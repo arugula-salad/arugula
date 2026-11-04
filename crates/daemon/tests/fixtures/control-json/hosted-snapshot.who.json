@@ -9,32 +9,174 @@
     "e"
   ],
   "agent_callers": [
-    "f1e5badd94570375:User { id: \"account:e\", name: \"e\", pic: None }"
+    "441915aa3e917f57:User { id: \"account:o\", name: \"o\", pic: None }",
+    "816b3eb51fa30f70:User { id: \"account:e\", name: \"e\", pic: None }"
+  ],
+  "already_in": [
+    "this machine is already in the team Acme on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in the team Acme on https://control.example",
+    "this machine is already in the team Acme on https://control.example, and a machine is in one team at a time. To work with the team t2 and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+  ],
+  "co_owner": {
+    "a": "User { id: \"account:a\", name: \"a\", pic: None }",
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owner_of": {
+    "a": "User { id: \"account:a\", name: \"a\", pic: None }",
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owners": [
+    "User { id: \"account:a\", name: \"a\", pic: None }"
   ],
   "drivers": [
-    "f1e5badd94570375:Owner"
+    "441915aa3e917f57:Owner",
+    "816b3eb51fa30f70:Owner"
   ],
   "hosted": true,
+  "is_me": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
   "is_team": true,
   "kind_name": [
     "team",
     "Acme"
   ],
-  "known_roots": [
-    "a=b7780dbaa438950e",
-    "e=ae54fc87def702ea",
-    "o=e131a8074c7abd29",
-    "v=b448e121f1186ddb"
+  "known": [
+    "Known { account: \"a\", root: \"a92bc689079e6ce0\", name: \"a\", role: Owner }",
+    "Known { account: \"e\", root: \"f6b9b46ee509b2c7\", name: \"e\", role: Editor }",
+    "Known { account: \"v\", root: \"5eb25aef5c911749\", name: \"v\", role: Viewer }"
   ],
+  "known_roots": {
+    "a": "a92bc689079e6ce0",
+    "acct1": null,
+    "e": "f6b9b46ee509b2c7",
+    "m": null,
+    "o": "55fa9dc5ffa7f653",
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": "5eb25aef5c911749",
+    "x": null
+  },
+  "legacy_app_children": {
+    "o": [
+      "55fa9dc5ffa7f653"
+    ]
+  },
+  "name_of_account": {
+    "a": "a",
+    "acct1": null,
+    "e": "e",
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": "v",
+    "x": null
+  },
   "others": [
-    "774cd0caf59a38ec:Owner",
-    "ae54fc87def702ea:Owner",
-    "b448e121f1186ddb:User { id: \"account:v\", name: \"v\", pic: None }",
-    "b7780dbaa438950e:Owner",
-    "e131a8074c7abd29:Owner"
+    "55fa9dc5ffa7f653:Owner",
+    "5eb25aef5c911749:User { id: \"account:v\", name: \"v\", pic: None }",
+    "5f341a1b54594623:Owner",
+    "a92bc689079e6ce0:Owner",
+    "f6b9b46ee509b2c7:Owner"
   ],
-  "owners": true,
+  "owners": {
+    "certs": {
+      "a": [
+        2,
+        0
+      ],
+      "e": [
+        3,
+        1
+      ],
+      "o": [
+        2,
+        0
+      ],
+      "v": [
+        1,
+        0
+      ]
+    },
+    "kind": "team",
+    "members": [
+      "o:Owner:55fa9dc5ffa7f653",
+      "a:Owner:a92bc689079e6ce0",
+      "e:Editor:f6b9b46ee509b2c7",
+      "v:Viewer:5eb25aef5c911749"
+    ],
+    "team": "t1",
+    "version": 5
+  },
+  "owns_here": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "reaches": {
+    "a": true,
+    "acct1": false,
+    "e": true,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": true,
+    "x": false
+  },
   "shared_roles": [],
+  "signers": {
+    "children": {
+      "o": [
+        "55fa9dc5ffa7f653"
+      ]
+    },
+    "origins": {},
+    "passkey_logs": {}
+  },
+  "state": [
+    "team",
+    "Acme"
+  ],
+  "team_people": [
+    "User { id: \"account:v\", name: \"v\", pic: None }"
+  ],
   "team_roles": [
     [
       "account:v",

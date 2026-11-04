@@ -19,5 +19,5 @@ paths = [
   '''(^|/)web/scripts/hosted\.fixture\.json$''',
   '''(^|/)web/scripts/run-grant\.fixture\.json$''',
   '''(^|/)contract/examples/logic/[a-z_]+/[a-z_]+\.json$''',
-  '''(^|/)crates/daemon/tests/fixtures/control-json/[a-z-]+\.json$''',
+  '''(^|/)crates/daemon/tests/fixtures/control-json/[a-z.-]+\.json$''',
 ]

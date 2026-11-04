@@ -53,7 +53,6 @@ use super::{
 #[cfg(unix)]
 use super::{SESSION, tab_name};
 #[cfg(unix)]
-use crate::control::Purpose;
 use crate::mux::Api;
 use crate::server::App;
 
@@ -88,7 +87,7 @@ const MAX_RESULT: usize = 2048;
 /// one deploy's run. Nobody gets in, it takes that run only, and it stops
 /// once the run's end is reported.
 pub fn deploy_box(app: &App) -> bool {
-    app.control.enrolled().is_some_and(|e| e.saved.is_for(Purpose::Deploy))
+    app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.deploys()))
 }
 
 /// The sudo rule a deploy's box keeps for this daemon's user: to the run

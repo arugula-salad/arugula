@@ -237,8 +237,9 @@ impl InTeam {
 }
 
 /// What a hosted machine is for (control's enrollment says `purpose`).
-/// A box that hears [`Purpose::Deploy`] or [`Purpose::Snapshot`] never
-/// stops being one.
+/// A purpose only ever closes: a box that hears [`Purpose::Deploy`] or
+/// [`Purpose::Snapshot`] never stops being one, and one that hears the
+/// other too is [`Purpose::Both`] ([`Purpose::or`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
     /// A workspace for its project's people.
@@ -250,6 +251,47 @@ pub enum Purpose {
     /// runs or sessions, and after its setup it wipes itself for the
     /// snapshot.
     Snapshot,
+    /// Told both, as the file's `deploy` and `builder` flags both set:
+    /// nobody gets in, as a deploy's box; it takes nothing and wipes
+    /// itself after its setup, as a snapshot's. Written back with both
+    /// flags, so a daemon from before decides the same.
+    Both,
+}
+
+impl Purpose {
+    /// From the file's flags.
+    fn from_flags(deploy: bool, builder: bool) -> Self {
+        match (deploy, builder) {
+            (false, false) => Self::People,
+            (true, false) => Self::Deploy,
+            (false, true) => Self::Snapshot,
+            (true, true) => Self::Both,
+        }
+    }
+
+    /// The file's flags: `deploy`, `builder`.
+    fn flags(self) -> (bool, bool) {
+        (self.deploys(), self.builds_snapshot())
+    }
+
+    /// This purpose, told `told` by a refresh: each flag once set stays
+    /// set, so a box only ever closes (a deploy's box told it's a
+    /// snapshot's, or the other way round, is both).
+    pub fn or(self, told: Self) -> Self {
+        let (d, b) = (self.flags(), told.flags());
+        Self::from_flags(d.0 || b.0, d.1 || b.1)
+    }
+
+    /// A deploy's box: nobody gets in, and it takes one deploy.
+    pub fn deploys(self) -> bool {
+        matches!(self, Self::Deploy | Self::Both)
+    }
+
+    /// A snapshot's builder: it takes no runs or sessions, and wipes
+    /// itself after its setup.
+    pub fn builds_snapshot(self) -> bool {
+        matches!(self, Self::Snapshot | Self::Both)
+    }
 }
 
 /// What a hosted machine pinned at enrollment (M178).
@@ -344,9 +386,9 @@ impl Saved {
         matches!(self.kind, MachineKind::Hosted(_))
     }
 
-    /// A hosted machine made for `purpose`.
-    pub fn is_for(&self, purpose: Purpose) -> bool {
-        self.hosted().is_some_and(|h| h.purpose == purpose)
+    /// What a hosted machine is for; nothing on another kind.
+    pub fn purpose(&self) -> Option<Purpose> {
+        self.hosted().map(|h| h.purpose)
     }
 }
 
@@ -416,6 +458,12 @@ struct OnDiskHosted {
     passkey_origins: Option<arugula_e2e::passkey::Origins>,
 }
 
+/// What a file that doesn't load means, for the log: the daemon runs as
+/// not joined, and how to get out of it.
+const NOT_LOADED: &str = "this machine runs as not joined, letting nobody in through control; `arugulad leave` forgets the file, then `arugulad join` again";
+const NOT_LOADED_HOSTED: &str =
+    "this machine runs as not joined, letting nobody in and enrolling nothing; rebuild the workspace";
+
 impl TryFrom<OnDisk> for Saved {
     type Error = anyhow::Error;
 
@@ -442,7 +490,7 @@ impl TryFrom<OnDisk> for Saved {
                         && d.team_names.is_empty()
                         && !d.locked
                         && d.lock.is_none(),
-                    "control.json holds a team's roster, certificates or lock with no team pinned; not loading it"
+                    "control.json holds a team's roster, certificates or lock with no team pinned; not loading it: {NOT_LOADED}"
                 );
                 None
             }
@@ -450,21 +498,16 @@ impl TryFrom<OnDisk> for Saved {
         let kind = match d.hosted {
             None => team.map_or(MachineKind::Personal, MachineKind::Team),
             Some(h) => {
-                let purpose = match (h.deploy, h.builder) {
-                    (false, false) => Purpose::People,
-                    (true, false) => Purpose::Deploy,
-                    (false, true) => Purpose::Snapshot,
-                    (true, true) => {
-                        bail!(
-                            "control.json says this hosted machine is a deploy's box and a snapshot's; not loading it"
-                        )
-                    }
-                };
+                let purpose = Purpose::from_flags(h.deploy, h.builder);
                 match (h.delegation.owner(), &team) {
                     (Some(Owner::Team(id)), Some(t)) if t.pin.team == id => {}
                     (Some(Owner::Account(_)), None) => {}
-                    (None, _) => bail!("control.json's hosted delegation names no owner; not loading it"),
-                    _ => bail!("control.json's team isn't the hosted delegation's owner; not loading it"),
+                    (None, _) => {
+                        bail!("control.json's hosted delegation names no owner; not loading it: {NOT_LOADED_HOSTED}")
+                    }
+                    _ => bail!(
+                        "control.json's team isn't the hosted delegation's owner; not loading it: {NOT_LOADED_HOSTED}"
+                    ),
                 }
                 MachineKind::Hosted(HostedPin {
                     cert: h.cert,
@@ -507,8 +550,8 @@ impl From<Saved> for OnDisk {
                     cert: h.cert,
                     delegation: h.delegation,
                     revocations: h.revocations,
-                    deploy: h.purpose == Purpose::Deploy,
-                    builder: h.purpose == Purpose::Snapshot,
+                    deploy: h.purpose.deploys(),
+                    builder: h.purpose.builds_snapshot(),
                     legacy_app_children: h.legacy_app_children,
                     passkey_logs: h.passkey_logs,
                     passkey_origins: h.passkey_origins,
@@ -905,7 +948,7 @@ impl Enrolled {
     fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool) -> Self {
         // A deploy's box (M219): nobody gets in, not even the project's
         // owners: it only takes its one deploy run, and goes after.
-        if saved.is_for(Purpose::Deploy) {
+        if saved.purpose().is_some_and(Purpose::deploys) {
             return Self {
                 saved,
                 keys,
@@ -1357,7 +1400,10 @@ pub struct Known {
     pub role: TeamRole,
 }
 
-fn read_saved(dir: &Path) -> anyhow::Result<Option<Saved>> {
+/// `control.json` in `dir`: none, the enrollment it holds, or why it
+/// doesn't load (which a daemon treats as not joined, and a hosted box's
+/// enrollment stops at).
+pub fn read_saved(dir: &Path) -> anyhow::Result<Option<Saved>> {
     match std::fs::read(dir.join(FILE)) {
         Ok(b) => Ok(Some(serde_json::from_slice(&b).context("control.json")?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -1569,6 +1615,11 @@ impl Control {
         }
         match note.as_ref().and_then(|n| n["by"].as_str()) {
             Some(by) => info!(control = was.url, whose = whose(was), by, "left control"),
+            None if self.state_dir.join(FILE).exists() => warn!(
+                control = was.url,
+                whose = whose(was),
+                "control.json no longer loads (the error above says why): this machine is no longer joined to control"
+            ),
             None => warn!(
                 control = was.url,
                 whose = whose(was),
@@ -3729,13 +3780,27 @@ fn private_http(url: &str) -> bool {
 /// `arugulad leave`: tell control, forget it. `listen` is where this
 /// machine is still reached locally.
 pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
-    let Some(s) = read_saved(state_dir)? else { bail!("this machine isn't joined to any control") };
+    // A file that doesn't load (#672) is still left: control is told at
+    // the URL it names, if it names one, and the file goes.
+    let (url, whose_it_is) = match read_saved(state_dir) {
+        Ok(Some(s)) => (s.url.clone(), whose(&s)),
+        Ok(None) => bail!("this machine isn't joined to any control"),
+        Err(e) => {
+            let url = std::fs::read(state_dir.join(FILE))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+                .and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_owned()));
+            let Some(url) = url else { bail!("control.json doesn't load ({e:#}), and names no control to leave") };
+            println!("control.json doesn't load ({e:#}); leaving {url} anyway.");
+            (url, "an enrollment that doesn't load".to_owned())
+        }
+    };
     let keys = DeviceKeys::load(&state_dir.join(KEY_FILE))?;
     let path = wire::LEAVE;
     let http = crate::roots::client();
-    let res = http.post(format!("{}{path}", s.url)).header(AUTH, auth_header(&keys, "POST", path, b"")).send().await;
+    let res = http.post(format!("{url}{path}")).header(AUTH, auth_header(&keys, "POST", path, b"")).send().await;
     match res {
-        Ok(r) if r.status().is_success() => println!("Left {} ({}).", s.url, whose(&s)),
+        Ok(r) if r.status().is_success() => println!("Left {url} ({whose_it_is})."),
         Ok(r) => println!("{} (leaving anyway)", control_said(r).await),
         Err(e) => println!("can't reach control ({e}); leaving anyway"),
     }
@@ -3745,7 +3810,7 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     let _ = std::fs::remove_file(state_dir.join(DROPPED_FILE));
     std::fs::remove_file(state_dir.join(FILE))?;
     println!("Arugula keeps running here; reach it at http://{listen}.");
-    println!("Rejoin with `arugulad join {}` (the approver picks their account or a team).", s.url);
+    println!("Rejoin with `arugulad join {url}` (the approver picks their account or a team).");
     Ok(())
 }
 
@@ -6090,17 +6155,26 @@ pub(crate) mod tests {
         assert!(a.is_empty() && h.is_empty());
     }
 
-    /// Where `control.json` files saved by earlier releases are kept, one
-    /// per kind and purpose, with what each one lets in beside it
-    /// (`<name>.who.json`).
+    /// Where `control.json` files are kept as the code on `origin/main`
+    /// before #672 wrote them, one per kind and purpose, with what that
+    /// code decided from each beside it (`<name>.who.json`, and
+    /// `<name>.accept.json` for other hosted machines' certificates).
+    /// Their README says how they were made.
     pub(crate) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/control-json");
 
+    /// The accounts the fixtures name, asked about one by one.
+    const ACCOUNTS: [&str; 10] = ["a", "o", "e", "v", "s", "x", "p", "q", "m", "acct1"];
+
     /// What a saved enrollment decides, as JSON: who it trusts and lets
-    /// in, who drives it and calls its agents, and what it says it is.
-    /// Recorded beside each fixture by the release that saved it, and
-    /// checked against what this code decides from the same file.
-    pub(crate) fn outcomes(saved: &Saved, acl: &Acl) -> serde_json::Value {
-        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), acl, true);
+    /// in, who drives it and calls its agents, who may sign for its
+    /// project, and what it says of itself and of each account. The same
+    /// function, on the types before #672, wrote each fixture's
+    /// `<name>.who.json` (see the README there); this one has to agree.
+    pub(crate) fn outcomes(saved: &Saved, dir: &Path) -> serde_json::Value {
+        use serde_json::json;
+        let acl = Arc::new(Acl::open(dir));
+        let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
+        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
         let sorted = |mut v: Vec<String>| {
             v.sort();
             v
@@ -6119,7 +6193,45 @@ pub(crate) mod tests {
             })
             .collect();
         shared_roles.sort();
-        serde_json::json!({
+        let owners = crate::hosted::runs::owners(saved).map(|o| match o {
+            arugula_e2e::hosted::Owners::Team { roster, certs } => json!({
+                "kind": "team",
+                "team": roster.team,
+                "version": roster.version,
+                "members": roster.members.iter().map(|m| format!("{}:{:?}:{}", m.account, m.role, m.root)).collect::<Vec<_>>(),
+                "certs": certs.iter().map(|(a, (c, r))| (a.clone(), json!([c.len(), r.len()]))).collect::<BTreeMap<_, _>>(),
+            }),
+            arugula_e2e::hosted::Owners::Account { trust, certs, revocations } => json!({
+                "kind": "account",
+                "account": trust.account,
+                "root": trust.root,
+                "certs": sorted(certs.iter().map(|c| c.device.clone()).collect()),
+                "revocations": sorted(revocations.iter().map(|r| r.device.clone()).collect()),
+            }),
+        });
+        let signers = crate::hosted::runs::owners(saved).map(|o| {
+            let s = crate::hosted::runs::signers(saved, &o);
+            json!({
+                "passkey_logs": s.pinned.passkey_logs.iter().map(|(a, l)| (a.clone(), l.events.len())).collect::<BTreeMap<_, _>>(),
+                "origins": s.pinned.origins,
+                "children": s.children,
+            })
+        });
+        let per_account = |f: &dyn Fn(&str) -> serde_json::Value| {
+            ACCOUNTS.iter().map(|a| (a.to_string(), f(a))).collect::<BTreeMap<_, _>>()
+        };
+        let known_roots = per_account(&|a| json!(e.known_root(a)));
+        let co_owner = per_account(&|a| json!(e.co_owner(a).map(|p| format!("{p:?}"))));
+        c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true)));
+        let owns_here = per_account(&|a| json!(c.owns_here(a)));
+        let is_me = per_account(&|a| json!(c.is_me(a)));
+        let name_of_account = per_account(&|a| json!(c.name_of_account(a)));
+        let co_owner_of = per_account(&|a| json!(c.co_owner_of(a).map(|p| format!("{p:?}"))));
+        let reaches = per_account(&|a| json!(c.reaches(&format!("account:{a}"))));
+        let mut known: Vec<String> = c.known().iter().map(|k| format!("{k:?}")).collect();
+        known.sort();
+        let state = c.state();
+        json!({
             "trusted": sorted(e.trusted.devices.keys().cloned().collect()),
             "others": who(&e.others),
             "drivers": who(&e.drivers),
@@ -6130,29 +6242,58 @@ pub(crate) mod tests {
             "shared_roles": shared_roles,
             "kind_name": kind_name(saved),
             "whose": whose(saved),
-            "is_team": saved.team().is_some(),
+            "already_in": [already_in(saved, None), already_in(saved, Some("t1")), already_in(saved, Some("t2"))],
+            "state": [state.kind, state.name],
+            "is_team": c.is_team(),
             "hosted": saved.is_hosted(),
-            "owners": crate::hosted::runs::owners(saved).is_some(),
-            "known_roots": sorted(["a", "o", "e", "v", "acct1", "s"].iter().filter_map(|a| Some(format!("{a}={}", e.known_root(a)?))).collect()),
+            "owners": owners,
+            "signers": signers,
+            "legacy_app_children": crate::hosted::runs::legacy_app_children(saved),
+            "known_roots": known_roots,
+            "co_owner": co_owner,
+            "owns_here": owns_here,
+            "is_me": is_me,
+            "name_of_account": name_of_account,
+            "co_owner_of": co_owner_of,
+            "reaches": reaches,
+            "known": known,
+            "team_people": sorted(c.team_people().iter().map(|p| format!("{p:?}")).collect()),
+            "co_owners": sorted(c.co_owners().iter().map(|p| format!("{p:?}")).collect()),
         })
     }
 
-    /// #672: `control.json` files saved by the release before the kind
-    /// was one type, one per kind and purpose (`tests/fixtures/control-json`),
+    /// What this machine says of other hosted machines' certificates
+    /// (`peer::accept_hosted`), for each input in `<name>.accept.json`:
+    /// `ok <project>` or `err`.
+    pub(crate) fn accepts(saved: &Saved, dir: &Path, inputs: &serde_json::Value) -> Vec<String> {
+        let acl = Acl::open(dir);
+        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+        inputs
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"]) {
+                Ok((project, _)) => format!("ok {project}"),
+                Err(_) => "err".to_owned(),
+            })
+            .collect()
+    }
+
+    /// #672: `control.json` files written by the code before the kind was
+    /// one type, one per kind and purpose (`tests/fixtures/control-json`),
     /// load, come out as the same file (so a daemon from before reads what
     /// this one saves), and decide the same: who's trusted, who gets in
-    /// and as whom, who drives it and calls its agents, and what it says
-    /// it is, as that release recorded beside each (`<name>.who.json`).
+    /// and as whom, who drives it and calls its agents, who may sign for
+    /// its project, which other hosted machines it accepts, and what it
+    /// says of itself and of each account, as that code recorded beside
+    /// each (`<name>.who.json`, `<name>.accept.json`).
     #[test]
     fn control_json_from_before_the_kind_was_one_type_loads_and_decides_the_same() {
-        let dir = std::env::temp_dir().join(format!("arugula-control-fixtures-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let acl = Acl::open(&dir);
         let mut names: Vec<String> = std::fs::read_dir(FIXTURES)
             .unwrap()
             .filter_map(|e| {
                 let n = e.unwrap().file_name().into_string().unwrap();
-                n.strip_suffix(".json").filter(|n| !n.ends_with(".who")).map(str::to_owned)
+                n.strip_suffix(".json").filter(|n| !n.ends_with(".who") && !n.ends_with(".accept")).map(str::to_owned)
             })
             .collect();
         names.sort();
@@ -6160,9 +6301,12 @@ pub(crate) mod tests {
             names,
             [
                 "hosted-account",
+                "hosted-both",
                 "hosted-deploy",
+                "hosted-deploy-team",
                 "hosted-snapshot",
                 "hosted-team",
+                "hosted-team-locked",
                 "personal",
                 "personal-joined",
                 "team",
@@ -6171,21 +6315,33 @@ pub(crate) mod tests {
             ]
         );
         for name in names {
-            let path = Path::new(FIXTURES).join(format!("{name}.json"));
-            let text = std::fs::read_to_string(&path).unwrap();
+            let dir = std::env::temp_dir().join(format!("arugula-control-fixtures-{}-{name}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let read =
+                |suffix: &str| std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}{suffix}"))).unwrap();
+            let text = read(".json");
             let saved: Saved = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
             let kind = |s: &Saved| match &s.kind {
                 MachineKind::Personal => "personal".to_owned(),
-                MachineKind::Team(_) => "team".to_owned(),
-                MachineKind::Hosted(h) => format!("hosted {:?} {}", h.purpose, h.team.is_some()),
+                MachineKind::Team(t) => format!("team {} {}", t.roster.is_some(), t.locked),
+                MachineKind::Hosted(h) => format!(
+                    "hosted {:?} {}",
+                    h.purpose,
+                    h.team.as_ref().map_or("account".to_owned(), |t| format!("team {} {}", t.locked, t.former.len()))
+                ),
             };
             let want = match name.as_str() {
                 "personal" | "personal-joined" => "personal",
-                "team" | "team-joined" | "team-locked" => "team",
-                "hosted-account" => "hosted People false",
-                "hosted-team" => "hosted People true",
-                "hosted-deploy" => "hosted Deploy false",
-                "hosted-snapshot" => "hosted Snapshot true",
+                "team-joined" => "team false false",
+                "team" => "team true false",
+                "team-locked" => "team true true",
+                "hosted-account" => "hosted People account",
+                "hosted-team" => "hosted People team false 0",
+                "hosted-team-locked" => "hosted People team true 1",
+                "hosted-deploy" => "hosted Deploy account",
+                "hosted-deploy-team" => "hosted Deploy team false 0",
+                "hosted-snapshot" => "hosted Snapshot team false 0",
+                "hosted-both" => "hosted Both account",
                 _ => unreachable!(),
             };
             assert_eq!(kind(&saved), want, "{name}");
@@ -6195,19 +6351,30 @@ pub(crate) mod tests {
             let again: Saved = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
             assert_eq!(again.kind, saved.kind, "{name}");
             // The same decisions.
-            let who: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(Path::new(FIXTURES).join(format!("{name}.who.json"))).unwrap())
-                    .unwrap();
-            assert_eq!(outcomes(&saved, &acl), who, "{name}: decides differently");
+            let who: serde_json::Value = serde_json::from_str(&read(".who.json")).unwrap();
+            let got = outcomes(&saved, &dir);
+            for (k, v) in who.as_object().unwrap() {
+                assert_eq!(&got[k], v, "{name}: {k} decided differently");
+            }
+            assert_eq!(
+                got.as_object().unwrap().len(),
+                who.as_object().unwrap().len(),
+                "{name}: a decision not recorded"
+            );
+            let accept: serde_json::Value = serde_json::from_str(&read(".accept.json")).unwrap();
+            let want: Vec<String> =
+                accept.as_array().unwrap().iter().map(|i| i["expect"].as_str().unwrap().to_owned()).collect();
+            assert_eq!(accepts(&saved, &dir, &accept), want, "{name}: accepts differently");
         }
     }
 
     /// #672: a `control.json` that says something no kind can be doesn't
-    /// load (the daemon logs it and runs as not joined, letting nobody
-    /// in): a roster, members' certificates or a lock with no team pinned,
-    /// a hosted machine that's a deploy's box and a snapshot's, a team
-    /// that isn't the hosted delegation's owner, or no team where the
-    /// delegation names one.
+    /// load (the daemon logs why and what to do, and runs as not joined,
+    /// letting nobody in): a roster, members' certificates or a lock with
+    /// no team pinned, a team that isn't the hosted delegation's owner, or
+    /// no team where the delegation names one. One with both `deploy` and
+    /// `builder` set does load, as [`Purpose::Both`], and is written back
+    /// with both.
     #[test]
     fn control_json_that_no_kind_can_be_doesnt_load() {
         let read = |name: &str| -> serde_json::Value {
@@ -6217,6 +6384,10 @@ pub(crate) mod tests {
         let said = |v: serde_json::Value, what: &str| {
             let e = refused(v).unwrap_or_else(|| panic!("loaded: {what}"));
             assert!(e.contains("not loading it"), "{what}: {e}");
+            assert!(
+                e.contains("`arugulad leave`") || e.contains("rebuild the workspace"),
+                "{what}: says what to do: {e}"
+            );
             e
         };
         let mut team = read("team-locked");
@@ -6229,10 +6400,6 @@ pub(crate) mod tests {
         certs["team_certs"] = read("team")["team_certs"].clone();
         assert!(said(certs, "members' certificates with no team").contains("no team pinned"));
         assert!(refused(read("personal-joined")).is_none(), "the file itself loads");
-
-        let mut both = read("hosted-deploy");
-        both["hosted"]["builder"] = true.into();
-        assert!(said(both, "a deploy's box and a snapshot's").contains("a deploy's box and a snapshot's"));
 
         let mut no_team = read("hosted-team");
         for f in ["team", "roster", "team_certs", "team_names", "former_members"] {
@@ -6250,5 +6417,59 @@ pub(crate) mod tests {
         let mut no_owner = read("hosted-account");
         no_owner["hosted"]["delegation"]["owner"] = "nobody".into();
         assert!(said(no_owner, "a delegation naming no owner").contains("names no owner"));
+
+        // Both flags: what the code before could write, loaded as it decided.
+        let both: Saved = serde_json::from_value(read("hosted-both")).unwrap();
+        assert_eq!(both.purpose(), Some(Purpose::Both));
+        let back = serde_json::to_value(&both).unwrap();
+        assert_eq!((back["hosted"]["deploy"].as_bool(), back["hosted"]["builder"].as_bool()), (Some(true), Some(true)));
+    }
+
+    /// #672: a purpose only closes. A deploy's box (nobody in) stays one
+    /// whatever it's told next; one told it's a snapshot's too is both, and
+    /// still lets nobody in. `arugulad leave` works on a file that doesn't
+    /// load, so a machine can get out of one.
+    #[test]
+    fn a_hosted_boxs_purpose_only_closes() {
+        use Purpose::*;
+        for (held, told, want) in [
+            (People, People, People),
+            (People, Deploy, Deploy),
+            (People, Snapshot, Snapshot),
+            (Deploy, People, Deploy),
+            (Deploy, Snapshot, Both),
+            (Snapshot, Deploy, Both),
+            (Snapshot, People, Snapshot),
+            (Both, People, Both),
+            (Both, Deploy, Both),
+            (Both, Snapshot, Both),
+        ] {
+            assert_eq!(held.or(told), want, "{held:?} told {told:?}");
+        }
+        assert!(Both.deploys() && Both.builds_snapshot() && Deploy.deploys() && !Deploy.builds_snapshot());
+        assert!(Snapshot.builds_snapshot() && !Snapshot.deploys() && !People.deploys() && !People.builds_snapshot());
+        let both: Saved =
+            serde_json::from_slice(&std::fs::read(Path::new(FIXTURES).join("hosted-both.json")).unwrap()).unwrap();
+        let dir = std::env::temp_dir().join(format!("arugula-both-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let e = Enrolled::build(both, Arc::new(DeviceKeys::generate()), &acl, true);
+        assert!(
+            e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.agent_callers.is_empty()
+        );
+    }
+
+    /// #672: `arugulad leave` on a file that doesn't load still forgets
+    /// it, telling the control the file names.
+    #[tokio::test]
+    async fn leave_forgets_a_file_that_doesnt_load() {
+        let dir = std::env::temp_dir().join(format!("arugula-leave-unloadable-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        DeviceKeys::load_or_create(&dir.join(KEY_FILE)).unwrap();
+        std::fs::write(dir.join(FILE), r#"{"url": "http://127.0.0.1:9", "locked": true}"#).unwrap();
+        leave(&dir, "127.0.0.1:7681").await.unwrap();
+        assert!(!dir.join(FILE).exists());
+        // Nothing to leave, then.
+        assert!(leave(&dir, "127.0.0.1:7681").await.is_err());
     }
 }

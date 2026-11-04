@@ -2,28 +2,152 @@
   "accounts": [],
   "agent_accounts": [],
   "agent_callers": [
-    "8a1d692156edddb7:User { id: \"account:acct1\", name: \"acct1\", pic: None }"
+    "87037842580fe8bf:User { id: \"account:acct1\", name: \"acct1\", pic: None }"
   ],
+  "already_in": [
+    "this machine is already in an account on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in an account on https://control.example, and a machine is in one team at a time. To work with the team t1 and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in an account on https://control.example, and a machine is in one team at a time. To work with the team t2 and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+  ],
+  "co_owner": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owner_of": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owners": [],
   "drivers": [
-    "8a1d692156edddb7:Owner"
+    "87037842580fe8bf:Owner"
   ],
   "hosted": true,
+  "is_me": {
+    "a": false,
+    "acct1": true,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
   "is_team": false,
   "kind_name": [
     "account",
     ""
   ],
-  "known_roots": [
-    "acct1=440444e39236c25a"
-  ],
+  "known": [],
+  "known_roots": {
+    "a": null,
+    "acct1": "b35d054e30489c4c",
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "legacy_app_children": {
+    "acct1": [
+      "043927f7d442b46b"
+    ]
+  },
+  "name_of_account": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
   "others": [],
-  "owners": true,
+  "owners": {
+    "account": "acct1",
+    "certs": [
+      "043927f7d442b46b",
+      "87037842580fe8bf",
+      "b35d054e30489c4c"
+    ],
+    "kind": "account",
+    "revocations": [],
+    "root": "b35d054e30489c4c"
+  },
+  "owns_here": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "reaches": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
   "shared_roles": [],
+  "signers": {
+    "children": {
+      "acct1": [
+        "043927f7d442b46b"
+      ]
+    },
+    "origins": {
+      "control.example": [
+        "https://control.example",
+        "https://app.example"
+      ]
+    },
+    "passkey_logs": {
+      "acct1": 2
+    }
+  },
+  "state": [
+    "account",
+    ""
+  ],
+  "team_people": [],
   "team_roles": [],
   "trusted": [
-    "440444e39236c25a",
-    "8a1d692156edddb7",
-    "c0067318aaf1193c"
+    "043927f7d442b46b",
+    "87037842580fe8bf",
+    "b35d054e30489c4c"
   ],
   "whose": "an account"
 }

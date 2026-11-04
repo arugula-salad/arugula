@@ -63,27 +63,39 @@ Decided (Jake, 2026-11-03):
   `Team(InTeam)`, the pin a machine joined or moved with and the roster,
   members' certificates, names, former members and lock it checked against
   that pin; or `Hosted(HostedPin)`, the hosted certificate and delegation,
-  the box's `Purpose` (people, deploy or snapshot), and the project's
-  `InTeam` when a team owns it. A `Purpose` once deploy or snapshot stays
-  one. Readers ask `team()`, `roster()`, `hosted()`, `is_hosted()` and
-  `is_for(purpose)`.
-- **The file keeps its flat shape.** `control.json` is written as every
-  release has written it (`OnDisk`): the team's fields at the top level,
-  `hosted` with its `deploy` and `builder` flags. A daemon from before this
-  reads a file this one saved, so a downgrade keeps the machine joined and
-  a hosted box enrolled.
-- **What no kind can be doesn't load.** A file with a roster, members'
-  certificates or a lock and no team pinned; a hosted machine flagged as
-  both a deploy's and a snapshot's; a team pinned that isn't the
-  delegation's owner, or none where the delegation names one: reading it
-  fails, the daemon logs why and runs as not joined, letting nobody in. No
-  release has written such a file: a join pins the team before anything
-  of it, a move out clears all of it, and a hosted enrollment is checked
-  whole (`hosted::trust::saved_from`).
-- **No trust check changed.** Who a certificate must chain to, who gets
-  in and as whom, and what only ever accumulates (removals, rosters that
-  only move forward, pinned passkey logs) are as they were: `aru-056` and
-  `aru-095` stand. The files the release before saved, one per kind and
-  purpose, are in `crates/daemon/tests/fixtures/control-json/`, each with
-  what that release decided from it beside it (`<name>.who.json`); a test
-  loads each, writes it back the same, and decides the same.
+  the box's `Purpose`, and the project's `InTeam` when a team owns it.
+  Readers ask `team()`, `roster()`, `hosted()`, `is_hosted()` and
+  `purpose()`.
+- **A purpose only closes.** `Purpose` is people, deploy, snapshot, or
+  both: each of the file's `deploy` and `builder` flags, once set, stays
+  set (`Purpose::or`), as the code before kept them. A deploy's box lets
+  nobody in and takes one deploy; a snapshot's takes no runs and wipes
+  itself after its setup; one told both does all of that. A refresh can
+  close a box further and never open it.
+- **The file keeps its flat shape.** `control.json` is written as the code
+  before wrote it (`OnDisk`): the team's fields at the top level, `hosted`
+  with its `deploy` and `builder` flags, both set for a box told both. A
+  daemon from before this reads a file this one saved and decides the
+  same, so a downgrade keeps the machine joined and a hosted box enrolled.
+- **What no kind can be doesn't load, and nothing touches it.** A file
+  with a roster, members' certificates or a lock and no team pinned; a
+  team pinned that isn't the hosted delegation's owner, or none where the
+  delegation names one. Reading it fails with a line that says why and
+  what to do; the daemon runs as not joined, letting nobody in through
+  control, and leaves the file and the key as they are. A hosted box with
+  such a file enrolls nothing: its claim is spent, and the workspace is
+  rebuilt. `arugulad leave` forgets such a file, telling the control it
+  names, so a machine can join again. No release from 0.43 on has
+  written such a file: a join pins the team before anything of it, a move
+  out clears all of it, and a hosted enrollment is checked whole
+  (`hosted::trust::saved_from`).
+- **No trust decision changed.** Who a certificate must chain to, who
+  gets in and as whom, who drives a hosted machine and calls its agents,
+  who may sign for its project, which other hosted machines it accepts,
+  and what only ever accumulates (removals, rosters that only move
+  forward, pinned passkey logs, a box's purpose) are as they were:
+  `aru-056` and `aru-095` stand. Files the code before wrote, one per kind
+  and purpose, are in `crates/daemon/tests/fixtures/control-json/`, each
+  with what that code decided from it beside it (`<name>.who.json`,
+  `<name>.accept.json`), and the README there says how they were made; a
+  test loads each, writes it back the same, and decides the same.

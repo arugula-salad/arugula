@@ -194,16 +194,14 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         sig: cert.sig.clone(),
     };
     // A deploy's box (M219) or a snapshot's (M263) stays one: a refresh
-    // that leaves the purpose out, or names another, doesn't open the box
-    // to anyone.
-    let purpose = match prev.and_then(|p| p.hosted()).map(|h| h.purpose) {
-        Some(held) if held != Purpose::People => held,
-        _ => match purpose.as_deref() {
-            Some(hosted::DEPLOY) => Purpose::Deploy,
-            Some(hosted::SNAPSHOT) => Purpose::Snapshot,
-            _ => Purpose::People,
-        },
+    // that leaves the purpose out doesn't open the box to anyone, and one
+    // that names the other makes it both (`Purpose::or`).
+    let told = match purpose.as_deref() {
+        Some(hosted::DEPLOY) => Purpose::Deploy,
+        Some(hosted::SNAPSHOT) => Purpose::Snapshot,
+        _ => Purpose::People,
     };
+    let purpose = prev.and_then(|p| p.hosted()).map_or(Purpose::People, |h| h.purpose).or(told);
     let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
         trust,
@@ -724,6 +722,48 @@ mod tests {
         let mut by_owner = got.clone();
         by_owner.lock = Some(lock(false, 20, &o));
         assert!(!saved_from(by_owner, &keys, Some(&third)).unwrap().team().unwrap().locked, "an owner's newer unlock");
+    }
+
+    /// #672: what a box is for only closes, refresh by refresh: a people's
+    /// box told it's a deploy's becomes one and stays one when told nothing
+    /// or told it's a snapshot's (then it's both); a snapshot's told it's a
+    /// deploy's is both too, and nobody gets in from then on; both never
+    /// opens. The flags written say the same as the code before wrote.
+    #[test]
+    fn a_boxs_purpose_only_closes_refresh_by_refresh() {
+        let keys = DeviceKeys::generate();
+        let (got, _) = enrollment(&keys);
+        let told = |p: Option<&str>| hosted::Enrollment { purpose: p.map(str::to_owned), ..got.clone() };
+        let refresh = |prev: &Saved, p: Option<&str>| saved_from(told(p), &keys, Some(prev)).unwrap();
+        let flags = |s: &Saved| {
+            let v = serde_json::to_value(s).unwrap();
+            (v["hosted"]["deploy"].as_bool().unwrap_or(false), v["hosted"]["builder"].as_bool().unwrap_or(false))
+        };
+        let people = saved_from(told(None), &keys, None).unwrap();
+        assert_eq!((people.purpose(), flags(&people)), (Some(Purpose::People), (false, false)));
+        // Deploy, told nothing, then told snapshot.
+        let deploy = refresh(&people, Some(hosted::DEPLOY));
+        assert_eq!((deploy.purpose(), flags(&deploy)), (Some(Purpose::Deploy), (true, false)));
+        assert_eq!(refresh(&deploy, None).purpose(), Some(Purpose::Deploy));
+        assert_eq!(refresh(&deploy, Some("people")).purpose(), Some(Purpose::Deploy));
+        let both = refresh(&deploy, Some(hosted::SNAPSHOT));
+        assert_eq!((both.purpose(), flags(&both)), (Some(Purpose::Both), (true, true)));
+        // Snapshot, told nothing, then told deploy: both, from then on.
+        let snapshot = refresh(&people, Some(hosted::SNAPSHOT));
+        assert_eq!((snapshot.purpose(), flags(&snapshot)), (Some(Purpose::Snapshot), (false, true)));
+        assert_eq!(refresh(&snapshot, None).purpose(), Some(Purpose::Snapshot));
+        let closed = refresh(&snapshot, Some(hosted::DEPLOY));
+        assert_eq!((closed.purpose(), flags(&closed)), (Some(Purpose::Both), (true, true)));
+        for p in [None, Some(hosted::DEPLOY), Some(hosted::SNAPSHOT)] {
+            assert_eq!(refresh(&closed, p).purpose(), Some(Purpose::Both), "{p:?}");
+            assert_eq!(refresh(&both, p).purpose(), Some(Purpose::Both), "{p:?}");
+        }
+        // A file with both flags, from the code before, reads as both.
+        let mut v = serde_json::to_value(&deploy).unwrap();
+        v["hosted"]["builder"] = true.into();
+        let read: Saved = serde_json::from_value(v).unwrap();
+        assert_eq!(read.purpose(), Some(Purpose::Both));
+        assert_eq!(refresh(&read, None).purpose(), Some(Purpose::Both));
     }
 
     #[test]

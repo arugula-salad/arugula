@@ -2,61 +2,61 @@
   "url": "https://control.example",
   "trust": {
     "account": "o",
-    "root": "e131a8074c7abd29"
+    "root": "55fa9dc5ffa7f653"
   },
   "cert": {
     "v": 1,
     "account": "o",
-    "device": "552aef464727096c",
+    "device": "6c57802e893bdf4b",
     "kind": "daemon",
     "name": "box",
-    "noise": "5055f50e4341914b6ac80430ccdb0963294b91950af6fa8c621bf4e72cf90a4f",
-    "sign": "0c8082035a74e6e228eccb20bd5f3da5266d982d0ae717a79889bfcdc81a58ad",
+    "noise": "5c5d755a3077e9bc0d993681c1dda5546fc0645d0a875e1da476a4c9c599544f",
+    "sign": "fad4d3d12a27ec9b3b51bd0a88374ab30ddd35eff2456e9499dd7a9f3d4202fc",
     "created": 2,
     "approver": "",
-    "sig": "6329c18f0c816d0c4ec1cabf405681ce1ea73e64e9c9ac007e4440a1cdf6ce706c38c949bc5b7d4671fe2c3f228bce024bcb0e22d8553a0ed0b59d3a6e233705"
+    "sig": "b5f530724030e568f9c4e364700f26126fa16fbd6628b05cc7198f8139e89c51ace5077e5a36b35533b3b820cb6d0ae0f7bee7b1570ec756b4dbd2bf9fd4ca07"
   },
   "certs": [],
   "revocations": [],
   "team": {
     "team": "t1",
     "founder": "o",
-    "founder_root": "e131a8074c7abd29"
+    "founder_root": "55fa9dc5ffa7f653"
   },
   "roster": {
     "v": 1,
     "team": "t1",
     "name": "Acme",
-    "version": 4,
-    "at": 4,
+    "version": 5,
+    "at": 5,
     "members": [
       {
         "account": "o",
-        "root": "e131a8074c7abd29",
+        "root": "55fa9dc5ffa7f653",
         "role": "owner",
         "name": "o"
       },
       {
         "account": "a",
-        "root": "b7780dbaa438950e",
+        "root": "a92bc689079e6ce0",
         "role": "owner",
         "name": "a"
       },
       {
         "account": "e",
-        "root": "ae54fc87def702ea",
+        "root": "f6b9b46ee509b2c7",
         "role": "editor",
         "name": "e"
       },
       {
         "account": "v",
-        "root": "b448e121f1186ddb",
+        "root": "5eb25aef5c911749",
         "role": "viewer",
         "name": "v"
       }
     ],
-    "by": "e131a8074c7abd29",
-    "sig": "bfd3e99d7561a4d71b223990f515ded545bc511214435b3ac0fc74c3f0da5c310c531eb441e8fcfbca5e20a4596ce4cc295b12c2e0a10a58876b87319ba0a107"
+    "by": "55fa9dc5ffa7f653",
+    "sig": "6e31340b749db346d43adfeeca835e2855b1583ca9ca93ac9ebedc804fb9cba63e7f3e41bb369ad4c383bcd1b375aaf2b88ad254dc2e19eb0f2401086d7bee0c"
   },
   "team_certs": {
     "a": [
@@ -64,26 +64,26 @@
         {
           "v": 1,
           "account": "a",
-          "device": "b7780dbaa438950e",
+          "device": "a92bc689079e6ce0",
           "kind": "browser",
           "name": "x",
-          "noise": "fd4d296fa3f588354aeb8411e8e5eeb89b93db9136eb7bb346a6a457006fd85c",
-          "sign": "f63f216e45d8f9de6e8bcf9ac16d06346c01cd2378f6db346953c35ed9c73c88",
-          "created": 1793764931215,
-          "approver": "b7780dbaa438950e",
-          "sig": "8dcdf303416596d0d841b03c70dc1e4d786d302f479a338680af2ed58a2d7c67263f3352bd7481f5ea60778bc0c18f15eb182288e7863b5d1ea84861028b2e07"
+          "noise": "b1def9f85346f1e3c9f0813f298beba5b1a0e206e593a7a3505e881e52d1f35c",
+          "sign": "2eddfda9fc5e9d3a0b7e9d7f16e63d7a4504ac2a3ab252e8a6744be7b1bf452f",
+          "created": 1793767991596,
+          "approver": "a92bc689079e6ce0",
+          "sig": "29d15df42b581673978f621e9dfb5f0dbc070a38d0a1f6d3dd2e25cfe024fa2dcaa0f66a1353eab18ac78b15268c25c800081a8424c318e56777501d3aedd208"
         },
         {
           "v": 1,
           "account": "a",
-          "device": "774cd0caf59a38ec",
+          "device": "5f341a1b54594623",
           "kind": "browser",
           "name": "phone",
-          "noise": "df9f91dd74399eb1552a0842cad0b102a72c87d0989929512946cdace046f371",
-          "sign": "5d6d4ca89821d29a67b13205d5ce5d4fadfbc14a148312bcc634e238eb31f80a",
-          "created": 1793764931228,
-          "approver": "b7780dbaa438950e",
-          "sig": "31980942290c43f6b1bf26f77d63c1ce66c8ce07b1bcd0c6da8e2a25d640e7e95b9c4fe23f37363d77e098148993a3b58395a3d7176068666a5f94903035ed07"
+          "noise": "c00c68d931d3468ad114f4cf1acc97c47293b8d985abdacccb179f1282d87e4b",
+          "sign": "25c4ef2011fe385b0fb3618f87ed4df66ccac3996c4fa6418ac19f1604072153",
+          "created": 1793767991612,
+          "approver": "a92bc689079e6ce0",
+          "sig": "24084a718c9ecaa0510b8442b24cd0907dc5397a558c93395ee260b1cc34c1e283f35d3ddc560e85ee92316671cc34208d5056df007d6adc2266ab49999f4d04"
         }
       ],
       []
@@ -93,14 +93,26 @@
         {
           "v": 1,
           "account": "o",
-          "device": "e131a8074c7abd29",
+          "device": "55fa9dc5ffa7f653",
           "kind": "browser",
           "name": "x",
-          "noise": "4bff56bc5e3650308f867fe39e6ab0e6526b5f471401fc834a8ea5c398e61543",
-          "sign": "e565c2a5c7cb22739b038114bcf62d3bbc816516211e18c21a721b61bb61f9de",
-          "created": 1793764931280,
-          "approver": "e131a8074c7abd29",
-          "sig": "3eaa890c94a23833b67dfbd7017466959248cd1f15569d8658e36bbc02f6551d860ae05af1eb5244a5a3d55fea90ff5e6558411944bbbc6dc5a2aa3234749103"
+          "noise": "f4f8fcb5e2bb2af43e056a1a521f6e1cbaa508f5b83c7585c017c1882e97db7c",
+          "sign": "4f2109f9d03cdae5ec4edffff428abd81b3020f357d7165a2766e427205b4e9e",
+          "created": 1793767991635,
+          "approver": "55fa9dc5ffa7f653",
+          "sig": "5b33f443406e9cde425fb54a4c6bc8dc34172754300899ea43fc4e2feae5bc868b1daa40b860213ee2a9e4b12d81da0445d446803120aac11e28e6b001e46e04"
+        },
+        {
+          "v": 1,
+          "account": "o",
+          "device": "441915aa3e917f57",
+          "kind": "daemon",
+          "name": "o-box",
+          "noise": "ffbc023f82cded9fae8062a73e0e9162fdc4470585c1843b9b737e3870c2c505",
+          "sign": "e68c2bb54f88c6e65e85cad998daa329d40b0728402199296c230355d2ed4325",
+          "created": 1793767991643,
+          "approver": "55fa9dc5ffa7f653",
+          "sig": "f9103370e824137e40cec2eb5299f5768abe17726c706668b41ad87f0f81eaa460d74d092cfdfa89729ef2230c56b97e980d07833507f50280af551ebb438305"
         }
       ],
       []
@@ -110,14 +122,14 @@
         {
           "v": 1,
           "account": "v",
-          "device": "b448e121f1186ddb",
+          "device": "5eb25aef5c911749",
           "kind": "browser",
           "name": "x",
-          "noise": "9e4b4fff1541bc9de8769742400c9294d0d5e35521fb36104181b111141db501",
-          "sign": "69382cc004c8b96499cfb2e1292890c56781cf6f9c277d90c8b9c175d6c4d88c",
-          "created": 1793764931293,
-          "approver": "b448e121f1186ddb",
-          "sig": "ea888b4d0fbc3f2b9cc0c52e2944d3cd54813ec12d29d69c80228e02d7b571986a7b2d151d7702ab3da8ab4d031d9caaf45bcadf7e888f783a7c9df2a29c620d"
+          "noise": "5c55f199c55b892f0df2cfcd5c546de08092686b7a5ddf68f7feb942998a8348",
+          "sign": "5ba3b54b93abd2e13bbe01bc7c66615f7926b1b9401e292093640a69689108a4",
+          "created": 1793767991674,
+          "approver": "5eb25aef5c911749",
+          "sig": "6e05c5f3dfeea6a037cb258a9b87e9c584b49c65b3f68e9afb766c996777295a967b04e371cca9ed0ebbc2aefef0991f482987c7557b697dfd65094b1170b602"
         }
       ],
       []
@@ -127,41 +139,65 @@
         {
           "v": 1,
           "account": "e",
-          "device": "ae54fc87def702ea",
+          "device": "f6b9b46ee509b2c7",
           "kind": "browser",
           "name": "x",
-          "noise": "5d9baa0bbf8e4912e8d1c17416d25a74a4115bb0590c19928fe343cc3e02cc19",
-          "sign": "1fa87c891638d7bb7aa9670785092890a8c088635031650fb4d0c073ca23f8c1",
-          "created": 1793764931286,
-          "approver": "ae54fc87def702ea",
-          "sig": "4df396a4091ff469b634e90680291c6f5e904f5a0eb9e1e88b00aa3bd0d7c4fae0ed76b6364324fcb1e35111400c569143673f8cdbd1f1a4f693af1f32dac300"
+          "noise": "d487c5be1fbef6e4d0a82bd7f48776a2d12757bdb1e9a41635e48e2504cb2932",
+          "sign": "570a3e8b53e1a476a1e35747cc099ad8b3289e7df59dff32091d25f2dbc60c6f",
+          "created": 1793767991650,
+          "approver": "f6b9b46ee509b2c7",
+          "sig": "70bca2303dbb799e7a9429edb8aebfc88c4a91abba0f09af027ac810fea7bf8d2bb6950b1e52fdaac0fd7a6d550975b90469eda0bb5fde44f67ade8efa0e7204"
         },
         {
           "v": 1,
           "account": "e",
-          "device": "f1e5badd94570375",
+          "device": "816b3eb51fa30f70",
           "kind": "daemon",
           "name": "e-box",
-          "noise": "66039f0797b80bb4c386f36ecd9be8d0f7f9db5de256487bf3cb0539d0d97545",
-          "sign": "3149149f107ddea478b4961e26769a1d02a673b8252d2a33e7debd8693d041e5",
-          "created": 1793764931299,
-          "approver": "ae54fc87def702ea",
-          "sig": "55ee8854d719a5ad60bfb7dc0ab5ed97a1781a46bede1af44656715235a94489c3d4faf779725ea8d025135fb076b662a0a4071a9dfc31901e98809dd19f070b"
+          "noise": "3700e184a52dff76c600a6756ac9bd108e55a4af6907bb9355877062c9954f79",
+          "sign": "60b616c0caae3a4258cd1e912282bac670aca1d112089e2285c83f6a1331dc51",
+          "created": 1793767991658,
+          "approver": "f6b9b46ee509b2c7",
+          "sig": "d60a2a92ec9620da6fdef26bf2f171d8a0fc0c8c98bb6941cf16476334b9ab50014153500a5d783f92ec429428bcb58172fa5b97a9a25456e6922d5ae8f26005"
+        },
+        {
+          "v": 1,
+          "account": "e",
+          "device": "b20d853b749efc95",
+          "kind": "browser",
+          "name": "e-phone",
+          "noise": "45ace5ee970a5130349cd494329254229259fa6e691bc2ecf1737ee3d53b1c62",
+          "sign": "3779afbec1cd20becc94f76596366c93ff0a59474c65b47ea6c225f9020d9b86",
+          "created": 1793767991666,
+          "approver": "f6b9b46ee509b2c7",
+          "sig": "b75dbbb5637fbf79b219b136db69e5a291ef5145c6d64fd9c1d8f72dc4b57bad11f0a581c3ea57910a4ae869ec5836d89c254b146a4001e88eeb0e9161d02504"
         }
       ],
-      []
+      [
+        {
+          "v": 1,
+          "account": "e",
+          "device": "b20d853b749efc95",
+          "at": 1793767991666,
+          "by": "f6b9b46ee509b2c7",
+          "sig": "259941166190a449b7cc3b1b352c4a9c8a464b97d4a904c714b61e230dbe78b07b0f547b8e5b2c8aec5838561c44a8d57a72054b4f88db6178f80f3ff0688804"
+        }
+      ]
     ]
   },
   "locked": false,
   "seen": {
     "round": 1,
     "at": {
-      "31980942290c43f6b1bf26f77d63c1ce66c8ce07b1bcd0c6da8e2a25d640e7e95b9c4fe23f37363d77e098148993a3b58395a3d7176068666a5f94903035ed07": 1,
-      "3eaa890c94a23833b67dfbd7017466959248cd1f15569d8658e36bbc02f6551d860ae05af1eb5244a5a3d55fea90ff5e6558411944bbbc6dc5a2aa3234749103": 1,
-      "4df396a4091ff469b634e90680291c6f5e904f5a0eb9e1e88b00aa3bd0d7c4fae0ed76b6364324fcb1e35111400c569143673f8cdbd1f1a4f693af1f32dac300": 1,
-      "55ee8854d719a5ad60bfb7dc0ab5ed97a1781a46bede1af44656715235a94489c3d4faf779725ea8d025135fb076b662a0a4071a9dfc31901e98809dd19f070b": 1,
-      "8dcdf303416596d0d841b03c70dc1e4d786d302f479a338680af2ed58a2d7c67263f3352bd7481f5ea60778bc0c18f15eb182288e7863b5d1ea84861028b2e07": 1,
-      "ea888b4d0fbc3f2b9cc0c52e2944d3cd54813ec12d29d69c80228e02d7b571986a7b2d151d7702ab3da8ab4d031d9caaf45bcadf7e888f783a7c9df2a29c620d": 1
+      "24084a718c9ecaa0510b8442b24cd0907dc5397a558c93395ee260b1cc34c1e283f35d3ddc560e85ee92316671cc34208d5056df007d6adc2266ab49999f4d04": 1,
+      "259941166190a449b7cc3b1b352c4a9c8a464b97d4a904c714b61e230dbe78b07b0f547b8e5b2c8aec5838561c44a8d57a72054b4f88db6178f80f3ff0688804": 1,
+      "29d15df42b581673978f621e9dfb5f0dbc070a38d0a1f6d3dd2e25cfe024fa2dcaa0f66a1353eab18ac78b15268c25c800081a8424c318e56777501d3aedd208": 1,
+      "5b33f443406e9cde425fb54a4c6bc8dc34172754300899ea43fc4e2feae5bc868b1daa40b860213ee2a9e4b12d81da0445d446803120aac11e28e6b001e46e04": 1,
+      "6e05c5f3dfeea6a037cb258a9b87e9c584b49c65b3f68e9afb766c996777295a967b04e371cca9ed0ebbc2aefef0991f482987c7557b697dfd65094b1170b602": 1,
+      "70bca2303dbb799e7a9429edb8aebfc88c4a91abba0f09af027ac810fea7bf8d2bb6950b1e52fdaac0fd7a6d550975b90469eda0bb5fde44f67ade8efa0e7204": 1,
+      "b75dbbb5637fbf79b219b136db69e5a291ef5145c6d64fd9c1d8f72dc4b57bad11f0a581c3ea57910a4ae869ec5836d89c254b146a4001e88eeb0e9161d02504": 1,
+      "d60a2a92ec9620da6fdef26bf2f171d8a0fc0c8c98bb6941cf16476334b9ab50014153500a5d783f92ec429428bcb58172fa5b97a9a25456e6922d5ae8f26005": 1,
+      "f9103370e824137e40cec2eb5299f5768abe17726c706668b41ad87f0f81eaa460d74d092cfdfa89729ef2230c56b97e980d07833507f50280af551ebb438305": 1
     }
   },
   "moved_at": 0,
@@ -170,34 +206,34 @@
       "project": "prj_1",
       "owner": "team:t1",
       "workspace": "hw_1",
-      "delegation": "effb8ee01318e73c17be2ea7dbcb736b",
-      "device": "552aef464727096c",
+      "delegation": "dd73c9224bc4814b38789a7b404a6647",
+      "device": "6c57802e893bdf4b",
       "name": "box",
-      "noise": "5055f50e4341914b6ac80430ccdb0963294b91950af6fa8c621bf4e72cf90a4f",
-      "sign": "0c8082035a74e6e228eccb20bd5f3da5266d982d0ae717a79889bfcdc81a58ad",
+      "noise": "5c5d755a3077e9bc0d993681c1dda5546fc0645d0a875e1da476a4c9c599544f",
+      "sign": "fad4d3d12a27ec9b3b51bd0a88374ab30ddd35eff2456e9499dd7a9f3d4202fc",
       "created": 2,
-      "sig": "6329c18f0c816d0c4ec1cabf405681ce1ea73e64e9c9ac007e4440a1cdf6ce706c38c949bc5b7d4671fe2c3f228bce024bcb0e22d8553a0ed0b59d3a6e233705"
+      "sig": "b5f530724030e568f9c4e364700f26126fa16fbd6628b05cc7198f8139e89c51ace5077e5a36b35533b3b820cb6d0ae0f7bee7b1570ec756b4dbd2bf9fd4ca07"
     },
     "delegation": {
       "project": "prj_1",
       "owner": "team:t1",
-      "key": "0e22923538e3860cb93cf3ace3906f2946dba1fff82fbf735692ef0a4ad8e3b4",
+      "key": "41fc6abf51d5e4b13f7dae0e99fd2707f08305a82b9f9ea790e53bd4ee470392",
       "at": 1,
-      "by": "e131a8074c7abd29",
-      "sig": "1d5a5930ee025f0bf3d181d52c03224760c6798083f4eb5b1efa2b1649c3b90f1ec7617f40744e488efae336ebea4deda19cd416925b616dde1c79e201c91605"
+      "by": "55fa9dc5ffa7f653",
+      "sig": "1d6492c8b3d6d31034489cd09679c9b43080558fb759ceebe9cf5992fc01b558c843e7f787ac129d405687d7d7d8b62b1d6622d1109697b0df7de3cc03488c0f"
     },
     "revocations": [
       {
         "project": "prj_1",
-        "delegation": "38a338637d4dbd47eeb43b6edbb5dd08",
+        "delegation": "315bc7fe8baf42ed10f77faad77de27b",
         "at": 5,
-        "by": "e131a8074c7abd29",
-        "sig": "a1b016dd9b1eb92f60d6aabcee82630a05f1096500f02c50e672a2673c77d5953f4196277b31c859fcf769a8ba90399d13f00a728a06f70d829717f26ac88000"
+        "by": "55fa9dc5ffa7f653",
+        "sig": "9ea4e50511a6451535884348cfb4ea72173f56eb10654861e7842f10ff7aed69ca652f29852bff6b196dbf44ec5645fec3b0ac875b298a65b4b4b53e57809b00"
       }
     ],
     "legacy_app_children": {
       "o": [
-        "e131a8074c7abd29"
+        "55fa9dc5ffa7f653"
       ]
     }
   }

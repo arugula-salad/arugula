@@ -2,56 +2,56 @@
   "url": "https://control.example",
   "trust": {
     "account": "acct1",
-    "root": "440444e39236c25a"
+    "root": "b35d054e30489c4c"
   },
   "cert": {
     "v": 1,
     "account": "acct1",
-    "device": "896a4c5db7733953",
+    "device": "97438c5c548d7884",
     "kind": "daemon",
     "name": "box",
-    "noise": "d7d1abc5e0f49ce5a23926f4605cddc3d2247f0a70ea8a52ca69cc4cd07c4632",
-    "sign": "60c9bde4a63db2b74151ca18cedb1bfb66646b48147b679e0bf34e52ecdb6331",
+    "noise": "2cd31b5cff74b2f1f345fd983521ee041229c03c4cf5b2f38e3b9573232a9873",
+    "sign": "75d503bbf3ce25cfcea614de7d41028761fe77f5b6fa98b3acf7be8e61814846",
     "created": 2,
     "approver": "",
-    "sig": "3a0ff00a16e83dbdbaa0e6aa29b17e3a0c240dcdab44d581be3dd61c572bcedf56c9a181645efcb408c57582d46c07b3bd29e661769c003f87e3abd6c15ed105"
+    "sig": "4096d8966d3999e3f438f83abfa64a42afebfb4dbefdbaecaee91a5e2130fd32371009f04d84cb4b1c9a49b4c2ce697fd58f5748a53d1f89b317399b568ce80f"
   },
   "certs": [
     {
       "v": 1,
       "account": "acct1",
-      "device": "440444e39236c25a",
+      "device": "b35d054e30489c4c",
       "kind": "browser",
       "name": "x",
-      "noise": "9b81d71e1e961754ac8b22fff9b4b58710b60224f728ad173871ac2061eb6126",
-      "sign": "fafa35cab21b4b40e206525ace8b71d7d81b7f08c8721cbbb18d4f50bc7eaa67",
-      "created": 1793764931387,
-      "approver": "440444e39236c25a",
-      "sig": "0049b5363152492eedb8f5d3fbf92c9c77ddb2f5f19c7332ff3ff6bebb6175c8ac2ceeb2b28987ec6339701f2ba0867f2616974e292ae9407f9ec82e3754a703"
+      "noise": "ec2999cd33030dba082d1c7e52bd6e471543d2019c01e6669e4b8ecb0294bb7e",
+      "sign": "e37bd08ed65c687e3151a82725565666e1de87a9a938d877f46bd765c66b4f56",
+      "created": 1793767991734,
+      "approver": "b35d054e30489c4c",
+      "sig": "f7412314abe211f77d9bd4b50d8c172ffc872310029e434748143c3cbf72404c00abbf75689d6e5e923059467c450fa6839b91ad5b54b66428c79b519e7c4b00"
     },
     {
       "v": 1,
       "account": "acct1",
-      "device": "c0067318aaf1193c",
+      "device": "043927f7d442b46b",
       "kind": "browser",
       "name": "phone",
-      "noise": "03cf83b4356ad0b7c0bf78aa631f0392792dd61c8e504b8df098587cb57d1e63",
-      "sign": "3a554c10468712a27ac939e4e896e6991d482fd1e945a21e08a29874eb46dae7",
-      "created": 1793764931394,
-      "approver": "440444e39236c25a",
-      "sig": "caccb793ad4c977d6217fc12f7349957db59ec6d9efddd41a219b93db1834c362df519589701155fbd4fdc000884ab73eb8a976321184b1dd0e02ac43e50360a"
+      "noise": "001594ac8a68c1d8af761d6f9e04436df2723b972a53f8c2deacef8412e28602",
+      "sign": "49bfaa10a0b478ce25c3e3ca90a03c85d6e209e79aaf01ecf0c3b2dcdc74c67f",
+      "created": 1793767991741,
+      "approver": "b35d054e30489c4c",
+      "sig": "efbb535db2fd884580474bb5615ea9df15a5601ff50e3b9933768049ff7960c78e5f03c1238e3344334becb1702a91061dfef49d8da87fcbd698d940ff22d60e"
     },
     {
       "v": 1,
       "account": "acct1",
-      "device": "8a1d692156edddb7",
+      "device": "87037842580fe8bf",
       "kind": "daemon",
       "name": "laptop-daemon",
-      "noise": "37f2115c6ba83c3e7329e54cd0a95449be441719276a2a0b8e8c82e18c62c42a",
-      "sign": "02a9e68f0857ed4c5b9e5ce2f2f823a4ae2146d5426aae15f8be668a86b87ec9",
-      "created": 1793764931400,
-      "approver": "440444e39236c25a",
-      "sig": "a4e92d66b1e8f9b0cd1bd0b167a7d262403ef07ca70b6d19feb48e306152dd1316a46f4258559f65c03d95e1acec6f364d54bb7a4202c2c39322a853490d8903"
+      "noise": "56fd780ff005ad9dcd0b41a035a518fc4c9c4ed6f3202376c79615c88e2b5531",
+      "sign": "030036982df6f2ea9539742f43a53fcc4826212036bdae48a3fae6263c76f958",
+      "created": 1793767991749,
+      "approver": "b35d054e30489c4c",
+      "sig": "9e19909f7eca23e8852ade5a74746d01e2ece95c77cb1229a4d1de4db9e52a208ea684df94ed4b5b1b92e99ad945b8f8d6dcff8227c285a30d1b47b00936340b"
     }
   ],
   "revocations": [],
@@ -59,9 +59,9 @@
   "seen": {
     "round": 1,
     "at": {
-      "0049b5363152492eedb8f5d3fbf92c9c77ddb2f5f19c7332ff3ff6bebb6175c8ac2ceeb2b28987ec6339701f2ba0867f2616974e292ae9407f9ec82e3754a703": 1,
-      "a4e92d66b1e8f9b0cd1bd0b167a7d262403ef07ca70b6d19feb48e306152dd1316a46f4258559f65c03d95e1acec6f364d54bb7a4202c2c39322a853490d8903": 1,
-      "caccb793ad4c977d6217fc12f7349957db59ec6d9efddd41a219b93db1834c362df519589701155fbd4fdc000884ab73eb8a976321184b1dd0e02ac43e50360a": 1
+      "9e19909f7eca23e8852ade5a74746d01e2ece95c77cb1229a4d1de4db9e52a208ea684df94ed4b5b1b92e99ad945b8f8d6dcff8227c285a30d1b47b00936340b": 1,
+      "efbb535db2fd884580474bb5615ea9df15a5601ff50e3b9933768049ff7960c78e5f03c1238e3344334becb1702a91061dfef49d8da87fcbd698d940ff22d60e": 1,
+      "f7412314abe211f77d9bd4b50d8c172ffc872310029e434748143c3cbf72404c00abbf75689d6e5e923059467c450fa6839b91ad5b54b66428c79b519e7c4b00": 1
     }
   },
   "moved_at": 0,
@@ -70,34 +70,34 @@
       "project": "prj_1",
       "owner": "account:acct1",
       "workspace": "hw_1",
-      "delegation": "0a21db9add7c3867981d347f410d66b9",
-      "device": "896a4c5db7733953",
+      "delegation": "6b67ffee5a4549da2661e4a3c6bd8b4f",
+      "device": "97438c5c548d7884",
       "name": "box",
-      "noise": "d7d1abc5e0f49ce5a23926f4605cddc3d2247f0a70ea8a52ca69cc4cd07c4632",
-      "sign": "60c9bde4a63db2b74151ca18cedb1bfb66646b48147b679e0bf34e52ecdb6331",
+      "noise": "2cd31b5cff74b2f1f345fd983521ee041229c03c4cf5b2f38e3b9573232a9873",
+      "sign": "75d503bbf3ce25cfcea614de7d41028761fe77f5b6fa98b3acf7be8e61814846",
       "created": 2,
-      "sig": "3a0ff00a16e83dbdbaa0e6aa29b17e3a0c240dcdab44d581be3dd61c572bcedf56c9a181645efcb408c57582d46c07b3bd29e661769c003f87e3abd6c15ed105"
+      "sig": "4096d8966d3999e3f438f83abfa64a42afebfb4dbefdbaecaee91a5e2130fd32371009f04d84cb4b1c9a49b4c2ce697fd58f5748a53d1f89b317399b568ce80f"
     },
     "delegation": {
       "project": "prj_1",
       "owner": "account:acct1",
-      "key": "512238f399cc6de99fba80c29d554db65d9fc419b54451d9639cf67a6458ba65",
+      "key": "4708441544e2a5a26297cf7e4ec392b4488200a6a13fb5ae59846802fff5d17b",
       "at": 1,
-      "by": "440444e39236c25a",
-      "sig": "e18b19d4eb820178407a18c272e4b14c96ece97224fdf5a79a863ffdfe0d828c11677b671443a099f9e38ab6a4996d005613e4f0622e8f0bb3fad3411c7adb09"
+      "by": "b35d054e30489c4c",
+      "sig": "f4449313599b932544bf2e28111cea61c6a99dcc861a65c44990f9e2cec1c76d5abc8d0dd1dc335c6aaf80d87152ae46e02d8c5eb932f4515a79dd5aa0037607"
     },
     "revocations": [
       {
         "project": "prj_1",
-        "delegation": "bcc4e7fc9fcb8a746064988705dc596f",
+        "delegation": "93a0e20252f43a316a9064d24224d4eb",
         "at": 5,
-        "by": "440444e39236c25a",
-        "sig": "7106c83534338f1be9be0b06e4d80395994eca487533eeccf2764dbc229e3104b7abf0c8612ead199de005ec8361527bfa1d1f0f3f38379b849f450829d10301"
+        "by": "b35d054e30489c4c",
+        "sig": "c208953838764f8303e19ed25742a521bdbdd4f1a5afd591bf01fc53d1c6154d18b6b4d266c122e0bb90d0569d6edfd2b3522edde911e870cb9b529b90d5780e"
       }
     ],
     "legacy_app_children": {
       "acct1": [
-        "c0067318aaf1193c"
+        "043927f7d442b46b"
       ]
     },
     "passkey_logs": {
@@ -113,26 +113,26 @@
             "rp": "control.example",
             "alg": -8,
             "keyFormat": "raw",
-            "key": "qdjrWaZYCbX0lBU-gqX6sCH00vMyYIV9DYEtd417-uo",
+            "key": "BmyIc2FRWuGKHf0XfaCC3jWg_WpK_QfbJzNLJ_UwQHY",
             "aaguid": "00000000000000000000000000000000",
             "at": 100,
             "by": "signup",
-            "hash": "0545c26750f4c7ae8514668d3614e36b0378bbcbe192fad332a43fcaca0d2cbf"
+            "hash": "4b0012cec4f3ff69453b01023a049ea461c10ac30c8baa10111af64c892efc09"
           },
           {
             "account": "acct1",
             "seq": 1,
-            "prev": "0545c26750f4c7ae8514668d3614e36b0378bbcbe192fad332a43fcaca0d2cbf",
+            "prev": "4b0012cec4f3ff69453b01023a049ea461c10ac30c8baa10111af64c892efc09",
             "event": "added",
             "credential": "AgICAgICAgICAgICAgICAg",
             "rp": "control.example",
             "alg": -8,
             "keyFormat": "raw",
-            "key": "Pbf7DIBAN67Fh6xcbSGwjHC70zjtEBtH82nP3oAZ8Gk",
+            "key": "zjGxvMJs-v5L4O0ntc-zzMm7XIJdqKYtHD_FO-zPsSk",
             "aaguid": "00000000000000000000000000000000",
             "at": 200,
             "by": "signup",
-            "hash": "993d9d6a4ebdbaa9f8c5b64800b4bc58a0aaaae28180c1e83a259eb5ff8396e8"
+            "hash": "39f86b216e199c5fbd0855e109deed6737b704c4b90f59c505067d13995bccde"
           }
         ]
       }

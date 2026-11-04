@@ -1296,7 +1296,8 @@ pub fn start(app: Arc<App>) {
             send_all(&app, &mut open).await;
             // A snapshot's builder (M263) takes nothing: it sets up, wipes
             // itself and goes.
-            let builder = app.control.enrolled().is_some_and(|e| e.saved.is_for(control::Purpose::Snapshot));
+            let builder =
+                app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.builds_snapshot()));
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).

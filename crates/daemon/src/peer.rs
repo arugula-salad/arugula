@@ -120,7 +120,7 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
 /// own chain for a personal project; for a team's, a roster checked from
 /// its pin (this machine's own team's, or one the owner's browser pinned
 /// here, #233).
-fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
+pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
     use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept};
     let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
     let d: Delegation = serde_json::from_value(v["delegation"].clone())?;

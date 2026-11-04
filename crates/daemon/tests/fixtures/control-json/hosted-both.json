@@ -1,0 +1,106 @@
+{
+  "url": "https://control.example",
+  "trust": {
+    "account": "acct1",
+    "root": "b35d054e30489c4c"
+  },
+  "cert": {
+    "v": 1,
+    "account": "acct1",
+    "device": "bdbfe3d942246eae",
+    "kind": "daemon",
+    "name": "deploy",
+    "noise": "fb4cec3bb51fed1d44ea8583a43678decc6c56fb16b5950115f77af5dfaa6f20",
+    "sign": "73a8c53b9d8ef5fbceb0bc40c049b60f20f2d918b3db0a2be588ab5a827ed106",
+    "created": 2,
+    "approver": "",
+    "sig": "ccb39fada72fd1ddeae58e222835ec1b43a9575b4f85d888e4fec0235376fac0e20b1eb66eea689a196328781074001b18ba4c5f489c3714b8c96443264c8d0a"
+  },
+  "certs": [
+    {
+      "v": 1,
+      "account": "acct1",
+      "device": "b35d054e30489c4c",
+      "kind": "browser",
+      "name": "x",
+      "noise": "ec2999cd33030dba082d1c7e52bd6e471543d2019c01e6669e4b8ecb0294bb7e",
+      "sign": "e37bd08ed65c687e3151a82725565666e1de87a9a938d877f46bd765c66b4f56",
+      "created": 1793767991734,
+      "approver": "b35d054e30489c4c",
+      "sig": "f7412314abe211f77d9bd4b50d8c172ffc872310029e434748143c3cbf72404c00abbf75689d6e5e923059467c450fa6839b91ad5b54b66428c79b519e7c4b00"
+    },
+    {
+      "v": 1,
+      "account": "acct1",
+      "device": "043927f7d442b46b",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "001594ac8a68c1d8af761d6f9e04436df2723b972a53f8c2deacef8412e28602",
+      "sign": "49bfaa10a0b478ce25c3e3ca90a03c85d6e209e79aaf01ecf0c3b2dcdc74c67f",
+      "created": 1793767991741,
+      "approver": "b35d054e30489c4c",
+      "sig": "efbb535db2fd884580474bb5615ea9df15a5601ff50e3b9933768049ff7960c78e5f03c1238e3344334becb1702a91061dfef49d8da87fcbd698d940ff22d60e"
+    },
+    {
+      "v": 1,
+      "account": "acct1",
+      "device": "87037842580fe8bf",
+      "kind": "daemon",
+      "name": "laptop-daemon",
+      "noise": "56fd780ff005ad9dcd0b41a035a518fc4c9c4ed6f3202376c79615c88e2b5531",
+      "sign": "030036982df6f2ea9539742f43a53fcc4826212036bdae48a3fae6263c76f958",
+      "created": 1793767991749,
+      "approver": "b35d054e30489c4c",
+      "sig": "9e19909f7eca23e8852ade5a74746d01e2ece95c77cb1229a4d1de4db9e52a208ea684df94ed4b5b1b92e99ad945b8f8d6dcff8227c285a30d1b47b00936340b"
+    }
+  ],
+  "revocations": [],
+  "locked": false,
+  "seen": {
+    "round": 1,
+    "at": {
+      "9e19909f7eca23e8852ade5a74746d01e2ece95c77cb1229a4d1de4db9e52a208ea684df94ed4b5b1b92e99ad945b8f8d6dcff8227c285a30d1b47b00936340b": 1,
+      "efbb535db2fd884580474bb5615ea9df15a5601ff50e3b9933768049ff7960c78e5f03c1238e3344334becb1702a91061dfef49d8da87fcbd698d940ff22d60e": 1,
+      "f7412314abe211f77d9bd4b50d8c172ffc872310029e434748143c3cbf72404c00abbf75689d6e5e923059467c450fa6839b91ad5b54b66428c79b519e7c4b00": 1
+    }
+  },
+  "moved_at": 0,
+  "hosted": {
+    "cert": {
+      "project": "prj_1",
+      "owner": "account:acct1",
+      "workspace": "hw_1",
+      "delegation": "3a0ded2b0efd4fc393bb31b29768dfd4",
+      "device": "bdbfe3d942246eae",
+      "name": "deploy",
+      "noise": "fb4cec3bb51fed1d44ea8583a43678decc6c56fb16b5950115f77af5dfaa6f20",
+      "sign": "73a8c53b9d8ef5fbceb0bc40c049b60f20f2d918b3db0a2be588ab5a827ed106",
+      "created": 2,
+      "sig": "ccb39fada72fd1ddeae58e222835ec1b43a9575b4f85d888e4fec0235376fac0e20b1eb66eea689a196328781074001b18ba4c5f489c3714b8c96443264c8d0a"
+    },
+    "delegation": {
+      "project": "prj_1",
+      "owner": "account:acct1",
+      "key": "3d2227745e18f2857955add7316f3c60254dc1622329b4e4fd24afff86778ef4",
+      "at": 1,
+      "by": "b35d054e30489c4c",
+      "sig": "2c9d088fb496e43cb233f652e777c68330aba19a902fd1476e990cbcc2df924408978f0c6d703e6b7968aa56e0106e1b6e591e88b6b2cbb05e45284ba5f0e60d"
+    },
+    "revocations": [
+      {
+        "project": "prj_1",
+        "delegation": "bce13a8345b22d729e487764f6d72336",
+        "at": 5,
+        "by": "b35d054e30489c4c",
+        "sig": "b4fb9965808d48947c49d3d940e88984ceba20e76a0f9e08c51ce87199251dd8b3454ab8a3d5147ff0f64f5c1707260fe6db751c57da28de4471724fff988307"
+      }
+    ],
+    "deploy": true,
+    "builder": true,
+    "legacy_app_children": {
+      "acct1": [
+        "043927f7d442b46b"
+      ]
+    }
+  }
+}
