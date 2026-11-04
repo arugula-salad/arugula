@@ -162,8 +162,8 @@ export class HostDirectory {
     const h = this.find(name);
     // The one place a host's URL is chosen. A host of a kind since
     // removed has no URL to go to: never this page's daemon in its stead.
-    if (!h || !reachable(h)) throw new Error(`${name} is gone from the host list`);
-    return h.urls[0];
+    if (h && !reachable(h)) throw new Error(`${name} is gone from the host list`);
+    return h?.urls?.[0] ?? "";
   }
 
   /** The shown host's name ("" until the home daemon's is known). */
@@ -212,11 +212,11 @@ export class HostDirectory {
 }
 
 /** A host this page can show: one in control's directory, or a tailnet
- * host with a URL. An ssh host is a terminal's; an entry of a kind the
- * daemon no longer makes (`dial_out`, `provider`, kept by an older cached
- * list) is nobody's. */
+ * host (the daemon lists one only with a URL). An ssh host is a
+ * terminal's; an entry of a kind the daemon no longer makes (`dial_out`,
+ * `provider`, kept by an older cached list) is nobody's. */
 function reachable(h: Host): boolean {
-  return h.transport === "control" || (h.transport === "tailnet" && h.urls.length > 0);
+  return h.transport === "control" || h.transport === "tailnet";
 }
 
 /** The machine the address names (`?machine=NAME`), if any. */
