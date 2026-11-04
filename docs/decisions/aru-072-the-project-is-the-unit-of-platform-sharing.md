@@ -58,12 +58,16 @@ DMs and pane or session threads don't hang off a project: they're about
 people and machines, not about a thing being built. Machines, sessions and
 panes stay on the machine plane ("Two planes, two trust rules") and are
 shared as "One function says what an intent needs" says, not through
-projects.
+projects. Hosted machines came later and are the exception: a project owns
+them ("Control enrolls hosted machines under a project", aru-095).
 
 A team's signed roster stays the authority over who reaches a team's
-machines. Control keeps `team_members`, a projection of each roster
-rewritten in the same transaction as the roster, for platform queries; it's
-never read for machine access.
+machines. Control keeps `team_members`, a projection of each roster that
+follows the hub's change feed since the process split, for platform queries;
+it's never read for machine access.
+
+Only default projects exist so far: nothing creates a second one, so a team
+can't yet separate two products (aru-134).
 
 Step 1 adds the rows and backfills them, and nothing reads `project_id` yet,
 so behaviour doesn't change.
