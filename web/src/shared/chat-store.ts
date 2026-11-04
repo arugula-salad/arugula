@@ -347,8 +347,6 @@ export class ChatStore {
         return;
       case "object":
         this.objectChanged(ev.target);
-        // Assigned or closed: what an issue's thread wants of me moved.
-        if (ev.target.startsWith("iss_")) this.roomsSoon();
         return;
       case "session":
         // M257: a session's card reads it again (`onObject(ses)`).
@@ -669,7 +667,7 @@ export class ChatStore {
   async read(id: string, seq: number) {
     const r = this.room(id);
     if (!r || (seq <= r.read && r.unread === 0)) return;
-    this.rooms = this.rooms.map((x) => (x.id === id ? { ...x, read: Math.max(x.read, seq), unread: 0, mentions: 0, wants: 0 } : x));
+    this.rooms = this.rooms.map((x) => (x.id === id ? { ...x, read: Math.max(x.read, seq), unread: 0, mentions: 0 } : x));
     this.emit();
     await call("POST", `/api/chat/rooms/${enc(id)}/read`, { seq }).catch(() => {});
   }

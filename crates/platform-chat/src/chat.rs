@@ -538,40 +538,7 @@ fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) 
     let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
     let mut r = listed_as(app, facts, account, room, mark, counts, &pins::Extras::of(&app.db, &[room])?)?;
     with_levels(app, account, std::slice::from_mut(&mut r), None)?;
-    let ask = UnreadAsk { room: &room.id, read: mark.0, from };
-    with_wants(app, account, std::slice::from_mut(&mut r), std::slice::from_ref(&ask))?;
     Ok(r)
-}
-
-/// What wants the reader in the threads on open native issues assigned to
-/// them ([`ChatRoom::wants`]). [`listed_as`] has every other room's; `asks`
-/// are the rooms' marks. One statement for the issues and one for those
-/// rooms, whatever the page's size.
-fn with_wants(app: &Platform, account: &str, rooms: &mut [ChatRoom], asks: &[UnreadAsk<'_>]) -> anyhow::Result<()> {
-    let issues: Vec<&str> = rooms
-        .iter()
-        .filter(|r| r.kind == ChatKind::Object && r.unread > 0)
-        .filter_map(|r| r.target.as_deref())
-        .filter(|t| t.starts_with("iss_"))
-        .collect();
-    let assigned: HashSet<String> = app.db.issues_assigned_open(account, &issues)?.into_iter().collect();
-    let on: HashSet<&str> = rooms
-        .iter()
-        .filter(|r| r.kind == ChatKind::Object && r.target.as_ref().is_some_and(|t| assigned.contains(t)))
-        .map(|r| r.id.as_str())
-        .collect();
-    let asks: Vec<UnreadAsk<'_>> = asks
-        .iter()
-        .filter(|a| on.contains(a.room))
-        .map(|a| UnreadAsk { room: a.room, read: a.read, from: a.from })
-        .collect();
-    let wanted = app.db.chat_wanted_in(account, &asks)?;
-    for r in rooms.iter_mut() {
-        if let Some(n) = wanted.get(&r.id) {
-            r.wants = *n;
-        }
-    }
-    Ok(())
 }
 
 /// What each room is set to for `account` (#113): their own choice, else
@@ -677,9 +644,6 @@ fn listed_as(
         read,
         unread,
         mentions,
-        // An object's thread wants only its mentions, unless `with_wants`
-        // finds it's on an issue the reader has.
-        wants: if room.kind == "object" { mentions } else { unread },
         muted,
         // The reader's own and default levels are filled in by
         // [`with_levels`], for a page of rooms at once.
@@ -1798,7 +1762,6 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
     }
     let own = marks.iter().filter_map(|(id, m)| m.2.map(|l| (id.clone(), l))).collect();
     with_levels(&app, &s.account, &mut rooms, Some(own))?;
-    with_wants(&app, &s.account, &mut rooms, &asks)?;
     let (threads_unread, threads_mentions) = threads::totals(&app, &s.account, &seen).await?;
     Ok(Json(ChatRooms { rooms, threads_unread, threads_mentions }))
 }
