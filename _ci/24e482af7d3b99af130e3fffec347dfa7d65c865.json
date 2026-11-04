@@ -3,12 +3,25 @@
   "commit": "24e482af7d3b99af130e3fffec347dfa7d65c865",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T03:47:59Z",
+  "at": "2026-11-04T03:51:23Z",
   "phases": {
     "lint": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "lint",
+          "id": 126376018639,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126376018639"
+        },
+        {
+          "name": "changes",
+          "id": 126376018844,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126376018844"
+        }
+      ]
     },
     "build": {
       "verdict": "pending",
@@ -43,7 +56,14 @@
     "windows-desktop": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 126375609220,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286580/job/126375609220"
+        }
+      ]
     }
   }
 }
