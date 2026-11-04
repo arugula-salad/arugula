@@ -9,21 +9,44 @@ export interface Grant {
   power: string;
   scope: { kind: "project" | "account"; id: string; name?: string | null };
   live: boolean;
-  /** Why a live one does nothing now (Arugula #683): a write power while
-   * its giver only views the project. Older pages never see it. */
-  idle?: string | null;
+  granted_by?: string;
+  revoked_at?: number | null;
+  /** Who revoked it (Arugula #683): the giver, a project's owner, the
+   * platform, or an account since deleted (no account). Older platforms
+   * say nothing. */
+  revoked_by?: { account: string | null; name: string | null } | null;
+  /** What a live one does on a viewer's (Arugula #683): a write power
+   * while its giver only views the project, as a label ("idle", "reads
+   * only") and why. Older platforms say nothing. */
+  limited?: { label: string; why: string } | null;
 }
+
+/** The reader's role in a project, as the page knows it. */
+export type Role = "owner" | "editor" | "viewer";
+
+/** The powers the platform refuses to a viewer's machine (Arugula #683):
+ * nothing of them works for a viewer's agents. The platform's
+ * `WRITE_POWERS` with `ViewerUse::Nothing`, kept in step by hand; the
+ * switches leave them out for a viewer rather than ask and be refused. */
+export const VIEWER_REFUSED = ["issues.write", "trackers.write", "runs.start", "runs.command"];
+
+/** `powers` without those a viewer's machine is refused, when `role` is viewer. */
+export const forRole = (powers: string[], role?: Role) => (role === "viewer" ? powers.filter((p) => !VIEWER_REFUSED.includes(p)) : powers);
 
 /** Where a switch reaches: a project, or your DMs (`account`). */
 export interface AgentScope {
   kind: "project" | "account";
   id?: string;
   name: string;
+  /** The reader's role in a project (Arugula #683): a viewer's switches
+   * give less. */
+  role?: Role;
 }
 
-/** What a switch gives over each scope. */
-export function powersFor(kind: AgentScope["kind"]): string[] {
-  return kind === "project" ? ["threads.read", "threads.post", "issues.write"] : ["threads.read", "threads.post"];
+/** What a switch gives over each scope: for a viewer's project (Arugula
+ * #683), only what a viewer's machine is given. */
+export function powersFor(kind: AgentScope["kind"], role?: Role): string[] {
+  return forRole(kind === "project" ? ["threads.read", "threads.post", "issues.write"] : ["threads.read", "threads.post"], role);
 }
 
 /** M218: an agent's power to plan a project's deploys and ask for their
@@ -160,42 +183,85 @@ export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "sta
 
 /** One switch: on while any of its grants is live, and `only` the powers it
  * holds when that's some but not all of what it gives (a partial grant,
- * shown as "only threads.read"). `idle`: why one of its live grants does
- * nothing now (Arugula #683), said under it. */
+ * shown as "only threads.read"). `limited`: what one of its live grants
+ * does on a viewer's (Arugula #683), said under it. `revoked`: a project
+ * owner (not the giver) revoked one of its grants, and no live one has
+ * replaced it: who and when, said under it. */
 export interface Cell {
   on: boolean;
   only: string[] | null;
-  idle: string | null;
+  limited: { label: string; why: string } | null;
+  revoked: { name: string; at: number } | null;
 }
 
-/** Why the first of these live grants that's idle is, or null. */
-export const idleOf = (live: Grant[]): string | null => live.find((g) => g.idle)?.idle ?? null;
+/** The limit of the first of these live grants that has one, or null. */
+export const limitOf = (live: Grant[]): Cell["limited"] => live.find((g) => g.limited)?.limited ?? null;
 
-/** Why a machine's boards grant over a project is idle, if it is. */
-export function boardsIdle(grants: Grant[], machine: string, project: string): string | null {
-  return idleOf([BOARDS_WRITE, BOARDS_READ].flatMap((p) => singleGrant(grants, machine, project, p) ?? []));
+/** The limit on a machine's boards grant over a project, if any. */
+export function boardsLimit(grants: Grant[], machine: string, project: string): Cell["limited"] {
+  return limitOf([BOARDS_WRITE, BOARDS_READ].flatMap((p) => singleGrant(grants, machine, project, p) ?? []));
 }
+
+/** The newest of a machine's grants of `powers` over a scope that someone
+ * other than its giver revoked (a project's owner, the platform, an
+ * account since deleted), when no live grant of that power has replaced
+ * it: who (by name, else "an owner") and when. */
+export function revokedByOther(grants: Grant[], machine: string, s: AgentScope, powers: string[]): Cell["revoked"] {
+  const over = grants.filter(
+    (g) => g.subject.id === machine && powers.includes(g.power) && g.scope.kind === s.kind && (s.kind === "account" || g.scope.id === s.id),
+  );
+  const replaced = new Set(over.filter((g) => g.live).map((g) => g.power));
+  const others = over.filter((g) => !g.live && g.revoked_by && g.revoked_by.account !== g.granted_by && !replaced.has(g.power));
+  others.sort((a, b) => (b.revoked_at ?? 0) - (a.revoked_at ?? 0));
+  const g = others[0];
+  return g ? { name: g.revoked_by!.name ?? g.revoked_by!.account ?? "an owner", at: g.revoked_at ?? 0 } : null;
+}
+
+/** The boards column's `revoked`. */
+export const boardsRevoked = (grants: Grant[], machine: string, s: AgentScope) => revokedByOther(grants, machine, s, [BOARDS_READ, BOARDS_WRITE]);
 
 /** What one machine's switch in one column over a scope reads of the
  * grants. Deploys, start and reply are one grant each, so never partial. */
-export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column): Cell {
+export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column, role?: Role): Cell {
   if (column === "boards") {
-    return { on: boardsLevel(grants, machine, s.id ?? "") !== "off", only: null, idle: boardsIdle(grants, machine, s.id ?? "") };
+    return {
+      on: boardsLevel(grants, machine, s.id ?? "") !== "off",
+      only: null,
+      limited: boardsLimit(grants, machine, s.id ?? ""),
+      revoked: boardsRevoked(grants, machine, s),
+    };
   }
   const single = SINGLE[column];
   if (single) {
     const g = singleGrant(grants, machine, s.id ?? "", single);
-    return { on: !!g, only: null, idle: g ? idleOf([g]) : null };
+    return { on: !!g, only: null, limited: g ? limitOf([g]) : null, revoked: revokedByOther(grants, machine, s, [single]) };
   }
   const powers = column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : undefined;
   const live = liveOver(grants, machine, s, powers);
-  const all = (powers ?? powersFor(s.kind)).every((p) => live.some((g) => g.power === p));
-  return { on: live.length > 0, only: live.length > 0 && !all ? live.map((g) => g.power) : null, idle: idleOf(live) };
+  // What the switch gives this reader: a viewer's machine isn't given the
+  // writes, so holding the rest isn't partial.
+  const gives = forRole(powers ?? powersFor(s.kind), role);
+  const all = gives.every((p) => live.some((g) => g.power === p));
+  return {
+    on: live.length > 0,
+    only: live.length > 0 && !all ? live.map((g) => g.power) : null,
+    limited: limitOf(live),
+    revoked: revokedByOther(grants, machine, s, powers ?? powersFor(s.kind)),
+  };
 }
 
 /** A scope's matrix: a row per machine, a cell per column. */
-export function matrixOf(grants: Grant[], machines: { id: string; name: string }[], s: AgentScope, columns: Column[]) {
-  return machines.map((machine) => ({ machine, cells: columns.map((c) => cellOf(grants, machine.id, s, c)) }));
+export function matrixOf(grants: Grant[], machines: { id: string; name: string }[], s: AgentScope, columns: Column[], role?: Role) {
+  return machines.map((machine) => ({ machine, cells: columns.map((c) => cellOf(grants, machine.id, s, c, role)) }));
+}
+
+/** Whether a column's switch has nothing to give a viewer's machine
+ * (Arugula #683): the whole of what it gives is refused. */
+export function columnRefused(column: Column, role?: Role): boolean {
+  if (role !== "viewer") return false;
+  const single = SINGLE[column];
+  const gives = single ? [single] : column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : column === "boards" ? [BOARDS_READ] : powersFor("project");
+  return forRole(gives, role).length === 0;
 }
 
 /** How many of a matrix's machines have any switch on: its card's count. */

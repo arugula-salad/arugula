@@ -18,14 +18,19 @@
 //! machine's signature isn't a [`Person`], so it can't give itself one.
 //! A grant is revoked by its giver, or by the account it's over
 //! (`cloud.drive`), or (Arugula #683) by an owner of the project it's
-//! over, whoever gave it: the owner's reach is the project's grants and
-//! nothing else, never one over an account (a teammate's `cloud.drive`,
-//! or their DMs) or over another project ([`revoke`]). The grant keeps who
-//! revoked it and when. And a write power ([`WRITE_POWERS`]) is refused to a
-//! viewer's machine at [`give`] (and to a viewer's token at its mint),
-//! saying why: every write it tried would be refused by the route's own
-//! role check. One that exists stays, and lists as idle ([`list`]) until a
-//! role change brings it back.
+//! over, whoever gave it, a machine's or a token's: the owner's reach is
+//! the project's grants and nothing else, never one over an account (a
+//! teammate's `cloud.drive`, or their DMs) or over another project
+//! ([`revoke`]). The grant keeps who revoked it and when, and the giver is
+//! told. A revoke isn't a ban: the grant is the machine owner's (aru-073),
+//! so they can give it again; an owner who means it takes them out of the
+//! team. It stops the next call [`agent_may`] sees; a run, an agent
+//! session or a deploy approval already under way carries on as it was.
+//! And a write power that does nothing for a viewer's agents
+//! ([`WRITE_POWERS`]) is refused to a viewer's machine at [`give`] (and to
+//! a viewer's token at its mint), saying why; one that still does something
+//! there is given, and [`list`] says what it does. One from before stays
+//! until a role change brings the rest of it back.
 //!
 //! [`WRITE_POWERS`]: crate::db::projects::WRITE_POWERS
 //!
@@ -72,8 +77,9 @@ use crate::{
     Platform,
     auth::{Machine, Person},
     db::projects::{
-        AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE,
-        SESSION_POWERS, TRACKERS_WRITE, is_write_power, subject_kind,
+        AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, Limited, REVOKED_BY_ERASED,
+        REVOKED_BY_PLATFORM, RUN_POWERS, SECRETS_WRITE, SESSION_POWERS, TRACKERS_WRITE, ViewerUse, refused_for_viewer,
+        subject_kind, viewer_use,
     },
     hub::{Daemon, HubResult},
 };
@@ -85,7 +91,7 @@ type R = Result<Json<Value>, ApiError>;
 pub const AGENT_UNGRANTED: &str = "agent_ungranted";
 
 /// Why a grant was refused at [`give`] (or a token's mint): a write power
-/// for a viewer's agents, which could never work there (Arugula #683).
+/// that does nothing for a viewer's agents (Arugula #683).
 pub const VIEWER_WRITE: &str = "viewer_write";
 
 /// Where an agent's grant reaches: a project, or its owner's account (their
@@ -146,21 +152,40 @@ pub async fn owner_role(
     }
 }
 
-/// Whether `power` over `scope` (a project, named `scope_name`) would do
-/// nothing for an agent whose owner is `role` there (Arugula #683): a
-/// write power on a viewer's. The reason, for a refusal or an idle mark.
-pub fn idle_for(power: &str, role: TeamRole, scope: &AgentScope, scope_name: &str) -> Option<String> {
-    (role == TeamRole::Viewer && is_write_power(power) && matches!(scope, AgentScope::Project(_))).then(|| {
-        format!(
-            "{power} does nothing on a viewer's: its giver only views {scope_name}, so every write its agents try \
-             there is refused. An owner making them an editor brings it to life"
-        )
-    })
+/// What `power` over `scope` (a project, named `scope_name`) does for an
+/// agent whose owner is `role` there, when that's less than the power
+/// (Arugula #683): a write power on a viewer's. `None` when it works as
+/// for anyone.
+pub fn limited_for(power: &str, role: TeamRole, scope: &AgentScope, scope_name: &str) -> Option<Limited> {
+    if role != TeamRole::Viewer || !matches!(scope, AgentScope::Project(_)) {
+        return None;
+    }
+    match viewer_use(power)? {
+        ViewerUse::Nothing => Some(Limited {
+            label: "idle".into(),
+            why: format!(
+                "{power} does nothing here: its giver only views {scope_name}, so every write its agents try there \
+                 is refused. An owner making them an editor brings it to life"
+            ),
+        }),
+        ViewerUse::Only(label, does) => Some(Limited {
+            label: label.into(),
+            why: format!(
+                "{power} {does}: its giver only views {scope_name}. An owner making them an editor brings the rest"
+            ),
+        }),
+    }
+}
+
+/// Whether giving `power` to a viewer's agents over `scope` is refused:
+/// nothing of it would work ([`refused_for_viewer`]).
+pub fn viewer_refused(power: &str, role: TeamRole, scope: &AgentScope) -> bool {
+    role == TeamRole::Viewer && matches!(scope, AgentScope::Project(_)) && refused_for_viewer(power)
 }
 
 /// The refusal (403, [`VIEWER_WRITE`]) for giving `power` over `scope_name`
 /// to `whose` ("geek's agents", "an agent token") when the giver only
-/// views it: it could never work, so it isn't given.
+/// views it: nothing of it would work, so it isn't given.
 pub fn viewer_write(power: &str, scope_name: &str, whose: &str) -> ApiError {
     refusal(
         StatusCode::FORBIDDEN,
@@ -341,15 +366,20 @@ fn wire(g: &Grant) -> Value {
         "created_at": g.created_at,
         "revoked_at": g.revoked_at,
         // Who revoked it (Arugula #683): the account, and its name as the
-        // directory has it. One revoked before that was recorded was its
-        // giver's doing.
-        "revoked_by": g.revoked_at.map(|_| json!({
-            "account": g.revoked_by.as_ref().unwrap_or(&g.granted_by),
-            "name": g.revoked_by_name,
-        })),
+        // directory has it; the platform itself, or an account since
+        // deleted (no account, a name saying so). One revoked before that
+        // was recorded was its giver's doing.
+        "revoked_by": g.revoked_at.map(|_| match g.revoked_by.as_deref() {
+            Some(REVOKED_BY_ERASED) => json!({ "account": null, "name": "an account since deleted" }),
+            Some(REVOKED_BY_PLATFORM) => {
+                json!({ "account": REVOKED_BY_PLATFORM, "name": "Arugula control, when the giver left the team" })
+            }
+            by => json!({ "account": by.unwrap_or(&g.granted_by), "name": g.revoked_by_name }),
+        }),
         "live": g.revoked_at.is_none(),
-        // A live one that does nothing now (Arugula #683): why, else null.
-        "idle": g.idle,
+        // What a live one does on a viewer's (Arugula #683): a label and
+        // why, else null.
+        "limited": g.limited,
     })
 }
 
@@ -384,9 +414,9 @@ pub async fn can_drive_cloud(app: &Platform, daemon: &str, account: &str) -> Hub
 
 /// Machine names for these grants, from the hub's directory (as the cache
 /// keeps it), project names for those over a project, the name of whoever
-/// revoked each revoked one, and which live ones are idle (Arugula #683:
-/// a write power whose giver only views the project, read from the cache
-/// as [`agent_may`] reads the owner's reach).
+/// revoked each revoked one, and what each live one does on a viewer's
+/// (Arugula #683: a write power whose giver only views the project, read
+/// from the cache as [`agent_may`] reads the owner's reach).
 async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> {
     let mut ids: Vec<String> = grants.iter().map(|g| g.subject_id.clone()).collect();
     ids.sort();
@@ -396,6 +426,7 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
         .iter()
         .filter(|g| g.revoked_at.is_some())
         .map(|g| g.revoked_by.clone().unwrap_or_else(|| g.granted_by.clone()))
+        .filter(|by| by != REVOKED_BY_ERASED && by != REVOKED_BY_PLATFORM)
         .collect();
     revokers.sort();
     revokers.dedup();
@@ -415,7 +446,7 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
                 projects.insert(g.scope_id.clone(), name);
             }
             g.scope_name = projects[&g.scope_id].clone();
-            if g.revoked_at.is_none() && is_write_power(&g.power) {
+            if g.revoked_at.is_none() && viewer_use(&g.power).is_some() {
                 let scope = AgentScope::Project(g.scope_id.clone());
                 let key = (g.granted_by.clone(), g.scope_id.clone());
                 let role = match roles.get(&key) {
@@ -427,7 +458,7 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
                     }
                 };
                 let name = g.scope_name.clone().unwrap_or_else(|| g.scope_id.clone());
-                g.idle = role.and_then(|r| idle_for(&g.power, r, &scope, &name));
+                g.limited = role.and_then(|r| limited_for(&g.power, r, &scope, &name));
             }
         }
     }
@@ -492,12 +523,43 @@ pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
 /// (Arugula #683) an owner of the project it's over, whoever gave it:
 /// [`revoke_as_owner`]. Only a [`Person`]: never a machine's signature.
 pub async fn revoke(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> R {
-    let g = match app.db.revoke_grant(&s.account, &id, now_ms())? {
-        Some(g) => g,
+    let (g, as_owner_now) = match app.db.revoke_grant(&s.account, &id, now_ms())? {
+        Some(g) => (g, false),
         None => revoke_as_owner(&app, &s.account, &id).await?,
     };
     let g = named(&app, vec![g]).await?.remove(0);
+    if as_owner_now {
+        notify_giver(&app, &g, &s.account).await;
+    }
     Ok(Json(wire(&g)))
+}
+
+/// Push the giver's devices a notice that a project's owner revoked their
+/// grant (Arugula #683): what, who, and that the machine is still theirs
+/// to grant from. In the background: a failure is only logged.
+async fn notify_giver(app: &Platform, g: &Grant, by: &str) {
+    let owner = app.cache.accounts(&*app.hub, std::slice::from_ref(&by.to_owned())).await.ok();
+    let owner = owner.and_then(|a| a.get(by).map(|a| a.name.clone())).unwrap_or_else(|| by.to_owned());
+    let subject = g.subject_name.clone().unwrap_or_else(|| g.subject_id.clone());
+    let scope = g.scope_name.clone().unwrap_or_else(|| g.scope_id.clone());
+    let msg = json!({
+        "title": "A grant was revoked",
+        "body": format!(
+            "{owner}, an owner of {scope}, revoked {subject}'s {} there. {} is still yours: you can give it again \
+             under Settings, Agents, on the platform page, or with `arugula grants add`.",
+            g.power,
+            if g.subject_kind == "agent" { "The token" } else { "The machine" }
+        ),
+        "tag": format!("grant-revoked-{}", g.id),
+        "control": true,
+    });
+    let hub = app.hub.clone();
+    let (giver, id) = (g.granted_by.clone(), g.id.clone());
+    tokio::spawn(async move {
+        if let Err(e) = hub.push(&giver, &msg).await {
+            tracing::warn!(account = %giver, grant = %id, error = %e, "the revoke's notice didn't go");
+        }
+    });
 }
 
 /// A project's owner revokes a grant over the project that they didn't
@@ -507,7 +569,9 @@ pub async fn revoke(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<
 /// but its own (404). The caller's role is asked of the hub, not the cache,
 /// as before any change: someone not in the project doesn't learn the
 /// grant exists (404); a member who isn't an owner is refused (403).
-async fn revoke_as_owner(app: &Platform, account: &str, id: &str) -> Result<Grant, ApiError> {
+/// Whether this call revoked it: a revoke of one revoked already changes
+/// nothing, and tells nobody again.
+async fn revoke_as_owner(app: &Platform, account: &str, id: &str) -> Result<(Grant, bool), ApiError> {
     let none = || err(StatusCode::NOT_FOUND, "no such grant");
     let project = app.db.grant_project(id)?.ok_or_else(none)?;
     let p = app.db.issue_project(&project)?.ok_or_else(none)?;
@@ -515,9 +579,11 @@ async fn revoke_as_owner(app: &Platform, account: &str, id: &str) -> Result<Gran
     if role != TeamRole::Owner {
         return Err(err(StatusCode::FORBIDDEN, "only the project's owners revoke a grant someone else gave over it"));
     }
-    let g = app.db.revoke_grant_over(&project, id, account, now_ms())?.ok_or_else(none)?;
-    tracing::info!(%account, %project, grant = %id, giver = %g.granted_by, "a project owner revoked a grant over the project");
-    Ok(g)
+    let (g, now) = app.db.revoke_grant_over(&project, id, account, now_ms())?.ok_or_else(none)?;
+    if now {
+        tracing::info!(%account, %project, grant = %id, giver = %g.granted_by, "a project owner revoked a grant over the project");
+    }
+    Ok((g, now))
 }
 
 #[derive(Deserialize)]
@@ -585,9 +651,9 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
             let Some((scope_name, role)) = owner_role(&app, &s.account, &scope, true).await? else {
                 return Err(err(StatusCode::FORBIDDEN, "you can only give your machine what you can read yourself"));
             };
-            // And never a write power to a viewer's machine (Arugula
-            // #683): it could never work.
-            if idle_for(&b.power, role, &scope, &scope_name).is_some() {
+            // And never a write power that does nothing for a viewer's
+            // machine (Arugula #683).
+            if viewer_refused(&b.power, role, &scope) {
                 let name = app
                     .cache
                     .daemons(&*app.hub, std::slice::from_ref(&b.daemon))

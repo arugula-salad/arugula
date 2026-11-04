@@ -15,7 +15,8 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { Time } from "../../shared/ui/time";
 import { session } from "../session";
 import { toneClass } from "../swarm";
-import { hasWorkOnBoards, withWorkOnBoards } from "./grants";
+import { roleIn } from "./environments";
+import { hasWorkOnBoards, VIEWER_REFUSED, withWorkOnBoards } from "./grants";
 import { Section } from "../../shared/ui/settings-section";
 
 type TokenGrant = { id: string; power: string; project: { id: string; name: string | null }; live: boolean };
@@ -28,6 +29,10 @@ export type AgentToken = {
   live: boolean;
   grants: TokenGrant[];
 };
+/** Powers the platform left out of a token over a project the minter
+ * only views (Arugula #683). */
+type LeftOut = { project: string; name: string; powers: string[] };
+
 type Call = { id: string; tool: string; project: string | null; outcome: string; detail: string; at: number };
 
 // What a token can hold, and what each lets its agent do.
@@ -114,7 +119,18 @@ export function AgentTokens() {
   const [name, setName] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
   const [powers, setPowers] = useState<string[]>(["threads.read", "issues.write"]);
-  const [made, setMade] = useState<{ token: string; name: string } | null>(null);
+  // Arugula #683: over a project you only view, a power that does nothing
+  // for a viewer isn't minted. The platform leaves it out per project and
+  // says which; the form says so before it asks, and a token that would
+  // hold nothing can't be made.
+  const viewed = (id: string) => {
+    const p = session.projects.find((x) => x.id === id);
+    return !!p && roleIn(p) === "viewer";
+  };
+  const viewerProjects = session.projects.filter((p) => projects.includes(p.id) && viewed(p.id));
+  const refused = powers.filter((p) => VIEWER_REFUSED.includes(p));
+  const nothingToMint = projects.length > 0 && projects.every(viewed) && powers.length > 0 && powers.every((p) => refused.includes(p));
+  const [made, setMade] = useState<{ token: string; name: string; left_out: LeftOut[] } | null>(null);
   const [open, setOpen] = useState("");
   const [busy, setBusy] = useState(false);
   // Revoke asks first (UI audit #158): the token is dead for good.
@@ -135,8 +151,8 @@ export function AgentTokens() {
     setErr("");
     setBusy(true);
     try {
-      const v = await call<{ token: string; agent_token: AgentToken }>("/api/agent-tokens", { name, projects, powers });
-      setMade({ token: v.token, name: v.agent_token.name });
+      const v = await call<{ token: string; agent_token: AgentToken; left_out?: LeftOut[] }>("/api/agent-tokens", { name, projects, powers });
+      setMade({ token: v.token, name: v.agent_token.name, left_out: v.left_out ?? [] });
       setMaking(false);
       setName("");
       await load();
@@ -181,6 +197,11 @@ export function AgentTokens() {
           <p>
             Copy it now: it's shown this once, and only its hash is kept.
           </p>
+          {made.left_out.map((l) => (
+            <p class="control-warning" key={l.project} data-agent-token-left-out={l.project}>
+              Without {l.powers.join(", ")} over <bdi>{l.name}</bdi>: you only view it, so those would do nothing there.
+            </p>
+          ))}
           <code class="deploy-digest" data-agent-token-value>
             {made.token}
           </code>
@@ -299,6 +320,13 @@ export function AgentTokens() {
               <code>threads.read</code> over a team's project reaches every one of that team's channels, not only its issues.
             </p>
           )}
+          {viewerProjects.length > 0 && refused.length > 0 && (
+            <p class="control-warning" data-agent-token-warn-viewer>
+              {refused.join(", ")} won't be minted over {viewerProjects.map((p) => p.name).join(", ")}: you only view{" "}
+              {viewerProjects.length === 1 ? "it" : "them"}, so those would do nothing there.
+              {nothingToMint ? " Pick a power a viewer's agent can use, such as threads.read." : ""}
+            </p>
+          )}
           {powers.includes("runs.command") && (
             <p class="control-warning" data-agent-token-warn-command>
               <code>runs.command</code> runs anything on the project's hosted boxes, so its agent can read what a box holds: its
@@ -310,7 +338,7 @@ export function AgentTokens() {
             <button class="secondary" type="button" onClick={() => setMaking(false)}>
               Cancel
             </button>
-            <button class="primary" disabled={busy || !projects.length || !powers.length} data-agent-token-make>
+            <button class="primary" disabled={busy || !projects.length || !powers.length || nothingToMint} data-agent-token-make>
               Make token
             </button>
           </div>

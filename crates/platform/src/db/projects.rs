@@ -108,26 +108,78 @@ pub const SESSION_POWERS: [&str; 2] = [SESSIONS_START, SESSIONS_REPLY];
 /// is given it ([`crate::agent_tokens`]), never a machine.
 pub const SECRETS_WRITE: &str = "secrets.write";
 
-/// The powers that are writes on the project's objects: every use of one
-/// runs the route's own role check first, which refuses a viewer, so on a
-/// viewer's machine (or a viewer's token) one of these does nothing. The
-/// one list of them (Arugula #683): [`crate::grants::give`] and a token's
-/// mint refuse to give one to a viewer, and
-/// [`crate::grants::list`] marks one that exists as idle. Where each is
-/// refused: `issues.write` in `issues::place`, `boards.write` in
-/// `boards::place`, `trackers.write` in `trackers::writes`, `deploys.plan`
-/// in `project_roles::project_as`, `runs.start` and `runs.command` in
-/// `triggers::routes::changer`, `sessions.start` in `chat::sessions`
-/// (`Cannot::Viewer`), `secrets.write` in `agent_mcp::set_secret`. Not
-/// `threads.post` or `sessions.reply`: a viewer posts in a thread, so
-/// those still do something; not the reads.
-pub const WRITE_POWERS: [&str; 8] =
-    [ISSUES_WRITE, BOARDS_WRITE, TRACKERS_WRITE, DEPLOYS_PLAN, RUNS_START, RUNS_COMMAND, SESSIONS_START, SECRETS_WRITE];
-
-/// Whether `power` is one of [`WRITE_POWERS`].
-pub fn is_write_power(power: &str) -> bool {
-    WRITE_POWERS.contains(&power)
+/// What a write power does for a viewer's agents (Arugula #683): every
+/// write runs the route's own role check first, which refuses a viewer, so
+/// on a viewer's machine (or a viewer's token) the power does only what's
+/// left. The one list of them, each with what `agent_may`'s callers let a
+/// viewer do: nothing at all, or some reads. [`crate::grants::give`] and a
+/// token's mint refuse to give one that does nothing; one that still does
+/// something is given, and [`crate::grants::list`] says what it does.
+///
+/// Where each is refused, and what still works:
+/// - `issues.write`: `issues::place` and `boards::relations::place`
+///   refuse a viewer; nothing reads with it.
+/// - `trackers.write`: `trackers::writes::writer` refuses a viewer; its
+///   `reach` only lists the grant.
+/// - `runs.start`, `runs.command`: `triggers::routes::changer` refuses a
+///   viewer; `runs.read` is the read.
+/// - `secrets.write` (a token's): `agent_mcp::seal` refuses a viewer. A
+///   token carried over from redone lists its apps' secret names with it
+///   (`agent_mcp_redone::list_secrets`), which the import doesn't gate.
+/// - `deploys.plan`: `project_roles::project_as` refuses a viewer's plan,
+///   request and ship; `deploys::agent::get` and the token's `list_apps`,
+///   `app_status` and `app_logs` read with it.
+/// - `boards.write`: `boards::place` refuses a viewer's change, and reads
+///   a board with it.
+/// - `sessions.start`: `chat::sessions` refuses a viewer's start
+///   (`Cannot::Viewer`); `sessions::wave` follows sessions with it, and
+///   `agent_sessions::stop` stops the owner's own.
+///
+/// Not `threads.post` or `sessions.reply`: a viewer posts in a thread, so
+/// those work as for anyone; not the reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewerUse {
+    /// Nothing works: refused when given.
+    Nothing,
+    /// Some of it works: a label for the grant ("reads only") and what it
+    /// does.
+    Only(&'static str, &'static str),
 }
+
+pub const WRITE_POWERS: [(&str, ViewerUse); 8] = [
+    (ISSUES_WRITE, ViewerUse::Nothing),
+    (TRACKERS_WRITE, ViewerUse::Nothing),
+    (RUNS_START, ViewerUse::Nothing),
+    (RUNS_COMMAND, ViewerUse::Nothing),
+    (SECRETS_WRITE, ViewerUse::Nothing),
+    (DEPLOYS_PLAN, ViewerUse::Only("reads only", "reads its deploys and apps, and never plans or ships one")),
+    (BOARDS_WRITE, ViewerUse::Only("reads only", "reads its boards, and never changes one")),
+    (
+        SESSIONS_START,
+        ViewerUse::Only("no starts", "follows its sessions and stops the ones you asked for, and never starts one"),
+    ),
+];
+
+/// What `power` does for a viewer's agents: `None` for one that isn't a
+/// write (it works as for anyone).
+pub fn viewer_use(power: &str) -> Option<ViewerUse> {
+    WRITE_POWERS.iter().find(|(p, _)| *p == power).map(|(_, u)| *u)
+}
+
+/// Whether `power` does nothing at all for a viewer's agents: never given
+/// to one.
+pub fn refused_for_viewer(power: &str) -> bool {
+    viewer_use(power) == Some(ViewerUse::Nothing)
+}
+
+/// `revoked_by` when the platform revoked a grant itself: an agent token's
+/// over a team's projects, when its giver left the team
+/// ([`super::agent_tokens::revoke_departed`]).
+pub const REVOKED_BY_PLATFORM: &str = "platform";
+
+/// `revoked_by` once the account that revoked it was deleted
+/// ([`erase_account`]): who is scrubbed, as other erased ids are.
+pub const REVOKED_BY_ERASED: &str = "";
 
 /// What a grant's subject is: a machine (`daemon`, its id 16 hex
 /// characters), or an agent with no machine (`agent`, M230: an agent grant
@@ -181,17 +233,26 @@ pub struct Grant {
     pub granted_by: String,
     pub created_at: u64,
     pub revoked_at: Option<u64>,
-    /// Who revoked it (Arugula #683): its giver, or an owner of the
-    /// project it's over. `None` on a live one, and on one revoked before
-    /// that was recorded, which its giver did.
+    /// Who revoked it (Arugula #683): its giver, an owner of the project
+    /// it's over, the platform ([`REVOKED_BY_PLATFORM`]) or an account
+    /// since deleted ([`REVOKED_BY_ERASED`]). `None` on a live one, and on
+    /// one revoked before that was recorded, which its giver did.
     pub revoked_by: Option<String>,
     /// Their name in the hub's directory (the caller fills it in).
     pub revoked_by_name: Option<String>,
-    /// Why a live one does nothing now (Arugula #683): a write power whose
-    /// giver only views the project. The caller fills it in
-    /// ([`crate::grants::list`]); it's never stored, since a role change
-    /// brings the grant back.
-    pub idle: Option<String>,
+    /// What a live one does for a viewer's agents, when its giver only
+    /// views the project (Arugula #683, [`WRITE_POWERS`]). The caller
+    /// fills it in ([`crate::grants::list`]); it's never stored, since a
+    /// role change brings the whole grant back.
+    pub limited: Option<Limited>,
+}
+
+/// A live grant's limit on a viewer's machine: a label ("idle", "reads
+/// only") and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Limited {
+    pub label: String,
+    pub why: String,
 }
 
 pub(super) const GRANT_COLUMNS: &str =
@@ -212,7 +273,7 @@ pub(super) fn grant_row(r: &Row) -> anyhow::Result<Grant> {
         revoked_at: r.get(8)?,
         revoked_by: r.get(9)?,
         revoked_by_name: None,
-        idle: None,
+        limited: None,
     })
 }
 
@@ -447,24 +508,32 @@ impl Db {
     /// A project's owner revokes a grant over the project, whoever gave it
     /// (Arugula #683, as [`revoke_agent_token_over`] does for a token's
     /// reach): only a grant whose scope is this project, never one over an
-    /// account or another project. Revoking it again changes nothing.
-    /// `None`: no such grant over the project. The caller has checked that
-    /// `by` owns `project` now ([`crate::grants::revoke`]).
+    /// account or another project. Revoking it again changes nothing (and
+    /// says so: the grant, and whether this call revoked it). `None`: no
+    /// such grant over the project. The caller has checked that `by` owns
+    /// `project` now ([`crate::grants::revoke`]).
     ///
     /// [`revoke_agent_token_over`]: Db::revoke_agent_token_over
-    pub fn revoke_grant_over(&self, project: &str, id: &str, by: &str, now: u64) -> anyhow::Result<Option<Grant>> {
+    pub fn revoke_grant_over(
+        &self,
+        project: &str,
+        id: &str,
+        by: &str,
+        now: u64,
+    ) -> anyhow::Result<Option<(Grant, bool)>> {
         let c = self.c();
-        c.execute(
+        let changed = c.execute(
             "UPDATE grants SET revoked_at = ?4, revoked_by = ?3 WHERE id = ?1
              AND scope_kind = 'project' AND scope_id = ?2 AND revoked_at IS NULL",
             params![id, project, by, now],
-        )?;
-        c.query_row(
+        )? > 0;
+        Ok(c.query_row(
             &format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = ?1 AND scope_kind = 'project' AND scope_id = ?2"),
             params![id, project],
             grant_row,
         )
-        .optional()
+        .optional()?
+        .map(|g| (g, changed)))
     }
 
     /// Give one of the account's own machines `cloud.drive` over it again,
@@ -648,6 +717,8 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     for m in &d.machines {
         c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![m])?;
     }
+    // Who revoked others' grants is scrubbed, as other erased ids are.
+    c.execute("UPDATE grants SET revoked_by = ?2 WHERE revoked_by = ?1", params![account, REVOKED_BY_ERASED])?;
     super::run_grants::erase_account(c, account)?;
     super::agent_tokens::erase_account(c, account)?;
     super::planter::erase_account(c, account)?;
@@ -877,10 +948,14 @@ mod tests {
         assert_eq!(db.revoke_grant_over(&u, &g.id, "alice", 20).unwrap(), None, "not over u");
         assert_eq!(db.revoke_grant_over(&t, &dms.id, "alice", 20).unwrap(), None, "over bob's account");
         assert_eq!(db.revoke_grant_over(&t, &other.id, "alice", 20).unwrap(), None, "over u");
-        let r = db.revoke_grant_over(&t, &g.id, "alice", 20).unwrap().unwrap();
-        assert_eq!((r.revoked_at, r.revoked_by.as_deref()), (Some(20), Some("alice")));
-        let again = db.revoke_grant_over(&t, &g.id, "alice", 21).unwrap().unwrap();
-        assert_eq!((again.revoked_at, again.revoked_by), (Some(20), Some("alice".into())), "again changes nothing");
+        let (r, changed) = db.revoke_grant_over(&t, &g.id, "alice", 20).unwrap().unwrap();
+        assert_eq!((r.revoked_at, r.revoked_by.as_deref(), changed), (Some(20), Some("alice"), true));
+        let (again, changed) = db.revoke_grant_over(&t, &g.id, "alice", 21).unwrap().unwrap();
+        assert_eq!(
+            (again.revoked_at, again.revoked_by, changed),
+            (Some(20), Some("alice".into()), false),
+            "again changes nothing"
+        );
         assert_eq!(db.live_grant("bbox", ISSUES_WRITE, ("project", &t), "bob").unwrap(), None);
         assert!(db.live_grant("bbox", THREADS_READ, ("account", "bob"), "bob").unwrap().is_some());
         assert!(db.live_grant("cbox", THREADS_READ, ("project", &u), "carol").unwrap().is_some());
@@ -890,6 +965,62 @@ mod tests {
         let r = db.revoke_grant("bob", &dms.id, 30).unwrap().unwrap();
         assert_eq!((r.revoked_at, r.revoked_by.as_deref()), (Some(30), Some("bob")));
         assert_eq!(db.revoke_grant("alice", &other.id, 31).unwrap(), None, "not alice's to revoke this way");
+
+        // alice's account is deleted: who revoked bob's grant is scrubbed,
+        // the row stays revoked.
+        let gone = Deleted { account: "alice".into(), machines: vec![], disbanded: vec![] };
+        super::erase_account(&db.c(), &gone).unwrap();
+        let r = db.grants("bob").unwrap().into_iter().find(|x| x.id == g.id).unwrap();
+        assert_eq!((r.revoked_at, r.revoked_by.as_deref()), (Some(20), Some(super::REVOKED_BY_ERASED)));
+        let mine = db.grants("bob").unwrap().into_iter().find(|x| x.id == dms.id).unwrap();
+        assert_eq!(mine.revoked_by.as_deref(), Some("bob"), "bob's own stays");
+    }
+
+    /// A token's revokes record who too: its owner's, a project owner's,
+    /// and the platform's when the giver left the team (Arugula #683).
+    #[test]
+    fn a_tokens_revokes_say_who() {
+        use super::super::agent_tokens::{NewToken, hash, new_token};
+        use super::ISSUES_WRITE;
+        use crate::hub::{Member, Team};
+        use arugula_e2e::team::TeamRole;
+        let db = Db::test();
+        let team = |members: &[(&str, TeamRole)]| Team {
+            id: "t1".into(),
+            name: "one".into(),
+            founder: "alice".into(),
+            locked: false,
+            version: 1,
+            members: members
+                .iter()
+                .map(|(a, role)| Member { account: (*a).into(), role: *role, name: (*a).into() })
+                .collect(),
+        };
+        db.project_roster(&team(&[("alice", TeamRole::Owner), ("bob", TeamRole::Editor)]), 1).unwrap();
+        let t = db.team_default_project("t1").unwrap().unwrap();
+        let mint = |name: &str| {
+            let (id, token) = new_token();
+            let new = NewToken {
+                id,
+                account: "bob".into(),
+                name: name.into(),
+                token_hash: hash(&token),
+                minted_from: "a browser".into(),
+            };
+            db.mint_agent_token(&new, &[(ISSUES_WRITE, &t)], 2).unwrap().id
+        };
+        let (own, owners, left) = (mint("own"), mint("owners"), mint("left"));
+        let by = |token: &str| -> Option<String> {
+            db.c()
+                .query_row("SELECT revoked_by FROM grants WHERE subject_id = ?1", params![token], |r| r.get(0))
+                .unwrap()
+        };
+        db.revoke_agent_token("bob", &own, 10).unwrap().unwrap();
+        assert_eq!(by(&own).as_deref(), Some("bob"));
+        assert_eq!(db.revoke_agent_token_over(&t, &owners, "alice", 11).unwrap(), 1);
+        assert_eq!(by(&owners).as_deref(), Some("alice"));
+        db.project_roster(&team(&[("alice", TeamRole::Owner)]), 12).unwrap();
+        assert_eq!(by(&left).as_deref(), Some(super::REVOKED_BY_PLATFORM), "bob left the team");
     }
 
     /// Deleting an account takes its personal project, its place in teams'

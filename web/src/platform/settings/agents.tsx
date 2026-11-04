@@ -19,12 +19,15 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import {
-  boardsIdle,
+  boardsLimit,
   boardsLevel,
   boardsMove,
+  boardsRevoked,
   cellKey,
   COLUMNS,
+  columnRefused,
   COMMAND_POWERS,
+  forRole,
   liveOver,
   machinesOf,
   matrixOf,
@@ -38,7 +41,10 @@ import {
   type Cell,
   type Column,
   type Grant,
+  type Role,
 } from "./grants";
+import { Time } from "../../shared/ui/time";
+import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -89,8 +95,10 @@ const HEADS: Record<Column, Head> = {
 const LEVEL_WORDS: Record<BoardsLevel, string> = { off: "Off", read: "Read", write: "Read and write" };
 
 /** The boards column's control: its level, and a choice of any of the
- * three, which moves straight there. */
-function BoardsLevelSelect({ level, label, k, busy, turn }: { level: BoardsLevel; label: string; k: string; busy: boolean; turn: (to: BoardsLevel) => void }) {
+ * three, which moves straight there. A viewer's machine reads at most
+ * (Arugula #683): write isn't offered, and one from before shows as it is. */
+function BoardsLevelSelect({ level, label, k, busy, role, turn }: { level: BoardsLevel; label: string; k: string; busy: boolean; role?: Role; turn: (to: BoardsLevel) => void }) {
+  const levels = (Object.keys(LEVEL_WORDS) as BoardsLevel[]).filter((l) => l !== "write" || role !== "viewer" || level === "write");
   return (
     <select
       class={`agent-level${level === "off" ? "" : " on"}`}
@@ -102,7 +110,7 @@ function BoardsLevelSelect({ level, label, k, busy, turn }: { level: BoardsLevel
       disabled={busy}
       onChange={(e) => turn((e.target as HTMLSelectElement).value as BoardsLevel)}
     >
-      {(Object.keys(LEVEL_WORDS) as BoardsLevel[]).map((l) => (
+      {levels.map((l) => (
         <option key={l} value={l}>
           {LEVEL_WORDS[l]}
         </option>
@@ -111,21 +119,33 @@ function BoardsLevelSelect({ level, label, k, busy, turn }: { level: BoardsLevel
   );
 }
 
-/** Under a switch whose grant does nothing now (Arugula #683): "idle",
- * with why as its tooltip. The switch stays on: a role change brings the
- * grant back, and off takes it away. */
-function Idle({ why, k }: { why: string | null; k: string }) {
-  return why ? (
-    <span class="agent-idle" title={why} data-agent-idle={k}>
-      idle
-    </span>
-  ) : null;
+/** What a reader of this role is told under a switch (Arugula #683):
+ * what a live grant does on a viewer's ("idle", "reads only", with why
+ * as its tooltip), and who revoked one that wasn't the giver, and when. */
+function Says({ cell, k }: { cell: Pick<Cell, "limited" | "revoked">; k: string }) {
+  return (
+    <>
+      {cell.limited && (
+        <span class="agent-idle" title={cell.limited.why} data-agent-limited={k}>
+          {cell.limited.label}
+        </span>
+      )}
+      {cell.revoked && (
+        <span class="agent-idle" data-agent-revoked={k}>
+          revoked by <bdi>{cell.revoked.name}</bdi> <Time at={cell.revoked.at} />
+        </span>
+      )}
+    </>
+  );
 }
 
 /** A switch in a matrix: on, off, or partly on (some of what it gives,
- * said in its title and under it), and busy while it's being turned. */
-function Switch({ cell, label, k, busy, turn }: { cell: Cell; label: string; k: string; busy: boolean; turn: (on: boolean) => void }) {
+ * said in its title and under it), and busy while it's being turned.
+ * `refused`: nothing it gives is given to a viewer's machine (Arugula
+ * #683), so it can't be turned on, and says why. */
+function Switch({ cell, label, k, busy, refused, turn }: { cell: Cell; label: string; k: string; busy: boolean; refused?: string; turn: (on: boolean) => void }) {
   const only = cell.only ? `only ${cell.only.join(", ")}` : "";
+  const off = !!refused && !cell.on;
   return (
     <>
       <input
@@ -134,18 +154,22 @@ function Switch({ cell, label, k, busy, turn }: { cell: Cell; label: string; k: 
         class={`sw-switch${cell.only ? " partial" : ""}`}
         data-agent-cell={k}
         data-partial={cell.only ? "" : undefined}
+        data-refused={off ? "" : undefined}
         aria-label={label}
         aria-busy={busy || undefined}
-        title={only || undefined}
+        title={off ? refused : only || undefined}
         checked={cell.on}
-        disabled={busy}
+        disabled={busy || off}
         onChange={(e) => turn((e.target as HTMLInputElement).checked)}
       />
       {only && <span class="agent-only">{only}</span>}
-      <Idle why={cell.idle} k={k} />
+      <Says cell={cell} k={k} />
     </>
   );
 }
+
+/** Why a column's switch is off for good on a viewer's project. */
+const REFUSED_WHY = "You only view this project, so this would do nothing for its agents: every write is refused. Ask an owner for the editor role.";
 
 export function AgentGrants() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -193,13 +217,18 @@ export function AgentGrants() {
   const turn = async (machine: string, s: AgentScope, on: boolean, which?: "runs" | "commands") => {
     setErr("");
     setBusy(cellKey(machine, s, which ?? "threads"));
-    const powers = which === "runs" ? RUN_POWERS : which === "commands" ? COMMAND_POWERS : powersFor(s.kind);
+    const all = which === "runs" ? RUN_POWERS : which === "commands" ? COMMAND_POWERS : powersFor(s.kind);
+    // A viewer's machine is given what still works for it (Arugula #683),
+    // and told what wasn't asked for.
+    const powers = forRole(all, s.role);
+    const left = all.filter((p) => !powers.includes(p));
     try {
       if (on) {
         const scope = s.kind === "project" ? { kind: "project", id: s.id } : { kind: "account" };
         for (const power of powers) await call("/api/grants", { daemon: machine, power, scope });
+        if (left.length) setErr(`Given without ${left.join(" and ")}: you only view ${s.name}, so those would do nothing for its agents.`);
       } else {
-        for (const g of liveOver(grants, machine, s, which ? powers : undefined)) {
+        for (const g of liveOver(grants, machine, s, which ? all : undefined)) {
           await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
         }
       }
@@ -219,7 +248,7 @@ export function AgentGrants() {
   // audit #168), and the matrix. The bar says whether any machine's agents
   // reach it at all.
   const card = (s: AgentScope, title: string, sub: string, columns: Column[], heads: Head[], data: object) => {
-    const rows = matrixOf(grants, machines, s, columns);
+    const rows = matrixOf(grants, machines, s, columns, s.role);
     const n = reaching(rows);
     return (
       <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
@@ -256,9 +285,10 @@ export function AgentGrants() {
                           label={name}
                           k={k}
                           busy={busy === k}
+                          role={s.role}
                           turn={(to) => void turnBoards(m.id, s, to)}
                         />
-                        <Idle why={boardsIdle(grants, m.id, s.id ?? "")} k={k} />
+                        <Says cell={{ limited: boardsLimit(grants, m.id, s.id ?? ""), revoked: boardsRevoked(grants, m.id, s) }} k={k} />
                       </td>
                     );
                   }
@@ -269,6 +299,7 @@ export function AgentGrants() {
                         k={k}
                         label={name}
                         busy={busy === k}
+                        refused={columnRefused(columns[i], s.role) ? REFUSED_WHY : undefined}
                         turn={(on) => turnCell(m.id, s, columns[i], on)}
                       />
                     </td>
@@ -301,10 +332,14 @@ export function AgentGrants() {
             They never approve anything: an owner approves a deploy, on their phone or in a browser, with a passkey, and a session's
             permission waits on a person. A switch marked
             "only …" holds part of what it gives (from <code>arugula grants add</code>, say): turning it off takes that away, and on
-            again gives all of it. One marked "idle" does nothing now: you only view that project, so every write its agents try
-            there is refused. It stays, and works once an owner makes you an editor; a write can't be turned on while you only view.
+            again gives all of it. In a project you only view, a switch gives what still works for a viewer's agents and says what it
+            left out; one that would do nothing can't be turned on. A grant from before you were a viewer stays and says what it
+            does now ("idle", "reads only"); an owner making you an editor brings the rest back.
           </p>
-          <p>A project's owners can also revoke any grant over it, whoever gave it: it shows here as revoked, by them.</p>
+          <p>
+            A project's owners can also revoke any grant over it, whoever gave it: it shows here as revoked, by them and when, and
+            you're told. The machine is still yours, so you can give it again; an owner who means it takes you out of the team.
+          </p>
         </>
       }
     >
@@ -321,7 +356,7 @@ export function AgentGrants() {
       ) : (
         <div class="sw-cards agent-cards" data-agent-grants>
           {session.projects.map((p) => {
-            const s: AgentScope = { kind: "project", id: p.id, name: p.team ? p.name : "your personal project" };
+            const s: AgentScope = { kind: "project", id: p.id, name: p.team ? p.name : "your personal project", role: roleIn(p) as Role };
             return card(
               s,
               p.name,

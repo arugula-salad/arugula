@@ -45,7 +45,7 @@ use crate::{
         agent_tokens::{AgentToken, MAX_LIVE, NewToken, hash, new_token},
         projects::Grant,
     },
-    grants::{AgentScope, idle_for, is_token_power, owner_role, viewer_write},
+    grants::{AgentScope, is_token_power, owner_role, viewer_refused, viewer_write},
 };
 
 pub use arugula_control_wire::agent_mcp::{AGENT_TOKEN_CALLS, AGENT_TOKEN_REVOKE, AGENT_TOKENS, MCP};
@@ -159,17 +159,27 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
             ),
         ));
     }
+    // Per project (Arugula #683): a write power that does nothing where
+    // the minter only views isn't minted there, and the answer says which
+    // were left out; a project left with none is left out whole. Nothing
+    // left at all is refused.
+    let mut grants: Vec<(&str, &str)> = vec![];
+    let mut left_out = vec![];
     for p in &projects {
         // Only over what the minter reads, on the hub's word.
         let scope = AgentScope::Project(p.clone());
         let Some((name, role)) = owner_role(&app, &s.account, &scope, true).await? else {
             return Err(err(StatusCode::FORBIDDEN, "you can only give an agent what you can read yourself"));
         };
-        // And never a write power where the minter only views (Arugula
-        // #683): it could never work, as a machine's can't.
-        if let Some(w) = powers.iter().find(|w| idle_for(w, role, &scope, &name).is_some()) {
-            return Err(viewer_write(w, &name, "an agent token"));
+        let (out, kept): (Vec<&String>, Vec<&String>) = powers.iter().partition(|w| viewer_refused(w, role, &scope));
+        if !out.is_empty() {
+            left_out.push(json!({ "project": p, "name": name, "powers": out }));
         }
+        grants.extend(kept.into_iter().map(|w| (w.as_str(), p.as_str())));
+    }
+    if grants.is_empty() {
+        let (p, w) = (powers.join(", "), left_out[0]["name"].as_str().unwrap_or_default().to_owned());
+        return Err(viewer_write(&p, &w, "an agent token"));
     }
     if app.db.live_agent_tokens(&s.account)? >= MAX_LIVE {
         return Err(err(
@@ -178,8 +188,6 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
         ));
     }
     let (id, token) = new_token();
-    let grants: Vec<(&str, &str)> =
-        projects.iter().flat_map(|p| powers.iter().map(move |w| (w.as_str(), p.as_str()))).collect();
     let from: String = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -192,7 +200,7 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
     tracing::info!(account = %s.account, token = %t.id, powers = ?powers, projects = ?projects, "minted an agent token");
     notify_mint(&app, &s.account, &t, &powers, projects.len());
     let view = wire(&app, &t, &app.db.agent_token_grants(&t.id, &s.account)?).await?;
-    Ok(Json(json!({ "agent_token": view, "token": token, "mcp_url": mcp_url(&app, &headers) })))
+    Ok(Json(json!({ "agent_token": view, "token": token, "mcp_url": mcp_url(&app, &headers), "left_out": left_out })))
 }
 
 /// Push the account's devices a notice of a new token: who it acts for,
@@ -286,7 +294,7 @@ pub async fn revoke_over(
     Path((project, id)): Path<(String, String)>,
 ) -> R {
     owner_of(&app, &s.account, &project).await?;
-    let n = app.db.revoke_agent_token_over(&project, &id, now_ms())?;
+    let n = app.db.revoke_agent_token_over(&project, &id, &s.account, now_ms())?;
     if n == 0 {
         return Err(err(StatusCode::NOT_FOUND, "no live agent token over this project by that id"));
     }

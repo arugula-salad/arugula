@@ -341,13 +341,33 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
     );
     assert!(why.contains("deploys.plan"), "{why}");
 
-    // A viewer's token never does more than a viewer: a write power isn't
-    // even minted (Arugula #683), since every write would be refused.
-    let (st, m) = mint(&base, "x", "viewer", &[&t], &["threads.read", "issues.write", "secrets.write"]).await;
+    // A viewer's token never does more than a viewer: a write power that
+    // does nothing for a viewer isn't minted where they only view (Arugula
+    // #683), per project, and the answer says which were left out. Nothing
+    // left at all is refused.
+    let (st, m) = mint(&base, "x", "viewer", &[&t], &["issues.write", "secrets.write"]).await;
     assert_eq!((st, m["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{m}");
     assert!(m["error"].as_str().unwrap().contains("an agent token"), "{m}");
     assert_eq!(app.db.live_agent_tokens("x").unwrap(), 0);
-    assert_eq!(mint(&base, "x", "viewer", &[&t], &["threads.read", "threads.post"]).await.0, 200);
+    let (_, me) = call(&base, "x", "GET", "/api/projects", None).await;
+    let personal = me["projects"].as_array().unwrap().iter().find(|p| p["team"].is_null()).unwrap()["id"].clone();
+    let personal = personal.as_str().unwrap().to_owned();
+    let (st, m) = mint(&base, "x", "mixed", &[&personal, &t], &["threads.read", "issues.write", "deploys.plan"]).await;
+    assert_eq!(st, 200, "{m}");
+    assert_eq!(m["left_out"], json!([{ "project": t, "name": "t", "powers": ["issues.write"] }]), "{m}");
+    let over = |p: &str| -> Vec<String> {
+        m["agent_token"]["grants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|g| g["project"]["id"] == p)
+            .map(|g| g["power"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(over(&personal), ["deploys.plan", "issues.write", "threads.read"], "{m}");
+    assert_eq!(over(&t), ["deploys.plan", "threads.read"], "deploys.plan reads for a viewer: {m}");
+    let (st, m) = mint(&base, "x", "reads", &[&t], &["threads.read", "threads.post"]).await;
+    assert_eq!((st, &m["left_out"]), (200, &json!([])), "{m}");
     // One minted before then, written as it was: still refused at every write.
     let (id, viewer) = crate::db::agent_tokens::new_token();
     let new = crate::db::agent_tokens::NewToken {
@@ -370,6 +390,20 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
         .await
         .unwrap();
     assert_eq!(r.status().as_u16(), 401);
+
+    // t's owner revokes one of a token's grants over t by its id, as a
+    // machine's (Arugula #683): the token's other grants stay.
+    let (_, m) = mint(&base, "b", "bobs", &[&t], &["threads.read", "issues.write"]).await;
+    let grants = m["agent_token"]["grants"].as_array().unwrap();
+    let write = grants.iter().find(|g| g["power"] == "issues.write").unwrap()["id"].as_str().unwrap().to_owned();
+    assert_eq!(call(&base, "x", "POST", &format!("/api/grants/{write}/revoke"), None).await.0, 403, "a viewer");
+    let (st, r) = call(&base, "a", "POST", &format!("/api/grants/{write}/revoke"), None).await;
+    assert_eq!((st, &r["live"], &r["revoked_by"]["account"]), (200, &json!(false), &json!("a")), "{r}");
+    let (_, listed) = call(&base, "b", "GET", "/api/agent-tokens", None).await;
+    let bobs = listed["tokens"].as_array().unwrap().iter().find(|t| t["name"] == "bobs").unwrap();
+    let live: Vec<&str> =
+        bobs["grants"].as_array().unwrap().iter().filter(|g| g["live"] == true).map(|g| g["power"].as_str().unwrap()).collect();
+    assert_eq!(live, ["threads.read"], "{bobs}");
 
     // Revoked: the next request is refused, before any tool.
     let (_, m) = mint(&base, "a", "gone", &[&t], &["issues.write"]).await;

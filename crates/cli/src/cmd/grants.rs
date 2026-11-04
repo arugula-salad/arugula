@@ -36,6 +36,13 @@ const AGENT_POWERS: [&str; 12] = [
     "sessions.reply",
 ];
 
+/// The powers that do nothing at all for a viewer's agents (Arugula #683,
+/// the platform's `WRITE_POWERS` with `ViewerUse::Nothing`): the platform
+/// refuses to give one over a project you only view, so `add` checks the
+/// whole list first and gives nothing rather than part of it. Kept in step
+/// with the platform's by hand.
+const VIEWER_REFUSED: [&str; 4] = ["issues.write", "trackers.write", "runs.start", "runs.command"];
+
 /// Those over a project only.
 const PROJECT_ONLY: [&str; 10] = [
     "issues.write",
@@ -96,9 +103,12 @@ pub enum GrantsCmd {
     },
     /// Take a machine's grants back: all its live ones, or one power, over
     /// one scope. Or one grant by its id (grt_…): as an owner of the
-    /// project it's over, a teammate's machine's too.
+    /// project it's over, a teammate's machine's or token's too; they're
+    /// told, and can give it again (an owner who means it takes them out
+    /// of the team).
     ///
-    /// Its agents are refused from their next call.
+    /// Its agents are refused from their next call; a run, an agent
+    /// session or an approval already under way carries on.
     Revoke {
         /// The machine: its name or id. Or a grant's id (grt_…), which a
         /// project's owner may revoke whoever gave it: the project's
@@ -137,10 +147,22 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
         }
         GrantsCmd::Add { machine, powers, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let scope = scope_of(&e, &scope)?;
-            for power in &powers {
-                let body = give(&id, power, scope.as_ref())?;
-                show(&e.api("POST", "/api/grants", Some(&body))?);
+            let (scope, role) = scope_of(&e, &scope)?;
+            // The whole list first: a power the platform would refuse
+            // means nothing is given, not the ones before it.
+            let bodies = powers.iter().map(|p| give(&id, p, scope.as_ref())).collect::<anyhow::Result<Vec<_>>>()?;
+            let refused = refused_for_viewer(&powers, role.as_deref());
+            if !refused.is_empty() {
+                let name = scope.as_ref().and_then(|s| s["name"].as_str()).unwrap_or("that project");
+                bail!(
+                    "you only view {name}, so {} would do nothing for {machine}'s agents: nothing was given. Add the \
+                     rest without {}",
+                    refused.join(", "),
+                    if refused.len() == 1 { "it" } else { "them" }
+                );
+            }
+            for body in &bodies {
+                show(&e.api("POST", "/api/grants", Some(body))?);
             }
         }
         GrantsCmd::Revoke { machine, power, scope } if machine.starts_with("grt_") => {
@@ -150,11 +172,21 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
             if power.is_some() || scope.project.is_some() || scope.dms {
                 bail!("a grant's id names one grant: no power, --project or --dms with it");
             }
-            show(&e.api("POST", &format!("/api/grants/{machine}/revoke"), None)?);
+            let r = e.api("POST", &format!("/api/grants/{machine}/revoke"), None).map_err(|err| {
+                if err.to_string().contains("no such grant") {
+                    err.context(
+                        "no grant by that id is yours to revoke: not over a project you own, or this control is \
+                         from before owners' revokes (0.66.15): ask its giver",
+                    )
+                } else {
+                    err
+                }
+            })?;
+            show(&r);
         }
         GrantsCmd::Revoke { machine, power, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let scope = scope_of(&e, &scope)?;
+            let (scope, _) = scope_of(&e, &scope)?;
             let live: Vec<&Value> = grants
                 .iter()
                 .filter(|g| g["subject"]["id"] == id && g["live"] == true)
@@ -199,14 +231,29 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
 }
 
 /// The scope asked for, as `POST /api/grants` takes it: a project named by
-/// its name or id among yours (`GET /api/projects`), or your DMs.
-fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<Option<Value>> {
+/// its name or id among yours (`GET /api/projects`), with its name and
+/// your role there beside it, or your DMs.
+fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<(Option<Value>, Option<String>)> {
     if s.dms {
-        return Ok(Some(json!({ "kind": "account" })));
+        return Ok((Some(json!({ "kind": "account" })), None));
     }
-    let Some(want) = &s.project else { return Ok(None) };
+    let Some(want) = &s.project else { return Ok((None, None)) };
     let projects = e.api("GET", "/api/projects", None)?;
-    Ok(Some(json!({ "kind": "project", "id": project_id(&projects, want)? })))
+    let id = project_id(&projects, want)?;
+    let p = projects["projects"].as_array().and_then(|all| all.iter().find(|p| p["id"] == id.as_str()));
+    let name = p.and_then(|p| p["name"].as_str()).unwrap_or(&id).to_owned();
+    let role = p.and_then(|p| p["team"]["role"].as_str().map(str::to_owned));
+    Ok((Some(json!({ "kind": "project", "id": id, "name": name })), role))
+}
+
+/// The powers among `powers` the platform refuses to a viewer's machine
+/// ([`VIEWER_REFUSED`]) when `role` there is viewer: for `add` to give
+/// nothing rather than part of the list.
+fn refused_for_viewer(powers: &[String], role: Option<&str>) -> Vec<String> {
+    if role != Some("viewer") {
+        return vec![];
+    }
+    powers.iter().filter(|p| VIEWER_REFUSED.contains(&p.as_str())).cloned().collect()
 }
 
 /// A project named on the command line, by its id or name (any case).
@@ -233,22 +280,22 @@ fn over(g: &Value, scope: &Value) -> bool {
 }
 
 /// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when
-/// (and by whom, when someone other than you did), or `idle` for a live
-/// one that does nothing (Arugula #683: a write power while you only view
-/// the project; `--json` says why).
+/// (and by whom, when someone other than its giver did), or a live one's
+/// limit while you only view the project (Arugula #683: `idle`, `reads
+/// only`; `--json` says why).
 fn line(g: &Value) -> String {
     let name = g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()).unwrap_or_default();
     let state = match g["revoked_at"].as_u64() {
         Some(at) => {
             let by = &g["revoked_by"];
             let giver = g["granted_by"].as_str().unwrap_or_default();
-            match by["account"].as_str().filter(|a| *a != giver) {
-                Some(a) => format!("revoked {} by {}", crate::hosts::ago(at), by["name"].as_str().unwrap_or(a)),
-                None => format!("revoked {}", crate::hosts::ago(at)),
+            let other = by.is_object() && by["account"].as_str() != Some(giver);
+            match (other, by["name"].as_str().or(by["account"].as_str())) {
+                (true, Some(who)) => format!("revoked {} by {who}", crate::hosts::ago(at)),
+                _ => format!("revoked {}", crate::hosts::ago(at)),
             }
         }
-        None if g["idle"].is_string() => "idle".into(),
-        None => "live".into(),
+        None => g["limited"]["label"].as_str().unwrap_or("live").to_owned(),
     };
     let scope = match (g["scope"]["kind"].as_str(), g["power"].as_str()) {
         (Some("project"), _) => {
@@ -306,16 +353,37 @@ mod tests {
         let g = |revoked_at: Option<u64>, by: Value, idle: Value| {
             json!({ "subject": { "name": "geek" }, "power": "issues.write", "granted_by": "b",
                 "scope": { "kind": "project", "id": "prj_2", "name": "Acme" }, "id": "grt_1",
-                "revoked_at": revoked_at, "revoked_by": by, "idle": idle })
+                "revoked_at": revoked_at, "revoked_by": by, "limited": idle })
         };
         assert!(line(&g(None, Value::Null, Value::Null)).contains(" live "));
-        assert!(line(&g(None, Value::Null, json!("does nothing"))).contains(" idle "));
+        assert!(line(&g(None, Value::Null, json!({ "label": "idle", "why": "does nothing" }))).contains(" idle "));
+        assert!(line(&g(None, Value::Null, json!({ "label": "reads only", "why": "…" }))).contains(" reads only "));
         let own = line(&g(Some(1), json!({ "account": "b", "name": "Bea" }), Value::Null));
         assert!(own.contains("revoked") && !own.contains(" by "), "{own}");
         let owner = line(&g(Some(1), json!({ "account": "a", "name": "Ana" }), Value::Null));
         assert!(owner.contains("by Ana"), "{owner}");
         let unnamed = line(&g(Some(1), json!({ "account": "a", "name": null }), Value::Null));
         assert!(unnamed.contains("by a"), "{unnamed}");
+        let erased = line(&g(Some(1), json!({ "account": null, "name": "an account since deleted" }), Value::Null));
+        assert!(erased.contains("by an account since deleted"), "{erased}");
+        let older = line(&g(Some(1), Value::Null, Value::Null));
+        assert!(older.contains("revoked") && !older.contains(" by "), "an older platform: {older}");
+    }
+
+    /// `add` gives nothing when any power in the list would be refused to
+    /// a viewer's machine (Arugula #683): the whole list is checked first.
+    #[test]
+    fn add_gives_nothing_rather_than_part_of_a_list() {
+        let powers = |l: &[&str]| l.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            refused_for_viewer(&powers(&["threads.read", "issues.write", "runs.start"]), Some("viewer")),
+            ["issues.write", "runs.start"]
+        );
+        assert!(
+            refused_for_viewer(&powers(&["threads.read", "deploys.plan", "boards.write"]), Some("viewer")).is_empty()
+        );
+        assert!(refused_for_viewer(&powers(&["issues.write"]), Some("editor")).is_empty());
+        assert!(refused_for_viewer(&powers(&["issues.write"]), None).is_empty(), "your DMs, or an older platform");
     }
 
     /// `add` takes one or more powers and one scope; an agent power needs
