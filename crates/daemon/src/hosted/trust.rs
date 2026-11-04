@@ -355,9 +355,13 @@ mod tests {
         let mut told = got.clone();
         told.closed = vec![word.clone(), HostedKey::generate().close(&got.delegation, 20)];
         let second = saved_from(told, &keys, Some(&first)).unwrap();
-        assert_eq!(second.hosted().unwrap().closed, [word.clone()], "only what checks out");
+        assert_eq!(second.hosted().unwrap().closed, std::slice::from_ref(&word), "only what checks out");
         let third = saved_from(got, &keys, Some(&second)).unwrap();
-        assert_eq!(third.hosted().unwrap().closed, [word.clone()], "control leaving it out changes nothing");
+        assert_eq!(
+            third.hosted().unwrap().closed,
+            std::slice::from_ref(&word),
+            "control leaving it out changes nothing"
+        );
         // And it's in the file: a restart keeps it, and a file from before
         // reads as none.
         let mut file = serde_json::to_value(&third).unwrap();
