@@ -1,10 +1,9 @@
-// A new browser checks who approved it (#761), whatever control says about
-// itself: it shows a code without being told it may, and it pins the
-// account's root only on the approving device's answer to that code, or
+// A new browser checks who approved it (#761): it shows a code, and it pins
+// the account's root only on the approving device's answer to that code, or
 // once its person has checked the account's fingerprint. Only a browser
 // whose own key is the root, or one the app's sign-in signed (control.spec),
 // has nothing to check. The browsers here reach a real control through
-// routes that change what it says.
+// routes, which stand in for the answers of other versions and timings.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -83,6 +82,14 @@ const signIn = async (page: Page) => {
 const booted = (page: Page) => page.waitForFunction(() => window.__arugula?.control?.phase === "ready", null, { timeout: 20_000 });
 const keyId = (page: Page) => page.evaluate(() => window.__arugula.control!.keys.id);
 const pinned = (page: Page) => page.evaluate(() => window.__arugula.control!.enrollment?.root ?? null);
+const phase = (page: Page) => page.evaluate(() => window.__arugula.control!.phase);
+/** The page is waiting to be approved; its key id. */
+async function waiting(page: Page): Promise<string> {
+  await page.waitForFunction(() => window.__arugula?.control?.phase === "waiting", null, { timeout: 20_000 });
+  return keyId(page);
+}
+/** The approval reached the page and it did what it does next. */
+const settled = (page: Page) => page.waitForFunction(() => ["ready", "unvouched", "error"].includes(window.__arugula?.control?.phase ?? ""), null, { timeout: 20_000 });
 
 /** The code a waiting page shows, `LOOKUP.SECRET`. */
 async function deviceCode(page: Page): Promise<string> {
@@ -121,7 +128,7 @@ async function done(page: Page, id: string) {
   await expect(laptop.locator(`[data-pending="${id}"]`)).toHaveCount(0, { timeout: 20_000 });
 }
 
-/** Control says the account has no devices yet, whatever it has. */
+/** The account reads as having no devices yet. */
 const noDevicesYet = (page: Page) =>
   page.route("**/api/me", async (r) => {
     const res = await r.fetch();
@@ -177,20 +184,21 @@ test("a control that doesn't say device_secret: an answer that's wrong is refuse
 test("a control that doesn't say device_secret: approved with no answer, the browser asks its person to check the account", async ({ browser }) => {
   const other = await browserWithoutTheFlag(browser);
   await signIn(other);
-  await deviceCode(other);
-  const id = await keyId(other);
+  const id = await waiting(other);
   await approveFromOlderPage(id);
-  await expect(other.locator('[data-unvouched="missing"]')).toBeVisible({ timeout: 20_000 });
-  await expect(other.locator(`[data-unvouched-account="${root}"]`)).toBeVisible();
+  await settled(other);
   // Nothing is pinned until the person says so.
   expect(await pinned(other)).toBeNull();
+  expect(await phase(other)).toBe("unvouched");
+  await expect(other.locator('[data-unvouched="missing"]')).toBeVisible();
+  await expect(other.locator(`[data-unvouched-account="${root}"]`)).toBeVisible();
   await other.locator("[data-vouch]").click();
   await booted(other);
   expect(await pinned(other)).toBe(root);
   await done(other, id);
 });
 
-test("a control from before codes: it never hears of them, and the browser still asks its person to check the account", async ({ browser }) => {
+test("a control from before codes: approved with no answer, the browser asks its person to check the account", async ({ browser }) => {
   const other = await browserWithoutTheFlag(browser);
   await other.route("**/api/devices", async (r) => {
     if (r.request().method() !== "POST") return r.fallback();
@@ -198,12 +206,11 @@ test("a control from before codes: it never hears of them, and the browser still
     await r.fallback({ postData: JSON.stringify(asked) });
   });
   await signIn(other);
-  // The approving page compares the fingerprint, a click away here.
-  await other.locator("[data-waiting-older] summary").click();
-  const id = (await other.locator("[data-fingerprint]").first().getAttribute("data-fingerprint", { timeout: 20_000 }))!;
+  const id = await waiting(other);
   await approveFromOlderPage(id);
-  await expect(other.locator('[data-unvouched="missing"]')).toBeVisible({ timeout: 20_000 });
+  await settled(other);
   expect(await pinned(other)).toBeNull();
+  await expect(other.locator('[data-unvouched="missing"]')).toBeVisible();
   await other.locator("[data-vouch]").click();
   await booted(other);
   expect(await pinned(other)).toBe(root);
@@ -229,7 +236,7 @@ test("two browsers at once on a new account: the one that waits checks its appro
   await done(other, id);
 });
 
-test("taken as the account's first device, a browser refuses any other root", async ({ browser }) => {
+test("approved as the account's first device, a browser takes only its own key as the root", async ({ browser }) => {
   const other = await browserWithoutTheFlag(browser);
   await noDevicesYet(other);
   const recovery = recoveryCodesSent(other);
@@ -238,13 +245,12 @@ test("taken as the account's first device, a browser refuses any other root", as
     if (r.request().method() !== "POST") return r.fallback();
     const { cert } = r.request().postDataJSON() as { cert: { device: string } };
     id = cert.device;
-    // It's listed under the laptop's root with a good certificate by the
-    // time it hears it was taken as the first.
+    // Its certificate from the laptop is in place when the answer comes.
     await r.fetch();
     await approveFromOlderPage(id);
     await r.fulfill({ json: { approved: true, cert, root: id } });
   });
-  // Control would keep the codes of a first device.
+  // Recovery codes are a first device's to keep.
   await other.route("**/api/recovery", (r) => r.fulfill({ json: {} }));
   await signIn(other);
   await other.waitForFunction(() => window.__arugula?.control?.phase === "error", null, { timeout: 30_000 });
@@ -254,20 +260,31 @@ test("taken as the account's first device, a browser refuses any other root", as
   await done(other, id);
 });
 
-test("taken as the account's first device, a browser refuses a root its own certificate doesn't reach", async ({ browser }) => {
+test("approved as the account's first device, a browser's own certificate still has to check out", async ({ browser }) => {
   const other = await browserWithoutTheFlag(browser);
   await noDevicesYet(other);
+  const recovery = recoveryCodesSent(other);
   let id = "";
+  let mine: { device: string } | undefined;
   await other.route("**/api/devices", async (r) => {
-    if (r.request().method() !== "POST") return r.fallback();
-    const { cert } = r.request().postDataJSON() as { cert: { device: string } };
-    id = cert.device;
-    await r.fetch();
-    await r.fulfill({ json: { approved: true, cert, root: id } });
+    if (r.request().method() === "POST") {
+      mine = (r.request().postDataJSON() as { cert: { device: string } }).cert;
+      id = mine.device;
+      await r.fetch();
+      return r.fulfill({ json: { approved: true, cert: mine, root: id } });
+    }
+    // Its own key as the root, with a signature that isn't good.
+    const res = await r.fetch();
+    const all = (await res.json()) as { trust: { account: string; root: string } };
+    await r.fulfill({ response: res, json: { ...all, trust: { ...all.trust, root: id }, certs: [{ ...mine, sig: "00".repeat(64) }] } });
   });
+  await other.route("**/api/recovery", (r) => r.fulfill({ json: {} }));
   await signIn(other);
   await other.waitForFunction(() => window.__arugula?.control?.phase === "error", null, { timeout: 30_000 });
+  expect(await other.evaluate(() => window.__arugula.control!.error)).toContain("doesn't check out");
   expect(await pinned(other)).toBeNull();
+  // Codes wait until its certificate has checked out.
+  expect(recovery).toEqual([]);
   await expect(laptop.locator(`[data-pending="${id}"]`)).toBeVisible({ timeout: 20_000 });
   await done(other, id);
 });
