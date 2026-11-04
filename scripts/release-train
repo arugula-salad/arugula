@@ -15,8 +15,10 @@
 #   the commit is newer than the last v* tag, and something in between added a note
 #
 # Minor and major versions stay a person's: `just release minor COMMIT --notes FILE`.
-# GH_TOKEN starts and watches rare-nightly.yml, and its pushes have to set off
-# workflows, so it isn't the job's own token. ARUGULA_TRAIN_RELEASE is for tests.
+# GH_TOKEN starts and watches rare-nightly.yml, with `actions: write`. git's own
+# credentials push the tag, which has to set off release.yml, so they aren't the
+# job's token: the workflow checks out with CI_GREEN_TOKEN. ARUGULA_TRAIN_RELEASE
+# is for tests.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
