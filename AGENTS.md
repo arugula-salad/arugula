@@ -362,13 +362,13 @@ lints the daemon with neither, and with each alone.
 
 ## Changing CI, and a red main
 
-- A pull request that changes `.github/`, the `justfile`,
-  `chant.workspace.json`, `.config/nextest.toml` or the CI scripts
-  (`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a
-  passing check.yml run on its head commit before it merges. Add the
-  `full-check` label, and after another push remove it and add it again.
-  binaries.yml's `ci-branch-run` job fails the pull request until it has
-  one (docs/development.md, "Changing CI").
+- main takes pull requests through GitHub's merge queue: `gh pr merge N`
+  queues one, and it lands once its group passes the whole suite, about
+  20 minutes later. If its group fails, the pull request leaves the queue;
+  read the group's run, fix it, and queue it again. A CI change is tested
+  the same way, so it needs no branch run first (docs/development.md,
+  "Merging through the queue"). The `full-check` label runs check.yml on the
+  branch for an earlier answer.
 - When main goes red and the same job fails again on its retry, revert
   the commit that broke it within about 30 minutes and bring the change
   back with its fix in a new pull request. Don't fix forward while others

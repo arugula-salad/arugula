@@ -137,9 +137,9 @@ pulls the test image from GHCR. Adding the `full-check` label to a pull
 request from a branch of this repository dispatches check.yml on that
 branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
 check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
-remove the label and add it back. A pull request that changes CI needs
-such a run on its head commit, and binaries.yml's `ci-branch-run` job
-fails it until it has one (development.md, "Changing CI").
+remove the label and add it back. Nothing requires it: the merge queue
+runs check.yml before a pull request lands (development.md, "Merging
+through the queue").
 
 Every pull request also runs `.github/workflows/pull-request.yml` (#306),
 on GitHub's `ubuntu-24.04` runners only: **pr-lint** (check.yml's lint

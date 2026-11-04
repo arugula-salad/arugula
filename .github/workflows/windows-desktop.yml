@@ -26,6 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  # scripts/queue-tested reads this commit's merge_group runs.
+  actions: read
   contents: read
 
 jobs:
@@ -42,6 +44,8 @@ jobs:
           path: ~/.npm
           key: npm-chant-0.124.61
       - id: ask
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: if scripts/app-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
   # M54 (#217): lint the desktop app and build its installer, kept as an
