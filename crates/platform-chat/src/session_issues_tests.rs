@@ -366,6 +366,42 @@ async fn a_sessions_agent_makes_writes_and_reads_its_projects_docs() {
     assert_eq!((st, &v["sections"][0]["body"], &v["doc"]["agent"]["machine"]), (200, &json!("Edited."), &json!(ses)));
 }
 
+/// A machine's copy in the session's project is read-only for the session
+/// too (Arugula #678): its write is refused naming the machine, and it
+/// still reads the copy.
+#[tokio::test]
+async fn a_session_doesnt_write_a_machines_copy() {
+    let (_hub, app, base, t, _u) = seeded().await;
+    let ses = session(&app, &t, "hw_2", "a");
+    let m = machine(&t, "hw_2", "box1");
+    // geek (a's machine) copies a Doc up, and a moves it into the team.
+    let body = serde_json::to_vec(
+        &json!({ "title": "From geek", "sections": [{ "id": "s1", "heading": "One", "body": "v1" }] }),
+    )
+    .unwrap();
+    let r = reqwest::Client::new()
+        .put(format!("{base}/api/daemon/docs/d1"))
+        .header("x-test-daemon", "a geek")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 200);
+    let placed: serde_json::Value = r.json().await.unwrap();
+    let id = placed["id"].as_str().unwrap().to_owned();
+    let mv = format!("/api/projects/{}/docs/{id}/move", placed["project"].as_str().unwrap());
+    let (st, _) = call(&base, "a", "POST", &mv, Some(json!({ "to": t }))).await;
+    assert_eq!(st, 200);
+
+    let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocRead { id: Some(id.clone()) }).await else { panic!() };
+    assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("geek-box")));
+    let w = Op::DocWrite { id, write: fill("s1", "the session's") };
+    let refused = ask(&app, &m, &ses, w).await;
+    let why = why(&refused);
+    assert!(why.contains("copy") && why.contains("geek-box"), "{why}");
+}
+
 /// A session's Doc calls are checked as its asker's and against the
 /// session: a viewer's session reads and makes nothing; a review session
 /// reads only; an ended one, another machine's call and another project's

@@ -25,6 +25,9 @@
 //! its own Doc id, so the same machine Doc always lands on the same `pdc_`.
 //! Private until a person moves it into a team's project
 //! ([`PROJECT_DOC_MOVE`]). A machine can't reach another machine's copies.
+//! The machine's Doc is the truth and the copy is read-only (Arugula #678):
+//! a write to it over [`PROJECT_DOC`] is refused, by a person or an agent
+//! session, naming the machine; only the machine's own puts change it.
 
 use serde::{Deserialize, Serialize};
 
@@ -88,9 +91,14 @@ pub struct Doc {
     pub rev: u64,
     pub created_at: u64,
     pub updated_at: u64,
-    /// The machine this Doc is a copy from, or null for one made here.
+    /// The machine this Doc is a copy from, or null for one made here. A
+    /// copy is read-only here: the machine's Doc is the truth (#678).
     #[serde(default)]
     pub machine: Option<String>,
+    /// That machine's name, when control knows it: null for a Doc made
+    /// here, or once the machine left. Older pages don't read it.
+    #[serde(default)]
+    pub machine_name: Option<String>,
 }
 
 /// One picture of a Doc, without its bytes: the shape a machine Doc's

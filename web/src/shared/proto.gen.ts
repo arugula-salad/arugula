@@ -4187,9 +4187,15 @@ sections: number, written: number,
  */
 rev: number, created_at: number, updated_at: number, 
 /**
- * The machine this Doc is a copy from, or null for one made here.
+ * The machine this Doc is a copy from, or null for one made here. A
+ * copy is read-only here: the machine's Doc is the truth (#678).
  */
-machine: string | null, };
+machine: string | null, 
+/**
+ * That machine's name, when control knows it: null for a Doc made
+ * here, or once the machine left. Older pages don't read it.
+ */
+machine_name: string | null, };
 
 /**
  * One picture of a Doc, without its bytes: the shape a machine Doc's

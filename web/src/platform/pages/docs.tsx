@@ -35,6 +35,12 @@ function nameOf(p: PlatformProject) {
   return (account: string) => (account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? null));
 }
 
+/** The machine a Doc is a copy from, by name (or that it left), or null
+ * for one made here. */
+export function copyFrom(d: ProjectDoc): string | null {
+  return d.machine ? d.machine_name || "a machine that left" : null;
+}
+
 /** The project's Docs, `null` while they load. */
 function useDocs(project: string): ProjectDoc[] | null {
   const [list, setList] = useState<ProjectDoc[] | null>(null);
@@ -55,6 +61,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
     <ul class="platform-list sw-rows" data-docs>
       {list.map((d) => {
         const to = pathOf({ page: "doc", project: p.id, doc: d.id }, names);
+        const copy = copyFrom(d);
         return (
           <li key={d.id} class="sw-row">
             <a href={to} data-doc-link={d.id} onClick={(e) => follow(e, to)}>
@@ -62,7 +69,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
             </a>
             <span class="dim project-doc-row">
               {" "}
-              {d.written} of {d.sections} written · {whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
+              {d.written} of {d.sections} written · {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
             </span>
           </li>
         );
@@ -323,6 +330,7 @@ function Preview({ row }: { row: Row }) {
   }, [doc.id]);
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   const to = docPath(row);
+  const copy = copyFrom(doc);
   return (
     <ListPreview
       data-doc-preview={doc.id}
@@ -336,7 +344,7 @@ function Preview({ row }: { row: Row }) {
           <span>
             updated <Time at={doc.updated_at} on />
           </span>
-          <span>made by {whoLabel(doc.author, doc.agent, nameOf(p))}</span>
+          {copy ? <span data-doc-copy-fact>a copy from {copy}</span> : <span>made by {whoLabel(doc.author, doc.agent, nameOf(p))}</span>}
         </>
       }
       actions={
@@ -417,13 +425,21 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const all = pathOf({ page: "docs", project }, names);
+  const copy = view ? copyFrom(view.doc) : null;
+  // A copy has no writer, whatever an older platform says (#678).
+  const writer = !!view?.writer && !copy;
   return (
-    <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(view.writer) : undefined}>
+    <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
       <p class="dim project-doc-head">
         <a href={all} onClick={(e) => follow(e, all)}>
           {p.name}'s Docs
         </a>
       </p>
+      {view && copy && (
+        <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
+          A copy of a Doc in {copy}'s library, updated <Time at={view.doc.updated_at} on />. It's read-only here: change it on {copy}, and its next copy brings the change.
+        </p>
+      )}
       {missing && !view && (
         <p class="dim" data-doc-missing>
           That Doc can't be read: {missing}.
@@ -438,11 +454,16 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           load={noImages}
           share={<CopyLinkButton link={new URL(pathOf({ page: "doc", project, doc }, names), location.href).href} />}
           byline={
-            view && (
+            view &&
+            (copy ? (
+              <>
+                <span data-doc-maker>a copy from {copy}</span> · updated <Time at={view.doc.updated_at} />
+              </>
+            ) : (
               <>
                 <span data-doc-maker>made by {whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · changed <Time at={view.doc.updated_at} />
               </>
-            )
+            ))
           }
         />
       ) : null}
@@ -463,7 +484,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           })}
         </p>
       )}
-      {view?.writer && <DocWriter project={project} view={view} wrote={show} />}
+      {view && writer && <DocWriter project={project} view={view} wrote={show} />}
     </section>
   );
 }

@@ -4,12 +4,18 @@
 // come with it); Bob is a viewer. Alice makes a Doc from the project's
 // Docs and writes a section; Bob reads it on a phone with no form, sees
 // Alice's next section arrive without a reload, and finds it on the
-// project's home. A local control (team-fixture.ts, `--platform-host
-// app.localhost`), as platform.spec.ts runs it.
+// project's home. Then (Arugula #678) Alice's machine joins and copies a
+// Doc of its own up: the copy is read-only on the page, which says whose
+// it is, and a write to it is refused naming the machine, while the
+// machine's own changes still arrive live. A local control
+// (team-fixture.ts, `--platform-host app.localhost`), as platform.spec.ts
+// runs it.
 
 import { expect, test, type Page } from "@playwright/test";
 import { attacker, prototype, prototypeRan } from "./doc-steps";
 import { closeContexts } from "./helpers";
+import { localToken } from "./local-token";
+import { daemonPort } from "./ports";
 import { TeamControl, home } from "./team-fixture";
 
 const t = new TeamControl("docs");
@@ -24,6 +30,10 @@ let alice: Page;
 let bob: Page;
 let app = "";
 let docPath = "";
+/** Acme's team id, for the machine that joins it. */
+let team = "";
+/** The team Doc Alice made from /docs, for the compatibility check. */
+let roadmapPath = "";
 
 async function platform(p: Page, path = "/") {
   await p.goto(`${app}${path}`);
@@ -40,7 +50,7 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
-  const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
+  team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -182,6 +192,7 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
   await preview.locator("[data-open-doc]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}-team-roadmap$/);
+  roadmapPath = new URL(alice.url()).pathname;
 
   // Bob reads the team's, and has no trace of hers.
   await platform(bob, "/docs");
@@ -193,4 +204,106 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
     return main.scrollWidth - main.clientWidth;
   });
   expect(wide).toBeLessThanOrEqual(0);
+});
+
+// Arugula #678: the machine's library Doc is the truth, and its copy on the
+// platform is read-only. Alice's machine geek joins Acme (Docs are copied
+// up while chat is on, which the team's flag says) and makes a Doc; its
+// copy lands in her private Docs, where the row, the preview
+// and the page say it's a copy from geek, the page has no form, a write
+// over the route is refused naming geek, and geek's next change arrives
+// on the open page.
+test("a machine's copy is read-only, and the page says whose it is", async () => {
+  test.setTimeout(180_000);
+  const state = await t.addMachine(alice, "geek", team);
+  const base = `http://127.0.0.1:${await daemonPort(state)}`;
+  const post = async (path: string, body: unknown) => {
+    const r = await fetch(base + path, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${localToken}` },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    expect(r.ok, `${path}: ${text}`).toBe(true);
+    return JSON.parse(text) as { block?: number };
+  };
+  const made = await post("/api/blocks", { type: "doc", config: { title: "Geek's plan" }, local: true });
+  await post(`/api/blocks/${made.block}/call/doc_outline`, { title: "Geek's plan", sections: [{ id: "s1", heading: "Goals", intent: "what ships" }] });
+  await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "From **geek**." });
+
+  // The copy is put a moment after the fill; the list is read on load.
+  const row = () => alice.locator("[data-list-rows] [data-doc]", { hasText: "Geek's plan" });
+  await platform(alice, "/docs");
+  await expect
+    .poll(
+      async () => {
+        await alice.reload();
+        await expect(alice.locator("[data-docs-page]")).toBeVisible();
+        await expect(alice.locator("[data-docs-loading]")).toHaveCount(0, { timeout: 15_000 });
+        return row().count();
+      },
+      { timeout: 60_000, intervals: [2000] },
+    )
+    .toBe(1);
+  await expect(row()).toHaveAttribute("data-private", "true");
+  await row().click();
+  const preview = alice.locator("[data-list-preview]");
+  await expect(preview.locator("[data-doc-copy-fact]")).toHaveText("a copy from geek");
+  await preview.locator("[data-open-doc]").click();
+
+  const page = alice.locator("[data-doc-page]");
+  await expect(page.locator(".doc-title")).toHaveText("Geek's plan", { timeout: 15_000 });
+  await expect(page).toHaveAttribute("data-writer", "false");
+  await expect(page.locator("[data-doc-writer]")).toHaveCount(0);
+  await expect(page.locator("[data-doc-copy]")).toContainText("A copy of a Doc in geek's library");
+  await expect(page.locator("[data-doc-copy]")).toContainText("read-only");
+  await expect(page.locator("[data-doc-maker]")).toHaveText("a copy from geek");
+  await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
+
+  // Over the route, as an agent or a script would: refused, naming geek.
+  const m = /\/p\/(prj_[0-9a-f]+)[^/]*\/docs\/(pdc_[0-9a-f]{32})/.exec(new URL(alice.url()).pathname)!;
+  const refused = await alice.evaluate(async ([project, id]) => {
+    const r = await fetch(`/api/projects/${project}/docs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ section: "s1", markdown: "edited on the web" }),
+    });
+    return { status: r.status, body: await r.text() };
+  }, [m[1], m[2]]);
+  expect(refused.status).toBe(403);
+  expect(refused.body).toContain("copy");
+  expect(refused.body).toContain("geek");
+
+  // The machine's own change still lands, and the open page has it.
+  await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "Changed on **geek** again." });
+  await expect(page.locator(".doc-section[data-section=s1] .doc-body")).toContainText("again", { timeout: 30_000 });
+  await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
+  await expect(page).toHaveAttribute("data-writer", "false");
+});
+
+// Control serves its newest page to older platforms and daemons: a Doc
+// view from before #678 has no `machine_name` (and one from before #418 no
+// `machine`). The page fills them in where it loads the view, so a Doc
+// made here keeps its form, and a copy stays read-only by the view's own
+// `writer`.
+test("a page newer than the platform still writes a Doc made here", async () => {
+  test.setTimeout(60_000);
+  const strip = async (route: import("@playwright/test").Route) => {
+    const res = await route.fetch();
+    const v = (await res.json()) as { doc: Record<string, unknown> };
+    const { machine: _machine, machine_name: _name, ...doc } = v.doc;
+    await route.fulfill({ response: res, json: { ...v, doc } });
+  };
+  await alice.route("**/api/projects/*/docs/pdc_*", strip);
+  try {
+    await platform(alice, roadmapPath);
+    const page = alice.locator("[data-doc-page]");
+    await expect(page.locator(".doc-title")).toHaveText("Team roadmap", { timeout: 15_000 });
+    await expect(page).toHaveAttribute("data-writer", "true");
+    await expect(page.locator("[data-doc-writer]")).toBeVisible();
+    await expect(page.locator("[data-doc-copy]")).toHaveCount(0);
+    await expect(page.locator("[data-doc-maker]")).toHaveText("made by you");
+  } finally {
+    await alice.unroute("**/api/projects/*/docs/pdc_*", strip);
+  }
 });
