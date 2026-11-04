@@ -65,6 +65,10 @@ pub struct Polled {
     pub fingerprint: String,
 }
 
+/// What [`Sent::said`] holds when a merge went in the branch's merge queue:
+/// it hasn't merged, and may yet not.
+pub const QUEUED: &str = "queued to merge";
+
 /// What a write did.
 pub struct Sent {
     pub url: Option<String>,

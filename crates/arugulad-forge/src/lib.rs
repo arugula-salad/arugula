@@ -197,7 +197,7 @@ const UPLOADED: usize = 50;
 
 // What went wrong, a poll's cheap part and a write's answer are the GitHub
 // crate's, and every forge's adapter uses them.
-pub use arugula_forge_github::{Error, Polled, Sent};
+pub use arugula_forge_github::{Error, Polled, QUEUED, Sent};
 // Forgejo's adapter (Labs) logs URLs with it.
 pub use arugula_forge_github::redact;
 
@@ -1170,7 +1170,9 @@ impl ForgeBlock {
         );
         if let Ok(mut l) = self.ctx.log() {
             let at = l.end();
-            let mut text = format!("{} on {repo}#{number}", w.what());
+            // "A merge on …" that exited 0 reads as merged; a queued one hasn't.
+            let what = r.as_ref().ok().map(|s| s.said.as_str()).filter(|s| s.contains(QUEUED)).unwrap_or(w.what());
+            let mut text = format!("{what} on {repo}#{number}");
             if let Some(d) = drafted {
                 text.push_str(&format!(" (drafted by {d})"));
             }
@@ -2106,6 +2108,9 @@ impl Block for ForgeBlock {
             for w in &st.wants {
                 out.push_str(&format!("  {}: {}\n", w.kind.as_str(), w.why));
             }
+        }
+        if let Some(s) = st.said.as_deref().filter(|s| s.contains(QUEUED)) {
+            out.push_str(&format!("{s} (not merged until GitHub's queue merges it)\n"));
         }
         let waiting: Vec<&Draft> = st.drafts.iter().filter(|d| d.status == DraftStatus::Waiting).collect();
         if !waiting.is_empty() {
