@@ -443,6 +443,13 @@ missing?: boolean,
  */
 machine_name?: string, 
 /**
+ * A machine Doc's copy on the platform (`pdc_…`), when it sits in this
+ * board's project (native #673): the title and counts are then the
+ * copy's, and the chip opens it while the machine is away. Older
+ * platforms don't send it.
+ */
+copy?: string, 
+/**
  * The account that linked it (the owner, for an agent).
  */
 added_by: string, 

@@ -376,6 +376,7 @@ test("a Doc's chip says its written sections, or the machine it is on; only work
   const machine = { kind: "machine_doc", machine: "m1", doc: "00112233445566ff", title: "Perf notes" };
   assert.equal(docWords({ pointer: machine, machine_name: "geek-box" }), "on geek-box");
   assert.equal(docWords({ pointer: machine }), "on a machine");
+  assert.equal(docWords({ pointer: machine, machine_name: "geek-box", sections: 2, written: 1 }), "1/2 on geek-box", "a machine Doc with a copy has counts");
   assert.equal(pointerLabel(machine), "Perf notes");
   assert.equal(pointerLabel(doc), "Doc 01234567");
   assert.equal(pointerText(machine), "", "a machine Doc is never typed in");

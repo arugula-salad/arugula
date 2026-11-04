@@ -419,9 +419,11 @@ export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
 
 /** What a Doc's chip says after its title: `3/5` sections written for a project Doc, `on <machine>` for a machine's, nothing for a Doc that is gone. */
 export function docWords(d: { pointer: BoardPointer; sections?: number; written?: number; missing?: boolean; machine_name?: string }): string {
-  if (d.pointer.kind === "machine_doc") return `on ${d.machine_name || "a machine"}`;
-  if (d.missing || !d.sections) return "";
-  return `${d.written ?? 0}/${d.sections}`;
+  if (d.missing) return "";
+  const counts = d.sections ? `${d.written ?? 0}/${d.sections}` : "";
+  // A machine Doc has counts once the machine copied it up (native #673).
+  if (d.pointer.kind === "machine_doc") return `${counts ? `${counts} ` : ""}on ${d.machine_name || "a machine"}`;
+  return counts;
 }
 
 /** Where a board lists a Doc, for the Doc's page: `Docs strip`, `2 rows`, or both. */

@@ -2,6 +2,13 @@
 //! on one row (`board_docs`, `row_id`). A Doc is a project Doc of the board's own project (`pdc_…`), or a Doc
 //! block on a machine, which an agent of that machine links
 //! (`MachineDoc`: the title is a snapshot, since the machine may be off).
+//! A machine Doc whose copy (#418) sits in the board's project is read
+//! from the copy instead (native #673): the title and sections as the
+//! machine last put them, and its `pdc_` id (`copy`), so the chip opens it
+//! while the machine is away. A copy anywhere else lends nothing: the
+//! board's readers may not read that project, so the chip keeps the title
+//! it was linked with. With the move route gone, a copy sits in its
+//! owner's personal project, so that is the owner's own boards.
 //!
 //! **Who may:** whoever writes the board (owners and editors, and an
 //! agent with `boards.write`, who takes off only the Docs its own machine
@@ -144,12 +151,34 @@ pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[
     named
 }
 
+/// The machine Docs' copies in the board's project, by machine and the
+/// machine's Doc id, for [`view`].
+pub(super) type Copies = HashMap<(String, String), crate::db::project_docs::Stored>;
+
+/// One read of the project's Docs, kept by key: a board's Docs are looked
+/// up in it, however many there are.
+pub(super) fn copies_in(app: &Platform, project: &str) -> Result<Copies, ApiError> {
+    Ok(app
+        .db
+        .project_docs(project)?
+        .into_iter()
+        .filter_map(|d| Some(((d.machine.clone()?, d.machine_doc.clone()?), d)))
+        .collect())
+}
+
 /// The Docs of a strip or a row as a read answers them: a project Doc by its
-/// title and sections now (one that is gone says so), a machine Doc by the
-/// title it had and its machine's name, or on "a machine" with its id
-/// blanked when the reader isn't told (`named`). `names` are the machines'
-/// names by id.
-pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>, named: &Named) -> Vec<wire::BoardDoc> {
+/// title and sections now (one that is gone says so); a machine Doc by its
+/// copy in this project (`copies`) when it has one, else the title it had,
+/// and by its machine's name, or on "a machine" with its id blanked when the
+/// reader isn't told (`named`). The copy is looked up before the id is
+/// blanked: a reader not told the machine still reads a copy in the board's
+/// project, where they may read. `names` are the machines' names by id.
+pub(super) fn view(
+    docs: Vec<db::Strip>,
+    names: &HashMap<String, String>,
+    named: &Named,
+    copies: &Copies,
+) -> Vec<wire::BoardDoc> {
     let name = |m: &str| names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned());
     docs.into_iter()
         .map(|s| {
@@ -160,6 +189,7 @@ pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>, named:
                 written: None,
                 missing: false,
                 machine_name: None,
+                copy: None,
                 added_by: s.added_by,
                 agent: s.agent.map(|m| arugula_control_wire::chat::ChatAgent {
                     machine_name: names.get(&m).cloned().unwrap_or_default(),
@@ -169,7 +199,12 @@ pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>, named:
                 created_at: s.created_at,
                 pointer: s.pointer,
             };
-            if let wire::Pointer::MachineDoc { machine, .. } = &mut d.pointer {
+            if let wire::Pointer::MachineDoc { machine, doc, .. } = &mut d.pointer {
+                // The copy first: the machine's id may be blanked below.
+                if let Some(c) = copies.get(&(machine.clone(), doc.clone())) {
+                    (d.title, d.sections, d.written) = (c.title.clone(), Some(c.sections), Some(c.written));
+                    d.copy = Some(c.id.clone());
+                }
                 if named.shows(machine, d.agent.is_some()) {
                     d.machine_name = Some(name(machine));
                 } else {

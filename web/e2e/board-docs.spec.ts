@@ -211,3 +211,41 @@ test("Bob, a viewer on a phone, sees the Docs and none of the buttons", async ()
   const refused = await api(bob, "POST", `/api/boards/${board}/docs`, { pointer: { kind: "doc", id: "pdc_00000000000000000000000000000000" } });
   expect(refused.status).toBe(403);
 });
+
+// Native #673: a machine Doc whose copy sits in the board's project is read
+// from the copy: the chip has the copy's title and counts and opens the
+// copy's page while the machine is away. The platform's side is tested in
+// Rust (`a_machine_docs_chip_reads_its_copy_only_in_the_copys_project`, and
+// `a_reader_not_told_the_machine_still_reads_a_copy_in_the_boards_project`);
+// here the board's answer is given a `copy`, as a platform with it answers.
+test("a machine Doc's chip opens its copy in the project", async () => {
+  test.setTimeout(90_000);
+  const plan = (await api(alice, "GET", `/api/projects/${project}/docs`)).body!.docs.find((d: any) => d.title === PLAN).id as string;
+  const linked = await api(alice, "POST", `/api/boards/${board}/docs`, { pointer: { kind: "machine_doc", machine, doc: "00112233445566aa", title: "Bench notes" } });
+  expect(linked.status).toBe(200);
+  const entry = linked.body!.docs.find((d: any) => d.title === "Bench notes").id as string;
+  const withCopy = async (route: import("@playwright/test").Route) => {
+    const res = await route.fetch();
+    const v = (await res.json()) as { docs: Record<string, unknown>[] };
+    const docs = v.docs.map((d) => (d.id === entry ? { ...d, title: "Bench notes, v2", sections: 2, written: 1, copy: plan } : d));
+    await route.fulfill({ response: res, json: { ...v, docs } });
+  };
+  await alice.route(`**/api/boards/${board}`, withCopy);
+  try {
+    await platform(alice, `/p/${project}/boards/${board}`);
+    const c = chip(strip(alice), "Bench notes, v2");
+    await expect(c).toBeVisible({ timeout: 15_000 });
+    await expect(c).toContainText("1/2 on");
+    await expect(c.locator("[data-board-doc-open]")).toHaveAttribute("data-board-doc-copy", plan);
+    await c.locator("[data-board-doc-open]").click();
+    await expect(alice.locator("[data-doc-page]")).toBeVisible({ timeout: 15_000 });
+    await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText(PLAN);
+  } finally {
+    await alice.unroute(`**/api/boards/${board}`, withCopy);
+  }
+  // Without a copy (an older platform, or none yet), the chip says where it is.
+  await platform(alice, `/p/${project}/boards/${board}`);
+  await expect(chip(strip(alice), "Bench notes")).toContainText("on alices");
+  await expect(chip(strip(alice), "Bench notes").locator("[data-board-doc-copy]")).toHaveCount(0);
+  expect((await api(alice, "DELETE", `/api/boards/${board}/docs/${entry}`)).status).toBe(200);
+});
