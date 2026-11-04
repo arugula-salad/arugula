@@ -10,11 +10,14 @@ rule.
 
 Depends on `arugula-core`, `arugula-e2e`, `arugula-proto` and `arugula-vt`. It must not name
 any integration: no HTTP server or client, no MCP, no SSH, no embedded web
-client, no control, and no chat (#675): no room, thread or mention types.
-`just mux-guard` fails if `axum`, `hyper`, `reqwest`, `rmcp`, `rust-embed` or
-`russh` appear in its dependency tree, or a type named `Mention…`, `Chat…`,
-`Room…` or `Thread…` appears in its code, and `just check` and `just
-check-core` run it.
+client, no control, and no chat types (#675): no room, thread or mention
+type; what remains of chat on its wire is a pane's `mentions_off` switch
+and the `HOOK_MENTIONS_TOLD` hook field, both the protocol's words for
+things the binary does. `just mux-guard` fails if `axum`, `hyper`,
+`reqwest`, `rmcp`, `rust-embed` or `russh` appear in its dependency tree,
+or a type named `Mention…`, `Chat…`, `Room…` or `Thread…` appears in its
+code (the standard library's `Thread` and `ThreadId` aside), and `just
+check` and `just check-core` run it.
 
 How an integration reaches the mux, since the mux can't reach it:
 

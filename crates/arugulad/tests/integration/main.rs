@@ -95,6 +95,7 @@ mod mention_agent_block;
 mod mention_card;
 #[cfg(unix)]
 mod mention_held;
+mod mention_merge;
 mod mention_tool_call;
 mod pipe;
 mod program_status;

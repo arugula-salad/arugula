@@ -984,9 +984,24 @@ mux-guard:
       done
     done
     # Chat is an integration too (native #675): no room, thread or mention
-    # type in the mux's code (comments aside); the daemon keeps those.
-    chatty=$(grep -rn --include='*.rs' '' crates/mux/src | sed -E 's#//.*$##' \
-      | grep -E '\b(Mention|Chat|Room|Thread)[A-Z][A-Za-z]*\b|\b(Mention|Room|Thread)\b' || true)
+    # type in the mux's code (comments aside); the daemon keeps those. The
+    # standard library's thread (`std::thread::Thread`, `ThreadId`) isn't
+    # one, and is taken out before the look. A grep that can't read the
+    # code (exit 2: the crate moved, say) fails the check; one that finds
+    # nothing (exit 1) passes it.
+    if ! code=$(grep -rn --include='*.rs' '' crates/mux/src \
+        | sed -E 's#//.*$##; s/thread::Thread([^A-Za-z0-9_]|$)/\1/g; s/(^|[^A-Za-z0-9_])ThreadId([^A-Za-z0-9_]|$)/\1\2/g'); then
+      echo "mux-guard: can't read crates/mux/src" >&2
+      exit 2
+    fi
+    set +e
+    chatty=$(printf '%s\n' "$code" | grep -E '\b(Mention|Chat|Room|Thread)[A-Z][A-Za-z]*\b|\b(Mention|Room|Thread)\b')
+    found=$?
+    set -e
+    if [ "$found" -gt 1 ]; then
+      echo "mux-guard: grep failed ($found) looking for chat types" >&2
+      exit "$found"
+    fi
     if [ -n "$chatty" ]; then
       printf '%s\n' "$chatty" >&2
       echo "mux-guard: arugula-mux names a chat type: rooms, threads and mentions are the daemon's (DECISIONS.md \"The mux names no integration\")" >&2

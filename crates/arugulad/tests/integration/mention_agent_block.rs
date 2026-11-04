@@ -100,8 +100,8 @@ fn mention(id: &str, seq: i64, text: &str) -> String {
 }
 
 /// A reply, message `seq` under the thread of `parent` in room `ch_x`, to
-/// the block's agent (#580).
-fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
+/// the session called Worker (#580).
+pub(super) fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
     json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
         "seq": seq, "parent": parent, "author": "Ada", "text": text, "session": "worker",
         "root_line": format!("root {parent}") } })

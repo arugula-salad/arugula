@@ -1334,7 +1334,7 @@ mod tests {
                 tail: "(tail)".into(),
             }),
         };
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let reports = TurnReports(tx);
         let first = reply("ch_x", 11, 10);
         assert_eq!(MentionTag::from_tag(&first.to_tag()), Some(first.clone()));
@@ -1348,6 +1348,15 @@ mod tests {
         let plain = MentionTag { room: "ch_x".into(), seq: 14, headline: String::new(), thread: None };
         assert_eq!(reports.joined(&tags, &plain.to_tag()), None, "no thread");
         assert_eq!(reports.joined(&[plain.to_tag()], &reply("ch_x", 12, 10).to_tag()), None);
+        // A tag that isn't a mention's (not this daemon's words): it joins
+        // nothing, nothing joins it, and its turn is reported to no one.
+        let bad = Tag { data: "not a mention".into(), card: String::new() };
+        assert_eq!(reports.joined(&tags, &bad), None);
+        assert_eq!(reports.joined(std::slice::from_ref(&bad), &reply("ch_x", 12, 10).to_tag()), None);
+        reports.turn(4, &bad, Turn::Started);
+        reports.turn(4, &first.to_tag(), Turn::Started);
+        assert_eq!(rx.try_recv().map(|(p, m, t)| (p, m.seq, t)).ok(), Some((4, 11, Turn::Started)));
+        assert!(rx.try_recv().is_err(), "the bad tag's turn was reported");
         // Three in a row: the merged text is rebuilt from every tag.
         let mut text = "framed".to_owned();
         let mut got = vec![first];
