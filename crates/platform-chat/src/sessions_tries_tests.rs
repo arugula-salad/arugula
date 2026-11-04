@@ -74,6 +74,7 @@ async fn world() -> World {
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
     let project = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    crate::sessions_hydrate_tests::allow(&app, &project);
     let general = Room {
         id: "ch_general".into(),
         scope: "team:t".into(),

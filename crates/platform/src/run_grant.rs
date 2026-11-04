@@ -25,7 +25,9 @@
 //!   formed, for this project and its owner, by the poster (an owner now),
 //!   freshly made, expires within [`MAX_DAYS`], its passkey checks out,
 //!   names the project's live delegation (the hub's word,
-//!   `HubPort::live_delegation`), and wasn't revoked before it got here. It
+//!   `HubPort::live_delegation`), wasn't revoked before it got here, and is
+//!   made past every grant the project has had, so that hosted machines,
+//!   which go by that time, order grants as they were given. It
 //!   takes the place of the project's live grant: renewing is signing a new
 //!   one, with one passkey prompt. It holds no passkey or device key itself
 //!   (aru-079), and the machines check again: they're what's trusted here.
@@ -40,6 +42,12 @@
 //!   machine that was asleep. A machine that never hears it honours the
 //!   grant until it expires. `running: stop` asks for runs going to stop
 //!   as well (M212).
+//! - **Agent sessions** run under the live grant's `runs.instruct` too
+//!   (aru-115, as amended): with none, or one a box enrolled since refuses,
+//!   nothing starts and the person is told how to give one
+//!   ([`sessions_barred`]). A revoke ends the live ones (`Chat::grant_revoked`),
+//!   and each one's work carries the grant, for its box to check
+//!   (`crate::work::work`).
 //! - **A start** (`runs.start`) sends the live grant and the project's
 //!   revokes to the workspace's machine, with a v2's granter's passkey log
 //!   as the hub publishes it (the machine takes only its removals), and the
@@ -60,7 +68,7 @@ use arugula_control_wire::{
 use arugula_e2e::{
     now_ms,
     passkey::Assertion,
-    project_grant::{CAPS, GrantRefusal, GrantRevoke, ProjectGrant, REVOKE_PASSKEY, Running, V2},
+    project_grant::{CAPS, GrantRefusal, GrantRevoke, INSTRUCT, ProjectGrant, REVOKE_PASSKEY, Running, V2},
     team::TeamRole,
 };
 use axum::{
@@ -71,12 +79,15 @@ use axum::{
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     Platform,
     auth::Person,
-    db::run_grants::{Added, StoredGrant},
+    db::{
+        Db,
+        run_grants::{Added, StoredGrant},
+    },
     forge::links::membership,
 };
 
@@ -275,6 +286,13 @@ pub async fn sign(
             ));
         }
         Added::Seen => return Err(err(StatusCode::CONFLICT, "that grant is here already")),
+        Added::Older => {
+            return Err(refusal(
+                StatusCode::CONFLICT,
+                "grant_older",
+                "the project's last grant says it was made later than this one, by its signer's clock: reload the page and sign again",
+            ));
+        }
     }
     info!(%account, %project, grant = g.id, "kept a project's standing grant, signed with a passkey");
     app.analytics.capture(&account, "run grant signed", json!({ "days": g.expires.map(|e| (e - g.made) / DAY_MS) }));
@@ -311,13 +329,79 @@ pub async fn revoke(
     }
     info!(%account, %project, delegation = r.delegation, grants = n, stop = r.running == Running::Stop, "revoked a project's standing grants");
     app.analytics.capture(&account, "run grant revoked", json!({ "stop": r.running == Running::Stop }));
+    // Its agent sessions end here too, when this took back the grant in
+    // force: one that had been replaced leaves what runs under the other
+    // alone. A session this misses, its job ends (`sessions::job`).
+    let sessions = match app.db.run_grant_revoked_since(&project, now)? {
+        false => 0,
+        true => match crate::features::chat().grant_revoked(&app, &project, r.running).await {
+            Ok(n) => n,
+            Err(e) => {
+                warn!(%project, error = %format!("{e:#}"), "can't end a project's sessions as its grant was revoked");
+                0
+            }
+        },
+    };
     // Every hosted machine of the project hears it now; one that's asleep
     // hears it with its next start.
     let op = DaemonOp::RunRevoke(RunRevoke { revoke: r });
     let machines: Vec<String> = app.db.hosted_workspaces(&project)?.into_iter().filter_map(|w| w.machine).collect();
     let answers = join_all(machines.iter().map(|m| app.hub.daemon_op(m, &op))).await;
     let told = answers.iter().filter(|a| matches!(a, Ok(OpAnswer::Done { .. }))).count();
-    Ok(Json(json!({ "revoked": n, "machines": machines.len(), "told": told })))
+    Ok(Json(json!({ "revoked": n, "machines": machines.len(), "told": told, "sessions": sessions })))
+}
+
+/// Why something that'd run an agent session is refused: the project has no
+/// grant for it ([`sessions_barred`]). Runs' refusal says the same.
+pub const NO_GRANT: &str = "no_grant";
+
+/// The project's live grant, if it lets agent sessions run: it gives
+/// `runs.instruct`. What goes with each session's work.
+pub fn session_grant(db: &Db, project: &str, now: u64) -> anyhow::Result<Option<ProjectGrant>> {
+    let live = db.live_run_grant(project, now)?;
+    Ok(live.map(|g| g.grant).filter(|g| g.caps.iter().any(|c| c == INSTRUCT)))
+}
+
+/// Why the project has no [`session_grant`], for a line: "it has none", or
+/// what became of the last one.
+pub fn no_grant_because(db: &Db, project: &str, now: u64) -> anyhow::Result<&'static str> {
+    if db.live_run_grant(project, now)?.is_some() {
+        return Ok("it doesn't allow instructing agents");
+    }
+    Ok(match db.run_grants(project, 1)?.first() {
+        None => "it has none",
+        Some(g) if g.revoked_at.is_some() => "an owner revoked it",
+        Some(_) => "it expired",
+    })
+}
+
+/// Where and how an owner gives the project a grant, for a line.
+pub fn how_to_grant(app: &Platform) -> String {
+    let url = app.cfg.public_url.trim_end_matches('/');
+    let on = if url.is_empty() { "Control's page".to_owned() } else { url.to_owned() };
+    format!("A project owner allows it with a passkey on {on}, under Devices and machines, Runs on cloud workspaces")
+}
+
+/// The line that says why, when agent sessions can't run on `project` now,
+/// and how an owner fixes it. `None`: they may. A grant for an earlier
+/// delegation counts as none, since every box enrolled since refuses it; if
+/// the hub can't say, the box's own check decides.
+pub async fn sessions_barred(app: &Platform, project: &str) -> anyhow::Result<Option<String>> {
+    let now = now_ms();
+    let because = match session_grant(&app.db, project, now)? {
+        None => no_grant_because(&app.db, project, now)?,
+        Some(g) => {
+            let live = app.hub.live_delegation(project, &g.owner).await.ok().flatten();
+            if live.is_none_or(|d| d == g.delegation) {
+                return Ok(None);
+            }
+            "it's for an earlier delegation"
+        }
+    };
+    Ok(Some(format!(
+        "@arugula runs under this project's standing grant, and {because}, so nothing started. {}, then ask again.",
+        how_to_grant(app)
+    )))
 }
 
 /// Why a grant or a revoke was refused: it's in a format the platform no
@@ -375,7 +459,7 @@ fn code_of(why: &str) -> (&'static str, &str) {
     let code = GrantRefusal::ALL
         .iter()
         .map(|r| r.code())
-        .chain(["not_hosted", "wrong_workspace", "revokes_unreadable"])
+        .chain(["not_hosted", "wrong_workspace", "revokes_unreadable", "grant_superseded"])
         .find(|c| *c == code);
     (code.unwrap_or("grant_refused"), says)
 }

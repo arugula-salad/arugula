@@ -53,7 +53,9 @@
 //!   it's stopped.
 //! - **Revokes stop runs.** A revoke that says `running stop`, relayed or
 //!   with a pull, stops the runs going under the grants it covers
-//!   ([`stop_revoked`]).
+//!   ([`stop_revoked`]), and ends the sessions going under them. Any other
+//!   revoke ends those too, once a turn under way does
+//!   ([`sessions::stop_revoked`]).
 //! - **Its log and artifacts** go to the run-log bucket as it runs and
 //!   when it ends, before its end is reported (M213, [`crate::run_logs`]).
 //! - **Busy while it runs** ([`running`]): the machine says it's working
@@ -61,7 +63,9 @@
 //!   pause mid-run.
 //! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
 //!   with session users takes up to three at once, beside its one run at a
-//!   time, each an ACP agent block run as its own session user.
+//!   time, each an ACP agent block run as its own session user, under the
+//!   project's standing grant, checked here before it's taken and as each
+//!   turn's prompt goes to its agent, whatever queued it.
 //!
 //! This is the crate `arugulad-work` (#232), beside the other feature crates
 //! on the base: the binary calls [`register`], which installs the base's
@@ -91,7 +95,7 @@ use arugula_control_wire::{
 };
 use arugula_e2e::{
     now_ms,
-    project_grant::ProjectGrant,
+    project_grant::{INSTRUCT, ProjectGrant, START},
     run::{Event, Op, State},
 };
 use arugula_proto::{Policy, StartedBy, api::RunRequest};
@@ -603,6 +607,12 @@ pub fn pane_command(
 /// approved run (one with no grant) waits for M218's check of its
 /// approval: until then it doesn't start here (fail closed).
 pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
+    grant_for(app, item, START)
+}
+
+/// Whether the project's standing grant gives `cap` over `item`, as
+/// [`grant`] asks.
+fn grant_for(app: &App, item: &WorkItem, cap: &str) -> Result<(), Refused> {
     if item.state != State::Pending.as_str() {
         return Err(Refused("approval_unchecked", "this machine can't check a run's approval yet".into()));
     }
@@ -613,7 +623,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
         project: item.project.clone(),
         workspace: item.workspace.clone(),
         run: Some(item.run.clone()),
-        cap: "runs.start".into(),
+        cap: cap.into(),
         grant: g,
         revokes: item.revokes.clone(),
         passkey_log: item.passkey_log.clone(),
@@ -656,6 +666,10 @@ pub fn check(
         None => grant(app, item)?,
     }
     let op = parse_op(&item.op, me)?;
+    // An agent's run tells it what to do: that's `runs.instruct` as well.
+    if item.deploy.is_none() && op.instruction.is_some() {
+        grant_for(app, item, INSTRUCT)?;
+    }
     deploy::matches(&op, item.deploy.as_ref())?;
     let src = op.directory.as_deref().map(|d| source_dir(d, &arugula_mux::sys::home())).transpose()?;
     Ok((op, src))
@@ -1273,6 +1287,7 @@ async fn send_all(app: &App, open: &mut BTreeSet<String>) {
 /// left, then pull, take what's ready (one run at a time), stop what a
 /// revoke covers, and send what's unsent.
 pub fn start(app: Arc<App>) {
+    let _ = sessions::APP.set(app.clone());
     crate::task::spawn(async move {
         let dir = app.control.state_dir().to_owned();
         let every = pull_every();
@@ -1287,6 +1302,9 @@ pub fn start(app: Arc<App>) {
             warn!(why, "hosted: sessions and runs can't be kept off the daemon's ports yet");
         }
         sessions::resume(&app).await;
+        if sessions::takes() {
+            sessions::watch(app.clone());
+        }
         let mut open: BTreeSet<String> = all(&dir)
             .into_iter()
             .filter(|l| l.state == State::Running.as_str() || l.events.iter().any(|k| !k.answered))
@@ -1315,6 +1333,7 @@ pub fn start(app: Arc<App>) {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
                         crate::hosted::runs::keep_revokes(&app, &w.revokes);
+                        sessions::stop_revoked(&app);
                         for item in w.items {
                             if run_going() {
                                 break;
@@ -1364,6 +1383,16 @@ impl crate::work::Work for Engine {
 
     fn stop_revoked(&self, app: &App) {
         stop_revoked(app);
+        if let Some(app) = sessions::APP.get() {
+            sessions::stop_revoked(app);
+        }
+    }
+
+    fn session_turn(
+        &self,
+        session: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+        Box::pin(sessions::turn_allowed(session))
     }
 
     fn running(&self) -> bool {

@@ -18,6 +18,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("session-asks");
@@ -158,6 +159,7 @@ test("Acme with chat on, two hosted workspaces, and #general", async ({ browser 
     );
   box(dev, "dev", ["https://github.com/o/app", "https://github.com/o/web"]);
   box(web, "web", ["https://github.com/o/web"]);
+  sql((db) => allowSessions(db, project, team));
   const ch = await api(alice, "POST", `/api/chat/teams/${team}/channels`, { name: "general" });
   expect(ch.status, JSON.stringify(ch.body)).toBe(200);
   general = (ch.body as { id: string }).id;

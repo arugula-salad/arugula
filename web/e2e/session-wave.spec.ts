@@ -15,6 +15,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("session-wave");
@@ -189,6 +190,7 @@ test("Acme with chat on, a hosted workspace, and two issues", async ({
         now,
       ),
   );
+  sql((db) => allowSessions(db, project, team));
   for (const [title, labels] of [
     ["Fix the login page", ["fleet"]],
     ["Add a health check", []],

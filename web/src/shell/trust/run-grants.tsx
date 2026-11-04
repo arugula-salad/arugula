@@ -124,7 +124,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                   ) : null}
                   <label class="control-check dim">
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
-                    stop the runs going
+                    stop the runs and agent sessions going
                   </label>{" "}
                   <button class="secondary danger small" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, g.grant.delegation, !!stop[r.id]))}>
                     Revoke
@@ -145,8 +145,9 @@ export function RunGrants({ s }: { s: ControlSession }) {
       <p class="dim control-explain">
         <b>Allow runs</b> asks for one of your passkeys to confirm a standing grant: for as long as you pick, Arugula may start runs and
         instruct them on every cloud workspace of the project, running whatever command the project's runs start, with none of your devices
-        awake. Each workspace checks your passkey against your account's published passkeys. <b>Renew</b> confirms a new one in its place.
-        Deploys still ask you every time. <b>Revoke</b> (a passkey too) stops new runs; the ones going finish unless you stop them too. A
+        awake. A thread's agent sessions run under it too: with no grant, <code>@arugula</code> starts nothing. Each workspace checks your
+        passkey against your account's published passkeys. <b>Renew</b> confirms a new one in its place. Deploys still ask you every time.{" "}
+        <b>Revoke</b> (a passkey too) stops new runs and ends agent sessions; a run or an agent's turn going finishes unless you stop them too. A
         workspace that's asleep when you revoke is told later; one that's never told keeps honouring the grant until it expires.
       </p>
       {!webauthn ? (

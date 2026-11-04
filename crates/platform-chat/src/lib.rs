@@ -104,6 +104,8 @@ mod runs_page_tests;
 #[cfg(test)]
 mod session_feedback_tests;
 #[cfg(test)]
+mod session_grant_tests;
+#[cfg(test)]
 mod session_issues_tests;
 pub mod session_live;
 #[cfg(test)]
@@ -326,6 +328,15 @@ impl features::Chat for Hooks {
 
     fn told(&self, app: &Platform, ids: &[String]) -> anyhow::Result<()> {
         session_live::told(app, ids)
+    }
+
+    fn grant_revoked<'a>(
+        &'a self,
+        app: &'a Platform,
+        project: &'a str,
+        running: arugula_e2e::project_grant::Running,
+    ) -> BoxFuture<'a, anyhow::Result<u64>> {
+        Box::pin(sessions::grant::revoked(app, project, running))
     }
 
     fn suite_done(&self, app: &Platform, event: &str, v: &Value, now: u64) -> anyhow::Result<()> {

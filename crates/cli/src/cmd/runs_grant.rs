@@ -27,7 +27,7 @@ pub enum GrantCmd {
     },
     /// Not here: an owner revokes it with a passkey (this says so).
     Revoke {
-        /// Stop the runs going too.
+        /// Stop the runs and agent sessions going too.
         #[arg(long)]
         stop: bool,
     },
