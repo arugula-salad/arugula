@@ -3060,6 +3060,211 @@ async fn fake_boards(f: FakeBoards) -> String {
     at
 }
 
+/// A fake control's platform that keeps what it is told, for planning a board
+/// in one call: project `prj_1` with two open boards titled Launch, a closed
+/// one titled Old, and `brd_9` once `create_board` makes it. It files an
+/// issue as `iss_N`, N its number, and refuses a title that says `no grant`
+/// as control does without the issues.write grant.
+#[derive(Clone, Default)]
+struct FakePlan {
+    state: Arc<std::sync::Mutex<PlanState>>,
+}
+
+#[derive(Default)]
+struct PlanState {
+    made: bool,
+    /// (id, title) in order.
+    groups: Vec<(String, String)>,
+    /// (the issue's number, its group's id).
+    rows: Vec<(u64, Option<String>)>,
+    /// The bodies of the issues filed; the first is #101.
+    filed: Vec<Value>,
+}
+
+async fn fake_plan(f: FakePlan) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    fn board(id: &str, title: &str, closed: bool) -> Value {
+        let mut b = json!({ "id": id, "project": "prj_1", "title": title, "created_by": "a1", "created_at": 1,
+            "updated_at": 1, "progress": { "done": 0, "total": 0, "proven": 0 } });
+        if closed {
+            b["closed_at"] = json!(2);
+        }
+        b
+    }
+    fn view(s: &PlanState) -> Value {
+        let rows: Vec<Value> = s
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, (n, group))| {
+                json!({ "id": format!("row_{}", i + 1), "rev": 1, "pointer": { "kind": "issue", "id": format!("iss_{n}") },
+                    "note": "", "status": "none", "lane": "next", "attachments": [], "group": group,
+                    "live": { "state": "open", "kind": "native", "number": n, "title": "" },
+                    "created_at": 1, "updated_at": 1 })
+            })
+            .collect();
+        let groups: Vec<Value> = s
+            .groups
+            .iter()
+            .map(|(id, t)| json!({ "id": id, "rev": 1, "title": t, "progress": { "done": 0, "total": 0 } }))
+            .collect();
+        let lane = |id: &str, title: &str, rows: Vec<Value>| json!({ "id": format!("lane_{id}"), "rev": 0, "title": title, "kind": "lane", "rows": rows });
+        json!({ "board": board("brd_9", "Epic", false), "groups": groups,
+            "zones": [lane("next", "Next", rows), lane("doing", "Doing", vec![]), lane("review", "Review", vec![]),
+                      lane("done", "Done", vec![])] })
+    }
+    async fn any(State(f): State<FakePlan>, req: Request) -> Response {
+        let (method, at) = (req.method().to_string(), req.uri().to_string());
+        let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        let mut s = f.state.lock().unwrap();
+        let said = |status: StatusCode, said: &str| (status, Json(json!({ "error": said }))).into_response();
+        match (method.as_str(), at.split('?').next().unwrap_or_default()) {
+            ("GET", "/api/daemon/issue-home") => Json(json!({ "project": "prj_1", "home": "native" })).into_response(),
+            ("GET", "/api/daemon/projects/prj_1/boards") => {
+                let mut boards =
+                    vec![board("brd_1", "Launch", false), board("brd_2", "Launch", false), board("brd_3", "Old", true)];
+                if s.made {
+                    boards.push(board("brd_9", "Epic", false));
+                }
+                Json(json!({ "project": "prj_1", "boards": boards })).into_response()
+            }
+            ("POST", "/api/daemon/projects/prj_1/boards") => {
+                s.made = true;
+                Json(view(&s)).into_response()
+            }
+            ("GET", "/api/daemon/boards/brd_9") => Json(view(&s)).into_response(),
+            ("POST", "/api/daemon/projects/prj_1/issues") => {
+                if b["title"].as_str().is_some_and(|t| t.contains("no grant")) {
+                    return said(StatusCode::FORBIDDEN, "this machine has no issues.write grant over the project");
+                }
+                s.filed.push(b.clone());
+                let n = 100 + s.filed.len() as u64;
+                Json(json!({ "id": format!("iss_{n}"), "number": n, "state": "open", "title": b["title"] }))
+                    .into_response()
+            }
+            ("POST", "/api/daemon/boards/brd_9/resolve") => {
+                let items: Vec<Value> = b["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| match i.as_str().unwrap().strip_prefix('#').and_then(|n| n.parse::<u64>().ok()) {
+                        Some(n) if n < 100 => {
+                            json!({ "item": i, "pointer": { "kind": "issue", "id": format!("iss_{n}") } })
+                        }
+                        _ => json!({ "item": i, "why": format!("nothing is {i} in this project") }),
+                    })
+                    .collect();
+                Json(json!({ "items": items })).into_response()
+            }
+            ("PUT", "/api/daemon/boards/brd_9/entries") => {
+                if b["entry"] == "zone" {
+                    let id = format!("zon_{}", s.groups.len() + 1);
+                    s.groups.push((id, b["title"].as_str().unwrap().to_owned()));
+                } else {
+                    let n: u64 = b["pointer"]["id"].as_str().unwrap().trim_start_matches("iss_").parse().unwrap();
+                    let known = s.groups.iter().any(|(id, _)| b["zone"].as_str() == Some(id));
+                    if !b["zone"].is_null() && !known {
+                        return said(StatusCode::BAD_REQUEST, "no such group");
+                    }
+                    s.rows.push((n, b["zone"].as_str().map(str::to_owned)));
+                }
+                Json(view(&s)).into_response()
+            }
+            _ => said(StatusCode::NOT_FOUND, &format!("no route {method} {at}")),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// A board is planned in one call (#548): `create_board` with two groups and
+/// five items, two of them new issues, puts five rows in the right groups;
+/// a group is addressed by the id `add_group` answered, a board by its title;
+/// two open boards of one title are refused, both listed; a new issue that
+/// control refuses fails alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_plans_a_board_in_one_call() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakePlan::default();
+    let url = fake_plan(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let rows = |fake: &FakePlan| fake.state.lock().unwrap().rows.clone();
+
+    let made = call(
+        &s,
+        "board_write",
+        json!({ "kind": "create_board", "project": "prj_1", "title": "Epic", "goal": "Ship it", "groups": [
+            { "title": "Phase 1", "items": ["#12", { "title": "New A", "body": "why" }, "#13"] },
+            { "title": "Phase 2", "items": [{ "title": "New B", "labels": ["bug"] }, "#14"] }] }),
+    )
+    .await;
+    let said = made["summary"].as_str().unwrap();
+    assert!(said.contains("Made a board") && said.contains("Groups: 2 added."), "{said}");
+    assert!(said.contains("Items: 5 added.") && said.contains("New A\": filed #101, added"), "{said}");
+    let (p1, p2) = (Some("zon_1".to_owned()), Some("zon_2".to_owned()));
+    assert_eq!(rows(&fake), [(12, p1.clone()), (101, p1.clone()), (13, p1), (102, p2.clone()), (14, p2)], "{said}");
+    let filed = fake.state.lock().unwrap().filed.clone();
+    assert_eq!(filed[0], json!({ "title": "New A", "body": "why", "labels": [], "assignees": [] }));
+    assert_eq!(filed[1]["labels"], json!(["bug"]));
+
+    // The id add_group answers addresses the group; the board is named by its title.
+    let group = call(&s, "board_write", json!({ "kind": "add_group", "board": "epic", "title": "Phase 3" })).await;
+    let id = group["group"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(id, "zon_3", "{group}");
+    assert!(group["summary"].as_str().unwrap().contains("zon_3"), "{group}");
+    // One new issue control refuses, one it files: the first fails alone.
+    let added = call(
+        &s,
+        "board_write",
+        json!({ "kind": "add", "board": "Epic", "group": id, "items": [{ "title": "no grant" }, { "title": "New C" }] }),
+    )
+    .await;
+    let said = added["summary"].as_str().unwrap();
+    assert!(said.starts_with("Added: 1 failed, 1 added."), "{said}");
+    assert!(said.contains("\"no grant\": failed, not filed, ") && said.contains("issues.write grant"), "{said}");
+    assert_eq!(rows(&fake).last(), Some(&(103, Some("zon_3".to_owned()))), "{said}");
+
+    let blank = call(&s, "board_write", json!({ "kind": "add", "board": "Epic", "items": [{ "title": " " }] })).await;
+    assert!(blank["summary"].as_str().unwrap().contains("a new issue needs a title"), "{blank}");
+    let many = vec![json!({ "title": "G" }); 21];
+    let big = refused(&s, "board_write", json!({ "kind": "create_board", "title": "Big", "groups": many })).await;
+    assert!(big.contains("up to 20 groups"), "{big}");
+    assert_eq!(fake.state.lock().unwrap().filed.len(), 3, "a refused item files nothing");
+
+    let two = refused(&s, "board_write", json!({ "kind": "add_group", "board": "launch", "title": "X" })).await;
+    assert!(two.contains("Launch (brd_1) and Launch (brd_2)"), "{two}");
+    let none = refused(&s, "board_read", json!({ "board": "Nope" })).await;
+    assert!(none.contains("Launch, Launch, Epic") && !none.contains("Old"), "{none}");
+    s.cancel().await.unwrap();
+    drop(d);
+}
+
 /// The board tools (boards, step 3) are listed and work with no flag (boards
 /// left Labs, native #191); board_read lists a project's boards and reads one as
 /// lanes, rows and 72-column text, the JSON only when verbose; board_write
