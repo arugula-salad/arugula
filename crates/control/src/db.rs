@@ -25,6 +25,7 @@ mod tables;
 
 use std::{path::Path, sync::Mutex};
 
+use arugula_control_wire::machine;
 use arugula_e2e::{Cert, Kind, Revocation};
 use arugula_platform_api::hub::ChangeKind;
 use changes::changed;
@@ -328,6 +329,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("daemons", "moved")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN moved TEXT")?;
     }
+    // #500: the handles a renamed machine went by (a JSON list).
+    if !has("daemons", "aliases")? {
+        conn.execute_batch("ALTER TABLE daemons ADD COLUMN aliases TEXT")?;
+    }
     if !has("daemons", "features")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN features TEXT")?;
     }
@@ -563,6 +568,19 @@ pub struct Erase<'a> {
     /// stay, for checking those signatures only, while they last.
     pub retain_for: &'a [String],
 }
+
+/// How [`Db::rename_daemon`] went.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Renamed {
+    Done,
+    /// No such machine.
+    Gone,
+    /// Another machine of its owner or team is called that; its name.
+    Taken(String),
+}
+
+/// The most old names a machine keeps.
+const MAX_ALIASES: usize = 20;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DaemonRow {
@@ -1945,6 +1963,97 @@ impl Db {
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// A machine renamed (#500): the display name only. Its old handle
+    /// stays as an alias, so `@old` still reaches it; the new one is refused
+    /// when another machine of its owner, or of its team, goes by it now.
+    pub fn rename_daemon(&self, id: &str, name: &str) -> anyhow::Result<Renamed> {
+        // The accounts that share a team with its owner: a team's room
+        // reaches their personal machines too, so a word one of them goes by
+        // now is taken (before the lock: `teams_of` takes it).
+        let mut mates: Vec<String> = vec![];
+        if let Some(owner) = self.daemon_account(id)? {
+            for body in self.teams_of(&owner)? {
+                let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                mates.extend(
+                    v["members"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|m| m["account"].as_str().map(str::to_owned)),
+                );
+            }
+            mates.sort();
+            mates.dedup();
+        }
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let Some((account, was, aliases)) = tx
+            .query_row("SELECT account, name, COALESCE(aliases, '[]') FROM daemons WHERE id = ?1", params![id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
+            .optional()?
+        else {
+            return Ok(Renamed::Gone);
+        };
+        let team: Option<String> = tx.query_row("SELECT team FROM daemons WHERE id = ?1", params![id], |r| r.get(0))?;
+        let (new, old) = (machine::handle(name), machine::handle(&was));
+        // Its owner's machines, and its team's, whoever owns them.
+        let mut q = tx.prepare(
+            "SELECT id, name, COALESCE(aliases, '[]') FROM daemons
+             WHERE id != ?1 AND (account = ?2 OR (?3 IS NOT NULL AND team = ?3))",
+        )?;
+        let others: Vec<(String, String, String)> = q
+            .query_map(params![id, account, team], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        drop(q);
+        if let Some((_, taken, _)) = others.iter().find(|(_, n, _)| machine::handle(n) == new) {
+            return Ok(Renamed::Taken(taken.clone()));
+        }
+        // Or a teammate's machine, personal or not: current names only.
+        let mut q = tx.prepare("SELECT name FROM daemons WHERE account = ?1 AND id != ?2")?;
+        for mate in mates.iter().filter(|m| **m != account) {
+            let theirs: Vec<String> = q.query_map(params![mate, id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            if let Some(taken) = theirs.into_iter().find(|n| machine::handle(n) == new) {
+                return Ok(Renamed::Taken(taken));
+            }
+        }
+        drop(q);
+        let mut mine: Vec<String> = serde_json::from_str(&aliases).unwrap_or_default();
+        mine.retain(|a| *a != new);
+        if !old.is_empty() && old != new && !mine.contains(&old) {
+            mine.push(old.clone());
+        }
+        let skip = mine.len().saturating_sub(MAX_ALIASES);
+        mine.drain(..skip);
+        // The newest holder of a word has it: no other machine of the same
+        // owner or team keeps it as an old name.
+        for (other, _, theirs) in &others {
+            let mut list: Vec<String> = serde_json::from_str(theirs).unwrap_or_default();
+            let before = list.len();
+            list.retain(|a| !mine.contains(a));
+            if list.len() != before {
+                tx.execute(
+                    "UPDATE daemons SET aliases = ?2 WHERE id = ?1",
+                    params![other, serde_json::to_string(&list)?],
+                )?;
+            }
+        }
+        tx.execute(
+            "UPDATE daemons SET name = ?2, aliases = ?3 WHERE id = ?1",
+            params![id, name, serde_json::to_string(&mine)?],
+        )?;
+        changed(&tx, ChangeKind::DaemonJoined, id)?;
+        tx.commit()?;
+        Ok(Renamed::Done)
+    }
+
+    /// The handles a machine went by before it was renamed (#500).
+    pub fn daemon_aliases(&self, id: &str) -> anyhow::Result<Vec<String>> {
+        let raw: Option<Option<String>> =
+            self.c().query_row("SELECT aliases FROM daemons WHERE id = ?1", params![id], |r| r.get(0)).optional()?;
+        Ok(raw.flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default())
     }
 
     pub fn daemon_account(&self, id: &str) -> anyhow::Result<Option<String>> {

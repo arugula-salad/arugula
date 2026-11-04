@@ -78,6 +78,7 @@ pub mod hosted;
 pub mod internal;
 pub mod issues;
 pub mod join;
+pub mod machine;
 pub mod maintenance;
 pub mod project_docs;
 pub mod projects;

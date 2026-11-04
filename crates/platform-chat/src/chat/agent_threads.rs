@@ -310,13 +310,11 @@ pub async fn machine_sessions(
     let (room, _, _) = room_of(&app, &d, THREADS_READ, &id).await?;
     let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
     let word = machine.trim_start_matches('@').to_lowercase();
-    let target = room_agents(&app, &facts, &room)
-        .await?
-        .into_iter()
-        .find(|a| hears(a) && a.machine_name.to_lowercase() == word)
-        .ok_or_else(|| {
-            arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
-        })?;
+    let mut hearing = room_agents(&app, &facts, &room).await?;
+    hearing.retain(hears);
+    let target = super::agents_named(&hearing, &word).first().map(|a| (*a).clone()).ok_or_else(|| {
+        arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
+    })?;
     let from_session = q.from_session.filter(|_| target.machine == d.daemon);
     let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session, only: vec![] };
     let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {

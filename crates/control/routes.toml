@@ -631,6 +631,13 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "POST"
+path = "/api/daemons/{id}/name"
+process = "hub"
+auth = "session"
+clients = ["page", "cli"]
+
+[[route]]
 method = "GET"
 path = "/api/daemon/trust"  # wire::TRUST
 process = "hub"

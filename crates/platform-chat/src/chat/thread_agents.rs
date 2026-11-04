@@ -256,9 +256,10 @@ pub(super) async fn of_thread(
         };
         let d = daemons.get(&a.machine);
         let owner = if a.owner.is_empty() { d.map(|d| d.account.clone()).unwrap_or_default() } else { a.owner };
-        let machine_name = match a.machine_name.is_empty() {
-            true => d.map(|d| d.name.clone()).unwrap_or_default(),
-            false => a.machine_name,
+        // As it is called now (#500); the status stored the name it had.
+        let machine_name = match d.map(|d| d.name.clone()).filter(|n| !n.is_empty()) {
+            Some(now) => now,
+            None => a.machine_name,
         };
         out.push((
             a.first,
@@ -394,6 +395,7 @@ mod tests {
             powers: vec![],
             mentionable: true,
             sessions: vec![],
+            aliases: vec![],
         };
         let rooms = [room("geek", "Jake", "geek"), room("mini", "Aaron", "Mac mini")];
         assert_eq!(

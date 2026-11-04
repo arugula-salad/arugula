@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
-import { sessionSlug } from "./agents";
+import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
 
 /** How often an open thread asks again. */
@@ -188,7 +188,7 @@ export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgen
   const words = atWords(text);
   return agents.filter((a) => {
     const name = sessionSlug(a.name);
-    const machine = a.machine_name.toLowerCase();
+    const machine = machineHandle(a.machine_name);
     return (!!name && words.has(name)) || (!a.hosted && (words.has(machine) || (!!name && words.has(`${machine}/${name}`))));
   });
 }
@@ -200,9 +200,9 @@ export function namedOutside(room: ChatRoomAgent[], agents: ChatThreadAgent[], t
   const out: string[] = [];
   for (const word of atWords(text)) {
     const [machine, session] = word.split("/", 2);
-    const a = room.find((r) => r.mentionable && r.machine_name.toLowerCase() === machine);
+    const a = room.find((r) => r.mentionable && machineHandle(r.machine_name) === machine);
     if (!a) continue;
-    const inThread = agents.some((t) => !t.hosted && t.machine_name.toLowerCase() === machine && (!session || sessionSlug(t.name) === session));
+    const inThread = agents.some((t) => !t.hosted && machineHandle(t.machine_name) === machine && (!session || sessionSlug(t.name) === session));
     if (!inThread) out.push(session ? `${session} on ${a.machine_name}` : a.machine_name);
   }
   return out;

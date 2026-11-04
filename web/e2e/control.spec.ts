@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { closeContexts, controlPanel, pasteFile, ready, run, text, uploadedPath, settingsRow } from "./helpers";
+import { closeContexts, closeSettingsPage, controlPanel, pasteFile, ready, run, text, uploadedPath, settingsRow } from "./helpers";
 import { ANY, controlPort, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
 
@@ -301,6 +301,39 @@ test("two machines join by code; one direct, one only through the relay", async 
   expect(readFileSync(await uploadedPath(laptop, pane))).toEqual(png);
   // The path waits on the prompt line: clear it for what's typed next.
   await laptop.evaluate((p) => window.__arugula.client.input(p, new TextEncoder().encode("\x15")), pane);
+});
+
+test("a machine is renamed in Settings, and the switcher and the page follow; a taken name is refused (#500)", async () => {
+  await showHost(laptop, "box");
+  const rename = async (name: string) => {
+    await settingsRow(laptop, "Rename machine…");
+    await laptop.locator(".prompt input").fill(name);
+    await laptop.keyboard.press("Enter");
+  };
+  const current = () => laptop.evaluate(() => window.__arugula.hosts.current);
+  await rename("Mini Box");
+  // The page follows the machine it showed: no reconnect, no new pick.
+  await expect.poll(current).toBe("Mini Box");
+  await expect.poll(() => hostNames(laptop)).toEqual(["Mini Box", "mac"]);
+  await expect(laptop.locator(".ws-head .host-button")).toHaveText(/Mini Box/);
+  await expect(laptop.locator("[data-settings-page]").getByRole("heading", { name: "This machine: Mini Box" })).toBeVisible();
+  expect(await connected(laptop)).toBe(true);
+  // The switcher lists it by the new name only.
+  await laptop.locator("[data-settings-page] .host-button").click();
+  await expect(laptop.getByRole("menuitem", { name: /^\s*Mini Box\s/ })).toBeVisible();
+  await expect(laptop.getByRole("menuitem", { name: /^\s*box\s/ })).toHaveCount(0);
+  await laptop.keyboard.press("Escape");
+  // Another of the account's machines has "mac": refused, and nothing changes.
+  await rename("MAC");
+  await expect.poll(() => laptop.evaluate(() => window.__arugula.client.error)).toContain("already called mac");
+  expect(await hostNames(laptop)).toEqual(["Mini Box", "mac"]);
+  // Back, as the next tests found it.
+  await rename("box");
+  await expect.poll(current).toBe("box");
+  await expect.poll(() => hostNames(laptop)).toEqual(["box", "mac"]);
+  // And the page as the next test found it: the panes of mac.
+  await closeSettingsPage(laptop);
+  await showHost(laptop, "mac");
 });
 
 test("a relayed page that goes leaves the machine's clients (presence) too", async () => {

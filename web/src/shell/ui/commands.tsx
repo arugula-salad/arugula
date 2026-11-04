@@ -10,6 +10,7 @@ import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
+import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -471,6 +472,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Arugula #500: its name on control, on control's page, where the shown
+    // machine has an id; control refuses anyone but its owner (or its team's).
+    ...renameItems(client),
     // Discovery 10: what its agents may do on control (`arugula grants`),
     // once it's joined (or the page is control's).
     ...(directory.control || directory.joined ? [{ label: "Agents' grants…", run: openAgentGrants }] : []),
@@ -481,6 +485,34 @@ export function machineSettingsItems(client: Client): MenuItem[] {
       label: "Remove arugula.nvim",
       hint: "Deletes the copies of arugula.nvim that Arugula installed on this machine; one your plugin manager installed stays",
       run: () => void removePlugin(client),
+    },
+  ];
+}
+
+/** *Rename…* on the shown machine (Arugula #500): the name the machines list,
+ * the switcher, chat and `@machine` call it. Only through control, which
+ * holds the name; the old one keeps working in mentions. */
+function renameItems(client: Client): MenuItem[] {
+  const host = directory.control ? directory.find(directory.current) : undefined;
+  const session = getControlSession();
+  if (!host?.id || !session) return [];
+  const id = host.id;
+  return [
+    {
+      label: "Rename machine…",
+      hint: "Its name in the machines list, in chat and in @mentions; the old name keeps working",
+      run: () => {
+        void (async () => {
+          const name = await askText(`Rename ${host.name}`, host.name, "a short name, like mini");
+          if (name === null || name.trim() === host.name) return;
+          try {
+            const now = await session.renameDaemon(id, name);
+            client.toast(`Renamed to ${now}. @${machineHandle(now)} reaches it; so does its old name.`);
+          } catch (e) {
+            client.toast((e as Error).message);
+          }
+        })();
+      },
     },
   ];
 }

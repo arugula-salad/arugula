@@ -756,6 +756,9 @@ impl Shower {
         let mut named = machines.clone();
         named.extend(ms.iter().filter_map(|m| m.agent.clone()));
         named.extend(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()));
+        // And those a mention's status names, by what each is called now
+        // (#500): the status stored the name it had.
+        named.extend(mention_status.values().flatten().map(|s| s.machine.clone()));
         named.sort();
         named.dedup();
         let (accounts, daemons, reach) = tokio::try_join!(
@@ -767,6 +770,7 @@ impl Shower {
             .iter()
             .filter_map(|m| m.agent.clone())
             .chain(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()))
+            .chain(mention_status.values().flatten().map(|s| s.machine.clone()))
             .map(|a| {
                 let name = daemons.get(&a).map(|d| d.name.clone()).unwrap_or_default();
                 (a, name)
@@ -835,7 +839,7 @@ impl Shower {
                 .get(&(m.room.clone(), m.seq))
                 .into_iter()
                 .flatten()
-                .map(shown_status)
+                .map(|s| shown_status(s, &self.agents))
                 .collect(),
             // An agent reads them at its machine's address.
             files: self
@@ -929,10 +933,18 @@ fn mention_status_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String
 }
 
 /// A stored status as the reader sees it.
-fn shown_status(s: &MentionStatus) -> ChatMentionStatus {
+///
+/// Its machine is named as it is called now (`names`, by id), not as it was
+/// when the status was stored (#500); the stored name is for a machine that
+/// has gone.
+fn shown_status(s: &MentionStatus, names: &HashMap<String, String>) -> ChatMentionStatus {
     ChatMentionStatus {
         machine: s.machine.clone(),
-        machine_name: s.machine_name.clone(),
+        machine_name: names
+            .get(&s.machine)
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| s.machine_name.clone()),
         state: mention_state(&s.state),
         session: s.session.clone(),
         asked: s.asked.clone(),
@@ -1018,16 +1030,28 @@ async fn agent_mentions(
     }
     let mut agents = room_agents(app, facts, room).await?;
     agents.retain(hears);
-    let named = |a: &ChatRoomAgent, w: &str| a.machine_name.to_lowercase() == w;
     let mut out: Vec<String> = Vec::new();
-    for a in &agents {
-        let mention = format!("{}{}", wire::AGENT_MENTION, a.machine);
-        if unreached.iter().any(|w| named(a, w)) && !out.contains(&mention) {
-            out.push(mention);
+    for w in unreached.iter() {
+        for a in agents_named(&agents, w) {
+            let mention = format!("{}{}", wire::AGENT_MENTION, a.machine);
+            if !out.contains(&mention) {
+                out.push(mention);
+            }
         }
     }
-    unreached.retain(|w| !agents.iter().any(|a| named(a, w)));
+    unreached.retain(|w| agents_named(&agents, w).is_empty());
     Ok(out)
+}
+
+/// The agents `@word` names (#500): those whose machine is called that now,
+/// else those that were once (a machine renamed keeps its old word working).
+fn agents_named<'a>(agents: &'a [ChatRoomAgent], word: &str) -> Vec<&'a ChatRoomAgent> {
+    arugula_control_wire::machine::named_by(agents, word, |a| a.machine_name.as_str(), |a| a.aliases.as_slice())
+}
+
+/// The same for a team's machines.
+pub(super) fn machines_named<'a>(machines: &'a [Daemon], word: &str) -> Vec<&'a Daemon> {
+    arugula_control_wire::machine::named_by(machines, word, |d| d.name.as_str(), |d| d.aliases.as_slice())
 }
 
 /// The named machines of the team `room` belongs to, and the team's id:
@@ -1074,7 +1098,7 @@ async fn unreached_why(
     let Some((team, machines)) = team_machines(app, facts, room).await? else { return Ok(vec![]) };
     let mut found: Vec<(&String, &Daemon)> = vec![];
     for w in unreached {
-        if let Some(d) = machines.iter().find(|d| d.name.to_lowercase() == *w) {
+        if let Some(d) = machines_named(&machines, w).first() {
             found.push((w, d));
         }
     }
@@ -1209,9 +1233,12 @@ fn board_lead(app: &Platform, room: &Room) -> Option<(String, String)> {
 /// (`@geek/ux`) when `a` is mentioned, else the board's lead's when `a`'s
 /// machine is the one that leads it (#394, #414, #429). None: the daemon works
 /// it out.
-fn session_for(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> Option<String> {
-    let named =
-        told.sessions.iter().find(|(m, _)| mentioned && *m == a.machine_name.to_lowercase()).map(|(_, s)| s.clone());
+fn session_for(told: &Told<'_>, agents: &[ChatRoomAgent], a: &ChatRoomAgent, mentioned: bool) -> Option<String> {
+    let named = told
+        .sessions
+        .iter()
+        .find(|(m, _)| mentioned && agents_named(agents, m).iter().any(|n| n.machine == a.machine))
+        .map(|(_, s)| s.clone());
     let chosen = || told.to.iter().find(|(m, _)| mentioned && *m == a.machine).map(|(_, s)| s.clone());
     named.or_else(chosen).or_else(|| told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()))
 }
@@ -1345,7 +1372,7 @@ async fn plan_tells(
         if held {
             continue;
         }
-        let session = session_for(told, a, is_mentioned);
+        let session = session_for(told, &agents, a, is_mentioned);
         let others = thread_agents::others_in(&seen, &agents, &a.machine, session.as_deref());
         out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session, others) });
     }
@@ -1536,21 +1563,25 @@ async fn mention_to_resend(
 ) -> Result<arugula_control_wire::forge::DaemonOp, &'static str> {
     let m = app.db.chat_message(&s.room, s.seq).ok().flatten().filter(|m| m.deleted.is_none()).ok_or("no message")?;
     let room = app.db.chat_room(&s.room).ok().flatten().filter(|r| r.archived.is_none()).ok_or("no room")?;
-    let named = if granted {
-        let name = s.machine_name.to_lowercase();
-        !name.is_empty() && without_code(&m.text).to_lowercase().contains(&format!("@{name}"))
-    } else {
-        m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine))
-    };
-    if !named {
-        return Err("no longer mentioned");
-    }
     let facts = Facts::of(app, None, &[&room]).await.map_err(|_| "no facts")?;
     let agents = room_agents(app, &facts, &room).await.map_err(|_| "no agents")?;
     let a = agents
         .iter()
         .find(|a| a.machine == s.machine && a.powers.iter().any(|p| p == THREADS_READ))
         .ok_or("no grant")?;
+    // The machine as it is called now, and as it was (#500): the text may
+    // name it either way, whatever the status stored.
+    let named = if granted {
+        let text = without_code(&m.text).to_lowercase();
+        std::iter::once(arugula_control_wire::machine::handle(&a.machine_name))
+            .chain(a.aliases.iter().cloned())
+            .any(|w| !w.is_empty() && text.contains(&format!("@{w}")))
+    } else {
+        m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine))
+    };
+    if !named {
+        return Err("no longer mentioned");
+    }
     let who = match &m.agent {
         Some(am) => {
             let on = agents.iter().find(|x| x.machine == *am).map_or(am.as_str(), |x| x.machine_name.as_str());
@@ -1570,7 +1601,7 @@ async fn mention_to_resend(
         root_line: root_line(app, &room, m.parent),
         to: vec![],
     };
-    Ok(mention_op(&told, session_for(&told, a, true), vec![]))
+    Ok(mention_op(&told, session_for(&told, &agents, a, true), vec![]))
 }
 
 // ---------------------------------------------------------------- live
@@ -2264,6 +2295,7 @@ async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Resu
             powers,
             mentionable: false,
             sessions: vec![],
+            aliases: d.aliases.clone(),
         });
     }
     Ok(out)
@@ -2660,7 +2692,7 @@ pub(crate) async fn post_replied(
     };
     // What is known now (#571): `sending`, unless a daemon answered first.
     let mention_status = match app.db.chat_mention_statuses(&room.id, seq, seq) {
-        Ok(rows) => rows.iter().map(shown_status).collect(),
+        Ok(rows) => rows.iter().map(|s| shown_status(s, &HashMap::new())).collect(),
         Err(e) => {
             tracing::warn!(error = %e, "chat: reading a mention's status");
             vec![]

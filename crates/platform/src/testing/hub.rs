@@ -189,8 +189,26 @@ impl TestHub {
     pub fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
         self.state.lock().unwrap().daemons.insert(
             id.into(),
-            Daemon { id: id.into(), account: account.into(), team: team.map(Into::into), name: format!("{id}-box") },
+            Daemon {
+                id: id.into(),
+                account: account.into(),
+                team: team.map(Into::into),
+                name: format!("{id}-box"),
+                aliases: vec![],
+            },
         );
+        self.change(ChangeKind::DaemonJoined, id);
+    }
+
+    /// `id` renamed (#500): its old handle stays as an alias.
+    pub fn rename_daemon(&self, id: &str, name: &str) {
+        if let Some(d) = self.state.lock().unwrap().daemons.get_mut(id) {
+            let old = arugula_control_wire::machine::handle(&d.name);
+            if !old.is_empty() && old != arugula_control_wire::machine::handle(name) {
+                d.aliases.push(old);
+            }
+            d.name = name.into();
+        }
         self.change(ChangeKind::DaemonJoined, id);
     }
 

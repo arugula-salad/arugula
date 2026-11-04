@@ -1411,7 +1411,7 @@ async fn a_joined_machines_direct_urls_are_listed() {
 }
 
 /// A daemon's relay socket, as `arugulad` dials it.
-async fn dial_relay(
+pub(crate) async fn dial_relay(
     c: &Control,
     d: &DeviceKeys,
 ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {

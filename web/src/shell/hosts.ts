@@ -136,8 +136,16 @@ export class HostDirectory {
   /** Control mode: the daemons this browser checked, from control. */
   setControl(hosts: Host[], stale: boolean) {
     const first = !this.control;
+    // The shown machine by its id, to follow it if it was renamed (#500).
+    const shownId = this.shown !== null ? this.find(this.shown)?.id : undefined;
     this.control = true;
     this.list = { this: "", hosts };
+    const now = shownId ? hosts.find((h) => h.id === shownId) : undefined;
+    if (now && now.name !== this.shown) {
+      this.shown = now.name;
+      save(CONTROL_SHOWN_KEY, now.name);
+      this.syncUrl();
+    }
     this.stale = stale;
     if (first) {
       const asked = linkedMachine();

@@ -33,6 +33,7 @@ pub mod keys;
 pub mod log;
 pub mod login;
 pub mod ls;
+pub mod machine;
 pub mod machines;
 pub mod mcp;
 pub mod mentions;
