@@ -64,6 +64,11 @@ impl Followups for Quiet {
     fn turn(&self, _: PaneId, _: &Tag, _: Turn) {}
 }
 
+/// A session with no pane, for a link that stays until the test ends it. The
+/// mux's first session is gone in a moment (its pane's program is `true`), and
+/// its grants go with it.
+const NO_PANE_HERE: u32 = 4242;
+
 /// A mux with an ACL we can change, and no program that lives: its first
 /// pane's shim is `true`.
 fn start(name: &str) -> (MuxHandle, Arc<Acl>, PathBuf) {
@@ -132,7 +137,7 @@ fn link(id: &str) -> Principal {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_client_whose_access_went_before_it_connected_is_turned_away() {
     let (m, acl, dir) = start("gone");
-    let id = acl.add_link(1, &"a".repeat(64), arugula_mux::store::now_ms() + 60_000, None).unwrap();
+    let id = acl.add_link(NO_PANE_HERE, &"a".repeat(64), arugula_mux::store::now_ms() + 60_000, None).unwrap();
     assert!(acl.revoke_link(&id, "owner").unwrap());
     m.send(Cmd::AclChanged);
 
@@ -151,12 +156,14 @@ async fn a_client_whose_access_went_before_it_connected_is_turned_away() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_client_with_access_connects_and_a_later_change_closes_it() {
     let (m, acl, dir) = start("live");
-    let id = acl.add_link(1, &"b".repeat(64), arugula_mux::store::now_ms() + 60_000, None).unwrap();
+    let id = acl.add_link(NO_PANE_HERE, &"b".repeat(64), arugula_mux::store::now_ms() + 60_000, None).unwrap();
 
     let mut owner = connect(&m, 902, Principal::Owner);
-    assert!(matches!(next(&mut owner).await, ToClient::Json(_)), "the owner gets state");
+    let first = next(&mut owner).await;
+    assert!(matches!(first, ToClient::Json(_)), "the owner gets state, not {first:?}");
     let mut viewer = connect(&m, 903, link(&id));
-    assert!(matches!(next(&mut viewer).await, ToClient::Json(_)), "a live link gets state");
+    let first = next(&mut viewer).await;
+    assert!(matches!(first, ToClient::Json(_)), "a live link gets state, not {first:?}");
 
     assert!(acl.revoke_link(&id, "owner").unwrap());
     m.send(Cmd::AclChanged);
@@ -166,6 +173,28 @@ async fn a_client_with_access_connects_and_a_later_change_closes_it() {
             ToClient::Msg(ServerMsg::Error { .. }) | ToClient::Json(_) | ToClient::Msg(_) | ToClient::Frame(_) => {}
         }
     }
+    m.shutdown().await;
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A link goes with its session, so a client that comes after is turned away
+/// like one whose link was revoked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_whose_link_went_with_its_session_is_turned_away() {
+    let (m, acl, dir) = start("session");
+    let id = acl.add_link(1, &"c".repeat(64), arugula_mux::store::now_ms() + 60_000, None).unwrap();
+    let viewer = link(&id);
+    let gone = async {
+        while acl.knows(&viewer) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), gone).await.expect("the first session closes");
+
+    let mut ctrl = connect(&m, 904, viewer);
+    let first = next(&mut ctrl).await;
+    assert!(matches!(first, ToClient::Msg(ServerMsg::Error { id: None, .. })), "told why, not {first:?}");
+    assert!(matches!(next(&mut ctrl).await, ToClient::Close), "and hung up on");
     m.shutdown().await;
     let _ = std::fs::remove_dir_all(dir);
 }
