@@ -30,7 +30,6 @@ mod control_moves;
 mod control_state;
 mod conversations;
 mod crash;
-mod dialout;
 mod doc;
 mod doc_copies;
 mod doc_library;

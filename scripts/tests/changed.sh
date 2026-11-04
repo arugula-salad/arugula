@@ -23,7 +23,7 @@ w=$tmp/work
 git init -q -b main "$w"
 cd "$w"
 mkdir -p scripts app docs
-cp "$src/changed" scripts/
+cp "$src/changed" "$src/queue-tested" scripts/
 commit() { mkdir -p "$(dirname "$1")" && printf '%s\n' "$2" >"$1" && git add -A && git commit -qm "$1"; git rev-parse HEAD; }
 base=$(commit app/a.rs one)
 git remote add origin "$tmp/origin.git"
@@ -45,6 +45,16 @@ cat >"$tmp/chant" <<'EOF'
 echo "$FAKE_BASE"
 EOF
 chmod +x "$tmp/chant"
+# A fake gh for scripts/queue-tested: how many of this workflow's merge_group
+# runs succeeded on the commit, or a failed call with FAKE_GH_FAILS.
+mkdir -p "$tmp/bin"
+cat >"$tmp/bin/gh" <<'GH'
+#!/usr/bin/env bash
+[ -z "${FAKE_GH_FAILS:-}" ] || exit 1
+echo "${FAKE_QUEUE_RUNS:-0}"
+GH
+chmod +x "$tmp/bin/gh"
+export PATH="$tmp/bin:$PATH" GITHUB_REPOSITORY=o/r GITHUB_SHA=$tip GITHUB_WORKFLOW=check
 export ARUGULA_CHANT="$tmp/chant" GITHUB_REF=refs/heads/main GITHUB_EVENT_NAME=push
 
 # shellcheck disable=SC2329 # runs and skips call it
@@ -67,6 +77,27 @@ check "says which base it diffed against" says "since ${base:0:12}"
 check "no base: runs" runs '' scripts
 check "and says why" says "chant ci base found no commit"
 GITHUB_EVENT_NAME=workflow_dispatch check "a manual run runs it" runs "$base" scripts
+
+# The queue passed this commit: main's push skips even what changed.
+FAKE_QUEUE_RUNS=1 check "a push the queue passed skips it" skips "$base" app
+check "and says why" says "the merge queue passed"
+FAKE_QUEUE_RUNS=1 GITHUB_EVENT_NAME=workflow_dispatch check "a manual run on it still runs" runs "$base" app
+FAKE_GH_FAILS=1 FAKE_QUEUE_RUNS=1 check "the API failing runs it" runs "$base" app
+
+# A merge group diffs against main: what's queued ahead of it counts too.
+git checkout -q -b gh-readonly-queue/main/pr-1
+commit docs/queued.md queued >/dev/null
+git push -q origin HEAD
+# shellcheck disable=SC2329
+group() { GITHUB_EVENT_NAME=merge_group GITHUB_REF=refs/heads/gh-readonly-queue/main/pr-1 scripts/changed app "" "$@" >"$tmp/out" 2>&1; }
+# shellcheck disable=SC2329
+group_skips() { ! group "$@"; }
+check "a docs-only group skips what it doesn't touch" group_skips app
+commit app/queued-ahead.rs ahead >/dev/null
+commit docs/queued.md queued-again >/dev/null
+git push -q origin HEAD
+check "a docs-only group behind a code one runs it" group app
+git checkout -q main
 # The fetch brought the records' branch and the tag chant reads, and left the clone full.
 check "fetched origin/chant/lifecycle" git show-ref -q --verify refs/remotes/origin/chant/lifecycle
 check "has the ci/ tags" git show-ref -q --verify "refs/tags/ci/green/$base"

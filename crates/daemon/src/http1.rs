@@ -1,11 +1,11 @@
-//! The client half the proxies share (`dial`, `sites`, the provider
-//! tunnel): an HTTP/1 connection over a stream of their own, and a
-//! switched exchange (a WebSocket) joined to the caller's.
+//! The client half of the block sites' proxy (`sites`): an HTTP/1
+//! connection over a stream of its own, and a switched exchange (a
+//! WebSocket) joined to the caller's.
 
 use std::error::Error;
 
 use hyper::{
-    Request, Response,
+    Response,
     body::{Body, Incoming},
     client::conn::http1::SendRequest,
     upgrade::{OnUpgrade, Upgraded},
@@ -29,23 +29,10 @@ where
     Ok(sender)
 }
 
-/// One request on a connection of its own.
-pub async fn once<B, T>(io: T, req: Request<B>) -> hyper::Result<Response<Incoming>>
-where
-    B: Body + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<Box<dyn Error + Send + Sync>>,
-    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
-    connect(io).await?.send_request(req).await
-}
-
 type Ends = (TokioIo<Upgraded>, TokioIo<Upgraded>);
 
-/// The caller's end and the server's of a switched exchange, once both
-/// have switched; what each failed with if either didn't. The server's
-/// is taken from `res` now, before it goes back to the caller.
-pub fn ends(
+/// Both ends of a switched exchange, once both upgrades are through.
+fn ends(
     client: OnUpgrade,
     res: &mut Response<Incoming>,
 ) -> impl Future<Output = Result<Ends, (Option<hyper::Error>, Option<hyper::Error>)>> + Send + 'static {

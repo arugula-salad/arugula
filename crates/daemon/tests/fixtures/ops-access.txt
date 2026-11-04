@@ -28,8 +28,6 @@ guests.list GET /api/guests Owner drives=false credential=true
 host.add POST /api/hosts Owner drives=false credential=false
 host.get GET /api/host Anyone drives=false credential=false
 host.remove DELETE /api/hosts/{name} Owner drives=false credential=false
-host_token.mint POST /api/hosts/{name}/token Owner drives=false credential=false
-host_token.revoke DELETE /api/hosts/{name}/token Owner drives=false credential=false
 hosted_setup.get GET /api/hosted/setup Owner drives=false credential=false
 hosts.list GET /api/hosts Owner drives=false credential=false
 ide.get GET /api/ide Owner drives=false credential=false

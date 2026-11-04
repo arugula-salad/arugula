@@ -497,8 +497,6 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     // #578 part a: fs, hosts, setup.
     ("/api/fs/read", "bytes, with the file's size in headers"),
     ("/api/fs/watch", "NDJSON stream"),
-    ("/api/hosts/invite", "a POST whose ttl is in the query, not a body"),
-    ("/api/hosts/join", "the token in the body is the credential: no user identity (server::guard)"),
     // #578 part b: `local_router`'s own routes that stay as they are.
     ("/ws", "websocket"),
     ("/api/editors/connect", "websocket, editors join the swarm (M28)"),

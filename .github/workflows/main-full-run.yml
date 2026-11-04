@@ -1,0 +1,29 @@
+name: main-full-run
+
+# Every job on main's head, each night. Under the merge queue main's pushes skip
+# what their group passed (scripts/queue-tested), which would leave two things
+# unserved: the build caches, which only main saves (a tag and a merge group
+# read main's; .github/actions/setup, save-if), and the jobs a group skips by
+# path (scripts/macos-changed). A dispatch, not a schedule on check.yml: `chant
+# ci workflow` rewrites check.yml's triggers and drops a schedule.
+on:
+  schedule:
+    - cron: "3 7 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The suites on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run check.yml --ref main
+          gh workflow run windows.yml --ref main
+          gh workflow run windows-desktop.yml --ref main

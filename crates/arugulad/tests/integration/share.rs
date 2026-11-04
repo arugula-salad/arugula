@@ -164,15 +164,7 @@ async fn a_share_link_shows_one_pane_live_and_refuses_everything_else() {
         assert!(body.contains("share") && !body.contains("expired"), "{body}");
         assert_eq!(dd.http("/share/ils_wrong", &friend).0, 404);
         assert_eq!(dd.http("/assets/nothing-here.js", &friend).0, 404, "past the guard, just not there");
-        for path in [
-            "/api/panes",
-            "/api/shares",
-            "/ws",
-            "/",
-            "/api/hosts",
-            "/h/x/api/panes",
-            &format!("/share/{t}/../api/panes"),
-        ] {
+        for path in ["/api/panes", "/api/shares", "/ws", "/", "/api/hosts", &format!("/share/{t}/../api/panes")] {
             assert_eq!(dd.http(path, &friend).0, 403, "{path}");
         }
         let tagged = [("host", PUBLIC)];
