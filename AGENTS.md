@@ -360,6 +360,15 @@ lints the daemon with neither, and with each alone.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
 
+## Release notes
+
+A pull request that changes what people using Arugula get adds a file in
+`docs/notes/` (`docs/notes/README.md` has the format): its `line` says, in one
+sentence, what it means for them. A change nobody would notice says so in a commit
+message instead: `Release-note: none, WHY`. The `notes` check fails until it has one
+or the other; a change only to docs, tests, CI or scripts needs neither. Releases
+are built from these, so nobody writes a release's notes at the end.
+
 ## Changing CI, and a red main
 
 - main takes pull requests through GitHub's merge queue: `gh pr merge N`

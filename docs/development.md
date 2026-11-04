@@ -275,10 +275,12 @@ saves them and runs what groups skip by path.
 *Require merge queue* with squash; *Build concurrency* 3, since GitHub builds
 each queued pull request apart, so this caps throughput, and each build takes
 a Mac (there are three) and about 20 of the plan's 60 hosted jobs; *Maximum
-group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
-(`HEADGREEN`), since a later group contains the ones ahead and its pass clears
-them, so a flake rarely ejects anyone while a real break still fails every
-later group; *Status check timeout* 60 minutes, which leaves room for a re-run. *Require status checks to pass*
+group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests*
+on (`ALLGREEN`), so a pull request that really fails leaves at once and the groups
+behind it rebuild. With it off, GitHub kept a failed head in place until every group
+behind it had run and failed too, since each contains it, which stalled the queue
+for 20 minutes on its first night. A flake doesn't need it off:
+`scripts/queue-verdict` re-runs a failed job before the verdict. *Status check timeout* 60 minutes, which leaves room for a re-run. *Require status checks to pass*
 requires `chant-verdict`, from GitHub Actions. The repository's *Allow
 auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
 requires are still running, which a pull request's own run usually is.
@@ -384,13 +386,23 @@ before the tag, however fast main moves, and merges landing meanwhile change
 nothing: the pick is fixed when you name it. After the tag, a commit adds the
 notes and the client fixtures to main.
 
+`release-train.yml` does this on its own every 4 hours (`scripts/release-train`,
+#724), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
+commit with the daemon's green tag goes out as a patch, with notes built from what
+its pull requests added to `docs/notes/` (`scripts/release-notes.mjs`), if they added
+any. Its rare jobs run first, and a failure holds the release while merges go on. A
+manual run of the workflow sends one now. Daemons don't install on their own: people
+get a notice with an Update now button. The steps below are for a minor or a major
+version, or when you want different notes.
+
 1. `just release --dry-run` names the commit (the newest on main that passed
    CI, below), the next version, the PRs since the last release and the
    command to release it with, which names that commit. If main has newer
    commits that aren't green yet, it lists those too: they aren't in this
    release. Without a named commit a release stops on them (#1679): wait for
    them, or pass `--older`.
-2. Write the notes against that list, in a file anywhere. They end with a
+2. Write the notes against that list, in a file anywhere, or start from what the
+   pull requests said: `node scripts/release-notes.mjs LAST_TAG COMMIT X.Y.Z`. They end with a
    headline section, a ```` ```whats-new ```` block of a few items (each a
    feature id, a title, one line, and maybe a **Try it** command or route and
    who it `needs`): the web client's What's new panel shows them after the
