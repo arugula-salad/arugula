@@ -34,8 +34,11 @@ pub trait People: Send + Sync + Debug {
     fn is_team(&self) -> bool;
     /// Whether this daemon's own team has `account` as an owner.
     fn owns_here(&self, account: &str) -> bool;
-    /// The team's other owners (#386), by account.
-    fn co_owners(&self) -> Vec<Principal>;
+    /// Everyone who gets in as the owner and isn't the owner's own
+    /// account, named as themselves: the team's other owners (#386), and
+    /// a hosted workspace's editors (native #705). What's said about them
+    /// (that they read what the owner reads), not what they may do.
+    fn as_owner(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
     fn team_people(&self) -> Vec<Principal>;
 }
