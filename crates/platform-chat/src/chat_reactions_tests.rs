@@ -158,12 +158,12 @@ async fn an_agent_reacts_with_threads_post_apart_from_its_owner() {
 
     let for_b = seen(&base, "b", seq).await;
     assert_eq!(for_b[0]["count"], 2, "the owner's and the agent's are two: {for_b}");
+    // In the order made, unless both landed in one millisecond: then by
+    // account and agent, the owner's first.
     let who = for_b[0]["who"].as_array().unwrap();
-    assert_eq!(
-        (&who[0]["agent"], &who[0]["account"]),
-        (&json!({ "machine": "geek", "machine_name": "geek-box" }), &json!("a"))
-    );
-    assert_eq!(who[1]["agent"], Value::Null);
+    let agent = json!({ "machine": "geek", "machine_name": "geek-box" });
+    assert!(who.iter().any(|w| w["agent"] == agent && w["account"] == "a"), "its agent's: {for_b}");
+    assert!(who.iter().any(|w| w["agent"].is_null() && w["account"] == "a"), "the owner's own: {for_b}");
     let for_a = seen(&base, "a", seq).await;
     assert_eq!(for_a[0]["mine"], true);
     // The agent reads them, its own marked, not the owner's.
