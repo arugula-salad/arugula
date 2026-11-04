@@ -1,8 +1,8 @@
 diff --git a/crates/daemon/src/control.rs b/crates/daemon/src/control.rs
-index 967f40ad4..58f6de5ad 100644
+index d2fab15eb..ff1c44f2b 100644
 --- a/crates/daemon/src/control.rs
 +++ b/crates/daemon/src/control.rs
-@@ -5811,4 +5811,452 @@ pub(crate) mod tests {
+@@ -5811,4 +5811,495 @@ pub(crate) mod tests {
          let (a, h) = take_shared(&at3, &held, &BTreeMap::new(), BTreeMap::new(), &mut checkpoint::Seen::default(), 1);
          assert!(a.is_empty() && h.is_empty());
      }
@@ -12,7 +12,7 @@ index 967f40ad4..58f6de5ad 100644
 +
 +    pub(crate) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/control-json");
 +
-+    const ACCOUNTS: [&str; 10] = ["a", "o", "e", "v", "s", "x", "p", "q", "m", "acct1"];
++    const ACCOUNTS: [&str; 11] = ["a", "o", "e", "v", "s", "x", "p", "q", "r", "m", "acct1"];
 +
 +    /// What a saved enrollment decides, as JSON (the same function, on the
 +    /// types after #672, checks each fixture against this).
@@ -149,6 +149,8 @@ index 967f40ad4..58f6de5ad 100644
 +        let (pk, pc) = device("p", Kind::Browser);
 +        let (_, p_box) = own("p", &pk, Kind::Daemon, "p-box");
 +        let (_, qc) = device("q", Kind::Browser);
++        let (rk, rc) = device("r", Kind::Browser);
++        let (_, r_box) = own("r", &rk, Kind::Daemon, "r-box");
 +        let (acct_root, acct_cert) = device("acct1", Kind::Browser);
 +        let (_, acct_phone) = own("acct1", &acct_root, Kind::Browser, "phone");
 +        let (_, acct_box) = own("acct1", &acct_root, Kind::Daemon, "laptop-daemon");
@@ -194,7 +196,11 @@ index 967f40ad4..58f6de5ad 100644
 +                name: "Beta".into(),
 +                version: 2,
 +                at: 2,
-+                members: vec![member("p", &pc, TeamRole::Owner), member("q", &qc, TeamRole::Editor)],
++                members: vec![
++                    member("p", &pc, TeamRole::Owner),
++                    member("q", &qc, TeamRole::Editor),
++                    member("a", &ac, TeamRole::Editor),
++                ],
 +                spent: vec![],
 +                redeem: None,
 +                by: String::new(),
@@ -211,6 +217,41 @@ index 967f40ad4..58f6de5ad 100644
 +            locked: false,
 +            lock: None,
 +            pin: Some(t2_pin.clone()),
++            former: Default::default(),
++        };
++        // t3 (founded by r), shared with and locked by r's signed word:
++        // only its owner gets in through it.
++        let t3_pin = TeamPin { team: "t3".into(), founder: "r".into(), founder_root: rc.device.clone() };
++        let t3_roster = {
++            let mut r = Roster {
++                v: 1,
++                team: "t3".into(),
++                name: "Gamma".into(),
++                version: 3,
++                at: 3,
++                members: vec![
++                    member("r", &rc, TeamRole::Owner),
++                    member("q", &qc, TeamRole::Editor),
++                    member("a", &ac, TeamRole::Editor),
++                ],
++                spent: vec![],
++                redeem: None,
++                by: String::new(),
++                sig: String::new(),
++            };
++            r.sign_with(&rk);
++            r
++        };
++        let mut t3_lock = TeamLock { team: "t3".into(), locked: true, version: 3, at: 30, by: String::new(), sig: String::new() };
++        t3_lock.sign_with(&rk);
++        let t3 = SharedTeam {
++            roster: t3_roster,
++            certs: [("r".to_owned(), (vec![rc.clone(), r_box.clone()], vec![])), ("q".to_owned(), (vec![qc.clone()], vec![]))]
++                .into(),
++            names: [("r".to_owned(), "Robin".to_owned())].into(),
++            locked: true,
++            lock: Some(t3_lock),
++            pin: Some(t3_pin),
 +            former: Default::default(),
 +        };
 +        let t9 = SharedTeam {
@@ -238,6 +279,8 @@ index 967f40ad4..58f6de5ad 100644
 +            delegated("team:t1", &ok),
 +            delegated("team:t1", &ek),
 +            delegated("team:t2", &pk),
++            delegated("team:t2", &ak),
++            delegated("team:t3", &rk),
 +            delegated("team:t9", &pk),
 +            delegated("account:a", &ak),
 +            delegated("account:a", &sk),
@@ -310,7 +353,7 @@ index 967f40ad4..58f6de5ad 100644
 +            seen: seen.clone(),
 +            peers: [("s".to_owned(), PeerCerts { name: "Sam".into(), certs: vec![sc.clone(), s_phone.clone()], revocations: vec![] })].into(),
 +            held_peers: [("h".to_owned(), PeerCerts { name: String::new(), certs: vec![], revocations: vec![] })].into(),
-+            shared_teams: [("t2".to_owned(), t2.clone())].into(),
++            shared_teams: [("t2".to_owned(), t2.clone()), ("t3".to_owned(), t3.clone())].into(),
 +            held_teams: [("t9".to_owned(), t9.clone())].into(),
 +            login: "jake".into(),
 +            moved_at: 1_700_000_000_000,

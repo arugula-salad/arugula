@@ -2,102 +2,102 @@
   "url": "https://control.example",
   "trust": {
     "account": "a",
-    "root": "a92bc689079e6ce0"
+    "root": "2fd78ba2a5780271"
   },
   "cert": {
     "v": 1,
     "account": "a",
-    "device": "67b4c7f6672fe960",
+    "device": "c95b41d8598649c5",
     "kind": "daemon",
     "name": "geek",
-    "noise": "6e426a0d601b29942d89991d7d3e49df03cdad715e4ca29baceebd9b78c0db45",
-    "sign": "e5f9150df11ec2ee2eeea9f1ab59249f82bcda38a62bd9d3a6fa004903775b2b",
-    "created": 1793767991604,
-    "approver": "a92bc689079e6ce0",
-    "sig": "406096e1a63535617be3ed2e2344f84ef55ec8da957c8f73b6eabbb79b8423ba817059dbf327e632ae9757f3cd40d062f07d38e2ce6c24ad891bcb5563e53a0f"
+    "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+    "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+    "created": 1793773139410,
+    "approver": "2fd78ba2a5780271",
+    "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
   },
   "certs": [
     {
       "v": 1,
       "account": "a",
-      "device": "a92bc689079e6ce0",
+      "device": "2fd78ba2a5780271",
       "kind": "browser",
       "name": "x",
-      "noise": "b1def9f85346f1e3c9f0813f298beba5b1a0e206e593a7a3505e881e52d1f35c",
-      "sign": "2eddfda9fc5e9d3a0b7e9d7f16e63d7a4504ac2a3ab252e8a6744be7b1bf452f",
-      "created": 1793767991596,
-      "approver": "a92bc689079e6ce0",
-      "sig": "29d15df42b581673978f621e9dfb5f0dbc070a38d0a1f6d3dd2e25cfe024fa2dcaa0f66a1353eab18ac78b15268c25c800081a8424c318e56777501d3aedd208"
+      "noise": "a8cf8feab8f91e4547d41833ddea8c95efa2121495ffa296ebcfe5b11678171f",
+      "sign": "e07043aab33b8e513c219a3fab18e2ad1c252613136f9a58d96bd42d076d102f",
+      "created": 1793773139403,
+      "approver": "2fd78ba2a5780271",
+      "sig": "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600"
     },
     {
       "v": 1,
       "account": "a",
-      "device": "67b4c7f6672fe960",
+      "device": "c95b41d8598649c5",
       "kind": "daemon",
       "name": "geek",
-      "noise": "6e426a0d601b29942d89991d7d3e49df03cdad715e4ca29baceebd9b78c0db45",
-      "sign": "e5f9150df11ec2ee2eeea9f1ab59249f82bcda38a62bd9d3a6fa004903775b2b",
-      "created": 1793767991604,
-      "approver": "a92bc689079e6ce0",
-      "sig": "406096e1a63535617be3ed2e2344f84ef55ec8da957c8f73b6eabbb79b8423ba817059dbf327e632ae9757f3cd40d062f07d38e2ce6c24ad891bcb5563e53a0f"
+      "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+      "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+      "created": 1793773139410,
+      "approver": "2fd78ba2a5780271",
+      "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
     },
     {
       "v": 1,
       "account": "a",
-      "device": "5f341a1b54594623",
+      "device": "fc05fb621ffbc559",
       "kind": "browser",
       "name": "phone",
-      "noise": "c00c68d931d3468ad114f4cf1acc97c47293b8d985abdacccb179f1282d87e4b",
-      "sign": "25c4ef2011fe385b0fb3618f87ed4df66ccac3996c4fa6418ac19f1604072153",
-      "created": 1793767991612,
-      "approver": "a92bc689079e6ce0",
-      "sig": "24084a718c9ecaa0510b8442b24cd0907dc5397a558c93395ee260b1cc34c1e283f35d3ddc560e85ee92316671cc34208d5056df007d6adc2266ab49999f4d04"
+      "noise": "d888c9352555ba42456624445c732495bdb1d17c4ff2f4d01ad09b00a4415566",
+      "sign": "f7f129a8affcdddff50898210aff9f8f23f2ff2d1eda7aea8d1924108fa7af22",
+      "created": 1793773139416,
+      "approver": "2fd78ba2a5780271",
+      "sig": "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09"
     },
     {
       "v": 1,
       "account": "a",
-      "device": "5b8df830796056ed",
+      "device": "733fb5b7a3e45491",
       "kind": "browser",
       "name": "old laptop",
-      "noise": "14b888e9a4180d86a815ed6e5810f3fdc2c635095709d76f766973303a0e933d",
-      "sign": "54c7281f9f742408e49045f2e6878dd2b9201a57e6068dc8016c9985a0706f46",
-      "created": 1793767991620,
-      "approver": "a92bc689079e6ce0",
-      "sig": "a1586f726971cbfb716a2a9cbfddf93936cff80b05d535204bb16357ae209aa75dd15c8e3b62c0c73fe9ccf729207d0877ddef632c517599a6b09bea6572d80a"
+      "noise": "ef02685c0707364b574379d923dbe698c971cafbb6f1f385181d659bb83cae6d",
+      "sign": "89b2135b596db08871510f14c4573e261706a240907032d6a50e99a2ad2763a7",
+      "created": 1793773139423,
+      "approver": "2fd78ba2a5780271",
+      "sig": "e15fdc6137155c7143bbcff5be25e3a09918dc412e89e1af7d176c6854b7f7bdfb90054c0663453ccba787aa844510dac5bde0ec58c53312f3ea205f4f8b5907"
     },
     {
       "v": 1,
       "account": "a",
-      "device": "d8cb43cbc0927ca0",
+      "device": "9c48b675829a24e5",
       "kind": "daemon",
       "name": "jake-air",
-      "noise": "c18c726cefe7ac143b51dd3e5544ad003c781f5a0acc429b38c74e1448d7db1f",
-      "sign": "8ad7e968500720529b83aed860ee8fb44d6026702ad3290651e17efe87928d44",
-      "created": 1793767991627,
-      "approver": "a92bc689079e6ce0",
-      "sig": "420add80469881068df5bed509ca92545c875d2c6d39b244fd3bf54babc8463d1ca023601eb529a9fab69b8fba106d5e2efd65f479dc2bb5212f143a7f83b605"
+      "noise": "7195e235d9fa337972fa982c909e2865397b8d9c615aed4d0956065c34f82c3f",
+      "sign": "8426725c9ede7a4f83c2fd0869dbeedc1232efc705adac87a5d347f53bf17ff8",
+      "created": 1793773139429,
+      "approver": "2fd78ba2a5780271",
+      "sig": "bd0493895bf91f4441b56ed7960279857cf6b9c7d84cda93c60feecb474b79419048e8fdb5611e7f0ea8d4d7ddc3ec1e2e7db1158f533205ad167cde31138308"
     }
   ],
   "revocations": [
     {
       "v": 1,
       "account": "a",
-      "device": "5b8df830796056ed",
-      "at": 1793767991628,
-      "by": "a92bc689079e6ce0",
-      "sig": "5170ce5e07466b25c201a87d9f3787dfebd3cd2324fb4db4c79bbef1465b7fd957642c773bc1d4f513e5933f8785943e2f3c2360e169416d9dd348dc9963930a"
+      "device": "733fb5b7a3e45491",
+      "at": 1793773139429,
+      "by": "2fd78ba2a5780271",
+      "sig": "309f2a613fdb8d55de3125d147275574d991e68156d9f52aa2fa6ad65eb0791dd673cfa2d9ef0d5084b875b9fb0d56e058f771d22c6b48e65bfb45ce6e387d08"
     }
   ],
   "locked": false,
   "seen": {
     "round": 1,
     "at": {
-      "24084a718c9ecaa0510b8442b24cd0907dc5397a558c93395ee260b1cc34c1e283f35d3ddc560e85ee92316671cc34208d5056df007d6adc2266ab49999f4d04": 1,
-      "29d15df42b581673978f621e9dfb5f0dbc070a38d0a1f6d3dd2e25cfe024fa2dcaa0f66a1353eab18ac78b15268c25c800081a8424c318e56777501d3aedd208": 1,
-      "406096e1a63535617be3ed2e2344f84ef55ec8da957c8f73b6eabbb79b8423ba817059dbf327e632ae9757f3cd40d062f07d38e2ce6c24ad891bcb5563e53a0f": 1,
-      "420add80469881068df5bed509ca92545c875d2c6d39b244fd3bf54babc8463d1ca023601eb529a9fab69b8fba106d5e2efd65f479dc2bb5212f143a7f83b605": 1,
-      "5170ce5e07466b25c201a87d9f3787dfebd3cd2324fb4db4c79bbef1465b7fd957642c773bc1d4f513e5933f8785943e2f3c2360e169416d9dd348dc9963930a": 1,
-      "a1586f726971cbfb716a2a9cbfddf93936cff80b05d535204bb16357ae209aa75dd15c8e3b62c0c73fe9ccf729207d0877ddef632c517599a6b09bea6572d80a": 1
+      "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600": 1,
+      "309f2a613fdb8d55de3125d147275574d991e68156d9f52aa2fa6ad65eb0791dd673cfa2d9ef0d5084b875b9fb0d56e058f771d22c6b48e65bfb45ce6e387d08": 1,
+      "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b": 1,
+      "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09": 1,
+      "bd0493895bf91f4441b56ed7960279857cf6b9c7d84cda93c60feecb474b79419048e8fdb5611e7f0ea8d4d7ddc3ec1e2e7db1158f533205ad167cde31138308": 1,
+      "e15fdc6137155c7143bbcff5be25e3a09918dc412e89e1af7d176c6854b7f7bdfb90054c0663453ccba787aa844510dac5bde0ec58c53312f3ea205f4f8b5907": 1
     }
   },
   "peers": {
@@ -107,26 +107,26 @@
         {
           "v": 1,
           "account": "s",
-          "device": "7b75e69af66a53c4",
+          "device": "40ef365d45873fc6",
           "kind": "browser",
           "name": "x",
-          "noise": "9a3bd8ffc92c5103ede0994f86d1718f88aa79a817cb1c5d04d0c9415729a34c",
-          "sign": "2871b6ead4fdc09f3a661667d661575a5798289ceb0efad14c078fc77fb7ce3a",
-          "created": 1793767991683,
-          "approver": "7b75e69af66a53c4",
-          "sig": "c51ed3a88091191ac279772ce974ccce9754be91db94539e5e927806d1014747e6760736801fd1b82b9dbce6316d1c28b4c4ee6c5ac733513ae45f2a5d8f7f01"
+          "noise": "dd1d0ca2b675d379c20bd86bef38bfb49285896021c7d0219ea085396161756f",
+          "sign": "f58ba022737f036851652db763b5ded5e0da19d4b302d3524f55576424ec2cd2",
+          "created": 1793773139474,
+          "approver": "40ef365d45873fc6",
+          "sig": "8984602f37220eab00f18f654774b4543dc69a8d99741ec5af87dcf2d111cb62048d872487e449a8e237ab214bdc5970ea3b3f4eb6420a9ecdaeef4628700300"
         },
         {
           "v": 1,
           "account": "s",
-          "device": "7aca41341e61feb4",
+          "device": "59d7051e5c22a558",
           "kind": "browser",
           "name": "s-phone",
-          "noise": "2cef9fc6d2fd20e9d3049e4014ce18e1b5d8d804beabc8f78f319699fbb20f7c",
-          "sign": "c5a822035eefc56a41559ecd7a79739db5a159cb1315af84de403c33f6f2cbb0",
-          "created": 1793767991691,
-          "approver": "7b75e69af66a53c4",
-          "sig": "abd7998fc26bc07854f3bf1be09c5b396dd9cae9435b7935a72d66f8a9ec2ee6c41b14943325352e68f1cb3d20fdb7a9453f6229325a9da8b4f3cd6b306a660d"
+          "noise": "991453febb1851e6b3d1d0bedb69b8674ae54b65cf996e1b454799b3692d070f",
+          "sign": "5726dc29adb9f72acbd9ff86b2e1ff21b8c4a671ea9f59544eef3c5794e5892e",
+          "created": 1793773139481,
+          "approver": "40ef365d45873fc6",
+          "sig": "f8ee01878b7d08ddd3bbb7f702dd37e1a8b33d3f1c175b113bc1e5d75feb5e1a2b8b76d1c5a54c8ab87ee46668f515df846d4f23bf847cef2c9367b06cc9d806"
         }
       ],
       "revocations": []
@@ -143,19 +143,25 @@
         "members": [
           {
             "account": "p",
-            "root": "9fbe729476649a44",
+            "root": "6a330f42647017f0",
             "role": "owner",
             "name": "p"
           },
           {
             "account": "q",
-            "root": "d4eeec42a117590d",
+            "root": "c88fd0f838ac3623",
             "role": "editor",
             "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
           }
         ],
-        "by": "9fbe729476649a44",
-        "sig": "f96743eae48974742eb10d65c6c29f607b916df7d45165355ce22cd1f720c3dd2d5920cdf26c7ed47c27fa7361817f391f433cb85de78277cc5214f9722fb507"
+        "by": "6a330f42647017f0",
+        "sig": "ce368ffbb5b3e157b2d662348581ec5d6facc24e0305d703588c04058d3b8e435248ea9c1a8a5414f6164f252e3bcf0b635719971c098548b44c6812a89b0d09"
       },
       "certs": {
         "p": [
@@ -163,26 +169,26 @@
             {
               "v": 1,
               "account": "p",
-              "device": "9fbe729476649a44",
+              "device": "6a330f42647017f0",
               "kind": "browser",
               "name": "x",
-              "noise": "9e868f82a831509549ccf4fb98226e9cc666b0faab4a82bf6d898e2131b2c847",
-              "sign": "f1a6536284b99f0d147899fd097b031af766d7283cfdb7d192beb671e97c2c45",
-              "created": 1793767991713,
-              "approver": "9fbe729476649a44",
-              "sig": "4e4857b27473abf576a1108a524ba9a1a153f7e5feb08a533370f5970586a9c6f01ec790b380d2c8e1667518ce74a38d486caef3a7015df57e5b68f99ffaa503"
+              "noise": "b18cbfe88057cf49858db92765c161fe2b103a85488e75bb43ae15ff84b9b879",
+              "sign": "c2a3fdf6d4c7bdc969021bbcc82c1a8e93a7e364b97482648b2474da838cd5e5",
+              "created": 1793773139501,
+              "approver": "6a330f42647017f0",
+              "sig": "76de06991780abcf92fa71045955477262b96cde349923224042e36a808bbc86eaa5fe524429a3e10f6e5cec1195696356b2bec8d6870ee4541328d19eca960d"
             },
             {
               "v": 1,
               "account": "p",
-              "device": "9b1888b1bb3f9f7b",
+              "device": "d06da3aed6e92ea7",
               "kind": "daemon",
               "name": "p-box",
-              "noise": "80e32d3135ec115e646420b15027a73b4a14a221645cd0cf5d2059a69bd8d006",
-              "sign": "9a64cab4b88f910ce45b916a74921f8fc431f29201bed3c8dcd0809ecbb5e0d4",
-              "created": 1793767991720,
-              "approver": "9fbe729476649a44",
-              "sig": "1f30e99ff3063267f802c15698a7ce2efaddf9abd25655b3396cfa587fb4a848913098b7a1f56ee476af3e2d45ac4f56522462e10f456702757c9a045e754402"
+              "noise": "7e18720d526f49f36a14e1df2ade251968dc524be39668d1c9cc90bc80307647",
+              "sign": "46c8a050b17746a18f282da19556aaeb86ff8eb2546e46654b071ed22b1642ee",
+              "created": 1793773139507,
+              "approver": "6a330f42647017f0",
+              "sig": "69b29375fd11c20ac84e2a37063a9ee750e8c33b6d2037fcf3920ead2d419dc9a281bd908908d09282d4b4b75e0c3376ff26b6c436e7075c36e9cecb20a1020e"
             }
           ],
           []
@@ -192,14 +198,14 @@
             {
               "v": 1,
               "account": "q",
-              "device": "d4eeec42a117590d",
+              "device": "c88fd0f838ac3623",
               "kind": "browser",
               "name": "x",
-              "noise": "9686ccd6982a76fe906c57d007ffea61482b55eb2ee6adaf28da5c8b0250d87e",
-              "sign": "1af9423d8427a5c2ff1bde650efbb28a777f12d7112b9d0156ecab42fcf2c31a",
-              "created": 1793767991727,
-              "approver": "d4eeec42a117590d",
-              "sig": "9e7d4687551d985de59fb3d85471afc55e73bdd2d16c7346851dce307d484debd0ac03158e008b2841c10faf570c4febebab74f101c280dfc07d09da6a52d905"
+              "noise": "9cf81f31ccbcd55a3e33f2f87f269bbb74e0404e001e9f23aea6960b2cae5e0e",
+              "sign": "ee959ef39dd8e7f1787179f1c5a1ad5a035ea3a522b4dff6971b5bcccf849748",
+              "created": 1793773139514,
+              "approver": "c88fd0f838ac3623",
+              "sig": "e08db9537214b11543b263a332febaea536522e84fc727f60b884b8a35880890a05e5baca5711341291ca1258dd63403fb0b15c937fa8d4ecc9efe8e5dfbc70d"
             }
           ],
           []
@@ -212,7 +218,103 @@
       "pin": {
         "team": "t2",
         "founder": "p",
-        "founder_root": "9fbe729476649a44"
+        "founder_root": "6a330f42647017f0"
+      }
+    },
+    "t3": {
+      "roster": {
+        "v": 1,
+        "team": "t3",
+        "name": "Gamma",
+        "version": 3,
+        "at": 3,
+        "members": [
+          {
+            "account": "r",
+            "root": "0fe891b6ffa4c9a8",
+            "role": "owner",
+            "name": "r"
+          },
+          {
+            "account": "q",
+            "root": "c88fd0f838ac3623",
+            "role": "editor",
+            "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
+          }
+        ],
+        "by": "0fe891b6ffa4c9a8",
+        "sig": "5f8afac6ff27da1c56815d706d2f2d0f7e36ba09661db412452c1f79771d6f364d8362da41e54bcb1463a658ef0fc5d0f4db08e1932467d67ff862fc92b51f0a"
+      },
+      "certs": {
+        "q": [
+          [
+            {
+              "v": 1,
+              "account": "q",
+              "device": "c88fd0f838ac3623",
+              "kind": "browser",
+              "name": "x",
+              "noise": "9cf81f31ccbcd55a3e33f2f87f269bbb74e0404e001e9f23aea6960b2cae5e0e",
+              "sign": "ee959ef39dd8e7f1787179f1c5a1ad5a035ea3a522b4dff6971b5bcccf849748",
+              "created": 1793773139514,
+              "approver": "c88fd0f838ac3623",
+              "sig": "e08db9537214b11543b263a332febaea536522e84fc727f60b884b8a35880890a05e5baca5711341291ca1258dd63403fb0b15c937fa8d4ecc9efe8e5dfbc70d"
+            }
+          ],
+          []
+        ],
+        "r": [
+          [
+            {
+              "v": 1,
+              "account": "r",
+              "device": "0fe891b6ffa4c9a8",
+              "kind": "browser",
+              "name": "x",
+              "noise": "3aaafdce45e55a4983949e1b0cffd5ce3c42e0da0537685350d3c5eb484d6005",
+              "sign": "1f76ec782c6be13256ddf08480be8390ad0ee2e95662d556b0b9d6a140aa8385",
+              "created": 1793773139521,
+              "approver": "0fe891b6ffa4c9a8",
+              "sig": "56e8faf360a8b5997e47399726301dd2e41e4b20c0d71827c4103461879efcdd1810760dce2dac341fec398cbf5ebbd9d281fd3f76e0fc9d3b4c841a2545c709"
+            },
+            {
+              "v": 1,
+              "account": "r",
+              "device": "1979f8d48a54d8cc",
+              "kind": "daemon",
+              "name": "r-box",
+              "noise": "5857513a3ba401b2afe0f8e9692d7a81d12766b5bf2c49b980f0678322244477",
+              "sign": "f471a40add21bf0a080fc2ab9073b48f075215471501fa1491423f526c74822b",
+              "created": 1793773139526,
+              "approver": "0fe891b6ffa4c9a8",
+              "sig": "2e346e45b9d4c85eb4821f3124c430904a5f607b768b0dc6351b04cb657b3d7cd9aecae2dc365c89bf78e15ca451293140e4ff4fe50e3793da4df075ce42fa07"
+            }
+          ],
+          []
+        ]
+      },
+      "names": {
+        "r": "Robin"
+      },
+      "locked": true,
+      "lock": {
+        "team": "t3",
+        "locked": true,
+        "version": 3,
+        "at": 30,
+        "by": "0fe891b6ffa4c9a8",
+        "sig": "1a2ef85de63ab9dcb64fda4129bf0fb9c308ffc8a1e8c740ab4fa7211a9fc7314e4e3dbded32643e10b6bb26d39ef8055d24a681b6bb744afe1c13bb102ed600"
+      },
+      "pin": {
+        "team": "t3",
+        "founder": "r",
+        "founder_root": "0fe891b6ffa4c9a8"
       }
     }
   },
@@ -227,19 +329,25 @@
         "members": [
           {
             "account": "p",
-            "root": "9fbe729476649a44",
+            "root": "6a330f42647017f0",
             "role": "owner",
             "name": "p"
           },
           {
             "account": "q",
-            "root": "d4eeec42a117590d",
+            "root": "c88fd0f838ac3623",
             "role": "editor",
             "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
           }
         ],
-        "by": "9fbe729476649a44",
-        "sig": "f96743eae48974742eb10d65c6c29f607b916df7d45165355ce22cd1f720c3dd2d5920cdf26c7ed47c27fa7361817f391f433cb85de78277cc5214f9722fb507"
+        "by": "6a330f42647017f0",
+        "sig": "ce368ffbb5b3e157b2d662348581ec5d6facc24e0305d703588c04058d3b8e435248ea9c1a8a5414f6164f252e3bcf0b635719971c098548b44c6812a89b0d09"
       },
       "certs": {},
       "locked": false

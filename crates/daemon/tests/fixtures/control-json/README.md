@@ -9,7 +9,7 @@ loads each, writes it back as the same JSON, and checks it decides the same.
 | File | What it is |
 |---|---|
 | `personal-joined` | Just joined to its account: what `join` saves |
-| `personal` | After refreshes: a removed device, a login, a move back from a team, a person (`s`) and a team (`t2`) sessions were shared with, a person and a team control left out |
+| `personal` | After refreshes: a removed device, a login, a move back from a team, a person (`s`) and two teams sessions were shared with (`t2`, and `t3` locked by its owner; this account is an editor in both), a person and a team control left out |
 | `team-joined` | Just moved into team `t1`: the pin, no roster yet |
 | `team` | The roster checked, members' certificates (one of `e`'s devices removed), their names, `x` taken out of the team |
 | `team-locked` | The same, locked by an owner's signed word |
@@ -28,14 +28,15 @@ Beside each `<name>.json`:
   and calls its agents, who may sign for its project, the pinned passkeys,
   and what it says of itself and of each account.
 - `<name>.accept.json`: other hosted machines' certificates, under
-  delegations for `t1` (signed by an owner, and by an editor), `t2`, `t9`,
-  account `a` (by its root, and by a stranger) and account `acct1`, and what
+  delegations for `t1` (signed by an owner, and by an editor), `t2` (by its
+  owner, and by an editor), `t3`, `t9`, account `a` (by its root, and by a
+  stranger) and account `acct1`, and what
   `peer::accept_hosted` said of each (`ok <project>` or `err`).
 
 ## How they were made
 
 Not by an old release: by the code on `origin/main` at
-`254319777fe406e7913d973134ffa98a1fc5e55c` (2026-11-03), the last commit
+`3665923e7c1bcd246c53d7e5404b711b278ee26d` (2026-11-04), the last commit
 before #672, whose `Saved` still had the kind spread over `team`, `roster`,
 the team's fields and `hosted` with its `deploy` and `builder` flags. That
 code wrote the files through its own `serde_json::to_vec_pretty` and the
@@ -43,15 +44,21 @@ decisions through the same `outcomes` function the test uses now, written
 against the old types. The keys are made for the fixtures and their private
 halves were never kept; the files hold public keys and signatures only.
 
-To make them again, from a clean checkout of that commit:
+`generate.patch`, in this directory, is the generator: the ignored test and
+the `outcomes` function on the old types, and `peer::accept_hosted` made
+`pub(crate)`. It applies to that commit, not to a tree that has #672. To
+make the fixtures again, from a checkout of this repository:
 
 ```sh
-git worktree add /tmp/arugula-main origin/main   # at the commit above
-cd /tmp/arugula-main
-git apply crates/daemon/tests/fixtures/control-json/generate.patch
-cargo nextest run -p arugulad-base --run-ignored only -E 'test(zz_write_control_json_fixtures)'
+here=$PWD/crates/daemon/tests/fixtures/control-json
+git worktree add /tmp/arugula-before-672 3665923e7c1bcd246c53d7e5404b711b278ee26d
+cd /tmp/arugula-before-672
+git apply "$here/generate.patch"
+CARGO_TARGET_DIR=$HOME/.cache/arugula-before-672-target \
+  cargo nextest run -p arugulad-base --run-ignored only -E 'test(zz_write_control_json_fixtures)'
+cp crates/daemon/tests/fixtures/control-json/*.json "$here/"
+cd - && git worktree remove --force /tmp/arugula-before-672
 ```
 
-`generate.patch` is the generator: the ignored test and the `outcomes`
-function on the old types, and `peer::accept_hosted` made `pub(crate)`. Every
-run makes new keys, so the files differ each time; what they decide doesn't.
+Every run makes new keys, so the files differ each time; what they decide
+doesn't.

@@ -490,7 +490,8 @@ impl TryFrom<OnDisk> for Saved {
                         && d.team_names.is_empty()
                         && !d.locked
                         && d.lock.is_none(),
-                    "control.json holds a team's roster, certificates or lock with no team pinned; not loading it: {NOT_LOADED}"
+                    "control.json holds a team's roster, certificates or lock with no team pinned; not loading it: {}",
+                    if d.hosted.is_some() { NOT_LOADED_HOSTED } else { NOT_LOADED }
                 );
                 None
             }
@@ -3781,28 +3782,34 @@ fn private_http(url: &str) -> bool {
 /// machine is still reached locally.
 pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     // A file that doesn't load (#672) is still left: control is told at
-    // the URL it names, if it names one, and the file goes.
+    // the URL it names, if it names one and the key is there, and the
+    // file goes either way.
     let (url, whose_it_is) = match read_saved(state_dir) {
-        Ok(Some(s)) => (s.url.clone(), whose(&s)),
+        Ok(Some(s)) => (Some(s.url.clone()), whose(&s)),
         Ok(None) => bail!("this machine isn't joined to any control"),
         Err(e) => {
+            println!("control.json doesn't load ({e:#}); leaving anyway.");
             let url = std::fs::read(state_dir.join(FILE))
                 .ok()
                 .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
                 .and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_owned()));
-            let Some(url) = url else { bail!("control.json doesn't load ({e:#}), and names no control to leave") };
-            println!("control.json doesn't load ({e:#}); leaving {url} anyway.");
             (url, "an enrollment that doesn't load".to_owned())
         }
     };
-    let keys = DeviceKeys::load(&state_dir.join(KEY_FILE))?;
-    let path = wire::LEAVE;
-    let http = crate::roots::client();
-    let res = http.post(format!("{url}{path}")).header(AUTH, auth_header(&keys, "POST", path, b"")).send().await;
-    match res {
-        Ok(r) if r.status().is_success() => println!("Left {url} ({whose_it_is})."),
-        Ok(r) => println!("{} (leaving anyway)", control_said(r).await),
-        Err(e) => println!("can't reach control ({e}); leaving anyway"),
+    match (&url, DeviceKeys::load(&state_dir.join(KEY_FILE))) {
+        (Some(url), Ok(keys)) => {
+            let path = wire::LEAVE;
+            let http = crate::roots::client();
+            let res =
+                http.post(format!("{url}{path}")).header(AUTH, auth_header(&keys, "POST", path, b"")).send().await;
+            match res {
+                Ok(r) if r.status().is_success() => println!("Left {url} ({whose_it_is})."),
+                Ok(r) => println!("{} (leaving anyway)", control_said(r).await),
+                Err(e) => println!("can't reach control ({e}); leaving anyway"),
+            }
+        }
+        (None, _) => println!("can't tell control: control.json names no control; leaving anyway"),
+        (Some(url), Err(e)) => println!("can't tell {url}: this machine's key doesn't load ({e:#}); leaving anyway"),
     }
     // The running daemon's log says it was this (#325), and it's no
     // longer "dropped": it left.
@@ -3810,7 +3817,10 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     let _ = std::fs::remove_file(state_dir.join(DROPPED_FILE));
     std::fs::remove_file(state_dir.join(FILE))?;
     println!("Arugula keeps running here; reach it at http://{listen}.");
-    println!("Rejoin with `arugulad join {url}` (the approver picks their account or a team).");
+    match url {
+        Some(url) => println!("Rejoin with `arugulad join {url}` (the approver picks their account or a team)."),
+        None => println!("Rejoin with `arugulad join URL` (the approver picks their account or a team)."),
+    }
     Ok(())
 }
 
@@ -6163,7 +6173,7 @@ pub(crate) mod tests {
     pub(crate) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/control-json");
 
     /// The accounts the fixtures name, asked about one by one.
-    const ACCOUNTS: [&str; 10] = ["a", "o", "e", "v", "s", "x", "p", "q", "m", "acct1"];
+    const ACCOUNTS: [&str; 11] = ["a", "o", "e", "v", "s", "x", "p", "q", "r", "m", "acct1"];
 
     /// What a saved enrollment decides, as JSON: who it trusts and lets
     /// in, who drives it and calls its agents, who may sign for its
@@ -6392,7 +6402,12 @@ pub(crate) mod tests {
         };
         let mut team = read("team-locked");
         team.as_object_mut().unwrap().remove("team");
-        assert!(said(team, "a roster with no pin").contains("no team pinned"));
+        let e = said(team, "a roster with no pin");
+        assert!(e.contains("no team pinned") && e.contains("`arugulad leave`"), "{e}");
+        let mut hosted = read("hosted-team");
+        hosted.as_object_mut().unwrap().remove("team");
+        let e = said(hosted, "a hosted roster with no pin");
+        assert!(e.contains("no team pinned") && e.contains("rebuild the workspace"), "a hosted machine's advice: {e}");
         let mut pinless = read("personal-joined");
         pinless["locked"] = true.into();
         assert!(said(pinless, "locked with no team").contains("no team pinned"));
@@ -6471,5 +6486,10 @@ pub(crate) mod tests {
         assert!(!dir.join(FILE).exists());
         // Nothing to leave, then.
         assert!(leave(&dir, "127.0.0.1:7681").await.is_err());
+        // No control named, and no key: the file still goes.
+        std::fs::remove_file(dir.join(KEY_FILE)).unwrap();
+        std::fs::write(dir.join(FILE), r#"{"locked": true}"#).unwrap();
+        leave(&dir, "127.0.0.1:7681").await.unwrap();
+        assert!(!dir.join(FILE).exists());
     }
 }

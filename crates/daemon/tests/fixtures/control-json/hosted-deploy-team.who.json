@@ -15,6 +15,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -27,6 +28,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -44,6 +46,7 @@
     "o": true,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -54,25 +57,26 @@
     "Acme"
   ],
   "known": [
-    "Known { account: \"a\", root: \"a92bc689079e6ce0\", name: \"a\", role: Owner }",
-    "Known { account: \"e\", root: \"f6b9b46ee509b2c7\", name: \"e\", role: Editor }",
-    "Known { account: \"v\", root: \"5eb25aef5c911749\", name: \"v\", role: Viewer }"
+    "Known { account: \"a\", root: \"2fd78ba2a5780271\", name: \"a\", role: Owner }",
+    "Known { account: \"e\", root: \"ddb304a78f3174b9\", name: \"e\", role: Editor }",
+    "Known { account: \"v\", root: \"7a6968289d341618\", name: \"v\", role: Viewer }"
   ],
   "known_roots": {
-    "a": "a92bc689079e6ce0",
+    "a": "2fd78ba2a5780271",
     "acct1": null,
-    "e": "f6b9b46ee509b2c7",
+    "e": "ddb304a78f3174b9",
     "m": null,
-    "o": "55fa9dc5ffa7f653",
+    "o": "54cc8bcf23f1bda2",
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
-    "v": "5eb25aef5c911749",
+    "v": "7a6968289d341618",
     "x": null
   },
   "legacy_app_children": {
     "o": [
-      "55fa9dc5ffa7f653"
+      "54cc8bcf23f1bda2"
     ]
   },
   "name_of_account": {
@@ -83,6 +87,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": "v",
     "x": null
@@ -109,10 +114,10 @@
     },
     "kind": "team",
     "members": [
-      "o:Owner:55fa9dc5ffa7f653",
-      "a:Owner:a92bc689079e6ce0",
-      "e:Editor:f6b9b46ee509b2c7",
-      "v:Viewer:5eb25aef5c911749"
+      "o:Owner:54cc8bcf23f1bda2",
+      "a:Owner:2fd78ba2a5780271",
+      "e:Editor:ddb304a78f3174b9",
+      "v:Viewer:7a6968289d341618"
     ],
     "team": "t1",
     "version": 5
@@ -125,6 +130,7 @@
     "o": true,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -137,6 +143,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -145,7 +152,7 @@
   "signers": {
     "children": {
       "o": [
-        "55fa9dc5ffa7f653"
+        "54cc8bcf23f1bda2"
       ]
     },
     "origins": {},

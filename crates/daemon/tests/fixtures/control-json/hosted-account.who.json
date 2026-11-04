@@ -2,7 +2,7 @@
   "accounts": [],
   "agent_accounts": [],
   "agent_callers": [
-    "87037842580fe8bf:User { id: \"account:acct1\", name: \"acct1\", pic: None }"
+    "fd83d8fef95a9283:User { id: \"account:acct1\", name: \"acct1\", pic: None }"
   ],
   "already_in": [
     "this machine is already in an account on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
@@ -17,6 +17,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -29,13 +30,14 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
   },
   "co_owners": [],
   "drivers": [
-    "87037842580fe8bf:Owner"
+    "fd83d8fef95a9283:Owner"
   ],
   "hosted": true,
   "is_me": {
@@ -46,6 +48,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -58,19 +61,20 @@
   "known": [],
   "known_roots": {
     "a": null,
-    "acct1": "b35d054e30489c4c",
+    "acct1": "b417a38661d90f76",
     "e": null,
     "m": null,
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
   },
   "legacy_app_children": {
     "acct1": [
-      "043927f7d442b46b"
+      "73d3f89b5604909e"
     ]
   },
   "name_of_account": {
@@ -81,6 +85,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -89,13 +94,13 @@
   "owners": {
     "account": "acct1",
     "certs": [
-      "043927f7d442b46b",
-      "87037842580fe8bf",
-      "b35d054e30489c4c"
+      "73d3f89b5604909e",
+      "b417a38661d90f76",
+      "fd83d8fef95a9283"
     ],
     "kind": "account",
     "revocations": [],
-    "root": "b35d054e30489c4c"
+    "root": "b417a38661d90f76"
   },
   "owns_here": {
     "a": false,
@@ -105,6 +110,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -117,6 +123,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -125,7 +132,7 @@
   "signers": {
     "children": {
       "acct1": [
-        "043927f7d442b46b"
+        "73d3f89b5604909e"
       ]
     },
     "origins": {
@@ -145,9 +152,9 @@
   "team_people": [],
   "team_roles": [],
   "trusted": [
-    "043927f7d442b46b",
-    "87037842580fe8bf",
-    "b35d054e30489c4c"
+    "73d3f89b5604909e",
+    "b417a38661d90f76",
+    "fd83d8fef95a9283"
   ],
   "whose": "an account"
 }

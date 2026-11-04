@@ -1,11 +1,13 @@
 {
   "accounts": [],
   "agent_accounts": [
-    "p"
+    "p",
+    "r"
   ],
   "agent_callers": [
-    "9b1888b1bb3f9f7b:User { id: \"account:p\", name: \"p\", pic: None }",
-    "d8cb43cbc0927ca0:User { id: \"account:a\", name: \"jake\", pic: None }"
+    "1979f8d48a54d8cc:User { id: \"account:r\", name: \"Robin\", pic: None }",
+    "9c48b675829a24e5:User { id: \"account:a\", name: \"jake\", pic: None }",
+    "d06da3aed6e92ea7:User { id: \"account:p\", name: \"p\", pic: None }"
   ],
   "already_in": [
     "this machine is already in the team t1 on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
@@ -20,6 +22,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -32,6 +35,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -47,6 +51,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -57,17 +62,19 @@
     "t1"
   ],
   "known": [
-    "Known { account: \"p\", root: \"9fbe729476649a44\", name: \"p\", role: Owner }",
-    "Known { account: \"q\", root: \"d4eeec42a117590d\", name: \"q\", role: Editor }"
+    "Known { account: \"p\", root: \"6a330f42647017f0\", name: \"p\", role: Owner }",
+    "Known { account: \"q\", root: \"c88fd0f838ac3623\", name: \"q\", role: Editor }",
+    "Known { account: \"r\", root: \"0fe891b6ffa4c9a8\", name: \"r\", role: Owner }"
   ],
   "known_roots": {
-    "a": "a92bc689079e6ce0",
+    "a": "2fd78ba2a5780271",
     "acct1": null,
     "e": null,
     "m": null,
     "o": null,
-    "p": "9fbe729476649a44",
-    "q": "d4eeec42a117590d",
+    "p": "6a330f42647017f0",
+    "q": "c88fd0f838ac3623",
+    "r": "0fe891b6ffa4c9a8",
     "s": null,
     "v": null,
     "x": null
@@ -81,6 +88,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -95,6 +103,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -107,6 +116,7 @@
     "o": false,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -120,10 +130,10 @@
   "team_people": [],
   "team_roles": [],
   "trusted": [
-    "5f341a1b54594623",
-    "67b4c7f6672fe960",
-    "a92bc689079e6ce0",
-    "d8cb43cbc0927ca0"
+    "2fd78ba2a5780271",
+    "9c48b675829a24e5",
+    "c95b41d8598649c5",
+    "fc05fb621ffbc559"
   ],
   "whose": "the team t1"
 }

@@ -2,44 +2,44 @@
   "url": "https://control.example",
   "trust": {
     "account": "a",
-    "root": "a92bc689079e6ce0"
+    "root": "2fd78ba2a5780271"
   },
   "cert": {
     "v": 1,
     "account": "a",
-    "device": "67b4c7f6672fe960",
+    "device": "c95b41d8598649c5",
     "kind": "daemon",
     "name": "geek",
-    "noise": "6e426a0d601b29942d89991d7d3e49df03cdad715e4ca29baceebd9b78c0db45",
-    "sign": "e5f9150df11ec2ee2eeea9f1ab59249f82bcda38a62bd9d3a6fa004903775b2b",
-    "created": 1793767991604,
-    "approver": "a92bc689079e6ce0",
-    "sig": "406096e1a63535617be3ed2e2344f84ef55ec8da957c8f73b6eabbb79b8423ba817059dbf327e632ae9757f3cd40d062f07d38e2ce6c24ad891bcb5563e53a0f"
+    "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+    "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+    "created": 1793773139410,
+    "approver": "2fd78ba2a5780271",
+    "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
   },
   "certs": [
     {
       "v": 1,
       "account": "a",
-      "device": "a92bc689079e6ce0",
+      "device": "2fd78ba2a5780271",
       "kind": "browser",
       "name": "x",
-      "noise": "b1def9f85346f1e3c9f0813f298beba5b1a0e206e593a7a3505e881e52d1f35c",
-      "sign": "2eddfda9fc5e9d3a0b7e9d7f16e63d7a4504ac2a3ab252e8a6744be7b1bf452f",
-      "created": 1793767991596,
-      "approver": "a92bc689079e6ce0",
-      "sig": "29d15df42b581673978f621e9dfb5f0dbc070a38d0a1f6d3dd2e25cfe024fa2dcaa0f66a1353eab18ac78b15268c25c800081a8424c318e56777501d3aedd208"
+      "noise": "a8cf8feab8f91e4547d41833ddea8c95efa2121495ffa296ebcfe5b11678171f",
+      "sign": "e07043aab33b8e513c219a3fab18e2ad1c252613136f9a58d96bd42d076d102f",
+      "created": 1793773139403,
+      "approver": "2fd78ba2a5780271",
+      "sig": "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600"
     },
     {
       "v": 1,
       "account": "a",
-      "device": "67b4c7f6672fe960",
+      "device": "c95b41d8598649c5",
       "kind": "daemon",
       "name": "geek",
-      "noise": "6e426a0d601b29942d89991d7d3e49df03cdad715e4ca29baceebd9b78c0db45",
-      "sign": "e5f9150df11ec2ee2eeea9f1ab59249f82bcda38a62bd9d3a6fa004903775b2b",
-      "created": 1793767991604,
-      "approver": "a92bc689079e6ce0",
-      "sig": "406096e1a63535617be3ed2e2344f84ef55ec8da957c8f73b6eabbb79b8423ba817059dbf327e632ae9757f3cd40d062f07d38e2ce6c24ad891bcb5563e53a0f"
+      "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+      "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+      "created": 1793773139410,
+      "approver": "2fd78ba2a5780271",
+      "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
     }
   ],
   "revocations": [],

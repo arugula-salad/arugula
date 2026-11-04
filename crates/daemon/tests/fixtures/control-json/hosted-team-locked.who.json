@@ -5,7 +5,7 @@
   ],
   "agent_accounts": [],
   "agent_callers": [
-    "441915aa3e917f57:User { id: \"account:o\", name: \"o\", pic: None }"
+    "116952298439d2ae:User { id: \"account:o\", name: \"o\", pic: None }"
   ],
   "already_in": [
     "this machine is already in the team Acme on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
@@ -20,6 +20,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -32,6 +33,7 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": null,
     "x": null
@@ -40,7 +42,7 @@
     "User { id: \"account:a\", name: \"a\", pic: None }"
   ],
   "drivers": [
-    "441915aa3e917f57:Owner"
+    "116952298439d2ae:Owner"
   ],
   "hosted": true,
   "is_me": {
@@ -51,6 +53,7 @@
     "o": true,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -61,25 +64,26 @@
     "Acme"
   ],
   "known": [
-    "Known { account: \"a\", root: \"a92bc689079e6ce0\", name: \"a\", role: Owner }",
-    "Known { account: \"e\", root: \"f6b9b46ee509b2c7\", name: \"e\", role: Editor }",
-    "Known { account: \"v\", root: \"5eb25aef5c911749\", name: \"v\", role: Viewer }"
+    "Known { account: \"a\", root: \"2fd78ba2a5780271\", name: \"a\", role: Owner }",
+    "Known { account: \"e\", root: \"ddb304a78f3174b9\", name: \"e\", role: Editor }",
+    "Known { account: \"v\", root: \"7a6968289d341618\", name: \"v\", role: Viewer }"
   ],
   "known_roots": {
-    "a": "a92bc689079e6ce0",
+    "a": "2fd78ba2a5780271",
     "acct1": null,
-    "e": "f6b9b46ee509b2c7",
+    "e": "ddb304a78f3174b9",
     "m": null,
-    "o": "55fa9dc5ffa7f653",
+    "o": "54cc8bcf23f1bda2",
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
-    "v": "5eb25aef5c911749",
+    "v": "7a6968289d341618",
     "x": null
   },
   "legacy_app_children": {
     "o": [
-      "55fa9dc5ffa7f653"
+      "54cc8bcf23f1bda2"
     ]
   },
   "name_of_account": {
@@ -90,14 +94,15 @@
     "o": null,
     "p": null,
     "q": null,
+    "r": null,
     "s": null,
     "v": "v",
     "x": null
   },
   "others": [
-    "55fa9dc5ffa7f653:Owner",
-    "5f341a1b54594623:Owner",
-    "a92bc689079e6ce0:Owner"
+    "2fd78ba2a5780271:Owner",
+    "54cc8bcf23f1bda2:Owner",
+    "fc05fb621ffbc559:Owner"
   ],
   "owners": {
     "certs": {
@@ -120,10 +125,10 @@
     },
     "kind": "team",
     "members": [
-      "o:Owner:55fa9dc5ffa7f653",
-      "a:Owner:a92bc689079e6ce0",
-      "e:Editor:f6b9b46ee509b2c7",
-      "v:Viewer:5eb25aef5c911749"
+      "o:Owner:54cc8bcf23f1bda2",
+      "a:Owner:2fd78ba2a5780271",
+      "e:Editor:ddb304a78f3174b9",
+      "v:Viewer:7a6968289d341618"
     ],
     "team": "t1",
     "version": 5
@@ -136,6 +141,7 @@
     "o": true,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -148,6 +154,7 @@
     "o": true,
     "p": false,
     "q": false,
+    "r": false,
     "s": false,
     "v": false,
     "x": false
@@ -156,7 +163,7 @@
   "signers": {
     "children": {
       "o": [
-        "55fa9dc5ffa7f653"
+        "54cc8bcf23f1bda2"
       ]
     },
     "origins": {},
