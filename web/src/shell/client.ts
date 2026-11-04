@@ -233,9 +233,8 @@ const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
    * page came from. Another daemon must list this page's origin as
-   * allowed (`--allow-origin`). A path (`/h/box`) is a dial-out host,
-   * reached through this page's own daemon. `e2e:<id>` with a target: a
-   * daemon reached through Arugula control. */
+   * allowed (`--allow-origin`). `e2e:<id>` with a target: a daemon reached
+   * through Arugula control. */
   constructor(
     readonly base = "",
     readonly e2e?: E2ETarget,

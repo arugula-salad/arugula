@@ -1225,11 +1225,12 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
    tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
    before it minted the run's tokens);
 2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if the
-   commit has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit
-   is in a release already. Otherwise it tags the commit itself `vX.Y.Z`
+   commit has no `docs/releases/X.Y.Z.md`, those notes leave out a PR since
+   the last release (docs/development.md, "Releasing"), the tag exists, or the
+   commit is in a release already. Otherwise it tags the commit itself `vX.Y.Z`
    (no version-bump commit since #1986: the release's build stamps the
-   version) and pushes the tag, whose message carries `Arugula-Deploy:
-   dep_…`. For the daemon it then commits the tag's client fixtures to
+   version) and pushes the tag, whose message carries the notes and
+   `Arugula-Deploy: dep_…`. For the daemon it then commits the tag's client fixtures to
    main (`crates/proto/fixtures/releases/X.Y.Z`, #200) and pushes that
    with the same token; if main refuses it, the run's log says to run
    `just release-fixtures X.Y.Z` and the release goes on. A deploy of a

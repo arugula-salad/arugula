@@ -547,13 +547,16 @@ shellcheck:
 
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
 # #307) as it is, with the lane's next version, and push the tag (#1986:
-# no commit moves the version; the release's build stamps it). The commit
-# needs the release's notes (docs/development.md). For the daemon it then
-# commits the tag's client fixtures to main by itself (#200); if main
-# refuses that, it says to run `just release-fixtures X.Y.Z`. A daemon
-# release also needs the commit's ci/rare tag (rare-nightly.yml, #305):
-# --rare starts those jobs on it and waits for them first.
-# just release [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
+# no commit moves the version; the release's build stamps it). `--dry-run`
+# names the commit and lists its PRs; write the notes against them and name
+# that commit with `--notes FILE`. The notes go in the tag's message, and it
+# refuses a PR they neither mention nor list as needing none (#707;
+# docs/development.md). It then commits them to main, and the daemon's client
+# fixtures (#200); if main refuses that, it says to run `just release-fixtures
+# X.Y.Z`. A daemon release also needs the commit's ci/rare tag
+# (rare-nightly.yml, #305): --rare starts those jobs on it and waits for them
+# first.
+# just release [patch|minor|major] [--app] [COMMIT|--older] [--notes FILE] [--rare] [--dry-run]
 release *args:
     scripts/release bump {{args}}
 
@@ -924,7 +927,9 @@ macos cmd="tools" *args:
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
+    scripts/tests/pr-plan.sh
     scripts/tests/ci-nightly-red.sh
+    scripts/tests/ci-auto-revert.sh
     scripts/tests/quarantine.sh
     scripts/tests/capabilities.sh
     scripts/tests/install.sh
@@ -937,7 +942,6 @@ test-scripts:
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
-    scripts/tests/ci-branch-run.sh
     node scripts/quarantine.mjs check
     scripts/check-nvim-tips
 
@@ -1247,8 +1251,9 @@ record-fixtures *names:
     {{cargo}} run -q -p arugula-testkit --bin record-fixtures -- --daemon {{target_dir}}/debug/arugulad --record crates/proto/fixtures {{names}}
 
 # Copy the client fixtures to crates/proto/fixtures/releases/VERSION, to
-# merge to main: the daemon's tests replay the last two releases' sets.
-# `just release` commits them to main itself after the tag; this is for
+# merge to main: the daemon's tests replay the last two releases' sets. With
+# them the release's notes, docs/releases/VERSION.md, from its tag.
+# `just release` commits both to main itself after the tag; this is for
 # when that push didn't go through (it says so, as does release.yml's
 # fixtures job). From the tag vVERSION when it's here or on GitHub, else
 # from this checkout (docs/development.md).
@@ -1270,6 +1275,11 @@ release-fixtures version:
       cp crates/proto/fixtures/*.jsonl "$d/"
     fi
     ls "$d"
+    n=docs/releases/$v.md
+    if [ ! -f "$n" ]; then
+      if scripts/release notes "v$v" >"$n.new"; then mv "$n.new" "$n"; echo "v$v's notes: $n"
+      else rm -f "$n.new"; fi
+    fi
 
 # The certificate vectors checked in for other implementations
 # (crates/e2e/fixtures/certs.json, from `interop fixtures`).

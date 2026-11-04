@@ -119,8 +119,8 @@ Claude Code's IDE (M28) is the deepest tie:
   `push.rs`, which uses `reqwest` and `p256`);
 - `is_team`, `sandbox_done`, `co_owners`, `team_people` and `owns_here`.
 
-`control.rs` is 3,254 lines and names `forge`, `labs`, `setup`, `dial` and
-`sites`.
+`control.rs` is 3,254 lines and names `forge`, `labs`, `setup`, `relay_ws`
+and `sites`.
 
 **Agent sessions.** `mux/config.rs:254` resumes an agent's conversation
 through `conversations::Index`, and `mux/info.rs:82` finds Claude Code's
@@ -206,7 +206,7 @@ the line in one test: see ticket 6.
 Everything else, about 64k lines:
 
 - the edge: `server.rs`, `api.rs`, `mcp/`, `share.rs`, `upload.rs`,
-  `relay_ws.rs`, `dial.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
+  `relay_ws.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
 - the HTTP access checks: `access.rs`, `localauth.rs`, `authz.rs`,
   `acl.rs`'s `api` (as `acl_api.rs`), `rules.rs`;
 - every block type except the ones the core makes itself: `agent/`,
@@ -387,8 +387,8 @@ behind a trait, because each is read inside the mux task's ordering:
 
 **`App` in `server.rs`.** It stays in the **binary**, whole. It is the
 binary's state: `MuxHandle` (from the core) next to `Hosts`, `Shares`,
-`Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands`, `Push` and
-`DialOuts`. The core never sees it. It saw it once, through
+`Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands` and `Push`. The core
+never sees it. It saw it once, through
 `invite::Hook`, and that moves into the invite block's kind. `App` gains
 `rules` and `ide` (as `Option<Arc<ide::Ide>>`, the concrete type; the
 `dyn IdeLink` is a clone of it in `Config`). Everything else reaching the
@@ -436,7 +436,7 @@ never opens it.
 ## The API server and the web client
 
 `server.rs` stays in `arugulad`: `/ws`, the routers (`router`,
-`local_router`, `tunnel_router`, `channel_router`, `editors_router`), the
+`local_router`, `channel_router`, `editors_router`), the
 guard and `cors` middleware, and `#[derive(Embed)] struct Assets` with
 `#[folder = "../../web/dist"]`. The path is relative to `crates/daemon`,
 which doesn't move, so `just web`, the `debug-embed` feature, release

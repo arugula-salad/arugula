@@ -5,22 +5,25 @@
 //! into control: they stay on disk, untouched. A change in who may read
 //! what reaches control at once, not at the next refresh, and a team's
 //! other owners read every pane's thread, as they read the pane (native
-//! #684).
+//! #684), as a hosted workspace's editors do (native #705).
 
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use arugula_control_wire::hosted::{EnrollRequest, Enrollment};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind,
+    hosted::{Delegation, HostedCert, HostedKey},
     team::{AccountCerts, Member, Roster, TeamPin, TeamRole},
 };
 use arugula_testkit::arugulad;
 use axum::{
     Json, Router,
     extract::{RawQuery, State, ws::WebSocketUpgrade},
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde_json::{Value, json};
@@ -45,6 +48,66 @@ struct Fake {
     imports: Arc<Mutex<Vec<Value>>>,
     /// Each reader list posted, and when.
     readers: Arc<Mutex<Vec<(Instant, Value)>>>,
+    /// A hosted machine's project (native #705): the team that owns it,
+    /// with the roster and certificates in `team`.
+    hosted: Arc<Mutex<Option<HostedProject>>>,
+    /// How many times a hosted box asked for its trust: its refreshes.
+    hosted_refreshes: Arc<Mutex<u32>>,
+}
+
+/// A team's project with a Cloud workspace, as the fake control enrolls
+/// its box: the delegation (signed by the team's founder) and the key it
+/// signs the box's certificate with.
+#[derive(Clone)]
+struct HostedProject {
+    key: Arc<HostedKey>,
+    delegation: Delegation,
+    pin: TeamPin,
+    /// The box's certificate, once it enrolled.
+    cert: Option<HostedCert>,
+}
+
+impl Fake {
+    /// What a hosted box pins and serves by: its certificate and the
+    /// team's roster as it is now.
+    fn enrollment(&self) -> Option<Enrollment> {
+        let h = self.hosted.lock().unwrap().clone()?;
+        let (rosters, certs) = self.team.lock().unwrap().clone().unwrap_or_default();
+        Some(Enrollment {
+            url: self.url.lock().unwrap().clone(),
+            cert: h.cert?,
+            delegation: h.delegation,
+            revocations: vec![],
+            team: Some(h.pin),
+            roster: rosters.last().cloned(),
+            certs,
+            locked: false,
+            lock: None,
+            trust: None,
+            account_certs: vec![],
+            account_revocations: vec![],
+            legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
+            purpose: None,
+        })
+    }
+}
+
+async fn hosted_enroll(State(f): State<Fake>, Json(b): Json<EnrollRequest>) -> Response {
+    let Some(h) = f.hosted.lock().unwrap().clone() else { return StatusCode::NOT_FOUND.into_response() };
+    let mut cert = HostedCert::new(&h.delegation, "hw_1", "box", &b.noise, &b.sign, arugula_e2e::now_ms());
+    h.key.sign(&mut cert);
+    f.hosted.lock().unwrap().as_mut().unwrap().cert = Some(cert);
+    Json(f.enrollment().unwrap()).into_response()
+}
+
+async fn hosted_trust(State(f): State<Fake>) -> Response {
+    *f.hosted_refreshes.lock().unwrap() += 1;
+    match f.enrollment() {
+        Some(e) => Json(e).into_response(),
+        None => StatusCode::UNAUTHORIZED.into_response(),
+    }
 }
 
 async fn about(State(f): State<Fake>) -> Json<Value> {
@@ -99,6 +162,8 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
             .route("/api/daemon/chat/import", post(import))
             .route("/api/daemon/chat/readers", post(readers))
+            .route("/api/hosted/enroll", post(hosted_enroll))
+            .route("/api/hosted/trust", get(hosted_trust))
             .route("/api/relay/dial", get(dial))
             .with_state(f.clone());
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -339,4 +404,153 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     });
     assert_eq!(newest(&f, "pane", &pane_t).unwrap(), Vec::<String>::new(), "an editor doesn't read a private pane");
     assert!(since_last(&f) < Duration::from_secs(60));
+}
+
+/// A Cloud workspace of team `t1`'s project, whose founder Alex (`a1`)
+/// signed the delegation, with Bea (`a2`) an editor and Cy (`a3`) a
+/// viewer: the box admits Bea as its owner, so she reads every pane's
+/// thread, a private one included, from the start; Cy reads what a viewer
+/// may, watching. Demoted to a viewer, Bea watches like Cy; taken out of
+/// the team, she's in no list (native #705).
+///
+/// A hosted refresh carries no Labs flags, so control's chat setting
+/// never reaches a hosted box on its own: the test writes what control
+/// would have said into the box's state dir, and the daemon reads it.
+#[test]
+fn a_hosted_workspaces_editor_reads_every_panes_thread_and_its_viewer_watches() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, bea_root) = device("a2");
+    let (_, cy_root) = device("a3");
+    let members = |bea: Option<TeamRole>| {
+        let mut m = vec![member("a1", &alex_root, TeamRole::Owner)];
+        m.extend(bea.map(|r| member("a2", &bea_root, r)));
+        m.push(member("a3", &cy_root, TeamRole::Viewer));
+        m
+    };
+    let mut certs = AccountCerts::new();
+    for (a, c) in [("a1", &alex_root), ("a2", &bea_root), ("a3", &cy_root)] {
+        certs.insert(a.into(), (vec![c.clone()], vec![]));
+    }
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 1, members(Some(TeamRole::Editor)))], certs.clone()));
+    let key = HostedKey::generate();
+    let mut delegation = Delegation {
+        project: "prj_1".into(),
+        owner: "team:t1".into(),
+        key: key.public(),
+        at: 1,
+        by: String::new(),
+        sig: String::new(),
+    };
+    delegation.sign_with(&alex);
+    *f.hosted.lock().unwrap() = Some(HostedProject {
+        key: Arc::new(key),
+        delegation,
+        pin: TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: alex_root.device.clone() },
+        cert: None,
+    });
+
+    let state = std::env::temp_dir().join(format!("arugula-hosted-readers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&state);
+    std::fs::create_dir_all(&state).unwrap();
+    // The box is set up already.
+    std::fs::write(state.join("hosted-setup.json"), json!({ "status": "ready", "reported": true }).to_string())
+        .unwrap();
+    let d = arugulad!("hostedreaders")
+        .no_wisp()
+        .no_tailscale()
+        .env_remove("ARUGULA_FEATURES")
+        .state_dir(&state)
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &state.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    // On a timeout: what control was told, and the box's log.
+    let wait = |what: &str, mut ok: Box<dyn FnMut() -> bool>| {
+        let deadline = Instant::now() + Duration::from_secs(40);
+        while !ok() {
+            if Instant::now() > deadline {
+                let log = std::fs::read_to_string(state.join("arugulad.log")).unwrap_or_default();
+                let tail: Vec<&str> = log.lines().rev().take(40).collect();
+                let lists: Vec<String> = f.readers.lock().unwrap().iter().map(|(_, b)| b.to_string()).collect();
+                panic!("timed out waiting for {what}\nlists:\n{}\nlog:\n{}", lists.join("\n"), tail.join("\n"));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    // Its first refresh: the box has taken its enrollment up.
+    wait("the box enrolled", Box::new(|| *f.hosted_refreshes.lock().unwrap() > 0));
+    // Control has chat on for the team: written once the box is in
+    // control (before, a daemon not in control forgets the file).
+    std::fs::write(state.join("flags.control.json"), json!({ "account": {}, "team": { "chat": true } }).to_string())
+        .unwrap();
+
+    let pane = match d.get("/api/panes").as_array().and_then(|p| p.first().cloned()) {
+        Some(p) => p,
+        None => {
+            let run = d.post("/api/run", json!({ "command": "sh", "session": null }));
+            let id = run["pane"].as_u64().unwrap();
+            d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == id).cloned().unwrap()
+        }
+    };
+    let (pane, session) = (pane["id"].as_u64().unwrap(), pane["session"].as_u64().unwrap().to_string());
+    let pane_t = pane.to_string();
+    let sid = session.parse::<u64>().unwrap();
+    // A share with Dee (`a9`) as a viewer, given or taken away: the change
+    // that sends the lists, and nudges the box to look at control again.
+    let dee = |on: bool| {
+        let share = if on {
+            json!({ "session": sid, "principal": "account:a9", "name": "dee", "role": "viewer", "history": true,
+                    "root": DeviceKeys::generate().id() })
+        } else {
+            json!({ "session": sid, "principal": "account:a9", "role": null })
+        };
+        d.post("/api/acl", share);
+    };
+    dee(true);
+    // Bea as the owner, from the start and not watching; Dee and Cy by
+    // their roles (a share, then the team), watching. Never Alex, whose
+    // account the box is.
+    let all = json!([
+        { "account": "a2", "from": null },
+        { "account": "a9", "from": null, "watching": true },
+        { "account": "a3", "from": null, "watching": true },
+    ]);
+    wait("the pane's readers", Box::new(|| lists_for(&f, "pane", &pane_t).contains(&all)));
+    wait("the session's readers", Box::new(|| lists_for(&f, "session", &session).contains(&all)));
+
+    // Private: Cy and Dee lose the pane's thread at once, Bea keeps it.
+    set_private(&d, pane, true);
+    wait(
+        "bea alone on the private pane",
+        Box::new(|| newest(&f, "pane", &pane_t).as_deref() == Some(&["a2".to_owned()])),
+    );
+    assert_eq!(newest(&f, "session", &session).unwrap(), ["a2", "a9", "a3"]);
+
+    // Demoted to a viewer: once the box has the roster, Bea watches the
+    // session like Cy, and the private pane is Alex's alone.
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 2, members(Some(TeamRole::Viewer)))], certs.clone()));
+    dee(false);
+    let watching = json!([
+        { "account": "a2", "from": null, "watching": true },
+        { "account": "a3", "from": null, "watching": true },
+    ]);
+    wait("bea watching the session", Box::new(|| lists_for(&f, "session", &session).contains(&watching)));
+    assert_eq!(newest(&f, "pane", &pane_t).unwrap(), Vec::<String>::new(), "a private pane: its owner's alone");
+
+    // Taken out of the team: in no list.
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 3, members(None))], certs));
+    dee(true);
+    wait(
+        "bea gone",
+        Box::new(|| newest(&f, "session", &session).as_deref() == Some(&["a9".to_owned(), "a3".to_owned()])),
+    );
+    assert!(since_last(&f) < Duration::from_secs(60));
+    let _ = std::fs::remove_dir_all(&state);
 }

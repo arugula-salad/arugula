@@ -1,11 +1,12 @@
-//! Many byte streams over one WebSocket (M4c's dial-out transport).
+//! Many byte streams over one WebSocket: control's relay's transport
+//! (first built for M4c's dial-out tunnel, since removed).
 //!
-//! A host that can only dial out keeps one WebSocket open to the home
-//! daemon. The home daemon opens a stream over it for each request it
-//! forwards (an HTTP request, or a client's WebSocket), and the host serves
-//! each stream as a connection of its own, as if it had been accepted on a
-//! port. Only the home end opens streams: the host can answer, never ask, so
-//! nothing routes through a host.
+//! A daemon keeps one WebSocket open to the home end (control's relay).
+//! The home end opens a stream over it for each request it forwards (an
+//! HTTP request, or a client's WebSocket), and the daemon serves each
+//! stream as a connection of its own, as if it had been accepted on a
+//! port. Only the home end opens streams: the daemon can answer, never
+//! ask, so nothing routes through a daemon.
 //!
 //! Each binary message is one frame: `kind (1) | stream (4, BE) | payload`.
 //!

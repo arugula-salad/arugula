@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# What a pull request's own run does (pull-request.yml, #718): reads the merge
+# commit Actions checked out, whose first parent is the base, and writes
+# web/scripts/e2e-select.mjs's answer as the job's outputs.
+#
+#   scripts/pr-plan >> "$GITHUB_OUTPUT"
+#
+# Prints e2e=true|false, shards=[1,2,...] and only="a.spec.ts b.spec.ts"
+# (empty for every spec). Whatever goes wrong, it says every spec: a run that
+# can't tell does more, not less.
+set -uo pipefail
+here=$(cd "$(dirname "$0")/.." && pwd)
+all='e2e=true
+shards=[1,2,3,4,5,6,7,8,9,10,11,12]
+only='
+files=$(git -C "$here" diff --name-only HEAD^1 HEAD 2>/dev/null) || { echo "$all"; exit 0; }
+answer=$(cd "$here/web" && printf '%s\n' "$files" | node scripts/e2e-select.mjs 2>/dev/null) || { echo "$all"; exit 0; }
+parsed=$(printf '%s' "$answer" | jq -r '"e2e=\(.e2e)", "shards=\(.shards // [] | tojson)", "only=\(.only // "")"' 2>/dev/null) || { echo "$all"; exit 0; }
+[ -n "$parsed" ] || { echo "$all"; exit 0; }
+echo "$parsed"

@@ -338,8 +338,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::HostsList);
         $m!($crate::op::ops::HostAdd);
         $m!($crate::op::ops::HostRemove);
-        $m!($crate::op::ops::HostTokenMint);
-        $m!($crate::op::ops::HostTokenRevoke);
         $m!($crate::op::ops::SetupGet);
         $m!($crate::op::ops::SetupTailscale);
         $m!($crate::op::ops::SetupControl);
@@ -1456,35 +1454,6 @@ pub mod ops {
         const NAME: &'static str = "host.remove";
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/hosts/{name}";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = Empty;
-    }
-
-    /// `POST /api/hosts/NAME/token` (M4c): mint the per-host token that lets one
-    /// host dial in, replacing the last (`arugula hosts token`). A POST, so
-    /// not read-only whatever it hands back.
-    pub struct HostTokenMint;
-
-    impl Op for HostTokenMint {
-        const NAME: &'static str = "host_token.mint";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/hosts/{name}/token";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = crate::hosts::HostToken;
-    }
-
-    /// `DELETE /api/hosts/NAME/token`: revoke it and drop the host's dial-out
-    /// connection (`arugula hosts revoke`).
-    pub struct HostTokenRevoke;
-
-    impl Op for HostTokenRevoke {
-        const NAME: &'static str = "host_token.revoke";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/hosts/{name}/token";
         const ACCESS: Access = Access::Owner;
         type Path = String;
         type Req = Empty;

@@ -77,9 +77,6 @@ export interface ControlInfo {
   vapid: string;
   /** Where control is now, when it answers at more than one URL (#507). */
   primary?: string;
-  /** Control passes an approving device's MAC to a waiting one (#761),
-   * so a waiting browser shows a code rather than a fingerprint. */
-  device_secret?: number;
   /** Blocks get origins of their own, `https://b-<site_key>.<this>` (M50);
    * absent when control doesn't serve blocks. */
   block_domain?: string;
@@ -1315,9 +1312,11 @@ export class ControlSession {
     this.request = cert;
     // #761: a code to show while it waits, whose secret control never
     // sees: the approving device answers it, and this browser checks the
-    // answer before it pins the root. Not for the first device (nothing
-    // approves it), nor one the app's sign-in signed already.
-    const secret = root !== null && !signed && this.info.device_secret ? deviceSecretFor(k.id) : null;
+    // answer before it pins the root. Made whatever control says of itself
+    // or of the account: with no answer, the person checks the account
+    // (`vouched`). A first device doesn't get as far as showing it; only
+    // one the app's sign-in signed already has none.
+    const secret = signed ? null : deviceSecretFor(k.id);
     this.deviceCode = secret ? `${await joinCode(cert)}.${secret}` : null;
     // #326: here to approve a machine, which this browser can't until it's
     // one of the account's devices: the device that approves it is shown
@@ -1325,6 +1324,11 @@ export class ControlSession {
     let join = joinInHash();
     const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join, ...(secret ? { features: DEVICE_SECRET } : {}) });
     let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
+    // Taken as the account's first device: its root can only be this key.
+    // Told there were no devices and kept waiting, another browser got
+    // there first (two signing in at once), and this one is approved as
+    // any other is.
+    const takenAsFirst = root === null && r.approved;
     if (signed && !r.approved) {
       // An older control keeps it waiting: approve it with the same
       // signature (a control that refused it leaves it to a device).
@@ -1364,19 +1368,23 @@ export class ControlSession {
         r = await ask();
       }
     }
-    if (root === null) await this.makeRecoveryCodes();
     // Pin the root as control reports it now, and check that our own
     // certificate chains back to it.
     const all = await api<{ trust: { account: string; root: string }; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
     // #758: the app's window takes the root the browser that signed it
     // pinned, not control's word for it.
     if (signed && all.trust.root !== signed.root) throw new Error("Arugula cloud says this account's root is a different device than the browser that signed this app in has: not trusting it");
-    // #761: the device that approved it answered its code, for this root.
-    // A recovery code approves it without one (this browser holds that).
-    if (secret && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
+    // This browser's own key as the root: nothing else can sign for it
+    // (`evaluate` wants its self-signed certificate), and nothing approved it.
+    const own = all.trust.root === k.id;
+    if (takenAsFirst && !own) throw new Error("Arugula cloud took this browser as the account's first device, then named another as its root: not trusting it");
     const trusted = await evaluate(all.trust, all.certs, all.revocations);
     const mine = trusted.get(k.id);
     if (!mine) throw new Error("Arugula cloud approved this device, but the approval doesn't check out");
+    // #761: the device that approved it answered its code, for this root.
+    // A recovery code approves it without one (this browser holds that).
+    if (secret && !own && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
+    if (root === null && own) await this.makeRecoveryCodes();
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
     dropDeviceSecret();
@@ -1445,9 +1453,9 @@ export class ControlSession {
    * device's MAC under this browser's secret. A MAC that checks out: yes.
    * A wrong one (control's own account, or the code mistyped): no, and
    * the secret goes, so there's one guess per code; the `unvouched` screen
-   * says to enroll again. None (approved from a page from before codes):
-   * the person checks the account's fingerprint on that screen, the old
-   * way, and says so with `vouchFor`. */
+   * says to enroll again. None (approved from a page from before codes,
+   * or a control that doesn't pass it on): the person checks the account's
+   * fingerprint on that screen, the old way, and says so with `vouchFor`. */
   private async vouched(secret: string, mine: Cert, all: { trust: { account: string; root: string }; certs: Cert[] }): Promise<boolean> {
     const got = await api<{ cert: Cert; mac?: string }>(`/api/devices/${mine.device}`);
     if (got.mac && (await deviceMacOk(secret, all.trust, mine, got.mac))) return true;
