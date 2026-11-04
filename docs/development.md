@@ -210,14 +210,25 @@ and why each needs what it does.
 
 ### When main goes red
 
-chant's tick retries a red job on main once (docs/testing.md). If it
-fails again, the failure is deterministic: chant's record for the commit
-(`_ci/<sha>.json` on the `chant/lifecycle` branch) has the job under
-`retried` and `failure`, and ci-red's "main is red" issue says it's red
-after its retry. Then revert the commit that broke it within about 30
-minutes, and bring the change back in a new pull request with the fix.
-Don't fix forward while others land on top of the red. When main's
-newest commit wasn't built alone, the tick's bisect names the culprit.
+The merge queue stops most breaks from landing, so a red main means something
+got past it: a push that bypassed the queue, or a nightly full run finding what
+a group skipped by path. chant's tick retries a red job on main once
+(docs/testing.md). If it fails again, the failure is deterministic: chant's
+record for the commit (`_ci/<sha>.json` on the `chant/lifecycle` branch) has
+the job under `retried` and `failure`, and ci-red's "main is red" issue says
+it's red after its retry. When main's newest commit wasn't built alone, the
+tick's bisect names the culprit.
+
+`auto-revert.yml` (`scripts/ci-auto-revert`) then opens a pull request reverting
+the commit, queues it, and tells its author, when there's one clear culprit: the
+one the bisect names, or the red commit when the commit below it is green. It
+goes through the queue like anything else, so it lands only if main passes
+without the commit. Close the pull request to stop it, and bring the change back
+in a new one with the fix. The repository variable `ARUGULA_AUTO_REVERT=off` turns
+it off. It leaves it to a person, saying why in the job's summary, when more than
+one commit could be the culprit, when the culprit is a revert or more than 6
+hours old, or when it doesn't revert cleanly. Then revert it by hand within about
+30 minutes. Don't fix forward while others land on top of the red.
 One deterministic `desktop-xvfb` mismatch kept main red for 11 or 12 runs,
 until 5756aaa21, while other work landed. A failure that passes on the
 retry is a flaky test, which goes in the quarantine (testing.md,
