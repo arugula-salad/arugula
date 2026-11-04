@@ -27,17 +27,12 @@ pub struct Args {
     matching: Option<String>,
     #[arg(long, default_value_t = 50)]
     limit: usize,
-    /// Another host's history, as synced here (`all`: every host's).
-    #[arg(long, value_name = "HOST")]
-    synced: Option<String>,
 }
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
-    let Ctx { sock, json_out, gone, .. } = ctx;
-    let synced_q = |flag| super::synced_q(flag, &gone);
-    let Args { pane, failed, kind, since, cwd, matching, limit, synced } = args;
+    let Ctx { sock, json_out, .. } = ctx;
+    let Args { pane, failed, kind, since, cwd, matching, limit } = args;
     let mut q = vec![format!("limit={limit}")];
-    q.extend(synced_q(synced));
     if let Some(p) = pane {
         q.push(format!("pane={}", p.0));
     }
@@ -69,7 +64,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             None => " …".to_owned(),
         };
         let closed = if c.open { "" } else { " (closed)" };
-        let host = c.host.as_ref().map(|h| format!("{h}:")).unwrap_or_default();
         let by = c.by.as_ref().map(|b| format!("  by {b}")).unwrap_or_default();
         let by = match c.kind {
             HistoryKind::Answer => format!("  (answer){by}"),
@@ -78,7 +72,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             HistoryKind::Command => by,
         };
         println!(
-            "{exit}  {host}%{} {:>8}  {}{closed}   [{}]{by}",
+            "{exit}  %{} {:>8}  {}{closed}   [{}]{by}",
             c.pane,
             time(c.started_ms),
             c.text.as_deref().unwrap_or("?"),

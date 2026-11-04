@@ -324,9 +324,9 @@ pub struct Joined {
 
 /// `POST /api/hosts/NAME/token`: a per-host token, minted by the home
 /// daemon for a host without tailnet identity. It lets that host, and only
-/// it, dial in (`arugulad --peer … --peer-token-file …`) and push its log
-/// segments (`--sync`). The home daemon keeps only its hash; minting another
-/// replaces it, and `DELETE /api/hosts/NAME/token` revokes it.
+/// it, dial in (`arugulad --peer … --token …`). The home daemon keeps only
+/// its hash; minting another replaces it, and `DELETE /api/hosts/NAME/token`
+/// revokes it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostToken {
     pub name: String,

@@ -43,7 +43,7 @@ pub enum HostsCmd {
     /// Mint a per-host token for a host without tailnet identity.
     ///
     /// One that dials out (`arugulad --peer wss://this-daemon --token FILE`) or
-    /// pushes its history (`--sync`). Adds it as a dial-out host if it isn't
+    /// is reached through here. Adds it as a dial-out host if it isn't
     /// listed; replaces any token it had. Printed once; only its hash is
     /// kept.
     Token { name: String },

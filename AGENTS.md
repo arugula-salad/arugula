@@ -221,9 +221,8 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
   the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
-  Sprites adapter and `labs/sandboxes.rs` in Labs), synced history
-  (`sync.rs`, `seal.rs`),
-  tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
+  Sprites adapter and `labs/sandboxes.rs` in Labs), tailscaled
+  (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
   box, enrolling, redialling on resume, busy and idle for control; it

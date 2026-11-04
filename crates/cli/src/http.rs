@@ -869,7 +869,7 @@ mod tests {
     /// Part c's routes (#578): the paths as the commands wrote them by hand
     /// (`enc` of the name in the path), and the bodies as the types serialize.
     #[test]
-    fn a_synced_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
+    fn a_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
         use super::{enc, route};
         use arugula_proto::{
             api::{Empty, FollowerLinkRequest, StudioLoginRequest},
@@ -878,9 +878,6 @@ mod tests {
         // A path argument is filled in as it is, so the commands pass `enc(name)`.
         let name = "a b/é".to_owned();
         let encoded = enc(&name);
-        assert_eq!(route::<SyncedList>(&(), &Empty {}).unwrap(), "/api/synced");
-        assert_eq!(SyncedRotate::path(&()), "/api/synced/rotate-key");
-        assert_eq!(SyncedForget::path(&encoded), "/api/synced/a%20b%2F%C3%A9");
         assert_eq!(route::<SandboxesList>(&(), &Empty {}).unwrap(), "/api/sandboxes");
         assert_eq!(route::<StudioGet>(&(), &Empty {}).unwrap(), "/api/studio");
         assert_eq!(StudioLogin::path(&()), "/api/studio");
