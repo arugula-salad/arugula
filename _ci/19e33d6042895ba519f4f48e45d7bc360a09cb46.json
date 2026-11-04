@@ -3,16 +3,16 @@
   "commit": "19e33d6042895ba519f4f48e45d7bc360a09cb46",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T07:01:14Z",
+  "at": "2026-11-04T07:02:08Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 126437992257,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126437992257"
         },
         {
@@ -36,7 +36,7 @@
         {
           "name": "build",
           "id": 126438178035,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438178035"
         },
         {
@@ -68,16 +68,23 @@
         {
           "name": "test-2",
           "id": 126438177978,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438177978"
         }
       ],
       "reason": "retrying"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "e2e",
+          "id": 126439148330,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126439148330"
+        }
+      ]
     },
     "claims": {
       "verdict": "pending",
@@ -113,7 +120,7 @@
         {
           "name": "workspace",
           "id": 126437457564,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880274/job/126437457564"
         },
         {
@@ -159,6 +166,18 @@
     "workspace-clippy": {
       "run": 126437457544,
       "at": "2026-11-04T07:01:14Z"
+    },
+    "build": {
+      "run": 126438178035,
+      "at": "2026-11-04T07:02:08Z"
+    },
+    "test-2": {
+      "run": 126438177978,
+      "at": "2026-11-04T07:02:08Z"
+    },
+    "workspace": {
+      "run": 126437457564,
+      "at": "2026-11-04T07:02:08Z"
     }
   }
 }
