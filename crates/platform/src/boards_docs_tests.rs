@@ -4,6 +4,7 @@
 //! Doc read as missing, and what the Doc's page says of its boards.
 
 use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_doc, agent_board_docs};
+use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
 use super::tests::{attach, geek, grant_write, issue, lane, put, row_in, rows_in};
@@ -470,6 +471,86 @@ async fn an_agent_links_its_machines_docs() {
     let entry = on_row["id"].as_str().unwrap();
     let (st, v) = geek(&base, "DELETE", &agent_board_doc(&id, entry), None).await;
     assert_eq!((st, row_titles(&v, &row)), (200, Vec::<String>::new()), "{v}");
+}
+
+/// A person links a machine's Doc only from a machine they may reach: their
+/// own, their team's, one shared with them; another's is refused. A reader
+/// is told the machine's name only when they may reach it too, so a link
+/// from before the check, or by someone the project has since lost, names
+/// nothing to the rest. An agent's link names its machine as before.
+#[tokio::test]
+async fn a_person_links_docs_on_machines_they_reach() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.daemon("apad", "a", None);
+    hub.daemon("xbox", "c", Some("u"));
+    crate::cache::catch_up(&app).await.unwrap();
+    let id = board(&base, &t).await;
+    let on = |machine: &str, doc: &str| json!({ "kind": "machine_doc", "machine": machine, "doc": doc, "title": doc });
+    let read = |who: &'static str| {
+        let (base, id) = (base.clone(), id.clone());
+        async move { call(&base, who, "GET", &format!("/api/boards/{id}"), None).await.1 }
+    };
+    let named = |v: &Value, title: &str| -> String {
+        let d = v["docs"].as_array().unwrap().iter().find(|d| d["title"] == title).unwrap();
+        d["machine_name"].as_str().unwrap().to_owned()
+    };
+
+    // Another's machine, and one that isn't: refused.
+    let (st, v) = link(&base, "a", &id, on("xbox", "theirs")).await;
+    assert_eq!(st, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("a machine they can reach"), "{v}");
+    assert_eq!(link(&base, "a", &id, on("nobox", "nowhere")).await.0, 403);
+    // The team's machine: its owner and a member alike; a member's own.
+    let (st, v) = link(&base, "a", &id, on("geek", "team notes")).await;
+    assert_eq!((st, named(&v, "team notes")), (200, "geek-box".to_owned()), "{v}");
+    let (st, v) = link(&base, "b", &id, on("geek", "more notes")).await;
+    assert_eq!((st, named(&v, "more notes")), (200, "geek-box".to_owned()), "an editor, the team's machine: {v}");
+    assert!(v["docs"][1]["agent"].is_null(), "a person's link, not an agent's: {v}");
+    let (st, v) = link(&base, "a", &id, on("apad", "my notes")).await;
+    assert_eq!((st, named(&v, "my notes")), (200, "apad-box".to_owned()), "{v}");
+
+    // Readers: the team's machine is named to every member; a's own only to
+    // a, until it is shared with b.
+    let v = read("b").await;
+    assert_eq!(
+        (named(&v, "team notes"), named(&v, "my notes")),
+        ("geek-box".to_owned(), "a machine".to_owned()),
+        "{v}"
+    );
+    assert_eq!(named(&read("x").await, "my notes"), "a machine");
+    assert_eq!(named(&read("a").await, "my notes"), "apad-box");
+    hub.share("apad", "b", true);
+    assert_eq!(named(&read("b").await, "my notes"), "apad-box", "shared with b now");
+    hub.share("apad", "b", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(named(&read("b").await, "my notes"), "a machine", "and no longer");
+
+    // A link from before the check names its machine to nobody here.
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO board_docs (id, board_id, row_id, position, target_kind, target, machine, title, added_by, created_at)
+             VALUES (?1, ?2, NULL, 9, 'machine_doc', 'd1', 'xbox', 'old link', 'a', 1)",
+            params![format!("bdc_{}", rand_hex()), id],
+        )
+        .unwrap();
+    for who in ["a", "b", "x"] {
+        assert_eq!(named(&read(who).await, "old link"), "a machine", "{who}");
+    }
+    // An agent's link names its machine to a reader who can't reach it.
+    grant_write(&base, "a", "geek", &t).await;
+    let mine = json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "agent notes" });
+    let (st, v) = geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine }))).await;
+    assert_eq!(st, 200, "{v}");
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer), ("c", TeamRole::Viewer)]);
+    hub.daemon("geek", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let v = read("c").await;
+    assert_eq!(
+        (named(&v, "agent notes"), named(&v, "team notes")),
+        ("geek-box".to_owned(), "a machine".to_owned()),
+        "{v}"
+    );
 }
 
 /// A closed board keeps its rows editable, and so its Docs.
