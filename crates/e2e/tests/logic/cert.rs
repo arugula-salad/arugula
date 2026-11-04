@@ -63,7 +63,7 @@ fn verify() -> Example {
         "Whether a signature is an Ed25519 public key's over a message: what every signed object here (a \
          certificate, a revocation, a roster, an approval, a run's event) is checked with. Strict Ed25519 \
          (RFC 8032 with ed25519-dalek's verify_strict): a non-canonical s, and a small-order (weak) public key, \
-         are refused, even where a lax check would pass. Hex is lowercase, as everything writes it and the browser reads it; anything that isn't 32 \
+         are refused, even where a lax check would pass. Hex is read in either case; anything that isn't 32 \
          bytes of key and 64 of signature is refused, never an error.",
         &["arugula_e2e::cert::verify_hex"],
     )
@@ -80,8 +80,15 @@ fn verify() -> Example {
         ex.case(about, json!({ "sign": sign, "message": message, "sig": s }), json!({ "ok": ok }));
     };
     case(&mut ex, "the signer's signature over the message", &pk, msg, &sig, true);
-    case(&mut ex, "the same signature in upper-case hex: hex is lowercase", &pk, msg, &sig.to_uppercase(), false);
-    case(&mut ex, "the key in upper-case hex", &pk.to_uppercase(), msg, &sig, false);
+    case(
+        &mut ex,
+        "the same signature in upper-case hex: hex is read in either case",
+        &pk,
+        msg,
+        &sig.to_uppercase(),
+        true,
+    );
+    case(&mut ex, "the key in upper-case hex", &pk.to_uppercase(), msg, &sig, true);
     case(&mut ex, "one character of the message changed", &pk, &msg.replace("two", "twO"), &sig, false);
     case(&mut ex, "the message without its last newline", &pk, msg.trim_end(), &sig, false);
     case(&mut ex, "the message with a newline more", &pk, &format!("{msg}\n"), &sig, false);

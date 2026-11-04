@@ -1976,7 +1976,7 @@ export class ControlSession {
     if (!ok.ok) return [];
     const c = proof.cert;
     // Its keys, to open a channel with; never in the account's trust.
-    const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise, sign: c.sign, created: c.created, approver: "", sig: "" };
+    const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise.toLowerCase(), sign: c.sign.toLowerCase(), created: c.created, approver: "", sig: "" };
     // Reached only through the relay: no direct URLs, whatever the
     // directory said.
     return [{ ...entry, urls: [], cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];

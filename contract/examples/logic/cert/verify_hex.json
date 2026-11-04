@@ -1,5 +1,5 @@
 {
-  "about": "Whether a signature is an Ed25519 public key's over a message: what every signed object here (a certificate, a revocation, a roster, an approval, a run's event) is checked with. Strict Ed25519 (RFC 8032 with ed25519-dalek's verify_strict): a non-canonical s, and a small-order (weak) public key, are refused, even where a lax check would pass. Hex is lowercase, as everything writes it and the browser reads it; anything that isn't 32 bytes of key and 64 of signature is refused, never an error.",
+  "about": "Whether a signature is an Ed25519 public key's over a message: what every signed object here (a certificate, a revocation, a roster, an approval, a run's event) is checked with. Strict Ed25519 (RFC 8032 with ed25519-dalek's verify_strict): a non-canonical s, and a small-order (weak) public key, are refused, even where a lax check would pass. Hex is read in either case; anything that isn't 32 bytes of key and 64 of signature is refused, never an error.",
   "cases": [
     {
       "about": "the signer's signature over the message",
@@ -11,13 +11,13 @@
       "output": {"ok": true}
     },
     {
-      "about": "the same signature in upper-case hex: hex is lowercase",
+      "about": "the same signature in upper-case hex: hex is read in either case",
       "input": {
         "message": "arugula example message v1\nline two\n",
         "sig": "3BA2ED9A7019310595F8ECFFB79DE2304FAF1DC43673DFB45D306A4F16919BE43A1FE4BBFBCA3CFB9C70C8DA8ABA39A4AD41568E1565FD2B02D9F7C557E58907",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "the key in upper-case hex",
@@ -26,7 +26,7 @@
         "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
         "sign": "8A88E3DD7409F195FD52DB2D3CBA5D72CA6709BF1D94121BF3748801B40F6F5C"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "one character of the message changed",

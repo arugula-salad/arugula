@@ -84,6 +84,28 @@ test("this browser keeps control's word that a delegation ended", async () => {
   assert.equal(held.get(f.id).at, 2500);
 });
 
+test("what one tab heard counts in another", async () => {
+  const storage = memory();
+  const [a, b] = [new ClosureStore(storage, "k"), new ClosureStore(storage, "k")];
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, b), accepted, "b has looked already");
+  assert.deepEqual(await acceptHostedHolding("acct1", proof({ closed: [f.closedEarly] }), mine, a), refused);
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, b), refused, "b hears it from a");
+  // Storage cleared under a page: its memory stays. An entry that doesn't read
+  // takes nothing else with it.
+  storage().setItem("k", "not json");
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, a), refused);
+  const other = memory();
+  other().setItem("k", JSON.stringify({ [f.id]: f.closedEarly, x: {}, y: { ...f.closed, at: 2.5 } }));
+  assert.equal(new ClosureStore(other, "k").get(f.id).at, 2500);
+});
+
+test("a time is its value, however it's written", async () => {
+  const text = (o) => JSON.parse(JSON.stringify(o).replace(`"at":2500`, `"at":2.5e3`));
+  assert.equal(JSON.stringify(f.closedEarly).includes(`"at":2500`), true);
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [text(f.closedEarly)] }), mine), refused);
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [{ ...f.closedEarly, at: 2 ** 53 }] }), mine), accepted);
+});
+
 test("nothing that doesn't check out is kept", async () => {
   const held = new ClosureStore(memory(), "k");
   await acceptHostedHolding("acct1", proof({ closed: [{ ...f.closedEarly, at: 2400 }, {}, null] }), mine, held);

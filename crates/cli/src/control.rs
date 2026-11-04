@@ -265,11 +265,11 @@ impl Enrolled {
     /// sight, as the page does) or this account's own devices.
     fn accept_hosted(&mut self, v: &Value, teams: &mut Option<Vec<Value>>, pinned: &mut bool) -> anyhow::Result<Cert> {
         use arugula_e2e::{
-            hosted::{Delegation, HostedCert, Owner, Owners, accept_holding, ends_listed},
+            hosted::{Owner, Owners, accept_holding, ends_listed, read_cert, read_delegation},
             team::{AccountCerts, Roster, TeamPin},
         };
-        let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
-        let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
+        let cert = read_cert(&v["cert"])?;
+        let d = read_delegation(&v["delegation"])?;
         let (revokes, closed) = ends_listed(v);
         let me = self.cert.account.clone();
         let mut held = self.closed.clone();

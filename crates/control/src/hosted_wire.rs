@@ -901,6 +901,20 @@ async fn a_revoke_ends_every_delegation_of_its_project() {
     assert!(row.ended().is_some() && row.revokes.is_empty());
     let (_, list) = c.as_person(&session(&c.app, "f1"), "GET", "/api/hosted/delegations", None).await;
     assert!(list["delegations"].as_array().unwrap().iter().all(|d| d["ended"] == json!(true)), "{list}");
+    // Its own revokes are kept all the same, each of them, and the earliest
+    // time counts. It had ended already, so neither is the first.
+    let ended_at = row.ended().unwrap();
+    let hal = device_of(&c, &fran, "f1");
+    let (early, later) =
+        (DelegationRevoke::new(&d1, ended_at - 60_000, &fran), DelegationRevoke::new(&d1, now_ms(), &hal));
+    let (st, v) = send_revoke(&c, "f1", &early).await;
+    assert_eq!((st, &v), (200, &json!({ "first": false, "kept": true })));
+    let (st, v) = send_revoke(&c, "f1", &later).await;
+    assert_eq!((st, &v), (200, &json!({ "first": false, "kept": true })));
+    let row = c.app.db.delegation(&d1.id()).unwrap().unwrap();
+    assert_eq!(row.revokes, [early.clone(), later]);
+    assert_eq!(row.revoke(), Some(&early));
+    assert_eq!(row.ended(), Some(early.at));
     // Over: a new one is taken.
     let mut d3 = delegation(&c, &owner, &fran);
     d3.at += 2;

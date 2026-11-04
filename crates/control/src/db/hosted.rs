@@ -263,6 +263,14 @@ impl Db {
                 )?;
                 RevokeTaken { first: true, kept: true }
             }
+            // Ended by another delegation's revoke: this is the first of its own.
+            Some(row) if row.revokes.is_empty() => {
+                tx.execute(
+                    "UPDATE project_delegations SET revoke = ?2 WHERE id = ?1",
+                    params![r.delegation, serde_json::to_string(r)?],
+                )?;
+                RevokeTaken { first: false, kept: true }
+            }
             Some(row) if row.revokes.len() >= MAX_REVOKES || row.revokes.iter().any(|h| h.by == r.by) => {
                 RevokeTaken { first: false, kept: false }
             }

@@ -151,8 +151,9 @@ export class RosterStore {
 
 /** Control's word of delegations that ended, as this browser heard it, by
  * delegation: the earliest of each, at most `HELD_CLOSURES` (the earliest-ended
- * go first). In memory for the page's life and in `storage` beside it, merged
- * with what another tab heard. Storage that can't be read or written leaves
+ * go first). In memory for the page's life and in `storage` beside it, read
+ * again on each look, so what another tab heard counts here too. An entry that
+ * doesn't read is left out. Storage that can't be read or written leaves
  * memory: the page forgets when it reloads. */
 export class ClosureStore {
   private map: Record<string, DelegationClosed> | null = null;
@@ -164,16 +165,17 @@ export class ClosureStore {
     this.key = key;
   }
 
-  private static ok(v: unknown): v is Record<string, DelegationClosed> {
-    return !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every(isClosed);
+  private static ok(v: unknown): v is Record<string, unknown> {
+    return !!v && typeof v === "object" && !Array.isArray(v);
   }
 
-  private read() {
-    return readStored(this.storage, this.key, ClosureStore.ok) ?? {};
-  }
-
+  /** Memory, with what `storage` holds now: the earlier of each. */
   private held() {
-    return (this.map ??= this.read());
+    const mine = (this.map ??= {});
+    for (const x of Object.values(readStored(this.storage, this.key, ClosureStore.ok) ?? {})) {
+      if (isClosed(x) && (!mine[x.delegation] || x.at < mine[x.delegation].at)) mine[x.delegation] = x;
+    }
+    return mine;
   }
 
   get(id: string) {
@@ -184,7 +186,6 @@ export class ClosureStore {
     const mine = this.held();
     if (mine[c.delegation] && mine[c.delegation].at <= c.at) return;
     mine[c.delegation] = c;
-    for (const [id, x] of Object.entries(this.read())) if (!mine[id] || x.at < mine[id].at) mine[id] = x;
     for (const x of Object.values(mine).sort((a, b) => a.at - b.at || (a.delegation < b.delegation ? -1 : 1))) {
       if (Object.keys(mine).length <= HELD_CLOSURES) break;
       delete mine[x.delegation];

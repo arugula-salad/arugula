@@ -120,14 +120,7 @@ pub fn fingerprint(id: &str) -> String {
     id.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap_or("")).collect::<Vec<_>>().join("-")
 }
 
-/// Lowercase hex, the only form anything writes, so a key has one spelling
-/// here and in the browser's copy (`unhex` in `web/src/shell/e2e/cert.ts`).
-pub fn lower_hex(s: &str) -> bool {
-    !s.bytes().any(|b| b.is_ascii_uppercase())
-}
-
 pub fn hex32(s: &str) -> anyhow::Result<[u8; 32]> {
-    anyhow::ensure!(lower_hex(s), "expected lowercase hex");
     let v = hex::decode(s)?;
     v.try_into().map_err(|_| anyhow::anyhow!("expected 32 bytes of hex"))
 }

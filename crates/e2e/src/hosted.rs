@@ -201,7 +201,8 @@ impl DelegationRevoke {
     /// It takes back `d`, signed by a device that may sign for `d`'s
     /// project (any of its owners, not only the one who delegated).
     pub fn revokes(&self, d: &Delegation, owners: &Owners) -> bool {
-        self.project == d.project
+        self.at <= MAX_TIME
+            && self.project == d.project
             && self.delegation == d.id()
             && owners.may_sign(&d.owner, &self.by, &self.body(), &self.sig)
     }
@@ -230,15 +231,67 @@ impl DelegationClosed {
 
     /// It ends `d`, signed with the key `d` names.
     pub fn closes(&self, d: &Delegation) -> bool {
-        self.project == d.project && self.delegation == d.id() && verify_hex(&d.key, self.body().as_bytes(), &self.sig)
+        self.at <= MAX_TIME
+            && self.project == d.project
+            && self.delegation == d.id()
+            && verify_hex(&d.key, self.body().as_bytes(), &self.sig)
     }
 }
 
-/// The entries of a list that read as `T`, each on its own: one that
-/// doesn't is left out, and takes nothing else with it. What isn't a list is
-/// none. The browser's copy reads a list the same way (`hosted.ts`).
+/// The largest time these papers take, 2^53 - 1: the browser reads a JSON
+/// number as a double, and signs and checks the digits it makes of it.
+pub const MAX_TIME: u64 = (1 << 53) - 1;
+
+/// A time as these papers read one, here and in the browser's copy
+/// (`hosted.ts`): a JSON number whose value is a non-negative integer no larger
+/// than [`MAX_TIME`], however it's written (`2500`, `2500.0`, `2.5e3`). A page
+/// has only the value to go by, and the signed body says it in plain digits.
+pub fn read_time(v: &serde_json::Value) -> Option<u64> {
+    let t = match v.as_u64() {
+        Some(t) => t,
+        None => {
+            let f = v.as_f64()?;
+            if f.fract() != 0.0 || f < 0.0 || f > MAX_TIME as f64 {
+                return None;
+            }
+            f as u64
+        }
+    };
+    (t <= MAX_TIME).then_some(t)
+}
+
+/// `v` as a `T`, its `field` in plain digits if it reads as a time.
+fn with_time<T: serde::de::DeserializeOwned>(v: &serde_json::Value, field: &str) -> serde_json::Result<T> {
+    let mut v = v.clone();
+    if let Some(t) = read_time(&v[field])
+        && let Some(o) = v.as_object_mut()
+    {
+        o.insert(field.to_owned(), t.into());
+    }
+    serde_json::from_value(v)
+}
+
+/// A machine's certificate as a directory or an enrollment lists it.
+pub fn read_cert(v: &serde_json::Value) -> serde_json::Result<HostedCert> {
+    with_time(v, "created")
+}
+
+/// A delegation as a directory or an enrollment lists it.
+pub fn read_delegation(v: &serde_json::Value) -> serde_json::Result<Delegation> {
+    with_time(v, "at")
+}
+
+/// The entries of a list of revokes or closures that read, each on its own:
+/// one that doesn't, or whose `at` isn't a time ([`read_time`]), is left out,
+/// and takes nothing else with it. What isn't a list is none. The browser's
+/// copy reads a list the same way (`hosted.ts`).
 pub fn entries<T: serde::de::DeserializeOwned>(list: &serde_json::Value) -> Vec<T> {
-    list.as_array().into_iter().flatten().filter_map(|e| serde_json::from_value(e.clone()).ok()).collect()
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| read_time(&e["at"]).is_some())
+        .filter_map(|e| with_time(e, "at").ok())
+        .collect()
 }
 
 /// [`entries`], for a field of a type that comes over the wire.
@@ -289,6 +342,14 @@ impl HeldClosures {
             return;
         }
         for c in closed.iter().filter(|c| c.closes(d)) {
+            self.keep(c.clone());
+        }
+    }
+
+    /// Add what `other` holds: the earlier of each. It's checked when it's
+    /// used ([`accept`]), as anything read back from a file is.
+    pub fn merge(&mut self, other: &HeldClosures) {
+        for c in other.0.values() {
             self.keep(c.clone());
         }
     }
@@ -595,6 +656,8 @@ pub fn accept(
     let owner = d.owner().ok_or(HostedRefusal::Form)?;
     if cert.check_form().is_err()
         || !d.well_formed()
+        || cert.created > MAX_TIME
+        || d.at > MAX_TIME
         || cert.project != d.project
         || cert.owner != d.owner
         || cert.delegation != d.id()
@@ -981,6 +1044,9 @@ mod tests {
         assert_eq!(accept_holding(e, &after, &d, &[], &[], &owners, &mut held), Err(HostedRefusal::Revoked));
         assert!(accept_holding(e, &before, &d, &[], &[], &owners, &mut held).is_ok());
         let mut again: HeldClosures = serde_json::from_str(&serde_json::to_string(&held).unwrap()).unwrap();
+        let mut merged = HeldClosures::default();
+        merged.merge(&again);
+        assert_eq!(merged, held);
         assert_eq!(accept_holding(e, &after, &d, &[], &[], &owners, &mut again), Err(HostedRefusal::Revoked));
 
         // A later time changes nothing; an earlier one is kept in its place.
@@ -1025,19 +1091,54 @@ mod tests {
         assert_eq!(ends_listed(&serde_json::json!({ "revocations": {}, "closed": "x" })), (vec![], vec![]));
     }
 
-    /// Keys and signatures have one spelling: lowercase, as in the browser.
+    /// A time is a value, however it's written, up to 2^53 - 1.
     #[test]
-    fn hex_is_lowercase_only() {
+    fn a_time_is_a_value_up_to_the_browsers_limit() {
+        for (text, want) in [
+            ("2500", Some(2500)),
+            ("2500.0", Some(2500)),
+            ("2.5e3", Some(2500)),
+            ("0", Some(0)),
+            ("-0.0", Some(0)),
+            ("9007199254740991", Some(MAX_TIME)),
+            ("9007199254740992", None),
+            ("9007199254740992.0", None),
+            ("18446744073709551615", None),
+            ("2500.5", None),
+            ("-1", None),
+            ("-1.0", None),
+            ("1e300", None),
+            ("\"2500\"", None),
+            ("true", None),
+            ("null", None),
+        ] {
+            assert_eq!(read_time(&serde_json::from_str(text).unwrap()), want, "{text}");
+        }
         let w = world();
         let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
         let word = w.key.close(&d, 30);
-        assert!(word.closes(&d));
-        let mut upper = word.clone();
+        let spelled = format!(
+            r#"{{"closed":[{{"project":"{}","delegation":"{}","at":3e1,"sig":"{}"}}]}}"#,
+            word.project, word.delegation, word.sig
+        );
+        let (_, closed) = ends_listed(&serde_json::from_str(&spelled).unwrap());
+        assert_eq!(closed, std::slice::from_ref(&word));
+        assert!(closed[0].closes(&d));
+        assert!(!w.key.close(&d, MAX_TIME + 1).closes(&d));
+    }
+
+    /// Hex reads in either case on these papers, as everywhere in Rust. What's
+    /// signed is the text as given.
+    #[test]
+    fn hex_reads_in_either_case() {
+        let w = world();
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let mut upper = w.key.close(&d, 30);
         upper.sig = upper.sig.to_uppercase();
-        assert!(!upper.closes(&d));
+        assert!(upper.closes(&d));
         let mut named = d.clone();
         named.key = named.key.to_uppercase();
-        assert!(!named.well_formed());
+        assert!(named.well_formed());
     }
 
     #[test]

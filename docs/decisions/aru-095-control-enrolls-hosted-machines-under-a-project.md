@@ -133,7 +133,11 @@ project P, until revoked" (Jake, 2026-10-21, #1235).
     word dated forward admits later certificates unless an owner's earlier
     revoke is supplied. A client's memory goes with its local state: a browser
     whose storage is cleared, or a CLI logged in again, has to hear it again.
-    Clients from before this go by revokes alone; control enrolls nothing
+    Control can send many other delegations an owner signed, ended, until what
+    a client kept of one is the first to go; and it can date its word zero, so
+    that a client refuses every machine under that delegation. Both are control
+    refusing service, which it can do anyway, and a new delegation is the way
+    back. Clients from before this go by revokes alone; control enrolls nothing
     under an ended delegation whichever client asks.
 
 `docs/control-e2e.md` says what control can and can't do with a

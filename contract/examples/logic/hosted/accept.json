@@ -1,5 +1,5 @@
 {
-  "about": "Whether a client accepts a hosted machine, for that project only: the client's account (me) and what it knows of the project's owners from its own checks (a team's roster and members' certificates, or its account's chain), never control's word for the machine. In this order: the certificate and delegation well formed and naming each other (form); the owners the client knows are the delegation's (wrong_project); me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the certificate signed with the key the delegation names (bad_signature); made no earlier than the delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) and any word from control that it ended, signed with the key the delegation names (closed) (revoked). Either that doesn't check out is ignored, each entry of a list on its own: one that doesn't read takes nothing else with it. Keys and signatures are lowercase hex. Accepted, it gives the client's role in the project.",
+  "about": "Whether a client accepts a hosted machine, for that project only: the client's account (me) and what it knows of the project's owners from its own checks (a team's roster and members' certificates, or its account's chain), never control's word for the machine. In this order: the certificate and delegation well formed and naming each other (form); the owners the client knows are the delegation's (wrong_project); me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the certificate signed with the key the delegation names (bad_signature); made no earlier than the delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) and any word from control that it ended, signed with the key the delegation names (closed) (revoked). Either that doesn't check out is ignored, each entry of a list on its own: one that doesn't read takes nothing else with it. A time is a JSON number whose value is a non-negative integer up to 2^53 - 1, however it's written. Hex in keys and signatures reads in either case. Accepted, it gives the client's role in the project.",
   "cases": [
     {
       "about": "alice's own project's box",
@@ -2003,10 +2003,62 @@
       }
     },
     {
-      "about": "closed, its signature in capitals: ignored",
+      "about": "closed, its time 2500.0: the value counts",
       "input": {
         "cert": "box",
-        "closed": ["closed-upper-sig"],
+        "closed": ["closed-time-with-a-fraction"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke, its time 2500.0: the value counts",
+      "input": {
+        "cert": "box",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-time-with-a-fraction"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "closed, its time 2500.5: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-time-half"],
         "delegation": "d",
         "me": "alice",
         "owners": {
@@ -2031,7 +2083,223 @@
       }
     },
     {
-      "about": "a revoke, its signature in capitals: ignored",
+      "about": "closed, its time past 2^53 - 1: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-time-past-the-limit"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a revoke, its time past 2^53 - 1: ignored",
+      "input": {
+        "cert": "box",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-time-past-the-limit"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a certificate, its time 3000.0: the value counts",
+      "input": {
+        "cert": "box-time-with-a-fraction",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a certificate, its time as text",
+      "input": {
+        "cert": "box-time-as-text",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a certificate, its time past 2^53 - 1",
+      "input": {
+        "cert": "box-time-past-the-limit",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a delegation, its time 2000.0: the value counts",
+      "input": {
+        "cert": "box",
+        "closed": [],
+        "delegation": "d-time-with-a-fraction",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a delegation, its time past 2^53 - 1",
+      "input": {
+        "cert": "box-under-far-delegation",
+        "closed": [],
+        "delegation": "d-time-past-the-limit",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "closed, its signature in capitals: it counts",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-upper-sig"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke, its signature in capitals: it counts",
       "input": {
         "cert": "box",
         "closed": [],
@@ -2054,9 +2322,7 @@
         },
         "revokes": ["revoke-upper-sig"]
       },
-      "output": {
-        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
-      }
+      "output": {"refused": "revoked"}
     },
     {
       "about": "a certificate, its signature in capitals",
@@ -2082,7 +2348,9 @@
         },
         "revokes": []
       },
-      "output": {"refused": "bad_signature"}
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
     },
     {
       "about": "a delegation, its signature in capitals",
@@ -2108,7 +2376,9 @@
         },
         "revokes": []
       },
-      "output": {"refused": "unsigned"}
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
     },
     {
       "about": "a certificate, its key in capitals",
@@ -2134,7 +2404,9 @@
         },
         "revokes": []
       },
-      "output": {"refused": "form"}
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
     },
     {
       "about": "a delegation, its key in capitals",
@@ -2160,7 +2432,9 @@
         },
         "revokes": []
       },
-      "output": {"refused": "form"}
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
     }
   ],
   "checks": [
@@ -2452,6 +2726,42 @@
       "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
       "workspace": "hw_1"
     },
+    "box-time-as-text": {
+      "created": "3000",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c40d7bbe06d53ac75c1f8864eb43041cef6dc13614e85c311ea43fa6d9eccb96cef6702b49095c5d91dfba047cebad625fd2b03a7076cf06b12eace08e75bb02",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-time-past-the-limit": {
+      "created": 9007199254740992,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "e6d99d38fa0466777a6e069da33e77fe63505cbdbc21abee6c1928334a0cddb2f00fc0af9f0172ec27233ac4c007c517224ab6693d7cd943925ecd74553d9a00",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-time-with-a-fraction": {
+      "created": 3000.0,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c40d7bbe06d53ac75c1f8864eb43041cef6dc13614e85c311ea43fa6d9eccb96cef6702b49095c5d91dfba047cebad625fd2b03a7076cf06b12eace08e75bb02",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
     "box-under-d-backdated": {
       "created": 3000,
       "delegation": "fae861798ffaf289523436ef2d514d57",
@@ -2569,6 +2879,18 @@
       "owner": "account:alice",
       "project": "prj_1",
       "sig": "9c48cad0067d4af2b277c8dec7a48cf5d33bfcd154d87ce0bfcb1fe22436131af94f9de8566e77a220a0397311387b1664e87585882f3f30a462e5fa6c01080b",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-far-delegation": {
+      "created": 9007199254740992,
+      "delegation": "2298e62be0f558003ae1c66a1f8f63f8",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "7690f44b884bc342fd91beded547b615c11da073c85309fd5e58f467ddebc059199888a76f2ec5872bbdfa8e195eddb7d4395ef53660c599248f731527bc6303",
       "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
       "workspace": "hw_1"
     },
@@ -2728,6 +3050,24 @@
       "project": "prj_1",
       "sig": "9219905705df7d6f0d84976de61c8cc378688f6b3fc4f1d226dcbe9c520d97f51f20c20ebfbafd9d5db139e2c01bd94104e146531cf6d187032a2dba4d7d390e"
     },
+    "closed-time-half": {
+      "at": 2500.5,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9219905705df7d6f0d84976de61c8cc378688f6b3fc4f1d226dcbe9c520d97f51f20c20ebfbafd9d5db139e2c01bd94104e146531cf6d187032a2dba4d7d390e"
+    },
+    "closed-time-past-the-limit": {
+      "at": 9007199254740992,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "0d97faa7996684058810e432073a4b4e14991a13eac763a521cc5ca709304816aebe2c64fa364ca09e509eda331df62f6834000d7de4163519248fb833e60305"
+    },
+    "closed-time-with-a-fraction": {
+      "at": 2500.0,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9219905705df7d6f0d84976de61c8cc378688f6b3fc4f1d226dcbe9c520d97f51f20c20ebfbafd9d5db139e2c01bd94104e146531cf6d187032a2dba4d7d390e"
+    },
     "closed-upper-sig": {
       "at": 2500,
       "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
@@ -2830,6 +3170,22 @@
       "project": "prj_1",
       "sig": "a813a8655045488966aa76fabdcace44c35d03c8768a1a286b7f414fd8acc3e1521e5c4451b07758e65ac9c41ffd1a05946dbf3e51bc1f063073bac50f439c07"
     },
+    "d-time-past-the-limit": {
+      "at": 9007199254740992,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "294c7fc1efbc4222eddb2b4efefc135847ffe23e104a2d218260d0673b0f0280d04cb8702b9669ab2f09ba1d68d87c285f007bdc8a562c67e647ae551bad640b"
+    },
+    "d-time-with-a-fraction": {
+      "at": 2000.0,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
     "d-upper-key": {
       "at": 2000,
       "by": "37f29b7074cf8b52",
@@ -2926,6 +3282,20 @@
     },
     "revoke-time-as-text": {
       "at": "2500",
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "41c71baba0365f3a2517e92122addaf5e295a24fd4d111ce6f630bb267296bdc4a8fa24bbdae4e7a10cfce8ccdc681eb384608dd40543c339e677c59f0180706"
+    },
+    "revoke-time-past-the-limit": {
+      "at": 9007199254740992,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "6c326aaf1a6c2db86fd1cd1d9e7fdb662cbfa407d23d1d12263549972cb9e0820186077c5dc23371f767c2d8634ea9528e6e702b2bf368953ccb5ac7a1e75d02"
+    },
+    "revoke-time-with-a-fraction": {
+      "at": 2500.0,
       "by": "37f29b7074cf8b52",
       "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
       "project": "prj_1",

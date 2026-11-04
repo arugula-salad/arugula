@@ -65,9 +65,14 @@ const enc = new TextEncoder();
 const token = (s: string) => /^[A-Za-z0-9_-]{1,64}$/.test(s);
 // eslint-disable-next-line no-control-regex
 const plain = (s: string) => s.length > 0 && [...s].length <= 64 && !/[\u0000-\u001f\u007f-\u009f]/.test(s);
-const isKey = (s: string) => /^[0-9a-f]{64}$/.test(s);
+// Hex on these papers reads in either case, as Rust's does; what's signed is
+// the text as given.
+const isKey = (s: string) => /^[0-9a-fA-F]{64}$/.test(s);
+const low = (s: string) => s.toLowerCase();
 
 const text = (v: unknown) => typeof v === "string";
+/** A time, as `arugula_e2e::hosted::read_time`: a JSON number whose value is a
+ * non-negative integer up to 2^53 - 1, however it's written. */
 const time = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
 const isRevoke = (v: unknown): v is DelegationRevoke => {
   const r = v as DelegationRevoke | null;
@@ -131,7 +136,7 @@ const ownerOf = (o: Owners) => ("team" in o ? `team:${o.team.team}` : `account:$
  * project's owners, trusted now. */
 async function maySign(o: Owners, owner: string, device: string, body: string, sig: string): Promise<boolean> {
   if (owner !== ownerOf(o) || !parseOwner(owner)) return false;
-  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli" || c.kind === "app") && (await verify(c.sign, body, sig));
+  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli" || c.kind === "app") && (await verify(low(c.sign), body, low(sig)));
   if ("team" in o) {
     for (const m of o.team.members.filter((m) => m.role === "owner")) {
       const [c, rv] = o.certs[m.account] ?? [[], []];
@@ -144,7 +149,7 @@ async function maySign(o: Owners, owner: string, device: string, body: string, s
 
 /** `x` ends `d`, whose id is `id`, signed with the key `d` names. */
 const closes = async (x: DelegationClosed, d: Delegation, id: string) =>
-  x.project === d.project && x.delegation === id && (await verify(d.key, closedBody(x), x.sig));
+  x.project === d.project && x.delegation === id && (await verify(low(d.key), closedBody(x), low(x.sig)));
 
 export type HostedRefusal = "form" | "wrong_project" | "not_in_project" | "unsigned" | "bad_signature" | "revoked";
 
@@ -160,7 +165,8 @@ export async function acceptHosted(
   const id = await delegationId(d);
   const formed =
     token(c.project) && token(c.workspace) && token(c.delegation) && !!parseOwner(c.owner) && plain(c.name) &&
-    isKey(c.noise) && isKey(c.sign) && (await deviceId(unhex(c.noise), unhex(c.sign))) === c.device &&
+    time(c.created) && time(d.at) &&
+    isKey(c.noise) && isKey(c.sign) && (await deviceId(unhex(low(c.noise)), unhex(low(c.sign)))) === c.device &&
     token(d.project) && !!parseOwner(d.owner) && isKey(d.key) && token(d.by) &&
     c.project === d.project && c.owner === d.owner && c.delegation === id;
   if (!formed) return no("form");
@@ -169,7 +175,7 @@ export async function acceptHosted(
     "team" in o ? o.team.members.find((m) => m.account === me)?.role : o.account.account === me ? "owner" : undefined;
   if (!role) return no("not_in_project");
   if (!(await maySign(o, d.owner, d.by, delegationBody(d), d.sig))) return no("unsigned");
-  if (!(await verify(d.key, hostedBody(c), c.sig))) return no("bad_signature");
+  if (!(await verify(low(d.key), hostedBody(c), low(c.sig)))) return no("bad_signature");
   // The earliest of a revoke an owner signed, as this browser holds them now,
   // and control's word. Either that doesn't check out is ignored.
   let revoked = Infinity;

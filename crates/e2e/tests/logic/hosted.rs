@@ -8,7 +8,7 @@ use arugula_e2e::{
     DeviceKeys, Kind,
     hosted::{
         Delegation, DelegationClosed, DelegationRevoke, HostedCert, HostedKey, Owner, accept, ends_listed,
-        enroll_proof_body, live,
+        enroll_proof_body, live, read_cert, read_delegation,
     },
     team::TeamRole,
 };
@@ -226,7 +226,11 @@ fn run_accept(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
     let (revokes, closed) = ends_listed(&json!({
         "revocations": ctx.all::<Value>(&i.revokes)?, "closed": ctx.all::<Value>(&i.closed)?,
     }));
-    Ok(match accept(&i.me, &ctx.get(&i.cert)?, &ctx.get(&i.delegation)?, &revokes, &closed, &owners.owners()) {
+    // A certificate or delegation that doesn't read is no answer but "form".
+    let (Ok(cert), Ok(d)) = (read_cert(&ctx.get(&i.cert)?), read_delegation(&ctx.get(&i.delegation)?)) else {
+        return Ok(json!({ "refused": "form" }));
+    };
+    Ok(match accept(&i.me, &cert, &d, &revokes, &closed, &owners.owners()) {
         Ok(a) => json!({ "accepted": {
             "project": a.project,
             "owner": a.owner.as_string(),
@@ -252,8 +256,9 @@ fn accepts() -> Example {
          delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) \
          and any word from control that it ended, signed with the key the delegation names (closed) (revoked). \
          Either that doesn't check out is ignored, each entry of a list on its own: one that doesn't read takes \
-         nothing else with it. Keys and signatures are lowercase hex. Accepted, it gives the client's role in the \
-         project.",
+         nothing else with it. A time is a JSON number whose value is a non-negative integer up to 2^53 - 1, however \
+         it's written. Hex in keys and signatures reads in either case. Accepted, it gives the client's role in \
+         the project.",
         &[
             "arugula_e2e::hosted::accept",
             "arugula_e2e::hosted::DelegationClosed::closes",
@@ -772,7 +777,100 @@ fn accepts() -> Example {
     closing("only a revoke entry that doesn't read: ignored", "box", "d", &["not-one-empty"], &[], &mine, ok.clone());
     closing("a revoke, its time as text: ignored", "box", "d", &["revoke-time-as-text"], &[], &mine, ok.clone());
 
-    // Keys and signatures have one spelling: lowercase hex.
+    // Times: a value up to 2^53 - 1, however it's written.
+    const OVER: u64 = 1 << 53;
+    let time_as = |v: Value, field: &str, t: Value| {
+        let mut o = v;
+        o[field] = t;
+        o
+    };
+    ex.object("closed-time-with-a-fraction", &time_as(json!(key.close(&d, 2_500)), "at", json!(2_500.0)));
+    ex.object(
+        "revoke-time-with-a-fraction",
+        &time_as(json!(DelegationRevoke::new(&d, 2_500, ak)), "at", json!(2_500.0)),
+    );
+    ex.object("closed-time-half", &time_as(json!(key.close(&d, 2_500)), "at", json!(2_500.5)));
+    ex.object("closed-time-past-the-limit", &key.close(&d, OVER));
+    ex.object("revoke-time-past-the-limit", &DelegationRevoke::new(&d, OVER, ak));
+    ex.object(
+        "box-time-with-a-fraction",
+        &time_as(json!(machine(&d, "hw_1", &boxk, 3_000, &key)), "created", json!(3_000.0)),
+    );
+    ex.object("box-time-as-text", &time_as(json!(machine(&d, "hw_1", &boxk, 3_000, &key)), "created", json!("3000")));
+    ex.object("box-time-past-the-limit", &machine(&d, "hw_1", &boxk, OVER, &key));
+    ex.object("d-time-with-a-fraction", &time_as(json!(d), "at", json!(2_000.0)));
+    let far = delegation("prj_1", acct, &key, OVER, ak);
+    ex.object("d-time-past-the-limit", &far);
+    ex.object("box-under-far-delegation", &machine(&far, "hw_1", &boxk, OVER, &key));
+    closing(
+        "closed, its time 2500.0: the value counts",
+        "box",
+        "d",
+        &[],
+        &["closed-time-with-a-fraction"],
+        &mine,
+        no("revoked"),
+    );
+    closing(
+        "a revoke, its time 2500.0: the value counts",
+        "box",
+        "d",
+        &["revoke-time-with-a-fraction"],
+        &[],
+        &mine,
+        no("revoked"),
+    );
+    closing("closed, its time 2500.5: ignored", "box", "d", &[], &["closed-time-half"], &mine, ok.clone());
+    closing(
+        "closed, its time past 2^53 - 1: ignored",
+        "box",
+        "d",
+        &[],
+        &["closed-time-past-the-limit"],
+        &mine,
+        ok.clone(),
+    );
+    closing(
+        "a revoke, its time past 2^53 - 1: ignored",
+        "box",
+        "d",
+        &["revoke-time-past-the-limit"],
+        &[],
+        &mine,
+        ok.clone(),
+    );
+    closing(
+        "a certificate, its time 3000.0: the value counts",
+        "box-time-with-a-fraction",
+        "d",
+        &[],
+        &[],
+        &mine,
+        ok.clone(),
+    );
+    closing("a certificate, its time as text", "box-time-as-text", "d", &[], &[], &mine, no("form"));
+    closing("a certificate, its time past 2^53 - 1", "box-time-past-the-limit", "d", &[], &[], &mine, no("form"));
+    closing(
+        "a delegation, its time 2000.0: the value counts",
+        "box",
+        "d-time-with-a-fraction",
+        &[],
+        &[],
+        &mine,
+        ok.clone(),
+    );
+    closing(
+        "a delegation, its time past 2^53 - 1",
+        "box-under-far-delegation",
+        "d-time-past-the-limit",
+        &[],
+        &[],
+        &mine,
+        no("form"),
+    );
+
+    // Hex in keys and signatures reads in either case; what's signed is the
+    // text as given.
     let upper_sig = |v: Value| {
         let mut o = v;
         o["sig"] = json!(o["sig"].as_str().unwrap().to_uppercase());
@@ -794,12 +892,28 @@ fn accepts() -> Example {
     under_upper.delegation = named_upper.id();
     key.sign(&mut under_upper);
     ex.object("box-under-upper-key", &under_upper);
-    closing("closed, its signature in capitals: ignored", "box", "d", &[], &["closed-upper-sig"], &mine, ok.clone());
-    closing("a revoke, its signature in capitals: ignored", "box", "d", &["revoke-upper-sig"], &[], &mine, ok.clone());
-    closing("a certificate, its signature in capitals", "box-upper-sig", "d", &[], &[], &mine, no("bad_signature"));
-    closing("a delegation, its signature in capitals", "box", "d-upper-sig", &[], &[], &mine, no("unsigned"));
-    closing("a certificate, its key in capitals", "box-upper-noise", "d", &[], &[], &mine, no("form"));
-    closing("a delegation, its key in capitals", "box-under-upper-key", "d-upper-key", &[], &[], &mine, no("form"));
+    closing(
+        "closed, its signature in capitals: it counts",
+        "box",
+        "d",
+        &[],
+        &["closed-upper-sig"],
+        &mine,
+        no("revoked"),
+    );
+    closing(
+        "a revoke, its signature in capitals: it counts",
+        "box",
+        "d",
+        &["revoke-upper-sig"],
+        &[],
+        &mine,
+        no("revoked"),
+    );
+    closing("a certificate, its signature in capitals", "box-upper-sig", "d", &[], &[], &mine, ok.clone());
+    closing("a delegation, its signature in capitals", "box", "d-upper-sig", &[], &[], &mine, ok.clone());
+    closing("a certificate, its key in capitals", "box-upper-noise", "d", &[], &[], &mine, ok.clone());
+    closing("a delegation, its key in capitals", "box-under-upper-key", "d-upper-key", &[], &[], &mine, ok.clone());
     for (about, input, want) in cases {
         ex.case(&about, input, want);
     }

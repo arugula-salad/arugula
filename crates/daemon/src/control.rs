@@ -1227,6 +1227,10 @@ pub struct Control {
     /// fetched and checked as a shared team's, so their members can be
     /// named; they let no one in.
     team_pins: RwLock<BTreeMap<String, String>>,
+    /// Control's word of delegations that ended, as heard
+    /// (`crate::peer::with_held`): kept here too, so a file that can't be
+    /// written forgets nothing, and one left behind takes nothing back.
+    held_closures: std::sync::Mutex<arugula_e2e::hosted::HeldClosures>,
     /// Invites waiting for their person to be reachable (#233), in
     /// `person-invites.json`: tried again after each refresh, for a day.
     invites: std::sync::Mutex<Vec<Waiting>>,
@@ -1494,6 +1498,7 @@ impl Control {
             published: Default::default(),
             no_relay,
             control_urls: Default::default(),
+            held_closures: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
                     .ok()
@@ -1640,6 +1645,10 @@ impl Control {
     }
 
     /// Where `control.json` and the device key live.
+    pub(crate) fn held_closures(&self) -> &std::sync::Mutex<arugula_e2e::hosted::HeldClosures> {
+        &self.held_closures
+    }
+
     pub fn state_dir(&self) -> &Path {
         &self.state_dir
     }
@@ -6433,7 +6442,7 @@ pub(crate) mod tests {
 
         use crate::{
             hosted::runs::tests::{MACHINE_KEY, machine},
-            peer::{HELD_FILE, accept_hosted, read_held, write_held},
+            peer::{HELD_FILE, accept_hosted, read_held, with_held, write_held},
         };
         let (saved, d, _root, _phone) = machine();
         let dir = std::env::temp_dir().join(format!("arugula-peer-held-{}", std::process::id()));
@@ -6471,9 +6480,27 @@ pub(crate) mod tests {
         let mut back = read_held(&dir).unwrap();
         assert_eq!(back, held);
         assert!(accept_hosted(&e, &after.0, &after.1, &mut back).is_err(), "after a restart");
-        // A file that doesn't read is an error, never none.
+        // A file that doesn't read is an error, never none, and no hosted
+        // machine counts until it's fixed.
         std::fs::write(dir.join(HELD_FILE), b"{").unwrap();
         assert!(read_held(&dir).is_err());
+        let memory = std::sync::Mutex::new(HeldClosures::default());
+        assert!(with_held(&memory, &dir, |held| held.is_none()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // A write that fails forgets nothing: this directory isn't there, so
+        // the file reads as none and can't be written.
+        let round = |entry: &(String, serde_json::Value)| {
+            with_held(&memory, &dir, |held| accept_hosted(&e, &entry.0, &entry.1, held.unwrap()).is_ok())
+        };
+        assert!(!round(&(told_id.clone(), told.clone())));
+        assert!(!dir.exists());
+        assert!(!round(&after), "the next round, with control leaving it out");
+        // A file left behind takes nothing back, and memory goes into it.
+        std::fs::create_dir_all(&dir).unwrap();
+        write_held(&dir, &HeldClosures::default()).unwrap();
+        assert!(!round(&after));
+        assert_eq!(read_held(&dir).unwrap(), *memory.lock().unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
