@@ -11,7 +11,7 @@
 .copy-link button {
   padding: 4px 10px;
   border-radius: var(--btn-radius);
-  background: var(--raised-hover);
+  background: var(--raised);
   font-size: 12px;
   white-space: nowrap;
 }
