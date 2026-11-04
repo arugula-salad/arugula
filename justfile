@@ -85,10 +85,19 @@ contract-schema mode="write":
 api-contract mode="write":
     node scripts/api-contract.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
-# Write DECISIONS.md, the index of the decision records in docs/decisions/.
-# Without `write`, check it's current.
+# Write DECISIONS.md, the index of the decision records in docs/decisions/,
+# and docs/capabilities/README.md, the index of the feature records. Without
+# `write`, check they're current, and that no standing decision names a path
+# that isn't there.
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
+    node scripts/capabilities.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
+# What the code and CI say this week, for keeping up (docs/capabilities/):
+# feature records behind the code, where the week's commits went, and what
+# costs what. `just map --no-ci` skips GitHub; `--since "30 days ago"`.
+map *args:
+    node scripts/map.mjs {{args}}
 
 # Check the headline sections of the release notes (docs/releases/X.Y.Z.md),
 # which What's new reads at build time, and list them.
@@ -924,6 +933,7 @@ test-scripts:
     scripts/tests/changed.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/quarantine.sh
+    scripts/tests/capabilities.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh

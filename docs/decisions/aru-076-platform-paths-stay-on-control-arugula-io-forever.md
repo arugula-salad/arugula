@@ -38,7 +38,7 @@ decided_on: "2026-10-20"
 reviews: []
 constrains:
   - "path:crates/control/src/auth.rs"
-  - "path:crates/control/src/main.rs"
+  - "path:crates/control/src/lib.rs"
   - "path:crates/control/routes.toml"
 ---
 
@@ -69,5 +69,5 @@ page is on `app.arugula.io` ("The platform page is on app.arugula.io, not on
 the keys' origin"), and that host points at the hub, which routes it to the
 platform by `Host`. The platform still has no public address, and every
 platform path on `control.arugula.io` keeps working for old daemons and apps.
-Where: `crates/control/src/auth.rs` (`check_daemon`, `daemon_auth_message_v2`), `crates/control/routes.toml`, `crates/control/src/main.rs`.
+Where: `crates/control/src/auth.rs` (`check_daemon`, `daemon_auth_message_v2`), `crates/control/routes.toml`, `crates/control/src/lib.rs`.
 From: #1150, #1128 (census), M134 (#1151), M135 (#1152), M140 (#1157).

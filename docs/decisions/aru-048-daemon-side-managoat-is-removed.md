@@ -29,8 +29,8 @@ constrains:
   - "path:crates/daemon/src/mcp/tools.rs"
   - "path:crates/arugulad-labs/src/agents/mod.rs"
   - "path:crates/proto/src/lib.rs"
-  - "path:crates/daemon/tests/integration/agents.rs"
-  - "path:crates/daemon/tests/integration/flag_gates.rs"
+  - "path:crates/arugulad/tests/integration/agents.rs"
+  - "path:crates/arugulad/tests/integration/flag_gates.rs"
 ---
 
 # Daemon-side Managoat is removed
@@ -76,5 +76,5 @@ tests). What stays, for saved state and a fleet whose versions are mixed:
   reads it. `/api/fountain/…`, `/api/agent-approvals` and `/api/a2a/
   fountain/…` are gone; `agent-approvals.json` and `managoat/` in a state
   dir are left as they are.
-Where: `crates/daemon/src/agent/defs.rs` (`Kind::Managoat`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/arugulad-labs/src/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/daemon/src/agent/defs.rs` (`Kind::Managoat`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/arugulad-labs/src/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/arugulad/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/arugulad/tests/integration/flag_gates.rs`.
 From: Jake, 2026-10-18.

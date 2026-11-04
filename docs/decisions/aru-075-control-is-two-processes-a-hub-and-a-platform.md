@@ -47,7 +47,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
 constrains:
-  - "path:crates/control/src/main.rs"
+  - "path:crates/control/src/lib.rs"
   - "path:crates/platform"
   - "path:crates/control/tables.toml"
   - "path:crates/control/routes.toml"
@@ -96,5 +96,5 @@ Sign-in with GitHub stays on the hub ("The hub stays the identity provider;
 passkeys are bound to control.arugula.io"). The hub's poke relay and
 `/api/daemon/github/token` stay until the relay is retired (M174), and reach
 `may()` and minting through the platform's internal API.
-Where: `crates/control/src/main.rs` (`App`), `crates/platform/`, `crates/control/routes.toml`, `crates/control/tables.toml`.
+Where: `crates/control/src/lib.rs` (`App`), `crates/platform/`, `crates/control/routes.toml`, `crates/control/tables.toml`.
 From: #1150 (platform roadmap, step 2), M134 (#1151), M136 (#1153), #1204 (step 4), M161 (#1207).
