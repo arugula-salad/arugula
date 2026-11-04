@@ -5,9 +5,8 @@
 //!
 //! **Where a call goes.** Without `pane`/`machine`, or for a pane on this
 //! host, this daemon answers from its own filesystem. Every host with a
-//! daemon (another peer, a dial-out host) answers the same way for
-//! itself; the client reaches it like any other API call (straight, or
-//! through `/h/NAME`). A block on a
+//! daemon (another peer) answers the same way for itself; the client
+//! reaches it like any other API call. A block on a
 //! machine with no daemon of ours (a VM pane or tab, a shell on a sandbox)
 //! is answered through the machine's provider ([`Provider::fs_list`]).
 //!

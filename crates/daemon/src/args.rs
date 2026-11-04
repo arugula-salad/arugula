@@ -341,9 +341,6 @@ pub(crate) struct RunArgs {
 
     #[command(flatten)]
     pub(crate) editors: EditorArgs,
-
-    #[command(flatten)]
-    pub(crate) reach: ReachArgs,
 }
 
 /// Editor blocks: VS Code as code-server, served like browser blocks
@@ -361,25 +358,6 @@ pub(crate) struct EditorArgs {
     /// Where code-server releases are downloaded from.
     #[arg(long, env = "ARUGULA_CODE_SERVER_RELEASES", default_value = crate::editors::RELEASES, hide = true)]
     pub(crate) code_server_releases: String,
-}
-
-/// Reaching a home daemon from a host that can only dial out, and
-/// keeping history there.
-#[derive(clap::Args, Debug)]
-pub(crate) struct ReachArgs {
-    /// Dial out to this home daemon (`wss://home.example.ts.net`) and serve this
-    /// daemon through it, for when nothing can connect in. Redials with
-    /// backoff; this daemon works on its own meanwhile.
-    #[arg(long, env = "ARUGULA_PEER", requires = "token")]
-    pub(crate) peer: Option<String>,
-    /// The per-host token for --peer, in a file. Mint one on the home
-    /// daemon with `arugula hosts token NAME`.
-    #[arg(long, env = "ARUGULA_TOKEN_FILE", value_name = "FILE")]
-    pub(crate) token: Option<PathBuf>,
-    /// An invite (`arugula hosts invite`) to trade for a token when the
-    /// --token file doesn't exist yet; the token is saved there.
-    #[arg(long, requires = "peer")]
-    pub(crate) join: Option<String>,
 }
 
 /// Browser blocks on ports: each is served on its own origin by a listener

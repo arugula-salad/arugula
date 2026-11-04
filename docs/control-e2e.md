@@ -111,9 +111,9 @@ The rest of this page has the details.
   - a new browser, phone or app window does the same with the code it
     shows, scanned or typed on a device you already use
     ([Approving a new device](#approving-a-new-browser-or-phone-the-code-it-shows)).
-- **Relay:** control keeps each enrolled daemon's dial-out socket (the daemon's
-  dial-out mux) and splices clients onto it. It sees connection metadata and byte
-  counts only.
+- **Relay:** control keeps each enrolled daemon's relay socket (the daemon's
+  mux, `relay_ws.rs`) and splices clients onto it. It sees connection metadata
+  and byte counts only.
 - **Read-only links:** a link carries a one-off device key in its fragment
   (`#k=…`). The daemon lists that key as a viewer of one session until the
   link expires.
@@ -1281,7 +1281,9 @@ Nothing in this spec blocks it.
 
 ## The relay
 
-Control's relay is the daemon's dial-out transport with control at the home end:
+Control's relay is the daemon's WebSocket-and-mux transport (`relay_ws.rs`,
+first built for the dial-out tunnel of M4c, since removed) with control at
+the home end:
 
 - An enrolled daemon keeps one WebSocket to `wss://control/dial`,
   authenticated by a Noise handshake with its daemon key. (The spike
@@ -1290,7 +1292,7 @@ Control's relay is the daemon's dial-out transport with control at the home end:
   the account may reach that daemon (metadata it has anyway), opens a mux
   stream and splices the two. It forwards opaque Noise messages and counts
   bytes per account (for fair use and the meter).
-- The mux is unchanged from the daemon's dial-out transport: per-stream credit, 256 KB windows, 16 KB
+- The mux is the same one: per-stream credit, 256 KB windows, 16 KB
   frames.
 
 **Measured** (spike relay on Fly, `shared-cpu-1x`, 256 MB):
@@ -1328,10 +1330,11 @@ Control's relay is the daemon's dial-out transport with control at the home end:
   abuse, not margin.
 
 **Found and fixed on the way: Nagle.** `axum::serve` leaves Nagle on, and
-the dial-out mux writes frames back to back (OPEN then DATA, DATA then
-GRANT), so the second frame waited for the peer's delayed ACK. That was
-40 ms on every request and keystroke through `/h/<name>/…` on the home
-daemon today: 41.7 ms against 1.4 ms direct. The daemon now sets
+the mux writes frames back to back (OPEN then DATA, DATA then GRANT), so
+the second frame waited for the peer's delayed ACK. That was 40 ms on
+every request and keystroke through the dial-out tunnel (`/h/<name>/…`,
+since removed) on the home daemon at the time: 41.7 ms against 1.4 ms
+direct. The daemon now sets
 `TCP_NODELAY` on every accepted connection, and relayed requests take
 2.0 ms. Control's relay must do the same.
 
@@ -1670,7 +1673,7 @@ leaves it. So:
   - the daemon checks the signature and encrypts the payload (today's
     `push::encrypt`);
   - it hands control `{endpoint, ciphertext, ttl, urgency}` through the
-    dial-out socket;
+    relay socket;
   - control signs the VAPID JWT and posts it.
 - **What control and the push service see:** endpoint, size and timing.
   Control logs "daemon X notified device Y".
