@@ -584,10 +584,10 @@ export function ShareDialog({ client }: { client: Client }) {
             ? "People you share with open their own panes on throwaway VMs."
             : "People you share with see its panes but can't open their own here."}{" "}
           {machine
-            ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. Your teams aren't asked. `
+            ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. `
             : ""}
-          Unless this machine is in their team, even people who drive ask you before typing in one of its panes. An owner here is an
-          owner of this session, not of the machine: they rename, close and share it, and nothing else.
+          Unless this machine is in their team, even people who drive ask you before typing in its panes. An owner here owns the
+          session, not the machine.
         </p>
         {changed ? (
           <div class="share-changed" data-key-changed={changed.p.account}>
