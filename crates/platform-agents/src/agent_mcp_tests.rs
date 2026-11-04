@@ -211,8 +211,16 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
 
     // A run, as a's start, by the token's agent: pending, with no standing
     // grant to start it.
-    let r = tool(&base, &token, "start_run", json!({ "command": ["just", "test"], "box": "dev" })).await;
+    let r = tool(&base, &token, "start_run", json!({ "command": ["just", "test"], "cloud_workspace": "dev" })).await;
     let run = ok(&r)["run"].clone();
+    // box, its old name, still names the workspace (Arugula #668); both
+    // names with different values are refused.
+    let r = tool(&base, &token, "start_run", json!({ "command": ["just", "test"], "box": "dev" })).await;
+    assert_eq!(ok(&r)["run"]["state"], json!("pending"), "{r}");
+    let r =
+        tool(&base, &token, "start_run", json!({ "command": ["ls"], "box": "dev", "cloud_workspace": "other" })).await;
+    assert_eq!(r["isError"], json!(true), "{r}");
+    assert!(r["content"][0]["text"].as_str().unwrap().contains("old name"), "{r}");
     assert_eq!(
         (&run["state"], &run["started_by"], &run["started_by_agent"]),
         (&json!("pending"), &json!("a"), &json!(id)),
@@ -291,7 +299,9 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
         calls.iter().filter(|c| c["tool"] == tool).map(|c| c["outcome"].as_str().unwrap()).collect::<Vec<_>>()
     };
     assert_eq!(of("issue_write"), ["ok", "ok"]);
-    assert_eq!(of("start_run"), ["ok"]);
+    // The first start, its start by box (the old name), and the refused
+    // one with both names (Arugula #668), newest first.
+    assert_eq!(of("start_run"), ["failed", "ok", "ok"]);
     assert_eq!(of("plan_deploy"), ["ok"]);
     assert_eq!(of("approve"), ["refused"; 4], "an ask to approve is kept, as `approve`");
     assert!(calls.iter().any(|c| c["detail"] == json!("set secret REDONE_TOKEN") && c["project"] == json!(t)));

@@ -376,6 +376,135 @@ pub fn a_guests_agent_is_refused_every_owners_tool() {
     }
 }
 
+/// Each renamed argument and kind (Arugula #668) is read under its new
+/// name and its old one, on every tool that takes it: `session` on
+/// `wait`, `session_reply`, `session_stop` and `read_session` is
+/// `agent_session`; `start_run`'s `box` is `cloud_workspace`; a Cloud
+/// workspace's `tab` on `wait`, `read_cloud` and `cloud` is `agent`;
+/// `list` kinds `sessions` and `cloud_tabs` are `agent_sessions` and
+/// `cloud_agents`. Both names with one value is that value; with two
+/// values the call is refused.
+pub fn old_argument_and_kind_names_are_read_as_the_new() {
+    let r = |tool: &str, args: Value| route(tool, args, fl(true)).map(|(_, k, a)| (k, a));
+    let cases: Vec<(&str, Value, Option<&str>, Value)> = vec![
+        (
+            "wait",
+            json!({ "until": "done", "session": "ses_1" }),
+            None,
+            json!({ "until": "done", "agent_session": "ses_1" }),
+        ),
+        (
+            "wait",
+            json!({ "until": "idle", "cloud_workspace": "hw_1", "tab": "3" }),
+            None,
+            json!({ "until": "idle", "cloud_workspace": "hw_1", "agent_block": "3" }),
+        ),
+        (
+            "session_reply",
+            json!({ "session": "ses_1", "text": "go" }),
+            None,
+            json!({ "agent_session": "ses_1", "text": "go" }),
+        ),
+        ("session_stop", json!({ "session": "ses_1" }), None, json!({ "agent_session": "ses_1" })),
+        ("read_session", json!({ "session": "ses_1" }), None, json!({ "agent_session": "ses_1" })),
+        (
+            "start_run",
+            json!({ "project": "personal", "spec": "ci", "box": "dev" }),
+            None,
+            json!({ "project": "personal", "spec": "ci", "cloud_workspace": "dev" }),
+        ),
+        (
+            "read_cloud",
+            json!({ "kind": "events", "cloud_workspace": "hw_1", "tab": "3" }),
+            Some("events"),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3" }),
+        ),
+        (
+            "cloud",
+            json!({ "kind": "prompt", "cloud_workspace": "hw_1", "tab": "3", "text": "go" }),
+            Some("prompt"),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3", "text": "go" }),
+        ),
+        (
+            "cloud",
+            json!({ "kind": "open_tab", "cloud_workspace": "hw_1", "prompt": "go", "agent": "codex" }),
+            Some("open_agent"),
+            json!({ "cloud_workspace": "hw_1", "prompt": "go", "agent": "codex" }),
+        ),
+        (
+            "cloud",
+            json!({ "kind": "close_tab", "cloud_workspace": "hw_1", "tab": "3" }),
+            Some("close_agent"),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3" }),
+        ),
+        ("list", json!({ "kind": "sessions" }), Some("agent_sessions"), json!({})),
+        (
+            "list",
+            json!({ "kind": "cloud_tabs", "cloud_workspace": "hw_1" }),
+            Some("cloud_agents"),
+            json!({ "cloud_workspace": "hw_1" }),
+        ),
+    ];
+    for (tool, old, kind, new) in cases {
+        assert_eq!(r(tool, old.clone()).unwrap(), (kind, new.clone()), "{tool} with the old name: {old}");
+        let mut as_new = new.clone();
+        if let Some(k) = kind {
+            as_new["kind"] = json!(k);
+        }
+        assert_eq!(r(tool, as_new).unwrap(), (kind, new), "{tool} with the new name");
+    }
+    // The old and the new name together: one value is fine, two aren't.
+    let (_, a) = r("wait", json!({ "until": "done", "session": "ses_1", "agent_session": "ses_1" })).unwrap();
+    assert_eq!(a, json!({ "until": "done", "agent_session": "ses_1" }));
+    let e = r("wait", json!({ "until": "done", "session": "ses_1", "agent_session": "ses_2" })).unwrap_err();
+    assert!(e.contains("session is its old name") && e.contains("give one"), "{e}");
+    let e = r("start_run", json!({ "project": "personal", "box": "a", "cloud_workspace": "b" })).unwrap_err();
+    assert!(e.contains("box is its old name"), "{e}");
+    // A null old name is as good as left out.
+    let (_, a) = r("read_session", json!({ "session": null, "agent_session": "ses_1" })).unwrap();
+    assert_eq!(a, json!({ "agent_session": "ses_1" }));
+    // Parsed, the new field holds either spelling.
+    for name in ["agent_session", "session"] {
+        let a: WaitArgs = parse(json!({ "until": "done", name: "ses_1" })).unwrap();
+        assert_eq!(a.agent_session.as_deref(), Some("ses_1"), "{name}");
+    }
+    for name in ["agent_block", "tab"] {
+        let a: WaitArgs = parse(json!({ "until": "idle", "cloud_workspace": "hw_1", name: "3" })).unwrap();
+        assert_eq!(a.agent_block.as_deref(), Some("3"), "{name}");
+    }
+    // agent is the program on cloud kind open_agent, and nothing else:
+    // sent as a pane number, the refusal names agent_block.
+    let e = r("wait", json!({ "until": "idle", "cloud_workspace": "hw_1", "agent": "3" })).unwrap_err();
+    assert!(e.contains("wait has no agent") && e.contains("agent_block"), "{e}");
+    let e = r("cloud", json!({ "kind": "prompt", "cloud_workspace": "hw_1", "agent": "3", "text": "go" })).unwrap_err();
+    assert!(e.contains("cloud kind prompt has no agent") && e.contains("agent_block"), "{e}");
+    let e = r("read_cloud", json!({ "kind": "events", "cloud_workspace": "hw_1", "agent": "3" })).unwrap_err();
+    assert!(e.contains("read_cloud kind events has no agent") && e.contains("agent_block"), "{e}");
+    assert!(
+        r("cloud", json!({ "kind": "open_agent", "cloud_workspace": "hw_1", "prompt": "go", "agent": "claude" }))
+            .is_ok()
+    );
+    // The tool list says only the new names.
+    for d in all_defs() {
+        let schema = serde_json::to_value(match &d.args {
+            Args::One(s) => s(),
+            Args::Kinds { kinds, default } => grouped_schema(kinds, *default),
+        })
+        .unwrap();
+        let props = schema["properties"].as_object().cloned().unwrap_or_default();
+        for (tool, old, new) in ARG_ALIASES.iter().filter(|(t, _, _)| *t == d.name) {
+            assert!(!props.contains_key(*old), "{tool} lists {old}");
+            assert!(props.contains_key(*new), "{tool} lists {new}");
+        }
+        if let Args::Kinds { kinds, .. } = &d.args {
+            for (_, old, new) in KIND_ALIASES.iter().filter(|(t, _, _)| *t == d.name) {
+                assert!(kinds.iter().all(|k| k.name != *old), "{} lists kind {old}", d.name);
+                assert!(kinds.iter().any(|k| k.name == *new), "{} lists kind {new}", d.name);
+            }
+        }
+    }
+}
+
 /// Each tool, and each kind of a grouped one, listed or not.
 fn every_tool_and_kind() -> Vec<(&'static str, Option<&'static str>)> {
     let mut out = vec![];

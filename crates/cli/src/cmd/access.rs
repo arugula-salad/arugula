@@ -1,4 +1,4 @@
-//! `arugula access`: who else can reach which sessions.
+//! `arugula access`: who may watch or drive a session on this machine.
 
 use super::Ctx;
 use crate::http::{request, request_op, send_op};

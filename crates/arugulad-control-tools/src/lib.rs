@@ -6,7 +6,7 @@
 //! `board_write`), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
 //! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
-//! with `list`'s kinds `cloud_workspaces`, `cloud_tabs`, `linked_repos`,
+//! with `list`'s kinds `cloud_workspaces`, `cloud_agents`, `linked_repos`,
 //! `threads` and `sessions`.
 //!
 //! Each call is a route on control's platform signed with this machine's
@@ -84,8 +84,8 @@ pub fn register() {
     }
     let kinds: [(&'static str, &'static crate::mcp::tools::Kind, registry::Run); 5] = [
         ("agents", &cloud::LIST_WORKSPACES, run_list_cloud_workspaces),
-        ("cloud_workspaces", &cloud::LIST_TABS, run_list_cloud_tabs),
-        ("cloud_tabs", &repos::LIST_LINKED, run_list_linked_repos),
+        ("cloud_workspaces", &cloud::LIST_AGENTS, run_list_cloud_agents),
+        ("cloud_agents", &repos::LIST_LINKED, run_list_linked_repos),
         ("linked_repos", &threads::LIST, run_list_threads),
         ("threads", &agent_sessions::LIST, run_list_sessions),
     ];
@@ -192,7 +192,7 @@ one!(run_read_session, agent_sessions::read_session);
 one!(run_session_stop, agent_sessions::session_stop);
 one!(run_list_sessions, agent_sessions::list_sessions);
 no_args!(run_list_cloud_workspaces, cloud::list_cloud_workspaces);
-one!(run_list_cloud_tabs, cloud::list_cloud_tabs);
+one!(run_list_cloud_agents, cloud::list_cloud_agents);
 one!(run_list_linked_repos, repos::list_linked_repos);
 no_args!(run_list_threads, threads::list_threads);
 
@@ -238,7 +238,7 @@ fn read_cloud_def() -> Def {
     Def {
         name: "read_cloud",
         title: "Read a Cloud workspace",
-        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
+        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_agents their agent blocks): an agent block's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, each named by its pane number (agent_block), and reading one wakes it.",
         args: Args::Kinds { kinds: table(cloud::READ), default: None },
         read_only: true,
         destructive: false,
@@ -254,7 +254,7 @@ fn cloud_def() -> Def {
     Def {
         name: "cloud",
         title: "Drive a Cloud workspace",
-        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
+        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open an agent block on its machine (open_agent), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_agent), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project; its agent blocks (claude or codex), named by pane number (agent_block), are the project's people's too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
         args: Args::Kinds { kinds: table(cloud::DRIVE), default: None },
         read_only: false,
         destructive: true,
@@ -264,7 +264,7 @@ fn cloud_def() -> Def {
         output: None,
         human: line(
             "drive your Cloud workspaces: open an agent there, prompt it and follow its turn",
-            "Open a Claude tab in my Cloud workspace and have it fix the flaky test.",
+            "Open a Claude agent in my Cloud workspace and have it fix the flaky test.",
             Needs::Cloud,
         ),
     }
