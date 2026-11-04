@@ -963,7 +963,18 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
 
     let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
     hub.daemon("xbox", "x", Some("t"));
-    grant_write(&base, "x", "xbox", &t).await;
+    // A viewer isn't given boards.write any more (Arugula #683); one from
+    // before, written as it was, is still refused at every write.
+    let (st, g) = call(
+        &base,
+        "x",
+        "POST",
+        "/api/grants",
+        crate::agents_tests::give("xbox", "boards.write", json!({ "kind": "project", "id": t })),
+    )
+    .await;
+    assert_eq!((st, g["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{g}");
+    app.db.give_grant("xbox", "boards.write", ("project", &t), "x", 1).unwrap();
     let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
 
     let (st, v) = xbox(&base, "POST", &agent_project_boards(&t), Some(json!({ "title": "Mine" }))).await;
