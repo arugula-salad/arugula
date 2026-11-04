@@ -1,4 +1,6 @@
 target/
+# The symlink `just e2e-spec` makes in a worktree whose CARGO_TARGET_DIR is elsewhere.
+/target
 /node_modules/
 /packaging/hosted/node_modules/
 /.cargo/claude-ide/
