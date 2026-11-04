@@ -233,7 +233,7 @@ fn reader_lists_follow_controls_chat_setting_and_old_threads_stay_put() {
     *f.chat.lock().unwrap() = true;
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("chatreaders")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env_remove("ARUGULA_FEATURES")
         .args(["--direct-url", "http://127.0.0.1:0"])
@@ -353,7 +353,7 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     // and refuses the owner's WebSocket (`set_private` below) without a
     // tailnet identity.
     let mut d =
-        arugulad!("coownerreaders").no_wisp().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
+        arugulad!("coownerreaders").no_provider().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
     d.stop();
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut daemon_cert = Cert::new(&daemon, "a1", Kind::Daemon, "box");

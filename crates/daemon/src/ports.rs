@@ -1,10 +1,10 @@
 //! Reaching a TCP port on a machine: one of this host's, directly, or one
-//! of a sprite's, through the Sprites proxy. Or a server Arugula runs
-//! itself (an editor block's code-server, M27), which it starts if needed.
+//! of a sandbox's, through its provider. Or a server Arugula runs itself
+//! (an editor block's code-server, M27), which it starts if needed.
 //!
-//! A machine's port is dialed through its provider (`Provider::dial`; for
-//! sprites, one Sprites proxy WebSocket per TCP connection, which wakes the
-//! sprite and keeps it awake while open).
+//! A machine's port is dialed through its provider (`Provider::dial`; on
+//! loam, one port-stream WebSocket per TCP connection, which wakes the
+//! sandbox and keeps it awake while open).
 
 use std::{
     io,
@@ -18,7 +18,7 @@ use futures_util::future::BoxFuture;
 pub use crate::provider::Conn;
 use crate::provider::Provider;
 
-/// Opening a connection takes at most this long (a sprite may be waking).
+/// Opening a connection takes at most this long (a sandbox may be waking).
 const DIAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A port on a machine.

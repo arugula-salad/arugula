@@ -247,7 +247,7 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
   await dialog.locator("select[name=agent]").selectOption("claude");
   await expect(dialog.locator(".adapter-help")).toBeHidden();
   await expect(dialog.getByRole("button", { name: "Start" })).toBeEnabled();
-  // On a VM it installs its own (where VMs are set up: wisp, #180).
+  // On a VM it installs its own (where VMs are set up, #180).
   await dialog.locator("select[name=agent]").selectOption("codex");
   if (await page.evaluate(() => window.__arugula.client.has("vms"))) {
     await dialog.locator("input[name=vm]").check();

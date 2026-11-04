@@ -917,14 +917,14 @@ pub struct State {
 
 pub type MachineId = u32;
 
-/// A machine that blocks can run on instead of this host: today a
-/// throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
-/// deleted when that pane closes.
+/// A machine that blocks can run on instead of this host: a throwaway
+/// sandbox from the provider (a loam microVM) owned by one pane or tab,
+/// and deleted when that closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Machine {
     pub id: MachineId,
-    /// Who runs it: `wisp`.
+    /// Who runs it: `loam`.
     #[serde(default)]
     pub provider: String,
     /// The provider's name for it.

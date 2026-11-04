@@ -88,7 +88,7 @@ fn a_daemon_follows_control_to_its_new_url() {
     *new.about.lock().unwrap() = json!({ "control": true, "daemon_auth": 2, "url": new_url });
 
     let mut d = arugulad!("ctlmoves")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--direct-url", "http://127.0.0.1:0"])
         .wait_secs(30)

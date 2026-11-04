@@ -196,7 +196,7 @@ test("a machine the account owns asks once on control's page, after the account'
         ...["--listen", ANY, "--name", "mac", "--state-dir", state],
         ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
       ],
-      { stdio: "ignore", env: { ...env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent" } },
+      { stdio: "ignore", env },
     ),
   );
   await expect

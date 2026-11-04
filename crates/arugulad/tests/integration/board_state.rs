@@ -62,7 +62,7 @@ async fn told(f: &FakeControl, pane: u64, state: &str) -> Value {
 async fn an_agent_blocks_state_goes_to_control() {
     let fake = FakeControl::default();
     let url = fake_control(fake.clone()).await;
-    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });

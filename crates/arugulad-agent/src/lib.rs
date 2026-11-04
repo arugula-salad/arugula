@@ -1764,7 +1764,7 @@ impl Agent {
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
-            return Err("VM agents need wisp (VM panes aren't set up)".into());
+            return Err("VM agents need a sandbox provider (VM panes aren't set up)".into());
         }
         // Fail now, with a clear reason, rather than in the VM later.
         if vm && cfg.def.agent == Kind::Claude && !ctx.restoring {
@@ -2122,7 +2122,7 @@ impl Agent {
             }
             Some(sprite) => {
                 let Some(provider) = self.ctx.provider.clone() else {
-                    return self.failed(inner, "VM agents need wisp".into());
+                    return self.failed(inner, "VM agents need a sandbox provider".into());
                 };
                 let mut secret = match inner.cfg.def.agent {
                     Kind::Claude => match secret_env(&self.ctx) {

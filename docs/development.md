@@ -850,16 +850,18 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   cleared a moment later when the `printf` that sent it finished.
 - **Unix socket paths max out at ~108 bytes.** Long state directories get a
   socket in `$XDG_RUNTIME_DIR` instead, recorded in `state/sock.path`.
-- **wisp already had the fix for its replay.** The M3b spike found that
-  reattaching resends the whole session and planned to ask for a `since=`
-  parameter, but wisp's `output_offset` (not one of the names the spike
-  tried) does exactly that. Each VM pane keeps its session id and how many
-  bytes it has logged in `exec.json`, and reattaches from there.
+- **Reattach from a byte offset.** The M3b spike found that reattaching
+  resends the whole session and planned to ask for a `since=` parameter,
+  but the provider already took an output offset (wisp's `output_offset`,
+  not one of the names the spike tried; loam's `offset`). Each VM pane
+  keeps its session id and how many bytes it has logged in `exec.json`,
+  and reattaches from there.
 - **bash expands `ENV`, command substitution included,** so a VM's shell
   gets the integration with nothing installed: the script travels in an
   environment variable and `ENV='$(…)'` writes it to a temporary file.
-- **`kill?signal=HUP` ends a VM shell at once;** wisp's default TERM waits
-  10s, because an interactive bash ignores it.
+- **A hang-up sends HUP, not TERM, to a VM shell:** an interactive bash
+  ignores TERM (the Sprites adapter, since removed, waited 10s on it);
+  with HUP the shell ends at once.
 - **A tab's title follows its active pane,** so grabbing a pane to drag it
   can resize its tab under the pointer. The tests aim after the pane is
   active, and anything that measures the tab bar mid-drag should too.
@@ -868,7 +870,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   127.0.0.1, with any Host header the sender likes, so "loopback means
   local" would let in anyone the ACL lets reach the sandbox. The daemon asks
   tailscaled's WhoIs about every peer there (it knows forwarded
-  connections); a second daemon in a sprite with another owner refused geek
+  connections); a second daemon in a sandbox with another owner refused geek
   even with a forged loopback Host and serve header.
 - **serve sends no identity for tagged nodes** (or Funnel). A request for
   the tailnet name without `Tailscale-User-Login` used to pass as local;
@@ -901,20 +903,10 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   subcommand's own `--host` loses to the global one the same way, so
   `open` and `agent` take `--machine mN`, like `edit` (#61); a `--host
   mN` there that isn't in the host list says so.
-- **"Cold" can be had on demand.** wisp turns a suspended sprite cold
-  after `--warm-ttl` (1h) by dropping its memory snapshot, which makes the
-  next wake a real boot. Its web UI's operator endpoints do the same at
-  once (`POST /ui/api/sprites/NAME/suspend`, then `/cool`, with a session
-  from `/ui/login`), which is how the removed `resident.spec.ts` tested a
-  cold wake. Suspending syncs the guest's disks first, so a daemon's log
-  and checkpoints in the sandbox are there after the reboot.
 - **A TUI on the main screen leaves the cursor mid-screen.** Claude Code
   draws in place and doesn't use the alternate screen, so after a restore
   the marker landed on top of it; it now goes below the last row with
   text.
-- **Sprites lists are paged** (50 at a time); wisp here holds more than
-  that.
-
 - **A program's exit can overtake its last output.** A pane's reader and
   its wait for the exit are separate threads, so a quick `arugula run`
   could end its command before its output arrived, and `capture

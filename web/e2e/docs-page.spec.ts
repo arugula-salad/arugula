@@ -33,7 +33,7 @@ test.use({ baseURL: async ({}, use) => use(url) });
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "arugula-e2e-docs-page-"));
   state = join(dir, "state");
-  ({ proc, url } = await daemon(state, ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(state, ["--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {
@@ -460,7 +460,7 @@ test.describe("the page drawn", () => {
   test.use({ baseURL: async ({}, use) => use(url2) });
   test.beforeAll(async () => {
     dir2 = mkdtempSync(join(tmpdir(), "arugula-e2e-docs-shots-"));
-    ({ proc: proc2, url: url2 } = await daemon(join(dir2, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+    ({ proc: proc2, url: url2 } = await daemon(join(dir2, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
   });
   test.afterAll(() => {
     proc2?.kill("SIGKILL");

@@ -271,7 +271,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
-    // VMs and sandboxes need wisp (#180).
+    // VMs and sandboxes need a sandbox provider (#180).
     ...(client.has("vms")
       ? [
           { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,

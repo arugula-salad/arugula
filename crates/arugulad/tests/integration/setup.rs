@@ -33,7 +33,7 @@ fn use_claude_code_installs_the_hooks_and_says_where() {
     let d = arugulad!("setup")
         .state_dir(&state)
         .home_in_state()
-        .no_wisp()
+        .no_provider()
         .env("PATH", &path)
         .env("ARUGULA_NPM", bin.join("npm"))
         .env("ARUGULA_AGENTS_DIR", state.join("agents"))

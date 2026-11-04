@@ -34,7 +34,7 @@ const post: Post = async (path, body) => {
 // One session: a terminal with a Doc beside it, which the Docs page lists.
 test.beforeAll(async ({ browser }) => {
   dir = mkdtempSync(join(tmpdir(), "arugula-e2e-a11y-"));
-  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
   const page = await browser.newPage({ baseURL: url, extraHTTPHeaders: keyHeaders });
   await reset(page);
   const [term] = await panes(page);

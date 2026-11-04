@@ -316,7 +316,7 @@ esac
     fn daemon(&self) -> Daemon {
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
         Daemon::child_labs_env(
-            &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
+            &["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &[
                 ("PATH", &path),
                 ("ARUGULA_FORGE_POLL_MS", "250,250"),

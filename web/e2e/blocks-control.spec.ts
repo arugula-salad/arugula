@@ -176,7 +176,7 @@ test("a port and an editor on a machine with no block flags open inside control'
         ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
       ],
       // code-server keeps its own logs under XDG_DATA_HOME: not the user's.
-      { stdio: "ignore", env: { ...process.env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent", XDG_DATA_HOME: join(dir, "data") } },
+      { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: join(dir, "data") } },
     ),
   );
   await expect

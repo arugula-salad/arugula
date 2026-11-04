@@ -684,7 +684,7 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
         b = b.env(k, v);
     }
     let d = b
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .state_dir(&state)
         .args(["--hosted"])

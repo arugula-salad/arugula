@@ -203,15 +203,7 @@ fn meta(d: &Daemon, id: &str) -> Value {
 fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_once_back() {
     let f = Fake::default();
     let (_rt, url) = serve(f.clone());
-    let args = [
-        "--owner",
-        "me@example.com",
-        "--tailscale-socket",
-        "/nonexistent/sock",
-        "--wisp-token-file",
-        "/nonexistent",
-        "--no-relay",
-    ];
+    let args = ["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock", "--no-relay"];
     let mut d = Daemon::child_in(&args, &[], |_| {});
 
     // A Doc from before the machine joined control: nothing goes anywhere.

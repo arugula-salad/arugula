@@ -1,5 +1,5 @@
 // #171, #180: a machine set up for nothing optional (no --block-listen, no
-// wisp, no studio) offers nothing that would fail for setup nobody
+// sandbox provider, no studio) offers nothing that would fail for setup nobody
 // mentioned. VM, sandbox and studio items aren't in its menus; Open a
 // port… and Open in editor say how to turn block sites on, with a link,
 // instead of failing.
@@ -27,7 +27,6 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       ARUGULA_STATE_DIR: labs(state),
-      ARUGULA_WISP_TOKEN_FILE: "/nonexistent",
     },
   });
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;

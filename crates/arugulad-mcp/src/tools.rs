@@ -3917,7 +3917,6 @@ mod tests {
                 "workspace",
                 "throwaway vm",
                 "sandbox",
-                "wisp",
                 "open_app",
                 "@agent",
                 "\"vm\"",

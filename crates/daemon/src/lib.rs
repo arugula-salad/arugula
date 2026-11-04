@@ -761,55 +761,53 @@ fn kinds(
     kinds
 }
 
-/// What VM panes could get their machines from: loam when `--loam-url`
-/// names it, else a wispd (or Fly's sprites) by its token file.
+/// What VM panes get their machines from: loam, when `--loam-url` names
+/// it. Without it there is no provider, and VM panes are off.
 struct ProviderArgs<'a> {
     loam_url: Option<&'a str>,
     loam_key_file: &'a std::path::Path,
-    wisp_url: &'a str,
-    wisp_token_file: &'a std::path::Path,
-    /// `--wisp-url` or `--wisp-token-file` was given, not left at its default.
-    wisp_given: bool,
 }
 
 /// The sandbox provider VM panes run on: `Some` when one is set up here
-/// (its credential is on disk), behind the `sandbox-providers` flag
-/// ([`provider_gate::Gated`], #489): the adapter is opened only with the
-/// flag on, on the running daemon, and with it off nothing is read or
+/// (`--loam-url`, with its key on disk), behind the `sandbox-providers`
+/// flag ([`provider_gate::Gated`], #489): the adapter is opened only with
+/// the flag on, on the running daemon, and with it off nothing is read or
 /// asked of a provider.
 fn open_provider(
     labs: &'static dyn lab_hooks::Hooks,
     state_dir: &std::path::Path,
     a: ProviderArgs<'_>,
 ) -> Option<std::sync::Arc<dyn provider::Provider>> {
-    // A build without Labs: its hooks say so, when the flags were given.
+    let url = a.loam_url?;
+    // A build without Labs: its hook says so.
     if !lab_flags::BUILT {
-        return match a.loam_url {
-            Some(url) => labs.open_loam(url, a.loam_key_file),
-            None => labs.open_provider(a.wisp_url, a.wisp_token_file, a.wisp_given),
-        };
+        return labs.open_loam(url, a.loam_key_file);
     }
-    let (kind, file) = match a.loam_url {
-        Some(_) => ("loam", a.loam_key_file),
-        None => ("wisp", a.wisp_token_file),
-    };
-    if !std::fs::metadata(file).is_ok_and(|m| m.len() > 0) {
-        if a.loam_url.is_some() || a.wisp_given {
-            warn!(file = %file.display(), "no {kind} credential; VM panes are off");
-        }
+    if !std::fs::metadata(a.loam_key_file).is_ok_and(|m| m.len() > 0) {
+        warn!(file = %a.loam_key_file.display(), "no loam key; VM panes are off");
         return None;
     }
-    let open: provider_gate::Open = match a.loam_url {
-        Some(url) => {
-            let (url, key) = (url.to_owned(), a.loam_key_file.to_owned());
-            Box::new(move || labs.open_loam(&url, &key))
-        }
-        None => {
-            let (url, token, given) = (a.wisp_url.to_owned(), a.wisp_token_file.to_owned(), a.wisp_given);
-            Box::new(move || labs.open_provider(&url, &token, given))
-        }
-    };
-    Some(std::sync::Arc::new(provider_gate::Gated::new(state_dir, kind, open)))
+    let (url, key) = (url.to_owned(), a.loam_key_file.to_owned());
+    let open: provider_gate::Open = Box::new(move || labs.open_loam(&url, &key));
+    Some(std::sync::Arc::new(provider_gate::Gated::new(state_dir, "loam", open)))
+}
+
+/// Where the token for the Sprites adapter (wisp) was, before the adapter
+/// was removed with the older machine model. It is left where it is and
+/// never read (and `fs` still never serves it); the log says so once, so
+/// a machine that was set up for wisp knows why its VM panes are off.
+fn old_wisp_token() -> PathBuf {
+    let token = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local/share"))
+        .join("wisp/token");
+    if token.exists() {
+        warn!(
+            file = %token.display(),
+            "a wisp token is here, but the Sprites adapter was removed: loam is the only sandbox provider (--loam-url and its key); VM panes made on wisp can't be reached"
+        );
+    }
+    token
 }
 
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
@@ -984,27 +982,16 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             None
         }
     };
-    let token_file = args.wisp_token_file.clone().unwrap_or_else(|| {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".local/share"))
-            .join("wisp/token")
-    });
-    // loam, when it's named; wispd (or Fly's sprites) otherwise.
+    // loam, when it's named: the only sandbox provider.
     let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
         arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
     });
     let provider = open_provider(
         lab_hooks::labs(),
         &state_dir,
-        ProviderArgs {
-            loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()),
-            loam_key_file: &loam_key_file,
-            wisp_url: &args.wisp_url,
-            wisp_token_file: &token_file,
-            wisp_given: args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
-        },
+        ProviderArgs { loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()), loam_key_file: &loam_key_file },
     );
+    let old_wisp_token = old_wisp_token();
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
@@ -1017,7 +1004,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     lab_hooks::labs().install_studio(studio_file.clone(), args.studio_file.is_some());
     // What `fs` never serves, besides the state directory.
     let private = vec![
-        token_file.clone(),
+        old_wisp_token,
         loam_key_file,
         secrets.anthropic_key.clone(),
         secrets.claude_token.clone(),
@@ -1432,94 +1419,104 @@ mod provider_tests {
         }
     }
 
-    /// Labs that counts how often each adapter was opened, and says when
+    /// Labs that counts how often the adapter was opened, and says when
     /// the last one it opened was dropped.
     #[derive(Default)]
     struct Asked {
         loam: AtomicUsize,
-        wisp: AtomicUsize,
         dropped: Arc<AtomicBool>,
     }
 
     impl Asked {
-        fn opened(&self) -> (usize, usize) {
-            (self.wisp.load(Ordering::SeqCst), self.loam.load(Ordering::SeqCst))
+        fn opened(&self) -> usize {
+            self.loam.load(Ordering::SeqCst)
         }
-        fn fake(&self) -> Option<Arc<dyn Provider>> {
+    }
+
+    impl lab_hooks::Hooks for Asked {
+        fn open_loam(&self, _: &str, _: &std::path::Path) -> Option<Arc<dyn Provider>> {
+            self.loam.fetch_add(1, Ordering::SeqCst);
             self.dropped.store(false, Ordering::SeqCst);
             Some(Arc::new(Fake(self.dropped.clone())))
         }
     }
 
-    impl lab_hooks::Hooks for Asked {
-        fn open_provider(&self, _: &str, _: &std::path::Path, _: bool) -> Option<Arc<dyn Provider>> {
-            self.wisp.fetch_add(1, Ordering::SeqCst);
-            self.fake()
-        }
-        fn open_loam(&self, _: &str, _: &std::path::Path) -> Option<Arc<dyn Provider>> {
-            self.loam.fetch_add(1, Ordering::SeqCst);
-            self.fake()
-        }
-    }
-
+    /// The gate ([`provider_gate::Gated`]) over a fake adapter: this is
+    /// what covers the provider trait's wrapper, since no test drives a
+    /// real provider; the loam adapter itself is tested against a fake
+    /// loam in its own crate.
     #[tokio::test]
     async fn the_provider_follows_the_flag_on_the_running_daemon() {
+        use arugula_mux::provider::{Begin, ExecEvent};
         use arugula_proto::flags::{SANDBOX_PROVIDERS, set};
         let dir = std::env::temp_dir().join(format!("arugula-provider-gate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let token = dir.join("wisp-token");
-        std::fs::write(&token, "wisp_t").unwrap();
         let key = dir.join("loam-key");
         let labs: &'static Asked = Box::leak(Box::default());
-        let args = |loam: Option<&'static str>| ProviderArgs {
-            loam_url: loam,
-            loam_key_file: &key,
-            wisp_url: "http://127.0.0.1:7788",
-            wisp_token_file: &token,
-            wisp_given: false,
-        };
+        let args = |loam: Option<&'static str>| ProviderArgs { loam_url: loam, loam_key_file: &key };
 
-        // No credential: not set up, whatever the flag says.
-        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "no loam key");
+        // No `--loam-url`, or no key: not set up, whatever the flag says.
         std::fs::write(&key, "loam_k").unwrap();
-        std::fs::write(&token, "").unwrap();
-        assert!(open_provider(labs, &dir, args(None)).is_none(), "an empty token");
-        std::fs::write(&token, "wisp_t").unwrap();
-        assert_eq!(labs.opened(), (0, 0));
+        assert!(open_provider(labs, &dir, args(None)).is_none(), "no --loam-url");
+        std::fs::write(&key, "").unwrap();
+        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "an empty key");
+        std::fs::remove_file(&key).unwrap();
+        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "no key file");
+        std::fs::write(&key, "loam_k").unwrap();
+        assert_eq!(labs.opened(), 0);
 
         // Off (the default): set up, so `vms` can say so, but nothing opens
         // and every call is the flag's refusal.
-        let p = open_provider(labs, &dir, args(None)).expect("a token file: set up");
-        assert_eq!(p.name(), "wisp");
+        let p = open_provider(labs, &dir, args(Some("https://loam.example"))).expect("a key file: set up");
+        assert_eq!(p.name(), "loam");
         let e = p.list("arugula-eph-").await.unwrap_err().to_string();
         assert!(e.contains("arugulad flags sandbox-providers on"), "{e}");
         assert!(!p.caps().fs_browse);
-        assert_eq!(labs.opened(), (0, 0));
+        assert_eq!(labs.opened(), 0);
+        // A terminal asked for with the flag off is lost at once, with the
+        // refusal as its output.
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let spawn =
+            arugula_mux::pane::Spawn { program: "bash".into(), args: vec![], cwd: Default::default(), env: vec![] };
+        let begin = Begin::New { spawn, image: None, create: true };
+        let _exec = p.clone().exec_tty(
+            &tokio::runtime::Handle::current(),
+            "m1".into(),
+            begin,
+            (80, 24),
+            Box::new(move |e| tx.send(e).is_ok()),
+        );
+        match rx.recv().await.unwrap() {
+            ExecEvent::Output(o) => assert!(String::from_utf8_lossy(&o).contains("sandbox-providers"), "{o:?}"),
+            e => panic!("{e:?}"),
+        }
+        assert!(matches!(rx.recv().await.unwrap(), ExecEvent::Lost { machine_gone: false }));
+        assert_eq!(labs.opened(), 0);
 
         // On: the next call opens it, no restart.
         set(&dir, SANDBOX_PROVIDERS, true).unwrap();
         assert_eq!(p.list("m").await.unwrap()[0].name, "m1");
         assert!(p.caps().fs_browse, "the adapter's capabilities");
-        assert_eq!(labs.opened(), (1, 0));
+        assert_eq!(labs.opened(), 1);
         assert_eq!(p.list("m").await.unwrap().len(), 1, "opened once");
-        assert_eq!(labs.opened(), (1, 0));
+        assert_eq!(labs.opened(), 1);
 
         // Off again, by its old name: refused, and the adapter is dropped.
         set(&dir, "vms", false).unwrap();
         assert!(p.list("m").await.is_err());
         assert!(labs.dropped.load(Ordering::SeqCst), "the adapter is let go of");
         assert!(p.status("m1").await.is_err());
-        assert_eq!(labs.opened(), (1, 0));
+        assert_eq!(labs.opened(), 1);
 
         // And on again: a new one.
         set(&dir, SANDBOX_PROVIDERS, true).unwrap();
         assert!(p.status("m1").await.is_err(), "the fake has no status");
-        assert_eq!(labs.opened(), (2, 0));
+        assert_eq!(labs.opened(), 2);
 
-        // loam, when named; with the flag on now, opened at once.
+        // With the flag on now, opened at once.
         let p = open_provider(labs, &dir, args(Some("https://loam.example"))).expect("a key file: set up");
-        assert_eq!((p.name(), labs.opened()), ("loam", (2, 1)));
+        assert_eq!((p.name(), labs.opened()), ("loam", 3));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
