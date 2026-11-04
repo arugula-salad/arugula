@@ -74,8 +74,8 @@ which pane, and they filter each person's `State`.
 mux uses `fs::rerun_line`. The same `fs.rs` (870 lines) holds `/api/fs`'s
 routes, which name `server::App`.
 
-**Block constructors.** `block::create` names nine types' constructors:
-`browser::Browser`, `agent::Agent`, `editor::Editor`, `remote::Remote`,
+**Block constructors.** `block::create` names the types' constructors:
+`browser::Browser`, `agent::Agent`, `editor::Editor`,
 `review::diff::Diff`, `review::file::FileView`, `forge::ForgeBlock`,
 `invite::card::InviteBlock`, and `labs::create_block` for Managoat, App and
 Workspace.
@@ -89,8 +89,6 @@ pointer to `App`.**
 
 **Block-type knowledge in the mux:**
 
-- `remote::parse` checks a remote block's config when it opens
-  (`mux/blocks.rs:178`).
 - `agent::defs::CLAUDE_CONFIG_DIR` is a constant (`mux/blocks.rs:297`).
 - `invite::OWNER_ONLY` and `CLOSE_OWNER_ONLY` are two strings
   (`mux/attention.rs:697`, `mux/clients.rs:117`).
@@ -119,8 +117,8 @@ Claude Code's IDE (M28) is the deepest tie:
   `push.rs`, which uses `reqwest` and `p256`);
 - `is_team`, `sandbox_done`, `co_owners`, `team_people` and `owns_here`.
 
-`control.rs` is 3,254 lines and names `forge`, `labs`, `setup`, `dial` and
-`sites`.
+`control.rs` is 3,254 lines and names `forge`, `labs`, `setup`, `relay_ws`
+and `sites`.
 
 **Agent sessions.** `mux/config.rs:254` resumes an agent's conversation
 through `conversations::Index`, and `mux/info.rs:82` finds Claude Code's
@@ -206,15 +204,15 @@ the line in one test: see ticket 6.
 Everything else, about 64k lines:
 
 - the edge: `server.rs`, `api.rs`, `mcp/`, `share.rs`, `upload.rs`,
-  `relay_ws.rs`, `dial.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
+  `relay_ws.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
 - the HTTP access checks: `access.rs`, `localauth.rs`, `authz.rs`,
   `acl.rs`'s `api` (as `acl_api.rs`), `rules.rs`;
 - every block type except the ones the core makes itself: `agent/`,
-  `browser.rs`, `editor/`, `review/`, `forge/`, `invite/`, `remote.rs` and
+  `browser.rs`, `editor/`, `review/`, `forge/`, `invite/` and
   `labs/` (the threads, calls and machine modules above excepted);
 - `conversations/`, `ide/` (the relay, lock files and prefs), `gate.rs`,
   `hand.rs`, `push.rs`;
-- reach: `hosts.rs`, `sync.rs`, `seal.rs`, `tailscale.rs`, `roots.rs`,
+- reach: `hosts.rs`, `tailscale.rs`, `roots.rs`,
   `sites.rs`, `tls.rs`, `ports.rs`;
 - lifecycle: `main.rs`, `args.rs`, `install.rs`, `setup.rs`, `update.rs`,
   `selfupdate.rs`;
@@ -244,7 +242,7 @@ starts:
 pub trait BlockKind: Send + Sync + 'static {
     /// Make one from its config (today's `X::create(ctx, config)`).
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String>;
-    /// Check a config before the block is placed (today `remote::parse`).
+    /// Check a config before the block is placed.
     fn check(&self, _config: &Value) -> Result<(), String> { Ok(()) }
     /// A stored log as text, for history and search (today
     /// `agent::transcript_of`).
@@ -387,8 +385,8 @@ behind a trait, because each is read inside the mux task's ordering:
 
 **`App` in `server.rs`.** It stays in the **binary**, whole. It is the
 binary's state: `MuxHandle` (from the core) next to `Hosts`, `Shares`,
-`Synced`, `Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands`, `Push` and
-`DialOuts`. The core never sees it. It saw it once, through
+`Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands` and `Push`. The core
+never sees it. It saw it once, through
 `invite::Hook`, and that moves into the invite block's kind. `App` gains
 `rules` and `ide` (as `Option<Arc<ide::Ide>>`, the concrete type; the
 `dyn IdeLink` is a clone of it in `Config`). Everything else reaching the
@@ -436,7 +434,7 @@ never opens it.
 ## The API server and the web client
 
 `server.rs` stays in `arugulad`: `/ws`, the routers (`router`,
-`local_router`, `tunnel_router`, `channel_router`, `editors_router`), the
+`local_router`, `channel_router`, `editors_router`), the
 guard and `cors` middleware, and `#[derive(Embed)] struct Assets` with
 `#[folder = "../../web/dist"]`. The path is relative to `crates/daemon`,
 which doesn't move, so `just web`, the `debug-embed` feature, release
@@ -520,8 +518,7 @@ tests' count under nextest is unchanged, and the unit tests' total across
    `main.rs`. `BlockEnv` and `BlockCtx` lose `mcp`, `invite`, `secrets` and
    `rules` to the agent's and invite's kinds. `EditorLink` replaces
    `editor::link::Link` in `Block`. `EditorJoin` carries the presence
-   block. `remote::parse` becomes `check`, and `agent::transcript_of`
-   becomes `stored_text`. No crate move. **M.** Independent of ticket 1.
+   block. `agent::transcript_of` becomes `stored_text`. No crate move. **M.** Independent of ticket 1.
    - *Traps:* Labs' twin must register refusals with today's exact text,
      which `just check-core`'s tests read. `invite::Hook` is set after
      `App` exists, so the invite kind holds the same `OnceLock`, not a

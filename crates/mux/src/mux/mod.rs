@@ -290,6 +290,9 @@ pub enum Api {
     Trust(PaneId, String, u32, oneshot::Sender<bool>),
     /// A notice for whoever (by principal id) is connected.
     Tell(String, String),
+    /// Who is trusted with which pane on this machine now (Arugula #681):
+    /// each live grant of trust as (pane, principal id, until ms).
+    Trusted(oneshot::Sender<Vec<(PaneId, String, u64)>>),
     /// The panes `who` may read the history and events of (M112): every
     /// pane of a session (`Some`), or of every session they reach, that's
     /// readable to them. `None` when there's no such session, or `who` has
@@ -903,6 +906,14 @@ impl Daemon {
                 },
                 _ => self.config.restore(id, &meta),
             };
+            if meta.kind == BlockType::Remote {
+                // A place for a pane on another daemon (#17, removed): the
+                // pane is still that daemon's own; this leaf goes, and the
+                // rest of the layout stays as it was.
+                info!(block = id, "dropped a remote block from the layout: remote blocks were removed");
+                let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                continue;
+            }
             if meta.kind != BlockType::Terminal {
                 let config = meta.config.clone().unwrap_or_default();
                 // What systemd kept for it (an agent server's pipes).

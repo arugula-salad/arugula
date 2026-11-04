@@ -1,0 +1,139 @@
+{
+  "accounts": [],
+  "agent_accounts": [
+    "p",
+    "r"
+  ],
+  "agent_callers": [
+    "1979f8d48a54d8cc:User { id: \"account:r\", name: \"Robin\", pic: None }",
+    "9c48b675829a24e5:User { id: \"account:a\", name: \"jake\", pic: None }",
+    "d06da3aed6e92ea7:User { id: \"account:p\", name: \"p\", pic: None }"
+  ],
+  "already_in": [
+    "this machine is already in the team t1 on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in the team t1 on https://control.example",
+    "this machine is already in the team t1 on https://control.example, and a machine is in one team at a time. To work with the team Beta and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+  ],
+  "co_owner": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owner_of": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owners": [],
+  "drivers": [],
+  "hosted": false,
+  "is_me": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "is_team": true,
+  "kind_name": [
+    "team",
+    "t1"
+  ],
+  "known": [
+    "Known { account: \"p\", root: \"6a330f42647017f0\", name: \"p\", role: Owner }",
+    "Known { account: \"q\", root: \"c88fd0f838ac3623\", name: \"q\", role: Editor }",
+    "Known { account: \"r\", root: \"0fe891b6ffa4c9a8\", name: \"r\", role: Owner }"
+  ],
+  "known_roots": {
+    "a": "2fd78ba2a5780271",
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": "6a330f42647017f0",
+    "q": "c88fd0f838ac3623",
+    "r": "0fe891b6ffa4c9a8",
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "legacy_app_children": {},
+  "name_of_account": {
+    "a": "jake",
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "others": [],
+  "owners": null,
+  "owns_here": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "reaches": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "shared_roles": [],
+  "signers": null,
+  "state": [
+    "team",
+    "t1"
+  ],
+  "team_people": [],
+  "team_roles": [],
+  "trusted": [
+    "2fd78ba2a5780271",
+    "9c48b675829a24e5",
+    "c95b41d8598649c5",
+    "fc05fb621ffbc559"
+  ],
+  "whose": "the team t1"
+}

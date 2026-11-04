@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Could this push behave differently on macOS? check.yml's macos job asks
 # first, so a docs-, site-, testnet- or control-only push doesn't wait on
-# GitHub's macOS runner. main runs it on every push regardless. The paths
+# GitHub's macOS runner. main runs it on every push the merge queue hasn't
+# already passed (scripts/queue-tested), and on its nightly full run. The paths
 # are the workspaces but control, plus what the macOS job also runs: the web UI
 # (the WebKit specs, and the daemon embeds it), the justfile, mise and
 # nextest's config.
@@ -9,7 +10,14 @@
 #   scripts/macos-changed [BEFORE]
 #
 # See scripts/changed for BEFORE and the exit status.
-[ "${GITHUB_REF:-}" = refs/heads/main ] && { echo "main: running it"; exit 0; }
+if [ "${GITHUB_REF:-}" = refs/heads/main ]; then
+  if "$(dirname "$0")/queue-tested"; then
+    echo "the merge queue passed this commit: skipping macOS"
+    exit 1
+  fi
+  echo "main: running it"
+  exit 0
+fi
 exec "$(dirname "$0")/changed" "macOS" "${1:-}" \
   crates ':!crates/control' Cargo.toml Cargo.lock server/Cargo.toml server/Cargo.lock server/.config rust-toolchain.toml \
   web justfile .mise.toml .config/nextest.toml .github/workflows/check.yml scripts/macos-changed scripts/changed

@@ -9,6 +9,7 @@ mod replay;
 #[cfg(unix)]
 mod testnet;
 
+mod access_view;
 mod agent_screens;
 mod agents;
 mod agents_real;
@@ -30,7 +31,6 @@ mod control_moves;
 mod control_state;
 mod conversations;
 mod crash;
-mod dialout;
 mod doc;
 mod doc_copies;
 mod doc_library;
@@ -104,6 +104,7 @@ mod questions;
 mod reboot;
 #[cfg(feature = "labs")]
 mod recipes;
+mod remote_layout;
 mod resume;
 mod review;
 mod session_history;

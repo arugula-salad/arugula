@@ -1976,7 +1976,13 @@ impl Db {
         if let Some(owner) = self.daemon_account(id)? {
             for body in self.teams_of(&owner)? {
                 let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-                mates.extend(v["members"].as_array().into_iter().flatten().filter_map(|m| m["account"].as_str().map(str::to_owned)));
+                mates.extend(
+                    v["members"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|m| m["account"].as_str().map(str::to_owned)),
+                );
             }
             mates.sort();
             mates.dedup();

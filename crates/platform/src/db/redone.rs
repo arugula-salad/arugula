@@ -160,6 +160,10 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![t.id, t.account, t.name, t.token_hash, now, t.minted_from, FROM_REDONE],
         )?;
+        // As redone had them, viewer or not (Arugula #683 refuses a mint
+        // of a power that does nothing for a viewer; an import carries
+        // what was there, and the writes are refused at the route as
+        // they were on redone's side).
         let mut project = String::new();
         for (power, p) in grants {
             tx.execute(

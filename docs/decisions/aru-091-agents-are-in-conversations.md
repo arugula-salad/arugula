@@ -118,7 +118,9 @@ grants ("Grants, not impersonation").
     only read its mentions when its person ran it couldn't be talked to in
     the thread about its work; the owner's switch keeps a person's machine
     running what its person allows. "A thread shows its agents" (aru-133)
-    records the same.
+    records the same. Jake confirmed this as the rule for now, 2026-11-03;
+    the aim is to move people's work off personal machines and onto cloud
+    machines.
 - **Amended for hosted boxes** (thread = session, Arugula #129): `@arugula`
   dispatches an agent session on the project's hosted box, and that
   session's status card is the one card kind a timeline shows ("A thread's

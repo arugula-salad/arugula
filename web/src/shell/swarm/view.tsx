@@ -1078,8 +1078,9 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
         %{p.id} · {p.host}
       </div>
       <div class="cq">{d.answered.headline}</div>
-      {can && (p.info.inbox || p.info.type === "agent") && (
+      {can && (
         <FollowUpBox
+          open={p.info.inbox || p.info.type === "agent"}
           pane={p.id}
           request={requester(fleet, p.host)}
           paneOp={(op) => fleet.paneOp(p.host, p.id, op)}

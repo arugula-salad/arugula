@@ -276,8 +276,8 @@ fn control(
         .enrolled()
         .map(|e| {
             e.saved
-                .roster
-                .iter()
+                .roster()
+                .into_iter()
                 .map(|r| r.name.clone())
                 .chain(e.saved.shared_teams.values().map(|t| t.roster.name.clone()))
                 .filter(|n| !n.is_empty())

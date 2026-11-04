@@ -344,11 +344,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who may watch or drive a session on this machine.
+    /// Who can reach this machine, and as what.
     ///
-    /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
-    /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
-    /// control).
+    /// `access` shows it: the owner, the team's people by their role, each
+    /// session's shares, links, ssh guests and trust, each saying whose word
+    /// it is (this machine's, or the team's roster), then its agents' powers
+    /// on Arugula cloud. `access grant SESSION WHO ROLE` shares a session,
+    /// `access revoke SESSION WHO` ends that, `access log` lists every grant
+    /// and revoke. WHO is a tailnet login (or `account:ID` from control).
     Access {
         #[command(subcommand)]
         cmd: Option<cmd::access::AccessCmd>,
@@ -367,11 +370,6 @@ enum Command {
     Shares {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
-    },
-    /// History other hosts synced here (kept encrypted).
-    Synced {
-        #[command(subcommand)]
-        cmd: Option<cmd::synced::SyncedCmd>,
     },
     /// Open this machine's page in your browser, signed in.
     ///
@@ -397,12 +395,13 @@ enum Command {
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// What your machines' agents may do in a project on Arugula control.
+    /// The powers your machines' agents hold: what they may do in a project on
+    /// Arugula control.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
-    /// takes grants from one machine, `restore` gives `cloud.drive` back; `ls`
+    /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
     /// (the default) lists them. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
@@ -641,7 +640,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         "Panes",
         &[
             "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
-            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs", "synced",
+            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs",
         ],
     ),
     (
@@ -928,19 +927,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
             cli.json,
         );
     }
-    let reads_history = matches!(cli.cmd, Command::History(_) | Command::Search(_) | Command::Tail(_));
     let resolved = match &cli.ssh {
         Some(dest) => ssh::Remote::parse(dest).map(http::Target::Ssh),
         None => hosts::target(socket(&cli), cli.host.as_deref()),
     };
-    let (sock, gone) = match resolved {
-        Ok(t) => (t, None),
-        // A host that's gone (deleted, unreachable) may have left its
-        // history here.
-        Err(e) if reads_history && cli.host.is_some() => {
-            eprintln!("arugula: {e:#}; reading what it synced here instead");
-            (http::Target::Socket(socket(&cli)), cli.host.clone())
-        }
+    let sock = match resolved {
+        Ok(t) => t,
         // `open --host m2` meant a machine: the flag is `--machine` (#61).
         Err(e)
             if cli.host.as_deref().is_some_and(looks_like_machine)
@@ -957,9 +949,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         r.prepare()?;
     }
     let json_out = cli.json;
-    // `run --home`: the local daemon too, and the host's name in its list.
-    let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name, gone };
+    let ctx = cmd::Ctx { sock, json_out };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),
@@ -967,9 +957,8 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
-        Command::Synced { cmd } => cmd::synced::run(cmd, ctx),
         Command::Hosts { cmd } => {
-            hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
+            hosts::run(&ctx.sock, cmd, ctx.json_out)?;
             Ok(0)
         }
         Command::Sandboxes => {

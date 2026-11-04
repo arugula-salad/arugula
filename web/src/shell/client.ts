@@ -233,9 +233,8 @@ const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
    * page came from. Another daemon must list this page's origin as
-   * allowed (`--allow-origin`). A path (`/h/box`) is a dial-out host,
-   * reached through this page's own daemon. `e2e:<id>` with a target: a
-   * daemon reached through Arugula control. */
+   * allowed (`--allow-origin`). `e2e:<id>` with a target: a daemon reached
+   * through Arugula control. */
   constructor(
     readonly base = "",
     readonly e2e?: E2ETarget,
@@ -251,28 +250,6 @@ export class Client {
 
   /** How an end-to-end client is connected, for the host chip. */
   path: "direct" | "relayed" | null = null;
-
-  /** #17: a connection for another layout's remote panes: only these
-   * terminals are drawn and attached (`null`: every pane, as usual). */
-  only: Set<PaneId> | null = null;
-
-  /** #17: draw and attach `pane` too. */
-  want(pane: PaneId) {
-    this.only ??= new Set();
-    if (this.only.has(pane)) return;
-    this.only.add(pane);
-    if (this.connected && this.state) this.applyState(this.state, false);
-  }
-
-  /** #17: stop drawing `pane`. */
-  unwant(pane: PaneId) {
-    if (!this.only?.delete(pane)) return;
-    const entry = this.panes.get(pane);
-    if (entry) {
-      entry.view.dispose();
-      this.panes.delete(pane);
-    }
-  }
 
   /** M30: the daemon said this person's access was removed. */
   revoked = false;
@@ -1393,7 +1370,7 @@ export class Client {
     const created: PaneId[] = [];
     const live = new Set(state.panes.map((p) => p.id));
     for (const [id, entry] of this.panes) {
-      if (!live.has(id) || (this.only && !this.only.has(id))) {
+      if (!live.has(id)) {
         entry.view.dispose();
         this.panes.delete(id);
       }
@@ -1405,7 +1382,6 @@ export class Client {
       }
     }
     for (const info of state.panes) {
-      if (this.only && !this.only.has(info.id)) continue;
       if (info.type !== "terminal") {
         if (!this.blocks.has(info.id)) {
           const view = makeBlockView(info.type, this, info.id);
@@ -1441,7 +1417,7 @@ export class Client {
     this.fixSelection();
     this.applyFollow();
     // Show what we just made: a split's new pane, a new tab or session.
-    if (created.length && !this.only && Date.now() - this.lastMadeAt < 3000) {
+    if (created.length && Date.now() - this.lastMadeAt < 3000) {
       const tab = this.tabOfPane(created[0]);
       if (tab) {
         this.session = this.sessionOfTab(tab.id) ?? this.session;
@@ -1451,7 +1427,7 @@ export class Client {
     }
     // A new connection's history comes for the tab on screen first; the
     // other terminals load behind it, or as soon as they're shown.
-    const later = reconnect && !this.only ? attach.filter((a) => a.offset === null && !this.isShown(a.pane)) : [];
+    const later = reconnect ? attach.filter((a) => a.offset === null && !this.isShown(a.pane)) : [];
     const now = attach.filter((a) => !later.includes(a));
     for (const a of now) this.loadingBehind.delete(a.pane);
     for (const a of later) this.loadingBehind.add(a.pane);
@@ -1472,7 +1448,7 @@ export class Client {
   private nextBehindQueued = false;
 
   private isShown(pane: PaneId): boolean {
-    return !!this.only?.has(pane) || (this.tab !== null && this.tabOfPane(pane)?.id === this.tab);
+    return this.tab !== null && this.tabOfPane(pane)?.id === this.tab;
   }
 
   /** Ask for panes, counting those that bring a snapshot. */

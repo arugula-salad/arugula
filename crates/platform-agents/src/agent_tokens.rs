@@ -45,7 +45,7 @@ use crate::{
         agent_tokens::{AgentToken, MAX_LIVE, NewToken, hash, new_token},
         projects::Grant,
     },
-    grants::{AgentScope, is_token_power, owner_reads},
+    grants::{AgentScope, is_token_power, owner_role, viewer_refused, viewer_write},
 };
 
 pub use arugula_control_wire::agent_mcp::{AGENT_TOKEN_CALLS, AGENT_TOKEN_REVOKE, AGENT_TOKENS, MCP};
@@ -64,16 +64,23 @@ pub fn mcp_url(app: &Platform, headers: &HeaderMap) -> String {
 }
 
 /// A token and its grants as the page and the CLI read them: never the
-/// token itself.
+/// token itself. A revoked grant says when and who (Arugula #683, as
+/// `GET /api/grants` does): on a live token that's a project's owner, or
+/// the platform when the minter left the team, never the minter, whose
+/// revoke takes the whole token.
 async fn wire(app: &Platform, t: &AgentToken, grants: &[Grant]) -> Result<Value, ApiError> {
+    let mut named = grants.to_vec();
+    crate::grants::name_revokers(app, &mut named).await?;
     let mut gs = vec![];
-    for g in grants {
+    for g in &named {
         let name = app.db.project_owner(&g.scope_id)?.map(|o| o.name);
         gs.push(json!({
             "id": g.id,
             "power": g.power,
             "project": { "id": g.scope_id, "name": name },
             "live": g.revoked_at.is_none(),
+            "revoked_at": g.revoked_at,
+            "revoked_by": crate::grants::revoked_by_wire(g),
         }));
     }
     Ok(json!({
@@ -159,11 +166,29 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
             ),
         ));
     }
+    // Per project (Arugula #683): a write power that does nothing where
+    // the minter only views isn't minted there, and the answer says which
+    // were left out; a project left with none is left out whole. Nothing
+    // left at all is refused.
+    let mut grants: Vec<(&str, &str)> = vec![];
+    let mut left_out = vec![];
+    let mut names: Vec<(&str, String)> = vec![];
     for p in &projects {
         // Only over what the minter reads, on the hub's word.
-        if owner_reads(&app, &s.account, &AgentScope::Project(p.clone()), true).await?.is_none() {
+        let scope = AgentScope::Project(p.clone());
+        let Some((name, role)) = owner_role(&app, &s.account, &scope, true).await? else {
             return Err(err(StatusCode::FORBIDDEN, "you can only give an agent what you can read yourself"));
+        };
+        let (out, kept): (Vec<&String>, Vec<&String>) = powers.iter().partition(|w| viewer_refused(w, role, &scope));
+        if !out.is_empty() {
+            left_out.push(json!({ "project": p, "name": name.clone(), "powers": out }));
         }
+        grants.extend(kept.into_iter().map(|w| (w.as_str(), p.as_str())));
+        names.push((p.as_str(), name));
+    }
+    if grants.is_empty() {
+        let (p, w) = (powers.join(", "), left_out[0]["name"].as_str().unwrap_or_default().to_owned());
+        return Err(viewer_write(&p, &w, "an agent token"));
     }
     if app.db.live_agent_tokens(&s.account)? >= MAX_LIVE {
         return Err(err(
@@ -172,8 +197,6 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
         ));
     }
     let (id, token) = new_token();
-    let grants: Vec<(&str, &str)> =
-        projects.iter().flat_map(|p| powers.iter().map(move |w| (w.as_str(), p.as_str()))).collect();
     let from: String = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -183,23 +206,42 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
         .collect();
     let new = NewToken { id, account: s.account.clone(), name, token_hash: hash(&token), minted_from: from };
     let t = app.db.mint_agent_token(&new, &grants, now_ms())?;
-    tracing::info!(account = %s.account, token = %t.id, powers = ?powers, projects = ?projects, "minted an agent token");
-    notify_mint(&app, &s.account, &t, &powers, projects.len());
+    tracing::info!(account = %s.account, token = %t.id, grants = ?grants, "minted an agent token");
+    notify_mint(&app, &s.account, &t, &reach_of(&grants, &names));
     let view = wire(&app, &t, &app.db.agent_token_grants(&t.id, &s.account)?).await?;
-    Ok(Json(json!({ "agent_token": view, "token": token, "mcp_url": mcp_url(&app, &headers) })))
+    Ok(Json(json!({ "agent_token": view, "token": token, "mcp_url": mcp_url(&app, &headers), "left_out": left_out })))
+}
+
+/// What was minted, by project: "issues.write, threads.read on Acme;
+/// threads.read on Web", the projects in the order asked and the powers
+/// as the mint keeps them, only what was given (a viewer's left-out
+/// powers aren't said, Arugula #683).
+fn reach_of(grants: &[(&str, &str)], names: &[(&str, String)]) -> String {
+    let mut by: Vec<(&str, Vec<&str>)> = vec![];
+    for (power, project) in grants {
+        match by.iter_mut().find(|(p, _)| p == project) {
+            Some((_, ps)) => ps.push(power),
+            None => by.push((project, vec![power])),
+        }
+    }
+    by.iter()
+        .map(|(project, powers)| {
+            let name = names.iter().find(|(p, _)| p == project).map_or(*project, |(_, n)| n.as_str());
+            format!("{} on {name}", powers.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Push the account's devices a notice of a new token: who it acts for,
-/// what it may do, and where to revoke it. In the background: a failure is
-/// only logged.
-fn notify_mint(app: &Platform, account: &str, t: &AgentToken, powers: &[String], projects: usize) {
+/// what it may do (`reach`: only what was minted), and where to revoke it.
+/// In the background: a failure is only logged.
+fn notify_mint(app: &Platform, account: &str, t: &AgentToken, reach: &str) {
     let msg = json!({
         "title": "A new agent token",
         "body": format!(
-            "\u{201c}{}\u{201d} can act as your agent over {projects} project(s): {}. Not you? Revoke it in Settings, \
-             Agents with no machine.",
+            "\u{201c}{}\u{201d} can act as your agent: {reach}. Not you? Revoke it in Settings, Agents with no machine.",
             t.name,
-            powers.join(", ")
         ),
         "tag": format!("agent-token-{}", t.id),
         "control": true,
@@ -273,18 +315,35 @@ pub async fn over(State(app): State<Arc<Platform>>, s: Person, Path(project): Pa
 
 /// `POST /api/projects/{project}/agent-tokens/{id}/revoke`: a project
 /// owner takes a token's reach over the project back, whoever minted it.
-/// Its grants elsewhere stay its owner's to keep or revoke.
+/// Its grants elsewhere stay its owner's to keep or revoke, and the
+/// minter is told (Arugula #683, [`crate::grants::notify_revoked`]), as a
+/// machine grant's giver is.
 pub async fn revoke_over(
     State(app): State<Arc<Platform>>,
     s: Person,
     Path((project, id)): Path<(String, String)>,
 ) -> R {
     owner_of(&app, &s.account, &project).await?;
-    let n = app.db.revoke_agent_token_over(&project, &id, now_ms())?;
+    // Its reach there before the revoke, for the notice: the live ones.
+    let before = app.db.agent_tokens_over(&project)?.into_iter().find(|(t, _)| t.id == id);
+    let n = app.db.revoke_agent_token_over(&project, &id, &s.account, now_ms())?;
     if n == 0 {
         return Err(err(StatusCode::NOT_FOUND, "no live agent token over this project by that id"));
     }
     tracing::info!(account = %s.account, %project, token = %id, "a project owner revoked an agent token's reach");
+    if let Some((t, grants)) = before {
+        crate::grants::notify_revoked(
+            app.clone(),
+            crate::grants::Revoked {
+                giver: t.account,
+                subject_kind: "agent".into(),
+                subject_id: t.id,
+                project: project.clone(),
+                powers: grants.iter().filter(|g| g.revoked_at.is_none()).map(|g| g.power.clone()).collect(),
+                by: s.account.clone(),
+            },
+        );
+    }
     Ok(Json(json!({ "project": project, "token": id, "revoked": n })))
 }
 

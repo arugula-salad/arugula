@@ -440,6 +440,39 @@ async fn an_owners_passkey_approves_and_the_log_keeps_its_assertion() {
     assert_eq!((st, &d["state"], &d["approvals"][0]["decision"]), (200, &json!("denied"), &json!("deny")), "{d}");
 }
 
+/// A viewer's machine is given deploys.plan, since it reads with it
+/// (Arugula #683): its agent reads a deploy, and never plans one.
+#[tokio::test]
+async fn a_viewers_agent_reads_deploys_and_never_plans() {
+    let (hub, app, base, t, _) = seeded().await;
+    hub.daemon("xbox", "x", Some("t"));
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let env = production(&base, &t).await;
+    let path = format!("/api/daemon/projects/{t}/deploys");
+    let (_, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", DEPLOYS_PLAN, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(g["live"], json!(true), "{g}");
+    let (st, d) = geek(&base, "POST", &path, plan_body(&env, "deadbeef")).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+
+    let (st, g) =
+        call(&base, "x", "POST", "/api/grants", give("xbox", DEPLOYS_PLAN, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!((st, &g["limited"]["label"]), (200, &json!("reads only")), "{g}");
+    let xbox = |method: &'static str, path: String, body: Option<Value>| {
+        let base = base.clone();
+        async move { as_header(&base, ("x-test-daemon", "x xbox"), method, &path, body).await }
+    };
+    let (st, d) = xbox("GET", format!("/api/daemon/deploys/{id}"), None).await;
+    assert_eq!((st, &d["id"]), (200, &json!(id)), "a viewer's agent reads: {d}");
+    let (st, v) = xbox("POST", path, plan_body(&env, "deadbeef")).await;
+    assert_eq!(st, 403, "and never plans: {v}");
+    assert!(v["error"].as_str().unwrap().contains("viewer"), "{v}");
+}
+
 /// Agents plan and ask, and never approve or deny: not a's agent on geek,
 /// a's own machine, with a's real passkey assertion in hand; not a's CLI
 /// login. There's no machine route that approves. Neither does an old

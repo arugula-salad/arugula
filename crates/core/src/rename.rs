@@ -13,9 +13,10 @@
 //!
 //! - the domains signed or hashed into device certificates, join and team
 //!   proofs, push and call tokens (`illogical device v1`, `illogical team
-//!   invite v1`, …), the Noise prologue `illogical/1`, the sync key's HKDF
-//!   info `illogical sync v1`, the key file header `illogical-device-key 1`
-//!   and the checkpoint magic `ILLOGICAL-CKPT1`;
+//!   invite v1`, …), the Noise prologue `illogical/1`, the key file header
+//!   `illogical-device-key 1` and the checkpoint magic `ILLOGICAL-CKPT1`
+//!   (the sync key's HKDF info `illogical sync v1` was one until synced
+//!   history was removed in 0.67: files sealed under it stay as they are);
 //! - the browser's IndexedDB `illogical-device`, which holds its device key.
 
 /// The old name of the product, for what was made under it.

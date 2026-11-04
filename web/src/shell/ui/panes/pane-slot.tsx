@@ -124,9 +124,7 @@ export function PaneSlot({
     // is the one that can paste an image (Chrome refuses ours).
     if (editable(e.target)) return;
     const items = () => paneItems(client, id, phone, isWorkspace ? workspaceDir : null);
-    // A remote pane's menu doesn't depend on this daemon's features.
-    if (info?.type === "remote") openMenu(e, items());
-    else openFresh(client, e, items);
+    openFresh(client, e, items);
   };
 
   // A terminal's shell waiting for Enter; a stopped agent block isn't
@@ -145,7 +143,7 @@ export function PaneSlot({
       <HostBadge client={client} id={id} />
       <StartedByBadge client={client} id={id} />
       <PaneMarks client={client} pane={id} />
-      {info?.type !== "remote" && <ThreadBadge client={client} pane={id} />}
+      <ThreadBadge client={client} pane={id} />
       {!active && (info?.attention === "needs_input" || info?.attention === "done") && (
         <div class={`pane-badge ${info.attention}`} title={info.reason?.headline}>
           {info.reason?.kind === "failed" ? "failed" : info.reason?.kind === "exited" ? "exited" : info.attention === "done" ? "done" : "needs you"}

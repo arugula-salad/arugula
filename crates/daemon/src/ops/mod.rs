@@ -9,6 +9,7 @@
 //! its errors ([`OpError`]) are worded by each surface as before. The design
 //! is in `docs/operations.md`.
 
+pub(crate) mod access;
 mod acl;
 mod close;
 mod flags;
@@ -27,7 +28,6 @@ mod shares;
 mod sharing;
 mod shell_env;
 mod signin;
-mod synced;
 mod telemetry;
 mod tokens;
 mod wait;
@@ -460,7 +460,6 @@ const ROUTERS: &[(&str, &str)] = &[
     // The Unix socket's router: the only one with the sign-in link.
     ("src/server.rs", "pub fn local_router("),
     // #578 part c.
-    ("src/sync.rs", "pub fn routes()"),
     ("../arugulad-labs/src/sandboxes.rs", "pub fn routes()"),
     ("../arugulad-labs/src/apps/routes.rs", "pub fn routes("),
 ];
@@ -498,17 +497,10 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     // #578 part a: fs, hosts, setup.
     ("/api/fs/read", "bytes, with the file's size in headers"),
     ("/api/fs/watch", "NDJSON stream"),
-    ("/api/hosts/invite", "a POST whose ttl is in the query, not a body"),
-    ("/api/hosts/join", "the token in the body is the credential: no user identity (server::guard)"),
     // #578 part b: `local_router`'s own routes that stay as they are.
     ("/ws", "websocket"),
     ("/api/editors/connect", "websocket, editors join the swarm (M28)"),
     ("/api/daemon/stop", "stops the daemon, over the socket only"),
-    // #578 part c: daemon-to-daemon pushes, a host token's, not a person's.
-    ("/api/sync/state", "a pushing host's token is the credential (server::guard); not a person's call"),
-    ("/api/sync/{pane}/log", "a host's push of raw bytes, 1 MB at most"),
-    ("/api/sync/{pane}/index", "a host's push of raw bytes, 1 MB at most"),
-    ("/api/sync/{pane}/closed", "a host's push, authorized by its host token"),
 ];
 
 #[cfg(test)]

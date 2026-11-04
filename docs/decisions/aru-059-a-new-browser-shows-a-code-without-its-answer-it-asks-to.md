@@ -43,8 +43,13 @@ the new device pins the root only when the MAC checks out. A wrong MAC is
 refused and the secret dropped (one guess per code). An approval with no MAC
 (a page from before codes, or `just dev-control`'s headless device) isn't
 refused outright, nor taken on trust: the new browser shows the account's
-fingerprint and asks the person to check it (*It matches*). The scanner uses
-the browser's `BarcodeDetector`, else jsQR, loaded only then.
+fingerprint and asks the person to check it (*It matches*). The new
+device makes the code whatever `/control.json` says, so it's the same against
+a control that doesn't mention codes: no MAC comes, and it asks. Only a browser
+whose own key is the account's root (a first device) and a window the app's
+sign-in signed have nothing to check; told it's the first device and then given
+another root, a browser refuses. The scanner uses the browser's
+`BarcodeDetector`, else jsQR, loaded only then.
 Why: the compare was easy to skip, and the new browser took the root on
 control's word. Refusing a MAC-less approval outright would strand anyone
 approving from a tab opened before the deploy.

@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
-import { newRemote, openIssue, openPr, remoteHosts } from "../../blocks";
+import { openIssue, openPr } from "../../blocks";
 import { directory } from "../../hosts";
 import type { Node, NvimBlockOpened, NvimBlockRequest, OpenRequest, PaneId, TabView } from "../../../shared/proto";
 import { editorPref } from "../../open-in-editor";
@@ -79,7 +79,7 @@ type Place = "right" | "down";
 type EditorApp = "vscode" | "nvim";
 /** Where it runs: this host, the tab's machine (a VM tab), or another host
  * in the home daemon's list (a shell only). */
-type Where = { kind: "here" } | { kind: "machine"; id: number; name: string } | { kind: "host"; name: string };
+type Where = { kind: "here" } | { kind: "machine"; id: number; name: string };
 
 const KINDS: { kind: Kind; label: string; description: string }[] = [
   { kind: "shell", label: "Shell", description: "Run commands on a machine" },
@@ -102,7 +102,7 @@ const HERE: Kind[] = ["chat", "pr", "issue", "web", "conversation"];
 /** Kinds with no working directory. */
 const NO_DIR: Kind[] = ["port", "chat", "web"];
 
-const whereKey = (w: Where) => (w.kind === "here" ? "here" : w.kind === "machine" ? `m${w.id}` : `h:${w.name}`);
+const whereKey = (w: Where) => (w.kind === "here" ? "here" : `m${w.id}`);
 
 export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView }) {
   const anchor = client.active(tab.id) ?? paneIds(tab)[0];
@@ -117,7 +117,11 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   // nvim, or this page can't show VS Code's site.
   const [editorApp, setEditorApp] = useState<EditorApp>(() => (editorPref() === "nvim" || !client.showsBlocks() ? "nvim" : "vscode"));
   const [where, setWhere] = useState<Where>(() => (tabMachine ? { kind: "machine", id: tabMachine.id, name: tabMachine.name ?? tabMachine.sprite } : { kind: "here" }));
-  const [dir, setDir] = useState(() => (anchor === undefined ? "" : (client.cwd(anchor) ?? "")));
+  // The directory the person chose; until they do, the active pane's as it
+  // is now, not as it was when the drawer opened: a `cd` that hasn't reached
+  // the page yet, or one made since, would otherwise never show.
+  const [chosenDir, setChosenDir] = useState<string | null>(null);
+  const dir = chosenDir ?? (anchor === undefined ? "" : (client.cwd(anchor) ?? ""));
   const [port, setPort] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -142,10 +146,8 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const wheres: Where[] = [
     { kind: "here" },
     ...(tabMachine ? [{ kind: "machine", id: tabMachine.id, name: tabMachine.name ?? tabMachine.sprite } as Where] : []),
-    ...remoteHosts().map((name): Where => ({ kind: "host", name })),
   ];
   const whereRefusal = (w: Where): string | null => {
-    if (w.kind === "host" && kind !== "shell") return "Only a shell opens on another host from here";
     if (w.kind !== "here" && kind === "agent") return "The agent dialog says where an agent runs";
     if (w.kind !== "here" && HERE.includes(kind)) return `${KINDS.find((k) => k.kind === kind)!.label} opens on this machine`;
     return null;
@@ -159,7 +161,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const theDir = dirApplies ? dir.trim() : "";
   const portMatch = port.trim().match(/^:?(\d{1,5})(\/.*)?$/);
 
-  const whereName = (w: Where) => (w.kind === "here" ? here : w.kind === "machine" ? `VM ${w.name}` : w.name);
+  const whereName = (w: Where) => (w.kind === "here" ? here : `VM ${w.name}`);
   const anchorName = anchor === undefined ? "" : `pane ${ordinal(tab, anchor)} (${client.title(anchor) || client.info(anchor)?.command || `%${anchor}`})`;
   const label = KINDS.find((k) => k.kind === kind)!.label;
   const what = kind === "port" ? `Port ${portMatch ? portMatch[1] : "…"}` : kind === "editor" ? (editorApp === "nvim" ? "nvim" : "VS Code") : label;
@@ -251,13 +253,6 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       return;
     }
     if (kind === "shell") {
-      if (chosenWhere.kind === "host") {
-        const was = client.error;
-        await newRemote(client, chosenWhere.name, { split: anchor });
-        if (client.error && client.error !== was) return failed(client.error);
-        settle(before, place === "down");
-        return;
-      }
       settle(before, false);
       client.intent(
         {
@@ -390,7 +385,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
             class="add-pane-choose"
             disabled={!dirApplies}
             title={dirApplies ? "Choose a directory" : "The picker browses the active pane's machine"}
-            onClick={() => anchor !== undefined && openPicker(client, anchor, false, setDir)}
+            onClick={() => anchor !== undefined && openPicker(client, anchor, false, setChosenDir)}
           >
             Choose…
           </button></div>

@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use anyhow::{Context, bail};
 use arugula_proto::{
     api::Empty,
-    hosts::{AddHost, HostList, Invite, Transport},
-    op::ops::{HostAdd, HostRemove, HostTokenMint, HostTokenRevoke, HostsList, SandboxesList},
+    hosts::{AddHost, HostList, Transport},
+    op::ops::{HostAdd, HostRemove, HostsList, SandboxesList},
 };
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -32,23 +32,6 @@ pub enum HostsCmd {
     },
     /// Remove a daemon from the list.
     Rm { name: String },
-    /// A one-time token that lets another daemon add itself.
-    ///
-    /// Used as `arugulad --peer wss://this-daemon --token FILE --join TOKEN`.
-    Invite {
-        /// How long it's good for (e.g. 30m, 2h).
-        #[arg(long, default_value = "1h")]
-        ttl: String,
-    },
-    /// Mint a per-host token for a host without tailnet identity.
-    ///
-    /// One that dials out (`arugulad --peer wss://this-daemon --token FILE`) or
-    /// pushes its history (`--sync`). Adds it as a dial-out host if it isn't
-    /// listed; replaces any token it had. Printed once; only its hash is
-    /// kept.
-    Token { name: String },
-    /// Revoke a host's token, and drop its dial-out connection.
-    Revoke { name: String },
 }
 
 pub fn sandboxes(target: &Target, json_out: bool) -> anyhow::Result<()> {
@@ -104,10 +87,6 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
         let dest = entry.ssh.as_deref().with_context(|| format!("host {host} has no ssh destination"))?;
         return Ok(Target::Ssh(crate::ssh::Remote::parse(dest)?));
     }
-    // A host that dials out to the home daemon (M4c) is reached through it.
-    if entry.transport == Transport::DialOut {
-        return Ok(Target::Via(socket_of(&local), format!("/h/{}", crate::http::enc(host))));
-    }
     // The first URL that answers.
     let mut last = None;
     for u in &entry.urls {
@@ -128,13 +107,6 @@ fn or_unknown(s: &str) -> &str {
     if s.is_empty() { "?" } else { s }
 }
 
-fn socket_of(t: &Target) -> PathBuf {
-    match t {
-        Target::Socket(p) | Target::Via(p, _) => p.clone(),
-        Target::Url(_) | Target::Ssh(_) | Target::Control(_) => unreachable!("the local daemon is a socket"),
-    }
-}
-
 pub(crate) fn ago(ms: u64) -> String {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64);
     let secs = now.unwrap_or(0).saturating_sub(ms) / 1000;
@@ -146,12 +118,7 @@ pub(crate) fn ago(ms: u64) -> String {
     }
 }
 
-pub fn run(
-    target: &Target,
-    cmd: Option<HostsCmd>,
-    json_out: bool,
-    secs: impl Fn(&str) -> anyhow::Result<u64>,
-) -> anyhow::Result<()> {
+pub fn run(target: &Target, cmd: Option<HostsCmd>, json_out: bool) -> anyhow::Result<()> {
     let v = match cmd {
         None => {
             // This daemon's list (if one runs here), and control's
@@ -199,9 +166,6 @@ pub fn run(
                 println!("{:<20} {:<44} (this daemon)", or_unknown(&list.this), "");
                 for h in &list.hosts {
                     let mut urls: Vec<&str> = h.urls.iter().map(String::as_str).collect();
-                    if h.transport == Transport::DialOut {
-                        urls.push("(dials out, reached through here)");
-                    }
                     let ssh;
                     if h.transport == Transport::Ssh {
                         ssh = format!("ssh {}", h.ssh.as_deref().unwrap_or("?"));
@@ -226,24 +190,6 @@ pub fn run(
             call_raw::<HostAdd>(target, &(), &body)?.1
         }
         Some(HostsCmd::Rm { name }) => call_raw::<HostRemove>(target, &crate::http::enc(&name), &Empty {})?.1,
-        Some(HostsCmd::Invite { ttl }) => {
-            let (invite, v) = request(target, "POST", &format!("/api/hosts/invite?ttl={}", secs(&ttl)?), None)?
-                .parse_raw::<Invite>()?;
-            if !json_out {
-                println!("{}", invite.token);
-                return Ok(());
-            }
-            v
-        }
-        Some(HostsCmd::Token { name }) => {
-            let (minted, v) = call_raw::<HostTokenMint>(target, &crate::http::enc(&name), &Empty {})?;
-            if !json_out {
-                println!("{}", minted.token);
-                return Ok(());
-            }
-            v
-        }
-        Some(HostsCmd::Revoke { name }) => call_raw::<HostTokenRevoke>(target, &crate::http::enc(&name), &Empty {})?.1,
     };
     if json_out {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());

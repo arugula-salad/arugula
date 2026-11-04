@@ -130,10 +130,16 @@ pub(crate) mod tests {
             .unwrap();
         assert!(named.status().is_success());
         app.analytics.flush().await;
-        let b = got.recv().await.unwrap();
-        let events: Vec<&str> = b["batch"].as_array().unwrap().iter().map(|e| e["event"].as_str().unwrap()).collect();
+        // The sender's timer can cut a batch between the two: read until
+        // both have come.
+        let mut batch = vec![];
+        while batch.len() < 2 {
+            let b = tokio::time::timeout(std::time::Duration::from_secs(30), got.recv()).await.unwrap().unwrap();
+            batch.extend(b["batch"].as_array().unwrap().iter().cloned());
+        }
+        let events: Vec<&str> = batch.iter().map(|e| e["event"].as_str().unwrap()).collect();
         assert_eq!(events, ["name changed", "control request"]);
-        let req = &b["batch"][1];
+        let req = &batch[1];
         assert_eq!(req["distinct_id"], "acct1");
         assert_eq!(req["properties"]["route"], "/api/me/name");
         assert_eq!(req["properties"]["method"], "POST");

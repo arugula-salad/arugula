@@ -79,7 +79,7 @@ async fn is_public(app: &App, port: u16, id: &str) -> bool {
 async fn check(app: &App, e: &Enrolled, remote: &[u8; 32], hello: &PublicHello) -> Result<(), Refused> {
     let g = &hello.public;
     let want = Expect { daemon: &e.keys.id(), remote, now: now_ms() };
-    let key = e.saved.hosted.as_ref().map(|h| h.delegation.key.as_str());
+    let key = e.saved.hosted().map(|h| h.delegation.key.as_str());
     // Everything but whether it's public, before control is asked.
     g.check(&want, key, |_, _| true)?;
     let sites = sites::get().ok_or(Refused::NoBlock)?;

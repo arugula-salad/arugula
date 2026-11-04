@@ -163,7 +163,13 @@ async fn an_agent_never_starts_past_its_owner() {
     let (st, v) = signed(&base, "carol lap", "POST", &runs, Some(cmd.clone())).await;
     assert_eq!(st, 403, "off the hosted beta's list: {v}");
     assert!(v["error"].as_str().unwrap().contains("limited beta"), "{v}");
-    grant(&base, "vic", "vbox", "runs.command", &p).await;
+    // A viewer isn't given runs.command any more (Arugula #683); one from
+    // before, written as it was, is still refused at the start.
+    let (st, g) =
+        call(&base, "vic", "POST", "/api/grants", give("vbox", "runs.command", json!({ "kind": "project", "id": p })))
+            .await;
+    assert_eq!((st, g["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{g}");
+    app.db.give_grant("vbox", "runs.command", ("project", &p), "vic", 1).unwrap();
     grant(&base, "vic", "vbox", "runs.read", &p).await;
     let (st, v) = signed(&base, "vic vbox", "POST", &runs, Some(cmd.clone())).await;
     assert_eq!(st, 403, "a viewer: {v}");

@@ -3,7 +3,9 @@
 // project Docs. Under the goal is a Docs strip: "+ Doc" opens a picker of the
 // project's Docs by title with a filter, a pick is a chip with its written
 // sections, and the chip opens the Doc's page, which says it is on the board.
-// A machine's Doc (an agent links those) says which machine has it. The row's
+// A machine's Doc (an agent links its own machine's; a person, one on a
+// machine they reach) says which machine has it to a reader who reaches it,
+// and is on "a machine", a plain chip, to the rest. The row's
 // drawer has a Docs section with the same picker; a Doc there moves no lane.
 // Bob, a viewer on a phone, sees the chips and none of the buttons. Pictures
 // of both at 1280 and 390, dark, go to $TMPDIR/517-shots/ (never committed).
@@ -13,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl } from "./team-fixture";
+import { TeamControl, home, live } from "./team-fixture";
 
 const t = new TeamControl("boarddocs");
 
@@ -33,6 +35,8 @@ let app = "";
 let project = "";
 let board = "";
 let rowId = "";
+let machine = "";
+let bobs = "";
 
 const PLAN = "The launch plan";
 const SPIKE = "Installer spike";
@@ -72,6 +76,15 @@ test("Alice links a project Doc to the board's strip, opens it, and takes it off
   await expect(alice.locator("[data-admit-yes]")).toBeVisible({ timeout: 15_000 });
   await alice.locator("[data-admit-yes]").click();
   await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(2);
+  // Alice's own machine, whose Doc she links below (Bob doesn't reach it), and Bob's (she doesn't reach that).
+  await t.addMachine(alice, "alices");
+  await home(alice);
+  await expect.poll(() => live(alice, ["alices"]), { timeout: 30_000 }).toBe(true);
+  machine = await alice.evaluate(() => window.__arugula.fleet.host("alices")!.id!);
+  await t.addMachine(bob, "bobs");
+  await home(bob);
+  await expect.poll(() => live(bob, ["bobs"]), { timeout: 30_000 }).toBe(true);
+  bobs = await bob.evaluate(() => window.__arugula.fleet.host("bobs")!.id!);
 
   await platform(alice);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
@@ -109,11 +122,13 @@ test("Alice links a project Doc to the board's strip, opens it, and takes it off
   await expect(picker).toHaveCount(0);
   // The chip has the title and written/total sections.
   await expect(chip(strip(alice), PLAN)).toContainText("2/3");
-  // A machine's Doc is linked by an agent (board_write link_doc); the platform keeps it with its title.
-  const machine = await api(alice, "POST", `/api/boards/${board}/docs`, { pointer: { kind: "machine_doc", machine: "mch_0123", doc: "00112233445566ff", title: "Perf notes" } });
-  expect(machine.status).toBe(200);
+  // A machine's Doc is linked by an agent (board_write link_doc), or by a person from a machine they reach; the platform keeps it with its title.
+  const linked = await api(alice, "POST", `/api/boards/${board}/docs`, { pointer: { kind: "machine_doc", machine, doc: "00112233445566ff", title: "Perf notes" } });
+  expect(linked.status).toBe(200);
+  const elsewhere = await api(alice, "POST", `/api/boards/${board}/docs`, { pointer: { kind: "machine_doc", machine: bobs, doc: "00112233445566ff", title: "Not hers" } });
+  expect(elsewhere.status).toBe(403);
   await alice.reload();
-  await expect(chip(strip(alice), "Perf notes")).toContainText("on a machine");
+  await expect(chip(strip(alice), "Perf notes")).toContainText("on alices");
   await expect(strip(alice).locator("[data-board-doc]")).toHaveCount(2);
   await alice.screenshot({ path: join(shots, "strip-1280-dark.png") });
 
@@ -174,7 +189,7 @@ test("a Doc on a row is in its drawer, moves no lane, and the Doc says which boa
 test("Bob, a viewer on a phone, sees the Docs and none of the buttons", async () => {
   test.setTimeout(90_000);
   // Alice links one again for him to see.
-  expect((await api(alice, "POST", `/api/boards/${board}/docs`, { row: rowId, pointer: { kind: "machine_doc", machine: "mch_0123", doc: "00112233445566ff", title: "Perf notes" } })).status).toBe(200);
+  expect((await api(alice, "POST", `/api/boards/${board}/docs`, { row: rowId, pointer: { kind: "machine_doc", machine, doc: "00112233445566ff", title: "Perf notes" } })).status).toBe(200);
   await platform(bob, `/p/${project}/boards/${board}`);
   await expect(strip(bob)).toBeVisible({ timeout: 15_000 });
   await expect(chip(strip(bob), PLAN)).toBeVisible();
@@ -183,7 +198,11 @@ test("Bob, a viewer on a phone, sees the Docs and none of the buttons", async ()
   await bob.locator("[data-board-row]").first().locator("[data-board-row-menu]").click();
   await bob.getByRole("menuitem", { name: "Details" }).click();
   const drawer = bob.locator("[data-board-drawer]");
-  await expect(chip(drawer.locator("[data-board-drawer-docs]"), "Perf notes")).toBeVisible();
+  // Alice's machine isn't one Bob reaches: the Doc is on "a machine", a plain chip with nothing to open.
+  const perf = chip(drawer.locator("[data-board-drawer-docs]"), "Perf notes");
+  await expect(perf).toBeVisible();
+  await expect(perf).toContainText("on a machine");
+  await expect(perf.locator("[data-board-doc-open]")).toHaveCount(0);
   // Bob's board page has no sideways scroll.
   expect(await bob.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect(drawer.locator("[data-board-drawer-doc-add], [data-board-doc-remove]")).toHaveCount(0);

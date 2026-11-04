@@ -33,7 +33,7 @@ or an account skip without it and name what's missing
 | `just journey [j1\|j2a\|j2b\|j2c\|j5\|j6]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, two people linking up, someone who won't read docs, and two people on a tailnet with no control; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
-| `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
+| `just forges`, `just testnet-editors` | real forges and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: `tools` (real Safari, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just testnet test control native-sim` (with `ARUGULA_NATIVE_SIM_HOST=MAC`) | the iPhone app on a simulator, tapped through by its UI test against the stack: pairing, projects, chat, a relayed terminal | no |
@@ -137,19 +137,25 @@ pulls the test image from GHCR. Adding the `full-check` label to a pull
 request from a branch of this repository dispatches check.yml on that
 branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
 check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
-remove the label and add it back. A pull request that changes CI needs
-such a run on its head commit, and binaries.yml's `ci-branch-run` job
-fails it until it has one (development.md, "Changing CI").
+remove the label and add it back. Nothing requires it: the merge queue
+runs check.yml before a pull request lands (development.md, "Merging
+through the queue").
 
 Every pull request also runs `.github/workflows/pull-request.yml` (#306),
-on GitHub's `ubuntu-24.04` runners only: **pr-lint** (check.yml's lint
-action), **pr-build** (the debug binaries, as check.yml's build:
-`.github/actions/build-debug`) and **pr-e2e (N)**, the twelve shards
-(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with
-**pr-gate** as the verdict. It needs no secret: with sccache's password
-(a branch of this repository) the build goes through sccache, and a fork's
-compiles cold. A new push cancels the run before. It's advisory for now:
-no ruleset requires pr-gate, and its summary says so. Its jobs are named
+on GitHub's `ubuntu-24.04` runners only: **pr-plan** picks what the change
+is likely to reach, then **pr-build** (the debug binaries, as check.yml's
+build: `.github/actions/build-debug`) and **pr-e2e (N)** run those specs
+(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with **pr-gate**
+as the verdict. A change to docs alone runs neither. Otherwise it takes the
+journeys and a few others, any spec it changes, and any spec whose name shares
+a word with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
+every spec reads (`helpers.ts`, Playwright's config) runs them all. So a green
+pr-gate doesn't mean every spec passes: the merge queue runs them all before
+anything lands. The `full-check` label runs check.yml on the branch for an
+earlier answer. pr-plan needs no secret: with sccache's password (a branch
+of this repository) the build goes through sccache, and a fork's compiles
+cold. A new push cancels the run before. It's advisory: no ruleset requires
+pr-gate, and its summary says so. Its jobs are named
 `pr-*` so no `ci.green` phase matches them.
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
@@ -1188,18 +1194,16 @@ These aren't part of `just check`: each has its own recipe.
 | What | Run | Details |
 |---|---|---|
 | Forgejo and GitLab CE with two bot users and webhooks (#93, M36-M40) | `just forges up forgejo && just forges test forgejo`, the same with `gitlab` (3-5 minutes and 4 GB to start), `just forges down` | [testnet/forges/README.md](../testnet/forges/README.md) |
-| #17 on two machines: home's layout holds panes on `mac`, which drops off the network (`docker network disconnect`) and comes back | `just testnet-hosts` | [testnet/hosts/README.md](../testnet/hosts/README.md) |
 | M28 in real VS Code (downloaded by `@vscode/test-electron`) over Microsoft's Remote-SSH into a box running arugulad: a phone follows the cursor, a breakpoint is a card it continues, an edit is accepted from its rail | `just testnet-editors` (downloads VS Code, its server and Remote-SSH; on Linux it runs under `xvfb-run`) | [testnet/editors/README.md](../testnet/editors/README.md) |
 
 The forge tests are `crates/arugulad/tests/integration/forges_real.rs`, marked
 `#[ignore]` so `cargo test` doesn't need the containers;
 `testnet/forges/test.sh` runs them with `--ignored` against the stack
-`up.sh` started, and they fail if it isn't there. The other two are
-Playwright specs (`web/e2e/testnet-hosts.spec.ts`,
-`web/e2e/editor-remote-ssh.spec.ts`) that bring their stack up and down
-themselves. A plain `just e2e` lists them as skipped, since they belong to
-their own recipes, which set `ARUGULA_TESTNET_HOSTS=1` or
-`ARUGULA_TESTNET_EDITORS=1`; with that set and no Docker they fail.
+`up.sh` started, and they fail if it isn't there. The other is a
+Playwright spec (`web/e2e/editor-remote-ssh.spec.ts`) that brings its stack
+up and down itself. A plain `just e2e` lists it as skipped, since it
+belongs to its own recipe, which sets `ARUGULA_TESTNET_EDITORS=1`; with
+that set and no Docker it fails.
 
 #### The nightly job against github.com
 

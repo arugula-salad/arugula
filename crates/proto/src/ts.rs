@@ -8,7 +8,7 @@ use std::{any::TypeId, collections::HashSet, path::PathBuf};
 use ts_rs::{Config, TS, TypeVisitor};
 
 use crate::{
-    ClientMsg, RemoteRef, ServerMsg,
+    ClientMsg, ServerMsg,
     api::{
         ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
         OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
@@ -58,6 +58,7 @@ fn generate() -> String {
     c.visit::<crate::api::DocLinkUrl>();
     c.visit::<crate::api::DocRow>();
     c.visit::<crate::api::AgentCan>();
+    c.visit::<crate::api::AccessView>();
     c.visit::<crate::api::DocOpenRequest>();
     c.visit::<crate::api::DocOpened>();
     c.visit::<crate::api::DocPreview>();
@@ -98,7 +99,6 @@ fn generate() -> String {
     c.visit::<GuestInviteRequest>();
     c.visit::<GuestInvite>();
     c.visit::<ForgeState>();
-    c.visit::<RemoteRef>();
     c.visit::<crate::workspace::Record>();
     c.visit::<crate::workspace::MemberWhy>();
     c.visit::<crate::workspace::Lease>();

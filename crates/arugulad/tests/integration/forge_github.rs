@@ -19,7 +19,8 @@
 //! of your team; red checks with a *Rerun* that posts
 //! `rerun-failed-jobs`; an agent's writes as drafts and a person's going
 //! out in GitHub's shapes; the rate limit backing off; the timeline's last
-//! page; and the PR's code from `refs/pull/N/head`.
+//! page; the PR's code from `refs/pull/N/head`; and a merge on a branch
+//! with a merge queue going in the queue, never over REST.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -76,6 +77,15 @@ struct Inner {
     /// The next this many reads of the repository itself fail (#427).
     repo_fails: u32,
     next: u64,
+    /// PUT merge answers 405 with this.
+    merge_refused: Option<String>,
+    /// GraphQL's word on the PR's branch and the PR.
+    queue_enabled: bool,
+    in_queue: bool,
+    /// `enqueuePullRequest` says no with this.
+    enqueue_refused: Option<String>,
+    /// The read of the PR's queue says no with this.
+    queue_read_refused: Option<String>,
 }
 
 #[derive(Clone)]
@@ -286,6 +296,9 @@ async fn merge(State(f): State<Fake>, h: HeaderMap, Json(body): Json<Value>) -> 
     if let Some(r) = guard(&h) {
         return r;
     }
+    if let Some(message) = f.with(|i| i.merge_refused.clone()) {
+        return (StatusCode::METHOD_NOT_ALLOWED, Json(json!({ "message": message }))).into_response();
+    }
     f.with(|i| {
         i.writes.push(("merge".into(), body.clone(), token_of(&h)));
         i.item["merged"] = json!(true);
@@ -294,6 +307,32 @@ async fn merge(State(f): State<Fake>, h: HeaderMap, Json(body): Json<Value>) -> 
         Fake::touch(i);
     });
     Json(json!({ "sha": "abc", "merged": true, "message": "Pull Request successfully merged" })).into_response()
+}
+
+/// GitHub's GraphQL: the PR's queue, and enqueuing it. A refusal is a 200
+/// with `errors`, as GitHub's are.
+async fn graphql(State(f): State<Fake>, h: HeaderMap, Json(body): Json<Value>) -> Response {
+    if let Some(r) = guard(&h) {
+        return r;
+    }
+    let query = body["query"].as_str().unwrap_or_default();
+    f.with(|i| {
+        if !query.contains("enqueuePullRequest") {
+            assert_eq!(body["variables"], json!({ "owner": "cli", "name": "cli", "number": N }));
+            if let Some(message) = &i.queue_read_refused {
+                return Json(json!({ "data": null, "errors": [{ "message": message }] }));
+            }
+            return Json(json!({ "data": { "repository": { "pullRequest": {
+                "id": "PR_node", "isInMergeQueue": i.in_queue, "isMergeQueueEnabled": i.queue_enabled } } } }));
+        }
+        if let Some(message) = &i.enqueue_refused {
+            return Json(json!({ "data": { "enqueuePullRequest": null }, "errors": [{ "message": message }] }));
+        }
+        i.writes.push(("enqueue".into(), body["variables"].clone(), token_of(&h)));
+        i.in_queue = true;
+        Json(json!({ "data": { "enqueuePullRequest": { "mergeQueueEntry": { "id": "MQE_1" } } } }))
+    })
+    .into_response()
 }
 
 async fn rerun(
@@ -386,6 +425,7 @@ impl Hub {
                 .route("/repositories/{id}/issues/{n}/timeline", get(moved_timeline))
                 .route(&format!("{p}/issues/{{n}}/comments"), post(comment))
                 .route(&format!("{p}/actions/runs/{{id}}/rerun-failed-jobs"), post(rerun))
+                .route("/graphql", post(graphql))
                 .route("/{*rest}", get(missing))
                 .with_state(f.clone());
             let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -664,6 +704,97 @@ fn an_agents_writes_are_drafts_and_a_persons_go_out() {
     // A GitHub block's login is gh's, not picked.
     let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/login"), Some(json!({ "name": "x" })));
     assert_eq!(status, 400, "{body}");
+}
+
+/// A branch with a merge queue goes through it, for a person and a sent
+/// draft, and nothing says "merged". The fake's REST merge answers 200, as
+/// GitHub did for an admin who may bypass the ruleset, so anything that
+/// reached it would merge and fail the "open" and no-merge checks here.
+#[test]
+fn a_merge_the_branch_queues_is_queued_and_not_merged() {
+    let dir = scratch("queue");
+    let hub = Hub::start(&dir, "jhgaylor", &[], &[]);
+    hub.f.with(|i| {
+        i.queue_enabled = true;
+        i.enqueue_refused = Some("Pull request is in clean status but not ready".into());
+    });
+    let d = hub.daemon();
+    let block = open_pr(&d);
+    read(&d, block);
+
+    // GitHub saying no to the queue is the person's to see, and REST isn't
+    // tried behind it.
+    let url = format!("/api/blocks/{block}/call/merge");
+    let (status, body) = d.raw("POST", &url, Some(json!({ "style": "squash" })));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("not ready"), "{body}");
+    assert!(hub.f.writes().is_empty());
+    hub.f.with(|i| i.enqueue_refused = None);
+
+    // A method the queue overrides is no error.
+    let out = d.call(block, "merge", json!({ "style": "squash" }));
+    assert_eq!(out["said"], "queued to merge", "{out}");
+    let w = hub.f.writes();
+    assert_eq!(w.len(), 1, "enqueued, once, and no merge");
+    assert_eq!((w[0].0.as_str(), &w[0].1), ("enqueue", &json!({ "id": "PR_node" })));
+    assert_eq!(w[0].2, format!("Bearer {TOKEN}"));
+    let hist = d.get(&format!("/api/history?pane={block}"));
+    assert!(hist.as_array().unwrap().iter().any(|h| h["text"] == "queued to merge on cli/cli#13788"), "{hist}");
+    let st = read(&d, block);
+    assert_eq!(st["said"], format!("queued to merge by {OWNER}"));
+    assert_eq!(st["pr"]["item"]["state"], "open", "the queue hasn't merged it");
+    let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
+    assert!(text.contains("queued to merge by") && text.contains("not merged"), "an agent's read: {text}");
+
+    // Asked again: it's in the queue already, and isn't enqueued twice.
+    let out = d.call(block, "merge", json!({ "style": "squash" }));
+    assert_eq!(out["said"], "already queued to merge", "{out}");
+    assert_eq!(hub.f.writes().len(), 1);
+
+    // An agent's merge is a draft: a person sends it, and it's queued.
+    hub.f.with(|i| i.in_queue = false);
+    let draft = d.call(block, "merge", json!({ "agent": true }));
+    d.wait_for("the card", || info(&d, block)["ask"]["id"] == draft["draft"]);
+    d.post(&format!("/api/blocks/{block}/call/answer"), json!({ "id": draft["draft"], "content": {} }));
+    d.wait_for("the draft sent", || {
+        d.state(block)["drafts"].as_array().unwrap().iter().any(|x| x["id"] == draft["draft"] && x["status"] == "sent")
+    });
+    assert_eq!(hub.f.writes().len(), 2);
+    assert!(d.state(block)["said"].as_str().unwrap().starts_with("queued to merge by "));
+    assert_eq!(d.state(block)["pr"]["item"]["state"], "open");
+    assert_eq!(hub.f.writes().iter().filter(|w| w.0 == "merge").count(), 0);
+}
+
+/// Not knowing whether the branch has a queue sends nothing: REST could skip
+/// a queue it can't see.
+#[test]
+fn a_failed_read_of_the_queue_merges_nothing() {
+    let dir = scratch("queueread");
+    let hub = Hub::start(&dir, "jhgaylor", &[], &[]);
+    hub.f.with(|i| i.queue_read_refused = Some("Something went wrong".into()));
+    let d = hub.daemon();
+    let block = open_pr(&d);
+    read(&d, block);
+    let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/merge"), Some(json!({ "style": "squash" })));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("not merged") && body.contains("Something went wrong"), "{body}");
+    assert!(hub.f.writes().is_empty(), "something went out: {:?}", hub.f.writes());
+    assert_eq!(d.state(block)["pr"]["item"]["state"], "open");
+}
+
+/// A 405 on a branch with no queue stays what it was, and nothing's enqueued.
+#[test]
+fn a_refused_merge_with_no_queue_stays_refused() {
+    let dir = scratch("noqueue");
+    let hub = Hub::start(&dir, "jhgaylor", &[], &[]);
+    hub.f.with(|i| i.merge_refused = Some("Pull Request is not mergeable".into()));
+    let d = hub.daemon();
+    let block = open_pr(&d);
+    read(&d, block);
+    let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/merge"), Some(json!({ "style": "squash" })));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("405 Pull Request is not mergeable"), "{body}");
+    assert!(hub.f.writes().is_empty(), "nothing was enqueued");
 }
 
 #[test]

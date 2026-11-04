@@ -1784,6 +1784,7 @@ path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
+note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project."
 
 # ---- platform: agents with no machine (M230, platform step 8)
 # An owner mints a bearer agent grant token over projects they read, with an

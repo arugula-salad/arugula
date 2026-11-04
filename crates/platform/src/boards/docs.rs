@@ -5,15 +5,30 @@
 //!
 //! **Who may:** whoever writes the board (owners and editors, and an
 //! agent with `boards.write`, who takes off only the Docs its own machine
-//! linked and links only its own machine's Docs). A Doc of another
+//! linked and links only its own machine's Docs). A person links a
+//! machine's Doc only from a machine control routes them to (their own, a
+//! team's, one shared with them: the hub's `may_reach`). A Doc of another
 //! project is no Doc: 404, checked here and not in the page. A Doc linked
 //! already answers the board as it is. A closed board's Docs stay
 //! editable, as its rows do.
 //!
+//! **Whose machine it names:** a machine Doc an agent linked names its
+//! machine while that machine holds `boards.write` over the project, as
+//! its blocks' states show while it does. One a person linked names the
+//! machine only to a reader who may reach it. To anyone else the Doc is on
+//! "a machine", with the machine's id blanked too, so a link made before
+//! the check, or by someone the project has since lost, names nothing to
+//! those it doesn't concern. That is a label, not a check: it waits on the
+//! hub [`NAME_WAIT`] at most, and on an error says "a machine" and goes on.
+//!
 //! **What a Doc is not:** a row's Doc is no attachment: nothing that works
 //! out a lane, the ready set, progress or a proof ever reads it.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::boards as wire;
@@ -38,8 +53,10 @@ fn no_doc() -> ApiError {
 
 /// A Doc pointer as it is kept: shaped, with a project Doc checked to be in
 /// `project` and a machine Doc's title trimmed. A machine's agent links
-/// only a Doc of its own machine.
-pub(super) fn doc_ok(
+/// only a Doc of its own machine; a person, only one on a machine they may
+/// reach (a "no" is never kept, so a machine just joined or shared is asked
+/// of the hub again).
+pub(super) async fn doc_ok(
     app: &Platform,
     by: Actor<'_>,
     project: &str,
@@ -54,10 +71,17 @@ pub(super) fn doc_ok(
         wire::Pointer::MachineDoc { machine, doc, title } => {
             name_ok(machine, "machine")?;
             name_ok(doc, "Doc")?;
-            if let Some(own) = by.agent
-                && own != machine
-            {
-                return Err(err(StatusCode::FORBIDDEN, "an agent links only Docs on its own machine"));
+            match by.agent {
+                Some(own) if own != machine => {
+                    return Err(err(StatusCode::FORBIDDEN, "an agent links only Docs on its own machine"));
+                }
+                Some(_) => {}
+                None => {
+                    let asked = std::slice::from_ref(machine);
+                    if !app.cache.may_reach(&*app.hub, by.account, asked).await?.contains(machine) {
+                        return Err(err(StatusCode::FORBIDDEN, "a person links only Docs on a machine they can reach"));
+                    }
+                }
             }
             Ok(wire::Pointer::MachineDoc {
                 machine: machine.clone(),
@@ -69,10 +93,63 @@ pub(super) fn doc_ok(
     }
 }
 
+/// The most a read waits on the hub to say whose machine a Doc is on.
+const NAME_WAIT: Duration = Duration::from_secs(2);
+
+/// Which machine Docs a read names to its reader (the module's top says
+/// which): the machines the reader may reach, and the machines whose agent
+/// writes the project now.
+#[derive(Default)]
+pub(super) struct Named {
+    reach: HashSet<String>,
+    writing: HashSet<String>,
+}
+
+impl Named {
+    fn shows(&self, machine: &str, by_agent: bool) -> bool {
+        self.reach.contains(machine) || (by_agent && self.writing.contains(machine))
+    }
+}
+
+/// What `account` is told of the machines of `docs` (the Docs of a board,
+/// strip and rows): one hub call for the reach, kept a tick ("no" too),
+/// within [`NAME_WAIT`]; an error or a wait past it names nothing, with a
+/// warning, rather than failing the read.
+pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[db::Strip]) -> Named {
+    let (mut linked, mut by_agent) = (vec![], vec![]);
+    for d in docs {
+        if let wire::Pointer::MachineDoc { machine, .. } = &d.pointer {
+            if d.agent.is_some() { &mut by_agent } else { &mut linked }.push(machine.clone());
+        }
+    }
+    linked.sort();
+    linked.dedup();
+    by_agent.sort();
+    by_agent.dedup();
+    let mut named = Named::default();
+    if !linked.is_empty() {
+        match tokio::time::timeout(NAME_WAIT, app.cache.may_reach_label(&*app.hub, account, &linked)).await {
+            Ok(Ok(reach)) => named.reach = reach,
+            Ok(Err(e)) => tracing::warn!(error = %e, "boards: naming a Doc's machine: saying \"a machine\""),
+            Err(_) => tracing::warn!(
+                "boards: the hub took over {NAME_WAIT:?} to say whose machine a Doc is on: saying \"a machine\""
+            ),
+        }
+    }
+    for m in by_agent {
+        if super::machine_writes(app, &m, project).await {
+            named.writing.insert(m);
+        }
+    }
+    named
+}
+
 /// The Docs of a strip or a row as a read answers them: a project Doc by its
 /// title and sections now (one that is gone says so), a machine Doc by the
-/// title it had and its machine's name. `names` are the machines' names by id.
-pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec<wire::BoardDoc> {
+/// title it had and its machine's name, or on "a machine" with its id
+/// blanked when the reader isn't told (`named`). `names` are the machines'
+/// names by id.
+pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>, named: &Named) -> Vec<wire::BoardDoc> {
     let name = |m: &str| names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned());
     docs.into_iter()
         .map(|s| {
@@ -92,10 +169,22 @@ pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec
                 created_at: s.created_at,
                 pointer: s.pointer,
             };
-            match (&d.pointer, s.head) {
-                (wire::Pointer::MachineDoc { machine, .. }, _) => d.machine_name = Some(name(machine)),
-                (_, Some(h)) => (d.title, d.sections, d.written) = (h.title, Some(h.sections), Some(h.written)),
-                (_, None) => (d.title, d.missing) = (wire::DOC_GONE.to_owned(), true),
+            if let wire::Pointer::MachineDoc { machine, .. } = &mut d.pointer {
+                if named.shows(machine, d.agent.is_some()) {
+                    d.machine_name = Some(name(machine));
+                } else {
+                    d.machine_name = Some("a machine".to_owned());
+                    machine.clear();
+                    if let Some(a) = &mut d.agent {
+                        a.machine.clear();
+                        a.machine_name.clear();
+                    }
+                }
+            } else {
+                match s.head {
+                    Some(h) => (d.title, d.sections, d.written) = (h.title, Some(h.sections), Some(h.written)),
+                    None => (d.title, d.missing) = (wire::DOC_GONE.to_owned(), true),
+                }
             }
             d
         })
@@ -109,7 +198,7 @@ pub async fn add(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AddDoc) -> R
     if let Some(row) = &a.row {
         id_ok(row, "row").map_err(|_| bad("expected a row id that starts row_"))?;
     }
-    let pointer = doc_ok(app, by, &board.project, &a.pointer)?;
+    let pointer = doc_ok(app, by, &board.project, &a.pointer).await?;
     let said = match app.db.add_board_doc(id, a.row.as_deref(), &pointer, by.account, by.agent, now_ms())? {
         Ok(db::Added::New(_)) => None,
         Ok(db::Added::Already(_)) => {

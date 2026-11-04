@@ -42,11 +42,13 @@
 # and core if it's ever missing instead of letting them skip. Only main's pushes (never other branches or pull requests), since
 # most of it runs on our own machines; a branch runs by hand:
 # `gh workflow run check.yml --ref BRANCH`. And the merge queue's groups
-# (merge_group, once the queue is on: docs/development.md, "Merging through
-# the queue"): a pull request with main and whatever is queued ahead of it,
-# everything run (scripts/changed runs it all for any event but a push),
-# and chant-merge-queue.yml's chant-verdict judges the group from its check
-# runs (ci.green's mergeQueue, chant#4644). Only someone who may
+# (merge_group: docs/development.md, "Merging through the queue"): a pull
+# request with main and whatever is queued ahead of it, what that reaches
+# run (scripts/changed), and chant-merge-queue.yml's chant-verdict judges
+# the group from its check runs (ci.green's mergeQueue, chant#4644). The
+# push that lands a group's commit skips what the group passed
+# (scripts/queue-tested); main-full-run.yml runs everything on main each
+# night, which keeps the caches only main saves fresh. Only someone who may
 # merge queues a pull request, so its code reaches our machines no sooner
 # than a merge would bring it.
 name: check
@@ -386,7 +388,7 @@ jobs:
         run: ARUGULA_DESKTOP_BINARIES="$CI_RUNS/$GITHUB_RUN_ID/x86_64-unknown-linux-musl/release" just desktop-xvfb
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
-          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
+          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'merge_group') && '1' || '' }}
 
   # What changed since main's newest green commit (#868, #1675; on a
   # branch, since it left main): suite, the suites' inputs
@@ -395,6 +397,10 @@ jobs:
   # branch's only when it changes that).
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      # scripts/queue-tested reads this commit's merge_group runs.
+      actions: read
+      contents: read
     outputs:
       suite: ${{ steps.ask.outputs.suite }}
       app: ${{ steps.ask.outputs.app }}

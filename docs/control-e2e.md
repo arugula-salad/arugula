@@ -111,9 +111,9 @@ The rest of this page has the details.
   - a new browser, phone or app window does the same with the code it
     shows, scanned or typed on a device you already use
     ([Approving a new device](#approving-a-new-browser-or-phone-the-code-it-shows)).
-- **Relay:** control keeps each enrolled daemon's dial-out socket (the daemon's
-  dial-out mux) and splices clients onto it. It sees connection metadata and byte
-  counts only.
+- **Relay:** control keeps each enrolled daemon's relay socket (the daemon's
+  mux, `relay_ws.rs`) and splices clients onto it. It sees connection metadata
+  and byte counts only.
 - **Read-only links:** a link carries a one-off device key in its fragment
   (`#k=…`). The daemon lists that key as a viewer of one session until the
   link expires.
@@ -1281,7 +1281,9 @@ Nothing in this spec blocks it.
 
 ## The relay
 
-Control's relay is the daemon's dial-out transport with control at the home end:
+Control's relay is the daemon's WebSocket-and-mux transport (`relay_ws.rs`,
+first built for the dial-out tunnel of M4c, since removed) with control at
+the home end:
 
 - An enrolled daemon keeps one WebSocket to `wss://control/dial`,
   authenticated by a Noise handshake with its daemon key. (The spike
@@ -1290,7 +1292,7 @@ Control's relay is the daemon's dial-out transport with control at the home end:
   the account may reach that daemon (metadata it has anyway), opens a mux
   stream and splices the two. It forwards opaque Noise messages and counts
   bytes per account (for fair use and the meter).
-- The mux is unchanged from the daemon's dial-out transport: per-stream credit, 256 KB windows, 16 KB
+- The mux is the same one: per-stream credit, 256 KB windows, 16 KB
   frames.
 
 **Measured** (spike relay on Fly, `shared-cpu-1x`, 256 MB):
@@ -1328,10 +1330,11 @@ Control's relay is the daemon's dial-out transport with control at the home end:
   abuse, not margin.
 
 **Found and fixed on the way: Nagle.** `axum::serve` leaves Nagle on, and
-the dial-out mux writes frames back to back (OPEN then DATA, DATA then
-GRANT), so the second frame waited for the peer's delayed ACK. That was
-40 ms on every request and keystroke through `/h/<name>/…` on the home
-daemon today: 41.7 ms against 1.4 ms direct. The daemon now sets
+the mux writes frames back to back (OPEN then DATA, DATA then GRANT), so
+the second frame waited for the peer's delayed ACK. That was 40 ms on
+every request and keystroke through the dial-out tunnel (`/h/<name>/…`,
+since removed) on the home daemon at the time: 41.7 ms against 1.4 ms
+direct. The daemon now sets
 `TCP_NODELAY` on every accepted connection, and relayed requests take
 2.0 ms. Control's relay must do the same.
 
@@ -1670,7 +1673,7 @@ leaves it. So:
   - the daemon checks the signature and encrypts the payload (today's
     `push::encrypt`);
   - it hands control `{endpoint, ciphertext, ttl, urgency}` through the
-    dial-out socket;
+    relay socket;
   - control signs the VAPID JWT and posts it.
 - **What control and the push service see:** endpoint, size and timing.
   Control logs "daemon X notified device Y".
@@ -2083,7 +2086,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `doc_link_parts` | ciphertext | A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
 | `projects` | metadata | A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, its issue home (native or GitHub) if someone chose one, and the hosted workspace its agents run on, if someone chose one (M254). | Cloud workspaces, team channels, native issues and secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
 | `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
-| `grants` | metadata | A grant: a subject (a machine, or an agent grant token, M230), a power over a scope (an account or a project), who gave it, when, and when it was revoked. The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, and over its boards boards.read and boards.write, off until its owner gives one over a scope the owner reads. | Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues or starts and reads runs, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
+| `grants` | metadata | A grant: a subject (a machine, or an agent grant token, M230), a power over a scope (an account or a project), who gave it, when, and when and by whom it was revoked (its giver, or an owner of the project it's over, Arugula #683). The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, and over its boards boards.read and boards.write, off until its owner gives one over a scope the owner reads. | Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues or starts and reads runs, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
 | `agent_tokens` | metadata | An agent grant token (M230): what an agent with no machine shows the platform's MCP endpoint. Its id, the account that minted it (whose agent it is), its name, the SHA-256 of the token (never the token, which is shown once), when it was made, last used and revoked. Its powers are grants (`subject_kind` agent). Minted only from a browser on the platform page: the browser it came from (its User-Agent). Or carried over from redone by the operator's import (M235, `imported_from`): the hash redone kept, the token never seen. | An agent with no machine calls the platform's MCP endpoint, which finds its token here, with every machine asleep. | yes: the account's tokens go, with the grants it gave them. |  |
 | `redone_imports` | metadata | What `arugula-platform import redone` carried over (M235): a redone tenant and the project it became, with the account its tokens went to; a redone token's id and the agent grant token it became; an app's name, the environment it became, and the Infisical folder the import vouches for (an app redone had deployed). Ids and times only. A second run finds these and changes nothing. | Agents with no machine call the platform's MCP endpoint with every machine asleep, and the projection checks which apps a project carried over. | partly: the rows naming the account stay without its id: a tombstone, so a token carried over before is never carried over again. Nothing else in them is the account's. |  |
 | `secret_projections` | metadata | Each write of a project's secret into the operator's Infisical (M235), or, in a dry run, what would have been written: the project, the app (Infisical's folder), the secret's name, never its value; written, would write, refused or failed, with a line of why; who set it (an account, and its agent token). | Secrets are set and projected by agents with no machine, with every machine asleep. | partly: the account's name comes off the rows it set; those of projects that are gone go. |  |

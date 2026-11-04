@@ -94,7 +94,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
   }, [client]);
   const rows = state.sessions.map((s) => summarize(client, s));
   const panes = rows.reduce((n, r) => n + r.panes, 0);
-  const needs = state.panes.filter((p) => p.attention === "needs_input" && p.type !== "remote").length;
+  const needs = state.panes.filter((p) => p.attention === "needs_input").length;
   const active = client.active();
   return (
     <section class="ws-overview" aria-label={`Sessions on ${host}`} data-overview tabIndex={-1} ref={root}>

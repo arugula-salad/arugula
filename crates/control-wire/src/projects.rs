@@ -13,6 +13,34 @@ use serde::{Deserialize, Serialize};
 /// `GET /api/projects`: who's signed in, and their projects, theirs first.
 pub const PROJECTS: &str = "/api/projects";
 
+/// The write powers that do nothing at all for a viewer's agents (Arugula
+/// #683): the platform refuses to give one over a project its giver only
+/// views, 403 `viewer_write`, to a machine (`POST /api/grants`) or a
+/// token (`POST /api/agent-tokens`, which leaves it out per project). The
+/// one list: the platform's `WRITE_POWERS` says why each does nothing and
+/// a test there checks it against this; `arugula grants add` checks its
+/// list against it before giving anything; the web's `VIEWER_REFUSED`
+/// (web/src/platform/settings/grants.ts) is its copy, which
+/// [`tests::the_webs_refused_list_is_this_one`] keeps equal.
+pub const VIEWER_REFUSED: [&str; 5] = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
+
+#[cfg(test)]
+mod tests {
+    /// The web client can't read a Rust constant, so its copy is checked
+    /// here: the one line that defines it, as this list would write it.
+    #[test]
+    fn the_webs_refused_list_is_this_one() {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/platform/settings/grants.ts");
+        let ts = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let want = format!(
+            "export const VIEWER_REFUSED = [{}];",
+            super::VIEWER_REFUSED.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", ")
+        );
+        assert!(ts.lines().any(|l| l == want), "{} must have the line\n{want}", path.display());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformProjects"))]

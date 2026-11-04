@@ -173,7 +173,8 @@ async fn a_name_a_teammates_personal_machine_has_is_taken() {
     person(&c.app, "ox", "x1");
     let team = "0011223344556677";
     let r = roster(team, 1, vec![member("a1", &aaron, TeamRole::Owner), member("j1", &jake, TeamRole::Editor)], &aaron);
-    let t = Team { id: team.into(), name: "Acme".into(), founder: "a1".into(), founder_root: aaron.id(), locked: false };
+    let t =
+        Team { id: team.into(), name: "Acme".into(), founder: "a1".into(), founder_root: aaron.id(), locked: false };
     c.app.db.add_team(&t, 1, &serde_json::to_string(&r).unwrap(), now_ms()).unwrap();
     let mac = daemon(&c.app, "a1", "Aarons-Mac-mini.local");
     let geek = daemon(&c.app, "j1", "geek");

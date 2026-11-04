@@ -15,7 +15,7 @@ import { directory } from "../hosts";
 import { openPlatform, platformOrigin } from "../platform-links";
 
 /** A grant, as `GET /api/grants` lists it. */
-interface Grant {
+export interface Grant {
   id: string;
   subject: { kind: string; id: string; name: string | null };
   power: string;
@@ -24,7 +24,7 @@ interface Grant {
 }
 
 /** What each power lets an agent do, as a phrase. */
-const POWERS: Record<string, string> = {
+export const POWERS: Record<string, string> = {
   "cloud.drive": "Drive your cloud workspaces",
   "threads.read": "Read threads",
   "threads.post": "Post in threads",
@@ -59,7 +59,7 @@ export function withWork(byPower: Map<string, string[]>): Map<string, string[]> 
 }
 
 /** Where one reaches, in words. */
-function over(g: Grant): string {
+export function over(g: Grant): string {
   if (g.power === "cloud.drive") return "your account";
   if (g.scope.kind === "account") return "your DMs";
   return g.scope.name ?? g.scope.id;

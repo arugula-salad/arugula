@@ -177,7 +177,7 @@ export function BoardPanel({
     if (rowKey) document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
   }, [rowKey, !!view]);
 
-  if (missing && !view) return <p class="board-none dim" data-board-missing>That board isn't one you can read ({missing}).</p>;
+  if (missing && !view) return <p class="board-none dim" data-board-missing>That board couldn't be read ({missing}).</p>;
   if (!view) return <p class="board-none dim">Loading…</p>;
 
   /** Run a write; on 409 read again and say so. */

@@ -283,6 +283,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A live grant that does nothing now (Arugula #683): a write power while
+   its giver only views the project. */
+.platform .agent-idle {
+  display: block;
+  margin-top: 3px;
+  font: 500 10px/1.2 var(--f-mono);
+  color: var(--dim);
+  cursor: help;
+}
+
 /* -- A project's settings: tables, tags and chips, and the environments'
       cards. */
 

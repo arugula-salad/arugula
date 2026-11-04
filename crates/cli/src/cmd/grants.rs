@@ -1,5 +1,5 @@
-//! `arugula grants`: what your machines may do with your things on Arugula
-//! control (M130). `cloud.drive`: the agents on a machine drive your Cloud
+//! `arugula grants`: the powers your machines' agents hold over your things
+//! on Arugula control (M130). `cloud.drive`: the agents on a machine drive your Cloud
 //! workspaces; every machine you join gets it, and you revoke it from one,
 //! and give it back, here. And (M197) what its agents may do in
 //! conversations: `threads.read` and `threads.post` in a project's threads
@@ -35,6 +35,12 @@ const AGENT_POWERS: [&str; 12] = [
     "sessions.start",
     "sessions.reply",
 ];
+
+/// The powers that do nothing at all for a viewer's agents (Arugula #683):
+/// the platform refuses to give one over a project you only view, so `add`
+/// checks the whole list first and gives nothing rather than part of it.
+/// The wire's list, the platform's own.
+use arugula_control_wire::projects::VIEWER_REFUSED;
 
 /// Those over a project only.
 const PROJECT_ONLY: [&str; 10] = [
@@ -94,12 +100,19 @@ pub enum GrantsCmd {
         #[command(flatten)]
         scope: Scope,
     },
-    /// Take a machine's grants back: all its live ones, or one power, over
-    /// one scope.
+    /// Take a machine's grants back, or one grant by its id.
     ///
-    /// Its agents are refused from their next call.
+    /// All of a machine's live grants, or one power, over one scope. Or
+    /// one grant by its id (grt_…): as an owner of the project it's over,
+    /// a teammate's machine's or token's too; they're told, and can give
+    /// it again (an owner who means it takes them out of the team).
+    ///
+    /// Its agents are refused from their next call; a run, an agent
+    /// session or an approval already under way carries on.
     Revoke {
-        /// The machine: its name or id.
+        /// The machine: its name or id. Or a grant's id (grt_…), which a
+        /// project's owner may revoke whoever gave it: the project's
+        /// Access view lists them.
         machine: String,
         /// Only this power.
         power: Option<String>,
@@ -117,6 +130,11 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
         bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
     };
+    run_with(&e, cmd, json_out)
+}
+
+/// [`run`], as this enrolled CLI.
+fn run_with(e: &Enrolled, cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
     let listed = e.api("GET", "/api/grants", None)?;
     let grants = listed["grants"].as_array().cloned().unwrap_or_default();
     let show = |g: &Value| if json_out { print_json(g) } else { println!("{}", line(g)) };
@@ -134,15 +152,46 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
         }
         GrantsCmd::Add { machine, powers, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let scope = scope_of(&e, &scope)?;
-            for power in &powers {
-                let body = give(&id, power, scope.as_ref())?;
-                show(&e.api("POST", "/api/grants", Some(&body))?);
+            let (scope, role) = scope_of(e, &scope)?;
+            // The whole list first: a power the platform would refuse
+            // means nothing is given, not the ones before it.
+            let bodies = powers.iter().map(|p| give(&id, p, scope.as_ref())).collect::<anyhow::Result<Vec<_>>>()?;
+            let refused = refused_for_viewer(&powers, role.as_deref());
+            if !refused.is_empty() {
+                let name = scope.as_ref().and_then(|s| s["name"].as_str()).unwrap_or("that project");
+                bail!(
+                    "you only view {name}, so {} would do nothing for {machine}'s agents: nothing was given. Add the \
+                     rest without {}",
+                    refused.join(", "),
+                    if refused.len() == 1 { "it" } else { "them" }
+                );
             }
+            for body in &bodies {
+                show(&e.api("POST", "/api/grants", Some(body))?);
+            }
+        }
+        GrantsCmd::Revoke { machine, power, scope } if machine.starts_with("grt_") => {
+            // One grant by its id: as its giver, or as an owner of the
+            // project it's over (Arugula #683), so it needn't be in the
+            // list above.
+            if power.is_some() || scope.project.is_some() || scope.dms {
+                bail!("a grant's id names one grant: no power, --project or --dms with it");
+            }
+            let r = e.api("POST", &format!("/api/grants/{machine}/revoke"), None).map_err(|err| {
+                if err.to_string().contains("no such grant") {
+                    err.context(
+                        "no grant by that id is yours to revoke: not over a project you own, or this control is \
+                         from before owners' revokes (0.66.15): ask its giver",
+                    )
+                } else {
+                    err
+                }
+            })?;
+            show(&r);
         }
         GrantsCmd::Revoke { machine, power, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let scope = scope_of(&e, &scope)?;
+            let (scope, _) = scope_of(e, &scope)?;
             let live: Vec<&Value> = grants
                 .iter()
                 .filter(|g| g["subject"]["id"] == id && g["live"] == true)
@@ -187,14 +236,29 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
 }
 
 /// The scope asked for, as `POST /api/grants` takes it: a project named by
-/// its name or id among yours (`GET /api/projects`), or your DMs.
-fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<Option<Value>> {
+/// its name or id among yours (`GET /api/projects`), with its name and
+/// your role there beside it, or your DMs.
+fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<(Option<Value>, Option<String>)> {
     if s.dms {
-        return Ok(Some(json!({ "kind": "account" })));
+        return Ok((Some(json!({ "kind": "account" })), None));
     }
-    let Some(want) = &s.project else { return Ok(None) };
+    let Some(want) = &s.project else { return Ok((None, None)) };
     let projects = e.api("GET", "/api/projects", None)?;
-    Ok(Some(json!({ "kind": "project", "id": project_id(&projects, want)? })))
+    let id = project_id(&projects, want)?;
+    let p = projects["projects"].as_array().and_then(|all| all.iter().find(|p| p["id"] == id.as_str()));
+    let name = p.and_then(|p| p["name"].as_str()).unwrap_or(&id).to_owned();
+    let role = p.and_then(|p| p["team"]["role"].as_str().map(str::to_owned));
+    Ok((Some(json!({ "kind": "project", "id": id, "name": name })), role))
+}
+
+/// The powers among `powers` the platform refuses to a viewer's machine
+/// ([`VIEWER_REFUSED`]) when `role` there is viewer: for `add` to give
+/// nothing rather than part of the list.
+fn refused_for_viewer(powers: &[String], role: Option<&str>) -> Vec<String> {
+    if role != Some("viewer") {
+        return vec![];
+    }
+    powers.iter().filter(|p| VIEWER_REFUSED.contains(&p.as_str())).cloned().collect()
 }
 
 /// A project named on the command line, by its id or name (any case).
@@ -220,12 +284,23 @@ fn over(g: &Value, scope: &Value) -> bool {
     }
 }
 
-/// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when.
+/// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when
+/// (and by whom, when someone other than its giver did), or a live one's
+/// limit while you only view the project (Arugula #683: `idle`, `reads
+/// only`; `--json` says why).
 fn line(g: &Value) -> String {
     let name = g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()).unwrap_or_default();
     let state = match g["revoked_at"].as_u64() {
-        Some(at) => format!("revoked {}", crate::hosts::ago(at)),
-        None => "live".into(),
+        Some(at) => {
+            let by = &g["revoked_by"];
+            let giver = g["granted_by"].as_str().unwrap_or_default();
+            let other = by.is_object() && by["account"].as_str() != Some(giver);
+            match (other, by["name"].as_str().or(by["account"].as_str())) {
+                (true, Some(who)) => format!("revoked {} by {who}", crate::hosts::ago(at)),
+                _ => format!("revoked {}", crate::hosts::ago(at)),
+            }
+        }
+        None => g["limited"]["label"].as_str().unwrap_or("live").to_owned(),
     };
     let scope = match (g["scope"]["kind"].as_str(), g["power"].as_str()) {
         (Some("project"), _) => {
@@ -272,7 +347,124 @@ mod tests {
         assert!(machine_id(&grants, "box").unwrap_err().to_string().contains("d2, d3"));
         assert!(machine_id(&grants, "mini").is_err());
         assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "geek"]).is_ok());
+        assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "grt_1"]).is_ok(), "one grant by its id");
         assert!(crate::Cli::try_parse_from(["arugula", "grants"]).is_ok());
+    }
+
+    /// A revoked line says who, when it wasn't the giver; a live grant that
+    /// does nothing says idle (Arugula #683).
+    #[test]
+    fn a_line_says_who_revoked_and_what_is_idle() {
+        let g = |revoked_at: Option<u64>, by: Value, idle: Value| {
+            json!({ "subject": { "name": "geek" }, "power": "issues.write", "granted_by": "b",
+                "scope": { "kind": "project", "id": "prj_2", "name": "Acme" }, "id": "grt_1",
+                "revoked_at": revoked_at, "revoked_by": by, "limited": idle })
+        };
+        assert!(line(&g(None, Value::Null, Value::Null)).contains(" live "));
+        assert!(line(&g(None, Value::Null, json!({ "label": "idle", "why": "does nothing" }))).contains(" idle "));
+        assert!(line(&g(None, Value::Null, json!({ "label": "reads only", "why": "…" }))).contains(" reads only "));
+        let own = line(&g(Some(1), json!({ "account": "b", "name": "Bea" }), Value::Null));
+        assert!(own.contains("revoked") && !own.contains(" by "), "{own}");
+        let owner = line(&g(Some(1), json!({ "account": "a", "name": "Ana" }), Value::Null));
+        assert!(owner.contains("by Ana"), "{owner}");
+        let unnamed = line(&g(Some(1), json!({ "account": "a", "name": null }), Value::Null));
+        assert!(unnamed.contains("by a"), "{unnamed}");
+        let erased = line(&g(Some(1), json!({ "account": null, "name": "an account since deleted" }), Value::Null));
+        assert!(erased.contains("by an account since deleted"), "{erased}");
+        let older = line(&g(Some(1), Value::Null, Value::Null));
+        assert!(older.contains("revoked") && !older.contains(" by "), "an older platform: {older}");
+    }
+
+    /// A control of the test's own: it answers `GET /api/grants` and `GET
+    /// /api/projects` as given, `200 {}` to anything else, and keeps every
+    /// request it saw (method, path, body). One connection per request,
+    /// as the CLI makes them.
+    fn control(grants: Value, projects: Value) -> (Enrolled, std::sync::mpsc::Receiver<(String, String, String)>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for sock in l.incoming() {
+                let sock = sock.unwrap();
+                let mut r = BufReader::new(sock.try_clone().unwrap());
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                let mut words = line.split_whitespace();
+                let (method, path) =
+                    (words.next().unwrap_or_default().to_owned(), words.next().unwrap_or_default().to_owned());
+                let mut len = 0;
+                loop {
+                    let mut line = String::new();
+                    r.read_line(&mut line).unwrap();
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap();
+                    }
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                }
+                let mut body = vec![0; len];
+                r.read_exact(&mut body).unwrap();
+                let answer = match path.as_str() {
+                    "/api/grants" if method == "GET" => grants.to_string(),
+                    "/api/projects" => projects.to_string(),
+                    _ => "{}".to_owned(),
+                };
+                // Kept before it's answered, so the CLI's return finds it.
+                if tx.send((method, path, String::from_utf8_lossy(&body).into_owned())).is_err() {
+                    break;
+                }
+                let mut sock = sock;
+                write!(sock, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{answer}", answer.len()).unwrap();
+            }
+        });
+        (Enrolled::for_tests(url), rx)
+    }
+
+    /// `add` gives nothing when any power in the list would be refused to
+    /// a viewer's machine (Arugula #683): the whole list is checked first,
+    /// before any grant is asked for; an editor's list is given whole, one
+    /// POST each, in order. The refused powers are the wire's list.
+    #[test]
+    fn add_gives_nothing_rather_than_part_of_a_list() {
+        let powers = |l: &[&str]| l.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            refused_for_viewer(&powers(&["threads.read", "issues.write", "runs.start"]), Some("viewer")),
+            ["issues.write", "runs.start"]
+        );
+        assert!(
+            refused_for_viewer(&powers(&["threads.read", "deploys.plan", "boards.write"]), Some("viewer")).is_empty()
+        );
+        assert!(refused_for_viewer(&powers(&["issues.write"]), Some("editor")).is_empty());
+        assert!(refused_for_viewer(&powers(&["issues.write"]), None).is_empty(), "your DMs, or an older platform");
+        assert_eq!(
+            refused_for_viewer(&powers(&["secrets.write"]), Some("viewer")),
+            ["secrets.write"],
+            "the wire's list"
+        );
+
+        let grants = json!({ "grants": [{ "id": "grt_0", "subject": { "kind": "daemon", "id": "d1", "name": "geek" },
+            "power": "cloud.drive", "scope": { "kind": "account", "id": "a" }, "live": true }] });
+        let projects = |role: &str| json!({ "projects": [{ "id": "prj_2", "name": "Acme", "team": { "id": "t", "name": "Acme", "role": role } }] });
+        let add = |powers: &[&str]| GrantsCmd::Add {
+            machine: "geek".into(),
+            powers: powers.iter().map(|p| (*p).to_owned()).collect(),
+            scope: Scope { project: Some("acme".into()), dms: false },
+        };
+        let (e, seen) = control(grants.clone(), projects("viewer"));
+        let err = run_with(&e, Some(add(&["threads.read", "issues.write", "runs.start"])), true).unwrap_err();
+        assert!(err.to_string().contains("issues.write, runs.start would do nothing"), "{err:#}");
+        let seen: Vec<_> = seen.try_iter().map(|(m, p, _)| format!("{m} {p}")).collect();
+        assert_eq!(seen, ["GET /api/grants", "GET /api/projects"], "nothing was given");
+
+        let (e, seen) = control(grants, projects("editor"));
+        assert_eq!(run_with(&e, Some(add(&["threads.read", "issues.write"])), true).unwrap(), 0);
+        let seen: Vec<_> = seen.try_iter().collect();
+        let posts: Vec<&str> = seen.iter().filter(|(m, _, _)| m == "POST").map(|(_, _, b)| b.as_str()).collect();
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        assert!(posts[0].contains("\"threads.read\"") && posts[1].contains("\"issues.write\""), "{posts:?}");
+        assert!(posts.iter().all(|b| b.contains("\"prj_2\"")), "{posts:?}");
     }
 
     /// `add` takes one or more powers and one scope; an agent power needs

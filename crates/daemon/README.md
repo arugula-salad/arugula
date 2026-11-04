@@ -26,8 +26,8 @@ comes from `arugula_core::version`, which the binary sets.
 The core is in `arugula-mux` ([crates/mux](../mux/README.md)): the mux task,
 panes, blocks' registry, the access model, history and the state directory.
 This crate is what goes around it: the edge (the web client, `/ws`, the HTTP
-API, MCP, share links, the relay's transport, dial-out, end-to-end
-channels, enrolment), the
+API, MCP, share links, the relay's transport, end-to-end channels,
+enrolment), the
 integrations (agents, browsers, editors, forges, review, invites and the
 rest of the block kinds), and `src/lib.rs`'s `main`, which builds the mux's
 `Config` from them and starts it. The mux names none of them.

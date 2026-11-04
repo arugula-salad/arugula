@@ -24,7 +24,6 @@ pub mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;
-pub mod dial;
 pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
@@ -78,11 +77,9 @@ mod board_state;
 mod people_block;
 pub mod push;
 pub mod relay_ws;
-mod remote;
 pub mod review;
 pub mod roots;
 pub mod rules;
-mod seal;
 mod selfupdate;
 pub mod server;
 mod setup;
@@ -96,7 +93,6 @@ pub mod sites;
 pub mod task;
 use arugula_mux::store;
 pub mod subcommands;
-mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 pub mod tailscale;
@@ -108,7 +104,7 @@ pub mod upload;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use args::{Args, BlockArgs, Command, ReachArgs, RunArgs};
+use args::{Args, BlockArgs, Command, RunArgs};
 use axum::serve::ListenerExt;
 use clap::FromArgMatches;
 use tracing::{info, warn};
@@ -225,47 +221,13 @@ impl mux::PaneGone for NoUploads {
     fn forget_on(&self, _provider: Arc<dyn provider::Provider>, _sprite: String, _pane: arugula_proto::PaneId) {}
 }
 
-/// Dial out to the home daemon and push history there, if asked to.
-fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -> anyhow::Result<()> {
-    if let (Some(peer), Some(token_file)) = (&r.peer, &r.token) {
-        dial::dial_url(peer)?;
-        let opts = dial::PeerOpts { url: peer.clone(), token_file: token_file.clone(), join: r.join.clone(), name };
-        let (accept, streams) = tokio::sync::mpsc::unbounded_channel();
-        info!(peer, "dialing out to the home daemon");
-        crate::task::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
-        crate::task::spawn(dial::keep_dialing(opts, accept));
-    }
-    if r.sync {
-        let origin = match (&r.sync_to, &r.peer) {
-            (Some(to), _) => to.trim_end_matches('/').to_owned(),
-            (None, Some(peer)) => dial::home_origin(peer)?,
-            (None, None) => anyhow::bail!("--sync needs --peer or --sync-to"),
-        };
-        let opts = sync::PushOpts {
-            origin,
-            token_file: r.token.clone().expect("clap requires --token"),
-            live: r.sync_live,
-            every: std::time::Duration::from_secs(r.sync_every.max(1)),
-        };
-        info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
-        crate::task::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
-    }
+/// The background tasks that run for the daemon's lifetime.
+fn start_background(app: &std::sync::Arc<server::App>) {
     // Control hears what the agent blocks' rows on a board should say.
     crate::task::spawn(board_state::keep_reporting(app.clone()));
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     crate::task::spawn(upload::keep_sweeping());
-    // Synced history expires a day at a time.
-    let synced = app.synced.clone();
-    crate::task::spawn(async move {
-        let mut day = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
-        day.tick().await;
-        loop {
-            day.tick().await;
-            synced.prune(sync::RETAIN_MS);
-        }
-    });
-    Ok(())
 }
 
 /// A random name for this daemon's state directory, kept in it: the
@@ -788,7 +750,6 @@ fn kinds(
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
     editors::kinds(&mut kinds);
-    kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
@@ -1157,8 +1118,15 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     };
     let guest_given =
         !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
-    let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
-    synced.prune(sync::RETAIN_MS);
+    // Synced history (M4c, removed in 0.67) left sealed files nothing reads
+    // now; they're the owner's to delete, so say so rather than touch them.
+    let synced_dir = state_dir.join("synced");
+    if synced_dir.is_dir() {
+        warn!(
+            dir = %synced_dir.display(),
+            "holds history other hosts synced here, sealed; syncing was removed and nothing reads it now: delete the directory when you're done with it (`rm -r`)"
+        );
+    }
     // Labs' guest invites.
     lab_hooks::labs().open(lab_hooks::Start {
         state_dir: state_dir.clone(),
@@ -1174,7 +1142,6 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         ide,
         hosts,
         shares,
-        synced,
         control.clone(),
         acl.clone(),
         mcp_tokens,
@@ -1219,11 +1186,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             }
         });
     }
-    start_reach(&args.reach, &app, name)?;
+    start_background(&app);
     // TCP_NODELAY on every accepted connection (axum leaves Nagle on).
-    // Dial-out tunnels write a DATA frame and a GRANT back to back, and
-    // with Nagle the second waits for the peer's delayed ACK: 40 ms on
-    // every keystroke relayed through `/h/<name>/ws` (found in S15).
+    // The relay's mux (`relay_ws.rs`) writes a DATA frame and a GRANT back
+    // to back, and with Nagle the second waits for the peer's delayed ACK:
+    // 40 ms on every relayed keystroke (found in S15, on the dial-out
+    // tunnel that first carried it).
     let listener = listener.tap_io(|tcp| {
         let _ = tcp.set_nodelay(true);
     });
@@ -1314,7 +1282,8 @@ pub mod whole {
 
     /// Every type that was made when `block::create` was a `match` has an
     /// entry in the table, in a build with Labs and in one without; the
-    /// two that never were (`Terminal`, `Unknown`) still have none.
+    /// two that never were (`Terminal`, `Unknown`) still have none, nor
+    /// does `Remote`, a word kept only so a stored layout parses.
     pub fn every_type_the_daemon_makes_has_a_kind() {
         let kinds = super::kinds(
             None,
@@ -1364,7 +1333,7 @@ pub mod whole {
                 | BlockType::People
                 | BlockType::Unknown => {}
             }
-            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown | BlockType::Remote);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
     }

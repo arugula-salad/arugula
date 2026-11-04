@@ -2181,6 +2181,40 @@ a.work-chip:hover {
   font-size: 11px;
 }
 
+/* Access (Arugula #681): one row per person, link or guest, with whose
+ * word it is as a chip at the right. */
+.access-rows li {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.access-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.access-row-head .hint {
+  font-size: 12px;
+}
+
+.access-word {
+  margin-left: auto;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.access-view h3 {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
 /* Shared Docs: a Doc's title over a dim sans line, its buttons on one
  * line each (UI audit #174). */
 .shared-docs-list .rule-text {

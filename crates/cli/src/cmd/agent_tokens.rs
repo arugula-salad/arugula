@@ -116,6 +116,8 @@ fn pick(listed: &Value, want: &str) -> anyhow::Result<String> {
 }
 
 /// `redone  live  used 3m ago  issues.write, deploys.plan on Acme  agt_…`.
+/// On a live token, a grant a project's owner revoked (Arugula #683) says
+/// so: `issues.write (revoked by Ana) on Acme`.
 fn line(t: &Value) -> String {
     let state = match (t["revoked_at"].as_u64(), t["last_used_at"].as_u64()) {
         (Some(at), _) => format!("revoked {}", crate::hosts::ago(at)),
@@ -125,7 +127,11 @@ fn line(t: &Value) -> String {
     let mut by: Vec<(String, Vec<String>)> = vec![];
     for g in t["grants"].as_array().into_iter().flatten() {
         let p = g["project"]["name"].as_str().or(g["project"]["id"].as_str()).unwrap_or("?").to_owned();
-        let power = g["power"].as_str().unwrap_or("?").to_owned();
+        let mut power = g["power"].as_str().unwrap_or("?").to_owned();
+        if t["revoked_at"].is_null() && g["live"] == false {
+            let who = g["revoked_by"]["name"].as_str().or(g["revoked_by"]["account"].as_str());
+            power = format!("{power} (revoked by {})", who.unwrap_or("an owner"));
+        }
         match by.iter_mut().find(|(n, _)| *n == p) {
             Some((_, ps)) => ps.push(power),
             None => by.push((p, vec![power])),
@@ -172,12 +178,18 @@ mod tests {
                 { "power": "issues.write", "project": { "id": "prj_1", "name": "Acme" } },
                 { "power": "deploys.plan", "project": { "id": "prj_1", "name": "Acme" } },
                 { "power": "runs.read", "project": { "id": "prj_2", "name": null } },
+                { "power": "boards.read", "project": { "id": "prj_2", "name": null }, "live": false,
+                  "revoked_at": 1, "revoked_by": { "account": "a", "name": "Ana" } },
             ] });
         let l = line(&t);
         assert!(
-            l.contains("live, never used") && l.contains("issues.write, deploys.plan on Acme; runs.read on prj_2"),
+            l.contains("live, never used")
+                && l.contains("issues.write, deploys.plan on Acme; runs.read, boards.read (revoked by Ana) on prj_2"),
             "{l}"
         );
+        let mut whole = t.clone();
+        whole["revoked_at"] = json!(2);
+        assert!(!line(&whole).contains("revoked by"), "a revoked token's grants are all yours: {}", line(&whole));
         let listed = json!({ "tokens": [t, { "id": "agt_2", "name": "redone", "live": false },
             { "id": "agt_3", "name": "two", "live": true }, { "id": "agt_4", "name": "two", "live": true }] });
         assert_eq!(pick(&listed, "redone").unwrap(), "agt_1", "a revoked one isn't named");

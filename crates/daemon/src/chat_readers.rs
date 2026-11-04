@@ -7,7 +7,10 @@
 //! whenever that changes (`POST /api/daemon/chat/readers`): after each
 //! refresh with control, and as soon as who may read what changes here
 //! (a share given or taken away, a pane made private, a roster change;
-//! native #684), debounced so a burst of changes is one send.
+//! native #684), debounced so a burst of changes is one send. Whoever
+//! gets in as the owner and isn't the owner (a team's other owners, a
+//! hosted workspace's editors; native #705) is listed by their own
+//! account, as the owner's role.
 //!
 //! Chat's on/off is control's setting, not a Labs flag here (native #203):
 //! it comes with the flags control sends ([`arugula_proto::flags::control_says`]),

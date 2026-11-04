@@ -175,9 +175,8 @@ nothing marked `mux:` names the edge or the block kinds.
   Cloud workspaces, conversations, native issues, runs and deploys, are
   in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the WebSocket
   transport under control's relay and the peer channels (`relay_ws.rs`),
-  the dial-out transport on it (`dial.rs`), end-to-end channels from client
-  devices (`e2e.rs`), enrolment in control (`control.rs`), Windows' named
-  pipe (`pipe.rs`).
+  end-to-end channels from client devices (`e2e.rs`), enrolment in control
+  (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
@@ -215,15 +214,14 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
   the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
-  Sprites adapter and `labs/sandboxes.rs` in Labs), synced history
-  (`sync.rs`, `seal.rs`),
-  tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
+  Sprites adapter and `labs/sandboxes.rs` in Labs), tailscaled
+  (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
   box, enrolling, redialling on resume, busy and idle for control; it
@@ -362,15 +360,24 @@ lints the daemon with neither, and with each alone.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
 
+## Release notes
+
+A pull request that changes what people using Arugula get adds a file in
+`docs/notes/` (`docs/notes/README.md` has the format): its `line` says, in one
+sentence, what it means for them. A change nobody would notice says so in a commit
+message instead: `Release-note: none, WHY`. The `notes` check fails until it has one
+or the other; a change only to docs, tests, CI or scripts needs neither. Releases
+are built from these, so nobody writes a release's notes at the end.
+
 ## Changing CI, and a red main
 
-- A pull request that changes `.github/`, the `justfile`,
-  `chant.workspace.json`, `.config/nextest.toml` or the CI scripts
-  (`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a
-  passing check.yml run on its head commit before it merges. Add the
-  `full-check` label, and after another push remove it and add it again.
-  binaries.yml's `ci-branch-run` job fails the pull request until it has
-  one (docs/development.md, "Changing CI").
+- main takes pull requests through GitHub's merge queue: `gh pr merge N`
+  queues one, and it lands once its group passes the whole suite, about
+  20 minutes later. If its group fails, the pull request leaves the queue;
+  read the group's run, fix it, and queue it again. A CI change is tested
+  the same way, so it needs no branch run first (docs/development.md,
+  "Merging through the queue"). The `full-check` label runs check.yml on the
+  branch for an earlier answer.
 - When main goes red and the same job fails again on its retry, revert
   the commit that broke it within about 30 minutes and bring the change
   back with its fix in a new pull request. Don't fix forward while others

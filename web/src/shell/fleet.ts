@@ -4,9 +4,9 @@
 // shows; this only knows what every pane is up to, which is what the swarm
 // draws. Control never sees terminal content, so the merge happens here.
 //
-// - Each host keeps its own transport (tailnet, dial-out, or an end-to-end
-//   channel through control). Relayed ones share one socket to control
-//   (see e2e/relaymux.ts).
+// - Each host keeps its own transport (tailnet, or an end-to-end channel
+//   through control). Relayed ones share one socket to control (see
+//   e2e/relaymux.ts).
 // - A host is `connected`, `stale` (it dropped; its panes stay, greyed,
 //   from the last summary, with when it was last heard), `offline` (never
 //   reached, or gone a while), `asleep` (a hosted machine whose box is
@@ -522,8 +522,6 @@ export class Fleet {
         const u = unreadOf(info.id);
         // Someone else's private pane (M14): not even a tile.
         if (info.private && st.roles) continue;
-        // A pane from another host in this layout (#17): its own host lists it.
-        if (info.type === "remote") continue;
         out.push({
           key: `${name}:${info.id}`,
           host: name,

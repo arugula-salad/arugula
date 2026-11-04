@@ -860,6 +860,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         agent_names(app, &machines).await?.into_iter().map(|(id, d)| (id, d.name)).collect()
     };
     let project = stored.board.project.clone();
+    let named = docs::named(app, account, &project, &strip).await;
     let mut board = stored.board.clone();
     name_boards(app, std::slice::from_mut(&mut board)).await?;
     progress(app, &project, std::slice::from_mut(&mut board)).await?;
@@ -972,7 +973,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
-            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names),
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &named),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
@@ -990,7 +991,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names), ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names, &named), ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again

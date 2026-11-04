@@ -171,6 +171,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-130](docs/decisions/aru-130-an-issue-opened-on-github-stays-native-and-only-new-comments-cross.md): An issue opened on GitHub stays native, and only new comments cross
 - [aru-134](docs/decisions/aru-134-one-data-model-what-each-noun-means-and-where-its-truth-lives.md): One data model: what each noun means and where its truth lives
 - [aru-135](docs/decisions/aru-135-a-machine-s-doc-is-the-truth-its-platform-copy-is-read-only.md): A machine's Doc is the truth; its platform copy is read-only
+- [aru-136](docs/decisions/aru-136-a-machine-s-kind-is-one-type-control-json-keeps-its-flat-shape.md): A machine's kind is one type; control.json keeps its flat shape
 
 ## Build and release
 
@@ -184,3 +185,4 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-070](docs/decisions/aru-070-windows-is-a-full-platform-built-on-github-s-runners.md): Windows is a full platform, built on GitHub's runners
 - [aru-104](docs/decisions/aru-104-drivers-come-in-order-chant-to-fly-then-apps-pla.md): Drivers come in order: chant to Fly, then apps-platform; planter in step 8
 - [aru-117](docs/decisions/aru-117-four-labs-flags-stay-renamed-the-rest-graduate-or-retire.md): Four Labs flags stay, renamed; the rest graduate or retire
+- [aru-137](docs/decisions/aru-137-a-release-s-notes-travel-with-its-tag.md): A release's notes travel with its tag
