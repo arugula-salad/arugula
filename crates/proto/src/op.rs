@@ -188,13 +188,6 @@ impl Request for crate::api::StudioLoginRequest {}
 
 impl Request for crate::api::FollowerLinkRequest {}
 
-/// A promote's body may be left off (`Content-Type` and all).
-impl Request for crate::hosts::PromoteRequest {
-    fn absent() -> Option<Self> {
-        Some(Self::default())
-    }
-}
-
 impl Request for crate::api::InstallAdapterRequest {
     fn absent() -> Option<Self> {
         Some(Self::default())
@@ -375,8 +368,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::SyncedRotate);
         $m!($crate::op::ops::SyncedForget);
         $m!($crate::op::ops::SandboxesList);
-        $m!($crate::op::ops::SandboxPromote);
-        $m!($crate::op::ops::SandboxDemote);
         $m!($crate::op::ops::StudioGet);
         $m!($crate::op::ops::StudioLogin);
         $m!($crate::op::ops::StudioLogout);
@@ -408,7 +399,7 @@ pub mod ops {
             TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
-        hosts::{Demoted, Host, PromoteRequest, SandboxList},
+        hosts::SandboxList,
         sharing::{Sharing, SharingSetRequest},
         telemetry::{TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
     };
@@ -1873,34 +1864,6 @@ pub mod ops {
         type Path = ();
         type Req = Empty;
         type Res = SandboxList;
-    }
-
-    /// `POST /api/sandboxes/NAME/promote`: keep a daemon running in a sandbox.
-    pub struct SandboxPromote;
-
-    impl Op for SandboxPromote {
-        const NAME: &'static str = "sandbox.promote";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/sandboxes/{name}/promote";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
-        type Path = String;
-        type Req = PromoteRequest;
-        type Res = Host;
-    }
-
-    /// `DELETE /api/sandboxes/NAME/resident`: stop that daemon, take its host off the list.
-    pub struct SandboxDemote;
-
-    impl Op for SandboxDemote {
-        const NAME: &'static str = "sandbox.demote";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/sandboxes/{name}/resident";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
-        type Path = String;
-        type Req = Empty;
-        type Res = Demoted;
     }
 
     /// `GET /api/studio` (M35): which studio, and whether there's a token.

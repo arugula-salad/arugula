@@ -4,14 +4,13 @@
 // shows; this only knows what every pane is up to, which is what the swarm
 // draws. Control never sees terminal content, so the merge happens here.
 //
-// - Each host keeps its own transport (tailnet, dial-out, provider tunnel,
-//   or an end-to-end channel through control). Relayed ones share one
-//   socket to control (see e2e/relaymux.ts).
+// - Each host keeps its own transport (tailnet, dial-out, or an end-to-end
+//   channel through control). Relayed ones share one socket to control
+//   (see e2e/relaymux.ts).
 // - A host is `connected`, `stale` (it dropped; its panes stay, greyed,
 //   from the last summary, with when it was last heard), `offline` (never
-//   reached, or gone a while), `asleep` (a sandbox whose provider says it
-//   sleeps, or a hosted machine whose box is paused, M182: never woken
-//   just to be counted) or `capped` (over the
+//   reached, or gone a while), `asleep` (a hosted machine whose box is
+//   paused, M182: never woken just to be counted) or `capped` (over the
 //   connection cap: shown from what was last known).
 // - Connects go through a small limiter with jitter, so a laptop waking
 //   with 20 hosts doesn't open 20 sockets at once, and a slow or dead host
@@ -31,7 +30,7 @@ export interface HostRef {
   /** Its daemon id in control's directory, if it has one. */
   id?: string;
   transport: string;
-  /** A provider's word for a sandbox's state (`running`, `warm`, `cold`). */
+  /** A control host's state in the directory (`online`, `offline`). */
   status?: string;
   /** Whose it is, when it isn't this person's (M19): their name, and the
    * team it belongs to. Absent: yours. */
@@ -103,8 +102,6 @@ const HEARTBEAT_MS = 3000;
 const ANSWER_MS = 3000;
 /** A host away this long is offline, not just stale. */
 const OFFLINE_MS = 60_000;
-/** Hidden this long, the page lets go of sandboxes (as the tab view does). */
-const HIDDEN_GRACE_MS = 10_000;
 const CACHE_KEY = "arugula.fleet";
 
 interface Entry {
@@ -130,9 +127,6 @@ export class Fleet {
   private fresh = new Set<Client>();
   private timer: number | undefined;
   private lastBeat = Date.now();
-  private hidden: number | undefined;
-  /** The page is hidden: sandboxes aren't held awake, or woken. */
-  private away = false;
   private merged: FleetPane[] | null = null;
   /** Shown when the cap leaves hosts out. */
   notice: string | null = null;
@@ -222,44 +216,26 @@ export class Fleet {
     // M123: the panes' unread counts come from control's chat.
     chat.subscribe(() => this.emit());
     document.addEventListener("visibilitychange", () => {
-      clearTimeout(this.hidden);
-      if (document.visibilityState === "visible") {
-        this.away = false;
-        this.wake();
-      } else this.hidden = window.setTimeout(() => this.letGo(), HIDDEN_GRACE_MS);
+      if (document.visibilityState === "visible") this.wake();
     });
     window.addEventListener("online", () => this.wake());
   }
 
-  /** Who to connect to, within the cap; asleep sandboxes stay asleep. */
+  /** Who to connect to, within the cap. */
   private plan() {
-    const live = [...this.hosts.values()].filter((e) => !this.asleep(e));
+    const live = [...this.hosts.values()];
     live.sort((a, b) => b.usedAt - a.usedAt || a.ref.name.localeCompare(b.ref.name));
     const keep = new Set(live.slice(0, CAP).map((e) => e.ref.name));
     const capped = live.length - keep.size;
     this.notice = capped > 0 ? `Live summaries for ${CAP} of ${live.length} machines: the other ${capped} refresh when you open them.` : null;
     for (const e of this.hosts.values()) {
-      if (this.asleep(e)) {
-        this.stop(e);
-        e.state = "asleep";
-      } else if (!keep.has(e.ref.name)) {
+      if (!keep.has(e.ref.name)) {
         this.stop(e);
         e.state = "capped";
       } else if (!e.client) {
         this.begin(e);
       }
     }
-  }
-
-  /** A sandbox sleeps when nothing holds it awake, and a summary
-   * connection does: let go of those while the page is hidden. */
-  private letGo() {
-    this.away = true;
-    for (const e of this.hosts.values()) if (e.ref.transport === "provider") e.client?.sleep();
-  }
-
-  private asleep(e: Entry): boolean {
-    return e.ref.transport === "provider" && !!e.ref.status && e.ref.status !== "running";
   }
 
   private begin(e: Entry) {
@@ -295,8 +271,6 @@ export class Fleet {
       const c = this.queue.shift()!;
       // Connected meanwhile, or already trying: nothing to do.
       if (c.linked || this.trying.has(c)) continue;
-      // Hidden: a sandbox's reconnect would wake it.
-      if (this.away && [...this.hosts.values()].some((e) => e.client === c && e.ref.transport === "provider")) continue;
       this.stats.started++;
       let freed = false;
       const free = () => {

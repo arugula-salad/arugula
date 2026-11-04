@@ -5,9 +5,8 @@
 //! name left as a link to it (`dirs::renamed`): the state, config, data and
 //! cache directories. What a running pane or agent was started with is
 //! still found under illogical's name until it ends: its holder socket in
-//! the temp dir, its systemd scope, its sandbox (`illogical-eph-`), a
-//! resident daemon's service, a VM agent's MCP relay socket and its block
-//! token. New ones get Arugula's.
+//! the temp dir, its systemd scope, its sandbox (`illogical-eph-`), a VM
+//! agent's MCP relay socket and its block token. New ones get Arugula's.
 //!
 //! **Never renamed**, because something already stored depends on the
 //! exact bytes. Each is marked "Frozen (#504)" where it's defined:

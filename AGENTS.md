@@ -101,7 +101,7 @@ Each has a `README.md` with where to start reading.
   `work` keeps what others read without it (`printable`, the fenced ports,
   the session users and the sessions' ledger as it's read).
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
-  workspaces, VMs and resident daemons, guest ssh, agent recipes and
+  workspaces, VMs, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
   through `lab_hooks.rs` (the `Hooks` trait, whose defaults are a build
   without Labs); its operations are `Handle<Labs>`. The binary registers it
@@ -221,8 +221,8 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
   the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
-  Sprites adapter, `labs/provider_tunnel.rs` and `labs/resident.rs` in
-  Labs), synced history (`sync.rs`, `seal.rs`),
+  Sprites adapter and `labs/sandboxes.rs` in Labs), synced history
+  (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
@@ -297,8 +297,8 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
-only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
-daemons and the provider tunnel) and guest ssh
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines and the
+sandboxes list) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,

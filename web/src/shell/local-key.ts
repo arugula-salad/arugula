@@ -50,7 +50,7 @@ export function ownUrl(url: string | URL, page: { href: string; host: string }):
 }
 
 /** `url` if it is our daemon's API (`/api/…`, `/ws`), or its ways through
- * to other hosts (`/h/<name>/…`, `/tunnel/<name>/…`; the daemon strips the
+ * to other hosts (`/h/<name>/…`; the daemon strips the
  * key before passing a request on, and other sites' redirects from the
  * answer): what the key goes to. */
 export function ownApiUrl(url: string | URL, page: { href: string; host: string }): URL | null {

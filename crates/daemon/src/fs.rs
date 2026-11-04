@@ -8,8 +8,8 @@
 //! **Who.** `/api/fs/…` is part of the owner's API: share-link viewers only
 //! ever reach `/share/<token>` and its socket, host tokens only the dial-in
 //! and sync paths, and everything else needs the owner (`server.rs`'s
-//! `guard`). Through `/h/NAME` and `/tunnel/NAME` the home daemon checks
-//! the owner before forwarding.
+//! `guard`). Through `/h/NAME` the home daemon checks the owner before
+//! forwarding.
 
 use std::{
     collections::{BTreeMap, HashSet},

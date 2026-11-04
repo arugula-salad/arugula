@@ -3,7 +3,7 @@
 //! host reboot takes it down too), both machines reboot: wispd's operator
 //! endpoints suspend each sprite and drop its memory snapshot ("cool"),
 //! which is what `--warm-ttl` does, so the next wake is a real boot
-//! (`web/e2e/resident.spec.ts` does the same). Then the daemon starts and:
+//! Then the daemon starts and:
 //!
 //! - every pane says its session was lost and gets a shell again, on its
 //!   tab's machine, under a new boot id with its home directory kept;

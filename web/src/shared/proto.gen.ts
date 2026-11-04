@@ -5817,8 +5817,6 @@ export const OPS = {
   "rule.forget": { method: "DELETE", path: "/api/rules/{index}" },
   "rules.forget_all": { method: "DELETE", path: "/api/rules" },
   "rules.list": { method: "GET", path: "/api/rules" },
-  "sandbox.demote": { method: "DELETE", path: "/api/sandboxes/{name}/resident" },
-  "sandbox.promote": { method: "POST", path: "/api/sandboxes/{name}/promote" },
   "sandboxes.list": { method: "GET", path: "/api/sandboxes" },
   "setup.agent": { method: "POST", path: "/api/setup/agents/{kind}" },
   "setup.claude": { method: "POST", path: "/api/setup/claude" },

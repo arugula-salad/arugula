@@ -103,7 +103,6 @@ mod questions;
 mod reboot;
 #[cfg(feature = "labs")]
 mod recipes;
-mod resident;
 mod resume;
 mod review;
 mod session_history;

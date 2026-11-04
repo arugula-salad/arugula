@@ -914,18 +914,14 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     }
     let mut access =
         access::Access::new(args.listen.port(), &public_hosts, &direct, &args.allow_origins, owner.clone());
-    if let Some(digest) = &args.provider_token_sha256 {
-        access = access.require_tunnel_token(digest)?;
-        info!("resident: loopback connections need the home daemon's tunnel token");
-    }
     if let Some(t) = &status {
         access = access.with_tailnet_name(&t.host);
     }
     // Loopback is everyone's on this machine: callers there show the local
-    // token (a resident's tunnel token stands in for it).
+    // token.
     let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
     let local_token_file = localauth::path(&state_dir);
-    if !access.tunnelled() {
+    {
         let file = &local_token_file;
         let existed = file.exists();
         let token = localauth::load_or_create(file)
@@ -1069,9 +1065,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     ];
     let acl = std::sync::Arc::new(acl::Acl::open(&state_dir));
     let mcp_tokens = mcp::Tokens::open(&state_dir);
-    // Agent blocks reach MCP on loopback (M16); not where loopback needs
-    // the provider's tunnel token (a resident daemon).
-    let mcp_link = args.provider_token_sha256.is_none().then(|| {
+    // Agent blocks reach MCP on loopback (M16).
+    let mcp_link = Some({
         let ip = match args.listen.ip() {
             std::net::IpAddr::V4(v4) if v4.is_unspecified() => std::net::Ipv4Addr::LOCALHOST.into(),
             std::net::IpAddr::V6(v6) if v6.is_unspecified() => std::net::Ipv6Addr::LOCALHOST.into(),
@@ -1148,7 +1143,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     editors::run_ide(&ide, mux.clone());
     editors::watch_panes(mux.clone());
 
-    let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
+    let hosts = hosts::Hosts::open(&state_dir, name.clone());
     hosts.spawn_probe();
     let shares = share::Shares::open(&state_dir);
     // Guest SSH access was the `guest-ssh` flag: a machine that had it on
@@ -1164,18 +1159,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
     let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
     synced.prune(sync::RETAIN_MS);
-    let static_dir = args.static_dir.clone().unwrap_or_else(|| {
-        let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"));
-        // The one from before the rename, where it is.
-        arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
-    });
-    // Labs' guest invites and the static binaries for resident daemons.
+    // Labs' guest invites.
     lab_hooks::labs().open(lab_hooks::Start {
         state_dir: state_dir.clone(),
         guest_listen,
         guest_host: args.guest_ssh_host.clone(),
         guest_given,
-        static_dir,
     });
     let app = server::App::new(
         access,

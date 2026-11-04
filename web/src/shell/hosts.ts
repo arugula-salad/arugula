@@ -4,20 +4,8 @@
 // directly; the home daemon never relays. The last list (and which host was
 // shown) is kept in localStorage, so known hosts stay reachable while the
 // home daemon is down.
-//
-// A resident daemon in a sandbox (M4b, a "provider" host) is reached
-// through the home daemon's tunnel (`/tunnel/<name>`), which wakes it. If
-// it also has a tailnet URL, that's tried once it's awake, and used when it
-// answers within about 5s (S4: wake through the provider first, because
-// tailnet packets don't wake a sleeping sandbox).
 import { opPath } from "./ops";
 import type { HostInfo } from "../shared/proto";
-
-export interface ProviderRef {
-  provider: string;
-  sandbox: string;
-  port: number;
-}
 
 export interface Host {
   name: string;
@@ -25,19 +13,15 @@ export interface Host {
   /** A daemon in Arugula control's directory: its device id. */
   id?: string;
   /** How it's reached: `tailnet`, straight to its URLs; `dial_out` (M4c),
-   * it dials the home daemon and is reached through it at `/h/<name>/…`;
-   * `provider` (M4b), a resident daemon in a sandbox, through the home
-   * daemon's provider tunnel at `/tunnel/<name>/…` (both on this page's
-   * own origin); `ssh` (M51), reached by a terminal's own ssh, never from
-   * a page. */
-  transport: "tailnet" | "dial_out" | "provider" | "control" | "ssh";
-  provider?: ProviderRef;
+   * it dials the home daemon and is reached through it at `/h/<name>/…`
+   * (on this page's own origin); `control`, through control's directory;
+   * `ssh` (M51), reached by a terminal's own ssh, never from a page. */
+  transport: "tailnet" | "dial_out" | "control" | "ssh";
   /** An ssh host's destination (`user@box`). */
   ssh?: string;
   added_ms: number;
   last_seen_ms: number | null;
-  /** A provider host's sandbox state, from the provider (never by
-   * connecting): running, warm, cold, gone. */
+  /** A control host's state in the directory: online, offline. */
   status?: string;
 }
 
@@ -75,7 +59,6 @@ export class HostDirectory {
   /** The host shown; `null` is the home daemon (this page's own). */
   shown: string | null = load<string>(SHOWN_KEY);
   /** Provider hosts whose tailnet URL answered: used instead of the tunnel. */
-  private upgraded = new Set<string>();
   /** The page is Arugula control's (M17): the list comes from control,
    * and there's no home daemon. */
   control = false;
@@ -99,7 +82,6 @@ export class HostDirectory {
     const asked = linkedMachine();
     if (asked !== null && this.find(asked)) this.shown = asked;
     if (this.shown !== null && !this.find(this.shown)) this.shown = null;
-    if (this.shown !== null) void this.upgrade(this.shown);
   }
 
   /** Keep the address on the machine shown (`?machine=NAME`), so the view
@@ -173,34 +155,7 @@ export class HostDirectory {
     const h = this.find(name);
     // The one place a host's URL is chosen.
     if (h?.transport === "dial_out") return `/h/${encodeURIComponent(h.name)}`;
-    if (h?.transport === "provider" && !this.upgraded.has(name)) return `/tunnel/${encodeURIComponent(h.name)}`;
     return h?.urls[0] ?? "";
-  }
-
-  /** Whether the shown host lives in a sandbox that sleeps. */
-  get sleeps(): boolean {
-    return this.shown !== null && this.find(this.shown)?.transport === "provider";
-  }
-
-  /** A provider host with a tailnet URL: once the tunnel has woken it,
-   * switch to the tailnet if it answers within about 5s. */
-  private async upgrade(name: string) {
-    const url = this.find(name)?.transport === "provider" ? this.find(name)?.urls[0] : undefined;
-    if (!url || this.upgraded.has(name)) return;
-    const until = Date.now() + 5000;
-    while (Date.now() < until && this.shown === name) {
-      try {
-        const res = await fetch(`${url}${opPath("host.get")}`, { signal: AbortSignal.timeout(1500) });
-        if (res.ok) {
-          this.upgraded.add(name);
-          this.emit();
-          return;
-        }
-      } catch {
-        // not up yet
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
   }
 
   /** The shown host's name ("" until the home daemon's is known). */
@@ -215,7 +170,6 @@ export class HostDirectory {
     save(this.control ? CONTROL_SHOWN_KEY : SHOWN_KEY, shown);
     this.syncUrl();
     this.emit();
-    if (shown !== null) void this.upgrade(shown);
   }
 
   /** Fetch the list from the home daemon; on failure keep the cached one. */

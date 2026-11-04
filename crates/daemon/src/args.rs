@@ -295,17 +295,6 @@ pub(crate) struct RunArgs {
     /// ~/.config/arugula/loam-key].
     #[arg(long, env = "ARUGULA_LOAM_KEY_FILE", hide = true)]
     pub(crate) loam_key_file: Option<PathBuf>,
-    /// Where the static binaries (`just static`) to copy into a sandbox
-    /// are, when making a daemon resident there [default:
-    /// $XDG_DATA_HOME/arugula/static].
-    #[arg(long, env = "ARUGULA_STATIC_DIR", hide = true)]
-    pub(crate) static_dir: Option<PathBuf>,
-    /// A resident daemon in a sandbox (set when it's made resident): the
-    /// SHA-256 of the token the home daemon's tunnel presents. Connections
-    /// from this machine (the provider's proxy arrives on loopback) need
-    /// it; the Unix socket doesn't.
-    #[arg(long, value_name = "HEX", hide = true)]
-    pub(crate) provider_token_sha256: Option<String>,
     /// An Anthropic API key for Claude Code agents in VMs, passed to them as
     /// ANTHROPIC_API_KEY [default: ~/.config/arugula/anthropic-key].
     #[arg(long, env = "ARUGULA_ANTHROPIC_KEY_FILE", hide = true)]
@@ -526,15 +515,9 @@ mod tests {
             }
         }
         let top = &texts[0];
-        for flag in [
-            "--wisp-url",
-            "--wisp-token-file",
-            "--loam-url",
-            "--loam-key-file",
-            "--studio-file",
-            "--guest-machines",
-            "--static-dir",
-        ] {
+        for flag in
+            ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--studio-file", "--guest-machines"]
+        {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
         assert!(top.contains("--guest-ssh ") && top.contains("--guest-ssh-host"), "{top}");
@@ -553,8 +536,7 @@ mod tests {
     #[test]
     fn labs_unhides_its_options_and_only_those() {
         let labs = ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--studio-file"];
-        let hidden_internals =
-            ["--guest-machines", "--static-dir", "--log-file", "--no-relay", "--provider-token-sha256"];
+        let hidden_internals = ["--guest-machines", "--log-file", "--no-relay"];
         let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));
         for flag in labs {

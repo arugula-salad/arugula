@@ -56,9 +56,6 @@ import { useHoverToSwitchTabs } from "./panes/drop";
 import { currentPlace } from "./places";
 import { shellTitle } from "./titles";
 
-/** How long a hidden page keeps its connection to a sandbox host. */
-const HIDDEN_GRACE_MS = 10_000;
-
 export function App({ client, cell }: { client: Client; cell: Cell }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
@@ -67,19 +64,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useEffect(() => {
     // Focusing the window doesn't take the size from another window
     // (#333): typing here, showing a tab or "use this size" does.
-    // A sandbox host sleeps when nothing holds it awake, and an open
-    // connection does: let go of it while the page is hidden.
-    let hidden: number | undefined;
     const visible = () => {
-      clearTimeout(hidden);
       if (document.visibilityState === "visible") client.wake();
-      else if (directory.sleeps) hidden = window.setTimeout(() => client.sleep(), HIDDEN_GRACE_MS);
     };
     document.addEventListener("visibilitychange", visible);
-    return () => {
-      clearTimeout(hidden);
-      document.removeEventListener("visibilitychange", visible);
-    };
+    return () => document.removeEventListener("visibilitychange", visible);
   }, [client]);
 
   // Following someone stops as soon as you do something yourself.

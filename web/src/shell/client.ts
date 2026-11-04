@@ -1126,8 +1126,8 @@ export class Client {
   private closed = false;
   private asleep = false;
 
-  /** Let go of the connection while nobody is looking (a sandbox host:
-   * an open connection keeps it awake); `wake` reconnects. */
+  /** Let go of the connection until `wake`: nothing is sent or received
+   * meanwhile (a test freezes a layout against live deltas with it). */
   sleep() {
     if (this.closed || !this.link) return;
     this.asleep = true;

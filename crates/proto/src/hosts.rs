@@ -16,27 +16,15 @@ pub enum Transport {
     /// `<home>/h/<name>/ws` and `<home>/h/<name>/api/...`. It has no URLs of
     /// its own.
     DialOut,
-    /// Through the home daemon's tunnel (`/tunnel/<name>/…`), which reaches
-    /// the host's port through its sandbox provider (M4b): for a resident
-    /// daemon in a sandbox that sleeps. Its URLs, if any, are tailnet ones
-    /// to upgrade to once it's awake.
+    /// From before 0.67: a daemon made resident in a provider's sandbox,
+    /// reached through the home daemon's tunnel (M4b, removed). Still read,
+    /// so an old `hosts.json` parses; the daemon drops such entries as it
+    /// starts and keeps the rest.
     Provider,
     /// Over ssh, from each client (M51): `arugula --host NAME` runs the
     /// system `ssh` to [`Host::ssh`]. No URLs; the web and the phone can't
     /// reach it, only a terminal can.
     Ssh,
-}
-
-/// Where a resident daemon lives: a sandbox, and its daemon's port there.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderRef {
-    /// Which provider: `wisp`, `sprites`.
-    #[serde(default)]
-    pub provider: String,
-    /// The provider's name for the sandbox.
-    #[serde(default)]
-    pub sandbox: String,
-    pub port: u16,
 }
 
 /// Another daemon, in the home daemon's list.
@@ -50,24 +38,15 @@ pub struct Host {
     pub urls: Vec<String>,
     #[serde(default)]
     pub transport: Transport,
-    /// For [`Transport::Provider`]: where it is.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<ProviderRef>,
     /// For [`Transport::Ssh`]: ssh's destination (`user@box`, or a Host
     /// from the client's `~/.ssh/config`). Nothing else is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<String>,
     #[serde(default)]
     pub added_ms: u64,
-    /// When the home daemon last reached it (for a provider host: last
-    /// saw its sandbox running).
+    /// When the home daemon last reached it.
     #[serde(default)]
     pub last_seen_ms: Option<u64>,
-    /// A provider host's sandbox state as its provider last said
-    /// (`running`, `warm`, `cold`, `gone`): asked of the provider, never
-    /// by connecting, so asking doesn't wake it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
 }
 
 /// `GET /api/hosts`.
@@ -80,7 +59,7 @@ pub struct HostList {
     pub hosts: Vec<Host>,
 }
 
-/// `POST /api/hosts`, and what a sandbox sends to `join`.
+/// `POST /api/hosts`, and what a dial-out host sends to `join`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddHost {
     pub name: String,
@@ -316,7 +295,8 @@ pub struct HostFeatures {
     pub flags: Option<Vec<String>>,
 }
 
-/// `POST /api/hosts/invite`: a one-time token that lets a sandbox add itself.
+/// `POST /api/hosts/invite`: a one-time token that lets a dial-out host add
+/// itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invite {
     #[serde(default)]
@@ -364,8 +344,6 @@ pub struct ProviderInfo {
     /// nothing follows it.
     #[serde(default)]
     pub exec_replay: u64,
-    /// Whether a daemon can be made resident there (files and services).
-    pub resident: bool,
 }
 
 /// `GET /api/sandboxes`: the provider's sandboxes, on the home daemon.
@@ -382,26 +360,4 @@ pub struct SandboxInfo {
     pub name: String,
     #[serde(default)]
     pub status: String,
-    /// The host in the list whose daemon lives there, if one does.
-    #[serde(default)]
-    pub host: Option<String>,
-}
-
-/// `DELETE /api/sandboxes/{name}/resident`: the hosts taken off the list.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Demoted {
-    #[serde(default)]
-    pub removed: Vec<String>,
-}
-
-/// `POST /api/sandboxes/{name}/promote`: copy the static daemon in and keep
-/// it running there as a provider service, then add it to the host list.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PromoteRequest {
-    /// Its name in the host list [default: the sandbox's].
-    #[serde(default)]
-    pub host: Option<String>,
-    /// The daemon's port inside the sandbox [default: 7681].
-    #[serde(default)]
-    pub port: Option<u16>,
 }
