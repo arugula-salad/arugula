@@ -120,3 +120,24 @@ iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
   version every 30 s while visible (5 min after an hour with no change)
   and swaps a newer one in place; a reader's click to run is kept per
   section across the swap.
+- **A kit of the house look is in the page (#699).** The frame loads
+  nothing, so `runner.html` carries the kit itself, a `<style>` in a
+  `<template>` that it writes after the policy and before the prototype's
+  own styles. Everything is opt-in: custom properties on `:root` and
+  classes that start `ar-`, no element selectors, so a prototype that uses
+  none renders as before. The colors are `light-dark(Latte, Slate)` and
+  follow the `color-scheme` the runner sets and moves; `scripts/prototype-kit.test.mjs`
+  checks each against `appearance.ts`.
+  - Tokens: `--ar-bg`, `-surface`, `-raised`, `-raised-hover`, `-text`,
+    `-muted`, `-subtle`, `-faint`, `-border`, `-accent`, `-on-accent`,
+    `-danger`, `-ok`, `-warn`; sizes `--ar-text-xs` 11px, `-sm` 12px,
+    `-md` 13px, `-lg` 15px (style.css's most used, until #687 settles the
+    scale); `--ar-space-1…4`, `--ar-radius-sm`, `--ar-radius`,
+    `--ar-radius-lg`, `--ar-shadow`, `--ar-font` and `--ar-mono`.
+  - Classes: `ar-btn` (`ar-btn-primary`, `ar-btn-ghost`), `ar-chip`
+    (`ar-chip-accent`, `-ok`, `-warn`, `-danger`), `ar-header` (a title,
+    and an `ar-toolbar` that keeps right), `ar-row` (a title, a value, and
+    an `ar-row-sub` line), `ar-dialog`, `ar-menu` with `ar-menu-item`,
+    `ar-empty` (a heading and a `p`) and `ar-toolbar`. The dialog and menu
+    are drawn in place, not fixed over the page, so a prototype can show
+    them beside what they belong to.
