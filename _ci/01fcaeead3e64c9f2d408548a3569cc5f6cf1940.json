@@ -3,7 +3,7 @@
   "commit": "01fcaeead3e64c9f2d408548a3569cc5f6cf1940",
   "branch": "main",
   "state": "red",
-  "at": "2026-11-04T06:57:49Z",
+  "at": "2026-11-04T06:59:04Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -36,7 +36,7 @@
         {
           "name": "build",
           "id": 126436934027,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436934027"
         },
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 126436934109,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436934109"
         }
       ]
@@ -77,9 +77,9 @@
       "runs": [
         {
           "name": "e2e",
-          "id": 126436309580,
+          "id": 126437892435,
           "conclusion": "skipped",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436309580"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126437892435"
         }
       ]
     },
@@ -93,7 +93,8 @@
           "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436934316"
         }
-      ]
+      ],
+      "culprit": "d9b3ce8bd4bbacef23bd454e5ff9fe983b644afa"
     },
     "macos": {
       "verdict": "fail",
@@ -143,10 +144,10 @@
   "failure": {
     "phase": "build",
     "run": {
-      "name": "static",
-      "id": 126436933863,
+      "name": "build",
+      "id": 126436934027,
       "conclusion": "failure",
-      "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436933863"
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41788264910/job/126436934027"
     }
   },
   "retried": {
