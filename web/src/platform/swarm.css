@@ -193,6 +193,22 @@
   color: var(--fg);
 }
 
+/* "N not on a board" beside a project's head on All boards (#656), before its "All ›". */
+.platform .sw-page .sw-section-head .sw-untriaged {
+  margin-left: auto;
+  color: var(--dim);
+  font: 500 12px/1.3 var(--f-mono);
+  text-decoration: none;
+}
+
+.platform .sw-page .sw-section-head .sw-untriaged:is(:hover, :focus-visible) {
+  color: var(--fg);
+}
+
+.platform .sw-page .sw-section-head .sw-untriaged + .sw-all {
+  margin-left: 0;
+}
+
 /* Chat, on the platform page (UI audit #157): denser than a page inside
    its rooms, but in the same faces. A view's name (Activity, Threads,
    Saved, Search, and Chat on a phone) is set as a page's; a room's name,

@@ -246,7 +246,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
         <p data-plane-waiting>
           {waiting} agent {waiting === 1 ? "write is" : "writes are"} waiting for approval in{" "}
           <a href={triage} onClick={(e) => follow(e, triage)}>
-            Triage
+            Not on a board
           </a>
           .
         </p>

@@ -22,13 +22,11 @@ import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
-import { useBoards } from "./pages/boards";
-import { issuesPlace } from "./pages/triage-text";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "issues" | "boards" | "docs" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "boards" | "docs" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -40,11 +38,11 @@ export function sectionOf(r: Route): Section | null {
     case "new-deploy":
     case "deploy":
       return "deploys";
+    // Issues and Triage are part of Boards (#656): the one place for tickets.
     case "issues":
     case "issue":
     case "new-issue":
     case "triage":
-      return "issues";
     case "boards":
     case "board":
     case "all-boards":
@@ -101,10 +99,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Live's camera goes to the team of the project on screen (#343).
   const working = p?.team?.id ?? null;
   useEffect(() => setWorkingTeam(working), [working]);
-  // Triage takes Issues' place and Boards follows it (#292). Until boards
-  // have answered, the bar is Issues as ever.
-  const boards = useBoards(project);
-  const triage = issuesPlace(boards) === "triage";
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
@@ -192,16 +186,10 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             Overview
           </Place>
         )}
-        {/* From the start: only chat saying it's off takes Issues away. */}
-        {project && chat.on !== false && (
-          <Place to={pathOf({ page: triage ? "triage" : "issues", project }, names)} here={here === "issues"} data={triage ? "triage" : "issues"}>
-            {triage ? "Triage" : "Issues"}
-            <PlaceUnread project={project} prefix="iss_" />
-          </Place>
-        )}
-        {project && triage && (
+        {project && (
           <Place to={pathOf({ page: "boards", project }, names)} here={here === "boards"} data="boards">
             Boards
+            {chat.on !== false && <PlaceUnread project={project} prefix="iss_" />}
           </Place>
         )}
         {project && (

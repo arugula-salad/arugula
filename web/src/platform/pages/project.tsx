@@ -86,7 +86,7 @@ export function ProjectHome({ id }: { id: string }) {
                 );
               })}
           </ul>
-          {/* With boards on, they lead and Issues is Triage (#292). */}
+          {/* With boards on, they lead; the issues on no board are on the Boards page (#656). */}
           {boardsOn && <ProjectBoards p={p} list={boards} />}
           {chat.on && <ProjectIssues p={p} />}
           {chat.on && <ProjectDocs p={p} />}

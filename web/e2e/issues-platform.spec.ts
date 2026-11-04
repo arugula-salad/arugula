@@ -54,9 +54,8 @@ test("a team's project lists its issues, and an owner opens one", async ({ brows
 
   await platform(alice);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
-  // The bar's place is Triage (#292), and the whole list is one link on.
-  await alice.locator("[data-platform-triage]").click();
-  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
+  // Issues is reached from Boards' "Not on a board" (#656): the bar has no place of its own.
+  await alice.locator("[data-platform-boards]").click();
   await alice.locator("[data-triage-all]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/issues$/);
   await expect(alice.locator("[data-issues-none]")).toContainText("No open issues");
@@ -123,7 +122,7 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   // doesn't mention her, so nothing counts it.
   await alice.locator("[data-issues-search]").fill("");
   await expect(alice.locator("[data-issue-row] [data-thread-new]")).toHaveAttribute("data-thread-new", "1", { timeout: 15_000 });
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-triage] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
   // Control's page has the thread unread too, and its Chat button doesn't
   // count it: chat doesn't list an issue's thread.
   const shell = await alice.context().newPage();
@@ -206,8 +205,8 @@ test("what's new in the thread of an issue assigned to you is in the inbox, and 
   // project's, so the bar's Triage there is Alice's own project's.)
   await platform(alice, issuePath.replace(/\/issues\/.*$/, "/issues"));
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-triage] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
   await alice.reload();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-triage] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
 });

@@ -18,7 +18,7 @@
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
-//   /p/:project/triage             its open issues on no board (#292)
+//   /p/:project/triage             the Boards page, scrolled to Not on a board (#292, #656)
 //   /p/:project/boards             its boards
 //   /p/:project/boards/:board      a board (`brd_…`)
 //   /docs                          every Doc the reader can read, their own
