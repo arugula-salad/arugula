@@ -87,7 +87,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
               <li key={p.id} data-project={p.id} data-delegated={d ? "yes" : "no"}>
                 <span>
                   {p.name}
-                  <span class="dim">{d ? " · control may enroll cloud workspaces into it" : " · no cloud workspaces"}</span>
+                  <span class="dim">{d ? " · Arugula may enroll cloud workspaces into it" : " · no cloud workspaces"}</span>
                 </span>
                 {d ? (
                   <button class="secondary danger small" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
@@ -105,7 +105,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
       ) : null}
       {projects.length ? (
         <p class="dim control-explain">
-          <b>Allow</b> signs, with this device, that control may enroll cloud workspaces into the project until you stop it. Stopping ends new
+          <b>Allow</b> signs, with this device, that Arugula may enroll cloud workspaces into the project until you stop it. Stopping ends new
           ones; the ones there stay until they're removed.
         </p>
       ) : null}

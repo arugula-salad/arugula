@@ -48,7 +48,7 @@ export function holdable(d: Driver): DriverSecret[] {
 
 /** What the page says of a secret the driver takes. */
 export function secretNote(s: DriverSecret): string {
-  if (s.minted === "always") return "minted by the platform for each run";
+  if (s.minted === "always") return "minted by Arugula for each run";
   if (s.minted === "unless_held") return "minted for each run unless the environment holds its own";
   return "";
 }

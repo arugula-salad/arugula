@@ -143,7 +143,7 @@ test("the push's page approves a deploy in place with a passkey, and says why wh
   await expect(alice.locator(`[data-deploy-card="${second}"] [data-deploy-done]`)).toContainText("Denied");
   expect((await api(alice, "GET", `/api/deploys/${second}`)).body.state).toBe("denied");
 
-  // A window with no WebAuthn (the Linux app's): Approve on Control, saying why.
+  // A window with no WebAuthn (the Linux app's): Approve on your machines page, saying why.
   const third = await asked(alice, project, env.body.id, "c");
   const bare = await alice.context().newPage();
   await bare.addInitScript(() => {
@@ -151,7 +151,7 @@ test("the push's page approves a deploy in place with a passkey, and says why wh
   });
   await bare.goto(`${app}/deploys/${third}`);
   const round = bare.locator("[data-deploy-on-control]");
-  await expect(round).toHaveText("Approve on Control");
+  await expect(round).toHaveText("Approve on your machines page");
   await expect(round).toHaveAttribute("href", `${t.base}/#deploy=${third}`);
   await expect(bare.locator("[data-deploy-why-elsewhere]")).toContainText("no passkeys");
   await bare.close();
@@ -164,6 +164,6 @@ test("the push's page approves a deploy in place with a passkey, and says why wh
   await alice.goto(`${app}/deploys/${third}`);
   await alice.locator(`[data-deploy-card="${third}"] [data-deploy-approve]`).click();
   await expect(alice.locator('[data-deploy-decide="elsewhere"] [data-deploy-on-control]')).toBeVisible();
-  await expect(alice.locator("[data-deploy-why-elsewhere]")).toContainText("can't use Control's passkeys");
+  await expect(alice.locator("[data-deploy-why-elsewhere]")).toContainText("can't use your Arugula passkeys");
   expect((await api(alice, "GET", `/api/deploys/${third}`)).body.state).toBe("pending");
 });

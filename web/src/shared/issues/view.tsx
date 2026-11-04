@@ -211,7 +211,7 @@ export function IssueView({
   useSubscribe((fn) => chat.subscribe(fn));
 
   if (missing && (!issue || !stale)) return <Missing what={`That issue isn't one you can read (${missing}).`} />;
-  if (!issue) return stale ? <Missing what={`Arugula control can't be reached: ${stale.why}`} /> : <p class={`${cls} dim`}>Loading…</p>;
+  if (!issue) return stale ? <Missing what={`Arugula cloud can't be reached: ${stale.why}`} /> : <p class={`${cls} dim`}>Loading…</p>;
   if (issue.project !== place.project) return <Missing what="That issue is in another project." />;
 
   const change = async (patch: Partial<IssuePatch>) => {
@@ -324,7 +324,7 @@ export function IssueView({
       </PageHeader>
       {stale && (
         <p class="issue-stale" role="status" data-issue-stale>
-          Can't reach Arugula control now: this is what it said {read ? <Time at={read} long /> : "last"}.
+          Can't reach Arugula cloud now: this is what it said {read ? <Time at={read} long /> : "last"}.
         </p>
       )}
       <div class="issue-cols">

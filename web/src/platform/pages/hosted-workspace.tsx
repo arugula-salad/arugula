@@ -453,7 +453,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
           <h2>Panes and agents</h2>
           {w.machine ? (
             <p>
-              Its terminals and agent blocks are live on Control, where your machines are, and everyone in the project sees the same ones.{" "}
+              Its terminals and agent blocks are live on your machines page, and everyone in the project sees the same ones.{" "}
               {ready ? (
                 <a href={machineHref(w.machine)} target="_blank" rel="noopener" data-hosted-open>
                   Open them ↗

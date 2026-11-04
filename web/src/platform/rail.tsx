@@ -42,8 +42,8 @@ export function PlatformRail() {
       href: "/",
       onClick: place("/"),
     },
-    { label: "Panes", tip: "Your panes, on Control", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
-    { label: "Swarm", tip: "Swarm: every agent on every machine, on Control", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
+    { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
+    { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
     {
       label: "Chat",
       aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
@@ -57,7 +57,7 @@ export function PlatformRail() {
     },
   ];
   const brand = (
-    <a class="ws-brand" href={`${control}/`} aria-label="Arugula: your machines and sessions" title="Your machines and sessions, on Control" data-open-control>
+    <a class="ws-brand" href={`${control}/`} aria-label="Arugula: your machines and sessions" title="Your machines and sessions" data-open-control>
       <Mark />
     </a>
   );

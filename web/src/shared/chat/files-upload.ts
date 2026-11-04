@@ -19,7 +19,7 @@ export function upload(room: string, file: File, name: string, progress: (p: num
       if (xhr.status >= 200 && xhr.status < 300) resolve(body);
       else reject(new Error(refusalOf(xhr.status, body, `Upload failed (${xhr.status})`)));
     };
-    xhr.onerror = () => reject(new Error("Couldn't reach control to upload"));
+    xhr.onerror = () => reject(new Error("Couldn't reach Arugula cloud to upload"));
     xhr.onabort = () => reject(new Error("Cancelled"));
     xhr.send(file);
   });

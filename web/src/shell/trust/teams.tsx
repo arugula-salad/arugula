@@ -284,7 +284,7 @@ function TeamSection({
   return (
     <section class="team" data-team={t.team}>
       <h3>
-        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : t.lockClaimed ? <span class="dim" data-team-lock-claimed>· control says it's locked (not signed by an owner)</span> : null}
+        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : t.lockClaimed ? <span class="dim" data-team-lock-claimed>· Arugula cloud says it's locked (not signed by an owner)</span> : null}
       </h3>
       {t.locked && !owner ? (
         <p class="dim" data-team-add-locked>
@@ -304,7 +304,7 @@ function TeamSection({
         </p>
       ) : t.rosterProblem ? (
         <p class="control-error" data-team-roster-problem={t.rosterProblem}>
-          Control sent a list of this team's members that doesn't follow the one this browser last checked (version {t.roster.version}). That one shows here, and changes wait until control sends one that follows it.
+          Arugula cloud sent a list of this team's members that doesn't follow the one this browser last checked (version {t.roster.version}). That one shows here, and changes wait until it sends one that follows it.
         </p>
       ) : null}
       {t.rosterLate?.length ? (

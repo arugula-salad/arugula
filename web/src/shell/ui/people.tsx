@@ -276,7 +276,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
             const c = readVerifyCode(t);
             if (!c) return false;
             if (c.account === who.account && c.root === who.root) ok();
-            else setErr(`That code isn't the key control gave for ${who.name}. Don't share with them here.`);
+            else setErr(`That code isn't the key Arugula cloud gave for ${who.name}. Don't share with them here.`);
             return true;
           }}
           close={() => setScanning(false)}
@@ -294,7 +294,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
           The words match
         </button>
       </div>
-      <p class="dim">Inviting them to a team by link doesn't trust control at all.</p>
+      <p class="dim">Inviting them to a team by link doesn't trust Arugula cloud at all.</p>
     </div>
   );
 }
@@ -601,7 +601,7 @@ export function ShareDialog({ client }: { client: Client }) {
               ) : (
                 ""
               )}
-              Control has given a different key since <Time at={changed.seen} on />. Nothing was shared.
+              Arugula cloud has given a different key since <Time at={changed.seen} on />. Nothing was shared.
             </p>
             <div class="prompt-buttons">
               <button class="secondary" onClick={() => setChanged(null)}>Cancel</button>

@@ -232,7 +232,7 @@ test.describe("on a computer", () => {
     await page.getByRole("menuitem", { name: "Appearance…" }).click();
     await expect(page.locator("[data-appearance]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
-    await page.getByRole("button", { name: "Use Control look" }).click();
+    await page.getByRole("button", { name: "Use the Slate look" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
     await expect(page.locator("html")).toHaveAttribute("data-finish", "flat");
     await expect(page.locator("html")).toHaveAttribute("data-corners", "soft");

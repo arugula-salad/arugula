@@ -280,7 +280,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
       ) : null}
       {s.enrollment && !s.rootMismatch ? <VerifyMe account={s.account} root={s.enrollment.root} /> : null}
       {s.rootMismatch ? (
-        <p class="control-error">Control reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
+        <p class="control-error">Arugula cloud reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
       ) : null}
       <h3 class="control-group">Machines</h3>
       <p class="dim">They run your terminals.</p>

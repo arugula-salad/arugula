@@ -47,7 +47,7 @@ test("dropped by control: a banner, the host menu's line, and Join again", async
 
   // The host menu: what happened, and the way back.
   await page.locator(".host-button").click();
-  await expect(page.getByText("Dropped by control: no longer in the team arugula on control.arugula.io")).toBeVisible();
+  await expect(page.getByText("Dropped by Arugula cloud: no longer in the team arugula on control.arugula.io")).toBeVisible();
   await expect(page.getByText("Join again…")).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -55,7 +55,7 @@ test("dropped by control: a banner, the host menu's line, and Join again", async
   await banner.locator("[data-control-rejoin]").click();
   const start = page.getByRole("dialog", { name: "Getting started" });
   await expect(start.locator("[data-getting-started]")).toHaveAttribute("data-step", "cloud");
-  await expect(start.locator("[data-start-dropped]")).toContainText("control dropped it");
+  await expect(start.locator("[data-start-dropped]")).toContainText("Arugula cloud dropped it");
   await expect(start.locator("[data-start-connect]")).toHaveText("Join control.arugula.io again");
   await expect(start.locator("[data-start-joined]")).toBeHidden();
   await start.getByRole("button", { name: "Close" }).click();

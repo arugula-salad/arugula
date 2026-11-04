@@ -38,7 +38,7 @@ export async function roomToken(team: string): Promise<Token> {
   });
   const body = (await r.json().catch(() => ({}))) as { token?: string; relay?: string; error?: string; reason?: string };
   if (r.ok && body.token && body.relay) return { token: body.token, relay: body.relay };
-  const why = refusalOf(r.status, body, `Control said ${r.status}`);
+  const why = refusalOf(r.status, body, `Arugula cloud said ${r.status}`);
   throw r.status >= 400 && r.status < 500 ? new Refused(why) : new Error(why);
 }
 

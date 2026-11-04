@@ -106,7 +106,7 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   const source = el.locator("[data-item-source]");
   await expect(source).toHaveAttribute("title", /as jhgaylor \(gh on /);
   await expect(source).toHaveAttribute("title", /polls/);
-  await expect(source).not.toHaveAttribute("title", /Arugula control/);
+  await expect(source).not.toHaveAttribute("title", /Arugula cloud/);
   // On the rail too, with a rerun.
   await expect
     .poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason?.actions ?? [], block))

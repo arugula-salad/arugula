@@ -835,9 +835,9 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <>
             It's running in a pane on its machine.{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              Watch pane %{run.pane} on Control ↗
+              Watch pane %{run.pane} on your machines ↗
             </a>
-            <span class="dim"> The platform page has no machines; Control shows the pane end to end.</span>
+            <span class="dim"> This page doesn't show machines; that one shows the pane end to end.</span>
           </>
         ) : going ? (
           <span class="dim">Waiting for its cloud workspace to take it.</span>
@@ -845,7 +845,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <span class="dim">
             It ended. It ran in pane %{run.pane}, which may still be open{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              on Control ↗
+              on your machines ↗
             </a>
             .
           </span>
@@ -956,7 +956,7 @@ function RunLog({ run }: { run: RunView }) {
       <h2>Log</h2>
       {error && <p class="control-error">{error}</p>}
       {!pages && !error && <p class="dim">Loading…</p>}
-      {first && !kept && <p class="dim" data-run-log-note>{sentence(first.note ?? "the platform keeps no log of this run")}</p>}
+      {first && !kept && <p class="dim" data-run-log-note>{sentence(first.note ?? "Arugula keeps no log of this run")}</p>}
       {kept && first && (
         <>
           {first.offset > 0 && (
@@ -1004,7 +1004,7 @@ function Artifacts({ p, run }: { p: PlatformProject; run: RunView }) {
         Artifacts <span class="dim">{list.length}</span>
       </h2>
       {error && <p class="control-error">{error}</p>}
-      {got && !got.on && <p class="dim">This platform keeps no runs' logs or artifacts.</p>}
+      {got && !got.on && <p class="dim">This server keeps no runs' logs or artifacts.</p>}
       {got?.on && list.length === 0 && <p class="dim">{ended(run.state) ? "It left none." : "None yet."}</p>}
       {list.length > 0 && (
         <ul class="platform-list">
@@ -1045,7 +1045,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
     <div class="run-thread">
       <h2>Thread</h2>
       {on === false ? (
-        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on for the team under Teams, on Control.</p>
+        <p class="dim">Threads come with chat, which is off for you. A team owner turns it on for the team under Teams, on your machines page.</p>
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
