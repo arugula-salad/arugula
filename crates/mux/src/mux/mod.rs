@@ -1495,6 +1495,13 @@ impl Daemon {
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Connect { sub } => {
+                // Its handshake was a moment ago: if access went since, that
+                // change's `AclChanged` found no client here to close.
+                if !self.config.acl.knows(&sub.principal) {
+                    info!(client = sub.client, who = sub.principal.id(), "no access by the time it connected");
+                    clients::hang_up(&sub);
+                    return;
+                }
                 let state = self.state_for(&sub.principal);
                 let client = sub.client;
                 self.clients.insert(client, sub.clone());

@@ -440,6 +440,7 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/share.rs", "pub fn api_routes()"),
     // Nested in `mod api`: its function ends at its own indent.
     ("src/acl_api.rs", "pub fn routes()"),
+    ("src/acl_api.rs", "pub fn link_routes()"),
     ("../arugulad-invite/src/lib.rs", "    fn routes(&self"),
     // The conversations' (M33), the agent block's.
     ("../arugulad-agent/src/lib.rs", "    fn routes(&self"),

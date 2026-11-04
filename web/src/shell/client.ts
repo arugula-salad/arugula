@@ -141,6 +141,8 @@ interface Link {
   readonly open: boolean;
   /** Why it couldn't connect, when control's relay was full (#344). */
   readonly full?: string;
+  /** The machine itself said no to this key (#913). */
+  readonly refused?: boolean;
   sendText(t: string): void;
   sendBinary(b: Uint8Array): void;
   close(): void;
@@ -178,6 +180,7 @@ class E2ELink implements Link {
   onClose: (why: string) => void = () => {};
   sock: E2ESocket | undefined;
   full: string | undefined;
+  refused = false;
   private closed = false;
   /** Connects in the background; the Client sees it as a socket that opens
    * (or closes, and is retried). `wake` (M182): a hosted machine that's
@@ -200,8 +203,9 @@ class E2ELink implements Link {
         sock.onClose = () => this.onClose(sock.why);
         sock.start();
       },
-      (e: Error & { full?: boolean }) => {
+      (e: Error & { full?: boolean; byDaemon?: boolean }) => {
         if (e.full) this.full = e.message;
+        this.refused = !!e.byDaemon;
         this.onClose(`couldn't connect: ${e.message}`);
       },
     );
@@ -1072,6 +1076,9 @@ export class Client {
       this.connected = false;
       this.clientId = null;
       this.asked = 0;
+      // A read-only link's key is either live on its machine or over: there's
+      // no certificate on its way, as there may be for a device (#913).
+      if (link.refused && this.e2e?.keys.id === "link") this.revoked = true;
       // Control's relay is full (#344): say so, and wait half a minute or
       // so (spread out, as everyone's page is waiting) rather than seconds.
       const delay = link.full ? 30_000 + Math.random() * 30_000 : Math.min(250 * 2 ** this.retry, 5000);

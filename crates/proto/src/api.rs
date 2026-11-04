@@ -1225,6 +1225,29 @@ pub struct LinkRequest {
     pub history: bool,
 }
 
+/// `GET /api/links`'s query string: one session's links, or every session's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinksQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionId>,
+}
+
+/// One row of `GET /api/links`: a read-only link to a session that still
+/// works. Its key stays out: the private half never reached the machine, so
+/// a link can't be read back from here, only ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionLink {
+    /// What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+    /// principal.
+    pub id: String,
+    pub session: SessionId,
+    #[serde(default)]
+    pub made_ms: u64,
+    #[serde(default)]
+    pub expires_ms: u64,
+}
+
 fn link_ttl() -> u64 {
     3600
 }

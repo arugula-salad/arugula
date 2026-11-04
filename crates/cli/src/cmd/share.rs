@@ -1,17 +1,23 @@
 //! `arugula share`: a read-only link to a pane, an ssh invite with `--guest`, and the lists of both.
 
 use super::Ctx;
-use crate::http::{call, call_raw};
+use crate::http::{call, call_raw, enc};
 use crate::util::{Pane, duration, here, now_ms, print_json, span, time};
 use arugula_proto::{
-    api::{Empty, GuestInviteRequest, ShareRequest},
-    op::ops::{GuestMint, GuestRevoke, GuestsList, ShareMint, ShareRevoke, SharesList},
+    api::{Empty, GuestInviteRequest, LinksQuery, ShareRequest},
+    op::ops::{GuestMint, GuestRevoke, GuestsList, LinkRevoke, LinksList, ShareMint, ShareRevoke, SharesList},
 };
 
 #[derive(clap::Subcommand)]
 pub enum SharesCmd {
     /// End a share link now; anyone watching is cut off.
     Revoke { id: u32 },
+}
+
+#[derive(clap::Subcommand)]
+pub enum LinksCmd {
+    /// End a read-only link to a session now; anyone watching is cut off.
+    Revoke { id: String },
 }
 
 #[derive(clap::Args)]
@@ -152,6 +158,27 @@ pub fn shares(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
         }
         Some(SharesCmd::Revoke { id }) => {
             call::<ShareRevoke>(&sock, &id, &Empty {})?;
+        }
+    }
+    Ok(0)
+}
+
+pub fn links(cmd: Option<LinksCmd>, ctx: Ctx) -> anyhow::Result<i32> {
+    let Ctx { sock, json_out, .. } = ctx;
+    match cmd {
+        None => {
+            let (links, v) = call_raw::<LinksList>(&sock, &(), &LinksQuery::default())?;
+            if json_out {
+                print_json(&v);
+                return Ok(0);
+            }
+            for l in &links {
+                let left = l.expires_ms.saturating_sub(now_ms()) / 1000;
+                println!("{} ${} made {:>8}, expires in {}", l.id, l.session, time(l.made_ms), span(left));
+            }
+        }
+        Some(LinksCmd::Revoke { id }) => {
+            call::<LinkRevoke>(&sock, &enc(&id), &Empty {})?;
         }
     }
     Ok(0)
