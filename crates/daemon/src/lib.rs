@@ -1282,7 +1282,8 @@ pub mod whole {
 
     /// Every type that was made when `block::create` was a `match` has an
     /// entry in the table, in a build with Labs and in one without; the
-    /// two that never were (`Terminal`, `Unknown`) still have none.
+    /// two that never were (`Terminal`, `Unknown`) still have none, nor
+    /// does `Remote`, a word kept only so a stored layout parses.
     pub fn every_type_the_daemon_makes_has_a_kind() {
         let kinds = super::kinds(
             None,
@@ -1332,7 +1333,7 @@ pub mod whole {
                 | BlockType::People
                 | BlockType::Unknown => {}
             }
-            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown | BlockType::Remote);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
     }
