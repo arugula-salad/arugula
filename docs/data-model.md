@@ -24,16 +24,32 @@ lists the differences.
 | **Device** | Keys and a certificate: browser, CLI, daemon, app or recovery | Hub `devices`, but each daemon decides for itself whether to trust one | 16 hex, a hash of its keys |
 | **Team** | People with a signed roster | Hub `teams` | 16 characters |
 | **Roster** | A team's signed, versioned list of members and roles | Hub `rosters`, checked again by each machine. `team_members` is a copy that's never read for machine access | Team + version |
-| **Role** | Owner, editor or viewer | The roster, or a session's grant in `acl.json` | The word |
+| **Role** | Owner, editor or viewer | The roster, or a session's share in `acl.json` | The word |
 | **Guest** | Someone with access who isn't a member | The machine | Depends on the kind |
 
-**Grant** has several meanings. Say which one you mean:
+**Grant** is five things: a person's role on a session, what a machine's agents
+may do in a project, the minutes a guest may type into one pane, the standing
+run grant and the delegation. Each has a word of its own, the same in the docs,
+the CLI's help, the dialogs and Settings. "Grant" itself stays only as the
+`arugula grants` command and the platform table's name, and a power's name,
+like `issues.write`, doesn't change:
 
-| Kind | What it says | Truth |
-|---|---|---|
-| Session grant | A person's role on a session | `<state>/acl.json` |
-| Project grant | What a machine's agents may do in a project, like `boards.write` | Platform, `grt_` |
-| Standing run grant | Runs a project's owner has signed for | `run_grants`, signed with a passkey |
+| Say | For | Truth | ID |
+|---|---|---|---|
+| **Share** | A person's role on a session, or a read-only link to one | `<state>/acl.json` | The principal; a link's key |
+| **Team role**, **project role** | The roster's word: the same roster, seen from a machine or from the platform | The roster, checked by each machine; the platform reads the hub's copy | The word |
+| **Power** | What a machine's agents, or an agent token, may do in a project or your DMs, like `issues.write` | Platform `grants` | `grt_`; a token's, `agt_` |
+| **Trust** | The minutes a guest may type into one pane | The machine, in memory | Pane + principal |
+| **Allow** | What a project owner signs for: the delegation, so control may enroll hosted machines into the project, and the standing run grant, so the platform may start its runs with every device asleep | Hub `project_delegations`; platform `run_grants`, signed with a passkey | The project |
+| **Guest** | A link guest, an SSH guest or a tailnet guest: someone with access who isn't a member | The machine | Depends on the kind |
+
+So a share is the machine's word about a person, a power is the platform's word
+about an agent, and neither reaches further than the other side would let it: an
+agent's power works only while its owner still reads the scope, and a hosted
+machine's people are the project's people. An owner's "owner" is one of four
+too: of the machine, of a session (a share that renames, closes and shares it,
+and nothing else), of a team, or of a project, which is the team's owner seen
+from the platform.
 
 Org isn't built. Billing keys on an owner, with no org above it.
 
@@ -64,7 +80,7 @@ workspace" to people and "hosted machine" for the daemon inside. Don't say "box"
 for either, because it also means hud and studio app boxes.
 
 Hosted machines stay out of the `daemons` table on purpose, so that what acts on
-ordinary machines (moves, shares, grants) can't reach them.
+ordinary machines (moves, shares, powers) can't reach them.
 
 Other things called a workspace aren't this: a **chant workspace** is a Labs block
 over a repo directory, and the **shell's workspace** is its layout.
@@ -155,7 +171,7 @@ linked for them, and a block on a repo that isn't is an unpinned block
 like any other.
 
 A native issue block (`iss_`) is a third thing: a pin onto the platform's
-`issues` row, read with the machine's `threads.read` grant, never from a
+`issues` row, read with the machine's `threads.read` power, never from a
 forge.
 
 ### Docs
@@ -185,8 +201,10 @@ purpose, and the records say why:
 
 | Where the code differs | Tracked in |
 |---|---|
-| "Session" and "agent session" name other things in Rust types | #667, #671 |
-| A Doc's copy can be edited on the platform, and the machine's next change overwrites the edit | #678, #673 |
-| MCP and the UI say "thread" and "conversation" for any room | #667 |
-| `arugula machines` lists only Labs VMs, which have no daemon inside | #669 |
-| How session grants and project grants relate isn't settled | #676 |
+| "Session" and "agent session" name other things in Rust types | #671 |
+| A board's chip for a machine Doc shows the title from when it was linked, not its copy; deleting a copy leaves links to it dead; the route that moves a Doc has no caller | #673 |
+| `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |
+| Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
+| A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
+| A team's other owners can't read a pane's thread, and a changed share reaches control only on the next minute's refresh | #684 |
+| `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |

@@ -586,7 +586,8 @@ export function ShareDialog({ client }: { client: Client }) {
           {machine
             ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. Your teams aren't asked. `
             : ""}
-          Unless this machine is in their team, even people who drive ask you before typing in one of its panes.
+          Unless this machine is in their team, even people who drive ask you before typing in one of its panes. An owner here is an
+          owner of this session, not of the machine: they rename, close and share it, and nothing else.
         </p>
         {changed ? (
           <div class="share-changed" data-key-changed={changed.p.account}>
