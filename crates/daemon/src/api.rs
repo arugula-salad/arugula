@@ -1091,9 +1091,6 @@ struct TailQuery {
     /// Strip escape sequences.
     #[serde(default)]
     text: Option<u8>,
-    /// A pane of another host, from its synced history.
-    #[serde(default)]
-    host: Option<String>,
 }
 
 /// A closed pane's output, from its retired log: no following, and offsets
@@ -1205,9 +1202,6 @@ async fn tail(
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
     if who.is_some() {
         after_authz_pause().await;
-    }
-    if let Some(host) = q.host.clone() {
-        return tail_synced(&app, who.as_ref(), id, host, &q).await;
     }
     // Under a "from now" share authz let in only an offset at or after
     // where it began; anything else reads from before any start.
@@ -1568,9 +1562,6 @@ struct HistoryQuery {
     kind: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
-    /// Another host's synced history (`*`: every host's).
-    #[serde(default)]
-    host: Option<String>,
     /// Only the panes in this session's tabs now (M112).
     #[serde(default)]
     session: Option<SessionId>,
@@ -1633,14 +1624,7 @@ async fn history_(
     Query(q): Query<HistoryQuery>,
 ) -> Res<Response> {
     let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    // M112: anyone reads the history of the panes they may read; another
-    // host's synced history stays the owner's, and a session is this host's.
-    if q.host.is_some() && !who.is_owner() {
-        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
-    }
-    if q.host.is_some() && q.session.is_some() {
-        return Err(bad("session is this host's: not with host"));
-    }
+    // M112: anyone reads the history of the panes they may read.
     let only =
         scope_for(&app, &who, q.session).await?.map(|s| s.panes.into_iter().map(|(p, f)| (p, f.offset)).collect());
     let matching = q.matching.as_deref().map(Regex::new).transpose().map_err(|e| bad(format!("match: {e}")))?;
@@ -1662,13 +1646,7 @@ async fn history_(
     };
     let store = app.mux.store.clone();
     let limit = q.limit.unwrap_or(100);
-    let synced = app.synced.clone();
-    let list = crate::task::spawn_blocking(move || match &q.host {
-        Some(host) => synced.history(host, &filter, limit),
-        None => history::history(&store, &filter, limit),
-    })
-    .await
-    .unwrap_or_default();
+    let list = crate::task::spawn_blocking(move || history::history(&store, &filter, limit)).await.unwrap_or_default();
     Ok(Json(list).into_response())
 }
 
@@ -1679,9 +1657,6 @@ struct SearchQuery {
     since: Option<u64>,
     #[serde(default)]
     limit: Option<usize>,
-    /// Another host's synced history (`*`: every host's).
-    #[serde(default)]
-    host: Option<String>,
 }
 
 async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Response> {
@@ -1690,50 +1665,14 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     let store = app.mux.store.clone();
     let kinds = app.mux.kinds.clone();
     let limit = q.limit.unwrap_or(100);
-    let synced = app.synced.clone();
     let docs_re = re.clone();
-    let host = q.host.clone();
-    let mut hits = crate::task::spawn_blocking(move || match &q.host {
-        Some(host) => synced.search(host, &re, since, limit),
-        None => history::search(&store, &kinds, &re, since, limit),
-    })
-    .await
-    .unwrap_or_default();
+    let mut hits = crate::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, limit))
+        .await
+        .unwrap_or_default();
     // The feature crates' lines (the Doc library's, #1493) follow this
     // machine's panes'.
-    if host.is_none() {
-        hits.extend(crate::features::search(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
-    }
+    hits.extend(crate::features::search(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
     Ok(Json(hits).into_response())
-}
-
-/// A pane synced from another host: its output from an offset (default the
-/// last 64 KB), no following. Another host's history is the owner's alone,
-/// as with `/api/history` (authz checked `who` on this host's pane of the
-/// same number, not that one).
-async fn tail_synced(
-    app: &App,
-    who: Option<&crate::acl::Principal>,
-    id: PaneId,
-    host: String,
-    q: &TailQuery,
-) -> Res<Response> {
-    if who.is_some_and(|w| !w.is_owner()) {
-        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
-    }
-    let synced = app.synced.clone();
-    let from = match q.from.as_deref() {
-        None => None,
-        Some(n) => Some(n.parse::<u64>().map_err(|_| bad("a synced pane's from takes an offset"))?),
-    };
-    let read = crate::task::spawn_blocking(move || {
-        let from = from.unwrap_or_else(|| synced.pane(&host, id).log_end.saturating_sub(64 * 1024));
-        synced.read_from(&host, id, from)
-    })
-    .await
-    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let (_, bytes) = read.map_err(|e| ApiError(StatusCode::NOT_FOUND, e.to_string()))?;
-    Ok(if q.text == Some(1) { strip(&bytes).into_bytes() } else { bytes }.into_response())
 }
 
 /// A machine's shell is found by its tag.

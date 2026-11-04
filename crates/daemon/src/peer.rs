@@ -120,7 +120,7 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
 /// own chain for a personal project; for a team's, a roster checked from
 /// its pin (this machine's own team's, or one the owner's browser pinned
 /// here, #233).
-fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
+pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
     use arugula_e2e::hosted::{Delegation, HostedCert, Owner, Owners, accept, ends_listed};
     let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
     let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
@@ -129,8 +129,9 @@ fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Resul
     let me = &e.saved.cert.account;
     let accepted = match d.owner().ok_or_else(|| anyhow::anyhow!("its delegation names no owner"))? {
         Owner::Team(team) => {
-            let (roster, certs) = match (&e.saved.roster, e.saved.shared_teams.get(&team)) {
-                (Some(r), _) if r.team == team => (r, &e.saved.team_certs),
+            let own = e.saved.team().and_then(|t| Some((t.roster.as_ref()?, &t.certs))).filter(|(r, _)| r.team == team);
+            let (roster, certs) = match (own, e.saved.shared_teams.get(&team)) {
+                (Some(own), _) => own,
                 (_, Some(t)) => (&t.roster, &t.certs),
                 _ => anyhow::bail!(
                     "its team isn't one this machine knows: open Control in a browser of this account once, which pins your teams here"

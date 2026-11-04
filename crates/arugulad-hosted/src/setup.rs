@@ -125,7 +125,7 @@ pub fn start(app: Arc<App>, state_dir: PathBuf) {
 
 /// Whether control enrolled this box to build a workspace's snapshot.
 fn builder(app: &App) -> bool {
-    app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder))
+    app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.builds_snapshot()))
 }
 
 async fn run(app: Arc<App>, state_dir: PathBuf) {

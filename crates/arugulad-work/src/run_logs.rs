@@ -78,7 +78,7 @@ pub struct Sent {
 /// machine in control does.
 pub fn may_upload(saved: Option<&Saved>) -> Result<(), &'static str> {
     match saved {
-        Some(s) if s.hosted.is_some() => Ok(()),
+        Some(s) if s.is_hosted() => Ok(()),
         _ => Err("not a hosted machine: a run's log stays in its pane"),
     }
 }
@@ -408,7 +408,7 @@ mod tests {
     fn only_a_hosted_machine_sends_a_runs_log() {
         let saved = machine();
         assert_eq!(may_upload(Some(&saved)), Ok(()));
-        let personal = Saved { hosted: None, ..saved };
+        let personal = Saved { kind: crate::control::MachineKind::Personal, ..saved };
         assert!(may_upload(Some(&personal)).is_err());
         assert!(may_upload(None).is_err());
     }

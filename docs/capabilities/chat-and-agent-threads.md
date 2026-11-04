@@ -52,7 +52,8 @@ The owner can turn this off for a machine (`agent_mentions` in `sharing.json`, o
 - Threads an older daemon kept in `<state>/threads/` stay on disk and are no longer read. Rooms brought in by the old import are read-only archives. Before a machine has said who reads a thread, its owner and, for a team's machine, the team's owners do.
 
 ## Not known
-- aru-091 and aru-115 say agents on personal machines are never woken by other people's mentions, and that mentions are read, not pushed. The headers of `chat.rs` and `chat/agent_threads.rs` also say nothing here wakes an agent. The code hands a teammate's mention to a live session as its next prompt or follow-up, on by default, as the header of `threads.rs` describes. Which is the rule now?
+- The headers of `chat.rs` and `chat/agent_threads.rs` still say nothing here wakes an agent, and `agent_mentions.rs`' header says a named session that isn't found moves on to the next step. The code and aru-091 are what's right.
+- The aim is to move people's work off personal machines and onto cloud machines (Jake, 2026-11-03). What that means for mentions on personal machines isn't decided.
 - `docs/control.md` says a machine's agents read mentions over MCP, which leaves out delivery. It is about the inbox, so it may be narrower on purpose.
 - What may a teammate's mention cause an agent to do? `framed` in `agent_mentions.rs` labels the text as information, not the person's approval. Whether that is enough is a question for a person.
 - What do we promise about the plain-text content control holds, beyond what aru-051 and `tables.toml` record?

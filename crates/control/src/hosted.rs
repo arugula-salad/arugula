@@ -33,9 +33,7 @@ use arugula_control_wire::hosted::{
 use arugula_e2e::{
     Cert, Revocation, Trust,
     cert::LegacyAppChildren,
-    hosted::{
-        Delegation, DelegationClosed, DelegationRevoke, HostedCert, HostedKey, Owner, Owners, enroll_proof_body, live,
-    },
+    hosted::{Delegation, DelegationClosed, HostedCert, HostedKey, Owner, Owners, enroll_proof_body, live},
     now_ms,
     team::{AccountCerts, Roster, TeamPin, TeamRole},
 };
