@@ -159,6 +159,14 @@ html[data-native-tabs] .platform {
   margin-top: 8px;
 }
 
+/* The boards pages are wider than the reading column (#704): their cards fit
+   three or four to a row in 1100px, its 24px sides included. */
+@media (min-width: 701px) {
+  .platform-section:is([data-boards-page], [data-all-boards-page]) {
+    padding-inline: max(24px, calc((100% - 1052px) / 2));
+  }
+}
+
 /* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
    panel inset as a page's section is, not drawn over the window as the
    shell's chat is. A phone's chat keeps the whole screen. */

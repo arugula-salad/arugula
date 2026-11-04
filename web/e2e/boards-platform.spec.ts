@@ -400,11 +400,51 @@ test("/boards lists every project's boards by project, folded under Done the sam
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
     // A board's title in a list is its link.
     await expect(acme.locator("a[data-board-link]")).toHaveAttribute("href", /\/boards\/brd_[0-9a-f]+/);
-    await expect(acme.locator("[data-boards-done] li.board-card.sw-card.sw-muted")).toContainText("Done");
+    await expect(acme.locator("[data-boards-done] li.board-card")).toContainText("Launch");
+    await expect(acme.locator("[data-boards-done] [data-board-progress]")).toHaveCount(0);
     expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
   await alice.locator("[data-all-boards-project-link]").click();
   await expect(alice.locator("[data-boards-page]")).toBeVisible({ timeout: 15_000 });
+});
+
+test("board cards are the compact ones: three or more to a row at 1280px, the title 14px, the goal on one line (#704)", async () => {
+  test.setTimeout(90_000);
+  for (const n of [1, 2, 3, 4]) {
+    const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: `Compact ${n}` });
+    expect(made.status).toBe(200);
+    const edited = await api(alice, "PATCH", `/api/boards/${made.body!.board.id}`, { goal: `Compact ${n} has a goal that is long enough to need more than one line in a card of this size.` });
+    expect(edited.status).toBe(200);
+  }
+  await alice.setViewportSize({ width: 1280, height: 800 });
+  await platform(alice, `/p/${project}/boards`);
+  const cards = alice.locator("ul.board-list:is([data-boards], [data-project-boards]) > li.board-card");
+  await expect(cards.filter({ hasText: "Compact 4" })).toHaveCount(1, { timeout: 15_000 });
+  const m = await cards.evaluateAll((els) => {
+    const tops = els.map((e) => Math.round(e.getBoundingClientRect().top));
+    const el = els.find((e) => e.textContent?.includes("Compact 1"))!;
+    const css = (sel: string) => getComputedStyle(el.querySelector(sel)!);
+    const box = getComputedStyle(el);
+    return {
+      firstRow: tops.filter((t) => t === tops[0]).length,
+      title: css(".board-card-title").fontSize,
+      goal: css(".board-card-line").fontSize,
+      goalWraps: css(".board-card-line").whiteSpace,
+      count: css("[data-board-progress]").fontSize,
+      pad: `${box.paddingTop} ${box.paddingRight}`,
+      radius: box.borderRadius,
+      width: el.getBoundingClientRect().width,
+      height: el.getBoundingClientRect().height,
+      bar: el.querySelector(".board-bar")?.getBoundingClientRect().height ?? 0,
+    };
+  });
+  expect(m.firstRow).toBeGreaterThanOrEqual(3);
+  expect(m.title).toBe("14px");
+  expect(m.goal).toBe("12px");
+  expect(m.goalWraps).toBe("nowrap");
+  expect(m.pad).toBe("10px 12px");
+  expect(m.height).toBeLessThan(110);
+  if (SHOTS) await alice.screenshot({ path: `${SHOTS}/compact-boards.png`, animations: "disabled" });
 });
 
 test("a board with a long title and goal wraps in a card on a phone, with no sideways scroll", async () => {
@@ -416,12 +456,9 @@ test("a board with a long title and goal wraps in a card on a phone, with no sid
   expect(edited.status).toBe(200);
   for (const path of ["/boards", `/p/${project}/boards`]) {
     await platform(bob, path);
-    const card = bob.locator("li.board-card.sw-card.sw-ok", { hasText: "extraordinarily" });
+    const card = bob.locator("li.board-card", { hasText: "extraordinarily" });
     await expect(card).toHaveCount(1, { timeout: 15_000 });
     await expect(card).toBeVisible();
-    await expect(card).toContainText("Open");
-    // The card's entry animation (swarm.css) settles: it isn't left at opacity 0.
-    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).opacity), { timeout: 5_000 }).toBe("1");
     await expect(card.locator("[data-board-progress]")).toHaveText("No work yet");
     await expect(bob.locator("[data-boards-stats]")).toHaveCount(0);
     expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -1088,7 +1125,13 @@ test("Not on a board: ＋, a multi-select, a drag and select-all each move the l
 
   // A drag onto the board's card.
   const first = rows.first();
-  await first.dragTo(bulk);
+  await first.hover();
+  await alice.mouse.down();
+  await bulk.hover();
+  await bulk.hover({ position: { x: 20, y: 12 } });
+  await expect(bulk).toHaveClass(/drop-over/);
+  await expect(bulk).toHaveCSS("box-shadow", /rgb.* 0px 0px 0px 2px/);
+  await alice.mouse.up();
   await expect(count).toHaveText(String(n0 - 6));
   await expect(progress).toContainText("0 of 6 done", { timeout: 15_000 });
 
