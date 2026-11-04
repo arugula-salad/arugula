@@ -242,15 +242,16 @@ does that instead. A queued pull request is tested as a merge group:
 main, the pull requests queued ahead of it, and it. It merges only if
 the group passes.
 
-`chant.workspace.json` sets `ci.green.mergeQueue` (chant#4644), so `chant
-ci workflow` puts `merge_group` on check.yml, windows.yml and
-windows-desktop.yml and writes `chant-merge-queue.yml`. A group runs what
+check.yml, windows.yml and windows-desktop.yml run on `merge_group`, and `chant
+ci workflow` keeps those triggers (chant#4644). A group runs what
 its diff against main reaches, and that diff holds whatever is queued
 ahead of it (`scripts/changed`), so a docs-only pull request behind a code
-one still runs everything. `chant-merge-queue.yml`'s `chant-verdict` job is
-the group's verdict: `chant ci verdict --wait` passes once every phase
-`ci.green` requires passed on the group's commit, judged as the tick judges
-main. On a pull request, binaries.yml's job of the same name stands in for
+one still runs everything. `queue-verdict.yml`'s `chant-verdict` job is the
+group's verdict: it passes once every phase `ci.green` requires passed on the
+group's commit, judged as the tick judges main, and a job that failed gets one
+re-run first (`scripts/queue-verdict`), so a flake doesn't throw a pull request
+out. `ci.green` doesn't set `mergeQueue`, since `chant ci workflow` would write
+chant's own verdict back, which fails at the first red job. On a pull request, binaries.yml's job of the same name stands in for
 it, once `binaries` and `quick` have passed. binaries.yml has no
 `merge_group` trigger, because its `chant-verdict`, skipped on a group,
 would count as passed. On a pull request that changes the desktop app,
@@ -277,7 +278,7 @@ a Mac (there are three) and about 20 of the plan's 60 hosted jobs; *Maximum
 group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
 (`HEADGREEN`), since a later group contains the ones ahead and its pass clears
 them, so a flake rarely ejects anyone while a real break still fails every
-later group; *Status check timeout* 45 minutes. *Require status checks to pass*
+later group; *Status check timeout* 60 minutes, which leaves room for a re-run. *Require status checks to pass*
 requires `chant-verdict`, from GitHub Actions. The repository's *Allow
 auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
 requires are still running, which a pull request's own run usually is.

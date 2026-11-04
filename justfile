@@ -928,6 +928,7 @@ test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
     scripts/tests/pr-plan.sh
+    scripts/tests/queue-verdict.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
     scripts/tests/quarantine.sh
