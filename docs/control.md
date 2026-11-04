@@ -684,7 +684,10 @@ own version; one this control doesn't speak is a 400 that says which it
 does. Reads (`pr.get`, `issue.get`, `item.list`, `checks.get`) and drafts
 (`draft.create`, `draft.list`, `draft.get`, `draft.discard`) go through the
 same viewer check as the routes above (M165), for a person or a machine with
-a live `cloud.drive` grant (for its owner). Sends (`draft.send`,
+a live `cloud.drive` grant (for its owner). Making a draft takes an owner
+or editor of the repo's project: a viewer reads items and drafts, their
+machines make none whatever they were granted, and a viewer discards only
+their own drafts. Sends (`draft.send`,
 `pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's
 only: a machine is refused (403, `reason: "agents_draft"`). A person's goes
 out as them through one of their machines (M168, below): a terminal has no

@@ -17,6 +17,11 @@
 //! `{project}` is an id, or `personal`; `{id}` is a workspace's id or its
 //! name in the project. A project someone isn't a member of, and a
 //! workspace that isn't the project's, are both 404.
+//!
+//! A workspace names who made it (`created_by`) only while they're in the
+//! project now ([`Members`]): one a former member made says nobody. The
+//! row keeps the name, for the worker's plan of who pays for its
+//! inference.
 
 use std::sync::Arc;
 
@@ -32,7 +37,7 @@ use serde_json::json;
 use tracing::info;
 
 use super::{Ask, HostedWorkspace, Spec};
-use crate::{Platform, auth::Person, cloud::CloudDriver, db::hosted::Added, forge::links::membership};
+use crate::{Platform, auth::Person, cloud::CloudDriver, db::hosted::Added, forge::links::membership, hub::Team};
 
 /// Live workspaces a project may have at once.
 pub const MAX_PER_PROJECT: u64 = 10;
@@ -93,6 +98,46 @@ fn found(w: Option<HostedWorkspace>) -> Result<HostedWorkspace, ApiError> {
     w.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such cloud workspace"))
 }
 
+/// Who's in a project now, as its workspaces are shown (module docs): a
+/// personal project's account, or a team's roster (through the cache, as
+/// a read of the project is). Read once per project, never per workspace.
+enum Members {
+    Account(String),
+    Team(Team),
+    Nobody,
+}
+
+impl Members {
+    async fn of(app: &Platform, project: &str) -> Result<Self, ApiError> {
+        Ok(match app.db.project_holder(project)? {
+            Some((Some(a), _)) => Members::Account(a),
+            Some((None, Some(t))) => app.cache.team(&*app.hub, &t).await?.map_or(Members::Nobody, Members::Team),
+            _ => Members::Nobody,
+        })
+    }
+
+    fn has(&self, account: &str) -> bool {
+        match self {
+            Members::Account(a) => a == account,
+            Members::Team(t) => t.role(account).is_some(),
+            Members::Nobody => false,
+        }
+    }
+
+    /// The workspace as it's shown: its maker named only while they're in.
+    fn shown(&self, mut w: HostedWorkspace) -> HostedWorkspace {
+        if w.created_by.as_deref().is_some_and(|a| !self.has(a)) {
+            w.created_by = None;
+        }
+        w
+    }
+}
+
+/// One workspace as it's shown to a member of `project`.
+async fn shown(app: &Platform, project: &str, w: HostedWorkspace) -> Result<HostedWorkspace, ApiError> {
+    Ok(Members::of(app, project).await?.shown(w))
+}
+
 pub async fn list(
     State(app): State<Arc<Platform>>,
     CloudDriver(Person { account }): CloudDriver,
@@ -100,7 +145,8 @@ pub async fn list(
 ) -> Result<Json<Workspaces>, ApiError> {
     enabled(&app)?;
     let (project, _) = membership(&app, &account, &project, false).await?;
-    let workspaces = app.db.hosted_workspaces(&project)?;
+    let members = Members::of(&app, &project).await?;
+    let workspaces = app.db.hosted_workspaces(&project)?.into_iter().map(|w| members.shown(w)).collect();
     Ok(Json(Workspaces { project, workspaces }))
 }
 
@@ -149,9 +195,10 @@ pub async fn open(
     let (project, _) = membership(&app, &account, &project, false).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     if w.state == "paused" && super::ask(&app, &w.id, Ask::Wake)? {
-        return Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?));
+        let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
+        return Ok(Json(shown(&app, &project, w).await?));
     }
-    Ok(Json(w))
+    Ok(Json(shown(&app, &project, w).await?))
 }
 
 pub async fn rebuild(
@@ -166,7 +213,8 @@ pub async fn rebuild(
         return Err(err(StatusCode::CONFLICT, "this cloud workspace is being deleted"));
     }
     info!(%account, %project, workspace = %w.id, "asked to rebuild a hosted workspace");
-    Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))
+    let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
+    Ok(Json(shown(&app, &project, w).await?))
 }
 
 pub async fn delete(
@@ -183,7 +231,8 @@ pub async fn delete(
     crate::features::chat().told(&app, &stopped)?;
     info!(%account, %project, workspace = %w.id, "asked to delete a hosted workspace");
     app.analytics.capture(&account, "hosted workspace deleted", json!({}));
-    Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))
+    let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
+    Ok(Json(shown(&app, &project, w).await?))
 }
 
 /// `PUT /api/projects/{project}/workspaces/{id}/spec`: what its box is
@@ -201,7 +250,7 @@ pub async fn set_spec(
     spec.check().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e))?;
     let w = found(app.db.set_hosted_spec(&project, &w.id, &spec, now_ms())?)?;
     info!(%account, %project, workspace = %w.id, rebuild_needed = w.rebuild_needed, "changed a hosted workspace's spec");
-    Ok(Json(w))
+    Ok(Json(shown(&app, &project, w).await?))
 }
 
 /// `GET /api/projects/{project}/workspaces/{id}/secrets`.
@@ -296,17 +345,17 @@ pub async fn all(
     }
     let mut projects = Vec::new();
     if let Some(id) = crate::projects::personal_project(&app, &account).await? {
-        projects.push((id, "Personal".to_owned()));
+        projects.push((id, "Personal".to_owned(), Members::Account(account.clone())));
     }
     let ids = app.cache.teams_of(&*app.hub, &account).await?;
     let mut teams: Vec<_> = app.cache.teams(&*app.hub, &ids).await?.into_values().collect();
     teams.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
     for t in teams.into_iter().filter(|t| t.role(&account).is_some()) {
-        projects.push((app.db.team_project(&t.id, &t.name, now_ms())?, t.name.clone()));
+        projects.push((app.db.team_project(&t.id, &t.name, now_ms())?, t.name.clone(), Members::Team(t)));
     }
-    for (project, name) in projects {
+    for (project, name, members) in projects {
         for w in app.db.hosted_workspaces(&project)? {
-            workspaces.push(Listed { workspace: w, project_name: name.clone() });
+            workspaces.push(Listed { workspace: members.shown(w), project_name: name.clone() });
         }
     }
     Ok(Json(AllWorkspaces { workspaces }))

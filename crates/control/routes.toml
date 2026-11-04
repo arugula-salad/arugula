@@ -2158,7 +2158,7 @@ path = "/api/projects/{project}/workspaces"
 process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
-note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id."
+note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id; created_by names its maker only while they're a member now (null for a former member)."
 
 [[route]]
 method = "POST"
@@ -2174,7 +2174,7 @@ path = "/api/projects/{project}/workspaces/{id}"
 process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
-note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box."
+note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box. created_by names its maker only while they're a member now."
 
 [[route]]
 method = "DELETE"
@@ -2688,7 +2688,7 @@ path = "/api/workspaces"
 process = "platform"
 auth = "cloud_driver"
 clients = ["daemon"]
-note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up."
+note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up. created_by names a maker only while they're a member now."
 
 [[route]]
 method = "GET"
@@ -2776,7 +2776,7 @@ path = "/api/forge/drafts"  # wire::projects::FORGE_DRAFTS
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. A machine's import_key makes a second upload answer with the first. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
+note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names; an owner's or editor's of the repo's project, who may read the repo. A viewer, or a viewer's machine, is refused (403). A machine's import_key makes a second upload answer with the first. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
 
 [[route]]
 method = "GET"
@@ -2792,7 +2792,7 @@ path = "/api/forge/drafts/{id}/discard"  # wire::projects::FORGE_DRAFT_DISCARD
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "Discards a draft (M170): its author, or anyone the viewer check lets read it."
+note = "Discards a draft (M170): its author, or an owner or editor the viewer check lets read it. A viewer discards only their own (403 on another's)."
 
 [[route]]
 method = "POST"

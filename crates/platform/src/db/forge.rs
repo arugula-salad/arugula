@@ -996,8 +996,9 @@ pub struct DraftFilter<'a> {
     pub limit: u32,
 }
 
-/// Who discards a draft: one who may read its repo (the viewer check's
-/// [`Readable`]), or its author, who may whether or not they still can.
+/// Who discards a draft: an owner or editor who may read its repo (the
+/// viewer check's [`Readable`]; the route decides the role), or its
+/// author, who may whether or not they still can read it.
 #[derive(Debug, Clone, Copy)]
 pub enum Discarder<'a> {
     Reader(&'a Readable),

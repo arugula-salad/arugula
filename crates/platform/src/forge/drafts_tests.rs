@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use arugula_e2e::team::TeamRole;
+
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
     chat_tests::{TestHub, call},
@@ -298,4 +300,74 @@ async fn discarding() {
     let (s, v) = discard("bob", b2.clone()).await;
     assert_eq!((s, v["state"].as_str()), (200, Some("discarded")), "{v}");
     assert!(!v.to_string().contains("secret"));
+}
+
+/// A viewer reads a repo's drafts and makes none: not as themselves, not
+/// through their machine (an upload included), whether or not GitHub
+/// lets them read the repo. They discard only their own (one from when
+/// they were an editor), and an editor still discards anyone's.
+#[tokio::test]
+async fn a_viewer_reads_and_doesnt_draft() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    // dan reads acme/app on GitHub, and is an editor for now.
+    hub.github("dan", 1004, "dan-gh");
+    gh.lock().unwrap().roles.insert(("acme/app".into(), "dan-gh".into()), ("write".into(), 1004));
+    // The roster as the hub says it, and the hub telling the platform.
+    let roster = |dan: TeamRole| {
+        hub.team(
+            "t1",
+            &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer), ("dan", dan)],
+        );
+        app.cache.team_changed("t1");
+    };
+    roster(TeamRole::Editor);
+    hub.daemon("dbox", "dan", None);
+    let comment = |repo: &str, body: &str| json!({ "repo": repo, "number": 1, "kind": "comment", "body": body });
+    let (s, dans) = call(&base, "dan", "POST", "/api/forge/drafts", Some(comment("acme/app", "mine"))).await;
+    assert_eq!(s, 200, "{dans}");
+    let dans = dans["draft"]["id"].as_str().unwrap().to_owned();
+    let (s, bobs) = call(&base, "bob", "POST", "/api/forge/drafts", Some(comment("acme/app", "bob's"))).await;
+    assert_eq!(s, 200, "{bobs}");
+    let bobs = bobs["draft"]["id"].as_str().unwrap().to_owned();
+    let (_, site) = call(&base, "bob", "POST", "/api/forge/drafts", Some(comment("acme/site", "public"))).await;
+    let site = site["draft"]["id"].as_str().unwrap().to_owned();
+    roster(TeamRole::Viewer);
+
+    // dan still reads both drafts on the private repo.
+    let (s, v) = call(&base, "dan", "GET", &format!("/api/projects/{team}/drafts"), None).await;
+    assert_eq!((s, ids(&v).len()), (200, 3), "{v}");
+    // ...and makes none: as a person, as a machine, as an upload.
+    let (s, v) = call(&base, "dan", "POST", "/api/forge/drafts", Some(comment("acme/app", "x"))).await;
+    assert_eq!((s, v["error"].as_str().map(|e| e.contains("viewer"))), (403, Some(true)), "{v}");
+    let (s, v) = machine(&base, "dan dbox", "POST", "/api/forge/drafts", Some(comment("acme/app", "x"))).await;
+    assert_eq!(s, 403, "a viewer's machine: {v}");
+    let upload = json!({ "repo": "acme/app", "number": 1, "kind": "comment", "body": "kept", "import_key": "k1" });
+    let (s, v) = machine(&base, "dan dbox", "POST", "/api/forge/drafts", Some(upload)).await;
+    assert_eq!(s, 403, "a viewer's machine's upload: {v}");
+    // carol, a viewer with no GitHub sign-in, reads the public repo's and
+    // drafts there no more than dan does.
+    let (s, v) = call(&base, "carol", "GET", &format!("/api/forge/drafts/{site}"), None).await;
+    assert_eq!(s, 200, "{v}");
+    let (s, _) = call(&base, "carol", "POST", "/api/forge/drafts", Some(comment("acme/site", "x"))).await;
+    assert_eq!(s, 403);
+    assert_eq!(rows(&app), 3, "nothing was made");
+
+    // Discarding: only their own.
+    let discard = |who: &'static str, id: &str| {
+        let (base, path) = (base.clone(), format!("/api/forge/drafts/{id}/discard"));
+        async move { call(&base, who, "POST", &path, None).await }
+    };
+    let (s, v) = discard("dan", &bobs).await;
+    assert_eq!((s, v["error"].as_str().map(|e| e.contains("viewer"))), (403, Some(true)), "{v}");
+    assert_eq!(discard("carol", &site).await.0, 403);
+    let (s, v) = discard("dan", &dans).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("discarded")), "{v}");
+    let (s, v) = machine(&base, "dan dbox", "POST", &format!("/api/forge/drafts/{dans}/discard"), None).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("discarded")), "their machine, theirs again: {v}");
+    // An editor discards anyone's, as before.
+    assert_eq!(discard("bob", &site).await.0, 200);
+    let (_, v) = call(&base, "alice", "GET", &format!("/api/projects/{team}/drafts"), None).await;
+    assert_eq!(ids(&v), [bobs.as_str()], "{v}");
 }

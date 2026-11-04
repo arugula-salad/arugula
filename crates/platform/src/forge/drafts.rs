@@ -8,15 +8,19 @@
 //! - **Who makes one:** a person, for themselves, or a machine with a live
 //!   `cloud.drive` grant ([`CloudDriver`]), for its owner: then the draft
 //!   names the machine and the agent. Either way the author must be able
-//!   to read the repo now.
+//!   to read the repo now, and be an owner or editor of its project
+//!   ([`drafter`]): a viewer reads items and drafts, and their machines
+//!   make none, whatever they were granted. The project is the repo's
+//!   link's: a repo is linked to one project at a time, and the role is
+//!   the one there.
 //! - **Uploads:** a daemon brings the drafts it kept in `layout.json` for a
 //!   linked repo with an `import_key` of its own. The platform makes it the
 //!   machine's (`<machine>:<key>`), so one machine's keys never meet
 //!   another's, and a second upload of the same key is answered with the
 //!   first draft: a daemon that crashed before it dropped its copy uploads
 //!   it again and gets the same row.
-//! - **Who discards one:** its author, or anyone who may read it, but not
-//!   while it's being sent.
+//! - **Who discards one:** its author, or an owner or editor who may read
+//!   it; a viewer discards only their own. Not while it's being sent.
 //! - **Who sends one:** its person, as themselves ([`super::send`], M168).
 //! - **Is a repo linked** ([`repo`]): what a daemon asks before it keeps a
 //!   block's drafts here. A repo linked to a project the reader isn't in
@@ -26,7 +30,7 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, Principal, err};
 use arugula_control_wire::projects as wire;
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
     extract::{FromRequestParts, Path, Query, State},
@@ -83,6 +87,19 @@ pub(super) fn no_draft() -> ApiError {
 
 fn not_linked(repo: &str) -> ApiError {
     err(StatusCode::NOT_FOUND, &format!("{repo} isn't linked to a project you can read it in"))
+}
+
+/// Whether `account` may draft on `project`'s repos and discard others'
+/// drafts there: an owner or editor, as the roster says now. A viewer
+/// may not (module docs). The role is decided as every project write
+/// decides it ([`super::links::membership`]).
+async fn drafter(app: &Platform, account: &str, project: &str) -> Result<bool, ApiError> {
+    let (_, role) = super::links::membership(app, account, project, true).await?;
+    Ok(role != TeamRole::Viewer)
+}
+
+fn viewer_drafts() -> ApiError {
+    err(StatusCode::FORBIDDEN, "a viewer reads a repo's items and drafts, and doesn't draft on them")
 }
 
 /// As the wire says it, with each machine's name where the hub still has
@@ -186,6 +203,9 @@ pub async fn create(
     let checked = viewer::check(&app, &v, std::slice::from_ref(&repo)).await?;
     if !checked.readable.has(repo.repo_id) {
         return Err(not_linked(repo_name));
+    }
+    if !drafter(&app, &d.account, &repo.project_id).await? {
+        return Err(viewer_drafts());
     }
     app.limits.check_account(DRAFTS_MADE, &d.account)?;
     let new = NewDraftRow {
@@ -331,17 +351,33 @@ pub async fn get(
     Ok(Json(wire_drafts(&app, vec![row]).await?.remove(0)))
 }
 
-/// `POST /api/forge/drafts/{id}/discard`: by its author or a reader. Again
-/// is a no-op; a sent one can't be (409).
+/// `POST /api/forge/drafts/{id}/discard`: by its author, or an owner or
+/// editor who may read it; a viewer who may read another's is refused
+/// (403). Again is a no-op; a sent one can't be (409).
 pub async fn discard(
     State(app): State<Arc<Platform>>,
     v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::DraftDiscarded>, ApiError> {
     let (repo_id, author) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
-    let r = readable(&app, &v, repo_id).await?;
-    let who = match &r {
-        Some(r) => Discarder::Reader(r),
+    let link = app.db.linked_repo(repo_id)?;
+    let r = match &link {
+        Some(link) => {
+            let c = viewer::check(&app, &v, std::slice::from_ref(link)).await?;
+            c.readable.has(repo_id).then_some(c.readable)
+        }
+        None => None,
+    };
+    let mut who = None;
+    if let (Some(r), Some(link)) = (&r, &link) {
+        if drafter(&app, &v.account, &link.project_id).await? {
+            who = Some(Discarder::Reader(r));
+        } else if author != v.account {
+            return Err(err(StatusCode::FORBIDDEN, "a viewer discards only their own drafts"));
+        }
+    }
+    let who = match who {
+        Some(who) => who,
         None if author == v.account => Discarder::Author(&v.account),
         None => return Err(no_draft()),
     };
