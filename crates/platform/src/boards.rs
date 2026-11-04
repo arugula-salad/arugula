@@ -72,10 +72,7 @@
 //!
 //! [`db::boards`]: crate::db::boards
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::{boards as wire, chat::ChatAgent};
@@ -862,21 +859,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     } else {
         agent_names(app, &machines).await?.into_iter().map(|(id, d)| (id, d.name)).collect()
     };
-    // A machine Doc a person linked names its machine only to a reader who
-    // may reach it.
-    let mut linked: Vec<String> = strip
-        .iter()
-        .filter(|d| d.agent.is_none())
-        .filter_map(|d| match &d.pointer {
-            wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
-            _ => None,
-        })
-        .collect();
-    linked.sort();
-    linked.dedup();
-    let reach: HashSet<String> =
-        if linked.is_empty() { Default::default() } else { app.cache.may_reach(&*app.hub, account, &linked).await? };
     let project = stored.board.project.clone();
+    let named = docs::named(app, account, &project, &strip).await;
     let mut board = stored.board.clone();
     name_boards(app, std::slice::from_mut(&mut board)).await?;
     progress(app, &project, std::slice::from_mut(&mut board)).await?;
@@ -989,7 +973,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
-            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &reach),
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &named),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
@@ -1007,7 +991,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names, &reach), ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names, &named), ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again

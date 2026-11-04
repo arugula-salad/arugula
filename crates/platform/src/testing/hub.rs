@@ -97,6 +97,8 @@ struct State {
     online: BTreeSet<String>,
     /// `machines_online` fails.
     online_down: bool,
+    /// `may_reach` fails.
+    reach_down: bool,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -230,6 +232,11 @@ impl TestHub {
     /// Whether the hub can say which machines are on the relay.
     pub fn online_down(&self, down: bool) {
         self.state.lock().unwrap().online_down = down;
+    }
+
+    /// Whether the hub can say whom it routes to a machine.
+    pub fn reach_down(&self, down: bool) {
+        self.state.lock().unwrap().reach_down = down;
     }
 
     /// The hub can't say which machines are working until one says again.
@@ -462,6 +469,9 @@ impl HubPort for TestHub {
     fn may_reach<'a>(&'a self, account: &'a str, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
         self.called("may_reach");
         let s = self.state.lock().unwrap();
+        if s.reach_down {
+            return Box::pin(async { anyhow::bail!("the hub is down") });
+        }
         done(machines.iter().filter(|m| Self::reaches(&s, account, m)).cloned().collect())
     }
     fn push<'a>(&'a self, account: &'a str, message: &'a Value) -> BoxFuture<'a, HubResult<Pushed>> {
