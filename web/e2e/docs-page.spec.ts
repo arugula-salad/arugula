@@ -11,7 +11,7 @@
 // the row that's selected, and the list's own keys and split are tested below.
 
 import type { ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -90,6 +90,17 @@ function shared(docId: string, title: string) {
       },
     }),
   );
+}
+
+/** Where a Doc's copy on the platform is, as the machine notes it in the
+ * Doc's `meta.json` after a put (#418): the list shows it (native #673). */
+function onPlatform(docId: string) {
+  const file = join(state, "docs", docId, "meta.json");
+  const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  const link = `http://127.0.0.1:1/p/prj_0123/docs/pdc_${"0".repeat(32)}`;
+  meta.platform = { project: "prj_0123", id: `pdc_${"0".repeat(32)}`, link, rev: 3, assets: {} };
+  writeFileSync(file, JSON.stringify(meta));
+  return link;
 }
 
 const docId = async (title: string) => ((await (await fetch(`${url}/api/docs`)).json()) as { id: string; title: string }[]).find((r) => r.title === title)!.id;
@@ -234,6 +245,18 @@ test.describe("the list", () => {
     await expect((await preview(page, "Short note")).locator(".list-preview-words")).toContainText("The opening line of the note.");
     await expect(row(page, "Short note")).toHaveAttribute("data-open", "");
     await expect(page.locator(".block-doc [data-doc-block]")).toHaveCount(1);
+  });
+
+  test("a Doc copied up to the platform says so, and its preview opens the copy", async ({ page }) => {
+    await seed(page);
+    const link = onPlatform(await docId("Short note"));
+    await page.reload();
+    await goToDocs(page);
+    await expect(row(page, "Short note").locator("[data-doc-platform]")).toHaveText("on the platform");
+    await expect(row(page, "Long plan").locator("[data-doc-platform]")).toHaveCount(0);
+    const p = await preview(page, "Short note");
+    await expect(p.locator("[data-doc-platform-link]")).toHaveAttribute("data-doc-platform-link", link);
+    await expect((await preview(page, "Long plan")).locator("[data-doc-platform-link]")).toHaveCount(0);
   });
 
   test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {

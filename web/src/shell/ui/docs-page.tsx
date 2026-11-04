@@ -258,6 +258,11 @@ function Page({ client }: { client: Client }) {
                   <LinkIcon /> shared
                 </span>
               )}
+              {r.platform && (
+                <span class="list-tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
+                  on the platform
+                </span>
+              )}
             </>
           ),
           age: <Time at={r.updated} title="Updated" />,
@@ -386,6 +391,11 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           {doc.shared?.link && (
             <button class="secondary small" data-doc-copy-link onClick={() => void copyLink()}>
               {copied ? "Copied" : "Copy link"}
+            </button>
+          )}
+          {doc.platform && (
+            <button class="secondary small" data-doc-platform-link={doc.platform.link} title="Its read-only copy on the platform, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
+              On the platform
             </button>
           )}
           <button

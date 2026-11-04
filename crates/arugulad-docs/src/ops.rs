@@ -16,7 +16,10 @@ use std::{collections::HashMap, sync::Arc};
 use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
-    api::{DocAsset, DocContent, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty, OpenRequest},
+    api::{
+        DocAsset, DocContent, DocOnPlatform, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty,
+        OpenRequest,
+    },
     op::ops::{DocAssetGet, DocDelete, DocOpen, DocPreviewGet, DocRead, DocsList},
 };
 use axum::http::StatusCode;
@@ -106,6 +109,7 @@ impl Handle<Docs> for DocsList {
                     by: m.by,
                     summary: shape.summary,
                     sections: shape.sections,
+                    platform: m.platform.map(|p| DocOnPlatform { project: p.project, id: p.id, link: p.link }),
                 }
             })
             .collect())
@@ -116,7 +120,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it now (open), whether it is shared. Any earlier session's Doc is here; open shows one.",
+        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link). Any earlier session's Doc is here; open shows one.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;
