@@ -14,6 +14,7 @@ import { ConnectionChip } from "./shell/context-header";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
+import { openSettings } from "./settings-route";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
@@ -135,15 +136,21 @@ export function AccountButton({ client }: { client: Client | null }) {
   const login = account?.login() ?? null;
   const ref = useRef<HTMLButtonElement>(null);
   const expanded = useMenuOpenFrom(ref);
+  // Where the rail has Settings, this is who you are (Arugula #695); with no
+  // rail (a phone, no machine shown) it's the way to the settings too.
+  const rail = !usePhone() && !!client?.state;
   const open = (e: MouseEvent) => {
-    countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mine: MenuItem[] = account ? [{ header: accountHeader(login), name: !!login }, ...account.items(), "separator"] : [];
-    const items: MenuItem[] = [...mine, ...presenceItems(liveItems()), ...settingsItems(client)];
+    const settings: MenuItem[] = rail ? [{ label: "Settings", run: () => openSettings() }] : settingsItems(client);
+    if (!rail) countView("settings");
+    const items: MenuItem[] = [...mine, ...presenceItems(liveItems()), ...settings];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
+  // A daemon's own page has no account: the rail's Settings is all there is.
+  if (rail && !account) return null;
   return (
     <>
       {/* #341: live presence, beside the account, with its Labs flag. */}
@@ -153,7 +160,7 @@ export function AccountButton({ client }: { client: Client | null }) {
         class="account-button"
         aria-haspopup="menu"
         aria-expanded={expanded}
-        title={login ? "Your account and settings" : "Settings"}
+        title={login ? "Your account" : "Settings"}
         aria-label={login ? `Account: ${login}` : "Settings"}
         data-account-menu
         onClick={open}

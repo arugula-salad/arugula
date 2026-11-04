@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
 import { clock, deviceZone, LEVELS, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 

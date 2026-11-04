@@ -5,7 +5,7 @@
 // can't be notified is told.
 
 import { devices, expect, test } from "@playwright/test";
-import { reset, closeContexts, sheetTab } from "./helpers";
+import { reset, closeContexts, sheetTab, settingsRow } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -43,7 +43,7 @@ test("opens once on first run, a step at a time, then from the account menu", as
   await panel.getByRole("button", { name: "Done" }).click();
   await expect(panel).toBeHidden();
   // Closing says where it went.
-  await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in the account menu, top right, any time.");
+  await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in Settings, at the bottom of the rail, any time.");
 
   // Remembered: not again on reload.
   await page.reload();
@@ -51,9 +51,8 @@ test("opens once on first run, a step at a time, then from the account menu", as
   await expect(page.locator(".session-button")).toBeVisible();
   await expect(panel).toBeHidden();
 
-  // Always in the account menu, from the start.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Getting started" }).click();
+  // Always in Settings, from the start.
+  await settingsRow(page, "Getting started");
   await expect(panel).toBeVisible();
   await expect(progress).toHaveText("Step 1 / 5 · Welcome");
   // Its agents step opens the agent dialog.
@@ -141,8 +140,7 @@ test("Things to try: each button does its thing, and is marked done once used, f
   await reset(page);
   const panel = page.getByRole("dialog", { name: "Getting started" });
   const tryStep = async () => {
-    await page.locator(".ws-head [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Getting started" }).click();
+    await settingsRow(page, "Getting started");
     await panel.locator('[data-start-seg="try"]').click();
     await expect(panel.locator("[data-start-tries]")).toBeVisible();
   };

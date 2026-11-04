@@ -2,6 +2,7 @@
 // tabs and panes to switch between, and a key bar supplies the keys a phone
 // keyboard lacks.
 
+import { openSettings } from "./settings-route";
 import { openAgentsPage } from "./agents-route";
 import { openDocsPage } from "./docs-route";
 import { useState } from "preact/hooks";
@@ -369,6 +370,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 <NotifySection client={client} session={session} />
                 <AccountSection close={close} />
                 <div class="sheet-actions">
+                  <button data-open-settings onClick={act(() => openSettings())}>
+                    Settings
+                  </button>
                   <button data-getting-started-open onClick={act(() => openGettingStarted(undefined, client))}>
                     Getting started
                   </button>

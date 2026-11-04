@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { closeContexts, controlPanel, pasteFile, ready, run, text, uploadedPath } from "./helpers";
+import { closeContexts, controlPanel, pasteFile, ready, run, text, uploadedPath, settingsRow } from "./helpers";
 import { ANY, controlPort, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
 
@@ -900,8 +900,7 @@ test("Getting started joins as soon as a device approves: nothing to compare (#7
   await expect(page.locator(".session-button")).toBeVisible();
   const start = page.getByRole("dialog", { name: "Getting started" });
   if (!(await start.isVisible())) {
-    await page.locator(".ws-head [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Getting started" }).click();
+    await settingsRow(page, "Getting started");
   }
   await start.locator('[data-start-seg="cloud"]').click();
   await start.locator("[data-start-connect]").click();
@@ -948,8 +947,7 @@ test("an older daemon: Getting started asks to check the account's fingerprint b
   const start = page.getByRole("dialog", { name: "Getting started" });
   const cloud = async () => {
     if (!(await start.isVisible())) {
-      await page.locator(".ws-head [data-account-menu]").click();
-      await page.getByRole("menuitem", { name: "Getting started" }).click();
+      await settingsRow(page, "Getting started");
     }
     await start.locator('[data-start-seg="cloud"]').click();
   };

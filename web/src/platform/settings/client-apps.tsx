@@ -12,7 +12,7 @@ import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
 import { useProductNames } from "./linked";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 type App = { client: string; app: string; title: string; added_by: string | null; added_at: number };
 

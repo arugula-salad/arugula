@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { CopyText } from "../../shared/ui/copy";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 export type Size = "small" | "large";
 

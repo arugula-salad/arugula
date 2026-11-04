@@ -12,7 +12,7 @@
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and for a team's owners its chat's
 // owners-only switches (UI audit #168). Each part is a section
-// (../settings/section), as /settings's are: a heading, one line, the rest
+// (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
 // The repos are a table, a row each with its switch. After them, the Plane
 // projects connected to it (#356, ../settings/plane), with boards on.
@@ -42,7 +42,7 @@ import { ClientApps } from "../settings/client-apps";
 import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
 import { BoardSettings } from "../settings/board-settings";
-import { Section, SectionIndex } from "../settings/section";
+import { Section, SectionIndex } from "../../shared/ui/settings-section";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */

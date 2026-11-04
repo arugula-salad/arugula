@@ -5,7 +5,7 @@
 // Arugula for the account, with what was spent on its own key (M231), and
 // this device's Appearance…, the shell's dialog. Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
-// there. Each part is a section (../settings/section): a heading, one
+// there. Each part is a section (shared/ui/settings-section): a heading, one
 // line, the rest behind More; on a wide screen an index of them sits
 // beside the column (../settings.css).
 
@@ -22,7 +22,8 @@ import { LinkedProducts } from "../settings/linked";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { NotificationSettings } from "../settings/notifications";
-import { Section, SectionIndex } from "../settings/section";
+import { SHELL_SECTIONS } from "../../shared/settings-map";
+import { ElsewhereLinks, Section, SectionIndex, type Elsewhere } from "../../shared/ui/settings-section";
 import { controlOrigin, session } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -56,10 +57,15 @@ export function SettingsPage() {
     location.href = (await call<{ url: string }>("/api/billing/checkout", { team })).url;
   };
   const body = useRef<HTMLDivElement>(null);
+  // The rest of Settings is on your machines page (Arugula #695).
+  const elsewhere: Elsewhere = {
+    title: "On your machines page",
+    links: SHELL_SECTIONS.map((s) => ({ title: s.title, href: `${controlOrigin()}/#settings=${s.id}` })),
+  };
   return (
     <section class="platform-section sw-page settings-page" data-platform-settings>
       <div class="settings-layout">
-        <SectionIndex body={body} />
+        <SectionIndex body={body} elsewhere={elsewhere} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Settings" />
           {/* The line says what's here: the plan only with billing on (UI audit #168). */}
@@ -84,7 +90,7 @@ export function SettingsPage() {
                 </li>
               )}
               <li>
-                <a href={controlOrigin()} data-settings-control>
+                <a href={`${controlOrigin()}/#settings=account`} data-settings-control>
                   Sign-in, passkeys, devices, teams and usage reports
                 </a>
                 <span class="dim">On your machines page, where your devices sign them.</span>
@@ -97,6 +103,7 @@ export function SettingsPage() {
           <AgentTokens />
           <ChatAlerts />
           <ClaudeSettings me={session.me?.account} />
+          <ElsewhereLinks elsewhere={elsewhere} />
         </div>
       </div>
       {plan && (

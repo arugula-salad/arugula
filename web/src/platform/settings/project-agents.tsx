@@ -18,7 +18,7 @@ import { follow, pathOf } from "../router";
 import { toneClass } from "../swarm";
 import { reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await platformFetch(path, {

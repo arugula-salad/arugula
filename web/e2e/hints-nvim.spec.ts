@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, paneEl, panes, reset } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, reset, settingsRow, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -194,9 +194,9 @@ test("the help card: once, over the first nvim pane, until it's closed; the pane
   await page.keyboard.press("Escape");
   await expect(card(page, other)).toHaveCount(0);
 
-  // Help in the account menu, too: over an nvim pane of the tab.
-  await page.locator("[data-account-menu]").click();
-  await (await menuItem(page, "nvim in Arugula", { exact: true })).click();
+  // Help in Settings, too: over an nvim pane of the tab.
+  await settingsRow(page, "nvim in Arugula");
+  await closeSettingsPage(page);
   await expect(page.locator("[data-pane-tip]")).toHaveCount(1);
   await page.locator("[data-pane-tip] [data-hint-second]").click();
   await expect(page.locator("[data-pane-tip]")).toHaveCount(0);
@@ -264,12 +264,11 @@ test("nvim-connect: Add arugula.nvim installs it into that nvim, which joins; hi
   expect((await editor(page, term))?.offer_plugin ?? false).toBe(false);
   expect(readFileSync(join(home, "data/nvim/site/pack/arugula/start/arugula.nvim/ARUGULA_INSTALLED"), "utf8")).toBeTruthy();
 
-  // Settings > Editor > Remove arugula.nvim (the owner's) deletes that copy
+  // Settings > This machine > Remove arugula.nvim (the owner's) deletes that copy
   // and says so; asked again, it says there is none.
   const copy = join(home, "data/nvim/site/pack/arugula/start/arugula.nvim");
   const remove = async () => {
-    await page.locator("[data-account-menu]").click();
-    await (await menuItem(page, "Remove arugula.nvim", { exact: true })).click();
+    await settingsRow(page, "Remove arugula.nvim");
   };
   await remove();
   await expect(page.getByText(/^Removed arugula\.nvim from /)).toBeVisible();

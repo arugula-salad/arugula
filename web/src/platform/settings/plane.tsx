@@ -20,7 +20,7 @@ import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
 import { useBoards } from "../pages/boards";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {

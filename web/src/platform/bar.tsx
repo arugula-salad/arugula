@@ -8,7 +8,6 @@ import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useEffect, useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
-import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -119,10 +118,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
       { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
-      { label: "Account settings", run: () => go("/settings") },
-      // This device's look, as in the shell's settings menu; on arugula.io
-      // the two pages share it.
-      { label: "Appearance…", run: openAppearance },
+      { label: "Settings", run: () => go("/settings") },
       // Who's around (#110): chat's people see this, and only they.
       ...presenceItems(liveItems()),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.

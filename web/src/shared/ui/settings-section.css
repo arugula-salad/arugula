@@ -1,0 +1,252 @@
+/* A Settings page's sections, index and switch (settings-section.tsx), on
+   both pages (Arugula #695): under `.platform` on `/settings`, and
+   `.settings-place` on control's page. */
+
+/* -- The sections */
+
+:is(.platform, .settings-place) .settings-sec {
+  margin-top: 32px;
+  scroll-margin-top: 16px;
+}
+
+:is(.platform, .settings-place) .settings-body > h1 + .settings-sec {
+  margin-top: 20px;
+}
+
+:is(.platform, .settings-place) .sw-page .settings-sec > h2 {
+  margin: 0 0 6px;
+}
+
+:is(.platform, .settings-place) .settings-sec > h2:focus {
+  outline: none;
+}
+
+:is(.platform, .settings-place) .settings-lede {
+  margin: 0 0 10px;
+  color: var(--dim);
+}
+
+/* More: the rest of a section's explanation, a click away. */
+:is(.platform, .settings-place) .settings-more {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+:is(.platform, .settings-place) .settings-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: 500 11px/1.6 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+}
+
+:is(.platform, .settings-place) .settings-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+:is(.platform, .settings-place) .settings-more > summary::before {
+  content: "";
+  border: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  border-right-width: 0;
+  transition: transform 0.15s;
+}
+
+:is(.platform, .settings-place) .settings-more[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+:is(.platform, .settings-place) .settings-more > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--tag-radius);
+}
+
+:is(.platform, .settings-place) .settings-more p {
+  max-width: 70ch;
+  margin: 6px 0 0;
+}
+
+/* Appearance & account: what to open, and what it is. */
+:is(.platform, .settings-place) .settings-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+:is(.platform, .settings-place) .settings-rows > li:last-child {
+  border-bottom: 0;
+}
+
+:is(.platform, .settings-place) .settings-rows .link,
+:is(.platform, .settings-place) .settings-rows a {
+  font-weight: 600;
+}
+
+/* -- A switch: the swarm's compact switch, a knob in a pill. Off, its knob
+      sits left on the raised grey; on, right on the accent; partly on (some
+      of what it gives, its title says which), in the middle on warn, so it
+      reads as neither. Drawn with backgrounds, not ::before, which an input
+      may not have. */
+
+:is(.platform, .settings-place) input.sw-switch {
+  --knob: var(--dim);
+  flex: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: radial-gradient(circle closest-side, var(--knob) 0 calc(100% - 1px), transparent 100%) 0% 50% / 16px 16px no-repeat,
+    var(--raised);
+  appearance: none;
+  -webkit-appearance: none;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background-position 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+:is(.platform, .settings-place) input.sw-switch:checked {
+  --knob: var(--on-color);
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-position: 100% 50%;
+}
+
+:is(.platform, .settings-place) input.sw-switch.partial {
+  --knob: var(--warn);
+  border-color: var(--warn);
+  border-style: dashed;
+  background-color: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  background-position: 50% 50%;
+}
+
+:is(.platform, .settings-place) input.sw-switch:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+:is(.platform, .settings-place) input.sw-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:is(.platform, .settings-place) input.sw-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Being turned: it waits, breathing, until the grants come back. */
+:is(.platform, .settings-place) input.sw-switch[aria-busy="true"] {
+  border-color: var(--accent);
+  cursor: progress;
+  animation: sw-switch-busy 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes sw-switch-busy {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0.3;
+  }
+}
+
+html[data-corners="square"] :is(.platform, .settings-place) input.sw-switch {
+  border-radius: 3px;
+}
+
+/* -- The index: in the panel's left gutter, where it's wide enough for
+      one (a panel of 880px plus two gutters of ~200px), and sticky as the
+      page scrolls. Narrower, there's no gutter to put it in, and the page
+      goes without. 180px holds the longest title on one line ("Agents on
+      your machines", UI audit #168). */
+
+:is(.platform, .settings-place) .settings-index {
+  display: none;
+}
+
+@media (min-width: 1320px) {
+  :is(.platform, .settings-place) .settings-layout {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    column-gap: 28px;
+    margin-left: -208px;
+  }
+  :is(.platform, .settings-place) .settings-index {
+    display: block;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    padding-top: 6px;
+  }
+  :is(.platform, .settings-place) .settings-index ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-left: 1px solid var(--line);
+  }
+  :is(.platform, .settings-place) .settings-index a {
+    display: block;
+    margin-left: -1px;
+    /* At least 24 px tall, a pointer's target. */
+    padding: 5px 0 5px 12px;
+    border-left: 2px solid transparent;
+    font: 500 11px/1.3 var(--f-mono);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-decoration: none;
+  }
+  :is(.platform, .settings-place) .settings-index a:is(:hover, :focus-visible) {
+    border-left-color: var(--accent);
+    color: var(--fg);
+  }
+  /* The section you're in (UI audit #166). */
+  :is(.platform, .settings-place) .settings-index a[aria-current] {
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.platform, .settings-place) input.sw-switch,
+  :is(.platform, .settings-place) .settings-more > summary::before {
+    transition: none;
+  }
+  :is(.platform, .settings-place) input.sw-switch[aria-busy="true"] {
+    animation: none;
+  }
+}
+
+:is(.platform, .settings-place) .settings-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The other page's sections: beside the column when there's room, else in it. */
+:is(.platform, .settings-place) .settings-elsewhere {
+  margin-top: 32px;
+}
+
+:is(.platform, .settings-place) .settings-index-head {
+  margin: 16px 0 6px;
+  font: 500 11px/1.3 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+@media (min-width: 1320px) {
+  :is(.platform, .settings-place) .settings-elsewhere {
+    display: none;
+  }
+}

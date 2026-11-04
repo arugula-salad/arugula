@@ -3,7 +3,7 @@
 // agents, and Things to try (buttons that each do one thing here, each
 // marked done once used). Opens by itself once per account on control's
 // page, once per browser on a daemon's own (the seen store, shared/seen.ts),
-// then from the account menu (top right) and the phone's sheet, and says
+// then from Settings (the rail) and the phone's sheet, and says
 // so when it closes.
 //
 // The steps that used to be commands to copy are buttons: the daemon runs
@@ -219,7 +219,7 @@ export function GettingStartedLayer() {
   // Where it went: it doesn't just vanish.
   return closedOnce ? (
     <div class="start-toast" role="status" data-start-toast>
-      Getting started is in the account menu, top right, any time.
+      Getting started is in Settings, at the bottom of the rail, any time.
     </div>
   ) : null;
 }
@@ -386,7 +386,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
           <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
             ‹ Back
           </button>
-          <span class="start-hint">Always in the account menu: Getting started</span>
+          <span class="start-hint">Always in Settings: Getting started</span>
           {last ? (
             <button class="primary" onClick={close}>
               Done
@@ -1091,7 +1091,7 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
         </ul>
       )}
       <p class="start-lede">
-        Anything you skipped is a click away: this is <b>Getting started</b> in the account menu, top right (and the ☰ sheet on a phone), any time.
+        Anything you skipped is a click away: this is <b>Getting started</b> in Settings, at the bottom of the rail (and the ☰ sheet on a phone), any time.
       </p>
     </section>
   );

@@ -16,7 +16,7 @@ import { Time } from "../../shared/ui/time";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import { hasWorkOnBoards, withWorkOnBoards } from "./grants";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 type TokenGrant = { id: string; power: string; project: { id: string; name: string | null }; live: boolean };
 export type AgentToken = {

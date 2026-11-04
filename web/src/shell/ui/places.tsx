@@ -2,6 +2,7 @@
 // chat, which is on the platform page (M153): the places bar's Chat opens
 // it there. The shell draws no chat page of its own since M155.
 
+import { closeSettings, settingsRoute } from "./settings-route";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { directory } from "../hosts";
@@ -85,7 +86,7 @@ export function useChatTick(client: Client) {
 
 /** Where a person is: the panes, the swarm or agents, or (in the new
  * workspace, M111) the overview of this machine's sessions. */
-export type Place = "panes" | "swarm" | "agents" | "docs" | "overview";
+export type Place = "panes" | "swarm" | "agents" | "docs" | "settings" | "overview";
 
 /** `#overview`, or `#overview=<session>` for one session's (M111). */
 export function overviewRoute(): { session?: number } | null {
@@ -113,6 +114,7 @@ export function currentPlace(): Place {
   if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
   if (docsRoute()) return "docs";
+  if (settingsRoute()) return "settings";
   return "panes";
 }
 
@@ -120,6 +122,7 @@ export function currentPlace(): Place {
 export function closePlace(at: Place) {
   if (at === "agents") closeAgentsPage();
   else if (at === "docs") closeDocsPage();
+  else if (at === "settings") closeSettings();
   else if (at === "swarm") closeSwarm();
   else if (at === "overview") closeOverview();
 }

@@ -11,7 +11,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { session } from "../session";
 import { useProductNames } from "./linked";
 import { monthName } from "./spend";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 interface Client {
   client: string;
