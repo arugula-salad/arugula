@@ -459,7 +459,7 @@ fn a_hosted_workspaces_editor_reads_every_panes_thread_and_its_viewer_watches() 
     std::fs::write(state.join("hosted-setup.json"), json!({ "status": "ready", "reported": true }).to_string())
         .unwrap();
     let d = arugulad!("hostedreaders")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env_remove("ARUGULA_FEATURES")
         .state_dir(&state)
