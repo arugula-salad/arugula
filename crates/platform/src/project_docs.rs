@@ -29,7 +29,10 @@
 //! truth, and its next put replaces the copy whole, so a write to a copy
 //! here, by a person or a session, is refused naming the machine
 //! ([`copy_refused`]), and a copy's view has no writer. The machine's own
-//! puts and a delete are as they were.
+//! puts are as they were. A copy goes with its Doc (native #673): the
+//! machine takes it down when the Doc is deleted there. And a copy is its
+//! project's to delete like any Doc (`deleter`, for the page): the
+//! machine's next change makes a new copy.
 //!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
@@ -261,9 +264,11 @@ async fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Resu
         .into_iter()
         .map(|a| wire::Asset { name: a.name, mime: a.mime, size: a.size, rev: a.rev })
         .collect();
-    // A copy is nobody's to write here (#678).
+    // A copy is nobody's to write here (#678), and anyone's who writes in
+    // its project to delete (native #673); a session never deletes.
     let writer = d.machine.is_none() && may_write(by, place, d).is_ok();
-    Ok(wire::DocView { doc: doc_wire(d, &names), sections, assets, writer })
+    let deleter = matches!(by, By::Person(_)) && place.role != TeamRole::Viewer;
+    Ok(wire::DocView { doc: doc_wire(d, &names), sections, assets, writer, deleter })
 }
 
 /// The Doc `id`, in `project`, changed: pages showing it read it again,
@@ -362,7 +367,9 @@ pub async fn asset(
     app.db.project_doc_asset(&doc.id, name)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such picture"))
 }
 
-/// Delete a Doc: owners and editors, never a session.
+/// Delete a Doc: owners and editors, never a session. A copy too: the
+/// machine's next change to the Doc makes a new copy, and the page says
+/// so (native #673).
 pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> Result<(), ApiError> {
     id_ok(id)?;
     let by = By::Person(account);

@@ -12,7 +12,9 @@
 //!   forgotten when the machine leaves control ([`forget_platform`]).
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
-//! Nothing here prunes: a Doc stays until the owner deletes it.
+//! Nothing here prunes: a Doc stays until the owner deletes it, and its
+//! copy on the platform goes with it ([`remove`], a tombstone in
+//! [`GONE`] until it's down).
 //!
 //! **The migration** ([`migrate`]) moves the Docs of the old layout, where a
 //! Doc's files were in its block's folder (`blocks/<id>/doc/`, or
@@ -209,10 +211,46 @@ pub fn list(state_dir: &Path) -> Vec<Meta> {
     out
 }
 
-/// The Doc, gone from disk.
+/// In the library: a file per deleted Doc, by id, until its copy on the
+/// platform is down ([`super::copies`]); its content counts the refusals.
+pub const GONE: &str = ".gone";
+
+/// Where the tombstones are.
+pub fn gone_dir(state_dir: &Path) -> PathBuf {
+    root(state_dir).join(GONE)
+}
+
+/// The Doc, gone from disk: its tombstone first, so a removal that fails
+/// partway still takes the copy down, then its folder, and its copy on the
+/// platform follows ([`super::copies::removed`]). A removal that fails
+/// before the Doc's files went takes the tombstone back: the Doc lives,
+/// and keeps its copy.
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"))
+    let gone = gone_dir(state_dir);
+    private_dir(&gone)
+        .and_then(|()| write_atomic(&gone.join(id), b"0"))
+        .map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
+    let removed = std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"));
+    if removed.is_err() && read_meta(&dir).is_some() {
+        let _ = std::fs::remove_file(gone.join(id));
+        return removed;
+    }
+    super::copies::removed(id);
+    removed
+}
+
+/// The Doc's `meta.json`, or `None` when it's gone for sure (no such
+/// file); one that can't be read or doesn't parse is an error, never an
+/// absence.
+pub fn read_meta_or_gone(dir: &Path) -> Result<Option<Meta>, String> {
+    let bytes = match std::fs::read(dir.join(META)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("can't read the Doc's meta.json: {e}")),
+    };
+    let meta: Meta = serde_json::from_slice(&bytes).map_err(|e| format!("the Doc's meta.json doesn't parse: {e}"))?;
+    Ok(Some(meta))
 }
 
 /// Lines of every Doc in the library matching `re` (a Doc that no block shows

@@ -292,6 +292,25 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await expect(page.locator(".doc-section[data-section=s1] .doc-body")).toContainText("again", { timeout: 30_000 });
   await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
   await expect(page).toHaveAttribute("data-writer", "false");
+
+  // The copy is the project's to delete (native #673), and the page says
+  // geek's next change brings a new one, which it does, under a new id.
+  await page.locator("[data-doc-delete]").click();
+  await expect(page.locator("[data-doc-confirm]")).toContainText("geek is your machine");
+  await page.locator("[data-doc-confirm-delete]").click();
+  await expect(alice).toHaveURL(/\/docs$/, { timeout: 15_000 });
+  const copies = async () => (await alice.evaluate(async (p) => (await fetch(`/api/projects/${p}/docs`)).json(), m[1])).docs.filter((d: { title: string }) => d.title === "Geek's plan") as { id: string }[];
+  expect(await copies()).toHaveLength(0);
+  await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "Back after the delete." });
+  await expect.poll(async () => (await copies()).length, { timeout: 60_000, intervals: [2000] }).toBe(1);
+  expect((await copies())[0].id).not.toBe(m[2]);
+
+  // Deleted on geek, the copy goes with it.
+  const rows = (await (await fetch(`${base}/api/docs`, { headers: { authorization: `Bearer ${localToken}` } })).json()) as { id: string; title: string }[];
+  const lib = rows.find((r) => r.title === "Geek's plan")!.id;
+  const gone = await fetch(`${base}/api/docs/${lib}`, { method: "DELETE", headers: { authorization: `Bearer ${localToken}` } });
+  expect(gone.ok, await gone.text()).toBe(true);
+  await expect.poll(async () => (await copies()).length, { timeout: 60_000, intervals: [2000] }).toBe(0);
 });
 
 // Control serves its newest page to older platforms and daemons: a Doc

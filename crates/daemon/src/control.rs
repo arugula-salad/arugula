@@ -1826,6 +1826,12 @@ impl Control {
         self.send_signed(reqwest::Method::PUT, path, serde_json::to_vec(body)?, "application/json").await
     }
 
+    /// DELETE at control, signed as this machine, if it's in control (a
+    /// Doc's copy, once the Doc is gone): as [`Control::put_signed`].
+    pub async fn delete_signed<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+        self.send_signed(reqwest::Method::DELETE, path, Vec::new(), "application/json").await
+    }
+
     /// [`Control::put_signed`] with a body of bytes as they are (a Doc's
     /// picture).
     pub async fn put_signed_bytes<T: serde::de::DeserializeOwned>(

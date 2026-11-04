@@ -9553,6 +9553,11 @@
             },
             "type": "array"
           },
+          "deleter": {
+            "default": false,
+            "description": "Whether the reader may delete it: a person who writes in the\nproject, a copy included (native #673). An older platform sends\nnone; the page then takes `writer`.",
+            "type": "boolean"
+          },
           "doc": {
             "$ref": "#/components/schemas/Doc"
           },
