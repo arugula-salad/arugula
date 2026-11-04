@@ -18,6 +18,64 @@
       ],
       "type": "object"
     },
+    "AddMany": {
+      "description": "[`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or\n`untriaged` (everything that matches, but the `except` pointers). More\nthan [`ADD_MANY_MAX`] is refused, 400: narrow the filter.",
+      "properties": {
+        "except": {
+          "description": "With `untriaged`: pointers to leave out.",
+          "items": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "type": "array"
+        },
+        "pointers": {
+          "items": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "untriaged": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntriagedQuery"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AddedMany": {
+      "description": "[`BOARD_ENTRIES_MANY`]' answer.",
+      "properties": {
+        "added": {
+          "description": "Rows made. An item on the board already isn't counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "attached": {
+          "description": "PRs attached to the row of the issue they close, as a single add does.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "board": {
+          "$ref": "#/$defs/BoardView"
+        }
+      },
+      "required": [
+        "added",
+        "attached",
+        "board"
+      ],
+      "type": "object"
+    },
     "AnswerAsk": {
       "additionalProperties": false,
       "description": "[`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when\nit has none.",
@@ -2214,6 +2272,30 @@
       ],
       "type": "string"
     },
+    "UntriagedQuery": {
+      "description": "Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`\nset, of the board's own project.",
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": "string"
+        },
+        "q": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
     "WorkItem": {
       "description": "One thing a row may point at.",
       "properties": {
@@ -2234,6 +2316,13 @@
         "kind": {
           "description": "`issue`, `pr` or `run`.",
           "type": "string"
+        },
+        "labels": {
+          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "number": {
           "description": "A run has none.",
@@ -2300,8 +2389,32 @@
           },
           "type": "array"
         },
+        "labels": {
+          "description": "With `untriaged`: the labels of everything that matches `q`, `label`\naside (so the chips keep their counts), most items first, then by name.",
+          "items": {
+            "$ref": "#/$defs/WorkLabel"
+          },
+          "type": "array"
+        },
+        "next": {
+          "default": null,
+          "description": "With `untriaged`: the cursor of the next page, null at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "project": {
           "type": "string"
+        },
+        "total": {
+          "description": "With `untriaged`: how many items match `q` and `label` in all.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2310,12 +2423,46 @@
       ],
       "type": "object"
     },
+    "WorkLabel": {
+      "description": "A label and how many of a query's matches carry it.",
+      "properties": {
+        "count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "count"
+      ],
+      "type": "object"
+    },
     "WorkQuery": {
       "description": "[`PROJECT_WORK`]'s query.",
       "properties": {
+        "cursor": {
+          "default": null,
+          "description": "With `untriaged`: the page after the one that answered this\n[`WorkItems::next`]. Opaque; it holds its place when items leave the\nlist between pages.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "default": null,
           "description": "`issue`, `pr` or `run`; absent means all.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "default": null,
+          "description": "With `untriaged`: only items with this label.",
           "type": [
             "string",
             "null"
@@ -2328,6 +2475,14 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "order": {
+          "default": null,
+          "description": "With `untriaged`, `new` (the default) or `old`: by when an item was\nlast updated.",
+          "type": [
+            "string",
             "null"
           ]
         },
