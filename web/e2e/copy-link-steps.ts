@@ -9,7 +9,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl } from "./team-fixture";
+import { TeamControl, opened } from "./team-fixture";
 
 export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
   const t = new TeamControl(name);
@@ -65,7 +65,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
     await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
 
-    await alice.goto(`${app}/`);
+    alice = await opened(alice, `${app}/`);
     await expect(alice.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
     await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
     project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];

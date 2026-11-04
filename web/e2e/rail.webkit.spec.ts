@@ -5,7 +5,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl, home, show } from "./team-fixture";
+import { TeamControl, home, opened, show } from "./team-fixture";
 
 const t = new TeamControl("rail376");
 
@@ -56,15 +56,30 @@ test("in a browser, Projects opens the platform page in a tab of its own", async
 
 // #288: in the desktop app the platform page replaces this window.
 test("in the app, Projects lands on the platform page in this window", async () => {
-  // macOS's WebKit only for now: Playwright's Linux WebKit throws its own
-  // "Assertion error" when a page goes to the platform page's origin (#402).
-  test.skip(process.platform === "linux", "Playwright's Linux WebKit asserts on a cross-origin navigation (#402)");
+  // Playwright's Linux WebKit throws its own "Assertion error" when an open
+  // page goes to another origin (#402), so the navigation is cancelled where
+  // the app asks for it (the Navigation API's `navigate` event), and the
+  // address it asked for opens in a new page.
   const shell = await alice.context().newPage();
-  await shell.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
+  await shell.addInitScript(() => {
+    Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } });
+    (window as { __asked?: string }).__asked = undefined;
+    (window as unknown as { navigation: EventTarget }).navigation.addEventListener("navigate", (e) => {
+      const ev = e as Event & { destination: { url: string } };
+      (window as { __asked?: string }).__asked = ev.destination.url;
+      ev.preventDefault();
+    });
+  });
   await shell.goto(`${t.base}/`);
   const pages = alice.context().pages().length;
   await shell.locator(".ws-rail [data-open-projects]").click();
-  await shell.waitForURL((u) => u.origin === app, { timeout: 15_000 });
-  expect(new URL(shell.url()).pathname).toBe("/");
+  // It asked for this window to go to the platform page, not for a tab of its own.
+  await expect.poll(() => shell.evaluate(() => (window as { __asked?: string }).__asked)).toBeTruthy();
+  const asked = new URL((await shell.evaluate(() => (window as { __asked?: string }).__asked))!);
+  expect(asked.origin).toBe(app);
+  expect(asked.pathname).toBe("/");
   expect(alice.context().pages().length).toBe(pages);
+  const landed = await opened(shell, asked.href);
+  await expect(landed).toHaveURL((u) => u.origin === app);
+  expect(alice.context().pages().length).toBe(pages + 1);
 });
