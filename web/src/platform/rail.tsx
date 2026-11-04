@@ -12,7 +12,8 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
 import { chatPath, sectionOf } from "./bar";
-import { go, useRoute } from "./router";
+import { activeProject, forgetActiveProject, go, pathOf, useRoute } from "./router";
+import { names } from "./links";
 import { controlOrigin, session } from "./session";
 import { barProject, where } from "./where";
 
@@ -30,6 +31,15 @@ export function PlatformRail() {
   const chatTo = chatPath(project);
   const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
   const place = (to: string) => () => go(to);
+  // Projects goes to the project last open (Arugula #586) while it's still one
+  // of the reader's; else the list.
+  const active = activeProject();
+  const projectsTo = active && session.project(active) ? pathOf({ page: "project", project: active }, names) : "/";
+  const openProjects = () => {
+    // Gone, or no longer the reader's: forget it, so the list is where this lands.
+    if (active && projectsTo === "/" && session.state === "ready") forgetActiveProject();
+    go(projectsTo);
+  };
   const items: RailItem[] = [
     {
       label: "Projects",
@@ -39,8 +49,8 @@ export function PlatformRail() {
       here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox" || r.page === "docs") && here !== "chat",
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
-      href: "/",
-      onClick: place("/"),
+      href: projectsTo,
+      onClick: openProjects,
     },
     { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
     { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
