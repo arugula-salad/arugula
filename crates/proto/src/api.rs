@@ -929,8 +929,10 @@ pub struct DocRow {
     #[serde(default)]
     pub sections: Vec<DocSectionShape>,
     /// Its copy on the platform (#418), once this machine has copied it up:
-    /// readable there with this machine asleep. Null until then, or on a
-    /// machine not in control; a daemon from before native #673 sends none.
+    /// readable there with this machine asleep. Null until then, and again
+    /// once the machine has left control; a daemon from before native #673
+    /// sends none, and a team's other owner isn't sent it (the copy is in
+    /// the owner's personal project, which they can't read).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub platform: Option<DocOnPlatform>,

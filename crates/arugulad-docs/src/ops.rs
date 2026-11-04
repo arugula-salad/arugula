@@ -91,6 +91,9 @@ impl Handle<Docs> for DocsList {
         let (metas, links) = crate::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
+        // A copy is in the owner's personal project: a team's other owner
+        // (#935) can't read it there, so they aren't pointed at it.
+        let co_owner = cx.co_owner();
         Ok(metas
             .into_iter()
             .map(|m| {
@@ -109,7 +112,11 @@ impl Handle<Docs> for DocsList {
                     by: m.by,
                     summary: shape.summary,
                     sections: shape.sections,
-                    platform: m.platform.map(|p| DocOnPlatform { project: p.project, id: p.id, link: p.link }),
+                    platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
+                        project: p.project,
+                        id: p.id,
+                        link: p.link,
+                    }),
                 }
             })
             .collect())

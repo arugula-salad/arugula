@@ -2911,6 +2911,7 @@ impl Control {
                     // (#347). Cheap when there's nothing to remove.
                     if let Ok(true) = arugula_proto::flags::forget_control(&me.state_dir) {
                         info!("not in control: its Labs flags no longer apply here");
+                        crate::features::left_control(&me.state_dir);
                     }
                 }
                 tokio::select! {
