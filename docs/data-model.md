@@ -206,5 +206,4 @@ purpose, and the records say why:
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
-| A team's other owners can't read a pane's thread, and a changed share reaches control only on the next minute's refresh | #684 |
 | `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |
