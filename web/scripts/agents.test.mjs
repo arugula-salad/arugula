@@ -5,6 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
+  blindLine,
+  blindMachines,
   boardsLevel,
   boardsMove,
   cellKey,
@@ -312,4 +314,25 @@ test("@ offers the machines a mention reaches, each with its sessions under it",
   assert.deepEqual(tokens("mini/u"), ["mini", "mini/ux-improvements"]);
   assert.deepEqual(tokens("mini/zzz"), []);
   assert.deepEqual(tokens("pad"), [], "without the grant it isn't offered");
+});
+
+test("the Boards page names the machines whose agents can't see a project's boards (#313)", () => {
+  const g = (id, power, daemon, live = true, project = "prj_1") => ({
+    id,
+    subject: { kind: "daemon", id: daemon, name: daemon },
+    power,
+    scope: { kind: "project", id: project },
+    live,
+  });
+  // Every machine has had a grant since it joined; only boards.* count here.
+  const grants = [g("a", "cloud.drive", "alpha"), g("b", "threads.read", "beta"), g("c", "boards.read", "gamma"), g("d", "boards.write", "delta"), g("e", "boards.read", "eps", false)];
+  assert.deepEqual(blindMachines(grants, "prj_1"), ["alpha", "beta", "eps"]);
+  assert.deepEqual(blindMachines(grants, "prj_2"), ["alpha", "beta", "delta", "eps", "gamma"], "another project's boards aren't granted");
+  assert.deepEqual(blindMachines([], "prj_1"), []);
+
+  assert.equal(blindLine([]), "");
+  assert.equal(blindLine(["mac"]), "Agents on mac can't see these boards.");
+  assert.equal(blindLine(["a", "b"]), "Agents on a and b can't see these boards.");
+  assert.equal(blindLine(["a", "b", "c"]), "Agents on a, b and c can't see these boards.");
+  assert.equal(blindLine(["a", "b", "c", "d"]), "Agents on a, b and 2 more can't see these boards.");
 });
