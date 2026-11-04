@@ -1,5 +1,6 @@
 // Access (Arugula #681): the owner answers "who can reach this machine?"
-// from one dialog, *Access…* in the machine's settings. Its rows are the
+// from one dialog, *Access…* in the machine's settings (a Settings page
+// row on the machine's own page, the machine menu's on control's). Its rows are the
 // daemon's own answer (`GET /api/access`): the owner, each session's shares,
 // links to a pane with when they end, ssh guests where Guest SSH access is
 // on, and trust live now, each row saying whose word it is. Its agents'
@@ -12,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open, ready } from "./helpers";
+import { closeContexts, closeSettingsPage, open, ready, settingsRow } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -55,9 +56,10 @@ const api = (path: string, body?: unknown, method = body === undefined ? "GET" :
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Access" });
 
+/** From the Settings page's machine rows (Arugula #695); on control's page
+ * the machine menu has the same row. */
 async function openDialog(page: Page) {
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Access…", exact: true }).click();
+  await settingsRow(page, "Access…");
   await expect(dialog(page)).toBeVisible();
 }
 
@@ -81,6 +83,7 @@ test("the owner sees who reaches the machine, each row saying whose word it is",
   await expect(dialog(page).locator("[data-access-powers-none]")).toContainText("Not joined to Arugula cloud");
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
+  await closeSettingsPage(page);
 
   // A session share, a link to a pane, trust on a pane, and an ssh guest
   // (Guest SSH access is on here, as every Labs flag from before is): one
