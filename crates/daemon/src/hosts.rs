@@ -446,8 +446,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
         tailnet_seen: app.tailnet_seen.load(std::sync::atomic::Ordering::Relaxed),
         control: saved.map(|s| s.url.clone()),
         // The team's name once its roster is in, else its id.
-        team: saved
-            .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
+        team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
         features: Some(features(app)),
     };
     HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }
