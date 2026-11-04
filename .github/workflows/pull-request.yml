@@ -27,7 +27,7 @@ name: pull request (hosted)
 # Its build is cold for the Rust crates even with sccache: on this PR's
 # first run (#1927) sccache hit only Ghostty's C and assembly (419 of 1018
 # compiles, no Rust), and rust-cache found nothing, since main's caches
-# come from the pods (another checkout path, another set of toolchains)
+# then came from the pods (another checkout path, another set of toolchains)
 # and a pull request doesn't save. It still built in under 7 minutes.
 on:
   pull_request:

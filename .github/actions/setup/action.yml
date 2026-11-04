@@ -1,5 +1,5 @@
 # What geek's disk used to give check.yml's jobs, for a fresh Linux runner
-# (the home cloud's arugula-amd64 pods, docs/development.md): the toolchain,
+# (GitHub's, or the home cloud's arugula-amd64 pods: docs/development.md): the toolchain,
 # caches in place of the kept build directories, and the run's binaries from
 # the jobs that built them in place of the shared run directory.
 name: setup
@@ -29,6 +29,9 @@ inputs:
   claude-code:
     description: The Claude Code CLI, which the specs that set it up (journey-j5) find on PATH, as they did on geek
     default: "false"
+  user-manager:
+    description: A systemd user manager for the job, for the tests that start the daemon as a service
+    default: "false"
 runs:
   using: composite
   steps:
@@ -55,6 +58,23 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
         fi
+    # GitHub's VMs boot systemd but start no user manager for the runner,
+    # whose job isn't a login session: linger starts one, and systemctl
+    # --user finds it through these two variables.
+    - name: A user manager
+      if: inputs.user-manager == 'true'
+      shell: bash
+      run: |
+        if systemctl --user show-environment >/dev/null 2>&1; then exit 0; fi
+        uid=$(id -u)
+        sudo loginctl enable-linger "$(id -un)"
+        for _ in $(seq 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
+        export XDG_RUNTIME_DIR=/run/user/$uid DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus
+        systemctl --user show-environment >/dev/null
+        {
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+        } >> "$GITHUB_ENV"
     # nvim from its release, pinned: Ubuntu's package is 0.9, and the nvim
     # tests (arugula.nvim, editor_swarm.rs, the nvim tips' :help check) need
     # 0.10 or later (#1736). neovim publishes no checksums, so these are the
