@@ -183,5 +183,4 @@ purpose, and the records say why:
 | A Doc's copy can be edited on the platform, and the machine's next change overwrites the edit | #678, #673 |
 | MCP and the UI say "thread" and "conversation" for any room | #667 |
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #669 |
-| Chat's rooms and threads are named inside the mux task | #675 |
 | How session grants and project grants relate isn't settled | #676 |

@@ -10,9 +10,11 @@ rule.
 
 Depends on `arugula-core`, `arugula-e2e`, `arugula-proto` and `arugula-vt`. It must not name
 any integration: no HTTP server or client, no MCP, no SSH, no embedded web
-client, no control. `just mux-guard` fails if `axum`, `hyper`, `reqwest`,
-`rmcp`, `rust-embed` or `russh` appear in its dependency tree, and `just check`
-and `just check-core` run it.
+client, no control, and no chat (#675): no room, thread or mention types.
+`just mux-guard` fails if `axum`, `hyper`, `reqwest`, `rmcp`, `rust-embed` or
+`russh` appear in its dependency tree, or a type named `Mention…`, `Chat…`,
+`Room…` or `Thread…` appears in its code, and `just check` and `just
+check-core` run it.
 
 How an integration reaches the mux, since the mux can't reach it:
 
@@ -21,8 +23,12 @@ How an integration reaches the mux, since the mux can't reach it:
   Browsers, agents, editors, forges and the rest are the binary's; the mux
   only asks the registry to make one.
 - **Traits.** What the mux calls out to is a trait in `src/mux/outside.rs`
-  (`Notify`, `People`, `AgentSessions`, `PaneGone`), plus
-  `Provider` for machines, all held in `Config`. The binary implements them.
+  (`Notify`, `People`, `AgentSessions`, `PaneGone`, `Usage`, `Followups`),
+  plus `Provider` for machines, all held in `Config`. The binary implements
+  them. `Followups` is how a follow-up the binary tagged (a teammate's
+  mention, say) is told of: the mux queues it for a pane with its opaque
+  `Tag`, reports where its turn is, and asks which waiting ones go in as
+  one; what the tag means is the binary's alone.
   `PaneCards` is the one that `start` takes: a card that makes a terminal
   wait on you (the IDE's diffs), run on the mux task and lent to each
   `Api::Cards` call.

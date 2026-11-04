@@ -545,13 +545,13 @@ fn replies_of_one_thread_in_the_queue_are_one_prompt_with_every_tag() {
         g.rebuild_line(l);
     }
     let reply = |seq: i64, root: i64| {
-        let thread = mux::MentionThread {
+        let thread = agent_mentions::MentionThread {
             root,
             head: format!("Thread {root}:"),
             line: format!("ada: reply {seq}"),
             tail: "(tail)".into(),
         };
-        let tag = mux::MentionTag { room: "ch_x".into(), seq, headline: String::new(), thread: Some(thread) };
+        let tag = MentionTag { room: "ch_x".into(), seq, headline: String::new(), thread: Some(thread) };
         Queued { text: format!("framed {seq}"), images: vec![], by: None, mention: vec![tag] }
     };
     let seqs = |q: &Queued| q.mention.iter().map(|t| t.seq).collect::<Vec<_>>();

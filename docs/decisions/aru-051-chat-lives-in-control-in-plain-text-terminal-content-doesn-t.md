@@ -50,7 +50,7 @@ constrains:
   - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
   - "path:crates/daemon/src/chat_readers.rs"
-  - "path:crates/mux/src/mux/chat_readers.rs"
+  - "path:crates/mux/src/mux/readers.rs"
   - "path:crates/daemon/src/control.rs"
 ---
 
@@ -137,7 +137,7 @@ What came in stays (archives, imported numbers and names); a `threads/`
 folder that never came in stays on its machine, unread. The reader lists
 stay, sent while control has chat on for the machine's account or team
 (control's setting, which rides with the flags it sends; no machine flag).
-Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/chat_readers.rs`,
+Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/readers.rs`,
 `chat::daemon_readers` in the platform.
 
 A conversation (#855, until M125) was a third kind of thread beside them, not

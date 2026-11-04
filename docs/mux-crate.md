@@ -141,8 +141,8 @@ and `labs::stop_beholds`. pane.rs calls `labs::machine_start`. Seventeen
 - `Block::wrote_run`, `BlockCtx::block` and `BlockCtx::update_reason`;
 - `Api::GuestInput`, `Api::GuestSize` and `Api::GuestLeft`;
 - `mux/thread_ops.rs`, with its twins in `mux/labs_off.rs` (both gone
-  since M125: chat is control's, and the mux only lists who reads each
-  pane's and session's thread, in `mux/chat_readers.rs`).
+  since M125: chat is control's, and the mux only lists who may read each
+  pane and session, in `mux/readers.rs`, `mux/chat_readers.rs` until #675).
 
 The other direction matters as much. Integrations reach the core through
 `MuxHandle` (`send`, `api`, `events`, and the fields `store`, `provider`,
@@ -153,8 +153,9 @@ The other direction matters as much. Integrations reach the core through
 sites) and `store::now_ms` (33) are used everywhere.
 
 `Daemon` itself is private to `mux/`. No integration touches its fields
-directly. They reach them through the mux's own files: `chat_readers.rs`
-for chat (`thread_ops.rs` before M125), `attention.rs` for the IDE, and
+directly. They reach them through the mux's own files: `readers.rs`
+for who may read what (`thread_ops.rs` before M125, `chat_readers.rs` before
+#675), `attention.rs` for the IDE, and
 `api_calls.rs` and `who_may.rs` for editors.
 
 ## The line

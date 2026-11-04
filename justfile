@@ -983,6 +983,15 @@ mux-guard:
         fi
       done
     done
+    # Chat is an integration too (native #675): no room, thread or mention
+    # type in the mux's code (comments aside); the daemon keeps those.
+    chatty=$(grep -rn --include='*.rs' '' crates/mux/src | sed -E 's#//.*$##' \
+      | grep -E '\b(Mention|Chat|Room|Thread)[A-Z][A-Za-z]*\b|\b(Mention|Room|Thread)\b' || true)
+    if [ -n "$chatty" ]; then
+      printf '%s\n' "$chatty" >&2
+      echo "mux-guard: arugula-mux names a chat type: rooms, threads and mentions are the daemon's (DECISIONS.md \"The mux names no integration\")" >&2
+      status=1
+    fi
     exit $status
 
 # What CI runs.

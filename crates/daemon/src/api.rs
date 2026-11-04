@@ -557,7 +557,7 @@ async fn hook(
     let asked = take.then(|| hook.clone());
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
     let follow_up = match asked {
-        Some(hook) => app.mux.api(|r| Api::TakeMention(id, hook, r)).await.flatten(),
+        Some(hook) => app.mux.api(|r| Api::TakeTagged(id, hook, r)).await.flatten(),
         None => None,
     };
     Ok(Json(HookAnswer { follow_up: follow_up.map(|(text, by)| HookFollowUp { text, by }) }))

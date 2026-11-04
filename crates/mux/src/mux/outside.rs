@@ -1,8 +1,8 @@
 //! What the mux calls out to and must not name: notifications, the people
-//! behind accounts, an agent's conversations and what a closed pane leaves
-//! behind, each a trait in `Config`, and the cards that make a terminal wait
-//! (`PaneCards`), which `start` takes. The binary hands the mux its
-//! implementations.
+//! behind accounts, an agent's conversations, what a closed pane leaves
+//! behind and the follow-ups it tagged, each a trait in `Config`, and the
+//! cards that make a terminal wait (`PaneCards`), which `start` takes. The
+//! binary hands the mux its implementations.
 
 use crate::acl::Principal;
 use arugula_proto::{DiffInfo, Driver, PaneId, Reason, ask::Answered};
@@ -124,90 +124,17 @@ pub trait Usage: Send + Sync + Debug {
     fn block_opened(&self, kind: arugula_proto::BlockType, config: &Value);
 }
 
-/// The mention a follow-up carries (#540): the message `seq` of `room` in
-/// Arugula control's chat. The mux only passes it along.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MentionTag {
-    pub room: String,
-    pub seq: i64,
-    /// What the card says while it is held for a session with no hooks
-    /// (#579). Empty for a mention that isn't held.
-    pub headline: String,
-    /// The thread it is in, when it may be merged with others of it (#580).
-    pub thread: Option<MentionThread>,
-}
-
-/// What it takes to put several mentions of one thread into one follow-up
-/// (#580). The mux only joins these; the words are the daemon's.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MentionThread {
-    /// The thread's root message.
-    pub root: i64,
-    /// The line that names the thread, when several are merged.
-    pub head: String,
-    /// This message, as one reply in the merged text.
-    pub line: String,
-    /// What closes the merged text.
-    pub tail: String,
-}
-
-impl MentionTag {
-    /// As an agent block's `send` and its log carry it.
-    pub fn to_json(&self) -> Value {
-        let mut v = serde_json::json!({ "room": self.room, "seq": self.seq });
-        if let Some(t) = &self.thread {
-            v["thread"] = serde_json::json!({ "root": t.root, "head": t.head, "line": t.line, "tail": t.tail });
-        }
-        v
-    }
-
-    /// The tag [`to_json`](Self::to_json) wrote.
-    pub fn from_json(v: &Value) -> Option<MentionTag> {
-        let t = &v["thread"];
-        let thread = t["root"].as_i64().map(|root| MentionThread {
-            root,
-            head: t["head"].as_str().unwrap_or_default().to_owned(),
-            line: t["line"].as_str().unwrap_or_default().to_owned(),
-            tail: t["tail"].as_str().unwrap_or_default().to_owned(),
-        });
-        Some(MentionTag {
-            room: v["room"].as_str()?.to_owned(),
-            seq: v["seq"].as_i64()?,
-            headline: String::new(),
-            thread,
-        })
-    }
-
-    /// Whether `other` is a message of the same thread: the same room and
-    /// root.
-    fn same_thread(&self, other: &MentionTag) -> bool {
-        match (&self.thread, &other.thread) {
-            (Some(a), Some(b)) => self.room == other.room && a.root == b.root,
-            _ => false,
-        }
-    }
-}
-
-/// Put `next` (a follow-up that carries `tag`) after `tags`' text, when it is
-/// in the same thread as they are (#580): `tags` all stay, so every one
-/// still reports its turn. False, and nothing changed, when it isn't.
-/// `text` is the follow-up of `tags` so far: the first one's own words, and
-/// from the second on, the merged text (oldest first).
-pub fn absorb(text: &mut String, tags: &mut Vec<MentionTag>, tag: &MentionTag) -> bool {
-    if !tags.first().is_some_and(|t| t.same_thread(tag)) {
-        return false;
-    }
-    tags.push(tag.clone());
-    *text = merged(tags);
-    true
-}
-
-/// The follow-up for several messages of one thread, oldest first.
-fn merged(tags: &[MentionTag]) -> String {
-    let threads: Vec<&MentionThread> = tags.iter().filter_map(|t| t.thread.as_ref()).collect();
-    let (Some(first), Some(last)) = (threads.first(), threads.last()) else { return String::new() };
-    let lines = threads.iter().map(|t| t.line.as_str()).collect::<Vec<_>>().join("\n");
-    format!("{}\n{lines}\n\n{}", first.head, last.tail)
+/// What the binary pins to a follow-up it wants told about (#675): its own
+/// words, serialized, which the mux never reads and gives back as they
+/// came in every report ([`Followups::turn`]); and what the card says while
+/// the follow-up is held for a session with no hooks (#579). A follow-up
+/// without a tag (a person's) is told of to no one, and never held.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Tag {
+    /// The binary's own, opaque here.
+    pub data: String,
+    /// The held card's headline. Empty for one that is never held.
+    pub card: String,
 }
 
 /// Where the turn that took a tagged follow-up is (#540).
@@ -217,11 +144,11 @@ pub enum Turn {
     Started,
     /// That turn ended: the pane's next `Stop` hook.
     Ended,
-    /// The mention never got a turn, or its turn was cut off (#613).
+    /// The follow-up never got a turn, or its turn was cut off (#613).
     Dropped(DropWhy),
 }
 
-/// Why a mention was dropped (#613).
+/// Why a tagged follow-up was dropped (#613).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropWhy {
     /// The person pressed stop while it waited in the queue.
@@ -230,7 +157,17 @@ pub enum DropWhy {
     Exited,
 }
 
-/// Told as it happens, on the mux task, so it must not block.
-pub trait Turns: Send + Sync + Debug {
-    fn turn(&self, pane: PaneId, tag: &MentionTag, turn: Turn);
+/// What the mux tells, and asks, of the follow-ups the binary tagged
+/// (#675). Told as it happens, on the mux task, so it must not block.
+pub trait Followups: Send + Sync + Debug {
+    /// Where the turn that took the follow-up tagged `tag` is.
+    fn turn(&self, pane: PaneId, tag: &Tag, turn: Turn);
+    /// Whether the follow-up tagged `next` goes in with the ones tagged
+    /// `tags` (oldest first), as one (#580): the text for all of them, or
+    /// `None` when it waits for a take of its own. What makes them one, and
+    /// the words, are the binary's. `tags` is never empty.
+    fn joined(&self, tags: &[Tag], next: &Tag) -> Option<String> {
+        let _ = (tags, next);
+        None
+    }
 }
