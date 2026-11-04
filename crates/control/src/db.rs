@@ -1969,6 +1969,18 @@ impl Db {
     /// stays as an alias, so `@old` still reaches it; the new one is refused
     /// when another machine of its owner, or of its team, goes by it now.
     pub fn rename_daemon(&self, id: &str, name: &str) -> anyhow::Result<Renamed> {
+        // The accounts that share a team with its owner: a team's room
+        // reaches their personal machines too, so a word one of them goes by
+        // now is taken (before the lock: `teams_of` takes it).
+        let mut mates: Vec<String> = vec![];
+        if let Some(owner) = self.daemon_account(id)? {
+            for body in self.teams_of(&owner)? {
+                let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                mates.extend(v["members"].as_array().into_iter().flatten().filter_map(|m| m["account"].as_str().map(str::to_owned)));
+            }
+            mates.sort();
+            mates.dedup();
+        }
         let mut c = self.c();
         let tx = c.transaction()?;
         let Some((account, was, aliases)) = tx
@@ -1993,6 +2005,15 @@ impl Db {
         if let Some((_, taken, _)) = others.iter().find(|(_, n, _)| machine::handle(n) == new) {
             return Ok(Renamed::Taken(taken.clone()));
         }
+        // Or a teammate's machine, personal or not: current names only.
+        let mut q = tx.prepare("SELECT name FROM daemons WHERE account = ?1 AND id != ?2")?;
+        for mate in mates.iter().filter(|m| **m != account) {
+            let theirs: Vec<String> = q.query_map(params![mate, id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            if let Some(taken) = theirs.into_iter().find(|n| machine::handle(n) == new) {
+                return Ok(Renamed::Taken(taken));
+            }
+        }
+        drop(q);
         let mut mine: Vec<String> = serde_json::from_str(&aliases).unwrap_or_default();
         mine.retain(|a| *a != new);
         if !old.is_empty() && old != new && !mine.contains(&old) {

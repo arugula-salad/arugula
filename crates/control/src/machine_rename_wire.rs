@@ -161,3 +161,35 @@ async fn only_its_owner_or_its_teams_owners_rename_it() {
     let (st, v) = rename(&c, &fran_s, &fran_box.id(), "From-Cy").await;
     assert_eq!(st, 409, "{v}");
 }
+
+/// A team's room reaches every member's granted machines, personal ones
+/// too: a word a teammate's machine goes by now is taken, whether or not
+/// either machine is in the team. Old names don't count.
+#[tokio::test]
+async fn a_name_a_teammates_personal_machine_has_is_taken() {
+    let c = control(|_| {}).await;
+    let aaron = person(&c.app, "aaron", "a1");
+    let jake = person(&c.app, "jake", "j1");
+    person(&c.app, "ox", "x1");
+    let team = "0011223344556677";
+    let r = roster(team, 1, vec![member("a1", &aaron, TeamRole::Owner), member("j1", &jake, TeamRole::Editor)], &aaron);
+    let t = Team { id: team.into(), name: "Acme".into(), founder: "a1".into(), founder_root: aaron.id(), locked: false };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&r).unwrap(), now_ms()).unwrap();
+    let mac = daemon(&c.app, "a1", "Aarons-Mac-mini.local");
+    let geek = daemon(&c.app, "j1", "geek");
+    let strangers = daemon(&c.app, "x1", "box");
+    let (a_s, j_s, x_s) = (session(&c.app, "a1"), session(&c.app, "j1"), session(&c.app, "x1"));
+
+    let (st, v) = rename(&c, &a_s, &mac.id(), "Geek").await;
+    assert_eq!(st, 409, "{v}");
+    assert!(v["error"].as_str().unwrap_or_default().contains("already called geek"), "{v}");
+    assert_eq!(c.app.db.daemon_aliases(&mac.id()).unwrap(), Vec::<String>::new(), "nothing changed");
+    // Not a stranger's: no team, no clash.
+    assert_eq!(rename(&c, &a_s, &mac.id(), "box").await.0, 200);
+    // An old name isn't taken: Jake's machine was "geek", now it isn't.
+    assert_eq!(rename(&c, &j_s, &geek.id(), "pad").await.0, 200);
+    assert_eq!(rename(&c, &a_s, &mac.id(), "geek").await.0, 200);
+    // And the other way round.
+    assert_eq!(rename(&c, &j_s, &geek.id(), "GEEK").await.0, 409);
+    let _ = (x_s, strangers);
+}
