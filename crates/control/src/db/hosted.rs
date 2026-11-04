@@ -16,6 +16,9 @@ use super::Db;
 pub(super) const SCHEMA: &str = "
 -- An owner's device's signed delegation (JSON), and its revocation.
 -- `owner` is `team:<id>` or `account:<id>`; `by_account` signed it.
+-- `revoke` is the first revoke, `revoked` when it came (set once, and it
+-- ends the delegation for good), and `more_revokes` (added since, a JSON
+-- list) every other owner's device's.
 CREATE TABLE IF NOT EXISTS project_delegations (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
@@ -71,7 +74,37 @@ CREATE INDEX IF NOT EXISTS hosted_machines_workspace ON hosted_machines (workspa
 pub struct DelegationRow {
     pub delegation: Delegation,
     pub by_account: String,
-    pub revoke: Option<DelegationRevoke>,
+    /// The first revoke, and every one since, one per device. Each was
+    /// checked as it came, against who was an owner then.
+    pub revokes: Vec<DelegationRevoke>,
+    /// When control took the first revoke, by its own clock. Once set the
+    /// delegation is over, whatever becomes of whoever signed it.
+    pub revoked: Option<u64>,
+}
+
+impl DelegationRow {
+    /// The first revoke, which ended it.
+    pub fn revoke(&self) -> Option<&DelegationRevoke> {
+        self.revokes.first()
+    }
+
+    /// When it ended: when control took the first revoke, or the earliest
+    /// revoke's own time if that's before it (within the slack control
+    /// allows a revoke's time). So what a client answers doesn't move when a
+    /// signer leaves and only control's word still counts. `None` while it
+    /// stands.
+    pub fn ended(&self) -> Option<u64> {
+        self.revoked.map(|at| self.revokes.iter().map(|r| r.at).fold(at, u64::min))
+    }
+}
+
+/// What became of a revoke control was sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevokeTaken {
+    /// It's the one that ended the delegation.
+    pub first: bool,
+    /// It's kept. Not, when this device's revoke of it was already.
+    pub kept: bool,
 }
 
 /// A live hosted machine. It has no direct URLs: it's reached only
@@ -108,12 +141,25 @@ pub enum Taken {
     Missing,
 }
 
-fn delegation_of(body: String, by_account: String, revoke: Option<String>) -> rusqlite::Result<DelegationRow> {
+const DELEGATION_COLUMNS: &str = "body, by_account, revoke, more_revokes, revoked";
+
+fn delegation_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<DelegationRow> {
     let json = |e: serde_json::Error| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
+    let mut revokes: Vec<DelegationRevoke> = r
+        .get::<_, Option<String>>(2)?
+        .map(|f| serde_json::from_str(&f))
+        .transpose()
+        .map_err(json)?
+        .into_iter()
+        .collect();
+    if let Some(more) = r.get::<_, Option<String>>(3)? {
+        revokes.extend(serde_json::from_str::<Vec<DelegationRevoke>>(&more).map_err(json)?);
+    }
     Ok(DelegationRow {
-        delegation: serde_json::from_str(&body).map_err(json)?,
-        by_account,
-        revoke: revoke.map(|r| serde_json::from_str(&r)).transpose().map_err(json)?,
+        delegation: serde_json::from_str(&r.get::<_, String>(0)?).map_err(json)?,
+        by_account: r.get(1)?,
+        revokes,
+        revoked: r.get(4)?,
     })
 }
 
@@ -136,34 +182,64 @@ impl Db {
     pub fn delegation(&self, id: &str) -> anyhow::Result<Option<DelegationRow>> {
         Ok(self
             .c()
-            .query_row("SELECT body, by_account, revoke FROM project_delegations WHERE id = ?1", params![id], |r| {
-                delegation_of(r.get(0)?, r.get(1)?, r.get(2)?)
-            })
+            .query_row(
+                &format!("SELECT {DELEGATION_COLUMNS} FROM project_delegations WHERE id = ?1"),
+                params![id],
+                delegation_of,
+            )
             .optional()?)
     }
 
     /// Every delegation of these owners' projects, newest first.
     pub fn delegations_of(&self, owners: &[String]) -> anyhow::Result<Vec<DelegationRow>> {
         let c = self.c();
-        let mut q = c.prepare(
-            "SELECT body, by_account, revoke FROM project_delegations WHERE owner = ?1 ORDER BY created DESC, id",
-        )?;
+        let mut q = c.prepare(&format!(
+            "SELECT {DELEGATION_COLUMNS} FROM project_delegations WHERE owner = ?1 ORDER BY created DESC, id"
+        ))?;
         let mut out = Vec::new();
         for o in owners {
-            for row in q.query_map(params![o], |r| delegation_of(r.get(0)?, r.get(1)?, r.get(2)?))? {
+            for row in q.query_map(params![o], delegation_of)? {
                 out.push(row?);
             }
         }
         Ok(out)
     }
 
-    /// Take a delegation back: whether this was the first revocation.
-    pub fn revoke_delegation(&self, r: &DelegationRevoke, now: u64) -> anyhow::Result<bool> {
-        let n = self.c().execute(
-            "UPDATE project_delegations SET revoke = ?2, revoked = ?3 WHERE id = ?1 AND revoked IS NULL",
-            params![r.delegation, serde_json::to_string(r)?, now],
-        )?;
-        Ok(n > 0)
+    /// Take a delegation back. The first revoke ends it, and `revoked` is
+    /// set then, once. Each later one is kept beside it, one per device:
+    /// what a client from before this counts is the revokes whose signers
+    /// are still owners, so the more of them it hears the better.
+    pub fn revoke_delegation(&self, r: &DelegationRevoke, now: u64) -> anyhow::Result<RevokeTaken> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let row = tx
+            .query_row(
+                &format!("SELECT {DELEGATION_COLUMNS} FROM project_delegations WHERE id = ?1"),
+                params![r.delegation],
+                delegation_of,
+            )
+            .optional()?;
+        let taken = match row {
+            None => RevokeTaken { first: false, kept: false },
+            Some(row) if row.revoked.is_none() => {
+                tx.execute(
+                    "UPDATE project_delegations SET revoke = ?2, revoked = ?3 WHERE id = ?1",
+                    params![r.delegation, serde_json::to_string(r)?, now],
+                )?;
+                RevokeTaken { first: true, kept: true }
+            }
+            Some(row) if row.revokes.iter().any(|h| h.by == r.by) => RevokeTaken { first: false, kept: false },
+            Some(row) => {
+                let more: Vec<&DelegationRevoke> = row.revokes.iter().skip(1).chain([r]).collect();
+                tx.execute(
+                    "UPDATE project_delegations SET more_revokes = ?2 WHERE id = ?1",
+                    params![r.delegation, serde_json::to_string(&more)?],
+                )?;
+                RevokeTaken { first: false, kept: true }
+            }
+        };
+        tx.commit()?;
+        Ok(taken)
     }
 
     /// Record a one-time enrollment. A sandbox id is enrolled once, ever

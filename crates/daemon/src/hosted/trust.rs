@@ -36,6 +36,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         cert,
         delegation,
         revocations,
+        closed,
         team,
         roster,
         certs,
@@ -69,6 +70,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     // leaving one out mustn't let a removed device count again.
     let revocations =
         kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.revocations.as_slice()));
+    let mut closed = kept(closed, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.closed.as_slice()));
+    closed.retain(|c| c.closes(&delegation));
     // When this box first saw each certificate and removal it holds.
     let mut seen = prev.map(|p| p.seen.clone()).unwrap_or_default();
     let now = seen.next();
@@ -221,6 +224,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             cert,
             delegation,
             revocations,
+            closed,
             deploy: purpose.as_deref() == Some(hosted::DEPLOY)
                 || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.deploy),
             builder: purpose.as_deref() == Some(hosted::SNAPSHOT)
@@ -296,7 +300,7 @@ mod tests {
         let root = DeviceKeys::generate();
         let mut root_cert = Cert::new(&root, "acct1", Kind::Browser, "laptop");
         root_cert.sign_with(&root);
-        let key = HostedKey::generate();
+        let key = HostedKey::from_seed(&ENROLLED_KEY);
         let mut d = Delegation {
             project: "prj_1".into(),
             owner: "account:acct1".into(),
@@ -314,6 +318,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),
@@ -330,12 +335,33 @@ mod tests {
         (got, root)
     }
 
+    /// Control's hosted key in [`enrollment`].
+    const ENROLLED_KEY: [u8; 32] = [7; 32];
+
     /// A device approved by `by`, of `account`.
     fn approved(account: &str, by: &DeviceKeys) -> (DeviceKeys, Cert) {
         let k = DeviceKeys::generate();
         let mut c = Cert::new(&k, account, Kind::Browser, "phone");
         c.sign_with(by);
         (k, c)
+    }
+
+    /// Control's word that the delegation ended is kept as a removal is: a
+    /// refresh adds to it, never takes from it. What doesn't check out isn't
+    /// kept at all.
+    #[test]
+    fn a_delegations_end_stays_when_control_leaves_it_out() {
+        let keys = DeviceKeys::generate();
+        let (got, _) = enrollment(&keys);
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(first.hosted.as_ref().unwrap().closed.is_empty());
+        let word = HostedKey::from_seed(&ENROLLED_KEY).close(&got.delegation, 30);
+        let mut told = got.clone();
+        told.closed = vec![word.clone(), HostedKey::generate().close(&got.delegation, 20)];
+        let second = saved_from(told, &keys, Some(&first)).unwrap();
+        assert_eq!(second.hosted.as_ref().unwrap().closed, [word.clone()], "only what checks out");
+        let third = saved_from(got, &keys, Some(&second)).unwrap();
+        assert_eq!(third.hosted.as_ref().unwrap().closed, [word], "control leaving it out changes nothing");
     }
 
     #[test]
@@ -612,6 +638,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: o_cert.device.clone() }),
             roster: Some(roster),
             certs: [("o".to_owned(), (vec![o_cert], vec![])), ("e".to_owned(), (vec![e_cert, phone.clone()], vec![]))]

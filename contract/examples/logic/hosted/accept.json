@@ -1,5 +1,5 @@
 {
-  "about": "Whether a client accepts a hosted machine, for that project only: the client's account (me) and what it knows of the project's owners from its own checks (a team's roster and members' certificates, or its account's chain), never control's word for the machine. In this order: the certificate and delegation well formed and naming each other (form); the owners the client knows are the delegation's (wrong_project); me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the certificate signed with the key the delegation names (bad_signature); made no earlier than the delegation and before any revoke that checks out (by any owner, of this delegation) (revoked). Revokes that don't check out are ignored. Accepted, it gives the client's role in the project.",
+  "about": "Whether a client accepts a hosted machine, for that project only: the client's account (me) and what it knows of the project's owners from its own checks (a team's roster and members' certificates, or its account's chain), never control's word for the machine. In this order: the certificate and delegation well formed and naming each other (form); the owners the client knows are the delegation's (wrong_project); me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the certificate signed with the key the delegation names (bad_signature); made no earlier than the delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) and any word from control that it ended, signed with the key the delegation names (closed: it holds when a revoke's signer has since left) (revoked). Either that doesn't check out is ignored. Accepted, it gives the client's role in the project.",
   "cases": [
     {
       "about": "alice's own project's box",
@@ -1279,10 +1279,480 @@
       "output": {
         "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
       }
+    },
+    {
+      "about": "closed after the box was made: the box stays",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-at-4000"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "closed the very ms the box was made",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-at-3000"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "closed before the box was made",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-at-2500"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke and control's word: the earlier counts",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-at-2500"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-at-4000"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "closed with another key: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-by-another-key"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "closing another delegation: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-of-another-delegation"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "closed, its signature not over its time: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-bad-signature"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "closed by an owner's device, not the key: ignored",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-by-an-owners-device"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a revoke by a device since taken off the account, alone: it doesn't count now",
+      "input": {
+        "cert": "box",
+        "closed": [],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-removed-tablet"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "the same, with control's word: it stays revoked",
+      "input": {
+        "cert": "box",
+        "closed": ["closed-at-2500"],
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-removed-tablet"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke by an owner who left the team, alone: it doesn't count now",
+      "input": {
+        "cert": "team-box",
+        "closed": [],
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster-carol-gone"
+          }
+        },
+        "revokes": ["team-revoke-by-carol"]
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the same owner who left the team, with control's word: it stays revoked",
+      "input": {
+        "cert": "team-box",
+        "closed": ["team-closed-at-2500"],
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster-carol-gone"
+          }
+        },
+        "revokes": ["team-revoke-by-carol"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke by an owner who is an editor now, alone: it doesn't count now",
+      "input": {
+        "cert": "team-box",
+        "closed": [],
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster-carol-editor"
+          }
+        },
+        "revokes": ["team-revoke-by-carol"]
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the same owner who is an editor now, with control's word: it stays revoked",
+      "input": {
+        "cert": "team-box",
+        "closed": ["team-closed-at-2500"],
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster-carol-editor"
+          }
+        },
+        "revokes": ["team-revoke-by-carol"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "two owners' revokes, one still an owner: the one still an owner's counts",
+      "input": {
+        "cert": "team-box",
+        "closed": [],
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": ["team-revoke-by-carol-later"]
+      },
+      "output": {"refused": "revoked"}
     }
   ],
-  "checks": ["arugula_e2e::hosted::accept", "arugula_e2e::hosted::HostedRefusal::code"],
-  "input": "me: the client's account; cert, delegation: labels; revokes: labels; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's",
+  "checks": [
+    "arugula_e2e::hosted::accept",
+    "arugula_e2e::hosted::DelegationClosed::closes",
+    "arugula_e2e::hosted::HostedRefusal::code"
+  ],
+  "input": "me: the client's account; cert, delegation: labels; revokes, closed: labels; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's",
   "keys": {
     "alice": {
       "device": "37f29b7074cf8b52",
@@ -1752,6 +2222,48 @@
       "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
       "v": 1
     },
+    "closed-at-2500": {
+      "at": 2500,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9219905705df7d6f0d84976de61c8cc378688f6b3fc4f1d226dcbe9c520d97f51f20c20ebfbafd9d5db139e2c01bd94104e146531cf6d187032a2dba4d7d390e"
+    },
+    "closed-at-3000": {
+      "at": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "0e25c0ff4ad3ce1bbb6734e224fdbe1ec8a2b6285e11dec48ba504ca2f76b40c83766897be6a9a54254c9a6c5d018be1ce27763e11eb708a43594277d704b601"
+    },
+    "closed-at-4000": {
+      "at": 4000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "4c475e2d284d47c6f5979d62b8239823b4b5c3385df2680e0d66d61237398849c046da441f5db0a3d24b9746d4fc2123a4f840d985483e2600f14743edc5a60c"
+    },
+    "closed-bad-signature": {
+      "at": 2400,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9219905705df7d6f0d84976de61c8cc378688f6b3fc4f1d226dcbe9c520d97f51f20c20ebfbafd9d5db139e2c01bd94104e146531cf6d187032a2dba4d7d390e"
+    },
+    "closed-by-an-owners-device": {
+      "at": 2500,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "af673bba28784c5d357b0f73069b11cb755913217d35e122f04f26220f2710911c2d4aa6f5bbe263c9a7e4dcc4bdd9a78a3b3fa5ae2869220520307d0d3d0e03"
+    },
+    "closed-by-another-key": {
+      "at": 2500,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "d8d0c60ea2dd3fc69e63c701417c9f9d6145ed22622736880f1fe71ec3ac8cda5e307d7591f62d9ce2ee9e434ba02e356cdc823d93eaff929e0f708514d3bd0b"
+    },
+    "closed-of-another-delegation": {
+      "at": 2500,
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "3a3122d862c7a99148887799b45ff46f5ee9cd9b14b9fb651d39f8c65eddfa046aebc31406a731afe3a24651d00bed019b5acae158620da36428d7ea78bb1b02"
+    },
     "d": {
       "at": 2000,
       "by": "37f29b7074cf8b52",
@@ -1909,6 +2421,13 @@
       "project": "prj_1",
       "sig": "f70fbf9367b0bcd9f348c849883e1f50826e1c7f0ae9fcec4a12ad36da29e5e2adf402f17ace57af1974fc04f52755c220076a82e2681a48c231757191a43804"
     },
+    "revoke-by-removed-tablet": {
+      "at": 2500,
+      "by": "7b992b4bd67000bc",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "bdc88b0fceea7e418f0c104d944f723deca997559bc4ea67b7b391ea7703f9fdae9d4b8ade993a1f517dda3bdfc62c75dfc15eb41767ab5193b273f296445506"
+    },
     "revoke-of-another-delegation": {
       "at": 2500,
       "by": "37f29b7074cf8b52",
@@ -1931,6 +2450,35 @@
       "v": 1,
       "version": 1
     },
+    "roster-carol-editor": {
+      "at": 3500,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "carol", "name": "carol-login", "role": "editor", "root": "e0a128f98e5582a3"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "vic", "name": "vic-login", "role": "viewer", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "6ef8fe76007d396fa48f61dfcc57a58a3d823bd0672696a464d0b9095e6acbed3dba6285fa46571f4b36d98df04d9b8999357b01aecac2644bbc2ad4c61e9d0e",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "roster-carol-gone": {
+      "at": 3500,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "vic", "name": "vic-login", "role": "viewer", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "f8ab3a5fc4880e9f61ea85fe72625e3eac9b87d1f22195451a2170fce2f910eba0a72143281449f541babeaab41509351654e28c1505932cb9cf9b6ed1400009",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
     "team-box": {
       "created": 3000,
       "delegation": "00b8e09b7c8913fa08b7feb426235a04",
@@ -1942,6 +2490,12 @@
       "sig": "b367b339c7dd831d7502aedd372577e241ab107d1208f459f78bb1c46753fd9722f7653ab81aad53edb82943e458b3ba73f1abbb74b589921a1f717988dd750e",
       "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
       "workspace": "hw_2"
+    },
+    "team-closed-at-2500": {
+      "at": 2500,
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "3a3122d862c7a99148887799b45ff46f5ee9cd9b14b9fb651d39f8c65eddfa046aebc31406a731afe3a24651d00bed019b5acae158620da36428d7ea78bb1b02"
     },
     "team-d": {
       "at": 2000,
@@ -1988,6 +2542,13 @@
       "delegation": "00b8e09b7c8913fa08b7feb426235a04",
       "project": "prj_2",
       "sig": "f2e1f69f8b0c5842c8b5b07dbd6d35aae7eda9a6129979e930d73421feb9fb772a4e8acccb7ee3ff87e53371cd161264f3fd2c3d969d74c89804370d5330d10f"
+    },
+    "team-revoke-by-carol-later": {
+      "at": 2600,
+      "by": "e0a128f98e5582a3",
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "888ff175a94039437529ce56c04c1c9d8667362dd4612d049b4c1777d6ef4fa8495b9fbae9bb3f4884cff97280615a811667b0a8386841e2b5614344329ac50c"
     },
     "vic": {
       "account": "vic",

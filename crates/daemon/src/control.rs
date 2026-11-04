@@ -207,6 +207,10 @@ pub struct HostedPin {
     pub delegation: arugula_e2e::hosted::Delegation,
     #[serde(default)]
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    /// Control's word that the delegation ended, kept as revocations are:
+    /// what holds when a revoke's signer has since left.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     /// A box made for one deploy's run (M219, control's enrollment says
     /// `purpose: deploy`): nobody gets in, it takes that run only, and it
     /// never stops being one.
@@ -4819,6 +4823,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 deploy: false,
                 builder: false,
                 legacy_app_children: None,
@@ -4940,6 +4945,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 deploy: false,
                 builder: false,
                 legacy_app_children: None,
@@ -5252,6 +5258,7 @@ pub(crate) mod tests {
             cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
             delegation: d.clone(),
             revocations: vec![],
+            closed: vec![],
             deploy,
             builder: false,
             legacy_app_children: None,

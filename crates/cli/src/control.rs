@@ -258,12 +258,12 @@ impl Enrolled {
     /// sight, as the page does) or this account's own devices.
     fn accept_hosted(&mut self, v: &Value, teams: &mut Option<Vec<Value>>, pinned: &mut bool) -> anyhow::Result<Cert> {
         use arugula_e2e::{
-            hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept},
+            hosted::{Delegation, HostedCert, Owner, Owners, accept, ends_listed},
             team::{AccountCerts, Roster, TeamPin},
         };
         let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
         let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
-        let revokes: Vec<DelegationRevoke> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+        let (revokes, closed) = ends_listed(v);
         let me = self.cert.account.clone();
         let ok = match d.owner().context("no owner")? {
             Owner::Team(id) => {
@@ -285,7 +285,7 @@ impl Enrolled {
                         *pinned = true;
                     }
                 }
-                accept(&me, &cert, &d, &revokes, &Owners::Team { roster: &roster, certs: &certs })
+                accept(&me, &cert, &d, &revokes, &closed, &Owners::Team { roster: &roster, certs: &certs })
             }
             Owner::Account(_) => {
                 let v = self.api("GET", "/api/devices", None)?;
@@ -296,6 +296,7 @@ impl Enrolled {
                     &cert,
                     &d,
                     &revokes,
+                    &closed,
                     &Owners::Account { trust: &self.trust, certs: &certs, revocations: &revs },
                 )
             }

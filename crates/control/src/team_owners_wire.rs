@@ -18,7 +18,7 @@ const TEAM: &str = "0123456789abcdef";
 
 /// A passkey `id` of `account`, made for control's own host (the test
 /// server's), its key from `seed`.
-fn site_passkey(c: &Control, account: &str, id: &str, seed: u8) -> ed25519_dalek::SigningKey {
+pub(crate) fn site_passkey(c: &Control, account: &str, id: &str, seed: u8) -> ed25519_dalek::SigningKey {
     let k = ed25519_dalek::SigningKey::from_bytes(&[seed; 32]);
     let host = c.base.trim_start_matches("http://").split(':').next().unwrap().to_owned();
     let d = passkey::Draft {
@@ -82,7 +82,7 @@ fn path() -> String {
 }
 
 /// The body that sends `r`, with `passkey`'s assertion over its bytes.
-fn with_passkey(c: &Control, r: &Roster, pk: Option<(&str, &ed25519_dalek::SigningKey)>) -> Value {
+pub(crate) fn with_passkey(c: &Control, r: &Roster, pk: Option<(&str, &ed25519_dalek::SigningKey)>) -> Value {
     let mut b = json!({ "roster": r });
     if let Some((id, k)) = pk {
         b["passkey"] = assertion(c, id, k, &r.owner_challenge());

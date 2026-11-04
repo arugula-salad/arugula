@@ -387,6 +387,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),

@@ -6,7 +6,9 @@
 
 use arugula_e2e::{
     DeviceKeys, Kind,
-    hosted::{Delegation, DelegationRevoke, HostedCert, HostedKey, Owner, accept, enroll_proof_body, live},
+    hosted::{
+        Delegation, DelegationClosed, DelegationRevoke, HostedCert, HostedKey, Owner, accept, enroll_proof_body, live,
+    },
     team::TeamRole,
 };
 use serde::Deserialize;
@@ -59,6 +61,7 @@ fn machine(d: &Delegation, workspace: &str, k: &DeviceKeys, created: u64, key: &
 enum BodyIn {
     Delegation { delegation: String },
     Revoke { revoke: String },
+    Closed { closed: String },
     Machine { cert: String },
     EnrollProof { credential: String, noise: String, sign: String, ms: u64 },
 }
@@ -70,6 +73,7 @@ fn run_bodies(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
             json!({ "body": d.body(), "id": d.id() })
         }
         BodyIn::Revoke { revoke } => json!({ "body": ctx.get::<DelegationRevoke>(&revoke)?.body() }),
+        BodyIn::Closed { closed } => json!({ "body": ctx.get::<DelegationClosed>(&closed)?.body() }),
         BodyIn::Machine { cert } => json!({ "body": ctx.get::<HostedCert>(&cert)?.body() }),
         BodyIn::EnrollProof { credential, noise, sign, ms } => {
             json!({ "body": enroll_proof_body(&credential, &noise, &sign, ms) })
@@ -85,19 +89,22 @@ fn bodies() -> Example {
         "The exact bytes of a hosted machine's papers. A delegation: an owner's device says control may enroll \
          hosted machines into a project with its hosted key, until revoked; its sig is that device's over the \
          body, and its id the first 16 bytes of SHA-256 over the body, hex. A revoke names the delegation by \
-         that id. A machine's certificate is signed with the key the delegation names. A machine signs an enroll \
+         that id. Control's word that a delegation ended is signed with the key the delegation names, and its at \
+         is control's. A machine's certificate is signed with that key too. A machine signs an enroll \
          proof with its own key: the SHA-256 (hex) of the ticket or sandbox id it enrolls with, so the proof \
          can't move to another enrollment and the credential isn't in it.",
         &[
             "arugula_e2e::hosted::Delegation::body",
             "arugula_e2e::hosted::Delegation::id",
             "arugula_e2e::hosted::DelegationRevoke::body",
+            "arugula_e2e::hosted::DelegationClosed::body",
             "arugula_e2e::hosted::HostedCert::body",
             "arugula_e2e::hosted::enroll_proof_body",
         ],
     )
     .shapes(
-        "of: delegation (delegation: a label), revoke (revoke), machine (cert), or enroll_proof (credential, noise, \
+        "of: delegation (delegation: a label), revoke (revoke), closed (closed), machine (cert), or enroll_proof \
+         (credential, noise, \
          sign, ms)",
         "body: the signed text; id: a delegation's",
     );
@@ -108,10 +115,12 @@ fn bodies() -> Example {
     ex.object("delegation", &d);
     ex.object("team-delegation", &delegation("prj_2", "team:t1", &key, 2_000, &alice.keys));
     ex.object("revoke", &DelegationRevoke::new(&d, 4_000, &alice.keys));
+    ex.object("closed", &key.close(&d, 4_000));
     ex.object("machine", &machine(&d, "hw_1", &boxk, 3_000, &key));
     ex.computed("an account's project's delegation", json!({ "of": "delegation", "delegation": "delegation" }));
     ex.computed("a team's project's", json!({ "of": "delegation", "delegation": "team-delegation" }));
     ex.computed("its revoke", json!({ "of": "revoke", "revoke": "revoke" }));
+    ex.computed("control's word that it ended", json!({ "of": "closed", "closed": "closed" }));
     ex.computed("a machine's certificate", json!({ "of": "machine", "cert": "machine" }));
     let credential = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"ticket-of-the-example"));
     ex.computed(
@@ -204,6 +213,8 @@ struct AcceptIn {
     delegation: String,
     #[serde(default)]
     revokes: Vec<String>,
+    #[serde(default)]
+    closed: Vec<String>,
     owners: OwnersIn,
 }
 
@@ -211,7 +222,8 @@ fn run_accept(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
     let i: AcceptIn = input(v)?;
     let owners = i.owners.load(ctx)?;
     let revokes: Vec<DelegationRevoke> = ctx.all(&i.revokes)?;
-    Ok(match accept(&i.me, &ctx.get(&i.cert)?, &ctx.get(&i.delegation)?, &revokes, &owners.owners()) {
+    let closed: Vec<DelegationClosed> = ctx.all(&i.closed)?;
+    Ok(match accept(&i.me, &ctx.get(&i.cert)?, &ctx.get(&i.delegation)?, &revokes, &closed, &owners.owners()) {
         Ok(a) => json!({ "accepted": {
             "project": a.project,
             "owner": a.owner.as_string(),
@@ -234,12 +246,18 @@ fn accepts() -> Example {
          me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the \
          project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the \
          certificate signed with the key the delegation names (bad_signature); made no earlier than the \
-         delegation and before any revoke that checks out (by any owner, of this delegation) (revoked). \
-         Revokes that don't check out are ignored. Accepted, it gives the client's role in the project.",
-        &["arugula_e2e::hosted::accept", "arugula_e2e::hosted::HostedRefusal::code"],
+         delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) \
+         and any word from control that it ended, signed with the key the delegation names (closed: it holds when \
+         a revoke's signer has since left) (revoked). Either that doesn't check out is ignored. Accepted, it gives \
+         the client's role in the project.",
+        &[
+            "arugula_e2e::hosted::accept",
+            "arugula_e2e::hosted::DelegationClosed::closes",
+            "arugula_e2e::hosted::HostedRefusal::code",
+        ],
     )
     .shapes(
-        &format!("me: the client's account; cert, delegation: labels; revokes: labels; {OWNERS_SHAPE}"),
+        &format!("me: the client's account; cert, delegation: labels; revokes, closed: labels; {OWNERS_SHAPE}"),
         "accepted: { project, owner, workspace, role }, or refused: the check's code",
     );
     let alice = person(&mut ex, "alice", 1);
@@ -585,6 +603,107 @@ fn accepts() -> Example {
         &["team-revoke-by-bob"],
         &team,
         yes("team:t1", "prj_2", "hw_2", "viewer"),
+    );
+
+    // Control's word that a delegation ended: it holds when a revoke's signer
+    // has since left, by the same time rule.
+    for (l, at) in [("closed-at-4000", 4_000), ("closed-at-3000", 3_000), ("closed-at-2500", 2_500)] {
+        ex.object(l, &key.close(&d, at));
+    }
+    ex.object("closed-by-another-key", &other_key.close(&d, 2_500));
+    ex.object("closed-of-another-delegation", &key.close(&td, 2_500));
+    let mut moved = key.close(&d, 2_500);
+    moved.at = 2_400;
+    ex.object("closed-bad-signature", &moved);
+    let mut by_owner = key.close(&d, 2_500);
+    by_owner.sig = hex::encode(ak.signature(by_owner.body().as_bytes()));
+    ex.object("closed-by-an-owners-device", &by_owner);
+    ex.object("team-closed-at-2500", &key.close(&td, 2_500));
+    ex.object("revoke-by-removed-tablet", &DelegationRevoke::new(&d, 2_500, &gone));
+    ex.object("team-revoke-by-carol-later", &DelegationRevoke::new(&td, 2_600, &carol.keys));
+    // The team after carol, who revoked, left; and after she was made an editor.
+    let (a_o, b_e, v_v) =
+        (member(&alice, TeamRole::Owner), member(&bob, TeamRole::Editor), member(&vic, TeamRole::Viewer));
+    ex.object("roster-carol-gone", &roster(2, 3_500, vec![a_o.clone(), b_e.clone(), v_v.clone()], ak));
+    ex.object("roster-carol-editor", &roster(2, 3_500, vec![a_o, member(&carol, TeamRole::Editor), b_e, v_v], ak));
+    let team_at = |roster: &str| {
+        json!({ "team": { "roster": roster, "certs": {
+            "alice": { "certs": alice_certs, "revocations": ["alice-tablet-revoked"] },
+            "bob": { "certs": ["bob"] }, "carol": { "certs": ["carol"] }, "vic": { "certs": ["vic"] } } } })
+    };
+    let (carol_gone, carol_editor) = (team_at("roster-carol-gone"), team_at("roster-carol-editor"));
+    let team_ok = yes("team:t1", "prj_2", "hw_2", "viewer");
+    let mut closing = |about: &str, c: &str, dl: &str, revs: &[&str], closed: &[&str], owners: &Value, want: Value| {
+        let input = json!({ "me": if dl == "d" { "alice" } else { "vic" }, "cert": c, "delegation": dl,
+                            "revokes": revs, "closed": closed, "owners": owners });
+        cases.push((about.into(), input, want));
+    };
+    closing("closed after the box was made: the box stays", "box", "d", &[], &["closed-at-4000"], &mine, ok.clone());
+    closing("closed the very ms the box was made", "box", "d", &[], &["closed-at-3000"], &mine, no("revoked"));
+    closing("closed before the box was made", "box", "d", &[], &["closed-at-2500"], &mine, no("revoked"));
+    closing(
+        "a revoke and control's word: the earlier counts",
+        "box",
+        "d",
+        &["revoke-at-4000"],
+        &["closed-at-2500"],
+        &mine,
+        no("revoked"),
+    );
+    for (about, l) in [
+        ("closed with another key: ignored", "closed-by-another-key"),
+        ("closing another delegation: ignored", "closed-of-another-delegation"),
+        ("closed, its signature not over its time: ignored", "closed-bad-signature"),
+        ("closed by an owner's device, not the key: ignored", "closed-by-an-owners-device"),
+    ] {
+        closing(about, "box", "d", &[], &[l], &mine, ok.clone());
+    }
+    closing(
+        "a revoke by a device since taken off the account, alone: it doesn't count now",
+        "box",
+        "d",
+        &["revoke-by-removed-tablet"],
+        &[],
+        &mine,
+        ok.clone(),
+    );
+    closing(
+        "the same, with control's word: it stays revoked",
+        "box",
+        "d",
+        &["revoke-by-removed-tablet"],
+        &["closed-at-2500"],
+        &mine,
+        no("revoked"),
+    );
+    for (who, owners) in [("left the team", &carol_gone), ("is an editor now", &carol_editor)] {
+        closing(
+            &format!("a revoke by an owner who {who}, alone: it doesn't count now"),
+            "team-box",
+            "team-d",
+            &["team-revoke-by-carol"],
+            &[],
+            owners,
+            team_ok.clone(),
+        );
+        closing(
+            &format!("the same owner who {who}, with control's word: it stays revoked"),
+            "team-box",
+            "team-d",
+            &["team-revoke-by-carol"],
+            &["team-closed-at-2500"],
+            owners,
+            no("revoked"),
+        );
+    }
+    closing(
+        "two owners' revokes, one still an owner: the one still an owner's counts",
+        "team-box",
+        "team-d",
+        &["team-revoke-by-carol-later"],
+        &[],
+        &team,
+        no("revoked"),
     );
     for (about, input, want) in cases {
         ex.case(&about, input, want);

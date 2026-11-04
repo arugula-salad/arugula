@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { acceptHosted, delegationId } from "../src/shell/e2e/hosted.ts";
+import { acceptHosted, closedBody, delegationId } from "../src/shell/e2e/hosted.ts";
 import { directUrls } from "../src/shared/hosted.ts";
 
 const f = JSON.parse(readFileSync(new URL("./hosted.fixture.json", import.meta.url), "utf8"));
@@ -50,6 +50,51 @@ test("tampering, revoking, and control's own signature are refused", async () =>
   // A root control made up: the delegation's signer isn't in this chain.
   const other = { account: { account: "acct1", root: "0000000000000000" }, certs: [f.root], revocations: [] };
   assert.deepEqual(await acceptHosted("acct1", proof(), other), { ok: false, why: "unsigned" });
+});
+
+test("control's word that a delegation ended counts as Rust's does", async () => {
+  const yes = { ok: true, project: "prj_1", workspace: "hw_1", role: "owner" };
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [f.closed] }), mine), yes, "after the box was made: it stays");
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [f.closedEarly] }), mine), { ok: false, why: "revoked" });
+  const moved = { ...f.closedEarly, at: 2400 };
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [moved] }), mine), yes, "its signature doesn't cover its time");
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: [{ ...f.closedEarly, sig: f.delegation.sig }] }), mine), yes, "an owner's signature isn't control's word");
+  assert.deepEqual(await acceptHosted("acct1", proof({ closed: undefined }), mine), yes, "a control from before sends none");
+});
+
+// Rust's example file (contract/examples/logic/hosted/accept.json, written by
+// crates/e2e/tests/logic/hosted.rs): every case, from its JSON alone, gets
+// the same answer here. Rust's checks and this copy can't drift apart.
+const examples = JSON.parse(readFileSync(new URL("../../contract/examples/logic/hosted/accept.json", import.meta.url), "utf8"));
+const named = (labels = []) => labels.map((l) => examples.objects[l]);
+const ownersOf = (o) =>
+  "team" in o
+    ? {
+        team: examples.objects[o.team.roster],
+        certs: Object.fromEntries(Object.entries(o.team.certs).map(([a, c]) => [a, [named(c.certs), named(c.revocations)]])),
+      }
+    : { account: { account: o.account.account, root: o.account.root }, certs: named(o.account.certs), revocations: named(o.account.revocations) };
+
+for (const c of examples.cases) {
+  test(`accept.json: ${c.about}`, async () => {
+    const i = c.input;
+    const got = await acceptHosted(
+      i.me,
+      { cert: examples.objects[i.cert], delegation: examples.objects[i.delegation], revocations: named(i.revokes), closed: named(i.closed) },
+      ownersOf(i.owners),
+    );
+    if (c.output.refused) assert.deepEqual(got, { ok: false, why: c.output.refused });
+    else {
+      const { project, workspace, role } = c.output.accepted;
+      assert.deepEqual(got, { ok: true, project, workspace, role });
+    }
+  });
+}
+
+test("the bytes of control's word are Rust's", async () => {
+  const b = JSON.parse(readFileSync(new URL("../../contract/examples/logic/hosted/bodies.json", import.meta.url), "utf8"));
+  const c = b.cases.find((x) => x.input.of === "closed");
+  assert.equal(closedBody(b.objects[c.input.closed]), c.output.body);
 });
 
 test("a hosted machine has no direct URLs to try; a joined one keeps its own", () => {

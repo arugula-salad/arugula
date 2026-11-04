@@ -87,7 +87,8 @@ check its signatures byte for byte.
   `sign`s (a machine's certificate with control's hosted key, from its
   seed), which client `accept`s a machine (every refusal: form, wrong
   project, not in it, unsigned by an owner's device, a bad signature,
-  revoked by time or by another owner), `live`, and project `owner` names.
+  revoked by time or by another owner, or ended by control's word, which
+  holds when a revoke's signer has left), `live`, and project `owner` names.
 - `passkey/`: an account's passkey log (DK3, aru-126): each event's `bodies`
   (text, proof line, hash and the challenge a proof signs), and `verify`,
   the one check of a passkey's assertion against a log (the chain, whether

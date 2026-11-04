@@ -31,6 +31,15 @@ export interface DelegationRevoke {
   sig: string;
 }
 
+/** Control's word that a delegation ended, signed with the key it names:
+ * what holds when a revoke's signer has since left. */
+export interface DelegationClosed {
+  project: string;
+  delegation: string;
+  at: number;
+  sig: string;
+}
+
 export interface HostedCert {
   project: string;
   owner: string;
@@ -49,6 +58,8 @@ export interface HostedProof {
   cert: HostedCert;
   delegation: Delegation;
   revocations: DelegationRevoke[];
+  /** Absent from a control from before. */
+  closed?: DelegationClosed[];
 }
 
 const enc = new TextEncoder();
@@ -62,6 +73,9 @@ export const delegationBody = (d: Delegation) =>
 
 export const revokeBody = (r: DelegationRevoke) =>
   `arugula project delegation revoke v1\nproject ${r.project}\ndelegation ${r.delegation}\nat ${r.at}\nby ${r.by}\n`;
+
+export const closedBody = (c: DelegationClosed) =>
+  `arugula project delegation closed v1\nproject ${c.project}\ndelegation ${c.delegation}\nat ${c.at}\n`;
 
 export const hostedBody = (c: HostedCert) =>
   `arugula hosted machine v1\nproject ${c.project}\nowner ${c.owner}\nworkspace ${c.workspace}\ndelegation ${c.delegation}\n` +
@@ -139,9 +153,15 @@ export async function acceptHosted(
   if (!role) return no("not_in_project");
   if (!(await maySign(o, d.owner, d.by, delegationBody(d), d.sig))) return no("unsigned");
   if (!(await verify(d.key, hostedBody(c), c.sig))) return no("bad_signature");
+  // The earliest of a revoke an owner signed, as this browser holds them
+  // now, and control's word, which holds when that owner has gone. Either
+  // that doesn't check out is ignored.
   let revoked = Infinity;
   for (const r of p.revocations ?? []) {
     if (r.project === d.project && r.delegation === id && (await maySign(o, d.owner, r.by, revokeBody(r), r.sig))) revoked = Math.min(revoked, r.at);
+  }
+  for (const x of p.closed ?? []) {
+    if (x.project === d.project && x.delegation === id && (await verify(d.key, closedBody(x), x.sig))) revoked = Math.min(revoked, x.at);
   }
   if (c.created < d.at || revoked <= c.created) return no("revoked");
   return { ok: true, project: d.project, workspace: c.workspace, role };

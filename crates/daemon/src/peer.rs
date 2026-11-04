@@ -121,10 +121,10 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
 /// its pin (this machine's own team's, or one the owner's browser pinned
 /// here, #233).
 fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
-    use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept};
+    use arugula_e2e::hosted::{Delegation, HostedCert, Owner, Owners, accept, ends_listed};
     let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
     let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
-    let revokes: Vec<DelegationRevoke> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+    let (revokes, closed) = ends_listed(v);
     anyhow::ensure!(cert.device == id, "its certificate is another machine's");
     let me = &e.saved.cert.account;
     let accepted = match d.owner().ok_or_else(|| anyhow::anyhow!("its delegation names no owner"))? {
@@ -136,13 +136,14 @@ fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Resul
                     "its team isn't one this machine knows: open Control in a browser of this account once, which pins your teams here"
                 ),
             };
-            accept(me, &cert, &d, &revokes, &Owners::Team { roster, certs })
+            accept(me, &cert, &d, &revokes, &closed, &Owners::Team { roster, certs })
         }
         Owner::Account(_) => accept(
             me,
             &cert,
             &d,
             &revokes,
+            &closed,
             &Owners::Account { trust: &e.saved.trust, certs: &e.saved.certs, revocations: &e.saved.revocations },
         ),
     }

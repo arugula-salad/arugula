@@ -19,7 +19,7 @@
 use arugula_e2e::{
     Cert, Revocation, Trust,
     cert::LegacyAppChildren,
-    hosted::{Delegation, DelegationRevoke, HostedCert},
+    hosted::{Delegation, DelegationClosed, DelegationRevoke, HostedCert},
     team::{AccountCerts, Roster, TeamPin},
 };
 use serde::{Deserialize, Serialize};
@@ -173,6 +173,10 @@ pub struct Enrollment {
     /// Revocations of it: the machine stays, but nothing more enrolls.
     #[serde(default)]
     pub revocations: Vec<DelegationRevoke>,
+    /// Control's word that it ended, which holds when a revoke's signer has
+    /// since left. Empty from a control from before, or while it stands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub closed: Vec<DelegationClosed>,
     /// A team's project: the team to pin, its roster now, and its
     /// members' certificates.
     #[serde(default)]

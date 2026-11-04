@@ -1011,7 +1011,7 @@ path = "/api/hosted/delegations/revoke"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Any owner's own device's signed revocation: nothing more enrolls under it."
+note = "Any owner's own device's signed revocation, judged as it arrives: nothing more enrolls under it, whatever becomes of its signer. Every owner's is kept; the answer says first and kept."
 
 [[route]]
 method = "POST"
