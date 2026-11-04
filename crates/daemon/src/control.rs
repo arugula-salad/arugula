@@ -5818,6 +5818,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: Some(in_team),
                 legacy_app_children: None,
