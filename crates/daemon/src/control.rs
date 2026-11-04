@@ -2107,11 +2107,13 @@ impl Control {
                 })
                 .collect()
         };
-        let team = s.roster.as_ref().map(|r| RosterTeam {
-            id: r.team.clone(),
-            name: r.name.clone(),
-            locked: s.locked,
-            members: members(r, &s.team_names),
+        let team = s.team().and_then(|t| {
+            t.roster.as_ref().map(|r| RosterTeam {
+                id: r.team.clone(),
+                name: r.name.clone(),
+                locked: t.locked,
+                members: members(r, &t.names),
+            })
         });
         let shared = s
             .shared_teams
@@ -2127,9 +2129,9 @@ impl Control {
             })
             .collect();
         Some(RosterView {
-            hosted: s.hosted.is_some(),
-            nobody: s.hosted.as_ref().is_some_and(|h| h.deploy || h.builder),
-            team_id: s.team.as_ref().map(|p| p.team.clone()),
+            hosted: s.is_hosted(),
+            nobody: s.purpose().is_some_and(|p| p.deploys() || p.builds_snapshot()),
+            team_id: s.team_pin().map(|p| p.team.clone()),
             account: s.cert.account.clone(),
             login: s.login.clone(),
             device: s.cert.device.clone(),
