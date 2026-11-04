@@ -214,7 +214,7 @@ Everything else, about 64k lines:
   `labs/` (the threads, calls and machine modules above excepted);
 - `conversations/`, `ide/` (the relay, lock files and prefs), `gate.rs`,
   `hand.rs`, `push.rs`;
-- reach: `hosts.rs`, `sync.rs`, `seal.rs`, `tailscale.rs`, `roots.rs`,
+- reach: `hosts.rs`, `tailscale.rs`, `roots.rs`,
   `sites.rs`, `tls.rs`, `ports.rs`;
 - lifecycle: `main.rs`, `args.rs`, `install.rs`, `setup.rs`, `update.rs`,
   `selfupdate.rs`;
@@ -387,7 +387,7 @@ behind a trait, because each is read inside the mux task's ordering:
 
 **`App` in `server.rs`.** It stays in the **binary**, whole. It is the
 binary's state: `MuxHandle` (from the core) next to `Hosts`, `Shares`,
-`Synced`, `Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands`, `Push` and
+`Control`, `Acl`, MCP's `Tokens`, `Guests`, `Hands`, `Push` and
 `DialOuts`. The core never sees it. It saw it once, through
 `invite::Hook`, and that moves into the invite block's kind. `App` gains
 `rules` and `ide` (as `Option<Arc<ide::Ide>>`, the concrete type; the

@@ -51,7 +51,7 @@ impl Http for Daemon {
         // A program on this machine shows the local token (serve's
         // requests carry an identity instead, and hosts' paths a token of
         // their own).
-        let own_credential = ["/api/sync/", "/api/hosts/join", "/api/dial"].iter().any(|p| path.starts_with(p));
+        let own_credential = ["/api/hosts/join", "/api/dial"].iter().any(|p| path.starts_with(p));
         let bearer = self.bearer();
         if !own_credential
             && !self.token().is_empty()
@@ -126,29 +126,15 @@ fn host_entry(home: &Daemon, name: &str) -> Option<Value> {
     list["hosts"].as_array()?.iter().find(|h| h["name"] == name).cloned()
 }
 
-/// Every file under `dir`.
-fn files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = vec![];
-    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            out.extend(files(&p));
-        } else {
-            out.push(p);
-        }
-    }
-    out
-}
-
 #[test]
-fn a_sandbox_that_only_dials_out_is_used_through_home_and_its_history_outlives_it() {
+fn a_sandbox_that_only_dials_out_is_used_through_home() {
     let home = start("home", &[]);
     let (token, _) = token_file(&home, "sbx");
     // Listed before it ever connects: a dial-out host has no URL.
     let entry = host_entry(&home, "sbx").unwrap();
     assert_eq!((entry["transport"].as_str(), entry["urls"].clone()), (Some("dial_out"), json!([])));
 
-    let sbx = sandbox(&home, "sbx", &token, &["--sync", "--sync-live", "--sync-every", "1"]);
+    let sbx = sandbox(&home, "sbx", &token, &[]);
     wait_for("the sandbox to dial in", 15, || {
         host_entry(&home, "sbx").is_some_and(|h| h["last_seen_ms"].is_u64())
             && home.http("GET", "/h/sbx/api/host", &[], None).0 == 200
@@ -216,26 +202,11 @@ fn a_sandbox_that_only_dials_out_is_used_through_home_and_its_history_outlives_i
     // Only its WebSocket and API, and nothing that leads anywhere else.
     assert_eq!(home.http("GET", "/h/sbx/", &[], None).0, 404);
     assert_eq!(home.http("GET", "/h/sbx/index.html", &[], None).0, 404);
-    assert_eq!(home.http("GET", "/h/sbx/api/sync/state", &[], None).0, 404, "no home routes over a tunnel");
+    assert_eq!(home.http("GET", "/h/sbx/api/dial", &[], None).0, 404, "no home routes over a tunnel");
     assert_eq!(home.http("GET", "/h/sbx/h/other/api/host", &[], None).0, 404);
     assert_eq!(home.http("GET", "/h/nope/api/host", &[], None).0, 502);
 
-    // History: pushed as it grows, kept encrypted.
     stdout(&cli(&home, &["--host", "sbx", "close", &format!("%{pane}")]));
-    wait_for("the closed pane to sync", 20, || {
-        let s = home.get_tcp("/api/synced");
-        s.as_array().unwrap().iter().any(|h| h["name"] == "sbx" && h["panes"][&pane]["closed_ms"].is_u64())
-    });
-    let key = home.state.join("synced/key");
-    let mode = std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&key).unwrap().permissions());
-    assert_eq!(mode & 0o777, 0o600);
-    let synced = files(&home.state.join("synced/sbx"));
-    assert!(synced.iter().any(|f| f.to_string_lossy().ends_with(".enc")), "{synced:?}");
-    for f in &synced {
-        let raw = std::fs::read(f).unwrap();
-        assert!(!raw.windows(13).any(|w| w == b"via-tunnel-42"), "plaintext in {}", f.display());
-        assert!(!raw.windows(9).any(|w| w == b"exit 3; e" || w == b"via-tunne"), "plaintext in {}", f.display());
-    }
 
     // Revoking the token cuts it off for good: redials are refused.
     stdout(&cli(&home, &["hosts", "revoke", "sbx"]));
@@ -246,33 +217,7 @@ fn a_sandbox_that_only_dials_out_is_used_through_home_and_its_history_outlives_i
     // The sandbox is deleted, and taken off the list.
     drop(sbx);
     stdout(&cli(&home, &["hosts", "rm", "sbx"]));
-    // Its history is still searchable here: asked for directly...
-    let hits = stdout(&cli(&home, &["search", "via-tunnel-[0-9]+", "--synced", "sbx"]));
-    assert!(hits.contains(&format!("sbx:%{pane}@")) && hits.contains("via-tunnel-42"), "{hits}");
-    let all: Value =
-        serde_json::from_str(&stdout(&cli(&home, &["--json", "search", "via-tunnel-42", "--synced", "all"]))).unwrap();
-    assert_eq!(all[0]["host"], "sbx");
-    // ...or with --host, which falls back to it when the host is gone.
-    let o = cli(&home, &["--host", "sbx", "history"]);
-    let out = stdout(&o);
-    assert!(out.contains("echo via-tunnel") || out.contains(&format!("sbx:%{pane}")), "{out}");
-    assert!(String::from_utf8_lossy(&o.stderr).contains("synced here"));
-    let tail = stdout(&cli(&home, &["--host", "sbx", "tail", &format!("%{pane}"), "--text"]));
-    assert!(tail.contains("via-tunnel-42"), "{tail}");
-    let tail = stdout(&cli(&home, &["tail", &format!("%{pane}"), "--synced", "sbx", "--text"]));
-    assert!(tail.contains("via-tunnel-42"), "{tail}");
-    // Local history is untouched by it.
-    let local = stdout(&cli(&home, &["search", "via-tunnel-42"]));
-    assert!(!local.contains("via-tunnel-42"), "{local}");
-
-    // Rotating the key keeps it readable and leaves no old key behind.
-    let old_key = std::fs::read_to_string(&key).unwrap();
-    stdout(&cli(&home, &["synced", "rotate-key"]));
-    assert_ne!(std::fs::read_to_string(&key).unwrap(), old_key);
-    let hits = stdout(&cli(&home, &["search", "via-tunnel-42", "--synced", "sbx"]));
-    assert!(hits.contains("via-tunnel-42"), "{hits}");
-    stdout(&cli(&home, &["synced", "rm", "sbx"]));
-    assert!(!stdout(&cli(&home, &["search", "via-tunnel-42", "--synced", "sbx"])).contains("via-tunnel"));
+    assert!(host_entry(&home, "sbx").is_none());
 }
 
 #[test]
@@ -317,30 +262,18 @@ async fn host_tokens_open_nothing_but_their_own_host() {
     assert_eq!(refused(dial(Some("ilh_forged")).await), 403);
     assert_eq!(refused(dial(Some(&a)).await), 101, "a's own token dials in");
 
-    let (h, a2, b2) = (home.clone(), a.clone(), b.clone());
+    let (h, a2) = (home.clone(), a.clone());
     tokio::task::spawn_blocking(move || {
         let bearer = |t: &str| format!("Bearer {t}");
-        // Pushes land under the token's host, whatever the caller says.
-        let (s, _, _) = h.http("POST", "/api/sync/1/log?from=0", &[("authorization", &bearer(&a2))], None);
-        assert_eq!(s, 200);
-        let (s, _, body) = h.http("GET", "/api/sync/state", &[("authorization", &bearer(&b2))], None);
-        assert_eq!((s, body.as_str()), (200, r#"{"panes":{}}"#), "b sees nothing of a's");
-        assert_eq!(h.http("GET", "/api/sync/state", &[], None).0, 401);
-        assert_eq!(h.http("GET", "/api/sync/state", &[("authorization", "Bearer ilh_x")], None).0, 403);
         // A host token is no owner credential, from the tailnet or anywhere.
         for host in [PUBLIC, "127.0.0.1:1"] {
             let hdr = [("host", host), ("authorization", &bearer(&a2))];
             assert_ne!(h.http("GET", "/api/panes", &hdr, None).0, 200);
-            assert_ne!(h.http("GET", "/api/synced", &hdr, None).0, 200);
             assert_ne!(h.http("POST", "/api/hosts/a/token", &hdr, None).0, 200);
             assert_ne!(h.http("GET", "/h/a/api/panes", &hdr, None).0, 200);
         }
-        // A foreign Host is refused before any token is looked at.
-        let hdr = [("host", "evil.example"), ("authorization", &bearer(&a2))];
-        assert_eq!(h.http("GET", "/api/sync/state", &hdr, None).0, 421);
         // Revoked: nothing.
         stdout(&cli(&h, &["hosts", "revoke", "a"]));
-        assert_eq!(h.http("GET", "/api/sync/state", &[("authorization", &bearer(&a2))], None).0, 403);
         assert!(!cli(&h, &["hosts", "revoke", "a"]).status.success(), "nothing left to revoke");
     })
     .await

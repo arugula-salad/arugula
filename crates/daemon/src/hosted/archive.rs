@@ -78,7 +78,7 @@ fn post(c: Closed, closed_at: u64) -> TranscriptPost {
 /// This daemon's control, when it's a hosted machine.
 fn hosted() -> Option<Arc<Control>> {
     let control = CONTROL.get().cloned()?;
-    control.enrolled().is_some_and(|e| e.saved.hosted.is_some()).then_some(control)
+    control.enrolled().is_some_and(|e| e.saved.is_hosted()).then_some(control)
 }
 
 /// An agent block closed: archive it, if this is a hosted machine.

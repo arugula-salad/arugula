@@ -39,7 +39,7 @@
 //! | GET | `/api/panes/N/wait` | `until=command-end\|exit\|match\|idle\|needs-input`, `re=`, `timeout=` secs | `WaitResult` |
 //! | GET | `/api/panes/N/export.cast` | | asciicast v3 |
 //! | GET | `/api/events` | `pane=`, `session=`, `type=a,b`, `follow=1`, `since=` secs | NDJSON `Event`s, each with an `id` (M112); a guest gets the panes they may read; a follow of one pane naming `attention` starts with its attention now (#895) |
-//! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
+//! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
@@ -78,20 +78,10 @@
 //! | DELETE | `/api/shares/N` | | `{}`: revoked; open viewers are cut off |
 //! | GET | `/share/TOKEN` | | the read-only viewer page |
 //! | GET | `/share/TOKEN/ws` | | WebSocket: the shared pane's snapshot and output, nothing else |
-//! | GET | `/api/sync/state` | host token | `SyncState`: how much of each pane the home daemon has |
-//! | POST | `/api/sync/N/log?from=OFFSET` | host token; raw bytes | `SyncedPane` |
-//! | POST | `/api/sync/N/index?from=BYTE` | host token; raw bytes | `SyncedPane` |
-//! | POST | `/api/sync/N/closed?at=MS` | host token | `SyncedPane` |
-//! | GET | `/api/synced` | | `[SyncedHost]`: hosts whose history is kept here |
-//! | DELETE | `/api/synced/NAME` | | `{}`: forget a host's synced history |
-//! | POST | `/api/synced/rotate-key` | | `{"key": id}`: re-encrypt it all under a new key |
 //!
-//! `history`, `search` and `tail` take `host=NAME` (`*`: every host, for
-//! history and search) to read history synced from another host instead.
-//!
-//! `dial`, `sync/*` and `/share/*` are reached without the owner's
-//! identity: a host token or a share token is the credential there, and it
-//! grants nothing else.
+//! `dial` and `/share/*` are reached without the owner's identity: a host
+//! token or a share token is the credential there, and it grants nothing
+//! else.
 //!
 //! `join` is how a dial-out host (`arugulad --peer … --join INVITE`) adds
 //! itself to the home daemon's list. It has no user identity, so the
@@ -625,9 +615,6 @@ pub struct HistoryEntry {
     /// Stream offsets of the output: `tail --from start`.
     pub start: u64,
     pub end: Option<u64>,
-    /// A synced copy of another host's history (`host=NAME`), not ours.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
     /// Who typed it (M13).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
@@ -661,9 +648,6 @@ pub struct SearchHit {
     pub line: String,
     /// The command whose output it is, if known.
     pub command: Option<String>,
-    /// A synced copy of another host's history (`host=NAME`), not ours.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
     /// A line of a Doc in the library (#1493): its id. `pane` is the block
     /// that shows it now, or 0 when none does; `offset` is the line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -786,45 +770,6 @@ pub struct GuestInvite {
     /// The jump host, as `host[:port]` (with `command` only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jump: Option<String>,
-}
-
-/// `GET /api/sync/state`: what the home daemon holds of the calling host's
-/// panes, so a push resumes where the last one stopped.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncState {
-    pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedPane {
-    /// Stream offset just past the last output byte held.
-    pub log_end: u64,
-    /// Bytes of the pane's index held.
-    pub index_len: u64,
-    /// When the pane closed on its host, once it has.
-    #[serde(default)]
-    pub closed_ms: Option<u64>,
-    #[serde(default)]
-    pub last_push_ms: u64,
-    /// Output bytes held (after retention).
-    #[serde(default)]
-    pub bytes: u64,
-}
-
-/// `GET /api/synced`: a host whose history the home daemon keeps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedHost {
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
-}
-
-/// `POST /api/synced/rotate-key`: the id of the key all synced history is
-/// now sealed under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedRotated {
-    pub key: u32,
 }
 
 /// `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.

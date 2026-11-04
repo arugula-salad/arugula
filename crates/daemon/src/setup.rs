@@ -360,8 +360,7 @@ fn control_status(app: &App) -> ControlStatus {
     let (pending, error) = JOIN.lock().unwrap().clone();
     ControlStatus {
         joined: saved.map(|s| s.url.clone()),
-        team: saved
-            .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
+        team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
         pending: pending.filter(|p| p.expires_ms > now_ms() && saved.is_none()),
         confirm: APPROVED.lock().unwrap().as_ref().filter(|_| saved.is_none()).map(|a| Confirm {
             account: a.joined.account.clone(),

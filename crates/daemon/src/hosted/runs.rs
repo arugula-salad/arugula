@@ -88,9 +88,12 @@ const UNREADABLE: Refused = Refused {
 
 /// Who may sign for the machine's project, from what it pinned.
 pub fn owners(saved: &Saved) -> Option<Owners<'_>> {
-    let pin = saved.hosted.as_ref()?;
+    let pin = saved.hosted()?;
     match pin.delegation.owner()? {
-        Owner::Team(_) => Some(Owners::Team { roster: saved.roster.as_ref()?, certs: &saved.team_certs }),
+        Owner::Team(_) => {
+            let team = pin.team.as_ref()?;
+            Some(Owners::Team { roster: team.roster.as_ref()?, certs: &team.certs })
+        }
         Owner::Account(_) => {
             Some(Owners::Account { trust: &saved.trust, certs: &saved.certs, revocations: &saved.revocations })
         }
@@ -103,7 +106,7 @@ pub fn owners(saved: &Saved) -> Option<Owners<'_>> {
 /// enrolled before #1394, until its first refresh): no app window counts.
 pub(crate) fn legacy_app_children(saved: &Saved) -> &LegacyAppChildren {
     const NONE: &LegacyAppChildren = &LegacyAppChildren::new();
-    saved.hosted.as_ref().and_then(|p| p.legacy_app_children.as_ref()).unwrap_or(NONE)
+    saved.hosted().and_then(|p| p.legacy_app_children.as_ref()).unwrap_or(NONE)
 }
 
 /// No passkey logs pinned.
@@ -117,7 +120,7 @@ static NO_ORIGINS: Origins = Origins::new();
 /// origins only shrunk; none pinned, no passkey counts), and for a v1 the
 /// browsers the desktop app's old windows approved.
 pub fn signers<'a>(saved: &'a Saved, owners: &'a Owners<'a>) -> Signers<'a> {
-    let pin = saved.hosted.as_ref();
+    let pin = saved.hosted();
     Signers {
         pinned: arugula_e2e::deploy::Pinned {
             owners,
@@ -132,7 +135,7 @@ pub fn signers<'a>(saved: &'a Saved, owners: &'a Owners<'a>) -> Signers<'a> {
 /// `now`, with the revokes it sent (checked now) and the ones `kept` here
 /// (checked when they were kept).
 pub fn check(saved: &Saved, s: &RunStart, kept: &[GrantRevoke], now: u64) -> Result<(), Refused> {
-    let Some(pin) = &saved.hosted else { return Err(NOT_HOSTED) };
+    let Some(pin) = saved.hosted() else { return Err(NOT_HOSTED) };
     if s.workspace != pin.cert.workspace {
         return Err(WRONG_WORKSPACE);
     }
@@ -162,7 +165,7 @@ fn read_kept(dir: &Path) -> anyhow::Result<Vec<GrantRevoke>> {
 /// checked at `now`: the newest one, as it covers what any older one did.
 /// Whether it kept one.
 fn keep(dir: &Path, saved: &Saved, revokes: &[GrantRevoke], now: u64) -> anyhow::Result<bool> {
-    let (Some(pin), Some(owners)) = (&saved.hosted, owners(saved)) else { return Ok(false) };
+    let (Some(pin), Some(owners)) = (saved.hosted(), owners(saved)) else { return Ok(false) };
     let delegation = pin.delegation.id();
     let signers = signers(saved, &owners);
     let Some(newest) = revokes
@@ -277,8 +280,7 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
         // Not this machine's, not an owner's, or an older one than it has.
         Ok(false) => {
             let signed = saved
-                .hosted
-                .as_ref()
+                .hosted()
                 .zip(owners(&saved))
                 .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &signers(&saved, &o), now));
             if signed { OpAnswer::Done { url: None, routed: None } } else { refused(GrantRefusal::Unsigned.into()) }
@@ -382,7 +384,7 @@ pub(crate) mod tests {
         let moved = grant(&other, &root, 10);
         assert_eq!(check(&saved, &start(&moved), &[], 20).unwrap_err().code, "grant_wrong_delegation");
         // A machine that isn't hosted.
-        let plain = Saved { hosted: None, ..saved.clone() };
+        let plain = Saved { kind: crate::control::MachineKind::Personal, ..saved.clone() };
         assert_eq!(check(&plain, &start(&g), &[], 20), Err(NOT_HOSTED));
     }
 
@@ -464,7 +466,7 @@ pub(crate) mod tests {
             |saved: &Saved, by: &DeviceKeys| check(saved, &start(&grant(&d, by, 10)), &[], 20).err().map(|r| r.code);
         // Enrolled before #1394: none pinned, until its first refresh.
         assert_eq!(code(&saved, &firefox), Some("grant_unsigned"));
-        saved.hosted.as_mut().unwrap().legacy_app_children = Some([("acct1".to_owned(), vec![firefox.id()])].into());
+        saved.hosted_mut().unwrap().legacy_app_children = Some([("acct1".to_owned(), vec![firefox.id()])].into());
         assert_eq!(code(&saved, &firefox), None);
         assert_eq!(code(&saved, &edge), Some("grant_unsigned"), "not one it approved back then");
         assert_eq!(code(&saved, &window), Some("grant_unsigned"), "the window itself");
@@ -475,7 +477,7 @@ pub(crate) mod tests {
     fn a_revoked_delegation_stops_its_grants() {
         let (mut saved, d, root, _) = machine();
         let g = grant(&d, &root, 10);
-        saved.hosted.as_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &root));
+        saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &root));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
     }
 
@@ -521,7 +523,7 @@ pub(crate) mod tests {
         }
         .after(None);
         let log = Log { account: "acct1".into(), events: vec![added], began: None };
-        let pin = saved.hosted.as_mut().unwrap();
+        let pin = saved.hosted_mut().unwrap();
         pin.passkey_logs = [("acct1".to_owned(), log.clone())].into();
         pin.passkey_origins = Some(origins_of_sites(["https://c.test"]));
         let v1 = grant(&d, &root, 10);
@@ -540,7 +542,7 @@ pub(crate) mod tests {
         let mut gone = log.clone();
         let e = gone.events[0].removal(35, "reset").placed_after(gone.events.last());
         gone.events.push(e);
-        saved.hosted.as_mut().unwrap().passkey_logs = [("acct1".to_owned(), gone)].into();
+        saved.hosted_mut().unwrap().passkey_logs = [("acct1".to_owned(), gone)].into();
         assert_eq!(check(&saved, &start(&v1), &read_kept(&dir).unwrap(), 40).unwrap_err().code, "grant_revoked");
         // A paused box that pulls the revoke only now, after its passkey
         // was removed, still keeps it: it's checked at its own time (30).

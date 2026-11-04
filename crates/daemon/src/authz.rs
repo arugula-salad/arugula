@@ -120,7 +120,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
-        // from where a "from now" share starts); synced hosts are the owner's.
+        // from where a "from now" share starts).
         ["api", "history" | "events"] if get => Policy::Handler,
         // M24: the handler shows each person what they may read, and checks
         // each pane acted on.
@@ -372,19 +372,15 @@ mod tests {
         assert_eq!(policy(&g, "/api/studio/apps"), Policy::Owner);
     }
 
-    /// #578 part c: synced history, sandboxes and studio were the owner's by
-    /// the default arm; as operations they say so, and an editor, a viewer or
-    /// a guest is refused all of them (studio's login is a way into a box as
-    /// the owner).
+    /// #578 part c: sandboxes and studio were the owner's by the default
+    /// arm; as operations they say so, and an editor, a viewer or a guest is
+    /// refused all of them (studio's login is a way into a box as the
+    /// owner).
     #[test]
-    fn synced_sandboxes_and_studio_stay_the_owners() {
+    fn sandboxes_and_studio_stay_the_owners() {
         let (g, p, u, d) = (Method::GET, Method::POST, Method::PUT, Method::DELETE);
         for (m, path) in [
-            (&g, "/api/synced"),
-            (&p, "/api/synced/rotate-key"),
-            (&d, "/api/synced/geek"),
             // A name that is a number is still not a pane.
-            (&d, "/api/synced/7"),
             (&u, "/api/studio/followers/7"),
             (&g, "/api/sandboxes"),
             (&g, "/api/studio"),
