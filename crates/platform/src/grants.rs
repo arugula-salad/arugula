@@ -558,16 +558,41 @@ pub async fn revoke(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<
     }
     let g = named(&app, vec![g]).await?.remove(0);
     let mut answer = wire(&g);
-    // A grant over a project whose giver doesn't read it now (they left
-    // the team, or it's locked to its owners): the project's Access view
-    // names neither them nor their machine (Arugula #682), and neither
-    // does an owner's revoke of it, now or when it's revoked again.
-    if g.scope_kind == "project"
-        && owner_role(&app, &g.granted_by, &AgentScope::Project(g.scope_id.clone()), false).await?.is_none()
-    {
-        unname_giver(&mut answer);
+    // The project's Access view (Arugula #682) names nobody who has left
+    // the project: not a giver, their machine or token, nor whoever
+    // revoked the grant. An owner's revoke of a grant over the project
+    // answers the same way, now and when it's revoked again. Someone
+    // locked out of a locked team is still on its roster, so still named;
+    // and the caller is never unnamed to themselves.
+    if g.scope_kind == "project" {
+        let gone = |a: &str| {
+            let a = a.to_owned();
+            let (app, project, caller) = (app.clone(), g.scope_id.clone(), s.account.clone());
+            async move { Ok::<_, ApiError>(a != caller && !on_roster(&app, &a, &project).await?) }
+        };
+        if gone(&g.granted_by).await? {
+            unname_giver(&mut answer);
+        }
+        if let Some(by) = answer["revoked_by"]["account"].as_str().map(str::to_owned)
+            && by != REVOKED_BY_PLATFORM
+            && gone(&by).await?
+        {
+            answer["revoked_by"] = json!({ "account": null, "name": "a former member" });
+        }
     }
     Ok(Json(answer))
+}
+
+/// Whether `account` is on the roster of the project's team now (locked
+/// out or not), or is the account a personal project belongs to: what
+/// tells a member, even one a lock keeps out, from someone who has left.
+pub async fn on_roster(app: &Platform, account: &str, project: &str) -> HubResult<bool> {
+    let Some(o) = app.db.project_owner(project)? else { return Ok(false) };
+    if let Some(a) = &o.account {
+        return Ok(a == account);
+    }
+    let Some(team) = &o.team else { return Ok(false) };
+    Ok(app.cache.team(&*app.hub, team).await?.is_some_and(|t| t.members.iter().any(|m| m.account == account)))
 }
 
 /// Take the giver, and their machine's or token's id and name, out of a

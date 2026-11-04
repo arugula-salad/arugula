@@ -77,7 +77,7 @@ const who = (w: Who | null | undefined) => {
  * what a viewer reads). */
 function asRole(role: string, n: number): string {
   const verb = (one: string, many: string) => (n === 1 ? one : many);
-  if (role === "viewer") return `${verb("reads", "read")} the project as a viewer: can wake a paused cloud workspace, makes and discards no drafts`;
+  if (role === "viewer") return `${verb("reads", "read")} the project as a viewer: can wake a paused cloud workspace, makes no drafts, discards only its owner's own`;
   return `${verb("acts", "act")} as an ${role === "editor" ? "editor" : "owner"}`;
 }
 
@@ -123,9 +123,9 @@ export function Access({ p }: { p: PlatformProject }) {
           <p>
             A <b>project role</b> is the team's role, from the roster: an owner, an editor or a viewer. Every machine joined to an account holds
             <code>cloud.drive</code> over it from its join, so its agents act as its owner, within the owner's role, on this project's cloud
-            workspaces (making one needs the hosted allowlist too) and its linked repos and their pull requests, issues and drafts, and read its
+            workspaces (making or rebuilding one needs the hosted allowlist too) and its linked repos and their pull requests, issues and drafts, and read its
             Plane connections, inference keys and Claude spend; a viewer's machine reads what a viewer reads, can wake a paused cloud workspace,
-            and doesn't make or discard drafts. Its owner revokes that per machine, nobody per project. A <b>power</b> is what a machine's agents or an agent token may do here, given by its owner
+            makes no drafts, and discards only its owner's own. Its owner revokes that per machine, nobody per project. A <b>power</b> is what a machine's agents or an agent token may do here, given by its owner
             under Settings, Agents, and never more than its owner reads; a row says when it does less than that now. <b>Allow</b> is what a project owner
             signed: cloud workspaces for the project, and runs on them with every device asleep. On a cloud workspace an editor has full use, as an
             owner does; a viewer watches.

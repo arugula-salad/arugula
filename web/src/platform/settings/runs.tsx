@@ -32,6 +32,9 @@ interface View {
   past: { grant: Grant; revoke: { running: "finish" | "stop"; at: number } | null; revoked_at: number | null; superseded_at: number | null }[];
   stale: boolean;
   renew: boolean;
+  /** The owner who confirmed it isn't an owner now: machines refuse it.
+   * A platform from before leaves it out. */
+  signer_gone?: boolean;
   workspaces: number;
   offer: boolean;
 }
@@ -76,7 +79,7 @@ export function RunGrant({ project }: { project: string }) {
     >
       {g ? (
         <ul class="platform-list sw-cards settings-cards">
-          <li class={`sw-card ${toneClass(v.stale || v.renew ? "warn" : "ok")}`}>
+          <li class={`sw-card ${toneClass(v.stale || v.renew || v.signer_gone ? "warn" : "ok")}`}>
             <div class="sw-head">
               <b class="sw-name">Standing grant</b>
               <span class="settings-tag">
@@ -94,6 +97,10 @@ export function RunGrant({ project }: { project: string }) {
             </span>
             {v.stale ? (
               <span class="settings-warn">It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again.</span>
+            ) : v.signer_gone ? (
+              <span class="settings-warn" data-run-grant-signer-gone>
+                The owner who confirmed it isn't an owner of the project now, so workspaces refuse it: sign it again.
+              </span>
             ) : v.renew ? (
               <span class="settings-warn">It expires soon: renew it to keep runs starting.</span>
             ) : null}
@@ -102,7 +109,7 @@ export function RunGrant({ project }: { project: string }) {
       ) : null}
       {v.role === "owner" ? (
         <p class="dim settings-note">
-          {g ? (v.stale || v.renew ? "Renew it, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
+          {g ? (v.stale || v.renew || v.signer_gone ? "Renew it, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
           {sign}, under Devices and machines, on a computer or your phone: you confirm it there with a passkey.
         </p>
       ) : (

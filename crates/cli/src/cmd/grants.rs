@@ -78,8 +78,9 @@ pub enum GrantsCmd {
     /// checks the roster itself); whose machines hold cloud.drive, a row
     /// per member (given on join, it acts as its owner within their role
     /// on the project's cloud workspaces and linked repos, and reads the
-    /// rest; a viewer's reads, wakes a paused workspace and makes no
-    /// drafts; never revoked per project); the other powers over it (every
+    /// rest; a viewer's reads, wakes a paused workspace, makes no drafts
+    /// and discards only its owner's own; never revoked per project); the
+    /// other powers over it (every
     /// live grant, whose machine or agent token holds it, and what it does
     /// now if less than the power); what an owner allowed (the delegation
     /// for cloud workspaces, the standing run grant and its expiry) and
@@ -389,13 +390,16 @@ fn access_text(v: &Value) -> String {
 
 /// What `n` machines with cloud.drive do for their owner's role: act as an
 /// owner or editor, or read as a viewer (a viewer's machine reaches only
-/// what a viewer reads: it can wake a paused cloud workspace, and doesn't
-/// make or discard drafts).
+/// what a viewer reads: it can wake a paused cloud workspace, makes no
+/// drafts, and discards only its owner's own).
 fn as_role(role: &str, n: u64) -> String {
     let verb = |one: &'static str, many: &'static str| -> &'static str { if n == 1 { one } else { many } };
     match role {
         "viewer" => {
-            format!("{} the project as a viewer (can wake a paused cloud workspace; no drafts)", verb("reads", "read"))
+            format!(
+                "{} the project as a viewer (can wake a paused cloud workspace; makes no drafts, discards only its owner's)",
+                verb("reads", "read")
+            )
         }
         "editor" => format!("{} as an editor", verb("acts", "act")),
         _ => format!("{} as an owner", verb("acts", "act")),
@@ -601,7 +605,7 @@ mod tests {
             "Cloud workspaces' drivers, by the platform's cloud.drive grants:",
             "alice                    1 of 2 machines acts as an owner (the rest had cloud.drive revoked by their owner)",
             "bob                      1 machine acts as an editor",
-            "viv                      2 machines read the project as a viewer (can wake a paused cloud workspace; no drafts)",
+            "viv                      2 machines read the project as a viewer (can wake a paused cloud workspace; makes no drafts, discards only its owner's)",
             "Other powers over it, by the platform's grants:",
             "geek (alice's)",
             "issues.write",

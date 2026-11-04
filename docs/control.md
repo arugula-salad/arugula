@@ -1246,13 +1246,14 @@ as control's copy stands; each machine checks the roster itself); whose
 machines hold `cloud.drive`, one row per member, since every machine
 joined to an account holds it over the account from its join and acts as
 its owner, within the owner's role, on everything a `CloudDriver` route
-serves: the project's cloud workspaces (opening, rebuilding, deleting;
-their specs, secrets, ports, previews and transcripts; making one needs
+serves: the project's cloud workspaces (opening, deleting;
+their specs, secrets, ports, previews and transcripts; making or rebuilding one needs
 the hosted allowlist too) and its linked repos and their pull requests,
 issues and drafts, and it reads the project's Plane connections, its
 inference keys and its Claude spend (setting those is a person's); a
 viewer's machine reads what a viewer reads, can wake a paused cloud
-workspace, and doesn't make or discard drafts; no one revokes it per project
+workspace, makes no drafts, and discards only its owner's own; no one
+revokes it per project
 (its owner does, per machine, with `arugula grants revoke`); the other
 powers over the project (every live grant, machines' and agent tokens',
 whose each is and what it does now if less than the power: a write power

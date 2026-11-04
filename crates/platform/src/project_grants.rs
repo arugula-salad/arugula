@@ -9,15 +9,16 @@
 //!   account holds `cloud.drive` over it from its join
 //!   ([`crate::grants::can_drive_cloud`]) and acts as its owner, within the
 //!   owner's role, on every route that takes a [`crate::cloud::CloudDriver`]:
-//!   the project's cloud workspaces (opening, rebuilding and deleting
-//!   them, their specs, secrets, ports and public previews, their archived
-//!   transcripts; making one needs the hosted allowlist too), its linked
-//!   repos (linking, unlinking, content mirroring) and their pull requests,
-//!   issues and drafts; and it reads the project's Plane connections and
-//!   their history, its inference keys and its Claude spend (setting those
-//!   is a person's). A viewer's machine reads what a viewer reads and can
-//!   wake a paused cloud workspace, and doesn't make or discard drafts. How
-//!   many of their machines hold it, and that nobody revokes it per project
+//!   the project's cloud workspaces (opening and deleting them, their
+//!   specs, secrets, ports and public previews, their archived
+//!   transcripts; making or rebuilding one needs the hosted allowlist
+//!   too), its linked repos (linking, unlinking, content mirroring) and
+//!   their pull requests, issues and drafts; and it reads the project's
+//!   Plane connections and their history, its inference keys and its
+//!   Claude spend (setting those is a person's). A viewer's machine reads
+//!   what a viewer reads and can wake a paused cloud workspace; it makes
+//!   no drafts, and discards only its owner's own. How many of their
+//!   machines hold it, and that nobody revokes it per project
 //!   (its owner does, per machine). The view never says "no other power"
 //!   as if nothing reached the project while this is true;
 //! - **powers:** every live grant whose scope is this project, machines'
@@ -83,12 +84,12 @@ pub const ROSTER_SAYS: &str =
 pub const PERSONAL_SAYS: &str = "this account's own project: its owner alone";
 pub const CLOUD_DRIVE_SAYS: &str = "the platform's cloud.drive grants, one per machine over its owner's account, given when the \
                                     machine joins: its agents act as its owner, within the owner's role, on this project's \
-                                    cloud workspaces (opening, rebuilding, deleting; their specs, secrets, ports, previews \
-                                    and transcripts; making one needs the hosted allowlist too) and its linked repos and \
-                                    their pull requests, issues and drafts, and read its Plane connections, inference keys \
-                                    and Claude spend. A viewer's reads what a viewer reads and can wake a paused cloud \
-                                    workspace, and doesn't make or discard drafts. Its owner revokes it per machine (arugula \
-                                    grants revoke); nobody revokes it per project";
+                                    cloud workspaces (opening, deleting; their specs, secrets, ports, previews and \
+                                    transcripts; making or rebuilding one needs the hosted allowlist too) and its linked \
+                                    repos and their pull requests, issues and drafts, and read its Plane connections, \
+                                    inference keys and Claude spend. A viewer's reads what a viewer reads and can wake a \
+                                    paused cloud workspace; it makes no drafts, and discards only its owner's own. Its owner \
+                                    revokes it per machine (arugula grants revoke); nobody revokes it per project";
 pub const POWERS_SAYS: &str = "the platform's grants, asked again on every call an agent makes; a grant reaches nothing past what its owner reads";
 pub const ALLOW_SAYS: &str =
     "signed by a project owner: the delegation on control, the standing run grant with a passkey";
@@ -227,9 +228,11 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
     };
     let live = app.db.live_run_grant(&project, now)?;
     let stale = crate::run_grant::is_stale(live.as_ref(), delegation.as_ref().and_then(|d| d.as_deref()));
-    let signer_of = live
-        .as_ref()
-        .and_then(|g| if g.grant.account.is_empty() { g.posted_by.clone() } else { Some(g.grant.account.clone()) });
+    let signer_of = live.as_ref().and_then(crate::run_grant::signer_of);
+    let signer_owner = match &live {
+        Some(g) => crate::run_grant::signer_is_owner(&app, &project, g).await?,
+        None => false,
+    };
     let run_grant = live.map(|g| {
         json!({
             "id": g.grant.id,
@@ -269,12 +272,11 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
         }
     };
     // The run grant's signer, named the same way (never a raw account),
-    // and whether they're one of the project's owners now: a machine
-    // checks that against the roster it holds and refuses the grant when
-    // they aren't (`GrantRefusal::NotAnOwner`), so it's as good as none.
+    // and whether they're one of the project's owners now: the runs
+    // settings' own check (`run_grant::signer_is_owner`).
     let run_grant = run_grant.map(|mut g| {
         g["by"] = signer_of.as_deref().map_or(Value::Null, name_of);
-        g["signer_owner"] = json!(signer_of.as_deref().is_some_and(|a| role_of(a) == Some(TeamRole::Owner)));
+        g["signer_owner"] = json!(signer_owner);
         g
     });
 

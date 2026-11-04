@@ -265,6 +265,80 @@ async fn an_owners_revoke_of_a_former_members_grant_names_nobody() {
     assert_eq!(app.db.live_grant("bobs", THREADS_POST, ("project", &t), "b").unwrap(), None);
 }
 
+/// Who an owner's revoke names, and who it doesn't: a giver locked out of
+/// a locked team is still on the roster, so named, not a former member; a
+/// giver revoking their own grant after leaving is never unnamed to
+/// themselves; a grant its giver revoked before leaving answers without
+/// naming them as its revoker either; and a revoker who has since left
+/// (a former co-owner) is unnamed too.
+#[tokio::test]
+async fn an_owners_revoke_names_whoever_is_still_on_the_roster() {
+    let (hub, app, base, t, _u) = seeded().await;
+    let roster = |members: &[(&str, TeamRole)]| {
+        hub.team("t", members);
+    };
+    let caught_up = || async {
+        crate::cache::catch_up(&app).await.unwrap();
+        crate::projects::follow(&app).await.unwrap();
+    };
+    hub.daemon("bobs", "b", Some("t"));
+    let mut ids = vec![];
+    for power in [THREADS_POST, THREADS_READ, BOARDS_WRITE, ISSUES_WRITE] {
+        let (st, g) =
+            call(&base, "b", "POST", "/api/grants", give("bobs", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+        ids.push(g["id"].as_str().unwrap().to_owned());
+    }
+    let revoke = |who: &'static str, id: String| {
+        let base = base.clone();
+        async move { call(&base, who, "POST", &format!("/api/grants/{id}/revoke"), None).await }
+    };
+
+    // Locked: b is out of the project, but on its roster. Named.
+    hub.lock("t", true);
+    caught_up().await;
+    let (st, r) = revoke("a", ids[0].clone()).await;
+    assert_eq!(st, 200, "{r}");
+    assert_eq!(
+        (&r["granted_by"], &r["subject"]["name"], &r["former_giver"]),
+        (&json!("b"), &json!("bobs-box"), &Value::Null)
+    );
+    assert_eq!(r["revoked_by"]["account"], "a");
+    hub.lock("t", false);
+    caught_up().await;
+
+    // b revokes one of their own, then leaves; a revokes it again: the
+    // answer names neither b as its giver nor b as its revoker.
+    let (st, r) = revoke("b", ids[1].clone()).await;
+    assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("b")), "{r}");
+    // o, an owner, revokes another of b's, then o leaves too.
+    roster(&[("a", TeamRole::Owner), ("o", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    caught_up().await;
+    let (st, r) = revoke("o", ids[2].clone()).await;
+    assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("o")), "{r}");
+    roster(&[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    caught_up().await;
+    let (st, r) = revoke("a", ids[1].clone()).await;
+    assert_eq!(st, 200, "{r}");
+    assert_eq!(r["former_giver"], true, "{r}");
+    assert_eq!(r["revoked_by"], json!({ "account": null, "name": "a former member" }), "{r}");
+    assert!(!r.to_string().contains("\"b\"") && !r.to_string().contains("bobs"), "{r}");
+    let (st, r) = revoke("a", ids[2].clone()).await;
+    assert_eq!(st, 200, "{r}");
+    assert_eq!(r["revoked_by"], json!({ "account": null, "name": "a former member" }), "o has left: {r}");
+    assert!(!r.to_string().contains("\"o\""), "{r}");
+
+    // b, gone from the project, revokes their own last grant: b is told
+    // about it as b, not as a former member to themselves.
+    let (st, r) = revoke("b", ids[3].clone()).await;
+    assert_eq!(st, 200, "{r}");
+    assert_eq!(
+        (&r["granted_by"], &r["subject"]["name"], &r["former_giver"]),
+        (&json!("b"), &json!("bobs-box"), &Value::Null)
+    );
+    assert_eq!(r["revoked_by"]["account"], "b");
+}
+
 /// The roster is read through the cache, as `agent_may` reads it: a
 /// second list asks the hub nothing but the project's delegation (the one
 /// thing the cache doesn't keep); a member taken off the roster still
@@ -575,10 +649,11 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
     // The owner who confirmed the grant stops being one: a machine refuses
     // the grant (NotAnOwner), so the view says the signer isn't an owner.
     // Here o signs it; o is demoted, then leaves, and the workspace's
-    // maker leaves too: a former member, unnamed. (The maker's row isn't
-    // checked here: a workspace's `created_by` goes to null when its
-    // maker leaves, in a change landing beside this one.) While the team
-    // is locked, full use is the owners' alone.
+    // maker leaves too. The signer reads as a former member, unnamed; no
+    // former member's name is anywhere in the answer, the maker's row
+    // included. (Its exact shape for a maker who left, `created_by` null,
+    // is a separate change's to set and test.) While the team is locked,
+    // full use is the owners' alone.
     hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     crate::cache::catch_up(&app).await.unwrap();
     crate::projects::follow(&app).await.unwrap();
@@ -588,12 +663,17 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
     let (_, v) = access(&base, "a", &t).await;
     let rg = &v["allow"]["run_grant"];
     assert_eq!((&rg["by"]["account"], &rg["signer_owner"]), (&json!("o"), &json!(true)), "{v}");
+    let (_, shown) = call(&base, "a", "GET", &format!("/api/projects/{t}/runs/grant"), None).await;
+    assert_eq!(shown["signer_gone"], false, "{shown}");
     hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Editor), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     crate::cache::catch_up(&app).await.unwrap();
     crate::projects::follow(&app).await.unwrap();
     let (_, v) = access(&base, "a", &t).await;
     let rg = &v["allow"]["run_grant"];
     assert_eq!((&rg["by"]["account"], &rg["signer_owner"]), (&json!("o"), &json!(false)), "{v}");
+    // The runs settings say the same, by the same check: sign it again.
+    let (_, shown) = call(&base, "a", "GET", &format!("/api/projects/{t}/runs/grant"), None).await;
+    assert_eq!((&shown["signer_gone"], &shown["offer"]), (&json!(true), &json!(true)), "{shown}");
     hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
     crate::cache::catch_up(&app).await.unwrap();
     crate::projects::follow(&app).await.unwrap();
