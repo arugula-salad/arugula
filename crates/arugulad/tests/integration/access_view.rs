@@ -89,6 +89,19 @@ fn the_owner_reads_who_reaches_the_machine_and_nobody_else_does() {
         assert!(!text.contains(secret), "{secret} is in the answer: {text}");
     }
 
+    // Someone holding a pane's share link gets none of it either: a share
+    // token opens its one pane's page, never the API.
+    let token = link["token"].as_str().unwrap().to_owned();
+    for (what, headers) in [
+        ("as a bearer", vec![("authorization", format!("Bearer {token}"))]),
+        ("as a cookie", vec![("cookie", format!("share={token}"))]),
+    ] {
+        let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let (status, _, body) = d.tcp("GET", "/api/access", &headers, None);
+        assert!(status == 401 || status == 403, "{what}: {status} {body}");
+        assert!(!body.contains("\"rows\""), "{what}: {body}");
+    }
+
     // The editor the session was shared with gets none of it: the
     // operation is the owner's on the tailnet as on the socket.
     let (status, body) = d.raw_as(FRIEND, "GET", "/api/access", None);

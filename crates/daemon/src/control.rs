@@ -6770,20 +6770,59 @@ pub(crate) mod tests {
             }
             let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
             c.install(Some(e));
+            // What the machine holds of its own, on every kind alike: a
+            // tailnet share, a session link, a pane link, an ssh guest and
+            // trust. None of them goes through `build`, so each is listed
+            // whatever the kind.
+            let link = crate::acl::Grant {
+                session: 1,
+                principal: "link:abc".into(),
+                name: "someone with a link".into(),
+                role: Role::Viewer,
+                by: "owner".into(),
+                at: 5,
+                from: None,
+                root: None,
+                key: Some("ab".repeat(32)),
+                expires: Some(u64::MAX),
+            };
+            let share = crate::acl::Grant {
+                session: 1,
+                principal: "tailnet:friend@example.com".into(),
+                name: "friend@example.com".into(),
+                role: Role::Editor,
+                key: None,
+                expires: None,
+                ..link.clone()
+            };
             let view = crate::ops::access::compose(crate::ops::access::Pieces {
                 name: "box".into(),
                 owner: "owner".into(),
                 roster: c.roster_view(),
-                grants: vec![],
-                shares: vec![],
-                guests: None,
-                guest_ssh: false,
-                trust: vec![],
+                grants: vec![share, link],
+                shares: vec![arugula_proto::api::Share {
+                    id: 1,
+                    pane: 1,
+                    created_ms: 1,
+                    expires_ms: u64::MAX,
+                    token: None,
+                    path: None,
+                    url: None,
+                }],
+                guests: Some(vec![
+                    serde_json::from_value(serde_json::json!({ "id": 1, "pane": 1, "expires_ms": u64::MAX })).unwrap(),
+                ]),
+                guest_ssh: true,
+                trust: vec![(1, "tailnet:friend@example.com".into(), u64::MAX)],
                 panes: vec![],
             });
             let mut says: BTreeMap<String, &str> = BTreeMap::new();
+            let mut held: Vec<&str> = Vec::new();
             for r in &view.rows {
-                assert!(matches!(r.kind.as_str(), "owner" | "team_owner" | "team_role"), "{name}: {r:?}");
+                if !matches!(r.kind.as_str(), "owner" | "team_owner" | "team_role") {
+                    held.push(r.kind.as_str());
+                    continue;
+                }
                 let account = r
                     .principal
                     .as_deref()
@@ -6792,6 +6831,7 @@ pub(crate) mod tests {
                 says.insert(account.to_owned(), r.role.as_str());
             }
             assert_eq!(says, admits, "{name}: the view and the enrollment disagree");
+            assert_eq!(held, ["share", "link", "link", "guest", "trust"], "{name}: what the machine holds");
             let _ = std::fs::remove_dir_all(&dir);
             seen += 1;
         }

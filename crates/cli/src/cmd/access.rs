@@ -223,6 +223,7 @@ pub fn lines(v: &AccessView) -> Vec<String> {
         ("team", _, Some(t)) => format!("a machine of the team {}{}", t.name, if t.locked { " (locked)" } else { "" }),
         ("team", _, None) => "a team machine (its roster isn't checked yet)".to_owned(),
         ("hosted", Some("deploy" | "both"), _) => format!("a deploy's box of {whose}: nobody gets in"),
+        ("hosted", Some("snapshot"), Some(t)) if t.locked => format!("a box building a snapshot of {whose} (locked)"),
         ("hosted", Some("snapshot"), _) => format!("a box building a snapshot of {whose}"),
         ("hosted", _, Some(t)) if t.locked => format!("a Cloud workspace of {whose} (locked)"),
         ("hosted", _, _) => format!("a Cloud workspace of {whose}"),

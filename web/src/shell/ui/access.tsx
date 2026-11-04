@@ -62,13 +62,17 @@ export function kindLine(v: AccessView): string {
     case "local":
       return "Not joined to Arugula cloud: only its owner, and whoever they share a session with, can reach it.";
     case "team":
-      return v.team
-        ? `A machine of the team ${v.team.name}${v.team.locked ? " (locked)" : ""}: its people reach it by their team role.`
-        : "A team machine whose roster this machine hasn't checked yet: nobody gets in through the team until it has.";
+      if (!v.team) return "A team machine whose roster this machine hasn't checked yet: nobody gets in through the team until it has.";
+      return v.team.locked
+        ? `A machine of the team ${v.team.name}, locked: only its owners get in.`
+        : `A machine of the team ${v.team.name}: its people reach it by their team role.`;
     case "hosted": {
       const whose = v.team ? `the team ${v.team.name}'s project` : "a personal project";
       if (v.purpose === "deploy" || v.purpose === "both") return `A deploy's box of ${whose}: nobody gets in, not even the project's owners.`;
-      if (v.purpose === "snapshot") return `A box building a snapshot of ${whose}: its people are admitted here, and Arugula cloud routes nobody to it.`;
+      if (v.purpose === "snapshot")
+        return v.team?.locked
+          ? `A box building a snapshot of ${whose}, locked: only the team's owners are admitted here, and Arugula cloud routes nobody to it.`
+          : `A box building a snapshot of ${whose}: its people are admitted here, and Arugula cloud routes nobody to it.`;
       if (v.team?.locked) return `A Cloud workspace of ${whose}, locked: only the team's owners get in.`;
       return v.team ? `A Cloud workspace of ${whose}: its people reach it by their team role.` : `A Cloud workspace of ${whose}: its account alone.`;
     }

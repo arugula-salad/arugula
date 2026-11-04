@@ -140,25 +140,16 @@ pub fn compose(p: Pieces) -> AccessView {
             .into(),
     );
 
-    // A deploy's box: nobody gets in, as `Enrolled::build` decides, so its
-    // shares, links and guests reach no one and aren't listed either.
+    // A deploy's box: the project's people aren't admitted, as
+    // `Enrolled::build` decides, and control routes nobody to it. What the
+    // box holds of its own (shares, links, guests, trust) is checked by
+    // other paths than `build`, so it's listed as held.
+    let nobody = roster.as_ref().is_some_and(|r| r.nobody);
     if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
         let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
         notes.push(format!(
-            "A box made for {what}: nobody gets in, not even the project's owners. Shares, links and guests it holds reach no one."
+            "A box made for {what}: the project's people aren't admitted here, not even its owners, and Arugula cloud routes nobody to it."
         ));
-        return AccessView {
-            kind: kind.into(),
-            purpose: r.purpose.clone(),
-            name,
-            machine: Some(r.device.clone()),
-            control: Some(r.url.clone()),
-            team,
-            guest_ssh: guests.as_ref().map(|_| guest_ssh),
-            sessions,
-            rows,
-            notes,
-        };
     }
     if roster.as_ref().is_some_and(|r| r.purpose.as_deref() == Some("snapshot")) {
         notes.push(
@@ -169,6 +160,7 @@ pub fn compose(p: Pieces) -> AccessView {
 
     // The owner: this machine's, or a hosted machine's project's people.
     match &roster {
+        Some(_) if nobody => {}
         Some(r) if r.hosted && r.team.is_none() => {
             // A personal project's box: no roster; the account's devices,
             // pinned at enrollment and checked by this machine.
@@ -195,14 +187,16 @@ pub fn compose(p: Pieces) -> AccessView {
         }
     }
 
-    // The roster's people: the machine's own team's, checked here.
-    if let Some(r) = &roster
+    // The roster's people: the machine's own team's, checked here. A
+    // workspace's notes are for a workspace: a snapshot's or a deploy's
+    // box said what it is above.
+    if let Some(r) = roster.as_ref().filter(|r| !r.nobody)
         && let Some(t) = &r.team
     {
         if t.locked {
             notes.push(format!("The team {} is locked: only its owners get in.", t.name));
         }
-        if hosted {
+        if hosted && r.purpose.as_deref() == Some("people") {
             notes.push(if t.locked {
                 "A Cloud workspace of a locked team: its owners get in, with full use; its editors and viewers don't until it's unlocked."
                     .into()
@@ -532,7 +526,7 @@ mod tests {
 
     /// A snapshot's box admits its project's people as a workspace does
     /// (`Enrolled::build` closes only on a deploy); the view says that
-    /// control routes nobody to it.
+    /// control routes nobody to it, and nothing of a workspace's.
     #[test]
     fn a_snapshots_box_admits_its_people_and_says_control_routes_nobody() {
         let mut r = enrolled(Some(acme(false)), true);
@@ -541,7 +535,9 @@ mod tests {
         assert_eq!(v.purpose.as_deref(), Some("snapshot"));
         let who: Vec<&str> = v.rows.iter().map(|r| r.who.as_str()).collect();
         assert_eq!(who, ["alex", "bea", "cy", "ola"]);
-        assert!(v.notes.iter().any(|n| n.contains("admitted here") && n.contains("routes nobody")), "{:?}", v.notes);
+        let said = |what: &str| v.notes.iter().any(|n| n.contains(what));
+        assert!(said("admitted here") && said("routes nobody"), "{:?}", v.notes);
+        assert!(!said("A Cloud workspace") && !said("Their own machines"), "{:?}", v.notes);
     }
 
     /// A hosted machine of a personal project: the account alone, and no
@@ -555,10 +551,11 @@ mod tests {
         assert_eq!((v.rows[0].principal.as_deref(), v.rows[0].word.as_str()), (Some("account:a1"), THIS_MACHINE));
     }
 
-    /// A box for one deploy: nobody, a sentence saying so, and none of its
-    /// shares, links or guests listed, since they reach no one either.
+    /// A box for one deploy: none of the project's people, and a sentence
+    /// saying so; what the box holds of its own is still listed, since
+    /// `Enrolled::build` isn't what checks a share, a link or a guest.
     #[test]
-    fn a_deploys_box_lets_nobody_in() {
+    fn a_deploys_box_admits_no_person_but_lists_what_it_holds() {
         let mut r = enrolled(Some(acme(false)), true);
         r.purpose = Some("deploy".into());
         r.nobody = true;
@@ -567,13 +564,16 @@ mod tests {
         p.shares = vec![Share { id: 1, pane: 9, created_ms: 1, expires_ms: 8_000, token: None, path: None, url: None }];
         p.trust = vec![(9, "tailnet:friend@example.com".into(), 99_999)];
         let v = compose(p);
-        assert!(v.rows.is_empty(), "{:?}", v.rows);
+        let kinds: Vec<&str> = v.rows.iter().map(|r| r.kind.as_str()).collect();
+        assert_eq!(kinds, ["share", "link", "trust"]);
         assert_eq!(v.purpose.as_deref(), Some("deploy"));
+        let said = |what: &str| v.notes.iter().any(|n| n.contains(what));
         assert!(
-            v.notes.iter().any(|n| n.starts_with("A box made for one deploy") && n.contains("reach no one")),
+            said("A box made for one deploy") && said("aren't admitted here") && said("routes nobody"),
             "{:?}",
             v.notes
         );
+        assert!(!said("reach no one") && !said("A Cloud workspace"), "{:?}", v.notes);
     }
 
     /// Nothing secret: a link's key, a pane link's token and an invite's
