@@ -93,12 +93,25 @@ the project's tracker, so issues get no parent field. Three rulings:
      closes the issue, and a source's closed state **shows on the row's
      card without moving the row**: zones are left to people, and later to
      rules.
+     - **Amended:** zones gave way to lanes worked out from the work
+       (aru-125, 2026-10-30), and a source's closed state now is Done. Two
+       writes do reach the source since. A merged PR that names a native
+       issue closes it, and moves the Plane item it names to Done (Arugula
+       #432 and #437, 2026-10-31; aru-125 records the rule). And a person
+       moving a row to Done closes its native issue, with a reason, while
+       a GitHub or Plane item is still closed only at its source: the move
+       is refused and says so (Arugula #494, alecraso, 2026-11-02; aru-125).
+       An agent's write to a tracker is still an explicit action under its
+       grant and the connection's policy (aru-124).
 3. **The first providers are GitHub issues, then Plane.** Each is an
    interface in control with a fake. Others (Linear, Jira, Asana) wait
    until someone needs them.
 
 All of it stays behind the `boards` Labs flag until it has been used for
-real.
+real. Amended: boards left Labs on 2026-11-03 (Arugula #191, PR #2137),
+after the three phases below had been used for Arugula's own work; the
+agent grants `boards.read` and `boards.write` still gate what a machine's
+agents do.
 
 ## Phases
 
@@ -116,3 +129,6 @@ real.
 
 Step 5 of the status board (#191) leaves Labs only after phase 1, so boards
 don't leave Labs just before their UI is reshaped.
+
+Amended: the untriaged inbox of phase 1 is now "Not on a board", under
+Boards, so all ticket management is in one place (Arugula #656, 2026-11-03).
