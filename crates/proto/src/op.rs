@@ -363,10 +363,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::McpTokenMint);
         $m!($crate::op::ops::McpTokenRevoke);
         $m!($crate::op::ops::SigninLinkGet);
-        // #578 part c: synced history, sandboxes, studio.
-        $m!($crate::op::ops::SyncedList);
-        $m!($crate::op::ops::SyncedRotate);
-        $m!($crate::op::ops::SyncedForget);
+        // #578 part c: sandboxes, studio.
         $m!($crate::op::ops::SandboxesList);
         $m!($crate::op::ops::StudioGet);
         $m!($crate::op::ops::StudioLogin);
@@ -395,8 +392,8 @@ pub mod ops {
             NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
             PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
             PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
+            WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
@@ -1809,47 +1806,7 @@ pub mod ops {
         type Res = SigninLink;
     }
 
-    // #578 part c: the home daemon's synced history and sandboxes, and studio.
-
-    /// `GET /api/synced`: the hosts whose history this daemon keeps
-    /// (`arugula synced`).
-    pub struct SyncedList;
-
-    impl Op for SyncedList {
-        const NAME: &'static str = "synced.list";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/synced";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = Vec<SyncedHost>;
-    }
-
-    /// `POST /api/synced/rotate-key`: re-encrypt it all under a new key.
-    pub struct SyncedRotate;
-
-    impl Op for SyncedRotate {
-        const NAME: &'static str = "synced.rotate";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/synced/rotate-key";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = SyncedRotated;
-    }
-
-    /// `DELETE /api/synced/NAME`: forget a host's synced history.
-    pub struct SyncedForget;
-
-    impl Op for SyncedForget {
-        const NAME: &'static str = "synced.forget";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/synced/{host}";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = Empty;
-    }
+    // #578 part c: the home daemon's sandboxes, and studio.
 
     /// `GET /api/sandboxes`: the provider's sandboxes (`arugula sandboxes`).
     /// Labs; home daemons only.

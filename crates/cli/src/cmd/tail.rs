@@ -3,7 +3,6 @@
 use super::Ctx;
 use crate::http::request;
 use crate::util::{Pane, here};
-use anyhow::Context;
 use std::io::{Read, Write};
 
 #[derive(clap::Args)]
@@ -21,20 +20,13 @@ pub struct Args {
     /// Strip colors and other escape sequences.
     #[arg(long)]
     text: bool,
-    /// A pane of this host, from the history it synced here (once it's
-    /// gone, say).
-    #[arg(long, value_name = "HOST", conflicts_with_all = ["follow", "last_command"])]
-    synced: Option<String>,
 }
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
-    let Ctx { sock, gone, .. } = ctx;
-    let synced_q = |flag| super::synced_q(flag, &gone);
-    let Args { pane, follow, from, last_command, text, synced } = args;
-    let synced = synced_q(synced);
-    // Another host's pane number means nothing here: say which.
-    let pane = if synced.is_some() { pane.map(|p| p.0).context("which pane? (give %N)")? } else { here(pane)? };
-    let mut q: Vec<String> = synced.into_iter().collect();
+    let Ctx { sock, .. } = ctx;
+    let Args { pane, follow, from, last_command, text } = args;
+    let pane = here(pane)?;
+    let mut q: Vec<String> = Vec::new();
     if let Some(f) = from {
         q.push(format!("from={f}"));
     }

@@ -58,7 +58,7 @@ impl Http for Daemon {
         // A program on this machine shows the local token (serve's
         // requests carry an identity instead, and hosts' paths a token of
         // their own).
-        let own_credential = ["/api/sync/", "/api/hosts/join", "/api/dial"].iter().any(|p| path.starts_with(p));
+        let own_credential = ["/api/hosts/join", "/api/dial"].iter().any(|p| path.starts_with(p));
         let bearer = self.bearer();
         if !own_credential
             && !self.token().is_empty()

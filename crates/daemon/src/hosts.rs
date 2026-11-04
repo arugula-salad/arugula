@@ -11,8 +11,8 @@
 //! A host without tailnet identity carries a **host token** (`ilh_…`,
 //! M4c), the host → us: minted here (`arugula hosts token NAME`, or by
 //! joining as `dial_out`), kept only as a hash in `host-tokens.json`. It
-//! lets that one host dial in (`dial.rs`) and push its history
-//! (`sync.rs`), and nothing else. It is never in the list clients get;
+//! lets that one host dial in (`dial.rs`), and nothing else. It is never
+//! in the list clients get;
 //! `hosts revoke` and `hosts rm` drop it.
 //!
 //! Daemons resident in a provider's sandbox (M4b) were removed in 0.67:
@@ -351,7 +351,7 @@ impl Hosts {
 /// plain origins (a client appends `/ws` and `/api/...`).
 fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
     let name = req.name.trim();
-    // Names are directory names too (synced history), so not `.` or `..`.
+    // Names are path segments (`/h/NAME`), so not `.` or `..`.
     if name.is_empty()
         || name.len() > 63
         || name.starts_with('.')
@@ -446,8 +446,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
         tailnet_seen: app.tailnet_seen.load(std::sync::atomic::Ordering::Relaxed),
         control: saved.map(|s| s.url.clone()),
         // The team's name once its roster is in, else its id.
-        team: saved
-            .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
+        team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
         features: Some(features(app)),
     };
     HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }

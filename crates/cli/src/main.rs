@@ -368,11 +368,6 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// History other hosts synced here (kept encrypted).
-    Synced {
-        #[command(subcommand)]
-        cmd: Option<cmd::synced::SyncedCmd>,
-    },
     /// Open this machine's page in your browser, signed in.
     ///
     /// Programs and browsers on this machine show the daemon's local token; this
@@ -633,7 +628,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         "Panes",
         &[
             "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
-            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs", "synced",
+            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs",
         ],
     ),
     (
@@ -916,19 +911,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
             cli.json,
         );
     }
-    let reads_history = matches!(cli.cmd, Command::History(_) | Command::Search(_) | Command::Tail(_));
     let resolved = match &cli.ssh {
         Some(dest) => ssh::Remote::parse(dest).map(http::Target::Ssh),
         None => hosts::target(socket(&cli), cli.host.as_deref()),
     };
-    let (sock, gone) = match resolved {
-        Ok(t) => (t, None),
-        // A host that's gone (deleted, unreachable) may have left its
-        // history here.
-        Err(e) if reads_history && cli.host.is_some() => {
-            eprintln!("arugula: {e:#}; reading what it synced here instead");
-            (http::Target::Socket(socket(&cli)), cli.host.clone())
-        }
+    let sock = match resolved {
+        Ok(t) => t,
         // `open --host m2` meant a machine: the flag is `--machine` (#61).
         Err(e)
             if cli.host.as_deref().is_some_and(looks_like_machine)
@@ -947,7 +935,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     let json_out = cli.json;
     // `run --home`: the local daemon too, and the host's name in its list.
     let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name, gone };
+    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),
@@ -955,7 +943,6 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
-        Command::Synced { cmd } => cmd::synced::run(cmd, ctx),
         Command::Hosts { cmd } => {
             hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
             Ok(0)

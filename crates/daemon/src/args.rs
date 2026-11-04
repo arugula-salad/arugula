@@ -372,31 +372,14 @@ pub(crate) struct ReachArgs {
     /// backoff; this daemon works on its own meanwhile.
     #[arg(long, env = "ARUGULA_PEER", requires = "token")]
     pub(crate) peer: Option<String>,
-    /// The per-host token for --peer (and --sync), in a file. Mint one on
-    /// the home daemon with `arugula hosts token NAME`.
+    /// The per-host token for --peer, in a file. Mint one on the home
+    /// daemon with `arugula hosts token NAME`.
     #[arg(long, env = "ARUGULA_TOKEN_FILE", value_name = "FILE")]
     pub(crate) token: Option<PathBuf>,
     /// An invite (`arugula hosts invite`) to trade for a token when the
     /// --token file doesn't exist yet; the token is saved there.
     #[arg(long, requires = "peer")]
     pub(crate) join: Option<String>,
-    /// Push closed panes' history to the home daemon, which keeps it
-    /// encrypted after this host is gone.
-    #[arg(long, requires = "token")]
-    pub(crate) sync: bool,
-    /// Push open panes' history too, as it grows.
-    #[arg(long, requires = "sync")]
-    pub(crate) sync_live: bool,
-    /// Where to push [default: the --peer's https:// origin].
-    #[arg(long, requires = "sync")]
-    pub(crate) sync_to: Option<String>,
-    /// Seconds between pushes.
-    #[arg(long, default_value_t = 30, requires = "sync")]
-    pub(crate) sync_every: u64,
-    /// Home daemon: the key ring synced history is sealed with [default:
-    /// <state>/synced/key, made on first use, 0600].
-    #[arg(long, env = "ARUGULA_SYNC_KEY_FILE")]
-    pub(crate) sync_key_file: Option<PathBuf>,
 }
 
 /// Browser blocks on ports: each is served on its own origin by a listener

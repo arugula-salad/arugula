@@ -82,7 +82,6 @@ mod remote;
 pub mod review;
 pub mod roots;
 pub mod rules;
-mod seal;
 mod selfupdate;
 pub mod server;
 mod setup;
@@ -96,7 +95,6 @@ pub mod sites;
 pub mod task;
 use arugula_mux::store;
 pub mod subcommands;
-mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 pub mod tailscale;
@@ -225,7 +223,7 @@ impl mux::PaneGone for NoUploads {
     fn forget_on(&self, _provider: Arc<dyn provider::Provider>, _sprite: String, _pane: arugula_proto::PaneId) {}
 }
 
-/// Dial out to the home daemon and push history there, if asked to.
+/// Dial out to the home daemon, if asked to.
 fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -> anyhow::Result<()> {
     if let (Some(peer), Some(token_file)) = (&r.peer, &r.token) {
         dial::dial_url(peer)?;
@@ -235,36 +233,11 @@ fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -
         crate::task::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
         crate::task::spawn(dial::keep_dialing(opts, accept));
     }
-    if r.sync {
-        let origin = match (&r.sync_to, &r.peer) {
-            (Some(to), _) => to.trim_end_matches('/').to_owned(),
-            (None, Some(peer)) => dial::home_origin(peer)?,
-            (None, None) => anyhow::bail!("--sync needs --peer or --sync-to"),
-        };
-        let opts = sync::PushOpts {
-            origin,
-            token_file: r.token.clone().expect("clap requires --token"),
-            live: r.sync_live,
-            every: std::time::Duration::from_secs(r.sync_every.max(1)),
-        };
-        info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
-        crate::task::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
-    }
     // Control hears what the agent blocks' rows on a board should say.
     crate::task::spawn(board_state::keep_reporting(app.clone()));
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     crate::task::spawn(upload::keep_sweeping());
-    // Synced history expires a day at a time.
-    let synced = app.synced.clone();
-    crate::task::spawn(async move {
-        let mut day = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
-        day.tick().await;
-        loop {
-            day.tick().await;
-            synced.prune(sync::RETAIN_MS);
-        }
-    });
     Ok(())
 }
 
@@ -1157,8 +1130,15 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     };
     let guest_given =
         !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
-    let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
-    synced.prune(sync::RETAIN_MS);
+    // Synced history (M4c, removed in 0.67) left sealed files nothing reads
+    // now; they're the owner's to delete, so say so rather than touch them.
+    let synced_dir = state_dir.join("synced");
+    if synced_dir.is_dir() {
+        warn!(
+            dir = %synced_dir.display(),
+            "holds history other hosts synced here, sealed; syncing was removed and nothing reads it now: delete the directory when you're done with it (`rm -r`)"
+        );
+    }
     // Labs' guest invites.
     lab_hooks::labs().open(lab_hooks::Start {
         state_dir: state_dir.clone(),
@@ -1174,7 +1154,6 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         ide,
         hosts,
         shares,
-        synced,
         control.clone(),
         acl.clone(),
         mcp_tokens,
