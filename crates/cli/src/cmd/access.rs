@@ -222,7 +222,9 @@ pub fn lines(v: &AccessView) -> Vec<String> {
         ("local", _, _) => "not joined to Arugula cloud".to_owned(),
         ("team", _, Some(t)) => format!("a machine of the team {}{}", t.name, if t.locked { " (locked)" } else { "" }),
         ("team", _, None) => "a team machine (its roster isn't checked yet)".to_owned(),
-        ("hosted", Some("deploy" | "both"), _) => format!("a deploy's box of {whose}: nobody gets in"),
+        ("hosted", Some("deploy" | "both"), _) => {
+            format!("a deploy's box of {whose}: none of the project's people are admitted")
+        }
         ("hosted", Some("snapshot"), Some(t)) if t.locked => format!("a box building a snapshot of {whose} (locked)"),
         ("hosted", Some("snapshot"), _) => format!("a box building a snapshot of {whose}"),
         ("hosted", _, Some(t)) if t.locked => format!("a Cloud workspace of {whose} (locked)"),
@@ -232,7 +234,7 @@ pub fn lines(v: &AccessView) -> Vec<String> {
     out.push(format!("{}: {kind}", v.name));
     out.extend(v.notes.iter().map(|n| format!("note: {n}")));
     if v.rows.is_empty() {
-        out.push("nobody can reach it".into());
+        out.push("nothing listed: no person, link or guest reaches it from what it holds".into());
         return out;
     }
     out.push(format!("{:<24} {:<7} {:<20} {:<13} {}", "who", "as", "where", "says", ""));
@@ -337,7 +339,11 @@ mod tests {
             name: "box".into(),
             ..Default::default()
         };
-        assert_eq!(lines(&deploy)[0], "box: a deploy's box of a personal project: nobody gets in");
+        assert_eq!(
+            lines(&deploy)[0],
+            "box: a deploy's box of a personal project: none of the project's people are admitted"
+        );
+        assert_eq!(lines(&deploy)[1], "nothing listed: no person, link or guest reaches it from what it holds");
         assert_eq!(l[1], "note: The team Acme is locked: only its owners get in.");
         assert!(l[2].starts_with("who"));
         assert_eq!(

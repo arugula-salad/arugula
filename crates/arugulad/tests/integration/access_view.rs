@@ -89,18 +89,20 @@ fn the_owner_reads_who_reaches_the_machine_and_nobody_else_does() {
         assert!(!text.contains(secret), "{secret} is in the answer: {text}");
     }
 
-    // Someone holding a pane's share link gets none of it either: a share
-    // token opens its one pane's page, never the API.
+    // Someone holding a pane's share link gets none of it either. The
+    // token is live: it opens its pane's page over the tailnet. The same
+    // token as the API's bearer is no credential at all (401, the answer
+    // an unknown token gets), so the op isn't reached, let alone refused
+    // by its policy as the editor below is (403).
     let token = link["token"].as_str().unwrap().to_owned();
-    for (what, headers) in [
-        ("as a bearer", vec![("authorization", format!("Bearer {token}"))]),
-        ("as a cookie", vec![("cookie", format!("share={token}"))]),
-    ] {
-        let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        let (status, _, body) = d.tcp("GET", "/api/access", &headers, None);
-        assert!(status == 401 || status == 403, "{what}: {status} {body}");
-        assert!(!body.contains("\"rows\""), "{what}: {body}");
-    }
+    let (page, _, _) = d.tcp("GET", &format!("/share/{token}"), &[("tailscale-user-login", FRIEND)], None);
+    assert_eq!(page, 200, "the share link is live");
+    let bearer = format!("Bearer {token}");
+    let (status, _, body) = d.tcp("GET", "/api/access", &[("authorization", &bearer)], None);
+    assert_eq!(status, 401, "{body}");
+    assert!(!body.contains("\"rows\""), "{body}");
+    let (status, _, _) = d.tcp("GET", "/api/panes", &[("authorization", &bearer)], None);
+    assert_eq!(status, 401, "nor anything else of the API");
 
     // The editor the session was shared with gets none of it: the
     // operation is the owner's on the tailnet as on the socket.

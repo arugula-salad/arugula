@@ -68,7 +68,8 @@ export function kindLine(v: AccessView): string {
         : `A machine of the team ${v.team.name}: its people reach it by their team role.`;
     case "hosted": {
       const whose = v.team ? `the team ${v.team.name}'s project` : "a personal project";
-      if (v.purpose === "deploy" || v.purpose === "both") return `A deploy's box of ${whose}: nobody gets in, not even the project's owners.`;
+      if (v.purpose === "deploy" || v.purpose === "both")
+        return `A deploy's box of ${whose}: none of the project's people are admitted, and Arugula cloud routes nobody to it.`;
       if (v.purpose === "snapshot")
         return v.team?.locked
           ? `A box building a snapshot of ${whose}, locked: only the team's owners are admitted here, and Arugula cloud routes nobody to it.`
@@ -217,7 +218,7 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
               ))}
             </ul>
           ) : (
-            <p data-access-nobody>Nobody can reach it.</p>
+            <p data-access-nobody>Nothing listed: no person, link or guest reaches it from what it holds.</p>
           )}
           {view.guest_ssh === false && <p class="hint">Guest SSH access is off: no ssh guest can be invited until you turn it on.</p>}
           <h3>Its agents&apos; powers</h3>

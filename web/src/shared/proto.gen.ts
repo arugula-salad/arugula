@@ -80,9 +80,9 @@ export type AccessView = {
 kind: string, 
 /**
  * A hosted machine's purpose: `people` (a workspace), `deploy` (one
- * deploy's box, which nobody gets into), `snapshot` (a box building a
- * snapshot: its people are admitted, and control routes nobody to it)
- * or `both`.
+ * deploy's box: none of the project's people are admitted, and control
+ * routes nobody to it), `snapshot` (a box building a snapshot: its
+ * people are admitted, and control routes nobody to it) or `both`.
  */
 purpose?: string | null, 
 /**

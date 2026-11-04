@@ -6795,11 +6795,24 @@ pub(crate) mod tests {
                 expires: None,
                 ..link.clone()
             };
+            // Shares with an account and with a team: both admitted through
+            // `build` alone (the account's devices from `peers`, the team's
+            // members from its checked roster), so a deploy's box, which
+            // admits no one, must not list them.
+            let account_share = crate::acl::Grant {
+                principal: "account:z9".into(),
+                name: "zed".into(),
+                role: Role::Viewer,
+                root: Some("0".repeat(16)),
+                ..share.clone()
+            };
+            let team_share =
+                crate::acl::Grant { principal: "team:t9".into(), name: "Nine".into(), ..account_share.clone() };
             let view = crate::ops::access::compose(crate::ops::access::Pieces {
                 name: "box".into(),
                 owner: "owner".into(),
                 roster: c.roster_view(),
-                grants: vec![share, link],
+                grants: vec![share, account_share, team_share, link],
                 shares: vec![arugula_proto::api::Share {
                     id: 1,
                     pane: 1,
@@ -6831,7 +6844,12 @@ pub(crate) mod tests {
                 says.insert(account.to_owned(), r.role.as_str());
             }
             assert_eq!(says, admits, "{name}: the view and the enrollment disagree");
-            assert_eq!(held, ["share", "link", "link", "guest", "trust"], "{name}: what the machine holds");
+            let expect_held: &[&str] = if saved.purpose().is_some_and(Purpose::deploys) {
+                &["share", "link", "link", "guest", "trust"]
+            } else {
+                &["share", "share", "team_share", "link", "link", "guest", "trust"]
+            };
+            assert_eq!(held, expect_held, "{name}: what the machine holds");
             let _ = std::fs::remove_dir_all(&dir);
             seen += 1;
         }

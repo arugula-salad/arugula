@@ -148,7 +148,7 @@ pub fn compose(p: Pieces) -> AccessView {
     if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
         let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
         notes.push(format!(
-            "A box made for {what}: the project's people aren't admitted here, not even its owners, and Arugula cloud routes nobody to it."
+            "A box made for {what}: the project's people aren't admitted here, not even its owners, nor is anyone a session was shared with by account or team, and Arugula cloud routes nobody to it."
         ));
     }
     if roster.as_ref().is_some_and(|r| r.purpose.as_deref() == Some("snapshot")) {
@@ -234,6 +234,11 @@ pub fn compose(p: Pieces) -> AccessView {
     let mut acl: Vec<&Grant> = grants.iter().collect();
     acl.sort_by_key(|g| (g.session, g.at));
     for g in acl {
+        // An account's or a team's share is admitted through `build`, which
+        // admits no one on a deploy's box: not listed there.
+        if nobody && (g.principal.starts_with("account:") || g.principal.starts_with("team:")) {
+            continue;
+        }
         if let Some(rest) = g.principal.strip_prefix("team:") {
             let shared = roster.as_ref().and_then(|r| r.shared.get(rest));
             match shared {
@@ -560,12 +565,19 @@ mod tests {
         r.purpose = Some("deploy".into());
         r.nobody = true;
         let mut p = pieces(Some(r));
-        p.grants = vec![grant(3, "tailnet:friend@example.com", "friend@example.com", Role::Editor)];
+        p.grants = vec![
+            grant(3, "tailnet:friend@example.com", "friend@example.com", Role::Editor),
+            grant(3, "account:z1", "zed", Role::Viewer),
+            grant(3, "team:t9", "Nine", Role::Viewer),
+        ];
         p.shares = vec![Share { id: 1, pane: 9, created_ms: 1, expires_ms: 8_000, token: None, path: None, url: None }];
         p.trust = vec![(9, "tailnet:friend@example.com".into(), 99_999)];
         let v = compose(p);
+        // The account's and the team's shares go through `build`, which
+        // admits no one here: not listed. The rest is checked elsewhere.
         let kinds: Vec<&str> = v.rows.iter().map(|r| r.kind.as_str()).collect();
         assert_eq!(kinds, ["share", "link", "trust"]);
+        assert!(v.rows.iter().all(|r| r.principal.as_deref() != Some("account:z1")), "{:?}", v.rows);
         assert_eq!(v.purpose.as_deref(), Some("deploy"));
         let said = |what: &str| v.notes.iter().any(|n| n.contains(what));
         assert!(
