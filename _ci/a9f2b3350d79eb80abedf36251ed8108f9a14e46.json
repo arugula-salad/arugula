@@ -3,7 +3,7 @@
   "commit": "a9f2b3350d79eb80abedf36251ed8108f9a14e46",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T05:58:46Z",
+  "at": "2026-11-04T05:59:35Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -43,7 +43,14 @@
     "windows-desktop": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 126417337446,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493400/job/126417337446"
+        }
+      ]
     }
   }
 }
