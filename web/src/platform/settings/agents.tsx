@@ -175,6 +175,8 @@ export function AgentGrants() {
   useSubscribe((fn) => session.subscribe(fn));
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [err, setErr] = useState("");
+  // What a viewer's switch left out (Arugula #683): a note, not an error.
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const load = () =>
     call<{ grants: Grant[] }>("/api/grants").then(
@@ -222,11 +224,12 @@ export function AgentGrants() {
     // and told what wasn't asked for.
     const powers = forRole(all, s.role);
     const left = all.filter((p) => !powers.includes(p));
+    setNote("");
     try {
       if (on) {
         const scope = s.kind === "project" ? { kind: "project", id: s.id } : { kind: "account" };
         for (const power of powers) await call("/api/grants", { daemon: machine, power, scope });
-        if (left.length) setErr(`Given without ${left.join(" and ")}: you only view ${s.name}, so those would do nothing for its agents.`);
+        if (left.length) setNote(`Given without ${left.join(" and ")}: you only view ${s.name}, so those would do nothing for its agents.`);
       } else {
         for (const g of liveOver(grants, machine, s, which ? all : undefined)) {
           await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
@@ -378,6 +381,11 @@ export function AgentGrants() {
           )}
         </div>
       )}
+      {note ? (
+        <p class="agent-grants-note" data-agent-grants-note>
+          {note}
+        </p>
+      ) : null}
       {err ? <p class="control-error">{err}</p> : null}
     </Section>
   );
