@@ -98,7 +98,7 @@ test("a plan's text is shown only when it's the plan signed", async () => {
   assert.equal((await checkPlan(forward, await sha256Hex(forward))).rollBack, null);
   // Another app, the same digest: not the plan signed.
   assert.equal(await checkPlan(text.replace("acme-web\n", "acme-evil\n"), digest), "its plan's text isn't the plan you'd sign");
-  assert.equal(await checkPlan(null, digest), "the platform didn't show its plan");
+  assert.equal(await checkPlan(null, digest), "Arugula didn't show its plan");
   assert.equal(await checkPlan("x\n", await sha256Hex("x\n")), "its plan's text can't be read");
 });
 

@@ -32,7 +32,7 @@ test("a subscription control lacks, or can't use for deploys, is said; a good on
 test("the account's subscriptions, counted", () => {
   assert.equal(standingSaid(standing({ subscriptions: 0, usable: 0 })), "Your account has no push subscriptions.");
   assert.equal(standingSaid(standing({ subscriptions: 1, usable: 1 })), "Your account has 1 push subscription.");
-  assert.equal(standingSaid(standing({ subscriptions: 3, usable: 2 })), "Your account has 3 push subscriptions; deploy pushes skip 1 of them (a device control no longer approves).");
+  assert.equal(standingSaid(standing({ subscriptions: 3, usable: 2 })), "Your account has 3 push subscriptions; deploy pushes skip 1 of them (a device Arugula cloud no longer approves).");
 });
 
 test("a test notification says what became of it", () => {
