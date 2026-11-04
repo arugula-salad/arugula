@@ -4,12 +4,14 @@
 # opens nothing but that fixture, and the hosted-machine fixture (M178),
 # whose keys are made-up test keys the Rust and web verifiers share, and the
 # logic's example files (#220), whose keys come from fixed one-byte seeds
-# (crates/e2e/tests/logic writes them).
+# (crates/e2e/tests/logic writes them), and the control.json fixtures (#672),
+# saved by a test from keys made for them: public keys and signatures only,
+# whose private halves were never kept.
 [extend]
 useDefault = true
 
 [allowlist]
-description = "lock files, the Doc link test vector, the hosted-machine fixture, and the logic's examples"
+description = "lock files, the Doc link test vector, the hosted-machine fixture, the logic's examples, and the control.json fixtures"
 paths = [
   '''(^|/)Cargo\.lock$''',
   '''(^|/)pnpm-lock\.yaml$''',
@@ -17,4 +19,5 @@ paths = [
   '''(^|/)web/scripts/hosted\.fixture\.json$''',
   '''(^|/)web/scripts/run-grant\.fixture\.json$''',
   '''(^|/)contract/examples/logic/[a-z_]+/[a-z_]+\.json$''',
+  '''(^|/)crates/daemon/tests/fixtures/control-json/[a-z-]+\.json$''',
 ]
