@@ -3,9 +3,11 @@
 // Acme; Bob is a viewer in it; Alice's machine geek joins the team and she
 // gives its agents issues.write over the project. Both of them read the
 // same Access section: the roles (Alice an owner, Bob a viewer), the one
-// power (Alice's agent on geek, issues.write), what an owner allowed
-// (nothing yet) and no cloud workspaces, each part saying whose word it
-// is, and no button to change any of it. A platform from before the route
+// power (Alice's agent on geek, issues.write), whose machines drive the
+// project's cloud workspaces by cloud.drive (Alice's one; Bob has none),
+// what an owner allowed (nothing yet) and no cloud workspaces, each part
+// saying whose word it is, and no button to change any of it. The grant's
+// id is in Alice's answer, to revoke, and not in Bob's. A platform from before the route
 // answers 404, and the section says it's older than the page. A local
 // control (team-fixture.ts, `--platform-host app.localhost`), as
 // boards-platform.spec.ts runs it.
@@ -79,8 +81,13 @@ test("Alice and Bob read the same Access section of the project's settings", asy
   expect(view.status).toBe(200);
   expect(view.body!.role).toBe("owner");
   expect((view.body!.roles.members as { name: string; role: string }[]).map((m) => `${m.name}:${m.role}`).sort()).toEqual(["alice:owner", "bob:viewer"]);
-  expect((view.body!.powers.grants as { power: string; reaches: boolean; subject: { name: string } }[]).map((g) => [g.subject.name, g.power, g.reaches])).toEqual([["geek", "issues.write", true]]);
-  expect(JSON.stringify(view.body)).not.toContain("cloud.drive");
+  expect((view.body!.powers.grants as { power: string; idle: string | null; subject: { name: string } }[]).map((g) => [g.subject.name, g.power, g.idle])).toEqual([["geek", "issues.write", null]]);
+  expect(view.body!.powers.grants[0].id).toBe(given.body!.id);
+  // cloud.drive: one row per member, Alice's geek driving as an owner.
+  expect((view.body!.cloud_drive.members as { owner: { name: string }; role: string; machines: number; driving: number }[]).map((m) => [m.owner.name, m.role, m.machines, m.driving])).toEqual([
+    ["alice", "owner", 1, 1],
+    ["bob", "viewer", 0, 0],
+  ]);
 
   for (const [who, page] of [
     ["Alice", alice],
@@ -96,6 +103,10 @@ test("Alice and Bob read the same Access section of the project's settings", asy
     await expect(access.locator("[data-access-roles]")).toContainText("Owner");
     await expect(access.locator("[data-access-roles]")).toContainText("Viewer");
     await expect(access.locator(".settings-note").first()).toContainText("roster");
+    await expect(access.locator("[data-access-driver]")).toHaveCount(2);
+    await expect(access.locator("[data-access-drivers]")).toContainText("alice's machines");
+    await expect(access.locator("[data-access-drivers]")).toContainText("1 machine drive as an owner");
+    await expect(access.locator("[data-access-drivers]")).toContainText("no machine joined");
     const power = access.locator("[data-access-power]");
     await expect(power).toHaveCount(1);
     await expect(power).toContainText("alice's agent on geek");
@@ -114,6 +125,9 @@ test("Alice and Bob read the same Access section of the project's settings", asy
   expect(asBob.status).toBe(200);
   expect(asBob.body!.role).toBe("viewer");
   expect(asBob.body!.powers.grants.length).toBe(1);
+  // A viewer doesn't get the grant's id: that's what a revoke needs.
+  expect(asBob.body!.powers.grants[0].id).toBeNull();
+  expect(JSON.stringify(asBob.body)).not.toContain("grt_");
 
   // A revoke goes at once, and the section follows on reload.
   const revoked = await api(alice, "POST", `/api/grants/${given.body!.id}/revoke`);

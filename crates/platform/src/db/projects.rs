@@ -630,6 +630,24 @@ impl Db {
         )
     }
 
+    /// Of `account`'s machines, those whose `cloud.drive` over it is
+    /// revoked (every grant they had there is): the rest drive, a machine
+    /// with no row yet included (it gets its grant the first time it asks,
+    /// [`crate::grants::can_drive_cloud`]). For a project's Access view
+    /// (Arugula #682), which says whose machines drive its cloud workspaces.
+    pub fn revoked_cloud_drive(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        self.c().query_map(
+            &format!(
+                "SELECT subject_id FROM grants WHERE subject_kind = 'daemon' AND power = '{CLOUD_DRIVE}'
+                 AND scope_kind = 'account' AND scope_id = ?1
+                 GROUP BY subject_id HAVING max(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) = 0
+                 ORDER BY subject_id"
+            ),
+            params![account],
+            |r| r.get(0),
+        )
+    }
+
     /// Every live grant over one project, whoever gave it and whatever its
     /// subject (a machine or an agent grant token) and power: the
     /// project's Access view (Arugula #682). Only grants whose scope is the

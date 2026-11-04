@@ -1242,18 +1242,25 @@ everyone in it: "Jake's agents on geek can read and post here".
 who can do what there in one place: `arugula grants ls --project acme`, or
 Access under the project's settings on the platform page, both from `GET
 /api/projects/{id}/grants`. It lists the project roles (the team's roster
-as control's copy stands; each machine checks the roster itself), the
+as control's copy stands; each machine checks the roster itself); whose
+machines drive the project's cloud workspaces, one row per member, since
+every machine joined to an account holds `cloud.drive` over it from its
+join and drives as its owner's role allows, which no one revokes per
+project (its owner does, per machine, with `arugula grants revoke`); the
 powers over the project (every live grant, machines' and agent tokens',
-whose each is and whether it reaches anything now: a grant whose giver
-left the project reaches nothing), what an owner allowed (the delegation
-for cloud workspaces on control, the standing run grant with its expiry,
-confirmed with a passkey) and the project's cloud workspaces, where an
-owner or editor has full use and a viewer watches. Each part says whose
-word it is. It's read-only and changes nothing of what's enforced; it
-never lists a grant over an account (`cloud.drive`, or a power over
-someone's DMs, which `arugula grants` shows their owner alone), a token, a
-signature or a secret. Someone who isn't in the project gets "no such
-project", as every project route answers them.
+whose each is and why it does nothing if it doesn't: a write power on a
+viewer's, a giver who left the project, a machine that isn't its giver's
+now; a giver who left is "a former member", unnamed); what an owner
+allowed (the delegation for cloud workspaces on control, the standing run
+grant with its expiry, confirmed with a passkey, and stale when it names
+an earlier delegation) and the project's cloud workspaces, where an owner
+or editor has full use and a viewer watches. Each part says whose word it
+is. It's read-only and changes nothing of what's enforced; it never
+lists another account's grant over their DMs, a token, a signature or a
+secret, and a token's or a grant's id (what a revoke needs) only to the
+project's owners. Someone who isn't in the project gets "no such
+project", as every project route answers them. 600 reads an hour per
+account.
 
 Grants bound what a machine's own signature can do (its MCP calls), not
 what a shell on it can do with your CLI login. The CLI's device key lives
@@ -1534,8 +1541,11 @@ aru-038): machines' agents still use their daemon's.
   The API is `GET`/`POST /api/agent-tokens` (`POST` from the page only),
   `POST /api/agent-tokens/{id}/revoke` and `GET
   /api/agent-tokens/{id}/calls`.
-- **A project's owners see every token over it,** whoever minted it, and
-  revoke its reach there (`GET /api/projects/{project}/agent-tokens`, `POST
+- **Every member of a project sees the tokens over it,** whoever minted
+  them: that one holds powers there, its name, who minted it and what it
+  may do, in the project's Access view (Arugula #682). Its id, which only
+  a revoke needs, is the project's owners', who revoke its reach there
+  (`GET /api/projects/{project}/agent-tokens`, `POST
   …/agent-tokens/{id}/revoke`; the project's settings page), or one of
   its grants by the grant's id (`POST /api/grants/{id}/revoke`, Arugula
   #683). The minter's devices are told, and the token's grants say who

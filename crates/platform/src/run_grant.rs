@@ -185,6 +185,15 @@ async fn owner_only(app: &Platform, account: &str, project: &str) -> Result<Stri
     Ok(project)
 }
 
+/// Whether the live grant names a delegation other than the project's
+/// live one, as control says it: machines enrolled since refuse the
+/// grant, so it's as good as none until it's signed again. `None` for the
+/// delegation (control has none, or couldn't say) isn't stale. The one
+/// check, for [`show`] and the project's Access view (Arugula #682).
+pub fn is_stale(live: Option<&StoredGrant>, delegation: Option<&str>) -> bool {
+    live.is_some_and(|g| delegation.is_some_and(|d| d != g.grant.delegation))
+}
+
 pub async fn show(
     State(app): State<Arc<Platform>>,
     Person { account }: Person,
@@ -198,7 +207,7 @@ pub async fn show(
     let past = app.db.run_grants(&project, PAST + 1)?.into_iter().filter(|g| Some(&g.grant.id) != id.as_ref());
     let workspaces = app.db.hosted_workspaces(&project)?.len() as u64;
     let delegation = app.hub.live_delegation(&project, &owner).await.ok().flatten();
-    let stale = live.as_ref().is_some_and(|g| delegation.as_ref().is_some_and(|d| *d != g.grant.delegation));
+    let stale = is_stale(live.as_ref(), delegation.as_deref());
     let renew = live.as_ref().is_some_and(|g| g.grant.expires.is_some_and(|e| e <= now + RENEW_DAYS * DAY_MS));
     Ok(Json(GrantView {
         offer: workspaces > 0 && (live.is_none() || stale),
