@@ -24,11 +24,12 @@ export interface Grant {
 /** The reader's role in a project, as the page knows it. */
 export type Role = "owner" | "editor" | "viewer";
 
-/** The powers the platform refuses to a viewer's machine (Arugula #683):
- * nothing of them works for a viewer's agents. The platform's
- * `WRITE_POWERS` with `ViewerUse::Nothing`, kept in step by hand; the
- * switches leave them out for a viewer rather than ask and be refused. */
-export const VIEWER_REFUSED = ["issues.write", "trackers.write", "runs.start", "runs.command"];
+/** The powers the platform refuses to a viewer's machine or token (Arugula
+ * #683): nothing of them works for a viewer's agents. A copy of the wire's
+ * `VIEWER_REFUSED` (crates/control-wire/src/projects.rs), whose test
+ * checks this line is the same list; the switches and the token form
+ * leave them out for a viewer rather than ask and be refused. */
+export const VIEWER_REFUSED = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
 
 /** `powers` without those a viewer's machine is refused, when `role` is viewer. */
 export const forRole = (powers: string[], role?: Role) => (role === "viewer" ? powers.filter((p) => !VIEWER_REFUSED.includes(p)) : powers);

@@ -143,12 +143,17 @@ async fn waits_for_pushes(hub: &crate::chat_tests::TestHub, n: usize) -> Vec<(St
 
 /// An owner's standing is asked of the hub now: a former owner, demoted or
 /// removed, can't revoke; while the team is locked only its owners read
-/// it, so an editor's attempt finds nothing and an owner's goes through.
-/// A grant over a personal project is its owner's alone.
+/// it, so a member's attempt on a grant they didn't give finds nothing,
+/// their own is still theirs to take back (a revoke only narrows, and
+/// nobody is told), and an owner's goes through. A grant over a personal
+/// project is its owner's alone.
 #[tokio::test]
 async fn a_former_owner_a_locked_out_member_and_an_outsider_cannot_revoke() {
     let (hub, app, base, t, _u) = seeded().await;
-    hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    let roster = |o: TeamRole| {
+        [("a", TeamRole::Owner), ("o", o), ("b", TeamRole::Editor), ("e", TeamRole::Editor), ("x", TeamRole::Viewer)]
+    };
+    hub.team("t", &roster(TeamRole::Owner));
     hub.daemon("bbox", "b", Some("t"));
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -163,22 +168,32 @@ async fn a_former_owner_a_locked_out_member_and_an_outsider_cannot_revoke() {
         }
     };
     let g0 = gives(0).await;
+    let g1 = gives(1).await;
 
     // o was an owner a moment ago: demoted to editor, 403; out of the team, 404.
-    hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Editor), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    hub.team("t", &roster(TeamRole::Editor));
     assert_eq!(revoke(&base, "o", &g0).await.0, 403, "demoted, on the hub's word, not the cache's");
-    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    hub.team(
+        "t",
+        &roster(TeamRole::Owner)[..1].iter().chain(&roster(TeamRole::Owner)[2..]).copied().collect::<Vec<_>>(),
+    );
     assert_eq!(revoke(&base, "o", &g0).await.0, 404, "removed");
     assert!(app.db.live_grant("bbox", THREADS_READ, ("project", &t), "b").unwrap().is_some());
 
-    // Locked: b (an editor) doesn't read t now, so their own revoke finds
-    // nothing of theirs there either way; a, an owner, still revokes.
+    // Locked: only t's owners read it now. x (a viewer) and e (an editor
+    // who didn't give it) find nothing; b takes their own back, as its
+    // giver, with nobody told; a, an owner, still revokes.
     hub.lock("t", true);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
     assert_eq!(revoke(&base, "x", &g0).await.0, 404, "a viewer, locked out");
+    assert_eq!(revoke(&base, "e", &g0).await.0, 404, "an editor, locked out");
+    let (st, r) = revoke(&base, "b", &g1).await;
+    assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("b")), "b's own, while locked out: {r}");
+    assert_eq!(app.db.live_grant("bbox", THREADS_POST, ("project", &t), "b").unwrap(), None);
     let (st, r) = revoke(&base, "a", &g0).await;
     assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("a")), "{r}");
+    assert_eq!(waits_for_pushes(&hub, 1).await.len(), 1, "a's revoke told b; b's own told nobody");
     hub.lock("t", false);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -195,6 +210,35 @@ async fn a_former_owner_a_locked_out_member_and_an_outsider_cannot_revoke() {
     assert_eq!(revoke(&base, "c", pid).await.0, 404);
     let (st, r) = revoke(&base, "a", pid).await;
     assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("a")), "{r}");
+}
+
+/// A giver who left the team is told what of theirs was revoked, and
+/// nothing of the project or who revoked it: not its name, not theirs
+/// (Arugula #683). The notice goes whether or not the hub names things.
+#[tokio::test]
+async fn a_giver_who_left_the_team_learns_only_what_of_theirs_was_revoked() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    hub.daemon("bbox", "b", Some("t"));
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, g) = call(&base, "b", "POST", "/api/grants", give("bbox", THREADS_POST, project(&t))).await;
+    assert_eq!(st, 200, "{g}");
+    let id = g["id"].as_str().unwrap().to_owned();
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, r) = revoke(&base, "a", &id).await;
+    assert_eq!((st, &r["revoked_by"]["account"]), (200, &json!("a")), "{r}");
+    let pushed = waits_for_pushes(&hub, 1).await;
+    assert_eq!(pushed.len(), 1, "{pushed:?}");
+    let (to, msg, _) = &pushed[0];
+    assert_eq!(to, "b");
+    assert_eq!(
+        msg["body"],
+        json!("bbox-box's threads.post over a project you no longer read was revoked by one of its owners."),
+        "{msg}"
+    );
 }
 
 /// A write power that does nothing for a viewer's agents is refused to a

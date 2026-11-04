@@ -19,7 +19,16 @@ import { roleIn } from "./environments";
 import { hasWorkOnBoards, VIEWER_REFUSED, withWorkOnBoards } from "./grants";
 import { Section } from "../../shared/ui/settings-section";
 
-type TokenGrant = { id: string; power: string; project: { id: string; name: string | null }; live: boolean };
+type TokenGrant = {
+  id: string;
+  power: string;
+  project: { id: string; name: string | null };
+  live: boolean;
+  revoked_at?: number | null;
+  /** Who revoked it (Arugula #683): on a live token, a project's owner or
+   * the platform, never you (your revoke takes the whole token). */
+  revoked_by?: { account: string | null; name: string | null } | null;
+};
 export type AgentToken = {
   id: string;
   name: string;
@@ -78,15 +87,35 @@ const POWER_WORDS: Record<string, string> = {
   "secrets.write": "set secrets",
 };
 
-// "Write issues, plan deploys on Acme; read runs on Web".
+// "Write issues, plan deploys on Acme; read runs on Web": what a live
+// token still holds; a revoked token's whole reach, for the record.
 export function reachOf(t: AgentToken): string {
   const by = new Map<string, string[]>();
-  for (const g of t.grants) {
+  for (const g of t.grants.filter((g) => g.live || !t.live)) {
     const p = g.project.name ?? g.project.id;
     by.set(p, [...(by.get(p) ?? []), POWER_WORDS[g.power] ?? g.power]);
   }
   const line = [...by].map(([p, ps]) => `${ps.join(", ")} on ${p}`).join("; ");
   return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+/** A live token's grants a project's owner revoked (Arugula #683), by
+ * project: who, what, and when the latest went. Nothing for a revoked
+ * token (you revoked it whole). */
+export function revokedOf(t: AgentToken): { project: string; powers: string[]; who: string; at: number }[] {
+  if (!t.live) return [];
+  const by = new Map<string, { project: string; powers: string[]; who: string; at: number }>();
+  for (const g of t.grants) {
+    if (g.live) continue;
+    const p = g.project.name ?? g.project.id;
+    const who = g.revoked_by?.name ?? g.revoked_by?.account ?? "an owner";
+    const at = g.revoked_at ?? 0;
+    const row = by.get(p) ?? { project: p, powers: [], who, at };
+    row.powers.push(POWER_WORDS[g.power] ?? g.power);
+    if (at >= row.at) Object.assign(row, { who, at });
+    by.set(p, row);
+  }
+  return [...by.values()];
 }
 
 function Calls({ id }: { id: string }) {
@@ -243,6 +272,11 @@ export function AgentTokens() {
                 </span>
               </div>
               <span class="agent-token-reach">{reachOf(t)}</span>
+              {revokedOf(t).map((r) => (
+                <span class="dim" key={r.project} data-agent-token-revoked-over={r.project}>
+                  {r.who} revoked {r.powers.join(", ")} on <bdi>{r.project}</bdi> <Time at={r.at} />. For reach there again, mint a new token.
+                </span>
+              ))}
               <span class="dim">
                 {t.live ? (
                   t.last_used_at ? (

@@ -365,17 +365,7 @@ fn wire(g: &Grant) -> Value {
         "granted_by": g.granted_by,
         "created_at": g.created_at,
         "revoked_at": g.revoked_at,
-        // Who revoked it (Arugula #683): the account, and its name as the
-        // directory has it; the platform itself, or an account since
-        // deleted (no account, a name saying so). One revoked before that
-        // was recorded was its giver's doing.
-        "revoked_by": g.revoked_at.map(|_| match g.revoked_by.as_deref() {
-            Some(REVOKED_BY_ERASED) => json!({ "account": null, "name": "an account since deleted" }),
-            Some(REVOKED_BY_PLATFORM) => {
-                json!({ "account": REVOKED_BY_PLATFORM, "name": "Arugula control, when the giver left the team" })
-            }
-            by => json!({ "account": by.unwrap_or(&g.granted_by), "name": g.revoked_by_name }),
-        }),
+        "revoked_by": revoked_by_wire(g),
         "live": g.revoked_at.is_none(),
         // What a live one does on a viewer's (Arugula #683): a label and
         // why, else null.
@@ -422,24 +412,11 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
     ids.sort();
     ids.dedup();
     let daemons = app.cache.daemons(&*app.hub, &ids).await?;
-    let mut revokers: Vec<String> = grants
-        .iter()
-        .filter(|g| g.revoked_at.is_some())
-        .map(|g| g.revoked_by.clone().unwrap_or_else(|| g.granted_by.clone()))
-        .filter(|by| by != REVOKED_BY_ERASED && by != REVOKED_BY_PLATFORM)
-        .collect();
-    revokers.sort();
-    revokers.dedup();
-    let accounts =
-        if revokers.is_empty() { Default::default() } else { app.cache.accounts(&*app.hub, &revokers).await? };
+    name_revokers(app, &mut grants).await?;
     let mut projects = std::collections::HashMap::new();
     let mut roles: std::collections::HashMap<(String, String), Option<TeamRole>> = Default::default();
     for g in &mut grants {
         g.subject_name = daemons.get(&g.subject_id).map(|d| d.name.clone());
-        if g.revoked_at.is_some() {
-            let by = g.revoked_by.as_ref().unwrap_or(&g.granted_by);
-            g.revoked_by_name = accounts.get(by).map(|a| a.name.clone());
-        }
         if g.scope_kind == "project" {
             if !projects.contains_key(&g.scope_id) {
                 let name = app.db.project_owner(&g.scope_id)?.map(|o| o.name);
@@ -463,6 +440,43 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
         }
     }
     Ok(grants)
+}
+
+/// The name of whoever revoked each revoked grant (`revoked_by_name`),
+/// from the hub's directory as the cache keeps it: for [`named`], and for
+/// a token's grants as `/api/agent-tokens` lists them (Arugula #683).
+pub async fn name_revokers(app: &Platform, grants: &mut [Grant]) -> HubResult<()> {
+    let mut revokers: Vec<String> = grants
+        .iter()
+        .filter(|g| g.revoked_at.is_some())
+        .map(|g| g.revoked_by.clone().unwrap_or_else(|| g.granted_by.clone()))
+        .filter(|by| by != REVOKED_BY_ERASED && by != REVOKED_BY_PLATFORM)
+        .collect();
+    revokers.sort();
+    revokers.dedup();
+    if revokers.is_empty() {
+        return Ok(());
+    }
+    let accounts = app.cache.accounts(&*app.hub, &revokers).await?;
+    for g in grants.iter_mut().filter(|g| g.revoked_at.is_some()) {
+        let by = g.revoked_by.as_ref().unwrap_or(&g.granted_by);
+        g.revoked_by_name = accounts.get(by).map(|a| a.name.clone());
+    }
+    Ok(())
+}
+
+/// Who revoked a grant, as the API says it (Arugula #683): the account,
+/// and its name as the directory has it; the platform itself, or an
+/// account since deleted (no account, a name saying so). One revoked
+/// before that was recorded was its giver's doing. `null` on a live one.
+pub fn revoked_by_wire(g: &Grant) -> Value {
+    g.revoked_at.map_or(Value::Null, |_| match g.revoked_by.as_deref() {
+        Some(REVOKED_BY_ERASED) => json!({ "account": null, "name": "an account since deleted" }),
+        Some(REVOKED_BY_PLATFORM) => {
+            json!({ "account": REVOKED_BY_PLATFORM, "name": "Arugula control, when the giver left the team" })
+        }
+        by => json!({ "account": by.unwrap_or(&g.granted_by), "name": g.revoked_by_name }),
+    })
 }
 
 /// `GET /api/grants`: the grants over the signed-in account, live and
@@ -521,45 +535,108 @@ pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
 /// refused from its next call; revoking again changes nothing. The
 /// caller is the grant's giver or the account it's over, as before, or
 /// (Arugula #683) an owner of the project it's over, whoever gave it:
-/// [`revoke_as_owner`]. Only a [`Person`]: never a machine's signature.
+/// [`revoke_as_owner`], and then the giver is told ([`notify_revoked`])
+/// before anything else can fail. Only a [`Person`]: never a machine's
+/// signature.
 pub async fn revoke(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> R {
     let (g, as_owner_now) = match app.db.revoke_grant(&s.account, &id, now_ms())? {
         Some(g) => (g, false),
         None => revoke_as_owner(&app, &s.account, &id).await?,
     };
-    let g = named(&app, vec![g]).await?.remove(0);
     if as_owner_now {
-        notify_giver(&app, &g, &s.account).await;
+        notify_revoked(
+            app.clone(),
+            Revoked {
+                giver: g.granted_by.clone(),
+                subject_kind: g.subject_kind.clone(),
+                subject_id: g.subject_id.clone(),
+                project: g.scope_id.clone(),
+                powers: vec![g.power.clone()],
+                by: s.account.clone(),
+            },
+        );
     }
+    let g = named(&app, vec![g]).await?.remove(0);
     Ok(Json(wire(&g)))
 }
 
+/// What a project's owner revoked (Arugula #683), for its giver to be
+/// told: ids as the revoke knew them, never names, so the notice doesn't
+/// depend on the hub answering.
+pub struct Revoked {
+    /// The grant's giver: a machine's owner, or a token's minter.
+    pub giver: String,
+    /// `daemon` or `agent`.
+    pub subject_kind: String,
+    pub subject_id: String,
+    /// The project the grant was over.
+    pub project: String,
+    /// The powers revoked there: one for a machine's grant, a token's
+    /// whole reach there for `agent_tokens::revoke_over`.
+    pub powers: Vec<String>,
+    /// The owner who revoked them.
+    pub by: String,
+}
+
 /// Push the giver's devices a notice that a project's owner revoked their
-/// grant (Arugula #683): what, who, and that the machine is still theirs
-/// to grant from. In the background: a failure is only logged.
-async fn notify_giver(app: &Platform, g: &Grant, by: &str) {
-    let owner = app.cache.accounts(&*app.hub, std::slice::from_ref(&by.to_owned())).await.ok();
-    let owner = owner.and_then(|a| a.get(by).map(|a| a.name.clone())).unwrap_or_else(|| by.to_owned());
-    let subject = g.subject_name.clone().unwrap_or_else(|| g.subject_id.clone());
-    let scope = g.scope_name.clone().unwrap_or_else(|| g.scope_id.clone());
-    let msg = json!({
-        "title": "A grant was revoked",
-        "body": format!(
-            "{owner}, an owner of {scope}, revoked {subject}'s {} there. {} is still yours: you can give it again \
-             under Settings, Agents, on the platform page, or with `arugula grants add`.",
-            g.power,
-            if g.subject_kind == "agent" { "The token" } else { "The machine" }
-        ),
-        "tag": format!("grant-revoked-{}", g.id),
-        "control": true,
-    });
-    let hub = app.hub.clone();
-    let (giver, id) = (g.granted_by.clone(), g.id.clone());
+/// grant (Arugula #683): what, who, and how to give it again. Spawned as
+/// soon as the revoke is committed, and nothing in it fails the notice:
+/// each name is looked up here, and an id stands in for one the hub
+/// doesn't answer. The machine is still the giver's to grant from; a
+/// token's powers were set when it was minted, so that giver mints a new
+/// one. A giver who doesn't read the project now (they left the team, or
+/// it's locked to its owners) learns only what of theirs was revoked:
+/// not the project's name, nor the owner's.
+pub fn notify_revoked(app: Arc<Platform>, r: Revoked) {
     tokio::spawn(async move {
-        if let Err(e) = hub.push(&giver, &msg).await {
-            tracing::warn!(account = %giver, grant = %id, error = %e, "the revoke's notice didn't go");
+        let msg = revoked_notice(&app, &r).await;
+        if let Err(e) = app.hub.push(&r.giver, &msg).await {
+            tracing::warn!(account = %r.giver, subject = %r.subject_id, error = %e, "the revoke's notice didn't go");
         }
     });
+}
+
+async fn revoked_notice(app: &Platform, r: &Revoked) -> Value {
+    let token = r.subject_kind == "agent";
+    let subject = if token {
+        app.db.agent_token(&r.subject_id).ok().flatten().map(|t| t.name)
+    } else {
+        let ids = std::slice::from_ref(&r.subject_id);
+        app.cache.daemons(&*app.hub, ids).await.ok().and_then(|mut d| d.remove(&r.subject_id)).map(|d| d.name)
+    };
+    let subject = subject.unwrap_or_else(|| r.subject_id.clone());
+    let powers = r.powers.join(", ");
+    let scope = AgentScope::Project(r.project.clone());
+    let body = match owner_role(app, &r.giver, &scope, false).await.ok().flatten() {
+        None => format!(
+            "{subject}'s {powers} over a project you no longer read was revoked by one of its owners.{}",
+            if token { " The token keeps its reach elsewhere." } else { "" }
+        ),
+        Some((scope, _)) => {
+            let ids = std::slice::from_ref(&r.by);
+            let owner =
+                app.cache.accounts(&*app.hub, ids).await.ok().and_then(|a| a.get(&r.by).map(|a| a.name.clone()));
+            let owner = owner.map_or_else(|| "An owner".to_owned(), |name| format!("{name}, an owner"));
+            if token {
+                format!(
+                    "{owner} of {scope}, revoked {subject}'s {powers} there. The token keeps its reach elsewhere; its \
+                     powers were set when it was minted, so for {scope} again, mint a new token under Settings, \
+                     Agents with no machine, on the platform page."
+                )
+            } else {
+                format!(
+                    "{owner} of {scope}, revoked {subject}'s {powers} there. The machine is still yours: you can give \
+                     it again under Settings, Agents, on the platform page, or with `arugula grants add`."
+                )
+            }
+        }
+    };
+    json!({
+        "title": "A grant was revoked",
+        "body": body,
+        "tag": format!("grant-revoked-{}-{}", r.subject_id, r.project),
+        "control": true,
+    })
 }
 
 /// A project's owner revokes a grant over the project that they didn't

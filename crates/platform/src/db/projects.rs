@@ -161,7 +161,10 @@ pub const WRITE_POWERS: [(&str, ViewerUse); 8] = [
 ];
 
 /// What `power` does for a viewer's agents: `None` for one that isn't a
-/// write (it works as for anyone).
+/// write (it works as for anyone). The ones that do nothing are the
+/// wire's [`VIEWER_REFUSED`](arugula_control_wire::projects::VIEWER_REFUSED),
+/// which the CLI checks and the web copies; [`tests::the_refused_list_is_the_wires`]
+/// keeps this one equal to it.
 pub fn viewer_use(power: &str) -> Option<ViewerUse> {
     WRITE_POWERS.iter().find(|(p, _)| *p == power).map(|(_, u)| *u)
 }
@@ -925,6 +928,19 @@ mod tests {
             Some((Some("t1".into()), None, "one".into()))
         );
         assert_eq!(db.project_owner("prj_none").unwrap(), None);
+    }
+
+    /// The powers `WRITE_POWERS` says do nothing for a viewer are the
+    /// wire's list, in its order (Arugula #683): the CLI and the web
+    /// check theirs against that one.
+    #[test]
+    fn the_refused_list_is_the_wires() {
+        let nothing: Vec<&str> =
+            super::WRITE_POWERS.iter().filter(|(_, u)| *u == super::ViewerUse::Nothing).map(|(p, _)| *p).collect();
+        assert_eq!(nothing, arugula_control_wire::projects::VIEWER_REFUSED);
+        for p in arugula_control_wire::projects::VIEWER_REFUSED {
+            assert!(super::refused_for_viewer(p), "{p}");
+        }
     }
 
     /// A project owner's revoke (Arugula #683) reaches a grant over that

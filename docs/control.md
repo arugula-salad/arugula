@@ -46,9 +46,12 @@ machine's or a token's (Arugula #683): `arugula grants revoke grt_…` with
 the grant's id, or the same route; it reaches the project's grants only,
 never one over an account (a teammate's `cloud.drive`, their DMs) or
 another project's, and the grant says who revoked it. The giver's devices
-are told, and the grant is still theirs to give again (an owner who means
-it takes them out of the team). A revoke refuses the next call; a run, an
-agent session or a deploy approval already under way carries on. Grants are per machine,
+are told (a giver who no longer reads the project learns only what of
+theirs was revoked, not the project's name or the owner's), and a
+machine's grant is still theirs to give again (an owner who means it
+takes them out of the team); a token's powers are set at its mint, so
+that's a new token. A revoke refuses the next call; a run, an agent
+session or a deploy approval already under way carries on. Grants are per machine,
 since the daemon signs every MCP call as itself; narrowing one to the
 owner's own agents is a later daemon change. A machine that's removed loses
 its grants, and one that joins again gets a new one. Grants live in
@@ -1515,7 +1518,12 @@ aru-038): machines' agents still use their daemon's.
   /api/agent-tokens/{id}/calls`.
 - **A project's owners see every token over it,** whoever minted it, and
   revoke its reach there (`GET /api/projects/{project}/agent-tokens`, `POST
-  …/agent-tokens/{id}/revoke`; the project's settings page). A token's
+  …/agent-tokens/{id}/revoke`; the project's settings page), or one of
+  its grants by the grant's id (`POST /api/grants/{id}/revoke`, Arugula
+  #683). The minter's devices are told, and the token's grants say who
+  revoked each (`revoked_by` in `GET /api/agent-tokens`; the page and
+  `arugula agent-tokens` say so on a live token): a token's powers are set
+  when it's minted, so reach there again is a new token. A token's
   grants over a team's project are revoked when its owner leaves the team
   (with the roster's projection, `db::agent_tokens::revoke_departed`).
 - **The same checks as a machine's agents.** Each tool is the route a

@@ -36,12 +36,11 @@ const AGENT_POWERS: [&str; 12] = [
     "sessions.reply",
 ];
 
-/// The powers that do nothing at all for a viewer's agents (Arugula #683,
-/// the platform's `WRITE_POWERS` with `ViewerUse::Nothing`): the platform
-/// refuses to give one over a project you only view, so `add` checks the
-/// whole list first and gives nothing rather than part of it. Kept in step
-/// with the platform's by hand.
-const VIEWER_REFUSED: [&str; 4] = ["issues.write", "trackers.write", "runs.start", "runs.command"];
+/// The powers that do nothing at all for a viewer's agents (Arugula #683):
+/// the platform refuses to give one over a project you only view, so `add`
+/// checks the whole list first and gives nothing rather than part of it.
+/// The wire's list, the platform's own.
+use arugula_control_wire::projects::VIEWER_REFUSED;
 
 /// Those over a project only.
 const PROJECT_ONLY: [&str; 10] = [
@@ -131,6 +130,11 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
         bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
     };
+    run_with(&e, cmd, json_out)
+}
+
+/// [`run`], as this enrolled CLI.
+fn run_with(e: &Enrolled, cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
     let listed = e.api("GET", "/api/grants", None)?;
     let grants = listed["grants"].as_array().cloned().unwrap_or_default();
     let show = |g: &Value| if json_out { print_json(g) } else { println!("{}", line(g)) };
@@ -148,7 +152,7 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
         }
         GrantsCmd::Add { machine, powers, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let (scope, role) = scope_of(&e, &scope)?;
+            let (scope, role) = scope_of(e, &scope)?;
             // The whole list first: a power the platform would refuse
             // means nothing is given, not the ones before it.
             let bodies = powers.iter().map(|p| give(&id, p, scope.as_ref())).collect::<anyhow::Result<Vec<_>>>()?;
@@ -187,7 +191,7 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
         }
         GrantsCmd::Revoke { machine, power, scope } => {
             let id = machine_id(&grants, &machine)?;
-            let (scope, _) = scope_of(&e, &scope)?;
+            let (scope, _) = scope_of(e, &scope)?;
             let live: Vec<&Value> = grants
                 .iter()
                 .filter(|g| g["subject"]["id"] == id && g["live"] == true)
@@ -371,8 +375,57 @@ mod tests {
         assert!(older.contains("revoked") && !older.contains(" by "), "an older platform: {older}");
     }
 
+    /// A control of the test's own: it answers `GET /api/grants` and `GET
+    /// /api/projects` as given, `200 {}` to anything else, and keeps every
+    /// request it saw (method, path, body). One connection per request,
+    /// as the CLI makes them.
+    fn control(grants: Value, projects: Value) -> (Enrolled, std::sync::mpsc::Receiver<(String, String, String)>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for sock in l.incoming() {
+                let sock = sock.unwrap();
+                let mut r = BufReader::new(sock.try_clone().unwrap());
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                let mut words = line.split_whitespace();
+                let (method, path) =
+                    (words.next().unwrap_or_default().to_owned(), words.next().unwrap_or_default().to_owned());
+                let mut len = 0;
+                loop {
+                    let mut line = String::new();
+                    r.read_line(&mut line).unwrap();
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap();
+                    }
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                }
+                let mut body = vec![0; len];
+                r.read_exact(&mut body).unwrap();
+                let answer = match path.as_str() {
+                    "/api/grants" if method == "GET" => grants.to_string(),
+                    "/api/projects" => projects.to_string(),
+                    _ => "{}".to_owned(),
+                };
+                // Kept before it's answered, so the CLI's return finds it.
+                if tx.send((method, path, String::from_utf8_lossy(&body).into_owned())).is_err() {
+                    break;
+                }
+                let mut sock = sock;
+                write!(sock, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{answer}", answer.len()).unwrap();
+            }
+        });
+        (Enrolled::for_tests(url), rx)
+    }
+
     /// `add` gives nothing when any power in the list would be refused to
-    /// a viewer's machine (Arugula #683): the whole list is checked first.
+    /// a viewer's machine (Arugula #683): the whole list is checked first,
+    /// before any grant is asked for; an editor's list is given whole, one
+    /// POST each, in order. The refused powers are the wire's list.
     #[test]
     fn add_gives_nothing_rather_than_part_of_a_list() {
         let powers = |l: &[&str]| l.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
@@ -385,6 +438,33 @@ mod tests {
         );
         assert!(refused_for_viewer(&powers(&["issues.write"]), Some("editor")).is_empty());
         assert!(refused_for_viewer(&powers(&["issues.write"]), None).is_empty(), "your DMs, or an older platform");
+        assert_eq!(
+            refused_for_viewer(&powers(&["secrets.write"]), Some("viewer")),
+            ["secrets.write"],
+            "the wire's list"
+        );
+
+        let grants = json!({ "grants": [{ "id": "grt_0", "subject": { "kind": "daemon", "id": "d1", "name": "geek" },
+            "power": "cloud.drive", "scope": { "kind": "account", "id": "a" }, "live": true }] });
+        let projects = |role: &str| json!({ "projects": [{ "id": "prj_2", "name": "Acme", "team": { "id": "t", "name": "Acme", "role": role } }] });
+        let add = |powers: &[&str]| GrantsCmd::Add {
+            machine: "geek".into(),
+            powers: powers.iter().map(|p| (*p).to_owned()).collect(),
+            scope: Scope { project: Some("acme".into()), dms: false },
+        };
+        let (e, seen) = control(grants.clone(), projects("viewer"));
+        let err = run_with(&e, Some(add(&["threads.read", "issues.write", "runs.start"])), true).unwrap_err();
+        assert!(err.to_string().contains("issues.write, runs.start would do nothing"), "{err:#}");
+        let seen: Vec<_> = seen.try_iter().map(|(m, p, _)| format!("{m} {p}")).collect();
+        assert_eq!(seen, ["GET /api/grants", "GET /api/projects"], "nothing was given");
+
+        let (e, seen) = control(grants, projects("editor"));
+        assert_eq!(run_with(&e, Some(add(&["threads.read", "issues.write"])), true).unwrap(), 0);
+        let seen: Vec<_> = seen.try_iter().collect();
+        let posts: Vec<&str> = seen.iter().filter(|(m, _, _)| m == "POST").map(|(_, _, b)| b.as_str()).collect();
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        assert!(posts[0].contains("\"threads.read\"") && posts[1].contains("\"issues.write\""), "{posts:?}");
+        assert!(posts.iter().all(|b| b.contains("\"prj_2\"")), "{posts:?}");
     }
 
     /// `add` takes one or more powers and one scope; an agent power needs
