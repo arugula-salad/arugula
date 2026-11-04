@@ -117,7 +117,11 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   // nvim, or this page can't show VS Code's site.
   const [editorApp, setEditorApp] = useState<EditorApp>(() => (editorPref() === "nvim" || !client.showsBlocks() ? "nvim" : "vscode"));
   const [where, setWhere] = useState<Where>(() => (tabMachine ? { kind: "machine", id: tabMachine.id, name: tabMachine.name ?? tabMachine.sprite } : { kind: "here" }));
-  const [dir, setDir] = useState(() => (anchor === undefined ? "" : (client.cwd(anchor) ?? "")));
+  // The directory the person chose; until they do, the active pane's as it
+  // is now, not as it was when the drawer opened: a `cd` that hasn't reached
+  // the page yet, or one made since, would otherwise never show.
+  const [chosenDir, setChosenDir] = useState<string | null>(null);
+  const dir = chosenDir ?? (anchor === undefined ? "" : (client.cwd(anchor) ?? ""));
   const [port, setPort] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -390,7 +394,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
             class="add-pane-choose"
             disabled={!dirApplies}
             title={dirApplies ? "Choose a directory" : "The picker browses the active pane's machine"}
-            onClick={() => anchor !== undefined && openPicker(client, anchor, false, setDir)}
+            onClick={() => anchor !== undefined && openPicker(client, anchor, false, setChosenDir)}
           >
             Choose…
           </button></div>
