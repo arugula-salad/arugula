@@ -154,9 +154,10 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 ### Where machines come from
 
 One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`),
-opened at startup only when `sandbox-providers` is on: with the flag off
-the daemon reads no token and opens no adapter, and turning it on takes a
-restart (the refusal says so).
+behind `sandbox-providers` like the rest of the feature: with the flag off
+the daemon opens no adapter and asks nothing of a provider, whatever token
+or key is on disk, and turning the flag on or off works on the running
+daemon.
 
 - **A Sprites API** (`crates/arugulad-labs/src/sprites.rs`): a wispd
   (`--wisp-url`, default `http://127.0.0.1:7788`, token in

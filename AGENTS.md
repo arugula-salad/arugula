@@ -208,7 +208,8 @@ nothing marked `mux:` names the edge or the block kinds.
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
+  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
+  the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
   Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
