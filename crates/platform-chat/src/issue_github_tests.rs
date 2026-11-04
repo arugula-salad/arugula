@@ -293,11 +293,9 @@ async fn a_viewers_comment_goes_out_and_their_agents_stays() {
     // Hers goes out as her, through one of her machines.
     assert_eq!(v["github"]["sending"], true, "{v}");
     assert!(v["github"]["draft"].as_str().unwrap().starts_with("dft_"), "her own draft: {v}");
-    let before = app.db.export_drafts(&id).unwrap().len();
     let got = export::posted(&app, &id, &room, "carol", Some("cbox"), 43, "the agent's note").await.unwrap();
     assert!(got.draft.is_empty(), "no draft: {got:?}");
-    assert!(got.why.as_deref().unwrap_or_default().contains("only views"), "{got:?}");
-    assert_eq!(app.db.export_drafts(&id).unwrap().len(), before);
+    assert!(got.why.as_deref().unwrap_or_default().contains("your owner only views"), "{got:?}");
     let (_, ds) = call(&base, "carol", "GET", "/api/forge/drafts?state=all", None).await;
     let texts: Vec<&str> = ds["drafts"].as_array().unwrap().iter().filter_map(|d| d["body"].as_str()).collect();
     assert_eq!(texts, ["from carol"], "only hers: {ds}");

@@ -1227,7 +1227,10 @@ impl ForgeBlock {
         if self.asking.lock().unwrap().is_some() || self.live.closed() {
             return;
         }
-        let first = self.state.lock().unwrap().drafts.iter().find(|d| d.status == DraftStatus::Waiting).cloned();
+        let first = {
+            let st = self.state.lock().unwrap();
+            st.drafts.iter().find(|d| d.status == DraftStatus::Waiting && self.may_settle(d)).cloned()
+        };
         let Some(d) = first else { return };
         let (repo, number) = self.repo();
         let ask = draft_ask(&d, &repo, number);
@@ -1323,20 +1326,33 @@ impl ForgeBlock {
     fn platform_drafts(&self) -> Vec<Draft> {
         let control = live::control();
         let p = self.platform.lock().unwrap();
-        let Some(link) = &p.link else { return vec![] };
-        // A viewer's machine can neither send nor drop another's draft, so
-        // its card never asks about one: only the owner's own show here.
-        let only_own = link.role.as_deref() == Some("viewer");
-        let owner = control.as_ref().and_then(|c| c.account());
+        if p.link.is_none() {
+            return vec![];
+        }
         p.drafts
             .iter()
             .filter(|d| d.state == "waiting")
-            .filter(|d| !only_own || owner.as_deref() == Some(d.author.as_str()))
             .filter_map(|d| {
                 let author = control.as_ref().and_then(|c| c.name_of_account(&d.author));
                 platform::shown(d, author.as_deref().unwrap_or("a person"), p.errors.get(&d.id).cloned())
             })
             .collect()
+    }
+
+    /// Whether this machine's owner may settle a draft from its card. On a
+    /// project the owner only views, a platform draft is theirs to settle
+    /// only if they wrote it: they can neither send nor drop another's. The
+    /// block still lists those; the card never asks about them.
+    fn may_settle(&self, d: &Draft) -> bool {
+        if !platform::is_platform_id(&d.id) {
+            return true;
+        }
+        let p = self.platform.lock().unwrap();
+        if p.link.as_ref().and_then(|l| l.role.as_deref()) != Some("viewer") {
+            return true;
+        }
+        let owner = live::control().and_then(|c| c.account());
+        p.drafts.iter().any(|f| f.id == d.id && owner.as_deref() == Some(f.author.as_str()))
     }
 
     /// Log a failure to sync once, not every poll.

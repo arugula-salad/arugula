@@ -687,15 +687,18 @@ same viewer check as the routes above (M165), for a person or a machine with
 a live `cloud.drive` grant (for its owner). A viewer of the project
 reads items and drafts and drafts for themselves (the page, `arugula pr
 comment` as them), and sends their own with their own GitHub rights, even
-after a demotion; a machine drafts only for an owner or editor, so an
-agent on a viewer's machine makes no draft on the platform (403,
-`viewer_write`), whatever the machine was granted. A viewer, and a
-viewer's machine, discards only the viewer's own drafts. A block's own
-drafts on a viewer's machine stay on the block, and its card sends them
-with the person's own `gh`, which the platform can't see; the daemon
-raises only the owner's own platform drafts there (`GET
-/api/forge/repos/{owner}/{name}` says the role; a daemon from before
-raises others' too, and a drop then fails on the card, saying so). On an
+after a demotion; an agent drafts only for an owner or editor, so an
+agent on a viewer's machine, or a CLI that says an agent runs it (as
+`arugula` does with `CLAUDECODE` or `AI_AGENT` set), makes no draft on
+the platform (403, `viewer_write`), whatever the machine was granted.
+The CLI's case rests on the client saying so. A viewer, and a viewer's
+machine, discards only the viewer's own drafts. A block's own drafts on
+a viewer's machine stay on the block, and its card sends them with the
+person's own `gh`, which the platform can't see. The block lists every
+platform draft its owner may read, and its card asks only about the
+owner's own (`GET /api/forge/repos/{owner}/{name}` says the role; a
+daemon from before asks about others' too, and a drop then fails on the
+card, saying so). On an
 exported issue, a viewer's own comment goes to GitHub as them; their
 agent's stays a native comment, saying why. Sends (`draft.send`,
 `pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's

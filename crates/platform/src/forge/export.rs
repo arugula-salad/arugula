@@ -531,7 +531,7 @@ pub async fn posted(
         match super::links::membership(app, author, &i.project, true).await {
             Ok((_, TeamRole::Viewer)) => {
                 return stays(format!(
-                    "{author} only views this project, so their agent's comment stays here, not on {}",
+                    "your owner only views this project, so this comment stays here, not on {}",
                     g.repo
                 ));
             }

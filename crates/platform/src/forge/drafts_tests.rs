@@ -346,6 +346,12 @@ async fn a_viewer_drafts_alone_and_their_machine_doesnt() {
     assert_eq!((s, ids(&v).len()), (200, 2), "{v}");
     let (s, dans) = call(&base, "dan", "POST", "/api/forge/drafts", Some(comment("acme/app", "mine"))).await;
     assert_eq!((s, dans["draft"]["author"].as_str()), (200, Some("dan")), "{dans}");
+    // An agent running his CLI says so (`agent`), and is refused as his
+    // machine would be.
+    let mut cli = comment("acme/app", "x");
+    cli["agent"] = json!("cli");
+    let (s, v) = call(&base, "dan", "POST", "/api/forge/drafts", Some(cli)).await;
+    assert_eq!((s, v["reason"].as_str()), (403, Some("viewer_write")), "an agent on the CLI: {v}");
     let dans = dans["draft"]["id"].as_str().unwrap().to_owned();
     // dan's machine makes none: as an agent's draft, as an upload, through ops.
     let (s, v) = machine(&base, "dan dbox", "POST", "/api/forge/drafts", Some(comment("acme/app", "x"))).await;

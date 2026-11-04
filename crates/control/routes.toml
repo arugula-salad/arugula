@@ -2776,7 +2776,7 @@ path = "/api/forge/drafts"  # wire::projects::FORGE_DRAFTS
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. A machine drafts only for an owner or editor of the repo's project: a viewer's machine is refused (403, viewer_write), while the viewer themselves still drafts. A machine's import_key makes a second upload answer with the first, before anything else is decided. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
+note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. An agent drafts only for an owner or editor of the repo's project: a viewer's machine, or a CLI that names an agent, is refused (403, viewer_write), while the viewer themselves still drafts. A machine's import_key makes a second upload answer with the first, before anything else is decided. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
 
 [[route]]
 method = "GET"
@@ -2816,7 +2816,7 @@ path = "/api/forge/repos/{owner}/{name}"  # wire::projects::FORGE_REPO
 process = "platform"
 auth = "cloud_driver"
 clients = ["daemon"]
-note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. Always a 200; another project's repo is no linked repo. When it's linked for them, role says the reader's role in the project (owner, editor or viewer): a viewer's machine keeps its blocks' drafts and raises only the owner's own."
+note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. A 200 whenever the platform can answer; another project's repo is no linked repo. When it's linked for them, role says the reader's role in the project (owner, editor or viewer): a viewer's machine keeps its blocks' drafts, and its cards ask only about the owner's own."
 
 [[route]]
 method = "POST"

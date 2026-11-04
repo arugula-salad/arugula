@@ -9,7 +9,9 @@
 //!   `cloud.drive` grant ([`CloudDriver`]), for its owner: then the draft
 //!   names the machine and the agent. Either way the author must be able
 //!   to read the repo now. A machine drafts only for an owner or editor
-//!   of the repo's project ([`drafter`]): a viewer's agents read items and
+//!   of the repo's project ([`drafter`]), and so does one that names an
+//!   agent (`agent`, as the CLI does when an agent runs it): that rests on
+//!   the client saying so. A viewer's agents read items and
 //!   drafts and make none here, whatever the machine was granted, while
 //!   the viewer themselves still drafts (and sends, with their own GitHub
 //!   rights). A block's own drafts never come here from a viewer's
@@ -56,6 +58,10 @@ use crate::{
 
 /// Drafts made per account per hour: an agent in a loop stops here.
 pub const DRAFTS_MADE: (&str, usize) = ("forge-draft", 600);
+
+/// Drafts asked for per machine per hour, before its owner's role is read:
+/// a daemon retrying a refusal spends its own allowance, not its owner's.
+pub const DRAFTS_ASKED: (&str, usize) = ("forge-draft-machine", 600);
 
 /// How many drafts a list holds at most, and when it doesn't say.
 const MOST: u32 = 500;
@@ -227,11 +233,17 @@ pub async fn create(
         let draft = wire_drafts(&app, vec![row]).await?.remove(0);
         return Ok(Json(wire::DraftCreated { draft, created: false }));
     }
-    // Before the role: an old daemon retrying a refusal is capped too.
-    app.limits.check_account(DRAFTS_MADE, &d.account)?;
-    if d.machine.is_some() && !drafter(&app, &d.account, &repo.project_id).await? {
+    // A machine's asks are counted as its own before the role is read, so
+    // an old daemon retrying a refusal never spends its owner's allowance.
+    if let Some(m) = &d.machine {
+        app.limits.check_daemon(DRAFTS_ASKED, m)?;
+    }
+    // An agent's draft, from its machine or from a CLI that says an agent
+    // runs it (`agent`), only for an owner or editor.
+    if (d.machine.is_some() || agent.is_some()) && !drafter(&app, &d.account, &repo.project_id).await? {
         return Err(viewer_drafts());
     }
+    app.limits.check_account(DRAFTS_MADE, &d.account)?;
     let new = NewDraftRow {
         project_id: &repo.project_id,
         author: &d.account,

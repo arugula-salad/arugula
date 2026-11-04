@@ -46,7 +46,7 @@ pub struct Link {
     pub login: Option<String>,
     /// The owner's role in the project (`owner`, `editor`, `viewer`), from
     /// a control that says it. A viewer's machine makes no drafts there,
-    /// and its blocks raise only the owner's own.
+    /// and its cards ask only about the owner's own.
     pub role: Option<String>,
     /// The repository's merge methods as the platform read them (#427);
     /// none from a control before that, or while it can't say.
