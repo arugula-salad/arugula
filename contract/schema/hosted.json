@@ -127,7 +127,7 @@
       "type": "object"
     },
     "DelegationClosed": {
-      "description": "Control's own word that a delegation ended, signed with the key the\ndelegation names: the delegate giving up what it was given. It holds\nwhatever becomes of the person who revoked, and `at` is control's clock\n(or the revoke's own time, when that's earlier), not a person's alone.\nControl sends it beside the revokes it took.",
+      "description": "Control's own word that a delegation ended, signed with the key the\ndelegation names. `at` is control's clock, or the earliest revoke's own\ntime when that's before it. Control sends it beside the revokes it took.",
       "properties": {
         "at": {
           "format": "uint64",
@@ -406,7 +406,7 @@
           "type": "object"
         },
         "closed": {
-          "description": "Control's word that it ended, which holds when a revoke's signer has\nsince left. Empty from a control from before, or while it stands.",
+          "description": "Control's word that it ended. Empty from a control from before, or\nwhile it stands.",
           "items": {
             "$ref": "#/$defs/DelegationClosed"
           },
