@@ -1,0 +1,29 @@
+{
+  "accounts": [],
+  "agent_accounts": [],
+  "agent_callers": [
+    "8a1d692156edddb7:User { id: \"account:acct1\", name: \"acct1\", pic: None }"
+  ],
+  "drivers": [
+    "8a1d692156edddb7:Owner"
+  ],
+  "hosted": true,
+  "is_team": false,
+  "kind_name": [
+    "account",
+    ""
+  ],
+  "known_roots": [
+    "acct1=440444e39236c25a"
+  ],
+  "others": [],
+  "owners": true,
+  "shared_roles": [],
+  "team_roles": [],
+  "trusted": [
+    "440444e39236c25a",
+    "8a1d692156edddb7",
+    "c0067318aaf1193c"
+  ],
+  "whose": "an account"
+}

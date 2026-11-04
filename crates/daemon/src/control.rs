@@ -128,95 +128,141 @@ pub const LEFT_FILE: &str = "control-left.json";
 /// wrong, or restored).
 const DROPPED_RETRY: Duration = Duration::from_secs(600);
 
-/// `<state>/control.json`.
+/// `<state>/control.json`: what this machine pinned of control, and
+/// what it is ([`MachineKind`]). On disk it keeps the shape every release
+/// has written ([`OnDisk`]): the kind spread over `team`, `roster`, the
+/// team's fields and `hosted` with its `deploy` and `builder` flags, so a
+/// daemon from before #672 reads a file this one saved. A file that says
+/// something no kind can be (a roster with no team pinned, a hosted
+/// machine that's both a deploy's and a snapshot's box, a team that isn't
+/// the delegation's owner) doesn't load: the daemon logs it and runs as
+/// not joined, letting nobody in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "OnDisk", into = "OnDisk")]
 pub struct Saved {
     pub url: String,
     pub trust: Trust,
     pub cert: Cert,
-    #[serde(default)]
     pub certs: Vec<Cert>,
-    #[serde(default)]
     pub revocations: Vec<Revocation>,
-    /// A team's machine (M19): the team and its founder, pinned at join.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team: Option<TeamPin>,
-    /// The team's roster as this daemon last verified it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub roster: Option<Roster>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub team_certs: AccountCerts,
-    /// Members taken out of the team: their certificates and removals as
-    /// last held, so letting one back in takes up from there.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub former_members: BTreeMap<String, Former>,
-    /// The team's members' names as they set them (#208); the roster has
-    /// one word each ("Sam-Stranger").
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub team_names: BTreeMap<String, String>,
-    /// The team is locked: only its owners get in.
-    #[serde(default)]
-    pub locked: bool,
-    /// The owner's signed word that set `locked`, as last taken
-    /// ([`checkpoint::take_lock`]): only a newer one from an owner changes
-    /// it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lock: Option<TeamLock>,
+    /// What this machine is: personal, a team's, or hosted (and for what).
+    pub kind: MachineKind,
     /// When this machine first saw each certificate and removal it holds
     /// ([`checkpoint::Seen`]): a certificate first seen after its
     /// approver's removal doesn't count.
-    #[serde(default, skip_serializing_if = "is_unseen")]
     pub seen: checkpoint::Seen,
     /// People sessions were shared with (by account): their certificates,
     /// checked against the roots pinned in their grants.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub peers: BTreeMap<String, PeerCerts>,
     /// Teams sessions were shared with (M30), by id: the latest roster that
     /// chains back to the founder pinned in the grant, and its members'
     /// certificates.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shared_teams: BTreeMap<String, SharedTeam>,
     /// Teams still pinned here that control left out of its last answer
     /// (it can withhold one): nobody gets in through them, but their
     /// rosters and members' removals stay as last checked, so an answer
     /// that brings one back moves forward from there.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub held_teams: BTreeMap<String, SharedTeam>,
     /// The same for people still granted here whom control left out:
     /// their certificates and removals as last checked.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub held_peers: BTreeMap<String, PeerCerts>,
     /// The account's login on control (M30), for what to call its owner.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub login: String,
     /// When the last move it took was made (#100): older ones are replays.
-    #[serde(default)]
     pub moved_at: u64,
+}
+
+/// What a machine is (#672, docs/data-model.md "Machines and compute"):
+/// one of three kinds, each with the fields that belong to it, so nothing
+/// else can be represented. One per daemon, behind an `Arc`: a personal
+/// machine's small variant isn't worth boxing the others for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
+pub enum MachineKind {
+    /// Joined to an account: who gets in is the account's own devices,
+    /// and whoever its sessions are shared with.
+    Personal,
+    /// A team's machine (M19): joined to a team, or moved into one by a
+    /// signed [`Move`]; its members get in by their roles.
+    Team(InTeam),
     /// A hosted machine (M178, M180): enrolled into one project under its
     /// delegation, not one of an account's devices. `cert` is made from
     /// its hosted certificate, and who gets in is the project's people
     /// (`crate::hosted::trust::saved_from`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hosted: Option<HostedPin>,
+    Hosted(HostedPin),
+}
+
+/// A team this machine checks for itself: the pin it joined with, and
+/// the roster, members' certificates and lock as it last verified them.
+/// A team machine's own team, or the team whose project a hosted machine
+/// is enrolled under. A team sessions were shared with is a
+/// [`SharedTeam`], the same checked from a grant's pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InTeam {
+    /// The team and its founder, pinned at join: what the roster is
+    /// checked against.
+    pub pin: TeamPin,
+    /// The team's roster as this daemon last verified it; none until the
+    /// first refresh after a join or move.
+    pub roster: Option<Roster>,
+    /// Members' certificates and removals, by account.
+    pub certs: AccountCerts,
+    /// Members taken out of the team: their certificates and removals as
+    /// last held, so letting one back in takes up from there.
+    pub former: BTreeMap<String, Former>,
+    /// The team's members' names as they set them (#208); the roster has
+    /// one word each ("Sam-Stranger").
+    pub names: BTreeMap<String, String>,
+    /// The team is locked: only its owners get in.
+    pub locked: bool,
+    /// The owner's signed word that set `locked`, as last taken
+    /// ([`checkpoint::take_lock`]): only a newer one from an owner changes
+    /// it.
+    pub lock: Option<TeamLock>,
+}
+
+impl InTeam {
+    /// Just joined or moved into `pin`'s team: nothing checked yet.
+    pub fn new(pin: TeamPin) -> Self {
+        Self {
+            pin,
+            roster: None,
+            certs: Default::default(),
+            former: Default::default(),
+            names: Default::default(),
+            locked: false,
+            lock: None,
+        }
+    }
+}
+
+/// What a hosted machine is for (control's enrollment says `purpose`).
+/// A box that hears [`Purpose::Deploy`] or [`Purpose::Snapshot`] never
+/// stops being one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// A workspace for its project's people.
+    People,
+    /// A box made for one deploy's run (M219): nobody gets in, and it
+    /// takes that run only.
+    Deploy,
+    /// A box made to build a workspace's snapshot (M263): it takes no
+    /// runs or sessions, and after its setup it wipes itself for the
+    /// snapshot.
+    Snapshot,
 }
 
 /// What a hosted machine pinned at enrollment (M178).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostedPin {
     pub cert: arugula_e2e::hosted::HostedCert,
     pub delegation: arugula_e2e::hosted::Delegation,
-    #[serde(default)]
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
-    /// A box made for one deploy's run (M219, control's enrollment says
-    /// `purpose: deploy`): nobody gets in, it takes that run only, and it
-    /// never stops being one.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub deploy: bool,
-    /// A box made to build a workspace's snapshot (M263, `purpose:
-    /// snapshot`): nobody gets in, it takes no runs or sessions, and after
-    /// its setup it wipes itself for the snapshot. It never stops being one.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub builder: bool,
+    pub purpose: Purpose,
+    /// The project's team, when the delegation's owner is a team: its
+    /// roster checked from the pin, as a team machine's is. None when an
+    /// account owns the project.
+    pub team: Option<InTeam>,
     /// The project owners' browsers and phones that grandfathered app
     /// windows approved, by account (`arugula_e2e::deploy::check_apply`):
     /// the first set control sent, and since then only what every later
@@ -224,7 +270,6 @@ pub struct HostedPin {
     /// (`crate::hosted::trust::saved_from`). `None` until control sends
     /// one (a box enrolled before takes its first at its next refresh), and
     /// then no app window counts here.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_app_children: Option<arugula_e2e::cert::LegacyAppChildren>,
     /// The passkey logs of its project's people, by account, as control
     /// sent them, each only ever extended by a refresh
@@ -232,13 +277,271 @@ pub struct HostedPin {
     /// `arugula_e2e::deploy::check_apply`) and the project's standing grant
     /// for runs and its revokes (DK6, `arugula_e2e::project_grant::check`)
     /// are checked against. Before DK6 only a deploy's box got them.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub passkey_logs: BTreeMap<String, arugula_e2e::passkey::Log>,
     /// With them: which origins may use each RP's passkeys, the first set
     /// control sent and since then only what every refresh also sent.
     /// `None` until control sends one: then no origin counts here.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passkey_origins: Option<arugula_e2e::passkey::Origins>,
+}
+
+impl MachineKind {
+    /// The team checked here, whichever kind holds one.
+    pub fn team(&self) -> Option<&InTeam> {
+        match self {
+            Self::Personal => None,
+            Self::Team(t) => Some(t),
+            Self::Hosted(h) => h.team.as_ref(),
+        }
+    }
+
+    pub fn team_mut(&mut self) -> Option<&mut InTeam> {
+        match self {
+            Self::Personal => None,
+            Self::Team(t) => Some(t),
+            Self::Hosted(h) => h.team.as_mut(),
+        }
+    }
+}
+
+impl Saved {
+    /// The team this machine checks: a team machine's own, or the team
+    /// whose project a hosted machine is enrolled under. None for a
+    /// personal machine, and for a hosted machine of an account's project.
+    pub fn team(&self) -> Option<&InTeam> {
+        self.kind.team()
+    }
+
+    pub fn team_mut(&mut self) -> Option<&mut InTeam> {
+        self.kind.team_mut()
+    }
+
+    /// The team's pin, when there is a team.
+    pub fn team_pin(&self) -> Option<&TeamPin> {
+        self.team().map(|t| &t.pin)
+    }
+
+    /// The team's roster as last verified, when there is one.
+    pub fn roster(&self) -> Option<&Roster> {
+        self.team()?.roster.as_ref()
+    }
+
+    /// What a hosted machine pinned, on one.
+    pub fn hosted(&self) -> Option<&HostedPin> {
+        match &self.kind {
+            MachineKind::Hosted(h) => Some(h),
+            _ => None,
+        }
+    }
+
+    pub fn hosted_mut(&mut self) -> Option<&mut HostedPin> {
+        match &mut self.kind {
+            MachineKind::Hosted(h) => Some(h),
+            _ => None,
+        }
+    }
+
+    pub fn is_hosted(&self) -> bool {
+        matches!(self.kind, MachineKind::Hosted(_))
+    }
+
+    /// A hosted machine made for `purpose`.
+    pub fn is_for(&self, purpose: Purpose) -> bool {
+        self.hosted().is_some_and(|h| h.purpose == purpose)
+    }
+}
+
+/// `control.json` as every release has written it: [`Saved`] with the
+/// kind spread over optional fields and flags. Reading maps it onto one
+/// [`MachineKind`], refusing what no kind can be; writing spreads it back
+/// out, so the file stays readable by a daemon from before #672.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OnDisk {
+    url: String,
+    trust: Trust,
+    cert: Cert,
+    #[serde(default)]
+    certs: Vec<Cert>,
+    #[serde(default)]
+    revocations: Vec<Revocation>,
+    /// A team's machine (M19): the team and its founder, pinned at join.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    team: Option<TeamPin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    roster: Option<Roster>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    team_certs: AccountCerts,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    former_members: BTreeMap<String, Former>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    team_names: BTreeMap<String, String>,
+    #[serde(default)]
+    locked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lock: Option<TeamLock>,
+    #[serde(default, skip_serializing_if = "is_unseen")]
+    seen: checkpoint::Seen,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    peers: BTreeMap<String, PeerCerts>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    shared_teams: BTreeMap<String, SharedTeam>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    held_teams: BTreeMap<String, SharedTeam>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    held_peers: BTreeMap<String, PeerCerts>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    login: String,
+    #[serde(default)]
+    moved_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hosted: Option<OnDiskHosted>,
+}
+
+/// [`HostedPin`] as written: the purpose as the `deploy` and `builder`
+/// flags, and the project's team in the file's team fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OnDiskHosted {
+    cert: arugula_e2e::hosted::HostedCert,
+    delegation: arugula_e2e::hosted::Delegation,
+    #[serde(default)]
+    revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    deploy: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    builder: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    legacy_app_children: Option<arugula_e2e::cert::LegacyAppChildren>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    passkey_logs: BTreeMap<String, arugula_e2e::passkey::Log>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    passkey_origins: Option<arugula_e2e::passkey::Origins>,
+}
+
+impl TryFrom<OnDisk> for Saved {
+    type Error = anyhow::Error;
+
+    fn try_from(d: OnDisk) -> anyhow::Result<Self> {
+        use arugula_e2e::hosted::Owner;
+        let team = match d.team {
+            Some(pin) => Some(InTeam {
+                pin,
+                roster: d.roster,
+                certs: d.team_certs,
+                former: d.former_members,
+                names: d.team_names,
+                locked: d.locked,
+                lock: d.lock,
+            }),
+            None => {
+                // A roster with no pin was checked against nothing: it
+                // lets nobody in. A lock or members' certificates
+                // without one are as meaningless.
+                anyhow::ensure!(
+                    d.roster.is_none()
+                        && d.team_certs.is_empty()
+                        && d.former_members.is_empty()
+                        && d.team_names.is_empty()
+                        && !d.locked
+                        && d.lock.is_none(),
+                    "control.json holds a team's roster, certificates or lock with no team pinned; not loading it"
+                );
+                None
+            }
+        };
+        let kind = match d.hosted {
+            None => team.map_or(MachineKind::Personal, MachineKind::Team),
+            Some(h) => {
+                let purpose = match (h.deploy, h.builder) {
+                    (false, false) => Purpose::People,
+                    (true, false) => Purpose::Deploy,
+                    (false, true) => Purpose::Snapshot,
+                    (true, true) => {
+                        bail!(
+                            "control.json says this hosted machine is a deploy's box and a snapshot's; not loading it"
+                        )
+                    }
+                };
+                match (h.delegation.owner(), &team) {
+                    (Some(Owner::Team(id)), Some(t)) if t.pin.team == id => {}
+                    (Some(Owner::Account(_)), None) => {}
+                    (None, _) => bail!("control.json's hosted delegation names no owner; not loading it"),
+                    _ => bail!("control.json's team isn't the hosted delegation's owner; not loading it"),
+                }
+                MachineKind::Hosted(HostedPin {
+                    cert: h.cert,
+                    delegation: h.delegation,
+                    revocations: h.revocations,
+                    purpose,
+                    team,
+                    legacy_app_children: h.legacy_app_children,
+                    passkey_logs: h.passkey_logs,
+                    passkey_origins: h.passkey_origins,
+                })
+            }
+        };
+        Ok(Self {
+            url: d.url,
+            trust: d.trust,
+            cert: d.cert,
+            certs: d.certs,
+            revocations: d.revocations,
+            kind,
+            seen: d.seen,
+            peers: d.peers,
+            shared_teams: d.shared_teams,
+            held_teams: d.held_teams,
+            held_peers: d.held_peers,
+            login: d.login,
+            moved_at: d.moved_at,
+        })
+    }
+}
+
+impl From<Saved> for OnDisk {
+    fn from(s: Saved) -> Self {
+        let (team, hosted) = match s.kind {
+            MachineKind::Personal => (None, None),
+            MachineKind::Team(t) => (Some(t), None),
+            MachineKind::Hosted(h) => (
+                h.team,
+                Some(OnDiskHosted {
+                    cert: h.cert,
+                    delegation: h.delegation,
+                    revocations: h.revocations,
+                    deploy: h.purpose == Purpose::Deploy,
+                    builder: h.purpose == Purpose::Snapshot,
+                    legacy_app_children: h.legacy_app_children,
+                    passkey_logs: h.passkey_logs,
+                    passkey_origins: h.passkey_origins,
+                }),
+            ),
+        };
+        let (team, roster, team_certs, former_members, team_names, locked, lock) = match team {
+            Some(t) => (Some(t.pin), t.roster, t.certs, t.former, t.names, t.locked, t.lock),
+            None => (None, None, Default::default(), Default::default(), Default::default(), false, None),
+        };
+        Self {
+            url: s.url,
+            trust: s.trust,
+            cert: s.cert,
+            certs: s.certs,
+            revocations: s.revocations,
+            team,
+            roster,
+            team_certs,
+            former_members,
+            team_names,
+            locked,
+            lock,
+            seen: s.seen,
+            peers: s.peers,
+            shared_teams: s.shared_teams,
+            held_teams: s.held_teams,
+            held_peers: s.held_peers,
+            login: s.login,
+            moved_at: s.moved_at,
+            hosted,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,10 +588,17 @@ fn take_move(saved: &mut Saved, m: Move) {
     if m.at <= saved.moved_at {
         return;
     }
+    // A hosted machine is a project's, not an account's (its refresh
+    // never asks for moves): one that reached it anyway changes nothing.
+    if saved.is_hosted() {
+        warn!(by = m.by, "a move from control reached a hosted machine; ignoring it");
+        return;
+    }
     let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
     let own = trusted.get(&m.by).is_some_and(|by| m.signed_for(&saved.cert.device, by));
-    let owner_out = saved.team.is_some()
-        && saved.roster.as_ref().is_some_and(|r| m.owner_takes_out(&saved.cert.device, r, &saved.team_certs));
+    let owner_out = saved
+        .team()
+        .is_some_and(|t| t.roster.as_ref().is_some_and(|r| m.owner_takes_out(&saved.cert.device, r, &t.certs)));
     if !own && !owner_out {
         warn!(
             by = m.by,
@@ -296,15 +606,11 @@ fn take_move(saved: &mut Saved, m: Move) {
         );
         return;
     }
-    if saved.team != m.team {
+    if saved.team_pin() != m.team.as_ref() {
         info!(team = m.team.as_ref().map(|p| p.team.as_str()), "moved");
-        saved.team = m.team;
-        saved.roster = None;
-        saved.team_certs = Default::default();
-        saved.former_members = Default::default();
-        saved.team_names = Default::default();
-        saved.locked = false;
-        saved.lock = None;
+        // Into a team: its roster is fetched from scratch. Out of one:
+        // nothing of it stays.
+        saved.kind = m.team.map_or(MachineKind::Personal, |pin| MachineKind::Team(InTeam::new(pin)));
     }
     saved.moved_at = m.at;
 }
@@ -396,30 +702,27 @@ pub(crate) fn retire_members(
 /// The team's roster, members' certificates and names, as a refresh
 /// takes control's answer: rosters from the one held, each following the
 /// one before ([`checkpoint::advance`]); members' removals only add up.
-fn take_team(saved: &mut Saved, pin: &TeamPin, t: wire::TeamAnswer, now: u64) {
-    let mut certs =
-        take_members(&saved.team_certs, saved.roster.as_ref(), &saved.former_members, t.certs, &mut saved.seen, now);
-    let (cur, stopped) = checkpoint::advance(saved.roster.as_ref(), t.rosters, pin, &certs);
+fn take_team(saved: &mut Saved, t: wire::TeamAnswer, now: u64) {
+    let Saved { kind, seen, .. } = saved;
+    let Some(team) = kind.team_mut() else { return };
+    let pin = &team.pin;
+    let mut certs = take_members(&team.certs, team.roster.as_ref(), &team.former, t.certs, seen, now);
+    let (cur, stopped) = checkpoint::advance(team.roster.as_ref(), t.rosters, pin, &certs);
     if let Some(version) = stopped {
         warn!(version, "a team roster from control doesn't follow the one held; ignoring it");
     }
     // Keep only the current members' certificates; those taken out are
     // kept apart, removals and all.
-    retire_members(saved.roster.as_ref(), cur.as_ref(), &mut certs, &mut saved.former_members);
+    retire_members(team.roster.as_ref(), cur.as_ref(), &mut certs, &mut team.former);
     let mut names = t.names;
     names.retain(|a, _| cur.as_ref().is_some_and(|r| r.member(a).is_some()));
-    saved.roster = cur;
-    saved.team_certs = certs;
-    saved.team_names = names;
+    team.roster = cur;
+    team.certs = certs;
+    team.names = names;
     // Locked or not by an owner's newer signed word only; control alone
     // can lock it, never unlock it.
-    (saved.locked, saved.lock) = checkpoint::take_lock(
-        (saved.locked, saved.lock.as_ref()),
-        t.lock,
-        t.locked,
-        saved.roster.as_ref(),
-        &saved.team_certs,
-    );
+    (team.locked, team.lock) =
+        checkpoint::take_lock((team.locked, team.lock.as_ref()), t.lock, t.locked, team.roster.as_ref(), &team.certs);
 }
 
 /// People's certificates as a refresh takes them (`got`, by account),
@@ -527,11 +830,13 @@ pub(crate) fn prune_seen(saved: &mut Saved) {
         held.extend(revs.iter().map(|r| checkpoint::seen_key(&r.sig)));
     };
     add(&saved.certs, &saved.revocations);
-    for (c, r) in saved.team_certs.values() {
-        add(c, r);
-    }
-    for f in saved.former_members.values() {
-        add(&f.certs, &f.revocations);
+    if let Some(t) = saved.team() {
+        for (c, r) in t.certs.values() {
+            add(c, r);
+        }
+        for f in t.former.values() {
+            add(&f.certs, &f.revocations);
+        }
     }
     for p in saved.peers.values().chain(saved.held_peers.values()) {
         add(&p.certs, &p.revocations);
@@ -600,7 +905,7 @@ impl Enrolled {
     fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool) -> Self {
         // A deploy's box (M219): nobody gets in, not even the project's
         // owners: it only takes its one deploy run, and goes after.
-        if saved.hosted.as_ref().is_some_and(|h| h.deploy) {
+        if saved.is_for(Purpose::Deploy) {
             return Self {
                 saved,
                 keys,
@@ -619,10 +924,12 @@ impl Enrolled {
         let mut team_roles = HashMap::new();
         // A hosted workspace's editors have full use of it, as its owners do
         // (Jake, 2026-10-21); viewers watch. Team machines keep their roles.
-        let hosted = saved.hosted.is_some();
-        if let Some(r) = &saved.roster {
+        let hosted = saved.is_hosted();
+        if let Some(t) = saved.team()
+            && let Some(r) = &t.roster
+        {
             for m in &r.members {
-                if saved.locked && m.role != TeamRole::Owner {
+                if t.locked && m.role != TeamRole::Owner {
                     continue;
                 }
                 let who = match m.role {
@@ -631,11 +938,11 @@ impl Enrolled {
                     TeamRole::Editor | TeamRole::Viewer => {
                         let role = if m.role == TeamRole::Editor { Role::Editor } else { Role::Viewer };
                         team_roles.insert(format!("account:{}", m.account), role);
-                        let name = saved.team_names.get(&m.account).unwrap_or(&m.name).clone();
+                        let name = t.names.get(&m.account).unwrap_or(&m.name).clone();
                         Principal::User { id: format!("account:{}", m.account), name, pic: None }
                     }
                 };
-                for c in r.devices(&m.account, &saved.team_certs).devices.into_values() {
+                for c in r.devices(&m.account, &t.certs).devices.into_values() {
                     if c.kind.connects() {
                         others.push((c, who.clone()));
                     }
@@ -694,7 +1001,7 @@ impl Enrolled {
     /// team's owners), as the owner, as their browsers are. Their
     /// requests reach everything here, MCP included.
     fn drivers(saved: &Saved, trusted: &Trusted) -> Vec<(Cert, Principal)> {
-        if saved.hosted.is_none() {
+        if !saved.is_hosted() {
             return Vec::new();
         }
         let mut out: Vec<(Cert, Principal)> = Vec::new();
@@ -707,15 +1014,17 @@ impl Enrolled {
         for c in trusted.devices.values() {
             add(c.clone());
         }
-        if let Some(r) = &saved.roster {
+        if let Some(t) = saved.team()
+            && let Some(r) = &t.roster
+        {
             for m in &r.members {
                 let full = match m.role {
                     TeamRole::Owner => true,
-                    TeamRole::Editor => !saved.locked,
+                    TeamRole::Editor => !t.locked,
                     TeamRole::Viewer => false,
                 };
                 if full {
-                    for c in r.devices(&m.account, &saved.team_certs).devices.into_values() {
+                    for c in r.devices(&m.account, &t.certs).devices.into_values() {
                         add(c);
                     }
                 }
@@ -745,10 +1054,12 @@ impl Enrolled {
         for c in trusted.devices.values() {
             add(c.clone(), own.clone());
         }
-        if let Some(r) = &saved.roster {
-            for m in r.members.iter().filter(|m| !saved.locked || m.role == TeamRole::Owner) {
-                let p = who(&m.account, saved.team_names.get(&m.account).unwrap_or(&m.name));
-                for c in r.devices(&m.account, &saved.team_certs).devices.into_values() {
+        if let Some(t) = saved.team()
+            && let Some(r) = &t.roster
+        {
+            for m in r.members.iter().filter(|m| !t.locked || m.role == TeamRole::Owner) {
+                let p = who(&m.account, t.names.get(&m.account).unwrap_or(&m.name));
+                for c in r.devices(&m.account, &t.certs).devices.into_values() {
                     add(c, p.clone());
                 }
             }
@@ -774,7 +1085,7 @@ impl Enrolled {
         if account == self.saved.trust.account {
             return Some(self.saved.trust.root.clone());
         }
-        let rosters = self.saved.roster.iter().chain(self.saved.shared_teams.values().map(|t| &t.roster));
+        let rosters = self.saved.roster().into_iter().chain(self.saved.shared_teams.values().map(|t| &t.roster));
         rosters.filter_map(|r| r.member(account)).map(|m| m.root.clone()).next()
     }
 
@@ -784,8 +1095,9 @@ impl Enrolled {
         if account == self.saved.cert.account {
             return None;
         }
-        let m = self.saved.roster.as_ref()?.member(account).filter(|m| m.role == TeamRole::Owner)?;
-        let name = self.saved.team_names.get(account).unwrap_or(&m.name).clone();
+        let t = self.saved.team()?;
+        let m = t.roster.as_ref()?.member(account).filter(|m| m.role == TeamRole::Owner)?;
+        let name = t.names.get(account).unwrap_or(&m.name).clone();
         Some(Principal::User { id: format!("account:{account}"), name, pic: None })
     }
 
@@ -916,10 +1228,9 @@ pub use arugula_proto::hosts::ControlState as State;
 
 /// Who a saved enrollment belongs to: `account` or `team`, and its name.
 fn kind_name(s: &Saved) -> (&'static str, String) {
-    match (&s.roster, &s.team) {
-        (Some(r), _) => ("team", r.name.clone()),
-        (None, Some(t)) => ("team", t.team.clone()),
-        _ => ("account", s.login.clone()),
+    match s.team() {
+        Some(t) => ("team", t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
+        None => ("account", s.login.clone()),
     }
 }
 
@@ -1500,8 +1811,9 @@ impl Control {
         if account == e.saved.cert.account {
             return Some(e.saved.login.clone()).filter(|l| !l.is_empty());
         }
-        let m = e.saved.roster.as_ref()?.member(account)?;
-        Some(e.saved.team_names.get(account).unwrap_or(&m.name).clone())
+        let t = e.saved.team()?;
+        let m = t.roster.as_ref()?.member(account)?;
+        Some(t.names.get(account).unwrap_or(&m.name).clone())
     }
 
     /// Teams the owner's browser pinned (#233).
@@ -1534,7 +1846,7 @@ impl Control {
     /// not this account.
     pub fn known(&self) -> Vec<Known> {
         let Some(e) = self.enrolled() else { return Vec::new() };
-        let rosters = e.saved.roster.iter().chain(e.saved.shared_teams.values().map(|t| &t.roster));
+        let rosters = e.saved.roster().into_iter().chain(e.saved.shared_teams.values().map(|t| &t.roster));
         let mut out: Vec<Known> = Vec::new();
         for m in rosters.flat_map(|r| &r.members) {
             if m.account == e.saved.cert.account || out.iter().any(|k| k.account == m.account) {
@@ -1549,7 +1861,7 @@ impl Control {
     /// owner: an owner here already.
     pub fn owns_here(&self, account: &str) -> bool {
         self.enrolled().is_some_and(|e| {
-            e.saved.roster.as_ref().and_then(|r| r.member(account)).is_some_and(|m| m.role == TeamRole::Owner)
+            e.saved.roster().and_then(|r| r.member(account)).is_some_and(|m| m.role == TeamRole::Owner)
         })
     }
 
@@ -1558,9 +1870,10 @@ impl Control {
         self.enrolled().is_some_and(|e| e.saved.cert.account == account)
     }
 
-    /// Whether this daemon is a team's (M19).
+    /// Whether this daemon is a team's (M19): a team machine, or a hosted
+    /// machine of a team's project.
     pub fn is_team(&self) -> bool {
-        self.enrolled().is_some_and(|e| e.saved.team.is_some())
+        self.enrolled().is_some_and(|e| e.saved.team().is_some())
     }
 
     /// Whether someone (by principal id) has devices this daemon lets in
@@ -1629,11 +1942,13 @@ impl Control {
     pub fn team_people(&self) -> Vec<Principal> {
         let Some(e) = self.enrolled() else { return Vec::new() };
         let mut out = Vec::new();
-        if let Some(r) = &e.saved.roster {
+        if let Some(t) = e.saved.team()
+            && let Some(r) = &t.roster
+        {
             for m in &r.members {
                 let id = format!("account:{}", m.account);
                 if e.team_roles.contains_key(&id) {
-                    let name = e.saved.team_names.get(&m.account).unwrap_or(&m.name).clone();
+                    let name = t.names.get(&m.account).unwrap_or(&m.name).clone();
                     out.push(Principal::User { id, name, pic: None });
                 }
             }
@@ -1661,7 +1976,7 @@ impl Control {
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub fn co_owners(&self) -> Vec<Principal> {
         let Some(e) = self.enrolled() else { return Vec::new() };
-        let Some(r) = &e.saved.roster else { return Vec::new() };
+        let Some(r) = e.saved.roster() else { return Vec::new() };
         r.members.iter().filter_map(|m| e.co_owner(&m.account)).collect()
     }
 
@@ -1881,7 +2196,7 @@ impl Control {
     /// caches it). An error when this isn't a hosted machine.
     pub(crate) async fn public_ports(&self) -> anyhow::Result<Vec<(u16, String)>> {
         let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
-        anyhow::ensure!(e.saved.hosted.is_some(), "not a hosted machine");
+        anyhow::ensure!(e.saved.is_hosted(), "not a hosted machine");
         let got: arugula_control_wire::hosted::PublicPorts =
             self.get(&e, arugula_control_wire::hosted::HOSTED_PREVIEWS).await?;
         Ok(got.ports.into_iter().map(|p| (p.port, p.preview)).collect())
@@ -1953,7 +2268,7 @@ impl Control {
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-        if e.saved.hosted.is_some() {
+        if e.saved.is_hosted() {
             return self.refresh_hosted(&e, number).await;
         }
         let took = std::time::Instant::now();
@@ -1991,10 +2306,10 @@ impl Control {
             take_move(&mut saved, m);
         }
 
-        if let Some(pin) = saved.team.clone() {
-            let since = saved.roster.as_ref().map_or(0, |r| r.version);
+        if saved.team().is_some() {
+            let since = saved.roster().map_or(0, |r| r.version);
             let t: wire::TeamAnswer = self.get(&e, &wire::TeamQuery::path(since, &self.features())).await?;
-            take_team(&mut saved, &pin, t, now);
+            take_team(&mut saved, t, now);
         }
 
         // People sessions here are shared with.
@@ -2046,28 +2361,15 @@ impl Control {
 
         let changed = saved.shared_teams != e.saved.shared_teams
             || saved.seen != e.saved.seen
-            || saved.lock != e.saved.lock
             || saved.held_teams != e.saved.held_teams
             || saved.held_peers != e.saved.held_peers
             || saved.url != e.saved.url
             || saved.login != e.saved.login
-            || (saved.team.clone(), saved.moved_at) != (e.saved.team.clone(), e.saved.moved_at)
-            || (
-                saved.certs.clone(),
-                saved.revocations.clone(),
-                saved.roster.clone(),
-                saved.locked,
-                saved.peers.clone(),
-            ) != (
-                e.saved.certs.clone(),
-                e.saved.revocations.clone(),
-                e.saved.roster.clone(),
-                e.saved.locked,
-                e.saved.peers.clone(),
-            )
-            || saved.team_certs != e.saved.team_certs
-            || saved.former_members != e.saved.former_members
-            || saved.team_names != e.saved.team_names;
+            || saved.moved_at != e.saved.moved_at
+            || saved.kind != e.saved.kind
+            || saved.certs != e.saved.certs
+            || saved.revocations != e.saved.revocations
+            || saved.peers != e.saved.peers;
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         if next.trusted.get(&next.saved.cert.device).is_none() {
@@ -2474,7 +2776,7 @@ impl Control {
                             // and a new key asks to join the same control
                             // again.
                             Err(e) if e.is::<Removed>() => {
-                                if en.saved.hosted.is_some() {
+                                if en.saved.is_hosted() {
                                     warn!(error = %e, "hosted: this machine was removed from its project");
                                 } else {
                                     warn!(error = %e, "this machine was removed from its account; joining again with a new key");
@@ -2483,7 +2785,7 @@ impl Control {
                                 me.dropped(&en, said);
                                 // A hosted machine never joins again: the
                                 // platform makes its box anew (M178).
-                                if en.saved.hosted.is_none() {
+                                if !en.saved.is_hosted() {
                                     rejoin(en.saved.url.clone());
                                 }
                             }
@@ -2827,11 +3129,10 @@ enum Forgot {
 
 /// Who a saved enrollment belongs to, in words.
 fn whose(s: &Saved) -> String {
-    match (&s.roster, &s.team) {
-        (Some(r), _) => format!("the team {}", r.name),
-        (None, Some(t)) => format!("the team {}", t.team),
-        _ if !s.login.is_empty() => format!("{}'s account", s.login),
-        _ => "an account".into(),
+    match s.team() {
+        Some(t) => format!("the team {}", t.roster.as_ref().map_or(&t.pin.team, |r| &r.name)),
+        None if !s.login.is_empty() => format!("{}'s account", s.login),
+        None => "an account".into(),
     }
 }
 
@@ -2843,7 +3144,7 @@ fn already_in(s: &Saved, team: Option<&str>) -> String {
     let move_it = "use Team … beside it in Devices and machines… (the account menu)";
     let leave = "`arugulad leave`, then join again, also moves it, but takes it off control until it's approved again";
     match team {
-        Some(t) if s.team.as_ref().is_some_and(|p| p.team == t) => here,
+        Some(t) if s.team_pin().is_some_and(|p| p.team == t) => here,
         Some(t) => {
             // Its name, if a session here was shared with it; else its id.
             let asked = s
@@ -3278,13 +3579,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         cert: cert.clone(),
         certs: all,
         revocations: got.revocations,
-        team: pin.clone(),
-        roster: None,
-        team_certs: Default::default(),
-        former_members: Default::default(),
-        team_names: Default::default(),
-        locked: false,
-        lock: None,
+        kind: pin.map_or(MachineKind::Personal, |p| MachineKind::Team(InTeam::new(p))),
         seen: Default::default(),
         peers: Default::default(),
         shared_teams: Default::default(),
@@ -3292,7 +3587,6 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         held_peers: Default::default(),
         login: String::new(),
         moved_at: 0,
-        hosted: None,
     };
     let joined = Joined {
         place: match &got.team {
@@ -3625,13 +3919,15 @@ pub(crate) mod tests {
             cert: dcert,
             certs: vec![root],
             revocations: vec![],
-            team: Some(TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: "r".into() }),
-            roster: None,
-            team_certs: Default::default(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: "r".into() },
+                roster: None,
+                certs: Default::default(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -3639,7 +3935,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: "sam".into(),
             moved_at: 0,
-            hosted: None,
         };
         // Into the team it's in: nothing to do.
         assert_eq!(already_in(&s, Some("t1")), "this machine is already in the team t1 on https://c.example");
@@ -3654,7 +3949,7 @@ pub(crate) mod tests {
         );
         assert!(share < move_it && move_it < leave, "{other}");
         // Its account, not a team: Team … first, then leave.
-        s.team = None;
+        s.kind = MachineKind::Personal;
         let mine = already_in(&s, None);
         assert!(
             mine.starts_with("this machine is already in sam's account on https://c.example. To move it, use Team …"),
@@ -4006,13 +4301,7 @@ pub(crate) mod tests {
             cert: dcert,
             certs: vec![aroot],
             revocations: vec![],
-            team: None,
-            roster: None,
-            team_certs: Default::default(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Personal,
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4020,7 +4309,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         write_saved(&dir, &saved).unwrap();
         let acl = Arc::new(Acl::open(&dir));
@@ -4480,13 +4768,7 @@ pub(crate) mod tests {
             cert: old_cert,
             certs: vec![root.clone()],
             revocations: vec![],
-            team: None,
-            roster: None,
-            team_certs: Default::default(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Personal,
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4494,7 +4776,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
 
         write_saved(&dir, &saved).unwrap();
@@ -4639,13 +4920,7 @@ pub(crate) mod tests {
             cert: daemon.clone(),
             certs: vec![root.clone()],
             revocations: vec![],
-            team: None,
-            roster: None,
-            team_certs: Default::default(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Personal,
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4653,24 +4928,23 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let pin = TeamPin { team: "t1".into(), founder: "a".into(), founder_root: root.device.clone() };
         let d = daemon.device.as_str();
 
         take_move(&mut saved, mv(&mkeys, &mallory, d, Some(&pin), 5));
-        assert_eq!(saved.team, None, "not by someone else");
+        assert_eq!(saved.team_pin(), None, "not by someone else");
         take_move(&mut saved, mv(&keys, &root, "other", Some(&pin), 5));
-        assert_eq!(saved.team, None, "not one signed for another machine");
+        assert_eq!(saved.team_pin(), None, "not one signed for another machine");
 
         let into = mv(&keys, &root, d, Some(&pin), 5);
         take_move(&mut saved, into.clone());
-        assert_eq!((saved.team.as_ref(), saved.moved_at), (Some(&pin), 5));
+        assert_eq!((saved.team_pin(), saved.moved_at), (Some(&pin), 5));
         take_move(&mut saved, mv(&keys, &root, d, None, 9));
-        assert_eq!((saved.team.as_ref(), saved.moved_at), (None, 9));
+        assert_eq!((saved.team_pin(), saved.moved_at), (None, 9));
         // Control replays the move into the team: too old.
         take_move(&mut saved, into);
-        assert_eq!(saved.team, None);
+        assert_eq!(saved.team_pin(), None);
     }
 
     /// #332: a member's machine in a team; the team's owners may take it
@@ -4710,18 +4984,20 @@ pub(crate) mod tests {
             cert: daemon.clone(),
             certs: vec![root],
             revocations: vec![],
-            team: Some(pin.clone()),
-            roster: Some(roster),
-            team_certs: [
-                ("o".to_owned(), (vec![owner.clone()], vec![])),
-                ("e".to_owned(), (vec![editor.clone()], vec![])),
-            ]
-            .into_iter()
-            .collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: pin.clone(),
+                roster: Some(roster),
+                certs: [
+                    ("o".to_owned(), (vec![owner.clone()], vec![])),
+                    ("e".to_owned(), (vec![editor.clone()], vec![])),
+                ]
+                .into_iter()
+                .collect(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4729,18 +5005,17 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let d = daemon.device.as_str();
 
         take_move(&mut saved, mv(&ekeys, &editor, d, None, 5));
-        assert_eq!(saved.team.as_ref(), Some(&pin), "not by an editor");
+        assert_eq!(saved.team_pin(), Some(&pin), "not by an editor");
         let other = TeamPin { team: "t2".into(), ..pin.clone() };
         take_move(&mut saved, mv(&okeys, &owner, d, Some(&other), 5));
-        assert_eq!(saved.team.as_ref(), Some(&pin), "an owner doesn't move it elsewhere");
+        assert_eq!(saved.team_pin(), Some(&pin), "an owner doesn't move it elsewhere");
 
         take_move(&mut saved, mv(&okeys, &owner, d, None, 6));
-        assert_eq!((saved.team.as_ref(), saved.moved_at), (None, 6));
+        assert_eq!((saved.team_pin(), saved.moved_at), (None, 6));
         // Out of the team, its owners are nobody to it.
         take_move(&mut saved, mv(&okeys, &owner, d, None, 7));
         assert_eq!(saved.moved_at, 6);
@@ -4783,16 +5058,18 @@ pub(crate) mod tests {
             cert: this,
             certs: vec![],
             revocations: vec![],
-            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() }),
-            roster: Some(roster),
-            team_certs: [("o", &owner), ("e", &editor), ("v", &viewer)]
-                .into_iter()
-                .map(|(a, c)| (a.to_owned(), (vec![c.clone()], vec![])))
-                .collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() },
+                roster: Some(roster),
+                certs: [("o", &owner), ("e", &editor), ("v", &viewer)]
+                    .into_iter()
+                    .map(|(a, c)| (a.to_owned(), (vec![c.clone()], vec![])))
+                    .collect(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4800,7 +5077,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let key = arugula_e2e::hosted::HostedKey::generate();
         let d = arugula_e2e::hosted::Delegation {
@@ -4812,12 +5088,12 @@ pub(crate) mod tests {
             sig: String::new(),
         };
         let hosted_saved = Saved {
-            hosted: Some(HostedPin {
+            kind: MachineKind::Hosted(HostedPin {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
-                deploy: false,
-                builder: false,
+                purpose: Purpose::People,
+                team: team_saved.team().cloned(),
                 legacy_app_children: None,
                 passkey_logs: Default::default(),
                 passkey_origins: None,
@@ -4837,9 +5113,7 @@ pub(crate) mod tests {
         assert_eq!(who(&hosted_saved, &owner), (true, None));
         // A deploy's box (M219): nobody at all, its owners included.
         let mut deploy_saved = hosted_saved.clone();
-        if let Some(h) = deploy_saved.hosted.as_mut() {
-            h.deploy = true;
-        }
+        deploy_saved.hosted_mut().unwrap().purpose = Purpose::Deploy;
         let e = Enrolled::build(deploy_saved, Arc::new(DeviceKeys::generate()), &acl, true);
         assert!(e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.team_roles.is_empty());
         assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
@@ -4913,16 +5187,18 @@ pub(crate) mod tests {
             cert: this,
             certs: vec![],
             revocations: vec![],
-            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() }),
-            roster: Some(roster),
-            team_certs: [("o", &owner, &o_box), ("e", &editor, &e_box), ("v", &viewer, &v_box)]
-                .into_iter()
-                .map(|(a, c, m)| (a.to_owned(), (vec![c.clone(), m.clone()], vec![])))
-                .collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() },
+                roster: Some(roster),
+                certs: [("o", &owner, &o_box), ("e", &editor, &e_box), ("v", &viewer, &v_box)]
+                    .into_iter()
+                    .map(|(a, c, m)| (a.to_owned(), (vec![c.clone(), m.clone()], vec![])))
+                    .collect(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -4930,15 +5206,14 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let hosted_saved = Saved {
-            hosted: Some(HostedPin {
+            kind: MachineKind::Hosted(HostedPin {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
-                deploy: false,
-                builder: false,
+                purpose: Purpose::People,
+                team: team_saved.team().cloned(),
                 legacy_app_children: None,
                 passkey_logs: Default::default(),
                 passkey_origins: None,
@@ -4957,7 +5232,9 @@ pub(crate) mod tests {
         };
         assert_eq!(drivers(&hosted_saved), ["e", "o"]);
         assert!(drivers(&team_saved).is_empty(), "a team machine has no drivers");
-        assert_eq!(drivers(&Saved { locked: true, ..hosted_saved.clone() }), ["o"]);
+        let mut locked = hosted_saved.clone();
+        locked.team_mut().unwrap().locked = true;
+        assert_eq!(drivers(&locked), ["o"]);
         // The viewer's machine still calls its agents.
         let e = Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false);
         assert!(e.agent_callers.iter().any(|(c, p)| c.device == v_box.device && !p.is_owner()));
@@ -5018,16 +5295,18 @@ pub(crate) mod tests {
             cert: this,
             certs: vec![m_root.clone(), m_other.clone()],
             revocations: vec![],
-            team: None,
-            roster: Some(roster(
-                "t1",
-                vec![member("m", &m_root, TeamRole::Owner), member("o", &o_root, TeamRole::Owner)],
-            )),
-            team_certs: [("o".to_owned(), (vec![o_root.clone(), o_box.clone()], vec![]))].into_iter().collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "m".into(), founder_root: m_root.device.clone() },
+                roster: Some(roster(
+                    "t1",
+                    vec![member("m", &m_root, TeamRole::Owner), member("o", &o_root, TeamRole::Owner)],
+                )),
+                certs: [("o".to_owned(), (vec![o_root.clone(), o_box.clone()], vec![]))].into_iter().collect(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: [("t2".to_owned(), shared)].into_iter().collect(),
@@ -5035,7 +5314,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: "mo".into(),
             moved_at: 0,
-            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-agent-callers-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -5100,18 +5378,20 @@ pub(crate) mod tests {
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
-            team: None,
-            roster: Some(roster),
-            team_certs: [
-                ("o".to_owned(), (vec![owner.clone()], vec![])),
-                ("e".to_owned(), (vec![editor.clone()], vec![])),
-            ]
-            .into_iter()
-            .collect(),
-            former_members: Default::default(),
-            team_names: [("o".to_owned(), "Olive".to_owned())].into_iter().collect(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() },
+                roster: Some(roster),
+                certs: [
+                    ("o".to_owned(), (vec![owner.clone()], vec![])),
+                    ("e".to_owned(), (vec![editor.clone()], vec![])),
+                ]
+                .into_iter()
+                .collect(),
+                former: Default::default(),
+                names: [("o".to_owned(), "Olive".to_owned())].into_iter().collect(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -5119,7 +5399,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-co-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -5197,15 +5476,17 @@ pub(crate) mod tests {
             url: String::new(),
             trust: Trust { account: "a".into(), root: root.device.clone() },
             cert: daemon,
-            certs: vec![root],
+            certs: vec![root.clone()],
             revocations: vec![],
-            team: None,
-            roster: Some(roster),
-            team_certs: [("s".to_owned(), (vec![sam], vec![]))].into_iter().collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Team(InTeam {
+                pin: TeamPin { team: "t1".into(), founder: "a".into(), founder_root: root.device.clone() },
+                roster: Some(roster),
+                certs: [("s".to_owned(), (vec![sam], vec![]))].into_iter().collect(),
+                former: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+            }),
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -5213,7 +5494,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-names-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -5224,7 +5504,7 @@ pub(crate) mod tests {
             other => panic!("{other:?}"),
         };
         assert_eq!(name(&saved), "Sam-Stranger");
-        saved.team_names.insert("s".into(), "Sam Stranger".into());
+        saved.team_mut().unwrap().names.insert("s".into(), "Sam Stranger".into());
         assert_eq!(name(&saved), "Sam Stranger");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -5238,13 +5518,7 @@ pub(crate) mod tests {
             cert: daemon,
             certs: vec![root],
             revocations: vec![],
-            team: None,
-            roster: None,
-            team_certs: Default::default(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Personal,
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -5252,7 +5526,6 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: login.into(),
             moved_at: 0,
-            hosted: None,
         }
     }
 
@@ -5282,7 +5555,11 @@ pub(crate) mod tests {
         assert!(state_of(Some(&saved), &Link { seen_ms: Some(5), ..Default::default() }, true).connected);
 
         let mut team = saved.clone();
-        team.team = Some(TeamPin { team: "t1".into(), founder: "f".into(), founder_root: "r".into() });
+        team.kind = MachineKind::Team(InTeam::new(TeamPin {
+            team: "t1".into(),
+            founder: "f".into(),
+            founder_root: "r".into(),
+        }));
         assert_eq!(state_of(Some(&team), &link, false).place(), "the team t1 on control.example");
 
         link.dropped = Some(Dropped {
@@ -5436,7 +5713,7 @@ pub(crate) mod tests {
         let (ek, ec) = device("e", Kind::Browser);
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
         let mut s = saved_for("https://c.example", "o");
-        s.team = Some(pin.clone());
+        s.kind = MachineKind::Team(InTeam::new(pin.clone()));
         let v1 = signed_roster(1, vec![member("o", &oc, TeamRole::Owner), member("e", &ec, TeamRole::Editor)], &ok);
         let certs: AccountCerts =
             [("o".to_owned(), (vec![oc.clone()], vec![])), ("e".to_owned(), (vec![ec.clone()], vec![]))].into();
@@ -5453,14 +5730,14 @@ pub(crate) mod tests {
             certs: certs.clone(),
             names: Default::default(),
         };
-        take_team(&mut s, &pin, answer(vec![v1.clone()], true, Some(lock(true, 10, &ok))), 1);
-        assert!(s.locked);
-        take_team(&mut s, &pin, answer(vec![], false, None), 1);
-        assert!(s.locked, "control unlocked it by its plain word");
-        take_team(&mut s, &pin, answer(vec![], false, Some(lock(false, 20, &ek))), 1);
-        assert!(s.locked, "an editor unlocked it");
-        take_team(&mut s, &pin, answer(vec![], false, Some(lock(false, 20, &ok))), 1);
-        assert!(!s.locked, "an owner's newer unlock");
+        take_team(&mut s, answer(vec![v1.clone()], true, Some(lock(true, 10, &ok))), 1);
+        assert!(s.team().unwrap().locked);
+        take_team(&mut s, answer(vec![], false, None), 1);
+        assert!(s.team().unwrap().locked, "control unlocked it by its plain word");
+        take_team(&mut s, answer(vec![], false, Some(lock(false, 20, &ek))), 1);
+        assert!(s.team().unwrap().locked, "an editor unlocked it");
+        take_team(&mut s, answer(vec![], false, Some(lock(false, 20, &ok))), 1);
+        assert!(!s.team().unwrap().locked, "an owner's newer unlock");
 
         let pins: BTreeMap<String, TeamPin> = [("t1".to_owned(), pin.clone())].into();
         let shared = |locked, l| -> BTreeMap<String, wire::SharedTeamAnswer> {
@@ -5508,7 +5785,7 @@ pub(crate) mod tests {
         let ((cli_k, cli), (app_k, app)) = (by_o(Kind::Cli), by_o(Kind::App));
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
         let mut s = saved_for("https://c.example", "o");
-        s.team = Some(pin.clone());
+        s.kind = MachineKind::Team(InTeam::new(pin.clone()));
         let certs: AccountCerts = [
             ("o".to_owned(), (vec![oc.clone(), cli, app], vec![])),
             ("e".to_owned(), (vec![ec.clone()], vec![])),
@@ -5530,15 +5807,15 @@ pub(crate) mod tests {
             vec![o.clone(), member("e", &ec, TeamRole::Editor), member("f", &fc, TeamRole::Viewer)],
             &ok,
         );
-        take_team(&mut s, &pin, answer(vec![v1]), 1);
+        take_team(&mut s, answer(vec![v1]), 1);
         // The CLI makes e an owner: not taken.
         let by_cli = signed_roster(
             2,
             vec![o.clone(), member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Viewer)],
             &cli_k,
         );
-        take_team(&mut s, &pin, answer(vec![by_cli]), 2);
-        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(1), "an owner a CLI made");
+        take_team(&mut s, answer(vec![by_cli]), 2);
+        assert_eq!(s.roster().map(|r| r.version), Some(1), "an owner a CLI made");
         // Nor the CLI moving o's own entry to another root (m's, say).
         let moved = signed_roster(
             2,
@@ -5549,13 +5826,13 @@ pub(crate) mod tests {
             ],
             &cli_k,
         );
-        take_team(&mut s, &pin, answer(vec![moved]), 3);
-        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(1), "an owner's root a CLI moved");
+        take_team(&mut s, answer(vec![moved]), 3);
+        assert_eq!(s.roster().map(|r| r.version), Some(1), "an owner's root a CLI moved");
         // The app makes e an owner: taken, and e's devices are owners here.
         let by_app =
             signed_roster(2, vec![o, member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Viewer)], &app_k);
-        take_team(&mut s, &pin, answer(vec![by_app]), 4);
-        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(2), "an owner the app made");
+        take_team(&mut s, answer(vec![by_app]), 4);
+        assert_eq!(s.roster().map(|r| r.version), Some(2), "an owner the app made");
         let dir = std::env::temp_dir().join(format!("arugula-dk7-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
@@ -5574,7 +5851,7 @@ pub(crate) mod tests {
         let (_, phone) = approved_by("e", &ek, "phone");
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
         let mut s = saved_for("https://c.example", "o");
-        s.team = Some(pin.clone());
+        s.kind = MachineKind::Team(InTeam::new(pin.clone()));
         let v1 = signed_roster(1, vec![member("o", &oc, TeamRole::Owner), member("e", &ec, TeamRole::Editor)], &ok);
         let answer = |revs: Vec<arugula_e2e::Revocation>, rosters: Vec<Roster>| wire::TeamAnswer {
             team: Some(pin.clone()),
@@ -5588,12 +5865,13 @@ pub(crate) mod tests {
             .into(),
             names: Default::default(),
         };
-        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
-        take_team(&mut s, &pin, answer(vec![], vec![v1]), 1);
+        let has_phone =
+            |s: &Saved| s.roster().unwrap().devices("e", &s.team().unwrap().certs).get(&phone.device).is_some();
+        take_team(&mut s, answer(vec![], vec![v1]), 1);
         assert!(has_phone(&s));
-        take_team(&mut s, &pin, answer(vec![arugula_e2e::Revocation::new("e", &phone.device, &ek)], vec![]), 1);
+        take_team(&mut s, answer(vec![arugula_e2e::Revocation::new("e", &phone.device, &ek)], vec![]), 1);
         assert!(!has_phone(&s));
-        take_team(&mut s, &pin, answer(vec![], vec![]), 1);
+        take_team(&mut s, answer(vec![], vec![]), 1);
         assert!(!has_phone(&s), "a removal control left out");
     }
 
@@ -5606,7 +5884,7 @@ pub(crate) mod tests {
         let (_, phone) = approved_by("e", &ek, "phone");
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
         let mut s = saved_for("https://c.example", "o");
-        s.team = Some(pin.clone());
+        s.kind = MachineKind::Team(InTeam::new(pin.clone()));
         let with_e =
             |v| signed_roster(v, vec![member("o", &oc, TeamRole::Owner), member("e", &ec, TeamRole::Editor)], &ok);
         let answer = |revs: Vec<arugula_e2e::Revocation>, rosters: Vec<Roster>, e_in: bool| {
@@ -5623,20 +5901,20 @@ pub(crate) mod tests {
                 names: Default::default(),
             }
         };
-        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
+        let has_phone =
+            |s: &Saved| s.roster().unwrap().devices("e", &s.team().unwrap().certs).get(&phone.device).is_some();
         let removal = arugula_e2e::Revocation::new("e", &phone.device, &ek);
-        take_team(&mut s, &pin, answer(vec![removal], vec![with_e(1)], true), 1);
+        take_team(&mut s, answer(vec![removal], vec![with_e(1)], true), 1);
         assert!(!has_phone(&s));
         // e taken out, then let back in; control leaves the removal out.
         take_team(
             &mut s,
-            &pin,
             answer(vec![], vec![signed_roster(2, vec![member("o", &oc, TeamRole::Owner)], &ok)], false),
             1,
         );
-        assert!(s.roster.as_ref().unwrap().member("e").is_none());
-        take_team(&mut s, &pin, answer(vec![], vec![with_e(3)], true), 1);
-        assert!(s.roster.as_ref().unwrap().member("e").is_some());
+        assert!(s.roster().unwrap().member("e").is_none());
+        take_team(&mut s, answer(vec![], vec![with_e(3)], true), 1);
+        assert!(s.roster().unwrap().member("e").is_some());
         assert!(!has_phone(&s), "a removal from before e left counts again");
 
         // The same for a team a session was shared with.
@@ -5810,5 +6088,167 @@ pub(crate) mod tests {
         // A pin no longer held drops the team, held or not.
         let (a, h) = take_shared(&at3, &held, &BTreeMap::new(), BTreeMap::new(), &mut checkpoint::Seen::default(), 1);
         assert!(a.is_empty() && h.is_empty());
+    }
+
+    /// Where `control.json` files saved by earlier releases are kept, one
+    /// per kind and purpose, with what each one lets in beside it
+    /// (`<name>.who.json`).
+    pub(crate) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/control-json");
+
+    /// What a saved enrollment decides, as JSON: who it trusts and lets
+    /// in, who drives it and calls its agents, and what it says it is.
+    /// Recorded beside each fixture by the release that saved it, and
+    /// checked against what this code decides from the same file.
+    pub(crate) fn outcomes(saved: &Saved, acl: &Acl) -> serde_json::Value {
+        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), acl, true);
+        let sorted = |mut v: Vec<String>| {
+            v.sort();
+            v
+        };
+        let who = |l: &[(Cert, Principal)]| sorted(l.iter().map(|(c, p)| format!("{}:{p:?}", c.device)).collect());
+        let mut team_roles: Vec<(String, String)> =
+            e.team_roles.iter().map(|(k, v)| (k.clone(), format!("{v:?}"))).collect();
+        team_roles.sort();
+        let mut shared_roles: Vec<(String, Vec<(String, String)>)> = e
+            .shared_roles
+            .iter()
+            .map(|(t, m)| {
+                let mut m: Vec<(String, String)> = m.iter().map(|(k, v)| (k.clone(), format!("{v:?}"))).collect();
+                m.sort();
+                (t.clone(), m)
+            })
+            .collect();
+        shared_roles.sort();
+        serde_json::json!({
+            "trusted": sorted(e.trusted.devices.keys().cloned().collect()),
+            "others": who(&e.others),
+            "drivers": who(&e.drivers),
+            "agent_callers": who(&e.agent_callers),
+            "agent_accounts": e.agent_accounts(),
+            "accounts": e.accounts(),
+            "team_roles": team_roles,
+            "shared_roles": shared_roles,
+            "kind_name": kind_name(saved),
+            "whose": whose(saved),
+            "is_team": saved.team().is_some(),
+            "hosted": saved.is_hosted(),
+            "owners": crate::hosted::runs::owners(saved).is_some(),
+            "known_roots": sorted(["a", "o", "e", "v", "acct1", "s"].iter().filter_map(|a| Some(format!("{a}={}", e.known_root(a)?))).collect()),
+        })
+    }
+
+    /// #672: `control.json` files saved by the release before the kind
+    /// was one type, one per kind and purpose (`tests/fixtures/control-json`),
+    /// load, come out as the same file (so a daemon from before reads what
+    /// this one saves), and decide the same: who's trusted, who gets in
+    /// and as whom, who drives it and calls its agents, and what it says
+    /// it is, as that release recorded beside each (`<name>.who.json`).
+    #[test]
+    fn control_json_from_before_the_kind_was_one_type_loads_and_decides_the_same() {
+        let dir = std::env::temp_dir().join(format!("arugula-control-fixtures-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let mut names: Vec<String> = std::fs::read_dir(FIXTURES)
+            .unwrap()
+            .filter_map(|e| {
+                let n = e.unwrap().file_name().into_string().unwrap();
+                n.strip_suffix(".json").filter(|n| !n.ends_with(".who")).map(str::to_owned)
+            })
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "hosted-account",
+                "hosted-deploy",
+                "hosted-snapshot",
+                "hosted-team",
+                "personal",
+                "personal-joined",
+                "team",
+                "team-joined",
+                "team-locked"
+            ]
+        );
+        for name in names {
+            let path = Path::new(FIXTURES).join(format!("{name}.json"));
+            let text = std::fs::read_to_string(&path).unwrap();
+            let saved: Saved = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let kind = |s: &Saved| match &s.kind {
+                MachineKind::Personal => "personal".to_owned(),
+                MachineKind::Team(_) => "team".to_owned(),
+                MachineKind::Hosted(h) => format!("hosted {:?} {}", h.purpose, h.team.is_some()),
+            };
+            let want = match name.as_str() {
+                "personal" | "personal-joined" => "personal",
+                "team" | "team-joined" | "team-locked" => "team",
+                "hosted-account" => "hosted People false",
+                "hosted-team" => "hosted People true",
+                "hosted-deploy" => "hosted Deploy false",
+                "hosted-snapshot" => "hosted Snapshot true",
+                _ => unreachable!(),
+            };
+            assert_eq!(kind(&saved), want, "{name}");
+            // The same file (up to the order of a map's keys).
+            let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(serde_json::to_value(&saved).unwrap(), file, "{name}: written differently");
+            let again: Saved = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+            assert_eq!(again.kind, saved.kind, "{name}");
+            // The same decisions.
+            let who: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(Path::new(FIXTURES).join(format!("{name}.who.json"))).unwrap())
+                    .unwrap();
+            assert_eq!(outcomes(&saved, &acl), who, "{name}: decides differently");
+        }
+    }
+
+    /// #672: a `control.json` that says something no kind can be doesn't
+    /// load (the daemon logs it and runs as not joined, letting nobody
+    /// in): a roster, members' certificates or a lock with no team pinned,
+    /// a hosted machine that's a deploy's box and a snapshot's, a team
+    /// that isn't the hosted delegation's owner, or no team where the
+    /// delegation names one.
+    #[test]
+    fn control_json_that_no_kind_can_be_doesnt_load() {
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap()).unwrap()
+        };
+        let refused = |v: serde_json::Value| serde_json::from_value::<Saved>(v).err().map(|e| e.to_string());
+        let said = |v: serde_json::Value, what: &str| {
+            let e = refused(v).unwrap_or_else(|| panic!("loaded: {what}"));
+            assert!(e.contains("not loading it"), "{what}: {e}");
+            e
+        };
+        let mut team = read("team-locked");
+        team.as_object_mut().unwrap().remove("team");
+        assert!(said(team, "a roster with no pin").contains("no team pinned"));
+        let mut pinless = read("personal-joined");
+        pinless["locked"] = true.into();
+        assert!(said(pinless, "locked with no team").contains("no team pinned"));
+        let mut certs = read("personal-joined");
+        certs["team_certs"] = read("team")["team_certs"].clone();
+        assert!(said(certs, "members' certificates with no team").contains("no team pinned"));
+        assert!(refused(read("personal-joined")).is_none(), "the file itself loads");
+
+        let mut both = read("hosted-deploy");
+        both["hosted"]["builder"] = true.into();
+        assert!(said(both, "a deploy's box and a snapshot's").contains("a deploy's box and a snapshot's"));
+
+        let mut no_team = read("hosted-team");
+        for f in ["team", "roster", "team_certs", "team_names", "former_members"] {
+            no_team.as_object_mut().unwrap().remove(f);
+        }
+        assert!(said(no_team, "a team's delegation with no team").contains("isn't the hosted delegation's owner"));
+        let mut other_team = read("hosted-team");
+        other_team["team"]["team"] = "t2".into();
+        assert!(said(other_team, "another team than the delegation's").contains("isn't the hosted delegation's owner"));
+        let mut with_team = read("hosted-account");
+        for f in ["team", "roster", "team_certs"] {
+            with_team[f] = read("team")[f].clone();
+        }
+        assert!(said(with_team, "an account's delegation with a team").contains("isn't the hosted delegation's owner"));
+        let mut no_owner = read("hosted-account");
+        no_owner["hosted"]["delegation"]["owner"] = "nobody".into();
+        assert!(said(no_owner, "a delegation naming no owner").contains("names no owner"));
     }
 }

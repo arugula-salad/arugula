@@ -1,0 +1,54 @@
+{
+  "accounts": [
+    "a",
+    "e",
+    "o",
+    "v"
+  ],
+  "agent_accounts": [
+    "e"
+  ],
+  "agent_callers": [
+    "bac95d96a7b99732:User { id: \"account:a\", name: \"jake\", pic: None }",
+    "f1e5badd94570375:User { id: \"account:e\", name: \"Erin\", pic: None }"
+  ],
+  "drivers": [],
+  "hosted": false,
+  "is_team": true,
+  "kind_name": [
+    "team",
+    "Acme"
+  ],
+  "known_roots": [
+    "a=b7780dbaa438950e",
+    "e=ae54fc87def702ea",
+    "o=e131a8074c7abd29",
+    "v=b448e121f1186ddb"
+  ],
+  "others": [
+    "774cd0caf59a38ec:Owner",
+    "ae54fc87def702ea:User { id: \"account:e\", name: \"Erin\", pic: None }",
+    "b448e121f1186ddb:User { id: \"account:v\", name: \"v\", pic: None }",
+    "b7780dbaa438950e:Owner",
+    "e131a8074c7abd29:Owner"
+  ],
+  "owners": false,
+  "shared_roles": [],
+  "team_roles": [
+    [
+      "account:e",
+      "Editor"
+    ],
+    [
+      "account:v",
+      "Viewer"
+    ]
+  ],
+  "trusted": [
+    "774cd0caf59a38ec",
+    "95992617336f0aac",
+    "b7780dbaa438950e",
+    "bac95d96a7b99732"
+  ],
+  "whose": "the team Acme"
+}

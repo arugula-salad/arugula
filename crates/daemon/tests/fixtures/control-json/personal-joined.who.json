@@ -1,0 +1,24 @@
+{
+  "accounts": [],
+  "agent_accounts": [],
+  "agent_callers": [],
+  "drivers": [],
+  "hosted": false,
+  "is_team": false,
+  "kind_name": [
+    "account",
+    ""
+  ],
+  "known_roots": [
+    "a=b7780dbaa438950e"
+  ],
+  "others": [],
+  "owners": false,
+  "shared_roles": [],
+  "team_roles": [],
+  "trusted": [
+    "95992617336f0aac",
+    "b7780dbaa438950e"
+  ],
+  "whose": "an account"
+}

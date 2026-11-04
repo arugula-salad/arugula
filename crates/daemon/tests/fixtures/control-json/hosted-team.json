@@ -1,0 +1,204 @@
+{
+  "url": "https://control.example",
+  "trust": {
+    "account": "o",
+    "root": "e131a8074c7abd29"
+  },
+  "cert": {
+    "v": 1,
+    "account": "o",
+    "device": "552aef464727096c",
+    "kind": "daemon",
+    "name": "box",
+    "noise": "5055f50e4341914b6ac80430ccdb0963294b91950af6fa8c621bf4e72cf90a4f",
+    "sign": "0c8082035a74e6e228eccb20bd5f3da5266d982d0ae717a79889bfcdc81a58ad",
+    "created": 2,
+    "approver": "",
+    "sig": "6329c18f0c816d0c4ec1cabf405681ce1ea73e64e9c9ac007e4440a1cdf6ce706c38c949bc5b7d4671fe2c3f228bce024bcb0e22d8553a0ed0b59d3a6e233705"
+  },
+  "certs": [],
+  "revocations": [],
+  "team": {
+    "team": "t1",
+    "founder": "o",
+    "founder_root": "e131a8074c7abd29"
+  },
+  "roster": {
+    "v": 1,
+    "team": "t1",
+    "name": "Acme",
+    "version": 4,
+    "at": 4,
+    "members": [
+      {
+        "account": "o",
+        "root": "e131a8074c7abd29",
+        "role": "owner",
+        "name": "o"
+      },
+      {
+        "account": "a",
+        "root": "b7780dbaa438950e",
+        "role": "owner",
+        "name": "a"
+      },
+      {
+        "account": "e",
+        "root": "ae54fc87def702ea",
+        "role": "editor",
+        "name": "e"
+      },
+      {
+        "account": "v",
+        "root": "b448e121f1186ddb",
+        "role": "viewer",
+        "name": "v"
+      }
+    ],
+    "by": "e131a8074c7abd29",
+    "sig": "bfd3e99d7561a4d71b223990f515ded545bc511214435b3ac0fc74c3f0da5c310c531eb441e8fcfbca5e20a4596ce4cc295b12c2e0a10a58876b87319ba0a107"
+  },
+  "team_certs": {
+    "a": [
+      [
+        {
+          "v": 1,
+          "account": "a",
+          "device": "b7780dbaa438950e",
+          "kind": "browser",
+          "name": "x",
+          "noise": "fd4d296fa3f588354aeb8411e8e5eeb89b93db9136eb7bb346a6a457006fd85c",
+          "sign": "f63f216e45d8f9de6e8bcf9ac16d06346c01cd2378f6db346953c35ed9c73c88",
+          "created": 1793764931215,
+          "approver": "b7780dbaa438950e",
+          "sig": "8dcdf303416596d0d841b03c70dc1e4d786d302f479a338680af2ed58a2d7c67263f3352bd7481f5ea60778bc0c18f15eb182288e7863b5d1ea84861028b2e07"
+        },
+        {
+          "v": 1,
+          "account": "a",
+          "device": "774cd0caf59a38ec",
+          "kind": "browser",
+          "name": "phone",
+          "noise": "df9f91dd74399eb1552a0842cad0b102a72c87d0989929512946cdace046f371",
+          "sign": "5d6d4ca89821d29a67b13205d5ce5d4fadfbc14a148312bcc634e238eb31f80a",
+          "created": 1793764931228,
+          "approver": "b7780dbaa438950e",
+          "sig": "31980942290c43f6b1bf26f77d63c1ce66c8ce07b1bcd0c6da8e2a25d640e7e95b9c4fe23f37363d77e098148993a3b58395a3d7176068666a5f94903035ed07"
+        }
+      ],
+      []
+    ],
+    "o": [
+      [
+        {
+          "v": 1,
+          "account": "o",
+          "device": "e131a8074c7abd29",
+          "kind": "browser",
+          "name": "x",
+          "noise": "4bff56bc5e3650308f867fe39e6ab0e6526b5f471401fc834a8ea5c398e61543",
+          "sign": "e565c2a5c7cb22739b038114bcf62d3bbc816516211e18c21a721b61bb61f9de",
+          "created": 1793764931280,
+          "approver": "e131a8074c7abd29",
+          "sig": "3eaa890c94a23833b67dfbd7017466959248cd1f15569d8658e36bbc02f6551d860ae05af1eb5244a5a3d55fea90ff5e6558411944bbbc6dc5a2aa3234749103"
+        }
+      ],
+      []
+    ],
+    "v": [
+      [
+        {
+          "v": 1,
+          "account": "v",
+          "device": "b448e121f1186ddb",
+          "kind": "browser",
+          "name": "x",
+          "noise": "9e4b4fff1541bc9de8769742400c9294d0d5e35521fb36104181b111141db501",
+          "sign": "69382cc004c8b96499cfb2e1292890c56781cf6f9c277d90c8b9c175d6c4d88c",
+          "created": 1793764931293,
+          "approver": "b448e121f1186ddb",
+          "sig": "ea888b4d0fbc3f2b9cc0c52e2944d3cd54813ec12d29d69c80228e02d7b571986a7b2d151d7702ab3da8ab4d031d9caaf45bcadf7e888f783a7c9df2a29c620d"
+        }
+      ],
+      []
+    ],
+    "e": [
+      [
+        {
+          "v": 1,
+          "account": "e",
+          "device": "ae54fc87def702ea",
+          "kind": "browser",
+          "name": "x",
+          "noise": "5d9baa0bbf8e4912e8d1c17416d25a74a4115bb0590c19928fe343cc3e02cc19",
+          "sign": "1fa87c891638d7bb7aa9670785092890a8c088635031650fb4d0c073ca23f8c1",
+          "created": 1793764931286,
+          "approver": "ae54fc87def702ea",
+          "sig": "4df396a4091ff469b634e90680291c6f5e904f5a0eb9e1e88b00aa3bd0d7c4fae0ed76b6364324fcb1e35111400c569143673f8cdbd1f1a4f693af1f32dac300"
+        },
+        {
+          "v": 1,
+          "account": "e",
+          "device": "f1e5badd94570375",
+          "kind": "daemon",
+          "name": "e-box",
+          "noise": "66039f0797b80bb4c386f36ecd9be8d0f7f9db5de256487bf3cb0539d0d97545",
+          "sign": "3149149f107ddea478b4961e26769a1d02a673b8252d2a33e7debd8693d041e5",
+          "created": 1793764931299,
+          "approver": "ae54fc87def702ea",
+          "sig": "55ee8854d719a5ad60bfb7dc0ab5ed97a1781a46bede1af44656715235a94489c3d4faf779725ea8d025135fb076b662a0a4071a9dfc31901e98809dd19f070b"
+        }
+      ],
+      []
+    ]
+  },
+  "locked": false,
+  "seen": {
+    "round": 1,
+    "at": {
+      "31980942290c43f6b1bf26f77d63c1ce66c8ce07b1bcd0c6da8e2a25d640e7e95b9c4fe23f37363d77e098148993a3b58395a3d7176068666a5f94903035ed07": 1,
+      "3eaa890c94a23833b67dfbd7017466959248cd1f15569d8658e36bbc02f6551d860ae05af1eb5244a5a3d55fea90ff5e6558411944bbbc6dc5a2aa3234749103": 1,
+      "4df396a4091ff469b634e90680291c6f5e904f5a0eb9e1e88b00aa3bd0d7c4fae0ed76b6364324fcb1e35111400c569143673f8cdbd1f1a4f693af1f32dac300": 1,
+      "55ee8854d719a5ad60bfb7dc0ab5ed97a1781a46bede1af44656715235a94489c3d4faf779725ea8d025135fb076b662a0a4071a9dfc31901e98809dd19f070b": 1,
+      "8dcdf303416596d0d841b03c70dc1e4d786d302f479a338680af2ed58a2d7c67263f3352bd7481f5ea60778bc0c18f15eb182288e7863b5d1ea84861028b2e07": 1,
+      "ea888b4d0fbc3f2b9cc0c52e2944d3cd54813ec12d29d69c80228e02d7b571986a7b2d151d7702ab3da8ab4d031d9caaf45bcadf7e888f783a7c9df2a29c620d": 1
+    }
+  },
+  "moved_at": 0,
+  "hosted": {
+    "cert": {
+      "project": "prj_1",
+      "owner": "team:t1",
+      "workspace": "hw_1",
+      "delegation": "effb8ee01318e73c17be2ea7dbcb736b",
+      "device": "552aef464727096c",
+      "name": "box",
+      "noise": "5055f50e4341914b6ac80430ccdb0963294b91950af6fa8c621bf4e72cf90a4f",
+      "sign": "0c8082035a74e6e228eccb20bd5f3da5266d982d0ae717a79889bfcdc81a58ad",
+      "created": 2,
+      "sig": "6329c18f0c816d0c4ec1cabf405681ce1ea73e64e9c9ac007e4440a1cdf6ce706c38c949bc5b7d4671fe2c3f228bce024bcb0e22d8553a0ed0b59d3a6e233705"
+    },
+    "delegation": {
+      "project": "prj_1",
+      "owner": "team:t1",
+      "key": "0e22923538e3860cb93cf3ace3906f2946dba1fff82fbf735692ef0a4ad8e3b4",
+      "at": 1,
+      "by": "e131a8074c7abd29",
+      "sig": "1d5a5930ee025f0bf3d181d52c03224760c6798083f4eb5b1efa2b1649c3b90f1ec7617f40744e488efae336ebea4deda19cd416925b616dde1c79e201c91605"
+    },
+    "revocations": [
+      {
+        "project": "prj_1",
+        "delegation": "38a338637d4dbd47eeb43b6edbb5dd08",
+        "at": 5,
+        "by": "e131a8074c7abd29",
+        "sig": "a1b016dd9b1eb92f60d6aabcee82630a05f1096500f02c50e672a2673c77d5953f4196277b31c859fcf769a8ba90399d13f00a728a06f70d829717f26ac88000"
+      }
+    ],
+    "legacy_app_children": {
+      "o": [
+        "e131a8074c7abd29"
+      ]
+    }
+  }
+}

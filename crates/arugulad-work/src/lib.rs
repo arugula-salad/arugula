@@ -625,7 +625,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
 /// it's a hosted machine in control.
 pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
     let e = app.control.enrolled()?;
-    let pin = e.saved.hosted.as_ref()?;
+    let pin = e.saved.hosted()?;
     Some((e.keys.clone(), pin.cert.device.clone(), pin.cert.project.clone(), pin.cert.workspace.clone()))
 }
 
@@ -1296,7 +1296,7 @@ pub fn start(app: Arc<App>) {
             send_all(&app, &mut open).await;
             // A snapshot's builder (M263) takes nothing: it sets up, wipes
             // itself and goes.
-            let builder = app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder));
+            let builder = app.control.enrolled().is_some_and(|e| e.saved.is_for(control::Purpose::Snapshot));
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).

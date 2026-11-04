@@ -53,6 +53,7 @@ use super::{
 #[cfg(unix)]
 use super::{SESSION, tab_name};
 #[cfg(unix)]
+use crate::control::Purpose;
 use crate::mux::Api;
 use crate::server::App;
 
@@ -87,7 +88,7 @@ const MAX_RESULT: usize = 2048;
 /// one deploy's run. Nobody gets in, it takes that run only, and it stops
 /// once the run's end is reported.
 pub fn deploy_box(app: &App) -> bool {
-    app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.deploy))
+    app.control.enrolled().is_some_and(|e| e.saved.is_for(Purpose::Deploy))
 }
 
 /// The sudo rule a deploy's box keeps for this daemon's user: to the run
@@ -398,7 +399,7 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
     let Some(e) = app.control.enrolled() else {
         return Err(Refused("not_hosted", "this machine isn't in control".into()));
     };
-    let Some(pin) = e.saved.hosted.as_ref() else {
+    let Some(pin) = e.saved.hosted() else {
         return Err(Refused("not_hosted", "this machine isn't a hosted machine".into()));
     };
     let o = &d.operation;
