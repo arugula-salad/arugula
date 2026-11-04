@@ -115,7 +115,8 @@ agents draft while people send".
     session's work carried no grant and its box checked none. Now each
     session's work carries the project's live grant on every pull, and the
     box checks it against what it pinned, `runs.instruct` included, before it
-    takes the session and before each turn. With none, nothing starts, and
+    takes the session and as each turn's prompt goes to the agent, whatever
+    queued it (a follow-up, a mention, someone typing in its block). With none, nothing starts, and
     the thread says an owner gives the project a grant, and how: `@arugula`
     (from a person, or `session_start`), a reply, Try 3, `@codex review`,
     Move to… and a rebuild's requeue all go by it. A revoke ends live

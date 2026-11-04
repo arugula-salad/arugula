@@ -47,7 +47,12 @@
 //!   ends a session mid-turn, one saying `finish` once its turn ends, and
 //!   new sessions and follow-ups are refused after either; a session whose
 //!   grant only goes away (none listed, no revoke) finishes its turn and
-//!   stays, until a follow-up needs one.
+//!   stays, until a follow-up needs one. The same with a grant and a revoke
+//!   signed by a passkey, as production's are. Whatever queues a turn, a
+//!   mention say, it's checked as it goes to the agent; what a restart saved
+//!   waits for a pull; a stop doesn't wait on control, and it stops a push; a
+//!   grant older than one the box has seen is refused; and with control out
+//!   of reach, a grant the box can't check yet waits rather than failing.
 
 use std::{
     collections::BTreeMap,
@@ -97,6 +102,25 @@ fn signed_grant(d: &Delegation, by: &DeviceKeys, change: impl FnOnce(&mut Projec
     g
 }
 
+/// `by`'s passkey `id` over `challenge`, from `origin`, as
+/// `navigator.credentials.get` gives it.
+fn passkey_over(by: &DeviceKeys, id: &str, challenge: &str, origin: &str) -> arugula_e2e::passkey::Assertion {
+    use base64::Engine as _;
+    use sha2::{Digest as _, Sha256};
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let cd = json!({ "type": "webauthn.get", "challenge": challenge, "origin": origin }).to_string();
+    let mut data = Sha256::digest(b"c.test").to_vec();
+    data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+    let mut signed = data.clone();
+    signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+    arugula_e2e::passkey::Assertion {
+        id: id.into(),
+        client_data_json: b64.encode(cd.as_bytes()),
+        authenticator_data: b64.encode(&data),
+        signature: b64.encode(by.signature(&signed)),
+    }
+}
+
 #[derive(Clone)]
 struct Fake {
     url: Arc<Mutex<String>>,
@@ -132,6 +156,15 @@ struct Fake {
     grant: Arc<Mutex<Option<ProjectGrant>>>,
     /// The project's revokes, on every pull.
     revokes: Arc<Mutex<Vec<GrantRevoke>>>,
+    /// What a pull carries of the grant's signer's passkey log.
+    carried: Arc<Mutex<Option<arugula_e2e::passkey::Log>>>,
+    /// Control doesn't answer a pull, or a report, until this is cleared.
+    stalled: Arc<std::sync::atomic::AtomicBool>,
+    /// A pull is answered with an error.
+    pull_down: Arc<std::sync::atomic::AtomicBool>,
+    /// A refresh (the box's project, its passkey logs) is answered with an
+    /// error.
+    trust_down: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Fake {
@@ -153,6 +186,10 @@ impl Fake {
         Fake {
             grant: Arc::new(Mutex::new(grant)),
             revokes: Default::default(),
+            carried: Default::default(),
+            stalled: Default::default(),
+            pull_down: Default::default(),
+            trust_down: Default::default(),
             url: Default::default(),
             root: Arc::new(root),
             root_cert,
@@ -172,6 +209,52 @@ impl Fake {
             transcripts: Default::default(),
             takes: Default::default(),
         }
+    }
+
+    /// While control is stalled ([`Fake::stalled`]), wait.
+    async fn hold(&self) {
+        while self.stalled.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// acct1's passkey log: `pk`, the root's key, and then each of `more`.
+    fn log_with(&self, more: &[(&str, &DeviceKeys)]) -> arugula_e2e::passkey::Log {
+        let added = |id: &str, by: &DeviceKeys, at: u64| arugula_e2e::passkey::Draft {
+            account: "acct1".into(),
+            event: arugula_e2e::passkey::Change::Added,
+            credential: id.into(),
+            rp: "c.test".into(),
+            alg: arugula_e2e::passkey::EDDSA,
+            key: by.sign_public().to_vec(),
+            aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+            at,
+            by: "signup".into(),
+        };
+        let mut events = vec![added("pk", &self.root, 1).after(None)];
+        for (i, (id, by)) in more.iter().enumerate() {
+            let next = added(id, by, 2 + i as u64).after(events.last());
+            events.push(next);
+        }
+        arugula_e2e::passkey::Log { account: "acct1".into(), events, began: None }
+    }
+
+    fn passkey_log(&self) -> arugula_e2e::passkey::Log {
+        self.log_with(&[])
+    }
+
+    /// A v2 grant by `account`, good for a day, confirmed by `by`'s passkey
+    /// `id`, from the origin the box pinned.
+    fn passkey_grant(&self, account: &str, by: &DeviceKeys, id: &str) -> ProjectGrant {
+        let now = arugula_e2e::now_ms();
+        let mut g = ProjectGrant::v2(&self.delegation, account, now, now + 86_400_000);
+        g.passkey = Some(passkey_over(by, id, &g.passkey_challenge(), "https://c.test"));
+        g
+    }
+
+    /// Say `op` over the relay.
+    fn relay(&self, op: Value) {
+        self.relay.lock().unwrap().as_ref().expect("the relay socket").send(op.to_string()).unwrap();
     }
 
     fn device(&self) -> String {
@@ -348,8 +431,10 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         locked: false,
         lock: None,
         legacy_app_children: None,
-        passkey_logs: None,
-        passkey_origins: None,
+        // acct1's passkey (the root's key, as an Ed25519 passkey), and the
+        // origin it's used from.
+        passkey_logs: Some([("acct1".to_owned(), f.passkey_log())].into()),
+        passkey_origins: Some(arugula_e2e::passkey::origins_of_sites(["https://c.test"])),
         purpose: None,
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));
@@ -357,6 +442,9 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
 }
 
 async fn trust(Axum(f): Axum<Fake>) -> Response {
+    if f.trust_down.load(std::sync::atomic::Ordering::SeqCst) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     match f.enrolled.lock().unwrap().clone() {
         Some((e, _)) => Json(e).into_response(),
         None => StatusCode::UNAUTHORIZED.into_response(),
@@ -402,24 +490,30 @@ async fn archived(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
 
 /// Every session that hasn't ended, as the platform lists them (the box
 /// keeps to its own cap).
-async fn work(Axum(f): Axum<Fake>, q: axum::extract::Query<BTreeMap<String, String>>) -> Json<Work> {
+async fn work(Axum(f): Axum<Fake>, q: axum::extract::Query<BTreeMap<String, String>>) -> Response {
     *f.pulls.lock().unwrap() += 1;
     *f.takes.lock().unwrap() = q.get("takes").cloned().unwrap_or_default();
+    f.hold().await;
+    if f.pull_down.load(std::sync::atomic::Ordering::SeqCst) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     let grant = f.grant.lock().unwrap().clone();
+    let carried = f.carried.lock().unwrap().clone();
     let sessions = f
         .sessions
         .lock()
         .unwrap()
         .values()
         .filter(|s| !s.stopped)
-        .map(|s| SessionWork { grant: grant.clone(), ..s.work.clone() })
+        .map(|s| SessionWork { grant: grant.clone(), passkey_log: carried.clone(), ..s.work.clone() })
         .collect();
-    Json(Work { items: vec![], revokes: f.revokes.lock().unwrap().clone(), sessions })
+    Json(Work { items: vec![], revokes: f.revokes.lock().unwrap().clone(), sessions }).into_response()
 }
 
 /// As the platform takes a report: the next number only, a move the box
 /// may make, then its prompts and actions are taken off the lists.
 async fn report(Axum(f): Axum<Fake>, Json(r): Json<SessionReport>) -> Json<Value> {
+    f.hold().await;
     let mut all = f.sessions.lock().unwrap();
     let Some(s) = all.get_mut(&r.session) else { return Json(json!({ "kind": "refused", "why": "no such session" })) };
     let refuse = |why: String, now: Option<&str>, next: Option<u64>| {
@@ -1586,7 +1680,6 @@ fn why_failed(f: &Fake, id: &str) -> String {
 #[test]
 fn a_session_runs_only_under_the_projects_grant() {
     let Rig { _rt, f, marks, sudo_log, d, .. } = rig("grant-needed");
-    let good = f.grant.lock().unwrap().clone();
     let agents = || std::fs::read_to_string(&sudo_log).unwrap_or_default().matches("arugula-brokered sh -c").count();
 
     *f.grant.lock().unwrap() = None;
@@ -1610,7 +1703,9 @@ fn a_session_runs_only_under_the_projects_grant() {
     assert!(why_failed(&f, &c).starts_with("grant_unsigned"), "{}", why_failed(&f, &c));
     assert_eq!(agents(), 0, "no agent started for any of them");
 
-    *f.grant.lock().unwrap() = good;
+    // Past the ones above, which the box has seen.
+    std::thread::sleep(Duration::from_millis(5));
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &f.root, |_| {}));
     let e = ses('e');
     f.start(&e, "good", prompt(4, "acct1", "hello"));
     wait(&marks, &f, "e's first turn", || f.state(&e) == "done");
@@ -1716,6 +1811,328 @@ fn a_live_session_with_no_grant_stays_until_a_follow_up_needs_one() {
     wait(&marks, &f, "a failed", || f.state(&a) == "failed");
     assert!(why_failed(&f, &a).starts_with("no_grant"), "{}", why_failed(&f, &a));
     assert_eq!(f.turns(&a).len(), 2, "{:?}", f.turns(&a));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// What a session's agent said in its block: everything in its transcript
+/// but what it was told.
+fn agent_said(d: &arugula_testkit::Daemon, block: u64) -> usize {
+    transcript(d, block).iter().filter(|l| l.starts_with("agent:")).count()
+}
+
+/// A mention of session `of` by the name its block goes by, as control pushes
+/// it over the relay.
+fn mention(id: &str, of: &str, seq: i64, text: &str) -> Value {
+    json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
+        "seq": seq, "author": "Ada", "text": text, "session": format!("session-{}", of.replace('_', "-")) } })
+}
+
+/// A mention goes straight into a session's block, with no prompt from the
+/// platform for its box to check. With a grant it runs. Once the grant's
+/// gone it doesn't, though control approves the turn: what was queued goes,
+/// and the card says why. The session isn't ended.
+#[test]
+fn a_mention_after_the_grant_went_starts_no_turn() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-mention");
+    let good = f.grant.lock().unwrap().clone();
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    let answer = |id: &str| {
+        f.said.lock().unwrap().iter().find(|v| v["t"] == "op.done" && v["id"] == id).map(|v| v["answer"].clone())
+    };
+    wait(&marks, &f, "the relay", || f.relay.lock().unwrap().is_some());
+
+    // The control: with a grant, a mention is a turn.
+    let before = agent_said(&d, block);
+    f.relay(mention("m1", &a, 1, "hello from a mention"));
+    wait(&marks, &f, "m1's answer", || answer("m1").is_some());
+    assert_eq!(answer("m1").unwrap()["routed"]["step"], "named", "{:?}", answer("m1"));
+    wait(&marks, &f, "m1's turn", || agent_said(&d, block) > before && f.state(&a) == "done");
+
+    *f.grant.lock().unwrap() = None;
+    let pulls = f.pulls();
+    wait(&marks, &f, "a pull with none", || f.pulls() > pulls + 1);
+    let before = agent_said(&d, block);
+    f.relay(mention("m2", &a, 2, "hello from a late mention"));
+    wait(&marks, &f, "m2's answer", || answer("m2").is_some());
+    assert_eq!(answer("m2").unwrap()["routed"]["step"], "named", "it reached the block: {:?}", answer("m2"));
+    let said = || f.of(&a).iter().filter_map(|(_, d)| d.error.clone()).collect::<Vec<_>>();
+    wait(&marks, &f, "the card told why", || said().iter().any(|e| e.starts_with("no_grant")));
+    wait(&marks, &f, "it back to done", || f.state(&a) == "done");
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(agent_said(&d, block), before, "the agent never had it: {:#?}", transcript(&d, block));
+    assert_eq!(f.state(&a), "done", "the session stays");
+
+    // A grant back: the next one runs, and the late one doesn't come with it.
+    *f.grant.lock().unwrap() = good;
+    let pulls = f.pulls();
+    wait(&marks, &f, "a pull with it", || f.pulls() > pulls + 1);
+    f.relay(mention("m3", &a, 3, "hello again"));
+    wait(&marks, &f, "m3's turn", || agent_said(&d, block) > before && f.state(&a) == "done");
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A fix the ledger saved before a restart: with no pull answered yet, it
+/// waits, however long control takes. Once one answers, it goes.
+#[test]
+fn a_saved_fix_waits_for_a_pull_after_a_restart() {
+    let Rig { _rt, f, marks, mut d, state, .. } = rig("grant-restart");
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    wait(&marks, &f, "reports sent", || f.of(&a).len() >= 2);
+    d.stop();
+
+    let ledger = state.join("work").join("sessions").join(format!("{a}.json"));
+    let mut l: Value = serde_json::from_str(&std::fs::read_to_string(&ledger).unwrap()).unwrap();
+    let base = l["turns_seen"].clone();
+    l["turn"] = json!({ "prompts": [], "base": base, "sent": false, "at": 1, "fix": "remember plum" });
+    std::fs::write(&ledger, serde_json::to_vec(&l).unwrap()).unwrap();
+
+    f.pull_down.store(true, std::sync::atomic::Ordering::SeqCst);
+    d.start();
+    let told = || asked(&transcript(&d, block), "remember plum");
+    wait(&marks, &f, "the pulls it can't get", || f.pulls() > 3);
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(told(), 0, "no pull has answered: {:#?}", transcript(&d, block));
+
+    f.pull_down.store(false, std::sync::atomic::Ordering::SeqCst);
+    wait(&marks, &f, "the fix, after a pull", || told() == 1);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A revoke saying `running stop` relayed to a box whose control then stops
+/// answering: the agent goes anyway, on nothing but what the box holds.
+#[test]
+fn a_relayed_stop_ends_a_session_with_control_not_answering() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-stall");
+    let a = ses('a');
+    f.start(&a, "busy", prompt(1, "acct1", "slowly"));
+    wait(&marks, &f, "a mid-turn", || f.state(&a) == "working");
+    wait(&marks, &f, "the relay", || f.relay.lock().unwrap().is_some());
+    let block = block_of(&f, &a);
+    f.stalled.store(true, std::sync::atomic::Ordering::SeqCst);
+    let revoke = GrantRevoke::new(PROJECT, &f.delegation.id(), Running::Stop, arugula_e2e::now_ms(), &f.root);
+    let op = arugula_control_wire::forge::DaemonOp::RunRevoke(arugula_control_wire::runs::RunRevoke { revoke });
+    f.relay(json!({ "t": "op", "id": "r1", "op": op }));
+    wait(&marks, &f, "its block closed", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    assert_eq!(f.state(&a), "working", "control hasn't heard: nothing waited for it");
+    f.stalled.store(false, std::sync::atomic::Ordering::SeqCst);
+    wait(&marks, &f, "the report, once control answers", || f.state(&a) == "failed");
+    assert!(why_failed(&f, &a).contains("standing grant was revoked"), "{}", why_failed(&f, &a));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// `git`, for the daemon: a push waits while `hold` is there, with a helper
+/// of its own running, and says who they are. Anything else is git.
+fn slow_git(dir: &Path) -> String {
+    let real = std::process::Command::new("sh").args(["-c", "command -v git"]).output().unwrap();
+    let real = String::from_utf8(real.stdout).unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+    let d = dir.display();
+    std::fs::write(dir.join("hold"), "").unwrap();
+    let script = format!(
+        "#!/bin/sh\ncase \" $* \" in *\" push \"*)\n  sleep 600 &\n  c=$!\n  echo $c > {d}/helper.pid\n  echo $$ > {d}/push.pid\n  \
+         while [ -e {d}/hold ]; do sleep 0.1; done\n  kill $c\n;; esac\nexec {} \"$@\"\n",
+        real.trim()
+    );
+    let git = dir.join("git");
+    std::fs::write(&git, script).unwrap();
+    std::fs::set_permissions(&git, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default())
+}
+
+/// Whether process `pid`, kept in `file`, runs (a zombie doesn't).
+fn runs(file: &Path) -> bool {
+    let pid = std::fs::read_to_string(file).unwrap();
+    let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid.trim())).unwrap_or_default();
+    stat.rsplit(") ").next().is_some_and(|rest| !rest.is_empty() && !rest.starts_with('Z'))
+}
+
+/// `running stop` while the daemon pushes: the push and what it started are
+/// killed, its token revoked, and nothing reaches the repo. `running finish`:
+/// the push goes through, then the session ends.
+#[test]
+fn a_stop_stops_a_push_and_a_finish_lets_it_land() {
+    let dir = std::env::temp_dir().join(format!("arugula-slow-git-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = slow_git(&dir);
+    let Rig { _rt, f, marks, d, remote, .. } = rig_with("grant-push", &[("PATH", &path)]);
+    let on_remote = || git(&remote, &["for-each-ref", "--format=%(refname)", "refs/heads/arugula"]);
+
+    let a = ses('a');
+    f.start(&a, "stopped", prompt(1, "acct1", "work README.md NOTES.md"));
+    wait(&marks, &f, "a's push under way", || dir.join("push.pid").exists() && dir.join("helper.pid").exists());
+    let (push, helper) = (dir.join("push.pid"), dir.join("helper.pid"));
+    assert!(runs(&push) && runs(&helper));
+    let tokens = f.pushes.lock().unwrap().len();
+    assert!(tokens > 0, "it has its token");
+    let stop = GrantRevoke::new(PROJECT, &f.delegation.id(), Running::Stop, arugula_e2e::now_ms(), &f.root);
+    f.revokes.lock().unwrap().push(stop);
+    wait(&marks, &f, "a ended", || f.state(&a) == "failed");
+    wait(&marks, &f, "the push killed", || !runs(&push));
+    wait(&marks, &f, "its helper killed", || !runs(&helper));
+    wait(&marks, &f, "its token revoked", || !f.revoked.lock().unwrap().is_empty());
+    assert_eq!(on_remote(), "", "nothing reached the repo");
+
+    // A newer grant, for the other half.
+    std::fs::remove_file(&push).unwrap();
+    std::fs::remove_file(&helper).unwrap();
+    std::thread::sleep(Duration::from_millis(5));
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &f.root, |_| {}));
+    let b = ses('b');
+    f.start(&b, "finished", prompt(2, "acct1", "work README.md NOTES.md"));
+    wait(&marks, &f, "b's push under way", || push.exists() && helper.exists());
+    let finish = GrantRevoke::new(PROJECT, &f.delegation.id(), Running::Finish, arugula_e2e::now_ms(), &f.root);
+    f.revokes.lock().unwrap().push(finish);
+    let pulls = f.pulls();
+    wait(&marks, &f, "the box to hear it", || f.pulls() > pulls + 2);
+    assert_eq!(f.state(&b), "working", "its turn goes on");
+    assert!(runs(&push), "and its push");
+    std::fs::remove_file(dir.join("hold")).unwrap();
+    wait(&marks, &f, "b ended with its turn", || f.state(&b) == "failed");
+    let turn = f.turn_reports(&b);
+    assert_eq!(turn.last().and_then(|t| t.pushed), Some(true), "{turn:?}");
+    assert!(on_remote().contains(&format!("arugula/{}", &b[4..12])), "{}", on_remote());
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Replaced by a newer grant, even one that gives less, an older one is
+/// refused once the box has seen the newer: a follow-up and a new session
+/// both, though control lists the older again.
+#[test]
+fn a_grant_older_than_one_the_box_saw_is_refused() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-older");
+    let old = f.grant.lock().unwrap().clone();
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+
+    std::thread::sleep(Duration::from_millis(5));
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &f.root, |g| g.caps = vec!["runs.start".into()]));
+    let pulls = f.pulls();
+    wait(&marks, &f, "the box to see it", || f.pulls() > pulls + 2);
+    assert_eq!(f.state(&a), "done");
+
+    *f.grant.lock().unwrap() = old;
+    f.queue(&a, prompt(2, "acct1", "remember plum"));
+    wait(&marks, &f, "a's follow-up refused", || f.state(&a) == "failed");
+    assert!(why_failed(&f, &a).starts_with("grant_superseded"), "{}", why_failed(&f, &a));
+    assert_eq!(f.turns(&a).len(), 1, "{:?}", f.turns(&a));
+    let b = ses('b');
+    f.start(&b, "two", prompt(3, "acct1", "hello"));
+    wait(&marks, &f, "b refused", || f.state(&b) == "failed");
+    assert!(why_failed(&f, &b).starts_with("grant_superseded"), "{}", why_failed(&f, &b));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// Grants as production's are: a v2 by an owner's passkey, checked against
+/// the log the box pinned, for a session's first turn and its follow-up. A
+/// non-owner's, a key the log doesn't have, an origin the box didn't pin and
+/// a passkey the carried log says was removed are refused. A v3 revoke, by
+/// passkey, ends a session mid-turn and refuses the next.
+#[test]
+fn a_session_runs_under_a_passkey_grant() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-passkey");
+    let set = |g: ProjectGrant| *f.grant.lock().unwrap() = Some(g);
+    let stranger = DeviceKeys::generate();
+
+    let refused = [
+        ('b', f.passkey_grant("someone", &stranger, "pk"), None, "grant_not_an_owner"),
+        ('c', f.passkey_grant("acct1", &stranger, "pk"), None, "grant_passkey"),
+        ('d', {
+            let now = arugula_e2e::now_ms();
+            let mut g = ProjectGrant::v2(&f.delegation, "acct1", now, now + 86_400_000);
+            g.passkey = Some(passkey_over(&f.root, "pk", &g.passkey_challenge(), "https://elsewhere.test"));
+            g
+        }, None, "grant_passkey"),
+        ('e', f.passkey_grant("acct1", &f.root, "pk"), {
+            let mut log = f.passkey_log();
+            let gone = log.events[0].removal(arugula_e2e::now_ms() - 1, "reset").placed_after(log.events.last());
+            log.events.push(gone);
+            Some(log)
+        }, "grant_passkey"),
+    ];
+    for (n, g, carried, code) in refused {
+        set(g);
+        *f.carried.lock().unwrap() = carried;
+        let s = ses(n);
+        f.start(&s, "refused", prompt(1, "acct1", "hello"));
+        wait(&marks, &f, code, || f.state(&s) == "failed");
+        assert!(why_failed(&f, &s).starts_with(code), "{n}: {}", why_failed(&f, &s));
+        assert!(f.turns(&s).is_empty(), "{n}");
+        // Off its list, as the platform does a failed one.
+        f.stop(&s);
+    }
+    *f.carried.lock().unwrap() = Some(f.passkey_log());
+
+    std::thread::sleep(Duration::from_millis(5));
+    set(f.passkey_grant("acct1", &f.root, "pk"));
+    let a = ses('a');
+    f.start(&a, "good", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(3, "acct1", "slowly"));
+    wait(&marks, &f, "a's follow-up, mid-turn", || f.turns(&a).len() == 2 && f.state(&a) == "working");
+
+    let mut revoke = GrantRevoke::v3(PROJECT, &f.delegation.id(), Running::Stop, arugula_e2e::now_ms(), "acct1");
+    revoke.passkey = Some(passkey_over(&f.root, "pk", &revoke.passkey_challenge(), "https://c.test"));
+    f.revokes.lock().unwrap().push(revoke);
+    wait(&marks, &f, "a ended", || f.state(&a) == "failed");
+    assert_eq!(f.turn_reports(&a).len(), 1, "cut off mid-turn");
+    let z = ses('f');
+    f.start(&z, "after", prompt(4, "acct1", "hello"));
+    wait(&marks, &f, "the next refused", || f.state(&z) == "failed");
+    assert!(why_failed(&f, &z).starts_with("grant_revoked"), "{}", why_failed(&f, &z));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A grant signed with a passkey the box hasn't pinned yet, as when an owner
+/// adds one to sign with. While a refresh can't get through the session
+/// waits, queued, and doesn't fail; once one does it runs. A passkey a
+/// refresh that got through still doesn't have fails it.
+#[test]
+fn a_new_passkey_waits_for_a_refresh_and_only_a_good_one_refuses() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-refresh");
+    let (added, never) = (DeviceKeys::generate(), DeviceKeys::generate());
+    wait(&marks, &f, "the box enrolled", || f.enrolled.lock().unwrap().is_some());
+
+    f.trust_down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let log = f.log_with(&[("pk2", &added)]);
+    if let Some((e, _)) = f.enrolled.lock().unwrap().as_mut() {
+        e.passkey_logs = Some([("acct1".to_owned(), log.clone())].into());
+    }
+    *f.grant.lock().unwrap() = Some(f.passkey_grant("acct1", &added, "pk2"));
+    *f.carried.lock().unwrap() = Some(log);
+    let a = ses('a');
+    f.start(&a, "new-key", prompt(1, "acct1", "hello"));
+    let at = std::time::Instant::now();
+    wait(&marks, &f, "a refresh's wait to pass", || {
+        std::fs::read_to_string(marks.join("arugulad.log")).unwrap_or_default().contains("waits for a refresh")
+    });
+    assert!(at.elapsed() >= Duration::from_secs(5), "it gave the refresh its time");
+    assert_eq!(f.state(&a), "queued", "it waits: {:?}", f.moves(&a));
+    assert!(f.turns(&a).is_empty());
+
+    f.trust_down.store(false, std::sync::atomic::Ordering::SeqCst);
+    wait(&marks, &f, "a's turn, after a refresh", || f.state(&a) == "done");
+
+    std::thread::sleep(Duration::from_millis(5));
+    *f.grant.lock().unwrap() = Some(f.passkey_grant("acct1", &never, "pk3"));
+    let b = ses('b');
+    f.start(&b, "unknown-key", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "b refused", || f.state(&b) == "failed");
+    assert!(why_failed(&f, &b).starts_with("grant_passkey"), "{}", why_failed(&f, &b));
     drop(d);
     let _ = std::fs::remove_dir_all(&marks);
 }

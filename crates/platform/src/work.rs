@@ -32,8 +32,8 @@
 //!
 //! **Sessions on the pull.** A thread's sessions go with the project's live
 //! standing grant, for the box to check, and the project's revokes, as runs
-//! do. With no grant, the platform offers no queued session and no prompt, so
-//! a box from before boxes checked starts nothing either.
+//! do. With no grant that lets them run, the platform offers no queued session
+//! and no prompt.
 //!
 //! Not here: who may start a run (M211's grant, M214's triggers), and the
 //! approval a run without a grant waits for (M218).
@@ -244,8 +244,12 @@ async fn under_grant(
     }
     let Some(grant) = crate::run_grant::session_grant(&app.db, &m.project, now)? else {
         sessions.retain(|s| s.state != crate::db::sessions::State::Queued.as_str());
+        // One that doesn't let them run is still the newest the box should
+        // know of.
+        let live = app.db.live_run_grant(&m.project, now)?.map(|g| g.grant);
         for s in sessions.iter_mut() {
             s.prompts.clear();
+            s.grant = live.clone();
         }
         return Ok(());
     };
@@ -333,7 +337,13 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
         // The grant it was started under, revoked or not: the machine
         // checks it, with the revokes, and refuses one taken back.
         let grant = match (&run.grant, run.state) {
-            (Some(g), State::Pending) => app.db.run_grant(&run.project, g)?.map(|g| g.grant),
+            // The one that took its place, if it has been replaced: a box
+            // that's seen the newer refuses the older.
+            (Some(g), State::Pending) => match app.db.run_grant(&run.project, g)? {
+                Some(s) if s.superseded_at.is_some() => app.db.live_run_grant(&run.project, now)?.or(Some(s)),
+                s => s,
+            }
+            .map(|g| g.grant),
             _ => None,
         };
         // A v2's granter's passkey log as the hub publishes it (DK6): the

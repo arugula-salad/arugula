@@ -3,7 +3,7 @@
 //! the project's hosted box", aru-115, both as amended 2026-11-04). The
 //! grant's own rules are [`crate::run_grant`]; a box checks it for itself
 //! (`crates/arugulad-work/src/sessions.rs`). What's here is what the platform
-//! does about it, for every box, the ones too old to check for themselves too:
+//! does about it:
 //!
 //! - **Nothing starts with no grant** ([`barred`]): `@arugula` and its
 //!   which-repo answer ([`crate::chat::sessions`]), `session_start`, Agent on
@@ -56,8 +56,9 @@ pub async fn must_run(app: &Platform, project: &str) -> Result<(), ApiError> {
     }
 }
 
-/// Whether a revoke since it was made takes session `s` back: it was live
-/// then, so nothing signed after brings it back.
+/// Whether the grant in force was revoked since session `s` was made: it was
+/// live then, so nothing signed after brings it back. Revoking a grant another
+/// had replaced takes nothing from it (`Db::run_grant_revoked_since`).
 pub fn ended_by_revoke(db: &Db, s: &Session) -> Result<bool> {
     db.run_grant_revoked_since(&s.project, s.created_at)
 }

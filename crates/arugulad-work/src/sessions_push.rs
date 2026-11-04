@@ -53,6 +53,8 @@ use crate::server::App;
 /// The most a whole push may take: the platform marks a session whose box
 /// says nothing for a minute unresponsive.
 const PUSH_MAX: Duration = Duration::from_secs(45);
+/// How often a push under way looks whether its session ended.
+const ENDED_EVERY: Duration = Duration::from_millis(250);
 /// The biggest bundle taken.
 const BUNDLE_MAX: usize = 512 * 1024 * 1024;
 
@@ -111,12 +113,36 @@ fn git(dir: &Path) -> tokio::process::Command {
 }
 
 async fn run(mut c: tokio::process::Command, what: &str) -> Result<String, String> {
-    let out = c.output().await.map_err(|e| format!("can't run git to {what}: {e}"))?;
+    // In a group of its own: git hands a push to helpers of its own, and
+    // stopping one stops them all.
+    #[cfg(unix)]
+    c.process_group(0);
+    let child = c
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("can't run git to {what}: {e}"))?;
+    let group = KillGroup(child.id());
+    let out = child.wait_with_output().await.map_err(|e| format!("can't run git to {what}: {e}"))?;
+    std::mem::forget(group);
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
         let said = String::from_utf8_lossy(&out.stderr);
         Err(format!("git couldn't {what}: {}", said.trim().chars().take(400).collect::<String>()))
+    }
+}
+
+/// Kills a git and what it started, when what's waiting on it is dropped: a
+/// session that ended while it pushes ([`push_turn`]).
+struct KillGroup(Option<u32>);
+
+impl Drop for KillGroup {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0.and_then(|p| i32::try_from(p).ok()) {
+            let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid), nix::sys::signal::Signal::SIGKILL);
+        }
     }
 }
 
@@ -330,12 +356,26 @@ pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String>
         }
         Err(_) => vec![],
     };
-    let pushed = tokio::time::timeout(
+    // The session ending stops the push: a revoke saying `running stop`, or
+    // a person's Stop. One that ends with its turn (`running finish`) ends
+    // after this.
+    let ended = async {
+        loop {
+            tokio::time::sleep(ENDED_EVERY).await;
+            let now = super::read(app.control.state_dir(), &l.session).ok().flatten();
+            if now.is_none_or(|now| now.ended.is_some()) {
+                return;
+            }
+        }
+    };
+    let pushing = tokio::time::timeout(
         PUSH_MAX,
         push_bundle(&mirror, &mine, &l.session, &l.branch, &l.branch, &remote, Some(&token), &shallow),
-    )
-    .await
-    .unwrap_or_else(|_| Err("the push took too long".into()));
+    );
+    let pushed = tokio::select! {
+        r = pushing => r.unwrap_or_else(|_| Err("the push took too long".into())),
+        () = ended => Err("the session ended: its push was stopped".into()),
+    };
     revoke(&revoke_at, &token).await;
     forget(token);
     let _ = std::fs::remove_file(&mine);

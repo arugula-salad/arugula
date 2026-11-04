@@ -25,7 +25,9 @@
 //!   formed, for this project and its owner, by the poster (an owner now),
 //!   freshly made, expires within [`MAX_DAYS`], its passkey checks out,
 //!   names the project's live delegation (the hub's word,
-//!   `HubPort::live_delegation`), and wasn't revoked before it got here. It
+//!   `HubPort::live_delegation`), wasn't revoked before it got here, and is
+//!   made past every grant the project has had, so that hosted machines,
+//!   which go by that time, order grants as they were given. It
 //!   takes the place of the project's live grant: renewing is signing a new
 //!   one, with one passkey prompt. It holds no passkey or device key itself
 //!   (aru-079), and the machines check again: they're what's trusted here.
@@ -284,6 +286,13 @@ pub async fn sign(
             ));
         }
         Added::Seen => return Err(err(StatusCode::CONFLICT, "that grant is here already")),
+        Added::Older => {
+            return Err(refusal(
+                StatusCode::CONFLICT,
+                "grant_older",
+                "the project's last grant says it was made later than this one, by its signer's clock: reload the page and sign again",
+            ));
+        }
     }
     info!(%account, %project, grant = g.id, "kept a project's standing grant, signed with a passkey");
     app.analytics.capture(&account, "run grant signed", json!({ "days": g.expires.map(|e| (e - g.made) / DAY_MS) }));
@@ -320,14 +329,18 @@ pub async fn revoke(
     }
     info!(%account, %project, delegation = r.delegation, grants = n, stop = r.running == Running::Stop, "revoked a project's standing grants");
     app.analytics.capture(&account, "run grant revoked", json!({ "stop": r.running == Running::Stop }));
-    // Its agent sessions end here first, for a box too old to check for
-    // itself; a session this misses, its job ends (`sessions::job`).
-    let sessions = match crate::features::chat().grant_revoked(&app, &project, r.running).await {
-        Ok(n) => n,
-        Err(e) => {
-            warn!(%project, error = %format!("{e:#}"), "can't end a project's sessions as its grant was revoked");
-            0
-        }
+    // Its agent sessions end here too, when this took back the grant in
+    // force: one that had been replaced leaves what runs under the other
+    // alone. A session this misses, its job ends (`sessions::job`).
+    let sessions = match app.db.run_grant_revoked_since(&project, now)? {
+        false => 0,
+        true => match crate::features::chat().grant_revoked(&app, &project, r.running).await {
+            Ok(n) => n,
+            Err(e) => {
+                warn!(%project, error = %format!("{e:#}"), "can't end a project's sessions as its grant was revoked");
+                0
+            }
+        },
     };
     // Every hosted machine of the project hears it now; one that's asleep
     // hears it with its next start.
@@ -446,7 +459,7 @@ fn code_of(why: &str) -> (&'static str, &str) {
     let code = GrantRefusal::ALL
         .iter()
         .map(|r| r.code())
-        .chain(["not_hosted", "wrong_workspace", "revokes_unreadable"])
+        .chain(["not_hosted", "wrong_workspace", "revokes_unreadable", "grant_superseded"])
         .find(|c| *c == code);
     (code.unwrap_or("grant_refused"), says)
 }

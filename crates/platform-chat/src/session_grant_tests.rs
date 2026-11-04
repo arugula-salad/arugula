@@ -115,6 +115,17 @@ async fn revoke(hub: &TestHub, app: &Platform, base: &str, t: &str, running: Run
     v
 }
 
+/// a revokes the project's grants under `delegation` through the route,
+/// saying `running`: what it answered.
+async fn revoke_of(keys: &DeviceKeys, base: &str, t: &str, delegation: &str, running: Running) -> Value {
+    let mut r = GrantRevoke::v3(t, delegation, running, now_ms(), "a");
+    r.passkey = Some(assertion(keys, &r.passkey_challenge()));
+    let path = format!("/api/projects/{t}/runs/grant/revoke");
+    let (st, v) = call(base, "a", "POST", &path, Some(json!({ "revoke": r }))).await;
+    assert_eq!(st, 200, "{v}");
+    v
+}
+
 /// With no grant, an editor's `@arugula` starts nothing: no session, no job,
 /// nothing for the box, and the thread says an owner gives one, and how.
 #[tokio::test]
@@ -422,4 +433,80 @@ async fn a_warm_ping_wakes_nothing_with_no_grant() {
     forbid(&app, &t);
     let w = crate::chat::typing::warm_for(&app, &room, "b", now_ms()).await.unwrap();
     assert_eq!(w, crate::chat::typing::Warm::NoGrant);
+}
+
+/// Revoking a grant another has replaced (under an earlier delegation, say)
+/// ends nothing that runs under the other: not at the route, not by its job,
+/// and follow-ups and new sessions go on. Revoking the one in force ends them.
+#[tokio::test]
+async fn a_revoke_of_a_replaced_grant_ends_nothing_under_the_new_one() {
+    let (hub, app, base, t, _u, keys) = platform(&[REPO]).await;
+    let old = app.db.live_run_grant(&t, now_ms()).unwrap().unwrap().grant;
+    // A new delegation, and a grant under it.
+    let device = DeviceKeys::generate();
+    let mut d = Delegation {
+        project: t.clone(),
+        owner: "team:t".into(),
+        key: HostedKey::from_seed(&[2; 32]).public(),
+        at: 2,
+        by: String::new(),
+        sig: String::new(),
+    };
+    d.sign_with(&device);
+    assert_ne!(d.id(), old.delegation);
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let now = now_ms();
+    let mut new = ProjectGrant::new(&d, now, Some(now + 86_400_000));
+    new.sign_with(&device);
+    app.db.add_run_grant(&new, "a", now).unwrap();
+
+    let (s, p) = session(&base, &app, &t, "one").await;
+    take(&app, &keys, &s.id);
+    box_says(&app, &keys, &s.id, 2, State::Working, State::Done, "{}");
+
+    let passkey = DeviceKeys::generate();
+    hub.passkey("pk-a", "a", passkey.sign_public());
+    let v = revoke_of(&passkey, &base, &t, &old.delegation, Running::Stop).await;
+    assert_eq!((&v["revoked"], &v["sessions"]), (&json!(1), &json!(0)), "{v}");
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Done);
+    assert!(matches!(step(&app, &s.id).await, Step::Again(_)));
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Done, "its job leaves it too");
+    let before = app.db.session_prompts(&s.id).unwrap().len();
+    post_in(&base, ROOM, "b", "and this", Some(p)).await;
+    assert_eq!(app.db.session_prompts(&s.id).unwrap().len(), before + 1, "a follow-up goes");
+    let (second, _) = session(&base, &app, &t, "two").await;
+    assert_eq!(second.state, State::Queued);
+
+    let v = revoke_of(&passkey, &base, &t, &d.id(), Running::Stop).await;
+    assert_eq!(v["sessions"], 2, "{v}");
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::Stopped);
+}
+
+/// A narrower grant is the newest for the box to know of, though sessions
+/// can't run under it. A run named under a grant that's been replaced goes
+/// with the one that replaced it: a box refuses the older once it's seen it.
+#[tokio::test]
+async fn the_pull_lists_the_grant_in_force() {
+    let (_hub, app, base, t, _u, keys) = platform(&[REPO]).await;
+    let (s, _) = session(&base, &app, &t, "one").await;
+    take(&app, &keys, &s.id);
+    forbid(&app, &t);
+    let device = DeviceKeys::generate();
+    let mut d = Delegation {
+        project: t.clone(),
+        owner: "team:t".into(),
+        key: HostedKey::from_seed(&[1; 32]).public(),
+        at: 1,
+        by: String::new(),
+        sig: String::new(),
+    };
+    d.sign_with(&device);
+    let now = now_ms();
+    let mut narrow = ProjectGrant::new(&d, now, Some(now + 86_400_000));
+    narrow.caps = vec!["runs.start".into()];
+    narrow.sign_with(&device);
+    app.db.add_run_grant(&narrow, "a", now).unwrap();
+    let w = pull(&app, &t, &keys).await;
+    assert_eq!(w.sessions[0].grant.as_ref(), Some(&narrow));
+    assert!(w.sessions[0].prompts.is_empty());
 }

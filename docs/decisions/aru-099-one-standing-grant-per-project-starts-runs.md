@@ -103,9 +103,13 @@ run needs `runs.instruct` as well as `runs.start`.
 - **A revoke ends live sessions** and refuses follow-ups and new ones.
   `running stop` ends them at once, mid-turn too. `running finish` lets a
   turn under way finish, and its session ends with it; one with no turn
-  under way ends at once. The platform ends them as the revoke arrives, for
-  boxes from before this too, and the box ends them itself on the pull that
-  brings the revoke, as it stops runs.
+  under way ends at once, and a stop ends a push under way too. The platform
+  ends them as the revoke arrives, and the box ends them itself as it hears
+  the revoke, without waiting on control. A revoke of a grant another has
+  replaced ends nothing that runs under the other.
+- **The newest grant counts.** A box that has seen a newer grant refuses an
+  older one, by the time each signs; the platform takes a new one only past
+  every grant the project has had.
 
 The cost: every project that wants `@arugula` needs an owner's passkey first,
 so a project with no grant loses it until one is given.

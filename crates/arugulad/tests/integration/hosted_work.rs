@@ -987,15 +987,17 @@ fn a_hosted_machine_runs_under_a_passkey_grant() {
 
     // A v2 grant, the account's passkey over its bytes: the run runs. So
     // does one under a device-signed v1 (made before DK6), until it expires.
+    let b = run_id('b');
+    let v1 = f.grant(&f.root);
+    f.items.lock().unwrap().push(f.item(&b, &format!("echo ran >> {}", ran_to("b").display()), v1.clone()));
+    wait(&marks, &f, "run b ran", || f.reports_of(&b).len() == 2);
+    std::thread::sleep(Duration::from_millis(5));
     let a = run_id('a');
     let v2 = f.passkey_grant("acct1", &f.root, here);
     let mut item = f.item(&a, &format!("echo ran >> {}", ran_to("a").display()), v2.clone());
     item.passkey_log = Some(f.passkey_log());
     f.items.lock().unwrap().push(item);
-    let b = run_id('b');
-    let v1 = f.grant(&f.root);
-    f.items.lock().unwrap().push(f.item(&b, &format!("echo ran >> {}", ran_to("b").display()), v1.clone()));
-    wait(&marks, &f, "runs a and b ran", || f.reports_of(&a).len() == 2 && f.reports_of(&b).len() == 2);
+    wait(&marks, &f, "run a ran", || f.reports_of(&a).len() == 2);
     assert_eq!((states(&f.reports_of(&a)), states(&f.reports_of(&b))), (ran(1), ran(1)));
     assert_eq!((lines(&ran_to("a")), lines(&ran_to("b"))), (1, 1));
 

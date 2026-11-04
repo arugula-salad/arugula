@@ -175,6 +175,13 @@ const FINISH_OUTPUT_MAX: usize = 4 * 1024;
 /// Who a finish step's fix prompt is from, in the block's transcript.
 pub const FINISH_STEP: &str = "the finish step";
 
+/// How long stopping an agent waits for it to cancel its turn before its
+/// block closes anyway.
+const CANCEL_MAX: Duration = Duration::from_secs(5);
+
+/// The daemon, for what asks with no handle on it
+/// ([`turn_allowed`]). Set when the work starts.
+pub static APP: std::sync::OnceLock<Arc<App>> = std::sync::OnceLock::new();
 /// The latest pull's sessions, by id: `None` before the first.
 static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
 /// Sessions followed now.
@@ -401,23 +408,62 @@ fn checked(app: &App, w: &SessionWork) -> Result<ProjectGrant, runs::Refused> {
     Ok(grant)
 }
 
+/// Why a session's next turn doesn't start now ([`allowed`]).
+enum NotNow {
+    /// The grant doesn't let it, and that's settled: what its report says.
+    Refused(String),
+    /// This box can't say until a refresh gets through: it waits, and is
+    /// asked again.
+    Wait,
+}
+
 /// [`checked`], before something that starts a turn. What this box pinned of
 /// who may sign can be a refresh old (a passkey just added, to sign the grant
 /// that's asked about), so one refused for that is asked again after a
-/// refresh, rather than failing a session a minute's wait would let through.
-async fn allowed(app: &App, w: &SessionWork) -> Result<ProjectGrant, runs::Refused> {
+/// refresh. Only a refresh that got through settles it: with control out of
+/// reach, the session waits rather than failing for good.
+async fn allowed(app: &App, w: &SessionWork) -> Result<ProjectGrant, NotNow> {
+    let refused = |r: runs::Refused| NotNow::Refused(format!("{}: {}", r.code, r.says));
     match checked(app, w) {
         Err(r) if PIN_CAN_CHANGE.contains(&r.code) => {
-            app.control.refresh_now(REFRESH_WAIT).await;
-            checked(app, w)
+            if !app.control.refresh_now(REFRESH_WAIT).await {
+                info!(session = w.session, code = r.code, "hosted: a session waits for a refresh to check its grant");
+                return Err(NotNow::Wait);
+            }
+            checked(app, w).map_err(refused)
         }
-        r => r,
+        r => r.map_err(refused),
     }
 }
 
-/// A session this box won't start a turn on: what its report says.
-fn why_not(r: runs::Refused) -> String {
-    format!("{}: {}", r.code, r.says)
+/// Whether session `id`'s agent may start a turn now
+/// (`work::Work::session_turn`), its block asks, just before the prompt goes:
+/// `Err` says why not. With no pull answered since this daemon started, or a
+/// refresh it can't get, it waits.
+pub async fn turn_allowed(id: String) -> Result<(), String> {
+    loop {
+        if let Some(app) = APP.get() {
+            let dir = app.control.state_dir();
+            let Ok(Some(l)) = read(dir, &id) else { return Err("this box has no such session".into()) };
+            if l.ended.is_some() {
+                return Err("the session ended".into());
+            }
+            if runs::revoke_over(app, l.grant.as_ref(), l.taken_at).is_some() {
+                return Err(super::REVOKED.to_owned());
+            }
+            let pulled = LATEST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.get(&id).cloned());
+            match pulled {
+                Some(Some(w)) => match allowed(app, &w).await {
+                    Ok(_) => return Ok(()),
+                    Err(NotNow::Refused(why)) => return Err(why),
+                    Err(NotNow::Wait) => {}
+                },
+                Some(None) => return Err("control doesn't list the session".into()),
+                None => {}
+            }
+        }
+        tokio::time::sleep(FOLLOW).await;
+    }
 }
 
 /// A pull's sessions: kept as the latest word on each; the ones this box
@@ -427,6 +473,11 @@ fn why_not(r: runs::Refused) -> String {
 pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
     let dir = app.control.state_dir().to_owned();
     let listed: BTreeMap<String, SessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
+    // The project's grant as listed, first: one that replaced another counts
+    // from now, whatever it gives.
+    if let Some((w, g)) = listed.values().find_map(|w| w.grant.as_ref().map(|g| (w, g))) {
+        runs::notice(app, &w.project, &w.workspace, g, w.passkey_log.as_ref());
+    }
     *LATEST.lock().unwrap_or_else(|e| e.into_inner()) = Some(listed.clone());
     for l in live(&dir) {
         let Some(w) = listed.get(&l.session) else {
@@ -454,20 +505,29 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
     send_all(app).await;
 }
 
-/// End the sessions a revoke kept here takes back: at once if it says
+/// Whether a revoke kept here ends session `l` now: at once if it says
 /// `running stop`, or there's no turn under way; else when that turn ends,
 /// with what it did reported first ([`step`] gives it no fix, and no other
-/// turn starts). After each pull, with the project's revokes; a relayed
-/// revoke asks for a pull.
-pub async fn stop_revoked(app: &Arc<App>) {
+/// turn starts).
+fn revoked_now(app: &App, l: &Session) -> bool {
+    let Some(how) = runs::revoke_over(app, l.grant.as_ref(), l.taken_at) else { return false };
+    how == Running::Stop || !(l.now() == State::Working && l.turn.as_ref().is_some_and(|t| t.sent))
+}
+
+/// End the sessions a revoke kept here takes back, now: each is marked here
+/// and its agent stopped in a task of its own, so nothing about control's
+/// answers holds it up. As a revoke is kept (relayed, or with a pull); and
+/// each session's [`step`] looks, for the turn that ends later.
+pub fn stop_revoked(app: &Arc<App>) {
     for l in live(app.control.state_dir()) {
-        let Some(how) = runs::revoke_over(app, l.grant.as_ref(), l.taken_at) else { continue };
-        let turn_going = l.now() == State::Working && l.turn.as_ref().is_some_and(|t| t.sent);
-        if how == Running::Finish && turn_going {
+        if !revoked_now(app, &l) {
             continue;
         }
         info!(session = l.session, "hosted: ending a session: its standing grant was revoked");
-        fail(app, &l.session, super::REVOKED).await;
+        if let Some(l) = mark_failed(app, &l.session, super::REVOKED) {
+            let app = app.clone();
+            crate::task::spawn(async move { wind_down(&app, &l).await });
+        }
     }
 }
 
@@ -636,7 +696,9 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
     };
     match allowed(app, w).await {
         Ok(g) => l.grant = Some(g),
-        Err(r) => return fail(l, why_not(r)),
+        Err(NotNow::Refused(why)) => return fail(l, why),
+        // Still queued: it's asked again on the next pull.
+        Err(NotNow::Wait) => return,
     }
     if !good_branch(&w.session, &w.branch) {
         return fail(l, format!("its branch isn't the session's own: {}", super::printable(&w.branch)));
@@ -1119,6 +1181,10 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
     if l.ended.is_some() {
         return false;
     }
+    if revoked_now(app, &l) {
+        fail(app, id, super::REVOKED).await;
+        return false;
+    }
     let Some((keys, me, ..)) = me(app) else { return true };
     if l.parked.is_some() {
         unpark(app, &l, &keys, &me).await;
@@ -1168,12 +1234,21 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if s.turns > t.base || s.queued > 0 {
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| started(now, &k, &m)));
-            } else if let Some(Err(r)) = match &work {
-                Some(w) => Some(allowed(app, w).await),
+            } else if work.is_none() {
+                // No pull has answered since this daemon started: what's
+                // saved waits for one.
+                return true;
+            } else if let Some(not) = match &work {
+                Some(w) => allowed(app, w).await.err(),
                 None => None,
             } {
-                fail(app, id, &why_not(r)).await;
-                return false;
+                match not {
+                    NotNow::Refused(why) => {
+                        fail(app, id, &why).await;
+                        return false;
+                    }
+                    NotNow::Wait => return true,
+                }
             } else if let Some(text) = t.fix.clone() {
                 give_fix(app, &b, id, text, &keys, &me).await;
             } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
@@ -1207,8 +1282,9 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                     say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
                 }
                 // The finish step, before the push: a stop meanwhile ends
-                // it here. A review runs none (M264).
-                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review);
+                // it here. A review runs none (M264), and nor does a turn
+                // that never began: no agent ran for it to check.
+                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review && s.turns > t.base);
                 let finished = finish_turn(app, &l, step, &keys, &me).await;
                 let Ok(Some(l)) = read(&dir, id) else { return false };
                 if l.ended.is_some() {
@@ -1325,6 +1401,16 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         }
         None => {
             BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+            // What the block said with no turn under way: a prompt it refused
+            // to start (a mention with no grant, say). The card says why.
+            if let Some(e) = s.error.clone().filter(|e| l.error.as_ref() != Some(e)) {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    let to = now.now();
+                    now.push(&k, &m, Kind::Error, to, SessionDetail { error: Some(e.clone()), ..Default::default() });
+                    now.error = Some(e);
+                }));
+            }
             let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
             let Some(seen_turns) = l.turns_seen else {
                 // A ledger from before it was kept: from now on.
@@ -1356,14 +1442,17 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 // A follow-up is listed only with a grant to run it under:
                 // refused here, the platform's word and this box's differ,
                 // and the card says why.
-                if let Some(Err(r)) = match &work {
-                    Some(w) => Some(allowed(app, w).await),
-                    None => None,
-                } {
-                    fail(app, id, &why_not(r)).await;
-                    return false;
+                match work.as_ref().map(|w| allowed(app, w)) {
+                    Some(check) => match check.await {
+                        Ok(_) => hand(app, &b, id, p, &keys, &me, s.turns).await,
+                        Err(NotNow::Refused(why)) => {
+                            fail(app, id, &why).await;
+                            return false;
+                        }
+                        Err(NotNow::Wait) => return true,
+                    },
+                    None => return true,
                 }
-                hand(app, &b, id, p, &keys, &me, s.turns).await;
             } else if l.now() == State::Done
                 && work.as_ref().is_some_and(|w| w.park)
                 && l.unnamed.is_empty()
@@ -1436,8 +1525,10 @@ async fn unpark(app: &Arc<App>, l: &Session, keys: &Arc<arugula_e2e::DeviceKeys>
     if !w.prompts.iter().any(|p| !l.handed.contains(&p.id)) || running(&dir) >= MAX_SESSIONS_PER_BOX {
         return;
     }
-    if let Err(r) = allowed(app, &w).await {
-        return fail(app, &l.session, &why_not(r)).await;
+    match allowed(app, &w).await {
+        Ok(_) => {}
+        Err(NotNow::Refused(why)) => return fail(app, &l.session, &why).await,
+        Err(NotNow::Wait) => return,
     }
     let sid = l.parked.as_ref().and_then(|p| p.agent_session.clone());
     let block = match open_block(app, l, sid.as_deref()).await {
@@ -1781,9 +1872,17 @@ async fn end(app: &Arc<App>, id: &str, why: &str) {
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
 async fn fail(app: &Arc<App>, id: &str, why: &str) {
-    let dir = app.control.state_dir().to_owned();
-    let Some((keys, me, ..)) = me(app) else { return };
-    let Some((l, _)) = update(&dir, id, |now| {
+    if let Some(l) = mark_failed(app, id, why) {
+        wind_down(app, &l).await;
+    }
+}
+
+/// Session `id` has failed, saying `why`, as its ledger says from here on: a
+/// push under way stops, nothing follows it, and the report is kept to send.
+fn mark_failed(app: &App, id: &str, why: &str) -> Option<Session> {
+    let dir = app.control.state_dir();
+    let (keys, me, ..) = me(app)?;
+    let (l, _) = update(dir, id, |now| {
         now.push(
             &keys,
             &me,
@@ -1792,20 +1891,25 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
             SessionDetail { reason: Some(why.to_owned()), ..Default::default() },
         );
         now.ended = Some(why.to_owned());
-    }) else {
-        return;
-    };
+    })?;
     warn!(session = id, why, "hosted: a session failed");
-    stop_agent(app, &l).await;
-    clean_slot(&dir, &l).await;
-    send(app, id).await;
+    Some(l)
+}
+
+/// What a session that failed leaves: its agent stopped first, then its slot
+/// cleaned, then the report sent, so a control that doesn't answer holds up
+/// nothing that matters.
+async fn wind_down(app: &Arc<App>, l: &Session) {
+    stop_agent(app, l).await;
+    clean_slot(app.control.state_dir(), l).await;
+    send(app, &l.session).await;
 }
 
 async fn stop_agent(app: &App, l: &Session) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
     if let Some(block) = l.block {
         if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
-            let _ = b.call("cancel", json!({})).await;
+            let _ = tokio::time::timeout(CANCEL_MAX, b.call("cancel", json!({}))).await;
         }
         app.mux.api(|r| Api::Close(block, r)).await;
     }

@@ -64,8 +64,8 @@
 //! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
 //!   with session users takes up to three at once, beside its one run at a
 //!   time, each an ACP agent block run as its own session user, under the
-//!   project's standing grant, checked here before it's taken and before
-//!   each turn.
+//!   project's standing grant, checked here before it's taken and as each
+//!   turn's prompt goes to its agent, whatever queued it.
 //!
 //! This is the crate `arugulad-work` (#232), beside the other feature crates
 //! on the base: the binary calls [`register`], which installs the base's
@@ -1287,6 +1287,7 @@ async fn send_all(app: &App, open: &mut BTreeSet<String>) {
 /// left, then pull, take what's ready (one run at a time), stop what a
 /// revoke covers, and send what's unsent.
 pub fn start(app: Arc<App>) {
+    let _ = sessions::APP.set(app.clone());
     crate::task::spawn(async move {
         let dir = app.control.state_dir().to_owned();
         let every = pull_every();
@@ -1329,6 +1330,7 @@ pub fn start(app: Arc<App>) {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
                         crate::hosted::runs::keep_revokes(&app, &w.revokes);
+                        sessions::stop_revoked(&app);
                         for item in w.items {
                             if run_going() {
                                 break;
@@ -1347,7 +1349,6 @@ pub fn start(app: Arc<App>) {
                     Err(e) => info!(error = %format!("{e:#}"), "hosted: can't ask control for work yet"),
                 }
                 stop_revoked(&app);
-                sessions::stop_revoked(&app).await;
                 send_all(&app, &mut open).await;
             }
             tokio::select! {
@@ -1379,6 +1380,16 @@ impl crate::work::Work for Engine {
 
     fn stop_revoked(&self, app: &App) {
         stop_revoked(app);
+        if let Some(app) = sessions::APP.get() {
+            sessions::stop_revoked(app);
+        }
+    }
+
+    fn session_turn(
+        &self,
+        session: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+        Box::pin(sessions::turn_allowed(session))
     }
 
     fn running(&self) -> bool {

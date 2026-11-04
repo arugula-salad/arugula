@@ -277,8 +277,8 @@ amended 2026-11-04). An owner allows them as they allow runs: *Allow runs*
 on Control's page, under Devices and machines, Runs on cloud workspaces, with
 a passkey (`arugula runs grant show` says whether a project has one). Each
 session's work carries the grant on every pull, and the box checks it against
-what it pinned, `runs.instruct` included, before it takes the session and
-before each turn.
+what it pinned, `runs.instruct` included, before it takes the session and as
+each turn's prompt goes to the agent.
 
 - **With no grant** (none yet, expired, revoked, or for an earlier
   delegation), `@arugula`, `session_start`, Try 3, `@codex review`, Move to…
@@ -290,19 +290,24 @@ before each turn.
 - **A revoke ends live sessions** and refuses follow-ups and new ones.
   *Also stop the runs going* (`running stop`) ends them at once, mid-turn
   too; without it (`running finish`) a turn under way finishes, and its
-  session ends with it, and one with no turn under way ends at once. A grant
-  signed after the revoke doesn't bring back a session it ended. The platform
-  ends them as the revoke arrives, and the box does on the pull that brings
-  the revoke, as it stops runs.
-- **A box from before this** checks nothing itself. The platform's rules
-  still hold for it: nothing starts with no grant, it's offered no queued
-  session or prompt, and a revoke takes its sessions off its list, so it stops
-  them. Only a box from this release on checks the grant's signature.
-- **A box from this release against a platform from before it,** which lists
-  no grant, refuses a new session or a follow-up (each fails, saying why). A
-  control can't be told from one that left the grant out on purpose, so the box
-  doesn't guess. It's only so for the minutes a release takes to deploy, or
-  after rolling the platform back.
+  session ends with it, and one with no turn under way ends at once. A stop
+  ends a push under way too. A grant signed after the revoke doesn't bring back
+  a session it ended. Revoking a grant another has replaced ends nothing that
+  runs under the other. The platform ends them as the revoke arrives, and the
+  box does as it hears the revoke, without waiting on control.
+- **Any turn, from anywhere.** The box checks as the prompt goes to the agent,
+  whatever queued it: a follow-up, a mention, a person typing in the block.
+  Refused, what was queued is dropped and the card says why. After a restart a
+  turn waits until a pull has answered; if the check needs what a refresh would
+  bring and control can't be reached, it waits too, and fails only when a
+  refresh that got through still refuses.
+- **Which grant.** A box that has seen a newer grant refuses an older one. The
+  order is the time a grant signs, and the platform takes a new one only past
+  every grant the project has had (the page signs one past the last, so a
+  device's clock doesn't matter).
+- **At a release,** a box from this release against a platform from before it
+  fails a new session or a follow-up, saying why, for the minutes a release
+  takes to deploy, or after rolling the platform back.
 
 **A session's agent asks no permission** on its box: Claude Code runs in
 `bypassPermissions` (Codex in `full-access`), and the block allows anything

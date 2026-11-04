@@ -2013,7 +2013,11 @@ export class ControlSession {
    * key signs it. It takes the place of the project's grant, if it has one
    * (renewing). Call it from a click. */
   async signRunGrant(d: Delegation, days: number): Promise<void> {
-    const made = Date.now();
+    // Past the project's last grant, whatever this device's clock says: hosted
+    // machines go by this time to tell which grant is newest.
+    const view = await this.runGrant(d.project);
+    const last = [view.grant, ...view.past].reduce((m, g) => Math.max(m, g?.grant.made ?? 0), 0);
+    const made = Math.max(Date.now(), last + 1);
     const g = await newGrant(d, this.account, expiresIn(days, made), undefined, made);
     const grant = { ...g, passkey: await passkeyOver(await passkeyChallenge(grantBody(g))) };
     await api(`/api/projects/${encodeURIComponent(d.project)}/runs/grant`, { grant }, platformFetch);

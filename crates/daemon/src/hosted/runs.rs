@@ -25,12 +25,23 @@
 //! it sends. A machine that never heard a revoke honours the grant until it
 //! expires.
 //!
+//! **Newest seen** (`<state>/run-grant-newest.json`). A grant that took
+//! another's place doesn't undo the old one's signature, so the machine
+//! keeps which is the newest it has seen check out, and refuses any older
+//! ([`SUPERSEDED`]). The order is the `made` a grant signs, then its id. An
+//! owner's clock can be off, so the platform is what makes that order the
+//! order they were given: it takes a grant only if its `made` is past every
+//! grant the project has had, and the page signs one past the last. A machine
+//! that's only ever seen the old one can't know: it goes by it until it's
+//! told otherwise, or the grant expires.
+//!
 //! The kept file fails closed: once a revoke was kept (a marker beside it
 //! says so), a missing or unreadable file refuses every start. It's in
 //! arugulad's state directory, which runs must never be able to write
 //! (M212: run as another user, or outside it).
 //!
-//! The grant gates only what the platform starts. People's own use of the
+//! The grant gates what the platform starts, and every turn of a thread's
+//! agent session, whoever or whatever asks for it. People's other use of the
 //! machine (its owners and editors, M180) doesn't go through it.
 //!
 //! A start that names a run (M212) has the machine pull its work at once
@@ -64,7 +75,10 @@ const FILE: &str = "run-grant-revokes.json";
 /// there.
 const MARKER: &str = "run-grant-revokes.kept";
 
-/// One writer at a time for [`FILE`].
+/// The newest grant this machine has seen check out.
+const NEWEST: &str = "run-grant-newest.json";
+
+/// One writer at a time for [`FILE`] and [`NEWEST`].
 static KEPT: Mutex<()> = Mutex::new(());
 
 /// Why a start was refused: a code the platform shows, and what it means.
@@ -96,6 +110,11 @@ pub const PIN_CAN_CHANGE: &[&str] = &[
     GrantRefusal::PasskeyLog.code(),
     GrantRefusal::Passkey.code(),
 ];
+/// A newer grant took this one's place, as this machine has seen.
+pub const SUPERSEDED: Refused = Refused {
+    code: "grant_superseded",
+    says: "a newer standing grant of this project has taken this one's place: this machine has seen it",
+};
 const UNREADABLE: Refused = Refused {
     code: "revokes_unreadable",
     says: "this hosted machine can't read the revokes it kept, so it starts nothing: rebuild the workspace",
@@ -175,6 +194,73 @@ fn read_kept(dir: &Path) -> anyhow::Result<Vec<GrantRevoke>> {
     }
 }
 
+/// A grant's place in the order (module docs).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+struct Newest {
+    made: u64,
+    id: String,
+}
+
+impl Newest {
+    fn of(g: &ProjectGrant) -> Self {
+        Newest { made: g.made, id: g.id.clone() }
+    }
+}
+
+/// The newest grant seen here. As [`read_kept`], one that doesn't read is an
+/// error, never "none".
+fn read_newest(dir: &Path) -> anyhow::Result<Option<Newest>> {
+    match std::fs::read(dir.join(NEWEST)) {
+        Ok(b) => Ok(Some(serde_json::from_slice(&b).context("the newest grant seen doesn't read")?)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow::Error::new(e).context("the newest grant seen can't be read")),
+    }
+}
+
+/// `g`, which checked out, against the newest seen here: refused if it's
+/// older, else it's the newest now.
+fn fresh(dir: &Path, g: &ProjectGrant) -> Result<(), Refused> {
+    let _held = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    let newest = read_newest(dir).map_err(|e| {
+        warn!(error = %format!("{e:#}"), "hosted: refusing starts: the newest grant seen can't be read");
+        UNREADABLE
+    })?;
+    let this = Newest::of(g);
+    if newest.as_ref().is_some_and(|n| *n > this) {
+        return Err(SUPERSEDED);
+    }
+    if newest.as_ref() != Some(&this) {
+        let wrote = serde_json::to_vec(&this)
+            .map_err(anyhow::Error::new)
+            .and_then(|b| crate::store::write_atomic(&dir.join(NEWEST), &b).map_err(anyhow::Error::new));
+        if let Err(e) = wrote {
+            warn!(error = %format!("{e:#}"), "hosted: can't keep the newest grant seen");
+        }
+    }
+    Ok(())
+}
+
+/// Have seen `g`, the project's grant as the platform lists it, whatever it
+/// gives: a narrower one takes an older one's place too. Nothing if it
+/// doesn't check out.
+pub fn notice(app: &crate::server::App, project: &str, workspace: &str, g: &ProjectGrant, carried: Option<&Log>) {
+    let dir = app.control.state_dir();
+    if read_newest(dir).ok().flatten().is_some_and(|n| n >= Newest::of(g)) {
+        return;
+    }
+    let Some(cap) = g.caps.first().cloned() else { return };
+    let start = RunStart {
+        project: project.to_owned(),
+        workspace: workspace.to_owned(),
+        run: None,
+        cap,
+        grant: g.clone(),
+        revokes: vec![],
+        passkey_log: carried.cloned(),
+    };
+    let _ = allows(app, &start);
+}
+
 /// Keep the revokes among `revokes` that are about this machine (its
 /// project and delegation) and that one of its project's owners signed,
 /// checked at `now`: the newest one, as it covers what any older one did.
@@ -227,7 +313,8 @@ pub fn allows(app: &crate::server::App, s: &RunStart) -> Result<(), Refused> {
             return Err(UNREADABLE);
         }
     };
-    check(&saved, s, &kept, now)
+    check(&saved, s, &kept, now)?;
+    fresh(dir, &s.grant)
 }
 
 /// Keep what's about this machine among `revokes` (they come with each
@@ -307,10 +394,9 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 stop,
                 "hosted: the project's standing grants were revoked"
             );
-            if stop {
-                crate::work::stop_revoked(app);
-            }
-            // The sessions it ends go on the pull this asks for.
+            // What it stops goes now: nothing here waits on control. A
+            // session it ends with its turn is ended then, by what follows it.
+            crate::work::stop_revoked(app);
             crate::work::nudge();
             OpAnswer::Done { url: None, routed: None }
         }
@@ -423,6 +509,26 @@ pub(crate) mod tests {
         // A machine that isn't hosted.
         let plain = Saved { kind: crate::control::MachineKind::Personal, ..saved.clone() };
         assert_eq!(check(&plain, &start(&g), &[], 20), Err(NOT_HOSTED));
+    }
+
+    /// The newest grant seen here: one older refused, by `made` then by id,
+    /// whichever clock signed it; the same one, and a newer one, taken; and a
+    /// file that doesn't read refuses.
+    #[test]
+    fn a_grant_older_than_the_newest_seen_is_refused() {
+        let (_, d, root, _) = machine();
+        let dir = super::super::scratch("run-grant-newest");
+        let (old, new) = (grant(&d, &root, 10), grant(&d, &root, 20));
+        assert_eq!(fresh(&dir, &old), Ok(()));
+        assert_eq!(fresh(&dir, &old), Ok(()), "the same one again");
+        assert_eq!(fresh(&dir, &new), Ok(()));
+        assert_eq!(fresh(&dir, &old), Err(SUPERSEDED));
+        assert_eq!(fresh(&dir, &new), Ok(()));
+        let later = grant(&d, &root, 30);
+        assert_eq!(fresh(&dir, &later), Ok(()));
+        assert_eq!(fresh(&dir, &new), Err(SUPERSEDED));
+        std::fs::write(dir.join(NEWEST), b"not json").unwrap();
+        assert_eq!(fresh(&dir, &later), Err(UNREADABLE));
     }
 
     /// Which revoke takes a session back: one covering the grant it holds,
