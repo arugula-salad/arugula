@@ -377,9 +377,8 @@ impl Daemon {
             Api::HeldDeliver(pane, reply) => {
                 let text = self.queued.deliver_held(pane, &*self.config.followups);
                 self.refresh_held(pane);
-                let _ = reply.send(
-                    text.ok_or_else(|| format!("%{pane} holds no tagged follow-up (it was delivered, or dismissed)")),
-                );
+                let _ = reply
+                    .send(text.ok_or_else(|| format!("%{pane} holds no mention (it was delivered, or dismissed)")));
             }
             Api::HeldDrop(pane, reply) => {
                 let n = self.queued.drop_held(pane);

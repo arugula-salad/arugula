@@ -140,6 +140,20 @@ stay, sent while control has chat on for the machine's account or team
 Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/readers.rs`,
 `chat::daemon_readers` in the platform.
 
+Since native #684 (2026-11-04) a reader list names a team's other owners
+too: they get in as the machine's owner, so they read what the owner reads,
+every pane's thread, a private one included, each by their own account
+and from the start. Only the roster's other owners the machine admits as
+the owner are added (none on a personal machine or a deploy's box; a hosted
+workspace's editors get in as the owner and aren't listed, as they never
+were); one the roster takes out or demotes goes from the lists with the
+next refresh. The lists also go when who may read what changes here, not
+only after a refresh: a share given or taken away, a pane made private or
+moved, a roster change, debounced to one send a moment after the change
+and at least ten seconds apart (longer when a send took several posts), so
+a burst of changes stays within control's limit on the route; a send that
+fails is carried by the next, since each carries the whole list.
+
 A conversation (#855, until M125) was a third kind of thread beside them, not
 a pane or session thread moved. It had a global id (`ConvId`, `c-` and 32
 hex digits) and lived on its home machine, the one it was made on, never in

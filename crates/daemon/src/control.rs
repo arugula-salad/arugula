@@ -779,9 +779,12 @@ impl Enrolled {
     }
 
     /// A team's other owner (#386): an owner here as this machine's own
-    /// account is, yet still someone to name, as `account:<id>`.
+    /// account is, yet still someone to name, as `account:<id>`. Only
+    /// someone [`Enrolled::build`] admits as the owner: the roster's other
+    /// owners, on a team or hosted machine, locked or not; nobody on a
+    /// deploy's box, where nobody gets in.
     fn co_owner(&self, account: &str) -> Option<Principal> {
-        if account == self.saved.cert.account {
+        if account == self.saved.cert.account || self.saved.hosted.as_ref().is_some_and(|h| h.deploy) {
             return None;
         }
         let m = self.saved.roster.as_ref()?.member(account).filter(|m| m.role == TeamRole::Owner)?;
@@ -5167,6 +5170,125 @@ pub(crate) mod tests {
                 Principal::Owner => "owner".into(),
             }
         }
+    }
+
+    /// Native #684: the co-owners a machine lists as thread readers are
+    /// exactly the roster's other owners it admits as the owner: none on a
+    /// personal machine; on a team machine, locked or not, and on a hosted
+    /// one, the roster's other owners (a hosted editor gets in as the
+    /// owner too, and isn't one: `team_people` doesn't name them either);
+    /// nobody on a deploy's box; and an owner the roster takes out or
+    /// demotes is gone from them.
+    #[test]
+    fn co_owners_are_the_rosters_other_owners_the_machine_admits() {
+        let (_, root) = device("m", Kind::Browser);
+        let (_, daemon) = device("m", Kind::Daemon);
+        let (_, owner) = device("o", Kind::Browser);
+        let (_, editor) = device("e", Kind::Browser);
+        let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: root.device.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = |version: u64, o: TeamRole| Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version,
+            at: version,
+            members: vec![
+                member("m", &root, TeamRole::Owner),
+                member("o", &owner, o),
+                member("e", &editor, TeamRole::Editor),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let personal = Saved {
+            url: String::new(),
+            trust: Trust { account: "m".into(), root: root.device.clone() },
+            cert: daemon,
+            certs: vec![root.clone()],
+            revocations: vec![],
+            team: None,
+            roster: None,
+            team_certs: [
+                ("o".to_owned(), (vec![owner.clone()], vec![])),
+                ("e".to_owned(), (vec![editor.clone()], vec![])),
+            ]
+            .into_iter()
+            .collect(),
+            former_members: Default::default(),
+            team_names: Default::default(),
+            locked: false,
+            lock: None,
+            seen: Default::default(),
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            held_teams: Default::default(),
+            held_peers: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+            hosted: None,
+        };
+        let team = Saved {
+            team: Some(TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() }),
+            roster: Some(roster(1, TeamRole::Owner)),
+            ..personal.clone()
+        };
+        let key = arugula_e2e::hosted::HostedKey::generate();
+        let d = arugula_e2e::hosted::Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: root.device.clone(),
+            sig: String::new(),
+        };
+        let hosted_pin = |deploy: bool| HostedPin {
+            cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+            delegation: d.clone(),
+            revocations: vec![],
+            deploy,
+            builder: false,
+            legacy_app_children: None,
+            passkey_logs: Default::default(),
+            passkey_origins: None,
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-co-owner-kinds-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        // The co-owners, and who among o and e gets in as the owner.
+        let look = |saved: &Saved| -> (Vec<String>, Vec<String>) {
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let mut as_owner: Vec<String> =
+                e.others.iter().filter(|(_, p)| p.is_owner()).map(|(c, _)| c.account.clone()).collect();
+            as_owner.sort();
+            as_owner.dedup();
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(e));
+            let co: Vec<String> = c.co_owners().iter().map(|p| p.id().to_owned()).collect();
+            (co, as_owner)
+        };
+        assert_eq!(look(&personal), (vec![], vec![]), "a personal machine has no roster");
+        assert_eq!(look(&team), (vec!["account:o".into()], vec!["o".into()]), "a team machine");
+        assert_eq!(
+            look(&Saved { locked: true, ..team.clone() }),
+            (vec!["account:o".into()], vec!["o".into()]),
+            "locked"
+        );
+        let hosted = Saved { hosted: Some(hosted_pin(false)), ..team.clone() };
+        assert_eq!(look(&hosted), (vec!["account:o".into()], vec!["e".into(), "o".into()]), "hosted: e isn't an owner");
+        assert_eq!(look(&Saved { hosted: Some(hosted_pin(true)), ..team.clone() }), (vec![], vec![]), "a deploy's box");
+        let demoted = Saved { roster: Some(roster(2, TeamRole::Editor)), ..team.clone() };
+        assert_eq!(look(&demoted), (vec![], vec![]), "a former owner, now an editor");
+        let mut gone = roster(3, TeamRole::Editor);
+        gone.members.retain(|m| m.account != "o");
+        assert_eq!(look(&Saved { roster: Some(gone), ..team.clone() }), (vec![], vec![]), "an owner taken out");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #208: a team member is called what they set ("Sam Stranger"), not

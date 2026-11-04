@@ -19,6 +19,8 @@ use serde_json::json;
 pub use crate::testing::hub::*;
 #[cfg(test)]
 use crate::{Platform, hub::PushOptions};
+#[cfg(test)]
+use arugula_control_wire::chat as wire;
 
 /// Listing rooms asks the hub for a page of rooms at once: one
 /// `may_reach` for every pane thread on others' machines, and nothing
@@ -62,6 +64,35 @@ async fn a_roster_change_reaches_chat_through_the_feed() {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Viewer)]);
     crate::cache::catch_up(&app).await.unwrap();
     assert_eq!(call(&base, "b", "GET", general, None).await.0, 200);
+}
+
+/// A team's other owner reads a pane's thread as its machine says (native
+/// #684): before the machine has said, as a team owner; once it has, only
+/// when its list names them, which a daemon's now does for its co-owners,
+/// and then as a reader who may post, not a watcher.
+#[tokio::test]
+async fn a_teams_other_owner_reads_a_pane_thread_as_its_machine_lists_them() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("c", TeamRole::Owner)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    let unsaid = room("th_0_9", "machine:m0", "pane", Some("m0"), Some("9"));
+    app.db.add_chat_room(&unsaid, &[], None).unwrap();
+    assert_eq!(call(&base, "c", "GET", "/api/chat/rooms/th_0_9", None).await.0, 200, "unsaid: a team owner reads");
+    assert_eq!(call(&base, "c", "GET", "/api/chat/rooms/th_0_1", None).await.0, 404, "said, and c isn't named");
+    let (st, v) = call(&base, "c", "POST", "/api/chat/rooms/th_0_1/messages", Some(json!({ "text": "hi" }))).await;
+    assert_eq!(st, 404, "{v}");
+    // The machine lists its co-owner, as a daemon does since native #684.
+    let readers = [
+        wire::ChatReader { account: "a".into(), from: None, watching: false },
+        wire::ChatReader { account: "c".into(), from: None, watching: false },
+    ];
+    app.db.set_chat_readers("m0", "pane", "1", &readers, 2).unwrap();
+    assert_eq!(call(&base, "c", "GET", "/api/chat/rooms/th_0_1", None).await.0, 200);
+    let (st, v) = call(&base, "c", "POST", "/api/chat/rooms/th_0_1/messages", Some(json!({ "text": "hi" }))).await;
+    assert_eq!(st, 200, "an owner posts: {v}");
+    assert_eq!(call(&base, "b", "GET", "/api/chat/rooms/th_0_1", None).await.0, 404, "b left the list");
 }
 
 /// A mention goes through the hub's push, to every subscription the

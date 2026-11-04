@@ -687,7 +687,7 @@ pub async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<
     (r.status().as_u16(), r.json().await.unwrap_or_default())
 }
 
-fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option<&str>) -> Room {
+pub fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option<&str>) -> Room {
     Room {
         id: id.into(),
         scope: scope.into(),
