@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use arugula_core::SessionId;
+use arugula_proto::op::ops::{LinkRevoke, LinksList};
 use arugula_proto::{
-    api::{AclSetRequest, LinkRequest, SessionLink},
-    op::ops::{AclGet, AclSet, LinkMint, LinkRevoke, LinksList},
+    api::{AclSetRequest, LinkRequest},
+    op::ops::{AclGet, AclSet, LinkMint},
 };
 use axum::{Router, http::StatusCode};
 use serde_json::{Value, json};
@@ -13,7 +14,12 @@ use serde_json::{Value, json};
 use crate::{api::ApiError, mux::Cmd, ops::OpRoutes, server::App};
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>().op::<LinksList>().op::<LinkRevoke>()
+    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>()
+}
+
+/// Listing a session's read-only links and ending one.
+pub fn link_routes() -> Router<Arc<App>> {
+    Router::new().op::<LinksList>().op::<LinkRevoke>()
 }
 
 fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {
@@ -46,10 +52,10 @@ pub(crate) async fn link(app: &App, b: LinkRequest) -> Result<Value, ApiError> {
 }
 
 /// The read-only links that still work: `session`'s, or every session's.
-pub(crate) fn links(app: &App, session: Option<SessionId>) -> Vec<SessionLink> {
+pub(crate) fn links(app: &App, session: Option<SessionId>) -> Vec<arugula_proto::api::SessionLink> {
     let links = app.acl.links().into_iter().filter(|g| session.is_none_or(|s| g.session == s));
     links
-        .map(|g| SessionLink {
+        .map(|g| arugula_proto::api::SessionLink {
             id: g.principal.strip_prefix("link:").unwrap_or(&g.principal).to_owned(),
             session: g.session,
             made_ms: g.at,
