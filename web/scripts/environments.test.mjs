@@ -50,7 +50,7 @@ test("an environment's body: its name, its driver's settings given, the secrets 
     holdable(apps).map((s) => s.name),
     ["APPS_PLATFORM_TOKEN"],
   );
-  assert.equal(secretNote(apps.secrets[1]), "minted by the platform for each run");
+  assert.equal(secretNote(apps.secrets[1]), "minted by Arugula for each run");
   assert.match(secretNote(fly.secrets[1]), /unless the environment holds its own/);
   assert.equal(secretNote(fly.secrets[0]), "");
 });
