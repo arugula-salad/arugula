@@ -565,6 +565,40 @@ test("a link that has run out says so, without connecting", async ({ browser }) 
   await stranger.close();
 });
 
+test("a link's page leaves this origin's page key alone until it's opened", async ({ browser }) => {
+  const key = "cd".repeat(32);
+  const link = `/#link=ab.${key}.${key}.${key}.${Date.now() + 600_000}`;
+  const context = await browser.newContext();
+  // Control's page here is on loopback, as a machine's own page is, and this
+  // browser has signed in on this origin.
+  await context.addInitScript(() => {
+    localStorage.setItem("arugula.key", "ilp_a_key_from_before");
+    const uses: string[] = [];
+    (window as unknown as { __keyUses: string[] }).__keyUses = uses;
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (this: Storage, name: string) {
+      if (name === "arugula.key") uses.push("read");
+      return getItem.call(this, name);
+    };
+    const open = CacheStorage.prototype.open;
+    CacheStorage.prototype.open = function (this: CacheStorage, name: string) {
+      uses.push(`cache ${name}`);
+      return open.call(this, name);
+    };
+  });
+  const stranger = await context.newPage();
+  const uses = () => stranger.evaluate(() => (window as unknown as { __keyUses: string[] }).__keyUses);
+  await stranger.goto(`${base}${link}`);
+  await expect(stranger.locator("[data-link-gate]")).toBeVisible();
+  await new Promise((r) => setTimeout(r, 500));
+  expect(await uses()).toEqual([]);
+  expect(await stranger.evaluate(() => caches.keys())).toEqual([]);
+  // It's only held back: opened, the page goes on as a page here does.
+  await stranger.locator("[data-link-open]").click();
+  await expect.poll(uses).toContain("read");
+  await context.close();
+});
+
 test("Revoke in the Share dialog ends a link's live viewer", async ({ browser }) => {
   const session = await alice.evaluate(() => window.__arugula.client.state!.sessions[0].id);
   const daemon = await alice.evaluate(() => window.__arugula.client.e2e!.daemon.id);

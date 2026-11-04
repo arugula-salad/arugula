@@ -1,5 +1,5 @@
 // First: this daemon's page key on the page's own requests (local-key.ts).
-import "./local-key";
+import { startPageKey } from "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
 // Live presence (#343): in the reader's teams' rooms while their switch says so.
@@ -72,6 +72,7 @@ const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]
 // fetched and no key is read until someone clicks, here, in a focused window.
 const linkEnds = linkMatch?.[5] ? Number(linkMatch[5]) : null;
 if (linkMatch) await waitForLinkOpen(document.getElementById("root")!, linkEnds);
+await startPageKey();
 const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
