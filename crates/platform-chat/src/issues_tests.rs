@@ -406,8 +406,10 @@ async fn an_agent_acts_through_its_grant_and_is_labelled() {
     assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some(AGENT_UNGRANTED)), "threads.read isn't issues.write: {}", e.1);
     assert_eq!(list(&app, geek, &p, &Default::default()).await.unwrap().issues.len(), 1);
 
-    // A viewer's agent never writes, granted or not.
-    assert_eq!(give("v", "vbox", "issues.write").await.0, 200);
+    // A viewer's agent never writes, granted or not: the grant isn't given
+    // any more (Arugula #683), and one from before is refused at the write.
+    assert_eq!(give("v", "vbox", "issues.write").await.0, 403);
+    app.db.give_grant("vbox", "issues.write", ("project", &p), "v", 1).unwrap();
     let e = create(&app, Actor { account: "v", agent: Some("vbox") }, &p, &new).await.unwrap_err();
     assert_eq!(e.0, StatusCode::FORBIDDEN, "{}", e.1);
 

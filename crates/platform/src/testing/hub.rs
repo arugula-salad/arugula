@@ -152,6 +152,18 @@ impl TestHub {
         self.change(ChangeKind::TeamRoster, id);
     }
 
+    /// The team locks (or unlocks): its roster's next version, as the
+    /// hub's `teams` answers it, with only its owners reading it.
+    pub fn lock(&self, id: &str, locked: bool) {
+        {
+            let mut s = self.state.lock().unwrap();
+            let t = s.teams.get_mut(id).expect("a team made with team()");
+            t.locked = locked;
+            t.version += 1;
+        }
+        self.change(ChangeKind::TeamRoster, id);
+    }
+
     /// `account` let `client` sign it in, and links its user `user` (M229).
     pub fn product(&self, account: &str, client: &str, user: &str) {
         let link = crate::hub::ProductLink {

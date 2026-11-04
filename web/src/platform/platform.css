@@ -508,6 +508,7 @@ html[data-corners="square"] .platform-section {
 }
 
 .agent-token-warning,
+.agent-grants-note,
 .deploy-form .control-warning {
   margin: 0;
   padding: 6px 10px;

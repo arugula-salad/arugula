@@ -127,6 +127,20 @@ impl Enrolled {
         Url::parse(&self.url)
     }
 
+    /// A CLI enrolled at `url` with a fresh key, for a command's test
+    /// against a server of the test's own.
+    #[cfg(test)]
+    pub(crate) fn for_tests(url: String) -> Self {
+        let keys = DeviceKeys::generate();
+        Self {
+            url,
+            cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
+            trust: Trust { account: "a".into(), root: String::new() },
+            pins: BTreeMap::new(),
+            keys,
+        }
+    }
+
     /// A request to control, signed with this CLI's key. It waits out a
     /// maintenance window on control's chat and Cloud routes (M141, `grants`
     /// is one) for up to five minutes, saying so on stderr; which 503s are
