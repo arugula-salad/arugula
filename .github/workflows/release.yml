@@ -3,8 +3,9 @@
 # which must be green in the daemon's lane, before anything is built. Then
 # build Linux (x86_64, arm64, static) and macOS (arm64, and x86_64
 # cross-compiled for Intel Macs) binaries, and a zip of arugulad and arugula
-# for Windows (install.ps1's), each with the tag's version written into its
-# checkout (`scripts/release stamp`: no commit moves the version). `chant
+# for Windows (install.ps1's), each with the tag's version and notes written
+# into its checkout (`scripts/release stamp`: no commit moves the version, and
+# the notes are in the tag's message, #707). `chant
 # release publish` (release/daemon/chant.config.ts) then attaches them to
 # the tag's release with SHA256SUMS and publishes it as latest, commits the
 # Homebrew formula to the tap and sends the editor extension to the
@@ -213,7 +214,7 @@ jobs:
   # (release/daemon/chant.config.ts): from a checkout of the tag's commit
   # (the cut's), unstamped, as `chant release publish` asks, with the files
   # in dist/release (gitignored). The draft step titles the release and
-  # gives it its notes first, and the formula step writes the Homebrew
+  # gives it its notes first, from the tag's message, and the formula step writes the Homebrew
   # formula's template there. The publish stages every target, then
   # reveals them in order: the tarballs, the Windows zip, the extension,
   # SHA256SUMS and chant's provenance statement on the draft, published as
@@ -278,14 +279,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The release's client fixtures on main (#200). `scripts/release bump`
-  # commits them there right after it pushes the tag (from the
-  # arugula-release deploy, with the arugula-io App's token, which the
-  # "binaries check" ruleset lets push to main), since there's no bump
+  # The release's client fixtures (#200) and notes (#707) on main.
+  # `scripts/release bump` commits them there right after it pushes the tag
+  # (from the arugula-release deploy, with the arugula-io App's token, which
+  # the "binaries check" ruleset lets push to main), since there's no bump
   # commit to carry them. This only checks: if main doesn't have
-  # crates/proto/fixtures/releases/X.Y.Z, its summary says to run `just
-  # release-fixtures X.Y.Z`. It never fails, and runs whatever became of
-  # publish.
+  # crates/proto/fixtures/releases/X.Y.Z or docs/releases/X.Y.Z.md, its
+  # summary says to run `just release-fixtures X.Y.Z`. It never fails, and
+  # runs whatever became of publish.
   fixtures:
     needs: [cut, publish]
     if: ${{ !cancelled() && needs.cut.result == 'success' }}

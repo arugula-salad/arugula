@@ -23,11 +23,13 @@
 //! 3. **Runs `scripts/release bump`** as that commit has it (what `just
 //!    release` runs), with the bump and the lane the plan names, the
 //!    commit, and the deploy's id as a trailer. It refuses what it refuses
-//!    (no notes in the commit, the tag there already, the commit released
+//!    (no notes in the commit, notes that leave out a PR since the last
+//!    release, the tag there already, the commit released
 //!    already, so a replay too, a daemon release's commit without the
 //!    `ci/rare/<sha>` tag rare-nightly.yml gives it, #305); else it tags
 //!    the commit itself and pushes the tag (#1986: no version-bump commit;
-//!    the release's build stamps the version). For the daemon it then
+//!    the release's build stamps the version, and the notes are in the tag's
+//!    message as well). For the daemon it then
 //!    commits the tag's client fixtures to `main` with the same token
 //!    (`crates/proto/fixtures/releases/X.Y.Z`, #200); if `main` refuses
 //!    that, it says so in the log and the release goes on. A commit from before #1986
