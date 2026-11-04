@@ -175,9 +175,8 @@ nothing marked `mux:` names the edge or the block kinds.
   Cloud workspaces, conversations, native issues, runs and deploys, are
   in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the WebSocket
   transport under control's relay and the peer channels (`relay_ws.rs`),
-  the dial-out transport on it (`dial.rs`), end-to-end channels from client
-  devices (`e2e.rs`), enrolment in control (`control.rs`), Windows' named
-  pipe (`pipe.rs`).
+  end-to-end channels from client devices (`e2e.rs`), enrolment in control
+  (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
@@ -363,13 +362,13 @@ lints the daemon with neither, and with each alone.
 
 ## Changing CI, and a red main
 
-- A pull request that changes `.github/`, the `justfile`,
-  `chant.workspace.json`, `.config/nextest.toml` or the CI scripts
-  (`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a
-  passing check.yml run on its head commit before it merges. Add the
-  `full-check` label, and after another push remove it and add it again.
-  binaries.yml's `ci-branch-run` job fails the pull request until it has
-  one (docs/development.md, "Changing CI").
+- main takes pull requests through GitHub's merge queue: `gh pr merge N`
+  queues one, and it lands once its group passes the whole suite, about
+  20 minutes later. If its group fails, the pull request leaves the queue;
+  read the group's run, fix it, and queue it again. A CI change is tested
+  the same way, so it needs no branch run first (docs/development.md,
+  "Merging through the queue"). The `full-check` label runs check.yml on the
+  branch for an earlier answer.
 - When main goes red and the same job fails again on its retry, revert
   the commit that broke it within about 30 minutes and bring the change
   back with its fix in a new pull request. Don't fix forward while others

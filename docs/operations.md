@@ -241,8 +241,8 @@ operations, and may call an operation's handler.
   could be). Kinds that aren't operations (`list` kind `devices`, every
   `draft` kind, the `show` kinds that open a block with extra work after)
   stay hand-written rows.
-- **Not HTTP at all:** the WebSocket (`/ws`, the share viewer's), the
-  dial-out tunnel (`/h/NAME/…`), `/mcp` itself.
+- **Not HTTP at all:** the WebSocket (`/ws`, the share viewer's), `/mcp`
+  itself.
 
 ## Required role across surfaces
 

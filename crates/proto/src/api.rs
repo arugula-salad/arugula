@@ -67,25 +67,14 @@
 //! | GET | `/api/hosts` | | `HostList`: the daemons a client can switch between |
 //! | POST | `/api/hosts` | `AddHost` | `Host` (replaces one with the same name) |
 //! | DELETE | `/api/hosts/NAME` | | `{}` |
-//! | POST | `/api/hosts/invite` | | `Invite`: a one-time token for `join` |
-//! | POST | `/api/hosts/join` | `JoinRequest` | `Joined`; the token is the credential |
-//! | POST | `/api/hosts/NAME/token` | | `HostToken`: a per-host token (replaces the last) |
-//! | DELETE | `/api/hosts/NAME/token` | | `{}`: revoked, and its dial-out connection dropped |
-//! | GET | `/api/dial` | `Authorization: Bearer <host token>` | WebSocket: a dial-out host's tunnel |
-//! | any | `/h/NAME/ws`, `/h/NAME/api/...` | | a dial-out host's own WebSocket and API, through its tunnel |
 //! | POST | `/api/shares` | `ShareRequest` | `Share` (with its token, shown once) |
 //! | GET | `/api/shares` | | `[Share]` (no tokens) |
 //! | DELETE | `/api/shares/N` | | `{}`: revoked; open viewers are cut off |
 //! | GET | `/share/TOKEN` | | the read-only viewer page |
 //! | GET | `/share/TOKEN/ws` | | WebSocket: the shared pane's snapshot and output, nothing else |
 //!
-//! `dial` and `/share/*` are reached without the owner's identity: a host
-//! token or a share token is the credential there, and it grants nothing
-//! else.
-//!
-//! `join` is how a dial-out host (`arugulad --peer … --join INVITE`) adds
-//! itself to the home daemon's list. It has no user identity, so the
-//! access checks refuse it everything else.
+//! `/share/*` is reached without the owner's identity: the share token is
+//! the credential there, and it grants nothing else.
 //!
 //! Errors are `{"error": "..."}` with a 4xx/5xx status.
 
