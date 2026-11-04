@@ -45,7 +45,6 @@ nix = { workspace = true, features = ["term", "process", "fs", "signal", "poll",
 
 [dev-dependencies]
 arugula-proto = { workspace = true, features = ["fixtures"] }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [lints]
 workspace = true

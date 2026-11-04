@@ -165,9 +165,11 @@ nothing marked `mux:` names the edge or the block kinds.
   (`api.rs`), MCP (`mcp/`, what everything shares, and `arugulad-mcp`, the
   server, the table and the tools' calls, reached through `mcp/`'s `Mcp`; its tools for what lives in control, such as
   Cloud workspaces, conversations, native issues, runs and deploys, are
-  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
-  (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
-  control (`control.rs`), Windows' named pipe (`pipe.rs`).
+  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the WebSocket
+  transport under control's relay and the peer channels (`relay_ws.rs`),
+  the dial-out transport on it (`dial.rs`), end-to-end channels from client
+  devices (`e2e.rs`), enrolment in control (`control.rs`), Windows' named
+  pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
@@ -206,7 +208,8 @@ nothing marked `mux:` names the edge or the block kinds.
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
+  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
+  the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
   Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).

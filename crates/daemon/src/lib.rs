@@ -68,6 +68,7 @@ use arugula_mux::perm;
 #[cfg(windows)]
 mod pipe;
 pub mod ports;
+pub mod provider_gate;
 mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
@@ -76,6 +77,7 @@ mod board_block;
 mod board_state;
 mod people_block;
 pub mod push;
+pub mod relay_ws;
 mod remote;
 pub mod review;
 pub mod roots;
@@ -801,6 +803,57 @@ fn kinds(
     kinds
 }
 
+/// What VM panes could get their machines from: loam when `--loam-url`
+/// names it, else a wispd (or Fly's sprites) by its token file.
+struct ProviderArgs<'a> {
+    loam_url: Option<&'a str>,
+    loam_key_file: &'a std::path::Path,
+    wisp_url: &'a str,
+    wisp_token_file: &'a std::path::Path,
+    /// `--wisp-url` or `--wisp-token-file` was given, not left at its default.
+    wisp_given: bool,
+}
+
+/// The sandbox provider VM panes run on: `Some` when one is set up here
+/// (its credential is on disk), behind the `sandbox-providers` flag
+/// ([`provider_gate::Gated`], #489): the adapter is opened only with the
+/// flag on, on the running daemon, and with it off nothing is read or
+/// asked of a provider.
+fn open_provider(
+    labs: &'static dyn lab_hooks::Hooks,
+    state_dir: &std::path::Path,
+    a: ProviderArgs<'_>,
+) -> Option<std::sync::Arc<dyn provider::Provider>> {
+    // A build without Labs: its hooks say so, when the flags were given.
+    if !lab_flags::BUILT {
+        return match a.loam_url {
+            Some(url) => labs.open_loam(url, a.loam_key_file),
+            None => labs.open_provider(a.wisp_url, a.wisp_token_file, a.wisp_given),
+        };
+    }
+    let (kind, file) = match a.loam_url {
+        Some(_) => ("loam", a.loam_key_file),
+        None => ("wisp", a.wisp_token_file),
+    };
+    if !std::fs::metadata(file).is_ok_and(|m| m.len() > 0) {
+        if a.loam_url.is_some() || a.wisp_given {
+            warn!(file = %file.display(), "no {kind} credential; VM panes are off");
+        }
+        return None;
+    }
+    let open: provider_gate::Open = match a.loam_url {
+        Some(url) => {
+            let (url, key) = (url.to_owned(), a.loam_key_file.to_owned());
+            Box::new(move || labs.open_loam(&url, &key))
+        }
+        None => {
+            let (url, token, given) = (a.wisp_url.to_owned(), a.wisp_token_file.to_owned(), a.wisp_given);
+            Box::new(move || labs.open_provider(&url, &token, given))
+        }
+    };
+    Some(std::sync::Arc::new(provider_gate::Gated::new(state_dir, kind, open)))
+}
+
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
     // Bound first: a port that's taken fails at once, and port 0 is known
     // before anything uses it (#66).
@@ -987,22 +1040,17 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
         arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
     });
-    let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
-        Some(url) if !url.is_empty() => {
-            let p = lab_hooks::labs().open_loam(url, &loam_key_file);
-            info!(url, on = p.is_some(), "VM panes on loam");
-            p
-        }
-        _ => {
-            let p = lab_hooks::labs().open_provider(
-                &args.wisp_url,
-                &token_file,
-                args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
-            );
-            info!(url = args.wisp_url, on = p.is_some(), "VM panes");
-            p
-        }
-    };
+    let provider = open_provider(
+        lab_hooks::labs(),
+        &state_dir,
+        ProviderArgs {
+            loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()),
+            loam_key_file: &loam_key_file,
+            wisp_url: &args.wisp_url,
+            wisp_token_file: &token_file,
+            wisp_given: args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
+        },
+    );
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
@@ -1333,5 +1381,190 @@ pub mod whole {
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
+    }
+}
+
+#[cfg(all(test, feature = "labs"))]
+mod provider_tests {
+    use super::*;
+    use arugula_mux::provider::{Begin, Caps, Conn, Exec, ExecSink, Pipe, PipeBegin, Provider, Sandbox, ServiceDef};
+    use futures_util::future::BoxFuture;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    /// An adapter that lists one sandbox and says when it's dropped.
+    struct Fake(Arc<AtomicBool>);
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    impl std::fmt::Debug for Fake {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("Fake")
+        }
+    }
+
+    fn no<'a, T: Send + 'a>() -> BoxFuture<'a, anyhow::Result<T>> {
+        Box::pin(async { Err(anyhow::anyhow!("not here")) })
+    }
+
+    impl Provider for Fake {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        fn caps(&self) -> &Caps {
+            static CAPS: std::sync::OnceLock<Caps> = std::sync::OnceLock::new();
+            CAPS.get_or_init(|| Caps {
+                exec_replay: 7,
+                exec_offset: true,
+                reattach_owner: true,
+                reattach_resize: true,
+                kill_signal: true,
+                kill_grace_ms: 1,
+                cold: arugula_mux::provider::Cold::Restore,
+                fs: true,
+                fs_browse: true,
+                services: true,
+            })
+        }
+        fn list<'a>(&'a self, prefix: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<Sandbox>>> {
+            Box::pin(async move { Ok(vec![Sandbox { name: format!("{prefix}1"), status: "running".into() }]) })
+        }
+        fn status<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Sandbox>>> {
+            no()
+        }
+        fn create<'a>(&'a self, _: &'a str, _: Option<&'a str>) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn delete<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn wake<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn dial<'a>(&'a self, _: &'a str, _: u16) -> BoxFuture<'a, std::io::Result<Conn>> {
+            Box::pin(async { Err(std::io::Error::other("not here")) })
+        }
+        fn exec_tty(
+            self: Arc<Self>,
+            _: &tokio::runtime::Handle,
+            _: String,
+            _: Begin,
+            _: (u16, u16),
+            _: ExecSink,
+        ) -> Exec {
+            Exec { tx: tokio::sync::mpsc::unbounded_channel().0 }
+        }
+        fn kill<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn run<'a>(&'a self, _: &'a str, _: &'a [&'a str]) -> BoxFuture<'a, anyhow::Result<(Vec<u8>, Option<i32>)>> {
+            no()
+        }
+        fn pipe<'a>(&'a self, _: &'a str, _: PipeBegin) -> BoxFuture<'a, anyhow::Result<Pipe>> {
+            no()
+        }
+        fn write_file<'a>(&'a self, _: &'a str, _: &'a str, _: Vec<u8>, _: u32) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn put_service<'a>(&'a self, _: &'a str, _: &'a str, _: &'a ServiceDef) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn delete_service<'a>(&'a self, _: &'a str, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+    }
+
+    /// Labs that counts how often each adapter was opened, and says when
+    /// the last one it opened was dropped.
+    #[derive(Default)]
+    struct Asked {
+        loam: AtomicUsize,
+        wisp: AtomicUsize,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Asked {
+        fn opened(&self) -> (usize, usize) {
+            (self.wisp.load(Ordering::SeqCst), self.loam.load(Ordering::SeqCst))
+        }
+        fn fake(&self) -> Option<Arc<dyn Provider>> {
+            self.dropped.store(false, Ordering::SeqCst);
+            Some(Arc::new(Fake(self.dropped.clone())))
+        }
+    }
+
+    impl lab_hooks::Hooks for Asked {
+        fn open_provider(&self, _: &str, _: &std::path::Path, _: bool) -> Option<Arc<dyn Provider>> {
+            self.wisp.fetch_add(1, Ordering::SeqCst);
+            self.fake()
+        }
+        fn open_loam(&self, _: &str, _: &std::path::Path) -> Option<Arc<dyn Provider>> {
+            self.loam.fetch_add(1, Ordering::SeqCst);
+            self.fake()
+        }
+    }
+
+    #[tokio::test]
+    async fn the_provider_follows_the_flag_on_the_running_daemon() {
+        use arugula_proto::flags::{SANDBOX_PROVIDERS, set};
+        let dir = std::env::temp_dir().join(format!("arugula-provider-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let token = dir.join("wisp-token");
+        std::fs::write(&token, "wisp_t").unwrap();
+        let key = dir.join("loam-key");
+        let labs: &'static Asked = Box::leak(Box::default());
+        let args = |loam: Option<&'static str>| ProviderArgs {
+            loam_url: loam,
+            loam_key_file: &key,
+            wisp_url: "http://127.0.0.1:7788",
+            wisp_token_file: &token,
+            wisp_given: false,
+        };
+
+        // No credential: not set up, whatever the flag says.
+        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "no loam key");
+        std::fs::write(&key, "loam_k").unwrap();
+        std::fs::write(&token, "").unwrap();
+        assert!(open_provider(labs, &dir, args(None)).is_none(), "an empty token");
+        std::fs::write(&token, "wisp_t").unwrap();
+        assert_eq!(labs.opened(), (0, 0));
+
+        // Off (the default): set up, so `vms` can say so, but nothing opens
+        // and every call is the flag's refusal.
+        let p = open_provider(labs, &dir, args(None)).expect("a token file: set up");
+        assert_eq!(p.name(), "wisp");
+        let e = p.list("arugula-eph-").await.unwrap_err().to_string();
+        assert!(e.contains("arugulad flags sandbox-providers on"), "{e}");
+        assert!(!p.caps().fs_browse);
+        assert_eq!(labs.opened(), (0, 0));
+
+        // On: the next call opens it, no restart.
+        set(&dir, SANDBOX_PROVIDERS, true).unwrap();
+        assert_eq!(p.list("m").await.unwrap()[0].name, "m1");
+        assert!(p.caps().fs_browse, "the adapter's capabilities");
+        assert_eq!(labs.opened(), (1, 0));
+        assert_eq!(p.list("m").await.unwrap().len(), 1, "opened once");
+        assert_eq!(labs.opened(), (1, 0));
+
+        // Off again, by its old name: refused, and the adapter is dropped.
+        set(&dir, "vms", false).unwrap();
+        assert!(p.list("m").await.is_err());
+        assert!(labs.dropped.load(Ordering::SeqCst), "the adapter is let go of");
+        assert!(p.status("m1").await.is_err());
+        assert_eq!(labs.opened(), (1, 0));
+
+        // And on again: a new one.
+        set(&dir, SANDBOX_PROVIDERS, true).unwrap();
+        assert!(p.status("m1").await.is_err(), "the fake has no status");
+        assert_eq!(labs.opened(), (2, 0));
+
+        // loam, when named; with the flag on now, opened at once.
+        let p = open_provider(labs, &dir, args(Some("https://loam.example"))).expect("a key file: set up");
+        assert_eq!((p.name(), labs.opened()), ("loam", (2, 1)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
