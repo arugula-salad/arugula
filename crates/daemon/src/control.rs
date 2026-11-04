@@ -300,6 +300,9 @@ pub struct HostedPin {
     pub cert: arugula_e2e::hosted::HostedCert,
     pub delegation: arugula_e2e::hosted::Delegation,
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    /// Control's word that the delegation ended: the earliest it's heard. A
+    /// refresh never takes it away.
+    pub closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     pub purpose: Purpose,
     /// The project's team, when the delegation's owner is a team: its
     /// roster checked from the pin, as a team machine's is. None when an
@@ -446,6 +449,8 @@ struct OnDiskHosted {
     delegation: arugula_e2e::hosted::Delegation,
     #[serde(default)]
     revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     deploy: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -514,6 +519,7 @@ impl TryFrom<OnDisk> for Saved {
                     cert: h.cert,
                     delegation: h.delegation,
                     revocations: h.revocations,
+                    closed: h.closed,
                     purpose,
                     team,
                     legacy_app_children: h.legacy_app_children,
@@ -551,6 +557,7 @@ impl From<Saved> for OnDisk {
                     cert: h.cert,
                     delegation: h.delegation,
                     revocations: h.revocations,
+                    closed: h.closed,
                     deploy: h.purpose.deploys(),
                     builder: h.purpose.builds_snapshot(),
                     legacy_app_children: h.legacy_app_children,
@@ -1246,6 +1253,10 @@ pub struct Control {
     /// fetched and checked as a shared team's, so their members can be
     /// named; they let no one in.
     team_pins: RwLock<BTreeMap<String, String>>,
+    /// Control's word of delegations that ended, as heard
+    /// (`crate::peer::with_held`): kept here too, so a file that can't be
+    /// written forgets nothing, and one left behind takes nothing back.
+    held_closures: std::sync::Mutex<arugula_e2e::hosted::HeldClosures>,
     /// Invites waiting for their person to be reachable (#233), in
     /// `person-invites.json`: tried again after each refresh, for a day.
     invites: std::sync::Mutex<Vec<Waiting>>,
@@ -1513,6 +1524,7 @@ impl Control {
             published: Default::default(),
             no_relay,
             control_urls: Default::default(),
+            held_closures: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
                     .ok()
@@ -1659,6 +1671,10 @@ impl Control {
     }
 
     /// Where `control.json` and the device key live.
+    pub(crate) fn held_closures(&self) -> &std::sync::Mutex<arugula_e2e::hosted::HeldClosures> {
+        &self.held_closures
+    }
+
     pub fn state_dir(&self) -> &Path {
         &self.state_dir
     }
@@ -5208,6 +5224,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: team_saved.team().cloned(),
                 legacy_app_children: None,
@@ -5328,6 +5345,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: team_saved.team().cloned(),
                 legacy_app_children: None,
@@ -5657,6 +5675,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d.clone(),
                 revocations: vec![],
+                closed: vec![],
                 purpose,
                 team: Some(in_team(r, locked)),
                 legacy_app_children: None,
@@ -5799,6 +5818,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: Some(in_team),
                 legacy_app_children: None,
@@ -6615,11 +6635,84 @@ pub(crate) mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|i| match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"]) {
-                Ok((project, _)) => format!("ok {project}"),
-                Err(_) => "err".to_owned(),
+            .map(|i| {
+                match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"], &mut Default::default()) {
+                    Ok((project, _)) => format!("ok {project}"),
+                    Err(_) => "err".to_owned(),
+                }
             })
             .collect()
+    }
+
+    /// This daemon keeps control's word that a delegation ended: a machine it
+    /// refused stays refused when control leaves the word out, across a
+    /// restart too, and one made before is accepted.
+    #[test]
+    fn a_daemon_keeps_a_delegations_end() {
+        use arugula_e2e::hosted::{HeldClosures, HostedCert, HostedKey};
+
+        use crate::{
+            hosted::runs::tests::{MACHINE_KEY, machine},
+            peer::{HELD_FILE, accept_hosted, read_held, with_held, write_held},
+        };
+        let (saved, d, _root, _phone) = machine();
+        let dir = std::env::temp_dir().join(format!("arugula-peer-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let key = HostedKey::from_seed(&MACHINE_KEY);
+        let entry = |created: u64, closed: serde_json::Value| {
+            let k = DeviceKeys::generate();
+            let mut cert = HostedCert::new(
+                &d,
+                "hw_2",
+                "box",
+                &hex::encode(k.noise_public),
+                &hex::encode(k.sign_public()),
+                created,
+            );
+            key.sign(&mut cert);
+            (
+                cert.device.clone(),
+                serde_json::json!({ "cert": cert, "delegation": d, "revocations": [], "closed": closed }),
+            )
+        };
+        let none = serde_json::json!([]);
+        let (before, after) = (entry(5, none.clone()), entry(40, none));
+        let (told_id, told) = entry(40, serde_json::json!([key.close(&d, 30), {}]));
+
+        let mut held = HeldClosures::default();
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_ok(), "it's heard nothing yet");
+        assert!(accept_hosted(&e, &told_id, &told, &mut held).is_err());
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_err(), "control left it out");
+        assert!(accept_hosted(&e, &before.0, &before.1, &mut held).is_ok());
+
+        write_held(&dir, &held).unwrap();
+        let mut back = read_held(&dir).unwrap();
+        assert_eq!(back, held);
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut back).is_err(), "after a restart");
+        // A file that doesn't read is an error, never none, and no hosted
+        // machine counts until it's fixed.
+        std::fs::write(dir.join(HELD_FILE), b"{").unwrap();
+        assert!(read_held(&dir).is_err());
+        let memory = std::sync::Mutex::new(HeldClosures::default());
+        assert!(with_held(&memory, &dir, |held| held.is_none()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // A write that fails forgets nothing: this directory isn't there, so
+        // the file reads as none and can't be written.
+        let round = |entry: &(String, serde_json::Value)| {
+            with_held(&memory, &dir, |held| accept_hosted(&e, &entry.0, &entry.1, held.unwrap()).is_ok())
+        };
+        assert!(!round(&(told_id.clone(), told.clone())));
+        assert!(!dir.exists());
+        assert!(!round(&after), "the next round, with control leaving it out");
+        // A file left behind takes nothing back, and memory goes into it.
+        std::fs::create_dir_all(&dir).unwrap();
+        write_held(&dir, &HeldClosures::default()).unwrap();
+        assert!(!round(&after));
+        assert_eq!(read_held(&dir).unwrap(), *memory.lock().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #672: `control.json` files written by the code before the kind was

@@ -32,6 +32,8 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use arugula_e2e::hosted::HeldClosures;
+
 use crate::control::{Control, Enrolled};
 
 /// How long one request to another machine may take, the handshake
@@ -66,51 +68,98 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
     let (e, v) = control.directory().await?;
     let own = e.saved.cert.account.clone();
     let mut out = Vec::new();
-    for d in v["daemons"].as_array().into_iter().flatten() {
-        let Some(id) = d["id"].as_str() else { continue };
-        if id == e.saved.cert.device {
-            continue;
-        }
-        if !d["hosted"].is_null() {
-            match accept_hosted(&e, id, &d["hosted"]) {
-                // M184: its project's machine, accepted for that project only.
-                Ok((project, cert)) => out.push(Machine {
-                    id: id.to_owned(),
-                    name: d["name"].as_str().unwrap_or(id).to_owned(),
-                    account: project,
-                    owner: String::new(),
-                    team: d["team"].as_str().map(str::to_owned),
-                    online: d["online"].as_bool().unwrap_or(false),
-                    cert,
-                }),
-                Err(why) => tracing::debug!(machine = id, %why, "not trusting a hosted machine"),
-            }
-            continue;
-        }
-        let account = d["account"].as_str().unwrap_or(&own).to_owned();
-        let cert = if account == own {
-            e.trusted.get(id).cloned()
-        } else {
-            let Some(root) = e.known_root(&account) else { continue };
-            let Ok(chain) = serde_json::from_value::<Chain>(d["chain"].clone()) else { continue };
-            // Control's word for the root counts only where a roster agrees.
-            if chain.trust.as_ref().is_none_or(|t| t.account != account || t.root != root) {
+    with_held(control.held_closures(), control.state_dir(), |mut held| {
+        for d in v["daemons"].as_array().into_iter().flatten() {
+            let Some(id) = d["id"].as_str() else { continue };
+            if id == e.saved.cert.device {
                 continue;
             }
-            Trust { account: account.clone(), root }.evaluate(&chain.certs, &chain.revocations).get(id).cloned()
-        };
-        let Some(cert) = cert.filter(|c| c.kind == Kind::Daemon) else { continue };
-        out.push(Machine {
-            id: id.to_owned(),
-            name: d["name"].as_str().unwrap_or(id).to_owned(),
-            owner: d["owner_name"].as_str().unwrap_or_default().to_owned(),
-            team: d["team"].as_str().map(str::to_owned),
-            online: d["online"].as_bool().unwrap_or(false),
-            account,
-            cert,
-        });
-    }
+            if !d["hosted"].is_null() {
+                // What it's heard can't be read: none this time, rather than
+                // forgetting.
+                let Some(held) = held.as_deref_mut() else { continue };
+                match accept_hosted(&e, id, &d["hosted"], held) {
+                    // M184: its project's machine, accepted for that project only.
+                    Ok((project, cert)) => out.push(Machine {
+                        id: id.to_owned(),
+                        name: d["name"].as_str().unwrap_or(id).to_owned(),
+                        account: project,
+                        owner: String::new(),
+                        team: d["team"].as_str().map(str::to_owned),
+                        online: d["online"].as_bool().unwrap_or(false),
+                        cert,
+                    }),
+                    Err(why) => tracing::debug!(machine = id, %why, "not trusting a hosted machine"),
+                }
+                continue;
+            }
+            let account = d["account"].as_str().unwrap_or(&own).to_owned();
+            let cert = if account == own {
+                e.trusted.get(id).cloned()
+            } else {
+                let Some(root) = e.known_root(&account) else { continue };
+                let Ok(chain) = serde_json::from_value::<Chain>(d["chain"].clone()) else { continue };
+                // Control's word for the root counts only where a roster agrees.
+                if chain.trust.as_ref().is_none_or(|t| t.account != account || t.root != root) {
+                    continue;
+                }
+                Trust { account: account.clone(), root }.evaluate(&chain.certs, &chain.revocations).get(id).cloned()
+            };
+            let Some(cert) = cert.filter(|c| c.kind == Kind::Daemon) else { continue };
+            out.push(Machine {
+                id: id.to_owned(),
+                name: d["name"].as_str().unwrap_or(id).to_owned(),
+                owner: d["owner_name"].as_str().unwrap_or_default().to_owned(),
+                team: d["team"].as_str().map(str::to_owned),
+                online: d["online"].as_bool().unwrap_or(false),
+                account,
+                cert,
+            });
+        }
+    });
     Ok(out)
+}
+
+/// Where this daemon keeps control's word of delegations that ended. Beside
+/// `control.json`, not in it: it says nothing of this machine, and holds
+/// across a leave and a join.
+pub(crate) const HELD_FILE: &str = "delegations-ended.json";
+
+/// Runs `f` with what this daemon holds of delegations that ended: `memory`
+/// and the file, the earlier of each, so neither can take from the other. What
+/// `f` adds is kept in `memory`, and in the file, tried again each time until
+/// it can be written. `None` when the file can't be read.
+pub(crate) fn with_held<T>(
+    memory: &Mutex<HeldClosures>,
+    dir: &std::path::Path,
+    f: impl FnOnce(Option<&mut HeldClosures>) -> T,
+) -> T {
+    let mut held = memory.lock().unwrap_or_else(|e| e.into_inner());
+    let file = read_held(dir).map_err(|why| tracing::warn!(%why, "can't read the delegations held ended"));
+    if let Ok(file) = &file {
+        held.merge(file);
+    }
+    let out = f(file.is_ok().then_some(&mut *held));
+    if let Ok(file) = &file
+        && *file != *held
+        && let Err(why) = write_held(dir, &held)
+    {
+        tracing::warn!(%why, "can't write the delegations held ended; kept in memory");
+    }
+    out
+}
+
+pub(crate) fn read_held(dir: &std::path::Path) -> anyhow::Result<HeldClosures> {
+    match std::fs::read(dir.join(HELD_FILE)) {
+        Ok(b) => Ok(serde_json::from_slice(&b)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HeldClosures::default()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub(crate) fn write_held(dir: &std::path::Path, held: &HeldClosures) -> anyhow::Result<()> {
+    crate::store::write_atomic(&dir.join(HELD_FILE), &serde_json::to_vec_pretty(held)?)?;
+    Ok(())
 }
 
 /// A hosted machine (M178), if this daemon accepts it: its project and the
@@ -120,11 +169,16 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
 /// own chain for a personal project; for a team's, a roster checked from
 /// its pin (this machine's own team's, or one the owner's browser pinned
 /// here, #233).
-pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
-    use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept};
-    let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
-    let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
-    let revokes: Vec<DelegationRevoke> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+pub(crate) fn accept_hosted(
+    e: &Enrolled,
+    id: &str,
+    v: &serde_json::Value,
+    held: &mut HeldClosures,
+) -> anyhow::Result<(String, Cert)> {
+    use arugula_e2e::hosted::{Owner, Owners, accept_holding, ends_listed, read_cert, read_delegation};
+    let cert = read_cert(&v["cert"])?;
+    let d = read_delegation(&v["delegation"])?;
+    let (revokes, closed) = ends_listed(v);
     anyhow::ensure!(cert.device == id, "its certificate is another machine's");
     let me = &e.saved.cert.account;
     let accepted = match d.owner().ok_or_else(|| anyhow::anyhow!("its delegation names no owner"))? {
@@ -137,14 +191,16 @@ pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> an
                     "its team isn't one this machine knows: open Control in a browser of this account once, which pins your teams here"
                 ),
             };
-            accept(me, &cert, &d, &revokes, &Owners::Team { roster, certs })
+            accept_holding(me, &cert, &d, &revokes, &closed, &Owners::Team { roster, certs }, held)
         }
-        Owner::Account(_) => accept(
+        Owner::Account(_) => accept_holding(
             me,
             &cert,
             &d,
             &revokes,
+            &closed,
             &Owners::Account { trust: &e.saved.trust, certs: &e.saved.certs, revocations: &e.saved.revocations },
+            held,
         ),
     }
     .map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;

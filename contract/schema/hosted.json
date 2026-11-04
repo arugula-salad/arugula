@@ -126,6 +126,33 @@
       ],
       "type": "object"
     },
+    "DelegationClosed": {
+      "description": "Control's own word that a delegation ended, signed with the key the\ndelegation names. `at` is control's clock, or the earliest revoke's own\ntime when that's before it. Control sends it beside the revokes it took.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delegation": {
+          "description": "The delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "at",
+        "sig"
+      ],
+      "type": "object"
+    },
     "DelegationPost": {
       "description": "What a person's page signs and sends: a new delegation\n(`POST /api/hosted/delegations`), or a revocation of one\n(`POST /api/hosted/delegations/revoke`).",
       "properties": {
@@ -377,6 +404,13 @@
           },
           "default": {},
           "type": "object"
+        },
+        "closed": {
+          "description": "Control's word that it ended. Empty from a control from before, or\nwhile it stands.",
+          "items": {
+            "$ref": "#/$defs/DelegationClosed"
+          },
+          "type": "array"
         },
         "delegation": {
           "$ref": "#/$defs/Delegation"

@@ -40,7 +40,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
       .map((x) => ({ id: x.id, name: x.team ? x.name : "Personal", owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
     const out: Row[] = [];
     for (const x of owned) {
-      const live = d.delegations.find((l) => l.delegation.project === x.id && l.delegation.owner === x.owner && l.delegation.key === d.key && !l.revoke);
+      const live = d.delegations.find((l) => l.delegation.project === x.id && l.delegation.owner === x.owner && l.delegation.key === d.key && !l.revoke && !l.ended);
       if (!live) continue;
       out.push({ id: x.id, name: x.name, delegation: live.delegation, delegationId: live.id, view: await s.runGrant(x.id).catch(() => null) });
     }
