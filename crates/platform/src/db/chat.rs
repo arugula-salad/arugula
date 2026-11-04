@@ -26,7 +26,10 @@ use super::{
     taken,
 };
 use anyhow::Result;
-use arugula_control_wire::chat::ChatReader;
+use arugula_control_wire::{
+    chat::ChatReader,
+    sessions::{CARD_VIA, SAID_VIA},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Room {
@@ -1119,6 +1122,59 @@ impl Db {
             ),
             params![account, asks],
             |r| Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?))),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+
+    /// Of these rooms' unread, by room, what wants `account` when the room
+    /// is on an issue assigned to them: its mentions of them, and what
+    /// others wrote. Not their own agents' posts, a session's card, or what
+    /// a session they asked for said: those are their own work reporting.
+    pub fn chat_wanted_in(
+        &self,
+        account: &str,
+        rooms: &[UnreadAsk<'_>],
+    ) -> Result<std::collections::HashMap<String, u64>> {
+        if rooms.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let asks = serde_json::to_string(
+            &rooms
+                .iter()
+                .map(|a| serde_json::json!({"room": a.room, "since": a.read, "floor": a.from}))
+                .collect::<Vec<_>>(),
+        )?;
+        // As `chat_unread_in`.
+        let (want, mentioned) = match c.dialect() {
+            Dialect::Sqlite => (
+                "SELECT json_extract(value, '$.room') AS room, json_extract(value, '$.since') AS since,
+                     json_extract(value, '$.floor') AS floor FROM json_each(?2)",
+                "EXISTS (SELECT 1 FROM json_each(m.mentions) WHERE value = ?1)",
+            ),
+            Dialect::Postgres => (
+                "SELECT * FROM jsonb_to_recordset(CAST(?2 AS jsonb)) AS w(room text, since bigint, floor bigint)",
+                "EXISTS (SELECT 1 FROM jsonb_array_elements_text(m.mentions::jsonb) v WHERE v = ?1)",
+            ),
+        };
+        let rows = c.query_map(
+            &format!(
+                "SELECT w.room, count(m.seq)
+                 FROM ({want}) w
+                 LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
+                     AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
+                     AND (m.via IS NULL OR m.via != 'system')
+                     AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = m.room AND s.seq = m.seq)
+                     AND (m.parent IS NULL OR m.also = TRUE)
+                     AND ({mentioned} OR (
+                         NOT (m.author = ?1 AND m.agent IS NOT NULL)
+                         AND (m.via IS NULL OR m.via NOT LIKE '{CARD_VIA}%')
+                         AND NOT EXISTS (SELECT 1 FROM agent_sessions a WHERE m.via = '{SAID_VIA}' || a.id AND a.asker = ?1)
+                     ))
+                 GROUP BY w.room"
+            ),
+            params![account, asks],
+            |r| Ok((r.get::<String>(0)?, r.get(1)?)),
         )?;
         Ok(rows.into_iter().collect())
     }

@@ -70,12 +70,23 @@ test("a project's Chat counts its own chat's rooms: a team's, or Personal's (UI 
 
 test("an issue's or a run's row counts its own thread", () => {
   const rooms = [thread("iss_a", { unread: 3 }), thread("run_b", { unread: 2, mentions: 1 }), room("pane", { target: "iss_a", unread: 7 })];
-  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 3, mention: false, room: undefined });
+  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 3, mention: false, quiet: 0, room: undefined });
   assert.equal(objectUnread(rooms, "iss_a").room?.id, rooms[0].id);
   assert.equal(objectUnread(rooms, "run_b").mention, true);
   // Nobody's opened its thread: nothing.
-  assert.deepEqual(objectUnread(rooms, "iss_none"), { n: 0, mention: false, room: undefined });
+  assert.deepEqual(objectUnread(rooms, "iss_none"), { n: 0, mention: false, quiet: 0, room: undefined });
   assert.equal(objectUnread([thread("iss_m", { unread: 5, mentions: 0, muted: true })], "iss_m").n, 0);
+});
+
+test("a thread that asks nothing of the reader is a dot on its row, in no count", () => {
+  const quiet = thread("iss_q", { level: "mentions", unread: 3, wants: 0 });
+  const asks = thread("iss_a", { level: "mentions", unread: 4, wants: 1 });
+  const rooms = [quiet, asks];
+  assert.deepEqual({ ...objectUnread(rooms, "iss_q"), room: undefined }, { n: 0, mention: false, quiet: 3, room: undefined });
+  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 1, mention: false, quiet: 0, room: undefined });
+  assert.equal(objectUnread([{ ...quiet, level: "nothing" }], "iss_q").quiet, 0);
+  assert.deepEqual(projectUnread(rooms, P, "iss_"), { n: 1, mention: false });
+  assert.deepEqual(threadNews(rooms, []).map((r) => r.target), ["iss_a"]);
 });
 
 test("a project's Issues and Runs places sum their threads", () => {
@@ -127,7 +138,11 @@ test("a channel on mentions counts its mentions and shows its other unread as bo
   assert.deepEqual([counted({ ...none, mentions: 0 }), bold({ ...none, mentions: 0 })], [0, false]);
   // A DM, a pane's thread and an object's keep counting everything.
   for (const k of ["dm", "pane", "session"]) assert.equal(counted(room(k, { level: "mentions", unread: 3 })), 3, k);
-  assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2);
+  // An object's thread counts what wants the reader, unless they asked for it all.
+  const asks = thread("iss_x", { level: "mentions", unread: 5, wants: 2 });
+  assert.equal(counted(asks), 2);
+  assert.equal(counted({ ...asks, level: "all" }), 5);
+  assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2, "a server from before `wants`");
   // The Chat button follows: a quiet channel adds nothing.
   assert.deepEqual(chatUnread([quiet, room("dm", { level: "all", unread: 1 })]), { n: 1, mention: false });
 });
