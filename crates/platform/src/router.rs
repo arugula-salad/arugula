@@ -79,7 +79,6 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
         .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))
-        .route(arugula_control_wire::projects::INBOX_SHADOW, post(forge::inbox::shadow))
         .route(arugula_control_wire::projects::INBOX_ITEM, post(forge::inbox::mark))
         // Native issues (M195).
         .route(issues::PROJECT_ISSUES, get(crate::issues::list_route).post(crate::issues::create_route))

@@ -2112,43 +2112,15 @@ to members the viewer check lets read the item, and only for what changed
 in the last hour. `inbox push` lines name the item and the account, never
 a title.
 
-**The inbox's shadow period.** For two weeks the server's inbox is held
-up against forge blocks' attention on Jake's machines. Set
-`ARUGULA_INBOX_SHADOW=1` in each of those daemons' environment (`on`,
-`true`, or a number of minutes; 15 minutes for `1`) and restart them. It's
-off unless set. Each then sends `POST /api/inbox/shadow` with its open
-GitHub blocks on linked repos: the item, the reasons the block's rules
-find (whether or not the person looked), and the platform's drafts it
-shows. No titles or text. The platform compares each with the owner's
-inbox rows for that item (seen, done or not) and logs:
-
-```sh
-fly logs -a arugula-platform | grep 'inbox shadow'
-```
-
-- `inbox shadow`: one line per report, with `day` (UTC), `daemon`,
-  `compared`, `agree`, `disagree` and `explained`. A day's numbers are the
-  sum of its lines on every machine; the match rate is `agree / compared`.
-  The gate is 99%. Explained items aren't in `compared`, so they don't
-  count either way.
-- `inbox shadow: disagree`: one line per disagreement, with the `item` id
-  and both sides' reasons (`block`, `platform`). Expect some, and explain
-  them: a team's review request (the platform doesn't know a person's
-  teams), a block's poll or the platform's recompute catching up,
-  `mergeable` (the platform has only GitHub's
-  `mergeable_state`, and a green PR waits for the poller to learn it, up
-  to a reconcile or two), and an issue someone else opened that you gave
-  yourself (the mirror doesn't keep who assigned it, so the platform
-  takes it as given to you; one you opened, it takes as your own doing).
-- `inbox shadow: explained`: one line per item left out of the score,
-  with the `item`, both sides' reasons and `why`. Today that's only
-  `content not mirrored`: the block found a mention on a repo whose
-  project doesn't mirror content, which the platform can't see, and
-  everything else agrees. A mention on a repo that does mirror content is
-  still a disagreement.
-
-Fly keeps logs only a few days, so ship them where they last (or collect
-the lines daily) for the two weeks.
+**The inbox's shadow period** (M171) ran from 2026-10-22 to 2026-11-02.
+Daemons with `ARUGULA_INBOX_SHADOW` set reported their open forge blocks'
+attention (items and reasons, never a title) to `POST /api/inbox/shadow`,
+and the platform logged how often its inbox agreed: under 90% on the
+first day, and 100% from the end of October once #1354 and #1467 were
+live. Both sides are gone
+(Arugula #674). An older daemon still carrying the setting gets a 404,
+logs it at debug and carries on, but doesn't pin its blocks while the
+setting is there: take it out of the daemon's environment and restart it.
 
 **M173 go-live** (#1219). Turning the mirror on for real people's repos is
 Jake's go. Until then nothing is linked, so the platform mirrors nothing.
@@ -2174,20 +2146,8 @@ In order:
    mirroring off unless the team asks for it. Each repo's first poller turn
    is a backfill: `forge mirror: poller turn` with `backfill` and its
    repo id, within a few minutes.
-3. **The inbox shadow on Jake's machines.** In each daemon's environment,
-   `ARUGULA_INBOX_SHADOW=1`, then restart the daemon:
-   - Linux: `systemctl --user edit arugulad` with
-     `[Service]` and `Environment=ARUGULA_INBOX_SHADOW=1`, then
-     `systemctl --user restart arugulad`.
-   - macOS, `arugulad install`'s agent: the same key under
-     `EnvironmentVariables` in `~/Library/LaunchAgents/arugulad.plist`
-     (reinstalls keep it), then
-     `launchctl kickstart -k gui/$(id -u)/arugulad`.
-
-   Check each: an `inbox shadow` line naming its `daemon` within 15
-   minutes. Its machine needs forge blocks open on linked repos to
-   compare anything; a shadowing daemon doesn't pin, so its blocks keep
-   reading GitHub.
+3. **The inbox shadow on Jake's machines** (done, and gone since; "The
+   inbox's shadow period" above).
 4. **Read the numbers every day,** from the lines above
    ("Reading the mirror's numbers", "The inbox's shadow period"):
 
@@ -2196,19 +2156,18 @@ In order:
    | Webhook to row | `forge mirror: webhook to row by day` | `buckets`, each run's last, summed | p95 at or under 5000 |
    | Drift | `forge mirror: drift today` (every machine) | `drift` over `items`, summed | under 1 per 1000 a day |
    | Rate budget | `forge mirror: rate budget` | `used_pct`, `backing_off` | never backing off for long |
-   | Inbox shadow | `inbox shadow` (every machine) | `agree / compared`, summed | 99% or more |
 
    Fly keeps only a few days of logs, so keep each day's lines:
 
    ```sh
-   fly logs -a arugula-platform --no-tail | grep -E "forge mirror:|inbox shadow" > m173-$(date -u +%F).log
+   fly logs -a arugula-platform --no-tail | grep "forge mirror:" > m173-$(date -u +%F).log
    ```
 
    The lines carry repo and item ids, never titles; keep the files off
    the public repo anyway.
-5. **Post the numbers on #1204** for two weeks: each day's four numbers,
-   the repo count, and every `inbox shadow: disagree` explained (the kinds
-   listed above). M173 is done when they hold for two weeks.
+5. **Post the numbers on #1204** for two weeks: each day's numbers, the
+   repo count, and every shadow disagreement explained. M173 is done when
+   they hold for two weeks.
 6. **Stop** if installers refuse the permission upgrade, or a team objects
    to content custody (#1204). `arugula project unlink` stops reading a
    repo at once and purges its rows within a day; pinned blocks go back to

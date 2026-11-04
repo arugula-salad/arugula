@@ -511,13 +511,8 @@ pub struct ForgeDraft {
 ///   `done=true`; `limit` up to 500.
 /// - `POST /api/inbox/{item}` ([`InboxMark`]): mark its entries (one
 ///   reason's, or all) seen or done, or not; answered [`InboxMarked`].
-/// - `POST /api/inbox/shadow` ([`InboxShadow`]): an opted-in machine's
-///   forge blocks' attention, which the platform compares with its own
-///   inbox for the machine's owner and logs (the shadow period). Answered
-///   [`ShadowCompared`].
 pub const INBOX: &str = "/api/inbox";
 pub const INBOX_ITEM: &str = "/api/inbox/{item}";
-pub const INBOX_SHADOW: &str = "/api/inbox/shadow";
 
 /// Why an item is in an inbox: a review is requested from you, your PR's
 /// checks failed, changes are requested on your PR, you're mentioned, an
@@ -605,42 +600,6 @@ pub struct InboxMarked {
     pub item: String,
     /// How many entries it changed.
     pub marked: u32,
-}
-
-/// What an opted-in machine's forge blocks want of its owner (the shadow
-/// period, M171): items and reasons, never a title.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct InboxShadow {
-    pub blocks: Vec<ShadowBlock>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ShadowBlock {
-    /// `OWNER/NAME` on github.com.
-    pub repo: String,
-    pub number: u64,
-    /// What the block's attention rules find now, as [`INBOX_REASONS`]
-    /// (`draft` aside), whether or not the person looked.
-    pub reasons: Vec<String>,
-    /// The platform's waiting drafts the block shows (`dft_` ids): its
-    /// `draft` reason, when one is the owner's.
-    #[serde(default)]
-    pub drafts: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ShadowCompared {
-    /// Blocks on items the platform has, and how many agreed.
-    pub compared: u32,
-    pub agree: u32,
-    pub disagree: u32,
-    /// Differences the platform can't help by design (a mention where
-    /// content isn't mirrored): not in `compared`.
-    #[serde(default)]
-    pub explained: u32,
 }
 
 /// `POST /api/forge/drafts/{id}/send` ([`SendDraft`], M168): a person sends

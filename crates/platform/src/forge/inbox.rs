@@ -56,10 +56,6 @@
 //!
 //! **Mentions and assignments on the platform's own objects** (M202) are
 //! entries here too, made when they happen: [`crate::inbox`].
-//!
-//! **Shadow mode** ([`shadow`]): machines opted in report their forge
-//! blocks' attention (items and reasons, no titles), and the platform logs
-//! how often its inbox agrees (docs/control-ops.md).
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -92,7 +88,7 @@ use super::{
 };
 use crate::{
     Platform,
-    auth::{Machine, Person},
+    auth::Person,
     db::{
         forge::ForgeCheck,
         inbox::{InboxFilter, Sources, THREAD_MENTION},
@@ -106,10 +102,6 @@ pub const INBOX_PUSHES: (&str, usize) = ("inbox-push", 60);
 pub const PUSH_GAP_MS: u64 = 60_000;
 /// Only what changed this recently pushes.
 pub const FRESH_MS: u64 = 3600 * 1000;
-/// Shadow reports per account per hour.
-const SHADOW_REPORTS: (&str, usize) = ("inbox-shadow", 60);
-/// The most blocks one report compares.
-const SHADOW_BLOCKS: usize = 200;
 /// How often each machine works out what it marked, and how long after a
 /// mark it waits for more.
 const EVERY: Duration = Duration::from_secs(30);
@@ -604,139 +596,4 @@ pub async fn mark_for(
     let (r, _) = viewer::item(app, &v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
     let n = app.db.mark_inbox(&r, account, &item, b.reason.as_deref(), b.seen, b.done, now_ms())?;
     Ok(wire::InboxMarked { item, marked: n as u32 })
-}
-
-/// Whether a block's reasons and the platform's agree: the same set.
-pub fn agree(block: &[String], platform: &[String]) -> bool {
-    let a: BTreeSet<&str> = block.iter().map(String::as_str).collect();
-    let b: BTreeSet<&str> = platform.iter().map(String::as_str).collect();
-    a == b
-}
-
-/// A disagreement the platform can't help, by design: the block's mention
-/// on a repo that doesn't mirror content, with the rest the same. It's
-/// left out of the score (Jake's call, #1217).
-fn explain(block: &[String], platform: &[String], mirrors: bool) -> Option<&'static str> {
-    let rest: Vec<String> = block.iter().filter(|r| *r != "mentioned").cloned().collect();
-    (!mirrors && rest.len() < block.len() && agree(&rest, platform)).then_some("content not mirrored")
-}
-
-/// `YYYY-MM-DD`, UTC.
-fn day(ms: u64) -> String {
-    let days = (ms / 86_400_000) as i64;
-    // Civil from days (Howard Hinnant's algorithm).
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// `POST /api/inbox/shadow` ([`wire::InboxShadow`]): a machine's forge
-/// blocks' attention, compared with the platform's inbox for its owner
-/// on the same items, and logged: a line per report with its day's
-/// counts, and one per disagreement with the item and both reasons, never
-/// a title (docs/control-ops.md). Blocks on repos the owner may not read
-/// here, or items the mirror doesn't have, aren't compared; nor is an
-/// explained difference ([`explain`]), which is counted on its own.
-pub async fn shadow(
-    State(app): State<Arc<Platform>>,
-    m: Machine,
-    Json(b): Json<wire::InboxShadow>,
-) -> Result<Json<wire::ShadowCompared>, ApiError> {
-    app.limits.check_account(SHADOW_REPORTS, &m.account)?;
-    let v = Viewer::of(&app, &m.account).await?;
-    // Each repo's id, if the owner may read it here, and whether it mirrors content.
-    let mut readable: HashMap<String, Option<(u64, bool)>> = HashMap::new();
-    let mut out = wire::ShadowCompared::default();
-    for blk in b.blocks.iter().take(SHADOW_BLOCKS) {
-        let name = blk.repo.to_ascii_lowercase();
-        let repo_id = match readable.get(&name) {
-            Some(r) => *r,
-            None => {
-                let r = match app.db.linked_repo_named(&blk.repo)? {
-                    Some(l) => viewer::check(&app, &v, std::slice::from_ref(&l))
-                        .await?
-                        .readable
-                        .has(l.repo_id)
-                        .then_some((l.repo_id, l.mirror_content)),
-                    None => None,
-                };
-                *readable.entry(name).or_insert(r)
-            }
-        };
-        let Some((repo_id, mirrors)) = repo_id else { continue };
-        let Some(item) = app.db.forge_item_id(repo_id, blk.number)? else { continue };
-        let mut block: Vec<String> = blk
-            .reasons
-            .iter()
-            .filter(|r| wire::INBOX_REASONS.contains(&r.as_str()) && *r != "draft")
-            .cloned()
-            .collect();
-        let drafts: Vec<String> = blk.drafts.iter().take(50).cloned().collect();
-        if !app.db.waiting_drafts_of(&m.account, &drafts)?.is_empty() {
-            block.push("draft".into());
-        }
-        let platform = app.db.inbox_reasons(&m.account, &item)?;
-        if agree(&block, &platform) {
-            out.compared += 1;
-            out.agree += 1;
-            continue;
-        }
-        block.sort();
-        let why = explain(&block, &platform, mirrors);
-        let (block, platform) = (block.join(","), platform.join(","));
-        // Explained: not compared, so it doesn't count either way.
-        if let Some(why) = why {
-            out.explained += 1;
-            info!(item = %item, block, platform, why, "inbox shadow: explained");
-        } else {
-            out.compared += 1;
-            out.disagree += 1;
-            info!(item = %item, block, platform, "inbox shadow: disagree");
-        }
-    }
-    info!(
-        day = day(now_ms()),
-        daemon = %m.daemon,
-        compared = out.compared,
-        agree = out.agree,
-        disagree = out.disagree,
-        explained = out.explained,
-        "inbox shadow"
-    );
-    Ok(Json(out))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn days_and_sets() {
-        assert_eq!(day(0), "1970-01-01");
-        assert_eq!(day(1_792_540_800_000), "2026-10-21");
-        assert_eq!(day(951_782_400_000), "2000-02-29");
-        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert!(agree(&s(&["done", "draft"]), &s(&["draft", "done"])));
-        assert!(agree(&s(&[]), &s(&[])));
-        assert!(!agree(&s(&["checks_failed"]), &s(&[])));
-        assert!(!agree(&s(&["checks_failed"]), &s(&["checks_failed", "mentioned"])));
-    }
-
-    /// Only a mention where content isn't mirrored is explained.
-    #[test]
-    fn explained() {
-        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(explain(&s(&["mentioned"]), &s(&[]), false), Some("content not mirrored"));
-        assert_eq!(explain(&s(&["done", "mentioned"]), &s(&["done"]), false), Some("content not mirrored"));
-        assert_eq!(explain(&s(&["mentioned"]), &s(&[]), true), None, "mirrored: it should have found it");
-        assert_eq!(explain(&s(&["mentioned"]), &s(&["assigned"]), false), None);
-        assert_eq!(explain(&s(&[]), &s(&["assigned"]), false), None);
-    }
 }

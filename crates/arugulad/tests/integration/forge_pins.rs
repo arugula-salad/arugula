@@ -8,6 +8,8 @@
 //! - a restart reads the pin from `layout.json` and still calls no GitHub;
 //! - a restart with the platform down reads GitHub (never a blank block),
 //!   and keeps the pin for when it's back;
+//! - the platform refusing the read (a 400) reads GitHub at once, and the
+//!   block pins again when it answers;
 //! - unlinked on the platform, the block reads GitHub again and drops the
 //!   pin;
 //! - the item's text comes from `/content`, asked once and again only when
@@ -46,6 +48,8 @@ struct Fake {
     up: Arc<Mutex<bool>>,
     /// `acme/app` is linked for the machine's owner.
     linked: Arc<Mutex<bool>>,
+    /// The platform refuses every item read (a 400).
+    refused: Arc<Mutex<bool>>,
     /// GitHub's calls, by `owner/name` (`user` for `/user…`).
     github: Arc<Mutex<HashMap<String, u32>>>,
     /// The platform's item reads.
@@ -147,6 +151,9 @@ async fn items(State(f): State<Fake>, uri: Uri) -> Response {
     let (id, what) = rest.split_once('/').unwrap_or((rest, ""));
     if !f.linked() || (id != ITEM && id != ISSUE) {
         return none();
+    }
+    if *f.refused.lock().unwrap() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "not like that" }))).into_response();
     }
     let issue = id == ISSUE;
     *f.reads.lock().unwrap() += 1;
@@ -359,6 +366,17 @@ fn a_linked_repos_block_is_a_pin_and_calls_no_github() {
     let calls = f.github("acme/app");
     std::thread::sleep(Duration::from_millis(800));
     assert_eq!(f.github("acme/app"), calls);
+
+    // Refused: GitHub at once, no stale wait, and the pin again as soon as
+    // the platform answers.
+    *f.refused.lock().unwrap() = true;
+    d.wait_for("GitHub's reader on a refusal", || title(&d, linked) == recorded && pinned(&d, linked).is_none());
+    assert!(f.github("acme/app") > calls);
+    *f.refused.lock().unwrap() = false;
+    d.wait_for("pinned after the refusal", || title(&d, linked) == "from the mirror" && pinned(&d, linked).is_some());
+    let calls = f.github("acme/app");
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(f.github("acme/app"), calls, "no GitHub call once it's pinned again");
 
     // Unlinked: the platform has no item for it, so the block reads GitHub
     // and drops the pin.
