@@ -17,7 +17,7 @@
 # Cut one only when crates/desktop changes: `just release --app` tags the
 # newest commit with ci/green-app as it is. No commit moves the version:
 # each build job writes the tag's into crates/desktop in its own checkout
-# (`scripts/release stamp`).
+# (`scripts/release stamp`). The notes are in the tag's message (#707).
 #
 # Secrets the app uses when they're set, and skips (saying which) when not:
 # TAURI_SIGNING_PRIVATE_KEY and _PASSWORD (updater signatures; the publish

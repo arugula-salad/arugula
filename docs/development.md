@@ -210,14 +210,25 @@ and why each needs what it does.
 
 ### When main goes red
 
-chant's tick retries a red job on main once (docs/testing.md). If it
-fails again, the failure is deterministic: chant's record for the commit
-(`_ci/<sha>.json` on the `chant/lifecycle` branch) has the job under
-`retried` and `failure`, and ci-red's "main is red" issue says it's red
-after its retry. Then revert the commit that broke it within about 30
-minutes, and bring the change back in a new pull request with the fix.
-Don't fix forward while others land on top of the red. When main's
-newest commit wasn't built alone, the tick's bisect names the culprit.
+The merge queue stops most breaks from landing, so a red main means something
+got past it: a push that bypassed the queue, or a nightly full run finding what
+a group skipped by path. chant's tick retries a red job on main once
+(docs/testing.md). If it fails again, the failure is deterministic: chant's
+record for the commit (`_ci/<sha>.json` on the `chant/lifecycle` branch) has
+the job under `retried` and `failure`, and ci-red's "main is red" issue says
+it's red after its retry. When main's newest commit wasn't built alone, the
+tick's bisect names the culprit.
+
+`auto-revert.yml` (`scripts/ci-auto-revert`) then opens a pull request reverting
+the commit, queues it, and tells its author, when there's one clear culprit: the
+one the bisect names, or the red commit when the commit below it is green. It
+goes through the queue like anything else, so it lands only if main passes
+without the commit. Close the pull request to stop it, and bring the change back
+in a new one with the fix. The repository variable `ARUGULA_AUTO_REVERT=off` turns
+it off. It leaves it to a person, saying why in the job's summary, when more than
+one commit could be the culprit, when the culprit is a revert or more than 6
+hours old, or when it doesn't revert cleanly. Then revert it by hand within about
+30 minutes. Don't fix forward while others land on top of the red.
 One deterministic `desktop-xvfb` mismatch kept main red for 11 or 12 runs,
 until 5756aaa21, while other work landed. A failure that passes on the
 retry is a flaky test, which goes in the quarantine (testing.md,
@@ -365,45 +376,73 @@ keeps whatever version it has; the release workflow's build jobs write the
 tag's version into their own checkout (`scripts/release stamp TAG`) before
 they build, as chant's `scripts/release-pack.sh` does for its packages, so
 the binaries, the tarballs' names and the hub's `/control.json` carry it.
-What a release needs is therefore in the commit before it's tagged: its
-notes. The copy of its client fixtures comes after the tag (step 2).
+A release's notes are written for that one commit and travel with its tag,
+in the annotated tag's message (#707), never in a commit made for them and
+never read from main at build time. So releasing takes no commit on main
+before the tag, however fast main moves, and merges landing meanwhile change
+nothing: the pick is fixed when you name it. After the tag, a commit adds the
+notes and the client fixtures to main.
 
-1. Notes go in `docs/releases/X.Y.Z.md`. Merge them to main.
-   The notes end with a headline section, a ```` ```whats-new ```` block of
-   a few items (each a feature id, a title, one line, and maybe a **Try
-   it** command or route and who it `needs`): the web client's What's new
-   panel shows them after the update, and the format is in
-   `scripts/whats-new.mjs` (`just whats-new` checks them). `scripts/release
-   draft` leaves it out of the GitHub release.
-2. Once that commit (or a later one) is green, `just release` (a patch;
-   `just release minor`, `just release major`) tags the newest commit on
-   main that passed CI (below) `vX.Y.Z`, the next version after the newest
-   `v*` tag, and pushes the tag. It refuses a commit without the notes or
-   their headline section. Then it copies the tag's client fixtures
-   (`crates/proto/fixtures/*.jsonl`), which later daemons replay (#200),
-   to `crates/proto/fixtures/releases/X.Y.Z` in a commit of their own and
-   pushes that straight to main, as the version-bump commit used to carry
-   them. From the arugula-release deploy that push uses the `arugula-io`
-   App's token, which has a bypass on the "binaries check" ruleset for it;
-   from your shell it's your own login. It skips a set main already has,
-   and tries again a few times if main moves under it. If main still
-   refuses it, the release stands and it prints the command to run
-   instead: `just release-fixtures X.Y.Z` (from the tag, wherever you run
-   it), then merge that to main. release.yml's `fixtures` job checks main
-   after the publish and says the same in its summary when the set is
-   missing; it never fails the release. If main has newer
-   commits that aren't green yet, it lists them (the release would leave
-   them out) and stops: wait for them, or `just release --older` releases
-   without them (#1679). The commit also needs its `ci/rare/<sha>` tag: the
-   jobs CI runs nightly instead of on each push passed on it (below).
-   Without one it stops; `just release --rare` starts those jobs on the
-   commit, waits for them (about as long as a check.yml run) and releases
-   if they pass. `just release --dry-run` shows the commit, the version,
-   what's missing, any commits left out and whether the commit has its
-   `ci/rare` tag, and stops. By hand instead: `git tag -a vX.Y.Z -m
-   "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`, with the commit
-   `chant ci last-green --lane daemon` names, then `just release-fixtures
-   X.Y.Z` merged to main.
+1. `just release --dry-run` names the commit (the newest on main that passed
+   CI, below), the next version, the PRs since the last release and the
+   command to release it with, which names that commit. If main has newer
+   commits that aren't green yet, it lists those too: they aren't in this
+   release. Without a named commit a release stops on them (#1679): wait for
+   them, or pass `--older`.
+2. Write the notes against that list, in a file anywhere. They end with a
+   headline section, a ```` ```whats-new ```` block of a few items (each a
+   feature id, a title, one line, and maybe a **Try it** command or route and
+   who it `needs`): the web client's What's new panel shows them after the
+   update, and the format is in `scripts/whats-new.mjs`. A PR that needs no
+   word goes in a ```` ```no-notes ```` block, as `#N`.
+   `scripts/release draft` leaves both blocks out of the GitHub release.
+3. `just release COMMIT --notes FILE` (a patch; add `minor` or `major`) tags
+   that commit `vX.Y.Z`, the next version after the newest `v*` tag, with the
+   notes in the tag's message, and pushes the tag. It refuses:
+   - a PR since the last release that the notes neither mention (`#N`,
+     anywhere) nor list in `no-notes`, and one they do mention that landed
+     after the commit, so the tag doesn't have it. Commits that only add
+     notes or fixtures' copies don't count;
+   - notes with no headline section, or one `scripts/whats-new.mjs` refuses,
+     which would otherwise fail every build job after the tag (with `--notes`
+     this needs node);
+   - a commit without its `ci/rare/<sha>` tag: the jobs CI runs nightly instead
+     of on each push passed on it (below). `--rare` starts those jobs on the
+     commit, waits for them (about as long as a check.yml run) and releases if
+     they pass.
+
+   Without `--notes` it takes them from `docs/releases/X.Y.Z.md` as the commit
+   has them, under the same checks, which is what the arugula-release deploy
+   does: that route still needs a commit carrying the notes.
+
+   Then, in one commit pushed straight to main, it adds the notes as
+   `docs/releases/X.Y.Z.md` (unless main has that file) and the tag's client
+   fixtures (`crates/proto/fixtures/*.jsonl`), which later daemons replay
+   (#200), as `crates/proto/fixtures/releases/X.Y.Z`. From the arugula-release
+   deploy that push uses the `arugula-io` App's token, which has a bypass on
+   the "binaries check" ruleset for it; from your shell it's your own login. It
+   skips what main already has, and tries again a few times if main moves under
+   it. If main still refuses it, the release stands and it prints the command
+   to run instead: `just release-fixtures X.Y.Z` (from the tag, wherever you run
+   it), then merge that to main. release.yml's `fixtures` job checks main after
+   the publish and says the same in its summary when either is missing; it
+   never fails the release.
+
+   By hand instead: `git tag -a vX.Y.Z -m "arugula X.Y.Z" "$sha" && git push
+   origin vX.Y.Z`, with the commit `chant ci last-green --lane daemon` names
+   and the notes already in that commit, then `just release-fixtures X.Y.Z`
+   merged to main. A tag whose message has no notes (every tag before #707)
+   reads them from `docs/releases/` at its commit.
+
+   Each build job's `scripts/release stamp` writes the tag's version and notes
+   into its own checkout before it builds, so What's New has them; it reads the
+   tag from GitHub, because on a tag push `actions/checkout` replaces the local
+   annotated tag with a lightweight one. It also writes in any earlier release's
+   notes the commit doesn't have yet, as when the pick is older than the commit
+   that put the last release's notes on main. The publish job never stamps
+   (below); its `scripts/release draft` reads the tag the same way and leaves
+   the tree alone.
+
    `.github/workflows/release.yml` cuts the release first (`cut`, [below](#publishing-through-chant)),
    then builds the x86_64 Linux tarball in the home cloud (`arugula-amd64`,
    [CI](#ci)), the arm64 one on GitHub's runner, the macOS ones on jake-mini (Apple silicon natively, Intel
@@ -436,7 +475,7 @@ notes. The copy of its client fixtures comes after the tag (step 2).
    from the same build (the `E2B_API_KEY` secret;
    [control-ops.md](control-ops.md#hosted-workspaces-template)). It builds
    no app.
-3. Running daemons find it within 12 hours and offer *Update now*
+4. Running daemons find it within 12 hours and offer *Update now*
    (`arugulad update` from a terminal); `install.sh` picks it up by
    itself. The site and the docs for users are
    [arugula-salad/site](https://github.com/arugula-salad/site), which deploys
@@ -448,7 +487,7 @@ A build from main (`just build`, `just dist`) reports the version
 `Cargo.toml` has, which stays at the last version a commit set (0.66.12,
 the last bump before #1986), whatever has been released since.
 
-Instead of step 2, a release can run as a deploy, approved from an
+Instead of step 3, a release can run as a deploy, approved from an
 owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221).
 
 <a id="publishing-through-chant"></a>**Publishing through chant (#1986).**
@@ -467,15 +506,17 @@ A `cut` job runs first: `chant release cut TAG --at <the tag's commit>
 green in that lane (`ci/green-<lane>/<sha>`, and no
 `ci/revoked-<lane>/<sha>`) and otherwise records the release on
 `chant/lifecycle`. Every build job waits for it, so a refused cut builds
-and deploys nothing. Each build job stamps the tag's version into its
-checkout and hands its files to the `publish` job as an Actions artifact.
+and deploys nothing. Each build job stamps the tag's version and notes into
+its checkout and hands its files to the `publish` job as an Actions artifact.
 The `publish` job checks out the tag's commit, unstamped (`chant release
-publish` publishes only from a clean checkout of the release's commit),
+publish` publishes only from a clean checkout of the release's commit, and
+refuses a tree with anything changed or untracked, so a stamped version or
+notes file would stop it),
 puts the files in `dist/release/` (gitignored), writes `SHA256SUMS`
 (`scripts/release sums`) and, for the daemon, the formula's template
 (`scripts/release formula`, from `packaging/homebrew/arugula.rb.in`),
 makes the draft release with its title and notes (`scripts/release
-draft`), and runs `chant release publish TAG --yes`. chant stages every
+draft`, from the tag's message), and runs `chant release publish TAG --yes`. chant stages every
 target, then reveals them in order: it attaches the files and
 `release.intoto.json`, its provenance statement, to the draft and
 publishes it; for the daemon it then commits the formula and sends the
@@ -520,13 +561,18 @@ that release is out (lex00, 2026-10-08, #524).
 
 **The app (`app-v*`)**, only when `crates/desktop` changes:
 
-1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.
-2. `just release --app` (with `minor` or `major` as above) tags the newest
-   commit on main with a `ci/green-app` tag (below) `app-vX.Y.Z`, the next
-   version after the newest `app-v*` tag (its own numbering, not the
-   daemon's), in the same way; by hand, once the app's lane passes
-   (`chant ci last-green --lane app`), `git tag -a app-vX.Y.Z -m "arugula
-   app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
+1. `just release --app --dry-run` names the commit, the newest on main with
+   a `ci/green-app` tag (below), and lists the PRs since the last app release
+   that touch `crates/desktop`.
+2. `just release --app COMMIT --notes FILE` (with `minor` or `major` as above)
+   tags it `app-vX.Y.Z`, the next version after the newest `app-v*` tag (its
+   own numbering, not the daemon's), in the same way: the notes in the tag's
+   message, the same refusals but for the headline section, which only a
+   daemon release has, and then `docs/releases/app-X.Y.Z.md` on main (`just
+   release-fixtures` is the daemon's: if main refuses it, it prints what to
+   run). By hand, once the app's lane passes (`chant ci last-green --lane
+   app`), with the notes in that commit: `git tag -a app-vX.Y.Z -m "arugula app
+   X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
    `.github/workflows/app-release.yml` cuts the release from the app's
    lane, downloads arugulad and arugula from the latest daemon release
    (checked against its `SHA256SUMS`) for the app to carry, builds and
@@ -622,8 +668,8 @@ once that release is out (lex00, 2026-10-08, #524).
 
 `just release` (`scripts/release bump`, #524) reads main and the `ci/`
 and release tags from GitHub, whatever your remotes are, and changes
-nothing in your checkout (it builds the fixtures commit in a scratch
-index). It takes the next version from the lane's newest
+nothing in your checkout (it builds the commit of notes and fixtures in a
+scratch index). It takes the next version from the lane's newest
 tag (or the commit's own version, when that's higher), and refuses a
 commit the lane already released or a tag that exists. `just release
 COMMIT` releases an older green commit on main instead.

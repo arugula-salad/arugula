@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // What's new's headlines, from the headline section of each daemon
 // release's notes (docs/releases/X.Y.Z.md). The web build reads them
-// through `releases` (web/vite.config.ts), so a release's build has its
-// own notes' headlines: the release's bump commit carries its notes onto
-// the green commit (scripts/release bump). Run, it checks every release's
-// section and lists them (`just whats-new`, in CI).
+// through `releases` (web/vite.config.ts). A release's notes aren't in its
+// commit, which is the one CI passed, as it is: they're in its tag's message,
+// and a release's build job writes them here before it builds, with the
+// version (`scripts/release stamp`, #707). They reach main after the tag, so
+// a build from main has every release's but the newest's, until they do. Run,
+// it checks every release's section and lists them (`just whats-new`, in CI).
 //
 // The section is a fenced block, a JSON list of a few items, which
-// `scripts/release publish` leaves out of the GitHub release:
+// `scripts/release draft` leaves out of the GitHub release:
 //
 //   ```whats-new
 //   [
@@ -26,7 +28,8 @@
 //   team), `hosted` (on the hosted workspaces' list), `flag:NAME` (a Labs
 //   flag on for the machine shown).
 //
-// `scripts/release bump` refuses a daemon release whose notes have none.
+// `scripts/release bump` refuses a daemon release whose notes have none, and,
+// before it tags anything, one whose section this file would refuse.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

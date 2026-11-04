@@ -4,7 +4,9 @@
 // would), weighs each by e2e/durations.json (what `just e2e-durations`
 // recorded from a run), a file it doesn't know by its tests at the known
 // files' average, and deals them out longest first to the lightest shard.
-// Prints shard N's files as path filters for `playwright test`.
+// Prints shard N's files as path filters for `playwright test`. With E2E_ONLY,
+// spec files separated by spaces, it deals only those (a pull request's run,
+// scripts/pr-plan), and a shard can come up empty.
 //
 //   node scripts/e2e-shard.mjs N M
 import { execFileSync } from "node:child_process";
@@ -20,7 +22,8 @@ const list = JSON.parse(
   execFileSync("node_modules/.bin/playwright", ["test", "--list", "--reporter=json"], { encoding: "utf8", maxBuffer: 64 << 20 }),
 );
 const count = (s) => (s.specs ?? []).reduce((a, sp) => a + sp.tests.length, 0) + (s.suites ?? []).reduce((a, c) => a + count(c), 0);
-const files = list.suites.map((s) => ({ file: s.file, tests: count(s) }));
+const only = process.env.E2E_ONLY ? new Set(process.env.E2E_ONLY.split(/\s+/)) : null;
+const files = list.suites.map((s) => ({ file: s.file, tests: count(s) })).filter((f) => !only || only.has(f.file));
 
 const known = existsSync("e2e/durations.json") ? JSON.parse(readFileSync("e2e/durations.json", "utf8")) : {};
 const seen = files.filter((f) => f.file in known);
