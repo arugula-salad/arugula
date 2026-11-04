@@ -103,6 +103,21 @@ impl Control {
     }
 }
 
+/// A dial of the relay as `arugulad` makes it, saying these direct URLs,
+/// signed over the path and query as the daemon signs.
+pub(crate) fn dial_saying(
+    c: &Control,
+    keys: &DeviceKeys,
+    urls: &[&str],
+) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+    let mut url = url::Url::parse(&format!("{}/api/relay/dial", c.base.replace("http://", "ws://"))).unwrap();
+    url.query_pairs_mut().append_pair("urls", &serde_json::to_string(urls).unwrap());
+    let signed = format!("{}?{}", url.path(), url.query().unwrap());
+    let mut req = url.as_str().into_client_request().unwrap();
+    req.headers_mut().insert("x-arugula-auth", v2(keys, "GET", &signed, b"").parse().unwrap());
+    req
+}
+
 /// Fran owns Acme, Cy is an editor in it, and Ox isn't.
 async fn acme() -> (Control, DeviceKeys, DeviceKeys, DeviceKeys) {
     let c = control(|_| {}).await;
@@ -179,9 +194,11 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     assert_eq!(c.signed_get(&boxk, "/api/daemon/trust").await, 403);
     assert_eq!(c.signed_get(&boxk, "/api/directory").await, 403);
     assert_eq!(c.signed_get(&boxk, "/api/devices").await, 403);
-    let mut req = format!("{}/api/relay/dial", c.base.replace("http://", "ws://")).into_client_request().unwrap();
-    req.headers_mut().insert("x-arugula-auth", v2(&boxk, "GET", "/api/relay/dial", b"").parse().unwrap());
-    let (_socket, _) = tokio_tungstenite::connect_async(req).await.expect("it dials the relay");
+    // It dials the relay. A stock box says no direct URLs; one that does is
+    // reached only through the relay all the same, so control keeps none.
+    let (_socket, _) = tokio_tungstenite::connect_async(dial_saying(&c, &boxk, &["http://10.0.0.5:7681"]))
+        .await
+        .expect("it dials the relay");
     for _ in 0..50 {
         if c.app.relay.online(&boxk.id()) {
             break;
@@ -190,10 +207,17 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     }
     assert!(c.app.relay.online(&boxk.id()));
 
-    // Cy's directory lists it, and Cy's client accepts it for the project.
+    // Cy's directory lists it, with no direct URLs, and Cy's client
+    // accepts it for the project.
     let (_, dir) = c.as_person(&cy_s, "GET", "/api/directory", None).await;
     let entry = dir["daemons"].as_array().unwrap().iter().find(|d| d["id"] == json!(boxk.id())).cloned().unwrap();
     assert_eq!(entry["online"], json!(true));
+    assert_eq!(entry["urls"], json!([]), "reached only through the relay: {entry}");
+    // A row an older control left direct URLs in comes back without them.
+    c.app.db.put_hosted_urls(&boxk.id(), &["http://10.0.0.5:7681".into()]).unwrap();
+    let (_, dir) = c.as_person(&cy_s, "GET", "/api/directory", None).await;
+    let again = dir["daemons"].as_array().unwrap().iter().find(|d| d["id"] == json!(boxk.id())).cloned().unwrap();
+    assert_eq!(again["urls"], json!([]), "{again}");
     let (_, teams) = c.as_person(&cy_s, "GET", "/api/teams", None).await;
     let r: Roster = serde_json::from_value(teams["teams"][0]["roster"].clone()).unwrap();
     let certs = serde_json::from_value(teams["teams"][0]["certs"].clone()).unwrap();
@@ -239,7 +263,8 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     assert_eq!(revs.len(), 1);
     assert!(accept("c1", &cert, &del, &revs, &owners).is_ok());
 
-    // Removed as a device is: hung up on, and its key signs nothing again.
+    // Removed, on control's word: hung up on, unlisted, and its key signs
+    // nothing here again.
     let (st, _) = c.as_person(&cy_s, "DELETE", &format!("/api/hosted/machines/{}", boxk.id()), None).await;
     assert_eq!(st, 403, "an editor doesn't remove it");
     let (st, _) = c.as_person(&fran_s, "DELETE", &format!("/api/hosted/machines/{}", boxk.id()), None).await;

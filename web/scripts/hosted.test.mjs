@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { acceptHosted, delegationId } from "../src/shell/e2e/hosted.ts";
+import { directUrls } from "../src/shared/hosted.ts";
 
 const f = JSON.parse(readFileSync(new URL("./hosted.fixture.json", import.meta.url), "utf8"));
 const mine = { account: { account: "acct1", root: f.root.device }, certs: [f.root], revocations: [] };
@@ -49,4 +50,11 @@ test("tampering, revoking, and control's own signature are refused", async () =>
   // A root control made up: the delegation's signer isn't in this chain.
   const other = { account: { account: "acct1", root: "0000000000000000" }, certs: [f.root], revocations: [] };
   assert.deepEqual(await acceptHosted("acct1", proof(), other), { ok: false, why: "unsigned" });
+});
+
+test("a hosted machine has no direct URLs to try; a joined one keeps its own", () => {
+  const hosted = { urls: ["http://10.0.0.5:7681"], hosted: { project: "prj_1", workspace: "hw_1", role: "owner" } };
+  assert.deepEqual(directUrls(hosted), []);
+  assert.deepEqual(directUrls({ urls: ["http://geek:7681"] }), ["http://geek:7681"]);
+  assert.deepEqual(directUrls({ urls: ["http://geek:7681"], hosted: undefined }), ["http://geek:7681"]);
 });

@@ -45,7 +45,7 @@ A **machine** runs `arugulad`. There are three kinds that control knows about:
 |---|---|---|
 | **Personal** | Joined to an account | `daemons`, with no team; `control.json` |
 | **Team** | Joined to a team; a signed move shifts a machine between personal and team | `daemons.team`; `control.json` |
-| **Hosted** | Runs inside a Cloud workspace, for people, a deploy or a snapshot | `hosted_machines`; `control.json` |
+| **Hosted** | Runs inside a Cloud workspace, for people, a deploy or a snapshot; reached only through control's relay | `hosted_machines`; `control.json` |
 
 A daemon can also run without joining control at all, known only by its local
 owner, and other daemons can list it by name in `hosts.json`.

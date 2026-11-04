@@ -197,8 +197,8 @@ impl Enrolled {
         let mut pinned = false;
         let mut teams: Option<Vec<Value>> = None;
         for d in v["daemons"].as_array().into_iter().flatten() {
-            let Ok(mut m) = serde_json::from_value::<Listed>(d.clone()) else { continue };
-            if d.get("hosted").is_some_and(|h| !h.is_null()) {
+            let Some((mut m, hosted)) = listed(d) else { continue };
+            if hosted {
                 // A hosted machine (M178, M180): for its project only, as
                 // this CLI's checks of the project say, never control's word.
                 match self.accept_hosted(&d["hosted"], &mut teams, &mut pinned) {
@@ -401,6 +401,18 @@ impl Listed {
             _ => String::new(),
         }
     }
+}
+
+/// A directory entry, and whether it's a hosted machine (M178). A hosted
+/// machine is reached only through the relay: whatever the entry says,
+/// it has no direct URLs here.
+fn listed(d: &Value) -> Option<(Listed, bool)> {
+    let mut m = serde_json::from_value::<Listed>(d.clone()).ok()?;
+    let hosted = d.get("hosted").is_some_and(|h| !h.is_null());
+    if hosted {
+        m.urls.clear();
+    }
+    Some((m, hosted))
 }
 
 /// Another account's certificates, as the directory sends them.
@@ -1120,6 +1132,26 @@ mod tests {
         let auths = server.join().unwrap();
         assert_eq!(auths.len(), 3, "the plain 503 asked once");
         assert_ne!(auths[0], auths[1], "signed afresh");
+    }
+
+    /// A hosted machine is reached only through the relay: the CLI keeps
+    /// no direct URL for it, whatever the directory says; a joined machine
+    /// keeps its own.
+    #[test]
+    fn a_hosted_machine_has_no_direct_urls() {
+        let joined = json!({ "id": "d1", "name": "geek", "urls": ["http://geek:7681"] });
+        let (m, hosted) = listed(&joined).unwrap();
+        assert_eq!((m.urls, hosted), (vec!["http://geek:7681".to_owned()], false));
+        let hosted = json!({
+            "id": "h1", "name": "hosted box", "urls": ["http://10.0.0.5:7681"],
+            "hosted": { "cert": {}, "delegation": {}, "revocations": [] },
+        });
+        let (m, is_hosted) = listed(&hosted).unwrap();
+        assert!(is_hosted);
+        assert!(m.urls.is_empty(), "{:?}", m.urls);
+        let (m, is_hosted) =
+            listed(&json!({ "id": "d2", "name": "box", "urls": ["http://box:7681"], "hosted": null })).unwrap();
+        assert!(!is_hosted && m.urls.len() == 1);
     }
 
     #[test]

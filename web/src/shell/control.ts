@@ -31,6 +31,7 @@ import {
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
@@ -1782,7 +1783,7 @@ export class ControlSession {
       // (M29), from what this page checked.
       const ws = this.info.url.replace(/^http/, "ws");
       void saveWorkerDirectory(
-        this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}` })),
+        this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}` })),
       ).catch(() => {});
     } catch (err) {
       if (err instanceof HttpError && err.status === 401) {
@@ -1973,7 +1974,9 @@ export class ControlSession {
     const c = proof.cert;
     // Its keys, to open a channel with; never in the account's trust.
     const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise, sign: c.sign, created: c.created, approver: "", sig: "" };
-    return [{ ...entry, cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];
+    // Reached only through the relay: no direct URLs, whatever the
+    // directory said.
+    return [{ ...entry, urls: [], cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];
   }
 
   // ---- project delegations (M178)
@@ -2372,7 +2375,7 @@ export class ControlSession {
     // M50: blocks on control's block origins, where control serves them.
     const blockDomain = this.info.block_domain;
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its

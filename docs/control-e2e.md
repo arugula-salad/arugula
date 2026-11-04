@@ -830,7 +830,9 @@ that project only.
   machine. Its signature opens only its own routes and the relay: every
   route a daemon's signature opens refuses it. It isn't in `daemons`, so
   nothing that reads a daemon's account (moves, shares, grants, Labs
-  flags) sees it.
+  flags) sees it. It's reached only through the relay: control keeps no
+  direct URL for it (the directory lists it with none), and clients try
+  none, whatever a directory says.
 - **Their machines, and agents** (M184). A project person's own machine
   reaches a hosted machine too, for its agents to drive it over MCP
   (`run`, `start_agent`, `read_output`, `show` there): control routes it
@@ -1152,7 +1154,7 @@ or whoever runs yours) does:
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
-| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
+| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, through the relay alone. Revoking the delegation stops every certificate made after it; a machine certified before it stays accepted until an owner removes it or the workspace is deleted or rebuilt |
 | enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
 | starts runs on a project's hosted workspaces | only under an owner's standing grant, confirmed with their passkey (signed by their browser before DK6), which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
@@ -2024,7 +2026,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
 | `project_delegations` | metadata | A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it. | yes: its own project's and its disbanded teams' go, and every one it signed. |  |
 | `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
-| `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
+| `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), when it was last seen and removed. Its `urls` column is never read: a hosted machine is reached only through the relay. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. The desktop app's is at control's own live endpoint, with the hash of the token it listens with and when it last did. | yes |  |
 | `push_prefs` | metadata | Which kinds of push an account turned off: chat, its machines, or its projects. | yes |  |
 | `account_prefs` | metadata | An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed. | yes |  |

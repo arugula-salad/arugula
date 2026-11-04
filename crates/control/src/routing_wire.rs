@@ -1394,6 +1394,22 @@ async fn a_daemons_relay_socket_takes_only_mux_sized_messages() {
     assert!(closed, "a 4 MB message closes the socket");
 }
 
+/// A joined machine's direct URLs, said as it dials the relay, are in the
+/// directory for its account's clients to try first (a hosted machine's
+/// aren't: `hosted_wire`).
+#[tokio::test]
+async fn a_joined_machines_direct_urls_are_listed() {
+    let c = control(|_| {}).await;
+    person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let d = daemon(&c.app, "a1", "geek");
+    let req = crate::hosted_wire::dial_saying(&c, &d, &["http://geek:7681"]);
+    let (_ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let (_, dir) = c.as_person(&cookie, "GET", "/api/directory", None).await;
+    let entry = dir["daemons"].as_array().unwrap().iter().find(|x| x["id"] == json!(d.id())).cloned().unwrap();
+    assert_eq!(entry["urls"], json!(["http://geek:7681"]), "{dir}");
+}
+
 /// A daemon's relay socket, as `arugulad` dials it.
 async fn dial_relay(
     c: &Control,
