@@ -1143,7 +1143,7 @@ test("with more than 100 not on a board: the filter, order and labels are the se
   await platform(alice, `/p/${project}/boards`);
   const count = alice.locator("[data-triage-count]");
   await expect(count).toBeVisible({ timeout: 15_000 });
-  const total = Number(await count.textContent());
+  let total = Number(await count.textContent());
   expect(total).toBeGreaterThan(120);
   const rows = alice.locator("[data-triage-row]");
   await expect(rows).toHaveCount(100);
@@ -1172,6 +1172,13 @@ test("with more than 100 not on a board: the filter, order and labels are the se
   await expect(count).toHaveText("30");
   await expect(rows).toHaveCount(30);
   await expect(chip("beta")).toContainText("90");
+  // After an add the total and the facet are read again: ＋ on one alpha row, and alpha counts 29.
+  await rows.first().locator("[data-triage-add]").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  await expect(count).toHaveText("29");
+  await expect(chip("alpha")).toContainText("29");
+  await expect(chip("beta")).toContainText("90");
+  total -= 1;
   await chip("alpha").click();
   await expect(count).toHaveText(String(total));
   await alice.locator("[data-triage-filter]").fill("Phone ticket");
