@@ -1973,6 +1973,18 @@ impl Db {
         )
     }
 
+    /// Every session of `project` that hasn't ended, oldest first.
+    pub fn live_sessions_of(&self, project: &str) -> Result<Vec<Session>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {COLS} FROM agent_sessions WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped')
+                 ORDER BY created_at, id"
+            ),
+            params![project],
+            session_row,
+        )
+    }
+
     /// [`rebuilt_in`] in a transaction of its own.
     pub fn session_rebuilt(
         &self,
@@ -2163,6 +2175,9 @@ impl Db {
                 review: s.role == Role::Review,
                 model: s.model.clone().or_else(|| model.clone()),
                 park,
+                // The platform's rule, on the pull (`crate::work::work`).
+                grant: None,
+                passkey_log: None,
             });
         }
         Ok(out)

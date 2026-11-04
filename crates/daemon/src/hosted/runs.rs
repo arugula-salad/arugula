@@ -36,7 +36,9 @@
 //! A start that names a run (M212) has the machine pull its work at once
 //! (`crate::work`); the run is checked again here ([`allows`]) before it
 //! starts. A revoke that says `running stop` stops the runs going under
-//! the grants it covers (`crate::work::stop_revoked`).
+//! the grants it covers (`crate::work::stop_revoked`). A thread's agent
+//! session is checked the same way for `runs.instruct`, before it's taken
+//! and before each turn, and any revoke ends it ([`revoke_over`]).
 
 use std::{path::Path, sync::Mutex};
 
@@ -81,6 +83,19 @@ impl From<GrantRefusal> for Refused {
 const NOT_HOSTED: Refused = Refused { code: "not_hosted", says: "this machine isn't a hosted machine" };
 const WRONG_WORKSPACE: Refused =
     Refused { code: "wrong_workspace", says: "this hosted machine is another workspace's" };
+/// A session's work listed no grant.
+pub const NO_GRANT: Refused = Refused {
+    code: "no_grant",
+    says: "this project has no standing grant for agent sessions: an owner of the project allows them with a passkey",
+};
+/// What's refused for what this machine pinned of who may sign, which a
+/// refresh brings up to date.
+pub const PIN_CAN_CHANGE: &[&str] = &[
+    GrantRefusal::Unsigned.code(),
+    GrantRefusal::NotAnOwner.code(),
+    GrantRefusal::PasskeyLog.code(),
+    GrantRefusal::Passkey.code(),
+];
 const UNREADABLE: Refused = Refused {
     code: "revokes_unreadable",
     says: "this hosted machine can't read the revokes it kept, so it starts nothing: rebuild the workspace",
@@ -234,6 +249,26 @@ pub fn stops(app: &crate::server::App, g: &ProjectGrant) -> bool {
     }
 }
 
+/// The kept revoke's word on a session here, under `grant` (the last one
+/// that checked out for it), taken at `taken_at`: `None` when none takes it
+/// back, else whether a turn under way finishes first. A session from
+/// before sessions held a grant has none to compare, so a revoke made since
+/// it was taken covers it. Revokes that can't be read fail closed.
+pub fn revoke_over(app: &crate::server::App, grant: Option<&ProjectGrant>, taken_at: u64) -> Option<Running> {
+    match read_kept(app.control.state_dir()) {
+        Ok(kept) => over(&kept, grant, taken_at),
+        Err(_) => Some(Running::Stop),
+    }
+}
+
+/// [`revoke_over`], of the revokes `kept`.
+fn over(kept: &[GrantRevoke], grant: Option<&ProjectGrant>, taken_at: u64) -> Option<Running> {
+    let covering = |r: &&GrantRevoke| grant.map_or(r.at >= taken_at, |g| r.covers(g));
+    let mut covers = kept.iter().filter(covering).peekable();
+    covers.peek()?;
+    Some(if covers.any(|r| r.running == Running::Stop) { Running::Stop } else { Running::Finish })
+}
+
 /// `runs.start`: check the grant, and answer. A start that names a run
 /// (M212) has the machine ask for its work now: the run itself comes that
 /// way, and is checked again before it starts.
@@ -275,6 +310,8 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
             if stop {
                 crate::work::stop_revoked(app);
             }
+            // The sessions it ends go on the pull this asks for.
+            crate::work::nudge();
             OpAnswer::Done { url: None, routed: None }
         }
         // Not this machine's, not an owner's, or an older one than it has.
@@ -386,6 +423,26 @@ pub(crate) mod tests {
         // A machine that isn't hosted.
         let plain = Saved { kind: crate::control::MachineKind::Personal, ..saved.clone() };
         assert_eq!(check(&plain, &start(&g), &[], 20), Err(NOT_HOSTED));
+    }
+
+    /// Which revoke takes a session back: one covering the grant it holds,
+    /// however its clock reads; one made since it was taken, for a session
+    /// from before sessions held a grant; `stop` over `finish`.
+    #[test]
+    fn a_session_is_taken_back_by_a_revoke_covering_its_grant() {
+        let (_, d, root, _) = machine();
+        let g = grant(&d, &root, 10);
+        let r = |running, at| GrantRevoke::new(&g.project, &g.delegation, running, at, &root);
+        // A grant made after the revoke is a new one.
+        assert_eq!(over(&[r(Running::Stop, 9)], Some(&g), 1000), None);
+        assert_eq!(over(&[r(Running::Stop, 10)], Some(&g), 1000), Some(Running::Stop));
+        assert_eq!(over(&[r(Running::Finish, 30)], Some(&g), 1000), Some(Running::Finish));
+        assert_eq!(over(&[], Some(&g), 1000), None);
+        // No grant held: by when it was taken.
+        assert_eq!(over(&[r(Running::Finish, 30)], None, 40), None);
+        assert_eq!(over(&[r(Running::Finish, 40)], None, 40), Some(Running::Finish));
+        let (a, b) = (r(Running::Finish, 50), r(Running::Stop, 50));
+        assert_eq!(over(&[a, b], None, 40), Some(Running::Stop));
     }
 
     #[test]

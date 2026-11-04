@@ -40,6 +40,14 @@
 //! - a session in a repo linked to the project that the box's setup didn't
 //!   clone (Fleet 6) clones it from GitHub, shallow, with a token control
 //!   mints for that clone and the box revokes after, then pushes from it.
+//! - a session runs only under the project's standing grant (aru-115, as
+//!   amended), checked against what the box pinned, before it's taken and
+//!   before each turn: with none, or one that doesn't check out, it fails
+//!   saying why and its agent never starts; a revoke saying `running stop`
+//!   ends a session mid-turn, one saying `finish` once its turn ends, and
+//!   new sessions and follow-ups are refused after either; a session whose
+//!   grant only goes away (none listed, no revoke) finishes its turn and
+//!   stays, until a follow-up needs one.
 
 use std::{
     collections::BTreeMap,
@@ -55,6 +63,7 @@ use arugula_control_wire::{
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
     hosted::{Delegation, HostedCert, HostedKey},
+    project_grant::{GrantRevoke, ProjectGrant, Running},
     session::{Event, Kind as EvKind, State},
 };
 use arugula_testkit::arugulad;
@@ -76,6 +85,16 @@ struct Ses {
     work: SessionWork,
     /// Stopped by a person: no longer listed, and its reports refused.
     stopped: bool,
+}
+
+/// A v1 standing grant under `d`, good for a day from now, as `change`
+/// leaves it, signed by `by`.
+fn signed_grant(d: &Delegation, by: &DeviceKeys, change: impl FnOnce(&mut ProjectGrant)) -> ProjectGrant {
+    let now = arugula_e2e::now_ms();
+    let mut g = ProjectGrant::new(d, now, Some(now + 86_400_000));
+    change(&mut g);
+    g.sign_with(by);
+    g
 }
 
 #[derive(Clone)]
@@ -108,6 +127,11 @@ struct Fake {
     transcripts: Arc<Mutex<Vec<Value>>>,
     /// What the box said it takes on its last pull.
     takes: Arc<Mutex<String>>,
+    /// The project's standing grant, listed with every session, as the
+    /// platform lists its live one. A good one, unless a test changes it.
+    grant: Arc<Mutex<Option<ProjectGrant>>>,
+    /// The project's revokes, on every pull.
+    revokes: Arc<Mutex<Vec<GrantRevoke>>>,
 }
 
 impl Fake {
@@ -125,7 +149,10 @@ impl Fake {
             sig: String::new(),
         };
         delegation.sign_with(&root);
+        let grant = Some(signed_grant(&delegation, &root, |_| {}));
         Fake {
+            grant: Arc::new(Mutex::new(grant)),
+            revokes: Default::default(),
             url: Default::default(),
             root: Arc::new(root),
             root_cert,
@@ -218,6 +245,8 @@ impl Fake {
             review,
             model: model.map(str::to_owned),
             park: false,
+            grant: None,
+            passkey_log: None,
         };
         self.sessions.lock().unwrap().insert(id.into(), Ses { work, stopped: false });
     }
@@ -376,8 +405,16 @@ async fn archived(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
 async fn work(Axum(f): Axum<Fake>, q: axum::extract::Query<BTreeMap<String, String>>) -> Json<Work> {
     *f.pulls.lock().unwrap() += 1;
     *f.takes.lock().unwrap() = q.get("takes").cloned().unwrap_or_default();
-    let sessions = f.sessions.lock().unwrap().values().filter(|s| !s.stopped).map(|s| s.work.clone()).collect();
-    Json(Work { items: vec![], revokes: vec![], sessions })
+    let grant = f.grant.lock().unwrap().clone();
+    let sessions = f
+        .sessions
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|s| !s.stopped)
+        .map(|s| SessionWork { grant: grant.clone(), ..s.work.clone() })
+        .collect();
+    Json(Work { items: vec![], revokes: f.revokes.lock().unwrap().clone(), sessions })
 }
 
 /// As the platform takes a report: the next number only, a move the box
@@ -1534,4 +1571,151 @@ fn a_parked_session_reopens_on_a_reply() {
     assert!(homes.join("ses2").join("work").join(&b).join(".git").exists(), "b keeps its checkout");
     assert_eq!(blocks_of(&f, &a).len(), 3);
     assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
+}
+
+/// The reasons session `id` was said to fail for, by its box's reports.
+fn why_failed(f: &Fake, id: &str) -> String {
+    let of = f.of(id);
+    let last = of.iter().rev().find(|(r, _)| r.to == "failed").expect("it failed");
+    last.1.reason.clone().unwrap_or_default()
+}
+
+/// No grant, one that gives only `runs.start`, and one nobody in the project
+/// signed: the session fails saying which, and its agent never starts. A
+/// good grant: it runs, and takes a follow-up.
+#[test]
+fn a_session_runs_only_under_the_projects_grant() {
+    let Rig { _rt, f, marks, sudo_log, d, .. } = rig("grant-needed");
+    let good = f.grant.lock().unwrap().clone();
+    let agents = || std::fs::read_to_string(&sudo_log).unwrap_or_default().matches("arugula-brokered sh -c").count();
+
+    *f.grant.lock().unwrap() = None;
+    let a = ses('a');
+    f.start(&a, "no-grant", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a refused", || f.state(&a) == "failed");
+    assert!(why_failed(&f, &a).starts_with("no_grant"), "{}", why_failed(&f, &a));
+    assert!(why_failed(&f, &a).contains("owner"), "says who: {}", why_failed(&f, &a));
+    assert!(f.turns(&a).is_empty(), "its turn never started");
+
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &f.root, |g| g.caps = vec!["runs.start".into()]));
+    let b = ses('b');
+    f.start(&b, "narrow", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "b refused", || f.state(&b) == "failed");
+    assert!(why_failed(&f, &b).starts_with("grant_not_covered"), "{}", why_failed(&f, &b));
+
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &DeviceKeys::generate(), |_| {}));
+    let c = ses('c');
+    f.start(&c, "unsigned", prompt(3, "acct1", "hello"));
+    wait(&marks, &f, "c refused", || f.state(&c) == "failed");
+    assert!(why_failed(&f, &c).starts_with("grant_unsigned"), "{}", why_failed(&f, &c));
+    assert_eq!(agents(), 0, "no agent started for any of them");
+
+    *f.grant.lock().unwrap() = good;
+    let e = ses('e');
+    f.start(&e, "good", prompt(4, "acct1", "hello"));
+    wait(&marks, &f, "e's first turn", || f.state(&e) == "done");
+    f.queue(&e, prompt(5, "acct1", "remember plum"));
+    wait(&marks, &f, "e's follow-up", || f.turns(&e).len() == 2 && f.state(&e) == "done");
+    assert_eq!(agents(), 1);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// `running stop` on the pull: a session mid-turn ends at once, its agent
+/// stopped and its slot cleaned, and a new session under the revoked grant
+/// is refused. A newer grant works again.
+#[test]
+fn a_revoke_saying_stop_ends_a_session_mid_turn_and_refuses_a_new_one() {
+    let Rig { _rt, f, marks, homes, d, .. } = rig("grant-stop");
+    let a = ses('a');
+    f.start(&a, "busy", prompt(1, "acct1", "slowly"));
+    wait(&marks, &f, "a mid-turn", || f.state(&a) == "working");
+    let block = block_of(&f, &a);
+    assert!(f.turn_reports(&a).is_empty(), "its turn is still going");
+    let revoke = GrantRevoke::new(PROJECT, &f.delegation.id(), Running::Stop, arugula_e2e::now_ms(), &f.root);
+    f.revokes.lock().unwrap().push(revoke);
+    wait(&marks, &f, "a stopped", || f.state(&a) == "failed");
+    assert!(why_failed(&f, &a).contains("standing grant was revoked"), "{}", why_failed(&f, &a));
+    assert!(f.turn_reports(&a).is_empty(), "cut off mid-turn, not after it: {:?}", f.moves(&a));
+    assert!(!f.moves(&a).iter().any(|(_, _, to)| to == "done"), "{:?}", f.moves(&a));
+    wait(&marks, &f, "a's block closed", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    let checkout = homes.join("ses1").join("work").join(&a);
+    wait(&marks, &f, "a's checkout gone", || !checkout.exists());
+
+    // The fake still lists the revoked grant: the box checks for itself.
+    let b = ses('b');
+    f.start(&b, "after", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "b refused", || f.state(&b) == "failed");
+    assert!(why_failed(&f, &b).starts_with("grant_revoked"), "{}", why_failed(&f, &b));
+    assert!(f.turns(&b).is_empty());
+
+    std::thread::sleep(Duration::from_millis(5));
+    *f.grant.lock().unwrap() = Some(signed_grant(&f.delegation, &f.root, |_| {}));
+    let c = ses('c');
+    f.start(&c, "again", prompt(3, "acct1", "hello"));
+    wait(&marks, &f, "c's first turn", || f.state(&c) == "done");
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// `running finish` on the pull: a session with no turn under way ends at
+/// once. One mid-turn finishes its turn, then ends, with the follow-up
+/// queued meanwhile never handed to its agent.
+#[test]
+fn a_revoke_saying_finish_ends_a_session_when_its_turn_ends() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-finish");
+    let idle = ses('a');
+    f.start(&idle, "idle", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "the idle one's turn", || f.state(&idle) == "done");
+    let busy = ses('b');
+    f.start(&busy, "busy", prompt(2, "acct1", "slowly"));
+    wait(&marks, &f, "b mid-turn", || f.state(&busy) == "working");
+    f.queue(&busy, prompt(3, "acct1", "remember plum"));
+    assert!(f.turn_reports(&busy).is_empty(), "its turn is still going");
+
+    let revoke = GrantRevoke::new(PROJECT, &f.delegation.id(), Running::Finish, arugula_e2e::now_ms(), &f.root);
+    f.revokes.lock().unwrap().push(revoke);
+    wait(&marks, &f, "the idle one ended", || f.state(&idle) == "failed");
+    assert!(why_failed(&f, &idle).contains("standing grant was revoked"), "{}", why_failed(&f, &idle));
+    assert_eq!(f.state(&busy), "working", "its turn goes on");
+    assert!(f.turn_reports(&busy).is_empty(), "the revoke came mid-turn");
+    wait(&marks, &f, "b ended with its turn", || f.state(&busy) == "failed");
+    assert_eq!(f.turns(&busy).len(), 1, "the follow-up never ran: {:?}", f.turns(&busy));
+    assert_eq!(f.turn_reports(&busy).len(), 1, "its turn's report went first");
+    assert!(why_failed(&f, &busy).contains("standing grant was revoked"), "{}", why_failed(&f, &busy));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A live session whose grant goes away with no revoke (it expired, or the
+/// box was updated in a project that never had one) stays: its turn
+/// finishes, and it's done, not failed. A grant back, a follow-up runs. A
+/// follow-up with none listed, which only a platform from before this sends
+/// (one that lists no grant at all), fails it, saying why.
+#[test]
+fn a_live_session_with_no_grant_stays_until_a_follow_up_needs_one() {
+    let Rig { _rt, f, marks, d, .. } = rig("grant-gone");
+    let good = f.grant.lock().unwrap().clone();
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "slowly"));
+    wait(&marks, &f, "a mid-turn", || f.state(&a) == "working");
+    *f.grant.lock().unwrap() = None;
+    assert!(f.turn_reports(&a).is_empty(), "the grant went mid-turn");
+    wait(&marks, &f, "its turn to end", || f.state(&a) == "done");
+    assert_eq!(f.turn_reports(&a).len(), 1, "it finished");
+    let pulls = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > pulls + 3);
+    assert_eq!(f.state(&a), "done", "it isn't ended for having none");
+
+    *f.grant.lock().unwrap() = good;
+    f.queue(&a, prompt(2, "acct1", "remember plum"));
+    wait(&marks, &f, "the follow-up", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+
+    *f.grant.lock().unwrap() = None;
+    f.queue(&a, prompt(3, "acct1", "remember plum"));
+    wait(&marks, &f, "a failed", || f.state(&a) == "failed");
+    assert!(why_failed(&f, &a).starts_with("no_grant"), "{}", why_failed(&f, &a));
+    assert_eq!(f.turns(&a).len(), 2, "{:?}", f.turns(&a));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
 }

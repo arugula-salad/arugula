@@ -272,6 +272,38 @@ session's card shows the failure and its last lines. It's one field in the
 project's settings, and `--finish` on `cloud edit`; it isn't part of the
 spec's hash, so changing it needs no rebuild.
 
+**Sessions run under the project's standing grant** (aru-099 and aru-115,
+amended 2026-11-04). An owner allows them as they allow runs: *Allow runs*
+on Control's page, under Devices and machines, Runs on cloud workspaces, with
+a passkey (`arugula runs grant show` says whether a project has one). Each
+session's work carries the grant on every pull, and the box checks it against
+what it pinned, `runs.instruct` included, before it takes the session and
+before each turn.
+
+- **With no grant** (none yet, expired, revoked, or for an earlier
+  delegation), `@arugula`, `session_start`, Try 3, `@codex review`, Move to…
+  and a reply start nothing, and the thread or the route's answer says an
+  owner gives the project a grant, and how. A queued session (a rebuilt box's,
+  say) fails, saying so. A session already going stays: its turn finishes,
+  prompts that were queued are dropped and said, its thread is told once, and
+  a grant given later lets it go on. CI's failures and reviews wait for one.
+- **A revoke ends live sessions** and refuses follow-ups and new ones.
+  *Also stop the runs going* (`running stop`) ends them at once, mid-turn
+  too; without it (`running finish`) a turn under way finishes, and its
+  session ends with it, and one with no turn under way ends at once. A grant
+  signed after the revoke doesn't bring back a session it ended. The platform
+  ends them as the revoke arrives, and the box does on the pull that brings
+  the revoke, as it stops runs.
+- **A box from before this** checks nothing itself. The platform's rules
+  still hold for it: nothing starts with no grant, it's offered no queued
+  session or prompt, and a revoke takes its sessions off its list, so it stops
+  them. Only a box from this release on checks the grant's signature.
+- **A box from this release against a platform from before it,** which lists
+  no grant, refuses a new session or a follow-up (each fails, saying why). A
+  control can't be told from one that left the grant out on purpose, so the box
+  doesn't guess. It's only so for the minutes a release takes to deploy, or
+  after rolling the platform back.
+
 **A session's agent asks no permission** on its box: Claude Code runs in
 `bypassPermissions` (Codex in `full-access`), and the block allows anything
 that still asks. The box is the blast radius (its own user, the firewall,

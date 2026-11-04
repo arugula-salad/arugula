@@ -30,6 +30,11 @@
 //! (M180's activity), which is what holds the box's timeout (M181), so it
 //! doesn't pause mid-run.
 //!
+//! **Sessions on the pull.** A thread's sessions go with the project's live
+//! standing grant, for the box to check, and the project's revokes, as runs
+//! do. With no grant, the platform offers no queued session and no prompt, so
+//! a box from before boxes checked starts nothing either.
+//!
 //! Not here: who may start a run (M211's grant, M214's triggers), and the
 //! approval a run without a grant waits for (M218).
 
@@ -224,6 +229,41 @@ fn name_authors(
     }
 }
 
+/// `sessions` as the project's standing grant has them (module docs): with
+/// it each carries the grant, and a v2's granter's passkey log while it may
+/// start a turn (each is a call to the hub, so not while a turn runs or
+/// nothing's waiting); without, no queued session and no prompt is offered.
+async fn under_grant(
+    app: &Platform,
+    m: &HostedMachine,
+    sessions: &mut Vec<arugula_control_wire::work::SessionWork>,
+    now: u64,
+) -> Result<()> {
+    if sessions.is_empty() {
+        return Ok(());
+    }
+    let Some(grant) = crate::run_grant::session_grant(&app.db, &m.project, now)? else {
+        sessions.retain(|s| s.state != crate::db::sessions::State::Queued.as_str());
+        for s in sessions.iter_mut() {
+            s.prompts.clear();
+        }
+        return Ok(());
+    };
+    let starting = |s: &arugula_control_wire::work::SessionWork| {
+        use crate::db::sessions::State as S;
+        s.state == S::Queued.as_str() || (s.state == S::Done.as_str() && !s.prompts.is_empty())
+    };
+    let log = match sessions.iter().any(starting) {
+        true => crate::run_grant::granter_log(app, &grant).await,
+        false => None,
+    };
+    for s in sessions.iter_mut() {
+        s.passkey_log = log.clone().filter(|_| starting(s));
+        s.grant = Some(grant.clone());
+    }
+    Ok(())
+}
+
 /// `GET /api/hosted/work` for `m`: the runs ready for it, with what it
 /// needs to check each before it starts, and its thread sessions. `takes`
 /// is what it said it takes.
@@ -257,14 +297,16 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             }
         }
     }
+    let now = arugula_e2e::now_ms();
+    under_grant(app, m, &mut sessions, now).await?;
+    // On every pull, for the runs and sessions going as well as the ones to
+    // start.
+    let revokes = app.db.run_grant_revokes(&m.project)?;
     if !takes.iter().any(|t| t == TAKES_RUN) {
-        return Ok(Work { sessions, ..Work::default() });
+        return Ok(Work { sessions, revokes, ..Work::default() });
     }
     let mut items = Vec::new();
     let ready = app.db.ready_runs(&m.project, &m.workspace, &m.machine, PULL_LIMIT)?;
-    // On every pull, for the runs going as well as the ones to start.
-    let revokes = app.db.run_grant_revokes(&m.project)?;
-    let now = arugula_e2e::now_ms();
     let takes_deploys = takes.iter().any(|t| t == TAKES_DEPLOY);
     for id in ready {
         // A deploy's run (M219) goes only to a machine that applies them,

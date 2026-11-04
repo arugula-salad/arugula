@@ -96,6 +96,10 @@ pub async fn route(
         }
         _ => return Err(crate::session_live::refused(&crate::db::sessions::Refused::Moved { now: s.state })),
     }
+    // A move starts its next turn on the other box.
+    if let Some(line) = super::grant::barred_for(&app, &s).await? {
+        return Err(arugula_control_common::refusal(StatusCode::CONFLICT, crate::run_grant::NO_GRANT, &line));
+    }
     let Some(to) = places(&app, &s).await?.into_iter().find(|p| p.workspace == b.workspace) else {
         return Err(err(StatusCode::BAD_REQUEST, "that isn't another of the project's workspaces with its repo"));
     };

@@ -32,7 +32,12 @@
 //!
 //! - **Feedback** (M260, [`crate::sessions::feedback::flush`]): CI's
 //!   failures and reviews on its branch that are due go to it as prompts,
-//!   first, so the rest of the step sees them queued.
+//!   first, so the rest of the step sees them queued. With no standing grant
+//!   they wait for one.
+//! - **The standing grant** ([`crate::sessions::grant`]): a session a revoke
+//!   takes back ends unless a turn is under way, and then ends when it does.
+//!   With no live grant, a queued one fails, saying so; any other stays, its
+//!   thread told once and what was queued for it dropped.
 //!
 //! It looks again in [`work::WAITING_MS`] while the session waits for its
 //! box, [`work::RUNNING_MS`] while a turn is under way, and [`IDLE_MS`]
@@ -48,6 +53,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
 
+use super::grant;
 use crate::{
     Platform,
     db::{
@@ -104,6 +110,10 @@ pub struct Checkpoint {
     /// When the job last saw a queued session's box with no room for it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_at: Option<u64>,
+    /// Its thread was told its project has no standing grant, and there
+    /// still isn't one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub told_no_grant: bool,
 }
 
 /// The `session` kind's handler.
@@ -125,9 +135,14 @@ impl Follow {
             db.uncancel_job(job, now)?;
         }
         let Some(s) = db.session(&job.id)? else { return Ok(Step::Done) };
+        let granted = crate::run_grant::session_grant(db, &s.project, now)?.is_some();
         // CI's failures and reviews that are due (M260): queued as its
-        // prompts, or, once it ended, dropped and said.
-        let feedback_due = crate::sessions::feedback::flush(&self.app, &s, now).await?;
+        // prompts, or, once it ended, dropped and said. With no grant they
+        // wait for one: there's nothing to send them to.
+        let feedback_due = match granted || s.state.terminal() {
+            true => crate::sessions::feedback::flush(&self.app, &s, now).await?,
+            false => None,
+        };
         if s.state.terminal() {
             return Ok(Step::Done);
         }
@@ -158,6 +173,47 @@ impl Follow {
                 return Ok(Step::Done);
             }
         }
+        // A revoke took it back: it ends, unless a turn is under way.
+        if state != State::Working && grant::ended_by_revoke(db, &s)? {
+            let s = db.session(&s.id)?.filter(|s| !s.state.terminal());
+            if let Some(s) = s
+                && grant::end(&self.app, &s, now)?
+            {
+                grant::say_ended(&self.app, &s)?;
+            }
+            return Ok(Step::Done);
+        }
+        let mut cp = job
+            .checkpoint
+            .as_ref()
+            .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
+            .unwrap_or_default();
+        if !granted {
+            // A box was to take it: it can't.
+            if state == State::Queued {
+                grant::fail_queued(&self.app, &s, now)?;
+                return Ok(Step::Done);
+            }
+            let dropped = db
+                .session_prompts(&s.id)?
+                .into_iter()
+                .filter(|p| p.state == PromptState::Queued)
+                .filter_map(|p| db.drop_prompt(&p.id, now).transpose())
+                .count();
+            if !cp.told_no_grant || dropped > 0 {
+                info!(session = s.id, dropped, "a live session's project has no standing grant");
+                if let Some(room) = db.chat_room(&s.room)? {
+                    crate::chat::sessions::say(&self.app, &room, s.parent_seq, &grant::live_line(&self.app, &s, now)?)?;
+                }
+                cp.told_no_grant = true;
+                job.checkpoint = Some(serde_json::to_value(&cp)?);
+                db.checkpoint_job(job, now)?;
+            }
+        } else if cp.told_no_grant {
+            cp.told_no_grant = false;
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
+        }
         let prompts = db.session_prompts(&s.id)?;
         let queued = prompts.iter().any(|p| p.state == PromptState::Queued);
         // Idle: done, nothing queued, and no prompt for a day. It ends, and
@@ -177,11 +233,6 @@ impl Follow {
             _ => false,
         };
         let room = db.box_has_room(&s.workspace, &s.id, now)?;
-        let mut cp = job
-            .checkpoint
-            .as_ref()
-            .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
-            .unwrap_or_default();
         // Not taken while its box had room: counted from its making, or
         // from when the job last saw the box full.
         if state == State::Queued {

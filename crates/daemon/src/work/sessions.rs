@@ -160,6 +160,11 @@ pub struct Session {
     #[serde(default)]
     pub block: Option<u32>,
     pub taken_at: u64,
+    /// The project's standing grant it last checked out under (aru-115, as
+    /// amended), for the revokes that end it. `None` in a ledger from before
+    /// a session's work carried one, until a pull lists one that checks out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<arugula_e2e::project_grant::ProjectGrant>,
     /// This box's latest report number in it.
     pub n: u64,
     /// Its state by this box's own reports.

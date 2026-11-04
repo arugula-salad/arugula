@@ -68,11 +68,43 @@ pub(crate) async fn platform_with(
     app.db.add_chat_room(&general, &["a", "b", "x", "y"], Some(&t)).unwrap();
     let keys = DeviceKeys::generate();
     add_box(&app, &t, "hw_dev", "dev", repos, Some(&keys.id()));
+    allow(&app, &t);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     (hub, app, base, t, u, keys)
+}
+
+/// `project` gets a live standing grant (aru-099), a v1 signed by a device
+/// nobody here checks: sessions run under it. What it gets.
+pub(crate) fn allow(app: &Platform, project: &str) -> arugula_e2e::project_grant::ProjectGrant {
+    let keys = DeviceKeys::generate();
+    let holder = app.db.project_holder(project).unwrap().unwrap();
+    let owner = match holder {
+        (_, Some(team)) => format!("team:{team}"),
+        (Some(account), None) => format!("account:{account}"),
+        _ => panic!("no holder"),
+    };
+    let mut d = arugula_e2e::hosted::Delegation {
+        project: project.into(),
+        owner,
+        key: arugula_e2e::hosted::HostedKey::from_seed(&[1; 32]).public(),
+        at: 1,
+        by: String::new(),
+        sig: String::new(),
+    };
+    d.sign_with(&keys);
+    let now = arugula_e2e::now_ms();
+    let mut g = arugula_e2e::project_grant::ProjectGrant::new(&d, now.saturating_sub(1), Some(now + 86_400_000));
+    g.sign_with(&keys);
+    assert_eq!(app.db.add_run_grant(&g, "a", now).unwrap(), crate::db::run_grants::Added::Kept);
+    g
+}
+
+/// `project` has no standing grant, as if none was ever given.
+pub(crate) fn forbid(app: &Platform, project: &str) {
+    app.db.c().execute("DELETE FROM run_grants WHERE project_id = ?1", params![project]).unwrap();
 }
 
 /// A hosted workspace `id` called `name` in `project`, cloning `repos`.

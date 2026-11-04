@@ -255,6 +255,10 @@ pub async fn asked(app: &Platform, room: &Room, thread: u64, author: &str, text:
         say(app, room, thread, &line.replace("@arugula", "@codex review"))?;
         return Ok(());
     }
+    if let Some(line) = super::grant::barred_for(app, &s).await? {
+        say(app, room, thread, &line.replace("@arugula", "@codex review"))?;
+        return Ok(());
+    }
     if !pushed(&app.db.session_events(&s.id)?) {
         say(app, room, thread, NOTHING_PUSHED)?;
         return Ok(());

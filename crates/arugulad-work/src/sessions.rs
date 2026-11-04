@@ -123,6 +123,7 @@ use arugula_control_wire::work::{
 };
 use arugula_e2e::{
     now_ms,
+    project_grant::{INSTRUCT, ProjectGrant, Running},
     session::{Event, Kind, State},
 };
 use arugula_proto::{BlockType, api::OpenRequest};
@@ -131,7 +132,13 @@ use tracing::{info, warn};
 
 use crate::work::sessions::{DIR, Kept, Parked, Session, Turn, all, block_gone, block_is, good_id, live, path, read};
 pub(crate) use crate::work::sessions::{slots, takes};
-use crate::{agent::hosted::AsUser, mux::Api, server::App};
+use crate::{
+    agent::hosted::AsUser,
+    control::REFRESH_WAIT,
+    hosted::runs::{self, NO_GRANT, PIN_CAN_CHANGE},
+    mux::Api,
+    server::App,
+};
 
 /// The mux session sessions' blocks open in.
 pub const BLOCKS: &str = "sessions";
@@ -376,16 +383,64 @@ fn running(dir: &Path) -> usize {
     live(dir).iter().filter(|l| l.parked.is_none()).count()
 }
 
+/// The project's standing grant lets the platform have session `w` start a
+/// turn here now: `runs.instruct`, checked against what this box pinned, with
+/// every revoke it kept. The grant, when it does.
+fn checked(app: &App, w: &SessionWork) -> Result<ProjectGrant, runs::Refused> {
+    let grant = w.grant.clone().ok_or(NO_GRANT)?;
+    let start = arugula_control_wire::runs::RunStart {
+        project: w.project.clone(),
+        workspace: w.workspace.clone(),
+        run: None,
+        cap: INSTRUCT.into(),
+        grant: grant.clone(),
+        revokes: vec![],
+        passkey_log: w.passkey_log.clone(),
+    };
+    runs::allows(app, &start)?;
+    Ok(grant)
+}
+
+/// [`checked`], before something that starts a turn. What this box pinned of
+/// who may sign can be a refresh old (a passkey just added, to sign the grant
+/// that's asked about), so one refused for that is asked again after a
+/// refresh, rather than failing a session a minute's wait would let through.
+async fn allowed(app: &App, w: &SessionWork) -> Result<ProjectGrant, runs::Refused> {
+    match checked(app, w) {
+        Err(r) if PIN_CAN_CHANGE.contains(&r.code) => {
+            app.control.refresh_now(REFRESH_WAIT).await;
+            checked(app, w)
+        }
+        r => r,
+    }
+}
+
+/// A session this box won't start a turn on: what its report says.
+fn why_not(r: runs::Refused) -> String {
+    format!("{}: {}", r.code, r.says)
+}
+
 /// A pull's sessions: kept as the latest word on each; the ones this box
-/// runs that aren't listed any more are stopped; queued ones are taken
+/// runs that aren't listed any more are stopped; each keeps the project's
+/// grant that checks out, for the revokes that end it; queued ones are taken
 /// while there's a slot; and each one it runs is followed.
 pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
     let dir = app.control.state_dir().to_owned();
     let listed: BTreeMap<String, SessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
     *LATEST.lock().unwrap_or_else(|e| e.into_inner()) = Some(listed.clone());
     for l in live(&dir) {
-        if !listed.contains_key(&l.session) {
+        let Some(w) = listed.get(&l.session) else {
             end(app, &l.session, "control says it ended").await;
+            continue;
+        };
+        // A revoke over what it holds ends it ([`stop_revoked`]), whatever
+        // newer grant is listed by now.
+        if w.grant.is_some()
+            && w.grant != l.grant
+            && runs::revoke_over(app, l.grant.as_ref(), l.taken_at).is_none()
+            && let Ok(g) = checked(app, w)
+        {
+            update(&dir, &l.session, |now| now.grant = Some(g));
         }
     }
     for (id, w) in &listed {
@@ -397,6 +452,23 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
         follow(app, &l.session);
     }
     send_all(app).await;
+}
+
+/// End the sessions a revoke kept here takes back: at once if it says
+/// `running stop`, or there's no turn under way; else when that turn ends,
+/// with what it did reported first ([`step`] gives it no fix, and no other
+/// turn starts). After each pull, with the project's revokes; a relayed
+/// revoke asks for a pull.
+pub async fn stop_revoked(app: &Arc<App>) {
+    for l in live(app.control.state_dir()) {
+        let Some(how) = runs::revoke_over(app, l.grant.as_ref(), l.taken_at) else { continue };
+        let turn_going = l.now() == State::Working && l.turn.as_ref().is_some_and(|t| t.sent);
+        if how == Running::Finish && turn_going {
+            continue;
+        }
+        info!(session = l.session, "hosted: ending a session: its standing grant was revoked");
+        fail(app, &l.session, super::REVOKED).await;
+    }
 }
 
 /// After a restart: follow every session this box runs, and send what's
@@ -522,6 +594,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         checkout: dest,
         block: None,
         taken_at: now_ms(),
+        grant: None,
         n: w.n,
         state: State::Queued.as_str().into(),
         ended: None,
@@ -561,6 +634,10 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
             let _ = update(&dir, &l.session, |now| *now = l.clone());
         }
     };
+    match allowed(app, w).await {
+        Ok(g) => l.grant = Some(g),
+        Err(r) => return fail(l, why_not(r)),
+    }
     if !good_branch(&w.session, &w.branch) {
         return fail(l, format!("its branch isn't the session's own: {}", super::printable(&w.branch)));
     }
@@ -1091,6 +1168,12 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if s.turns > t.base || s.queued > 0 {
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| started(now, &k, &m)));
+            } else if let Some(Err(r)) = match &work {
+                Some(w) => Some(allowed(app, w).await),
+                None => None,
+            } {
+                fail(app, id, &why_not(r)).await;
+                return false;
             } else if let Some(text) = t.fix.clone() {
                 give_fix(app, &b, id, text, &keys, &me).await;
             } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
@@ -1133,8 +1216,10 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 }
                 // One fix, after a turn that ran and wasn't cancelled.
                 let went = s.turns > t.base && s.error.is_none() && s.status != "exited" && s.status != "stopped";
+                // A fix is another turn: not once the grant's gone.
+                let may_fix = work.as_ref().is_some_and(|w| checked(app, w).is_ok());
                 let fix = match &finished {
-                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went => Some(fix_prompt(r)),
+                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went && may_fix => Some(fix_prompt(r)),
                     _ => None,
                 };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
@@ -1268,6 +1353,16 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                     now.push(&k, &m, Kind::State, State::Working, d);
                 }));
             } else if let Some(p) = next {
+                // A follow-up is listed only with a grant to run it under:
+                // refused here, the platform's word and this box's differ,
+                // and the card says why.
+                if let Some(Err(r)) = match &work {
+                    Some(w) => Some(allowed(app, w).await),
+                    None => None,
+                } {
+                    fail(app, id, &why_not(r)).await;
+                    return false;
+                }
                 hand(app, &b, id, p, &keys, &me, s.turns).await;
             } else if l.now() == State::Done
                 && work.as_ref().is_some_and(|w| w.park)
@@ -1340,6 +1435,9 @@ async fn unpark(app: &Arc<App>, l: &Session, keys: &Arc<arugula_e2e::DeviceKeys>
     }
     if !w.prompts.iter().any(|p| !l.handed.contains(&p.id)) || running(&dir) >= MAX_SESSIONS_PER_BOX {
         return;
+    }
+    if let Err(r) = allowed(app, &w).await {
+        return fail(app, &l.session, &why_not(r)).await;
     }
     let sid = l.parked.as_ref().and_then(|p| p.agent_session.clone());
     let block = match open_block(app, l, sid.as_deref()).await {

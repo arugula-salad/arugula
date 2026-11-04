@@ -199,7 +199,9 @@ pub struct Work {
     /// Every revoke of the project's grants the platform holds, on every
     /// pull, ready runs or not: a machine checks them against the grants
     /// its runs going were started under, and stops those a `running stop`
-    /// covers.
+    /// covers, and against its sessions' grants, ending those any revoke
+    /// covers (a turn under way finishes first, unless it says `running
+    /// stop`).
     #[serde(default)]
     pub revokes: Vec<GrantRevoke>,
     /// The sessions on this machine's workspace that haven't ended, for a
@@ -406,6 +408,21 @@ pub struct SessionWork {
     /// for it ([`MAX_SESSIONS_PER_BOX`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub park: bool,
+    /// The project's standing grant, on every pull while it has a live one
+    /// that gives `runs.instruct` (aru-115, as amended): the box checks it
+    /// against what it pinned before it takes the session or starts a turn
+    /// (`arugula_e2e::project_grant::check`), and keeps the last one that
+    /// checked out, for the revokes that come with every pull
+    /// ([`Work::revokes`]). With none, the box starts nothing new; a turn
+    /// under way finishes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<ProjectGrant>,
+    /// A v2 grant's granter's passkey log, as the platform read it from the
+    /// hub (DK6, as [`WorkItem::passkey_log`]), while the session may be
+    /// about to start a turn: the machine takes only its removals. `None`:
+    /// it goes by what it pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_log: Option<arugula_e2e::passkey::Log>,
 }
 
 /// The agents a session runs on (M264): Claude Code and Codex, through

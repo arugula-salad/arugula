@@ -211,6 +211,17 @@ impl Db {
         Ok(newest)
     }
 
+    /// Whether one of the project's grants was revoked since `at` (ms, the
+    /// platform's clock): what was live then is taken back.
+    pub fn run_grant_revoked_since(&self, project: &str, at: u64) -> Result<bool> {
+        let n: u64 = self.c().query_row(
+            "SELECT count(*) FROM run_grants WHERE project_id = ?1 AND revoked_at >= ?2",
+            params![project, at],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
     /// Revoke every grant of `r`'s project under its delegation made at or
     /// before its time that isn't revoked yet: how many. The caller checked
     /// the revoke is well formed and for this project.

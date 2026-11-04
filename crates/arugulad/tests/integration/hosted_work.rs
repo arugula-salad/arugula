@@ -14,6 +14,7 @@
 //!   its end is reported; with no bucket, the run runs and its log stays
 //!   in its pane;
 //! - a run the box's crash interrupts fails, and never runs again (M223);
+//! - an agent run needs `runs.instruct` as well as `runs.start`;
 //! - DK6: a run starts under a passkey-signed grant (v2), checked against
 //!   the passkey log the box pinned from control, as does one under a
 //!   device-signed v1 until it expires; a passkey revoke stops new runs
@@ -607,6 +608,32 @@ fn a_hosted_machine_runs_each_run_once() {
     assert!(stopped.detail.contains("standing grant was revoked"), "{}", stopped.detail);
     assert_eq!(lines(&four), 0);
     f.revokes.lock().unwrap().clear();
+
+    // An agent run is an instruction: a grant with `runs.start` alone starts
+    // a command but not an agent, and one with `runs.instruct` alone starts
+    // neither.
+    let narrow = |cap: &str| {
+        let mut g = ProjectGrant::new(&f.delegation, arugula_e2e::now_ms(), Some(arugula_e2e::now_ms() + 1_000_000));
+        g.caps = vec![cap.into()];
+        g.sign_with(&f.root);
+        g
+    };
+    let instructed = Op { instruction: Some("fix the build".into()), ..Op::default() };
+    let (i, j, k) = (run_id('6'), run_id('9'), run_id('0'));
+    let cmd_ran = marks.join("narrow-command");
+    let cmd =
+        Op { argv: vec!["sh".into(), "-c".into(), format!("echo ran >> {}", cmd_ran.display())], ..Op::default() };
+    f.items.lock().unwrap().push(f.item_of(&i, &instructed, narrow("runs.start")));
+    wait(&marks, &f, "run 6 refused", || f.reports_of(&i).len() == 1);
+    assert_eq!(f.reports_of(&i)[0].to, "failed");
+    assert!(f.reports_of(&i)[0].detail.contains("grant_not_covered"), "{}", f.reports_of(&i)[0].detail);
+    assert!(!marks.join("claude").exists(), "no agent ran");
+    f.items.lock().unwrap().push(f.item_of(&j, &cmd, narrow("runs.start")));
+    wait(&marks, &f, "run 9 reported", || f.reports_of(&j).len() == 2);
+    assert_eq!(lines(&cmd_ran), 1, "a command runs under runs.start");
+    f.items.lock().unwrap().push(f.item_of(&k, &cmd, narrow("runs.instruct")));
+    wait(&marks, &f, "run 0 refused", || f.reports_of(&k).len() == 1);
+    assert!(f.reports_of(&k)[0].detail.contains("grant_not_covered"), "{}", f.reports_of(&k)[0].detail);
 
     // C1: a run copies only a directory under the box user's home.
     let g = run_id('1');
