@@ -80,6 +80,8 @@ mod chat_tests;
 #[cfg(test)]
 mod chat_threads_tests;
 #[cfg(test)]
+mod chat_wants_tests;
+#[cfg(test)]
 mod forge_mentions_tests;
 #[cfg(test)]
 mod forge_viewer_tests;

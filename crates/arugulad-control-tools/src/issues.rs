@@ -54,7 +54,9 @@ pub struct CreateArgs {
 pub struct CommentArgs {
     /// The issue: "#N" (in the current project) or "iss_…".
     pub issue: String,
-    /// The comment, in markdown; @login mentions a person there.
+    /// The comment, in markdown; @login mentions a person there. Mention
+    /// whoever you need to decide or answer: a comment that names nobody
+    /// reaches no one's inbox.
     pub text: String,
     #[serde(default)]
     pub project: Option<String>,

@@ -4,10 +4,10 @@
 // (issues come with it); Bob is a viewer. Alice opens an issue and
 // comments; Bob, who can't open one, reads it on a phone, comments, and
 // Alice has it over the live stream; Alice closes it as not planned and
-// the timeline says so. What's new in an issue's thread is on its row and
-// the Issues place, and in the inbox's New in threads, never on the Chat
-// button (chat doesn't list the thread); opening the issue, or Done in the
-// inbox, reads it. Open on GitHub asks for a linked repo first (M205). A
+// the timeline says so. What's new in an issue's thread is a dot on its row;
+// on an issue assigned to you it's a count on the row and the Issues place,
+// and in the inbox's New in threads. It's never on the Chat button (chat
+// doesn't list the thread); opening the issue, or Done in the inbox, reads it. Open on GitHub asks for a linked repo first (M205). A
 // local control (team-fixture.ts, `--platform-host app.localhost`), as
 // platform.spec.ts runs it.
 
@@ -119,10 +119,11 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   await view.locator(".thread-compose textarea").fill("Same here on the phone");
   await view.locator(".thread-compose textarea").press("Enter");
   await expect(view.locator(".thread-msg").last()).toContainText("Same here on the phone");
-  // Alice has it with no reload: a dot on its row and a count on Triage.
+  // Alice has it with no reload: a dot on its row. It isn't her issue and
+  // doesn't mention her, so nothing counts it.
   await alice.locator("[data-issues-search]").fill("");
-  await expect(alice.locator("[data-issue-row] [data-thread-unread]")).toHaveAttribute("data-thread-unread", "1", { timeout: 15_000 });
-  await expect(alice.locator("[data-platform-triage] [data-place-unread]")).toHaveAttribute("data-place-unread", "1");
+  await expect(alice.locator("[data-issue-row] [data-thread-new]")).toHaveAttribute("data-thread-new", "1", { timeout: 15_000 });
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-triage] [data-place-unread]")).toHaveCount(0);
   // Control's page has the thread unread too, and its Chat button doesn't
   // count it: chat doesn't list an issue's thread.
   const shell = await alice.context().newPage();
@@ -138,7 +139,7 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   await expect(alice.locator("[data-issue] .thread-msg").last()).toContainText("Same here on the phone", { timeout: 15_000 });
   await alice.locator("[data-issue-back]").click();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1);
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-triage] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-new]")).toHaveCount(0);
   await alice.locator("[data-issue-row] a").first().click();
   await expect(alice.locator("[data-issue] [data-issue-title]")).toHaveText("Search misses hyphenated words");
 
@@ -170,8 +171,20 @@ test("the owner closes it as not planned, and the timeline and the lists say so"
   await expect(view.locator('[data-issue-event="reopened"]')).toBeVisible();
 });
 
-test("what's new in its thread is in the inbox, and Dismiss there reads it", async () => {
+test("what's new in the thread of an issue assigned to you is in the inbox, and Dismiss there reads it", async () => {
   test.setTimeout(90_000);
+  const issue = /iss_[0-9a-f]+/.exec(issuePath)![0];
+  const assigned = await alice.evaluate(async (id) => {
+    const { me } = (await (await fetch("/api/projects", { credentials: "same-origin" })).json()) as { me: { account: string } };
+    const r = await fetch(`/api/issues/${id}`, {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignees: { add: [me.account] } }),
+    });
+    return r.status;
+  }, issue);
+  expect(assigned).toBe(200);
   await alice.locator("[data-issue-back]").click();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1);
   await platform(bob, issuePath);
