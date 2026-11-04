@@ -14,7 +14,12 @@ const said = (n: number, mention: boolean) => `${n} new in its thread${mention ?
  * thread has nothing new. */
 export function ThreadUnread({ target }: { target: string }) {
   useSubscribe((fn) => chat.subscribe(fn));
-  const { n, mention } = objectUnread(chat.rooms, target);
+  const { n, mention, quiet } = objectUnread(chat.rooms, target);
+  // New, and asking nothing of the reader: a dot with no number.
+  if (quiet) {
+    const title = `${quiet} new in its thread`;
+    return <span class="thread-unread quiet" title={title} aria-label={title} data-thread-new={quiet}><span class="thread-unread-dot" aria-hidden="true" /></span>;
+  }
   if (!n) return null;
   return (
     <span class={mention ? "thread-unread mention" : "thread-unread"} title={said(n, mention)} aria-label={said(n, mention)} data-thread-unread={n}>
@@ -30,7 +35,7 @@ export function PlaceUnread({ project, prefix }: { project: string; prefix: "iss
   const { n, mention } = projectUnread(chat.rooms, project, prefix);
   if (!n) return null;
   const what = prefix === "iss_" ? "issues'" : "runs'";
-  const title = `${n} unread in this project's ${what} threads${mention ? ", mentioning you" : ""}`;
+  const title = `${n} for you in this project's ${what} threads${mention ? ", mentioning you" : ""}`;
   // The rows' mark, a dot before the count, so "Issues 29" doesn't read
   // as 29 issues (UI audit #159); a reader hears the title.
   return (

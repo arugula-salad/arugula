@@ -64,6 +64,27 @@ impl Db {
         )
     }
 
+    /// Which of these native issues are open and assigned to `account`.
+    /// One statement; an id that isn't there isn't in the list.
+    pub fn issues_assigned_open(&self, account: &str, ids: &[&str]) -> anyhow::Result<Vec<String>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let rows: Vec<(String, String)> = c.query_map(
+            &format!("SELECT id, assignees FROM issues WHERE closed_at IS NULL AND {}", in_json(&c, "id", 1)),
+            params![json_list(ids)?],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(rows
+            .into_iter()
+            .filter(|(_, assignees)| {
+                serde_json::from_str::<Vec<String>>(assignees).is_ok_and(|a| a.iter().any(|x| x == account))
+            })
+            .map(|(id, _)| id)
+            .collect())
+    }
+
     /// The runs with these ids (`run_…`, M210): each one's id and project.
     /// One statement; an id that isn't there isn't in the list.
     pub fn run_places(&self, ids: &[&str]) -> anyhow::Result<Vec<(String, String)>> {
