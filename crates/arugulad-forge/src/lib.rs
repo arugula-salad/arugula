@@ -1323,12 +1323,15 @@ impl ForgeBlock {
     fn platform_drafts(&self) -> Vec<Draft> {
         let control = live::control();
         let p = self.platform.lock().unwrap();
-        if p.link.is_none() {
-            return vec![];
-        }
+        let Some(link) = &p.link else { return vec![] };
+        // A viewer's machine can neither send nor drop another's draft, so
+        // its card never asks about one: only the owner's own show here.
+        let only_own = link.role.as_deref() == Some("viewer");
+        let owner = control.as_ref().and_then(|c| c.account());
         p.drafts
             .iter()
             .filter(|d| d.state == "waiting")
+            .filter(|d| !only_own || owner.as_deref() == Some(d.author.as_str()))
             .filter_map(|d| {
                 let author = control.as_ref().and_then(|c| c.name_of_account(&d.author));
                 platform::shown(d, author.as_deref().unwrap_or("a person"), p.errors.get(&d.id).cloned())
@@ -1377,6 +1380,7 @@ impl ForgeBlock {
         };
         self.platform.lock().unwrap().link = Some(link.clone());
         let mut changed = false;
+        let mut quiet = true;
         let waiting: Vec<Draft> = {
             let refused = self.platform.lock().unwrap().refused.clone();
             self.config.lock().unwrap().drafts.iter().filter(|d| !refused.contains(&d.id)).cloned().collect()
@@ -1398,6 +1402,7 @@ impl ForgeBlock {
                 }
                 Err(platform::Failed::Later(why)) => {
                     self.say_once(why);
+                    quiet = false;
                     break;
                 }
             }
@@ -1411,7 +1416,11 @@ impl ForgeBlock {
                     p.errors.retain(|id, _| list.iter().any(|d| d.id == *id));
                     changed |= p.drafts != list;
                     p.drafts = list;
-                    p.said = None;
+                    // What the upload just said stays said: a list that
+                    // works doesn't make the next poll say it again.
+                    if quiet {
+                        p.said = None;
+                    }
                 }
                 Err(platform::Failed::NotLinked) => platform::forget(&repo),
                 Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.say_once(why),

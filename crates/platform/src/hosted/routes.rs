@@ -21,7 +21,7 @@
 //! A workspace names who made it (`created_by`) only while they're in the
 //! project now ([`Members`]): one a former member made says nobody. The
 //! row keeps the name, for the worker's plan of who pays for its
-//! inference.
+//! inference. Chat's link card for a workspace says the same.
 
 use std::sync::Arc;
 
@@ -101,14 +101,16 @@ fn found(w: Option<HostedWorkspace>) -> Result<HostedWorkspace, ApiError> {
 /// Who's in a project now, as its workspaces are shown (module docs): a
 /// personal project's account, or a team's roster (through the cache, as
 /// a read of the project is). Read once per project, never per workspace.
-enum Members {
+/// Someone on a locked team's roster is still in it: only who left is
+/// not.
+pub enum Members {
     Account(String),
     Team(Team),
     Nobody,
 }
 
 impl Members {
-    async fn of(app: &Platform, project: &str) -> Result<Self, ApiError> {
+    pub async fn of(app: &Platform, project: &str) -> Result<Self, ApiError> {
         Ok(match app.db.project_holder(project)? {
             Some((Some(a), _)) => Members::Account(a),
             Some((None, Some(t))) => app.cache.team(&*app.hub, &t).await?.map_or(Members::Nobody, Members::Team),
@@ -116,26 +118,46 @@ impl Members {
         })
     }
 
-    fn has(&self, account: &str) -> bool {
+    /// [`Members::of`] where the answer only names people: a roster that
+    /// can't be read now names nobody, rather than failing what's done.
+    pub async fn or_nobody(app: &Platform, project: &str) -> Self {
+        Self::of(app, project).await.unwrap_or_else(|e| {
+            tracing::warn!(project, error = %e.1, "reading a project's members to name a workspace's maker");
+            Members::Nobody
+        })
+    }
+
+    pub fn has(&self, account: &str) -> bool {
         match self {
             Members::Account(a) => a == account,
-            Members::Team(t) => t.role(account).is_some(),
+            Members::Team(t) => t.members.iter().any(|m| m.account == account),
             Members::Nobody => false,
         }
     }
 
+    /// `account` if they're in, as a maker is named.
+    pub fn named(&self, account: Option<String>) -> Option<String> {
+        account.filter(|a| self.has(a))
+    }
+
     /// The workspace as it's shown: its maker named only while they're in.
-    fn shown(&self, mut w: HostedWorkspace) -> HostedWorkspace {
-        if w.created_by.as_deref().is_some_and(|a| !self.has(a)) {
-            w.created_by = None;
-        }
+    pub fn shown(&self, mut w: HostedWorkspace) -> HostedWorkspace {
+        w.created_by = self.named(w.created_by.take());
         w
     }
 }
 
-/// One workspace as it's shown to a member of `project`.
+/// One workspace as it's shown to a member of `project`, before anything
+/// is done to it.
 async fn shown(app: &Platform, project: &str, w: HostedWorkspace) -> Result<HostedWorkspace, ApiError> {
     Ok(Members::of(app, project).await?.shown(w))
+}
+
+/// One workspace as it's shown after something was done to it (a wake, a
+/// rebuild, a delete, a new spec): the maker's name is never what fails
+/// an answer about a thing that's done.
+async fn shown_after(app: &Platform, project: &str, w: HostedWorkspace) -> HostedWorkspace {
+    Members::or_nobody(app, project).await.shown(w)
 }
 
 pub async fn list(
@@ -196,7 +218,7 @@ pub async fn open(
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     if w.state == "paused" && super::ask(&app, &w.id, Ask::Wake)? {
         let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
-        return Ok(Json(shown(&app, &project, w).await?));
+        return Ok(Json(shown_after(&app, &project, w).await));
     }
     Ok(Json(shown(&app, &project, w).await?))
 }
@@ -214,7 +236,7 @@ pub async fn rebuild(
     }
     info!(%account, %project, workspace = %w.id, "asked to rebuild a hosted workspace");
     let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
-    Ok(Json(shown(&app, &project, w).await?))
+    Ok(Json(shown_after(&app, &project, w).await))
 }
 
 pub async fn delete(
@@ -232,7 +254,7 @@ pub async fn delete(
     info!(%account, %project, workspace = %w.id, "asked to delete a hosted workspace");
     app.analytics.capture(&account, "hosted workspace deleted", json!({}));
     let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
-    Ok(Json(shown(&app, &project, w).await?))
+    Ok(Json(shown_after(&app, &project, w).await))
 }
 
 /// `PUT /api/projects/{project}/workspaces/{id}/spec`: what its box is
@@ -250,7 +272,7 @@ pub async fn set_spec(
     spec.check().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e))?;
     let w = found(app.db.set_hosted_spec(&project, &w.id, &spec, now_ms())?)?;
     info!(%account, %project, workspace = %w.id, rebuild_needed = w.rebuild_needed, "changed a hosted workspace's spec");
-    Ok(Json(shown(&app, &project, w).await?))
+    Ok(Json(shown_after(&app, &project, w).await))
 }
 
 /// `GET /api/projects/{project}/workspaces/{id}/secrets`.

@@ -1045,6 +1045,25 @@ impl Db {
         self.c().query_map("SELECT DISTINCT repo_id FROM drafts WHERE author = ?1", params![author], |r| r.get(0))
     }
 
+    /// The draft a machine's upload made before, by its `import_key`
+    /// (`<machine>:<key>`), if it's on a readable repo: what a second
+    /// upload is answered with before anything else is decided.
+    pub fn kept_upload(&self, r: &Readable, import_key: &str) -> anyhow::Result<Option<DraftRow>> {
+        if r.repos().is_empty() {
+            return Ok(None);
+        }
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.import_key = ?1 AND d.repo_id IN ({})",
+                    repos_in(r)
+                ),
+                params![import_key],
+                draft_row,
+            )
+            .optional()
+    }
+
     /// Keep a draft on a readable repo: it, and whether it's new. One with
     /// an `import_key` kept before is answered with that one, unless it's
     /// another author's ([`Taken`](super::Taken)). `None` when the repo

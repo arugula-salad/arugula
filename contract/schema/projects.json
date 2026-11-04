@@ -640,6 +640,13 @@
             "null"
           ]
         },
+        "role": {
+          "description": "The reader's role in the project it's linked to (`owner`, `editor`\nor `viewer`), when it's linked for them: a viewer's machine makes\nno drafts on the platform, so its blocks raise only the owner's own.\nAbsent from a control before this.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "why": {
           "default": null,
           "type": [
