@@ -394,4 +394,37 @@ test.describe("phone", () => {
     await paneEl(page, id).getByRole("button", { name: "Deny", exact: true }).tap();
     await expect(paneEl(page, id).locator(".agent-msg").last()).toHaveText("Not allowed.");
   });
+
+  test("a long-press on a link in the transcript is the browser's; elsewhere, the pane's menu", async ({ page }) => {
+    await reset(page);
+    await page.locator(".sheet-button").click();
+    await page.getByRole("button", { name: "New agent" }).click();
+    await startFake(page, "hello");
+    await expect.poll(() => agentBlock(page)).not.toBeNull();
+    const block = paneEl(page, (await agentBlock(page))!);
+    await expect(block.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
+    await block.locator(".agent-log").evaluate((log) => {
+      const a = document.createElement("a");
+      a.id = "t619-link";
+      a.href = "https://example.com/";
+      a.textContent = "a link";
+      log.append(a);
+    });
+    const press = (selector: string) =>
+      page.evaluate((selector) => {
+        const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        document.querySelector(selector)!.dispatchEvent(e);
+        return e.defaultPrevented;
+      }, selector);
+    expect(await press("#t619-link")).toBe(false);
+    await expect(page.getByRole("menuitem")).toHaveCount(0);
+    // Selected transcript text keeps the browser's Copy.
+    await block.locator(".agent-msg").last().evaluate((el) => {
+      getSelection()!.selectAllChildren(el);
+    });
+    expect(await press(".agent-msg:last-of-type")).toBe(false);
+    await page.evaluate(() => getSelection()!.removeAllRanges());
+    expect(await press(".agent-log")).toBe(true);
+    await expect(page.getByRole("menuitem").first()).toBeVisible();
+  });
 });
