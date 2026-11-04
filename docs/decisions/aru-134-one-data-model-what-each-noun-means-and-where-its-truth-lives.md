@@ -40,7 +40,7 @@ constrains:
 # One data model: what each noun means and where its truth lives
 
 The product went from machine-first to teams to a project platform quickly, and
-each shift added nouns without retiring the old ones. Four decisions settle the
+each shift added nouns without retiring the old ones. Five decisions settle the
 worst of it (Jake, 2026-11-03), and [docs/data-model.md](../data-model.md) holds
 the whole model, including where the code doesn't match it yet.
 
@@ -57,6 +57,9 @@ the whole model, including where the code doesn't match it yet.
   stays open.
 - **A team has its one default project for now.** aru-072 already gives a team a
   default project. Nothing creates a second until a team needs one.
+- **A room is any place people chat.** "Thread" is only for replies and threads
+  on an object, and "conversation" only for Claude Code. MCP's `read_thread` and
+  `post_thread` keep their names for launch.
 
 The security distinctions that look like duplicates stay as they are:
 `docs/data-model.md` lists them under "Don't merge these".
