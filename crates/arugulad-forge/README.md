@@ -5,7 +5,7 @@ here rebuilds this crate, Labs and the binary, not the daemon: pull requests
 and issues as forge blocks (M36–M38, read with the person's `gh`, agents
 draft and people send), project issues pinned from the platform (`native.rs`,
 M203) and its mirror (`pin.rs`, `platform.rs`), live updates through
-control's GitHub App (`live.rs`, `shadow.rs`), and control's `forge.send`
+control's GitHub App (`live.rs`), and control's `forge.send`
 op (`send_op.rs`). The reader and the model are `arugula-forge-github`'s
 ([crates/forge-github](../forge-github/README.md)).
 

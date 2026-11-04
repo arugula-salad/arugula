@@ -886,21 +886,6 @@
       ],
       "type": "object"
     },
-    "InboxShadow": {
-      "description": "What an opted-in machine's forge blocks want of its owner (the shadow\nperiod, M171): items and reasons, never a title.",
-      "properties": {
-        "blocks": {
-          "items": {
-            "$ref": "#/$defs/ShadowBlock"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "blocks"
-      ],
-      "type": "object"
-    },
     "LinkRepo": {
       "description": "`POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project\nmember who is an admin or maintainer of it on GitHub may. When the\nGitHub App isn't installed where it lives, the answer is a 409 with\n`reason: \"install_app\"` and `install_url`, GitHub's page to install it,\nwhich brings them back to the project's settings.",
       "properties": {
@@ -1240,73 +1225,6 @@
           ]
         }
       },
-      "type": "object"
-    },
-    "ShadowBlock": {
-      "properties": {
-        "drafts": {
-          "default": [],
-          "description": "The platform's waiting drafts the block shows (`dft_` ids): its\n`draft` reason, when one is the owner's.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reasons": {
-          "description": "What the block's attention rules find now, as [`INBOX_REASONS`]\n(`draft` aside), whether or not the person looked.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "description": "`OWNER/NAME` on github.com.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo",
-        "number",
-        "reasons"
-      ],
-      "type": "object"
-    },
-    "ShadowCompared": {
-      "properties": {
-        "agree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "compared": {
-          "description": "Blocks on items the platform has, and how many agreed.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "disagree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "explained": {
-          "default": 0,
-          "description": "Differences the platform can't help by design (a mention where\ncontent isn't mirrored): not in `compared`.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "compared",
-        "agree",
-        "disagree"
-      ],
       "type": "object"
     },
     "TrackerClose": {

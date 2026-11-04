@@ -1,7 +1,7 @@
 //! The inbox (M171) on the viewer tests' world (`viewer_tests::world`),
 //! against a fake GitHub: each reason from seeded rows, a private item
 //! never in an inbox or a push for a member GitHub doesn't let read it,
-//! one push per reason, seen and done, and the shadow comparison. Runs on
+//! one push per reason, seen and done. Runs on
 //! SQLite and, with `ARUGULA_TEST_POSTGRES_URL` (`just
 //! test-platform-postgres`), Postgres.
 
@@ -332,57 +332,14 @@ async fn seen_and_done() {
     assert!(v["entries"][0]["seen_at"].is_null(), "{v}");
 }
 
-/// A machine's blocks against the platform's inbox for its owner: what
-/// agrees, what doesn't, and what isn't compared.
-#[tokio::test]
-async fn the_shadow_comparison() {
-    let (_hub, _gh, app, base) = setup().await;
-    exec(
-        &app,
-        "INSERT INTO drafts (id, project_id, author, agent_name, repo_id, number, kind, body, created_at, updated_at)
-         SELECT 'dft_b', project_id, 'bob', 'mcp:claude-code', 77, 1, 'comment', 'lgtm', 1, 1
-         FROM linked_repos WHERE repo_id = 77",
-        params![],
-    );
-    inbox::recompute(&app, 77, &[1], false).await.unwrap();
-    inbox::recompute(&app, 88, &[2], false).await.unwrap();
-    let report = json!({ "blocks": [
-        // Agrees, its draft and all.
-        { "repo": "acme/app", "number": 1, "reasons": ["review_requested"], "drafts": ["dft_b"] },
-        // The block found a mention the platform has no text for (acme/site
-        // doesn't mirror content): explained, not compared.
-        { "repo": "Acme/Site", "number": 2, "reasons": ["mentioned"] },
-        // The block doesn't show the draft: disagrees.
-        { "repo": "acme/app", "number": 1, "reasons": ["review_requested"] },
-        // Not compared: eve's repo, an item the mirror doesn't have, a repo nobody linked.
-        { "repo": "eve-gh/x", "number": 3, "reasons": [] },
-        { "repo": "acme/app", "number": 404, "reasons": ["done"] },
-        { "repo": "other/repo", "number": 1, "reasons": [] },
-    ] });
-    let r = reqwest::Client::new()
-        .post(format!("{base}/api/inbox/shadow"))
-        .header("x-test-daemon", "bob m1")
-        .json(&report)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 200);
-    let v: Value = r.json().await.unwrap();
-    assert_eq!(v, json!({ "compared": 2, "agree": 1, "disagree": 1, "explained": 1 }));
-    // A person's session isn't a machine.
-    let (s, _) = call(&base, "bob", "POST", "/api/inbox/shadow", Some(report)).await;
-    assert_eq!(s, 401);
-}
-
-/// Production's first shadow report (2026-10-22): two issues Jake opened
-/// and gave himself (and others), on a project that doesn't mirror
-/// content. The block said nothing for one and `mentioned` for the other;
-/// the platform said `assigned` for both, since the mirror doesn't keep
-/// who assigned an issue. One you opened, you took: not `assigned`. The
-/// mention needs the text.
+/// Two issues Jake opened and gave himself (and others), as the inbox's
+/// shadow period found them (2026-10-22): the mirror doesn't keep who
+/// assigned an issue, so one you opened, you took: not `assigned`. A
+/// mention needs the text, so it's found only where the repo mirrors
+/// content.
 #[tokio::test]
 async fn your_own_issue_given_to_you() {
-    let (_hub, _gh, app, base) = setup().await;
+    let (_hub, _gh, app, _base) = setup().await;
     exec(
         &app,
         "UPDATE forge_items SET author_login = 'alice-gh', assignees = '[\"alice-gh\", \"bob-gh\"]' WHERE id = 'fi_a2'",
@@ -394,29 +351,9 @@ async fn your_own_issue_given_to_you() {
     assert_eq!(reasons(&wants(&app, 88, 2, "bob", Some("bob-gh"))), [("assigned", "assigned to you")]);
     inbox::recompute(&app, 88, &[2], false).await.unwrap();
     assert_eq!(rows(&app), ["bob fi_a2 assigned"]);
-    let report = |reasons: Value| {
-        let base = base.clone();
-        async move {
-            let body = json!({ "blocks": [{ "repo": "acme/site", "number": 2, "reasons": reasons }] });
-            let r = reqwest::Client::new()
-                .post(format!("{base}/api/inbox/shadow"))
-                .header("x-test-daemon", "alice m1")
-                .json(&body)
-                .send()
-                .await
-                .unwrap();
-            r.json::<Value>().await.unwrap()
-        }
-    };
-    // #415: nothing on either side.
-    assert_eq!(report(json!([])).await, json!({ "compared": 1, "agree": 1, "disagree": 0, "explained": 0 }));
-    // #213: bob's comment mentions her. Without the text the platform
-    // can't see it: explained, and left out of the score.
-    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 0, "agree": 0, "disagree": 0, "explained": 1 }));
-    // The repo mirrors content, but the platform didn't find the mention:
-    // that's a disagreement.
+    // bob's comment mentions her: without the text the platform can't see
+    // it, so the repo has to mirror content.
     exec(&app, "UPDATE linked_repos SET mirror_content = TRUE WHERE repo_id = 88", params![]);
-    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 0, "disagree": 1, "explained": 0 }));
     exec(
         &app,
         "INSERT INTO forge_content (repo_id, number, kind, github_id, author_login, body, updated_at)
@@ -425,5 +362,5 @@ async fn your_own_issue_given_to_you() {
     );
     assert_eq!(reasons(&wants(&app, 88, 2, "alice", Some("alice-gh"))), [("mentioned", "mentioned by bob-gh")]);
     inbox::recompute(&app, 88, &[2], false).await.unwrap();
-    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 1, "disagree": 0, "explained": 0 }));
+    assert_eq!(rows(&app), ["alice fi_a2 mentioned", "bob fi_a2 assigned"]);
 }

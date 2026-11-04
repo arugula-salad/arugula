@@ -2841,14 +2841,6 @@ auth = "session"
 clients = ["page", "cli", "native"]
 note = "Marks a person's inbox entries for an item seen or done (M171), through the viewer check: an item they may not read is a 404."
 
-[[route]]
-method = "POST"
-path = "/api/inbox/shadow"  # wire::projects::INBOX_SHADOW
-process = "platform"
-auth = "daemon"
-clients = ["daemon"]
-note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
-
 # ---- platform: boards (boards, step 1)
 # A project's boards, for its members: a team's owners and editors change
 # them, its viewers read them; anyone else gets 404. Boards left Labs

@@ -109,6 +109,48 @@ creates a second one. Membership comes from the team's roster.
 | **Group** | A named section of a board | Platform `board_entries` | `zon_` |
 | **Lane** | Next, Doing, Review or Done, worked out from the work, with a person's override | Derived on read | The word |
 
+### Forge items: two read paths
+
+GitHub or Plane is the record, and the platform's mirror is a copy of it. A
+PR or issue block on a machine reads one of two ways, on purpose
+([aru-087](decisions/aru-087-the-daemon-s-forge-reader-stays-for-unlinked-rep.md)):
+the daemon's own reader stays for what the platform doesn't mirror. Which
+path a block is on decides where each of its parts comes from:
+
+| | Pinned block | Unpinned block |
+|---|---|---|
+| **When** | A github.com repo linked to a project the machine's owner is a member of, on a machine joined to control | Everything else: an unlinked repo, Forgejo, GitLab, a machine on a tailnet without control |
+| **The item, its checks and events** | The mirror (`forge_items`, `forge_checks`, `forge_events`), read as the machine for its owner, through the viewer check | The forge, with the person's own `gh`, `tea` or `glab` |
+| **Its text** (description, comments, reviews) | The platform's content read: GitHub's through the App, or `forge_content` where the project opted in; the block keeps it between changes | The forge |
+| **Who "you" are** | The owner's GitHub login as the platform has it, without teams | The forge's word, with teams |
+| **Waiting drafts** (comments, reviews) | Platform `drafts` (`dft_`): the block's go up once, and it shows the platform's | The block's config in `layout.json` |
+| **Merge, rerun and live updates** | The block, in `layout.json` | The same |
+| **Sends** | The person's `gh` from the block, with the platform told first; from the phone, a one-use token of theirs through the platform | The person's CLI |
+| **Diff and checkout** | The person's git | The same |
+| **The pin** `{kind, global_id}` | `layout.json` | None |
+| **The block's log** | `blocks/%N/` on the machine | The same |
+| **Attention** | The block's rules over the mirror's model; the platform's inbox works out its own from the same rows | The block's rules |
+
+A block switches paths on what the platform says, and keeps the pin in its
+config across an outage so the platform is asked first on every read:
+
+- **Not linked, or no item the owner may read** (a 404): the pin goes and
+  the block reads GitHub.
+- **Unreachable:** what the platform said last stays, marked stale, for 10
+  minutes; then GitHub until it answers. After a restart, GitHub at once:
+  a block is never blank.
+- **Refused** (a 400 or 409): GitHub at once.
+
+Every fallback reads with the person's own GitHub login, so it shows what
+GitHub lets that person read, which is what the viewer check asks GitHub
+too; the check's other half, project membership, is what makes the repo
+linked for them, and a block on a repo that isn't is an unpinned block
+like any other.
+
+A native issue block (`iss_`) is a third thing: a pin onto the platform's
+`issues` row, read with the machine's `threads.read` grant, never from a
+forge.
+
 ### Docs
 
 | Kind | What it is | Truth | ID |

@@ -728,11 +728,12 @@ which the mirror doesn't keep. Unlinked repos, Forgejo,
 GitLab and machines outside control read as before. The platform says it's
 unlinked: the block reads GitHub again. The platform can't be reached: the
 block shows what it said last for 10 minutes, then reads GitHub until it
-answers (after a restart, at once: a block is never blank). A person's
-comment, review or merge from a pinned block still goes out with their `gh`
-until sends are the platform's (M168). A machine reporting for M171's
-shadow period (`ARUGULA_INBOX_SHADOW`) doesn't pin, so its report stays
-GitHub's word.
+answers (after a restart, at once: a block is never blank); a refusal
+reads GitHub at once. A person's comment, review or merge from a pinned
+block goes out with their `gh`, as every block's does; from the phone the
+platform sends with a one-use token of theirs (M168). Which path owns
+which of a block's parts is in docs/data-model.md, "Forge items: two read
+paths".
 
 **No pokes from control (M174, #1220).** Until then, a machine's GitHub
 blocks heard the App's webhooks from control as pokes, and read at once.

@@ -109,15 +109,6 @@ pub struct InboxFilter {
 }
 
 impl Db {
-    /// An item's id by its repo and number.
-    pub fn forge_item_id(&self, repo_id: u64, number: u64) -> anyhow::Result<Option<String>> {
-        self.c()
-            .query_row("SELECT id FROM forge_items WHERE repo_id = ?1 AND number = ?2", params![repo_id, number], |r| {
-                r.get(0)
-            })
-            .optional()
-    }
-
     /// The platform's own read of what an item's inbox is worked out from
     /// (module docs): `None` when the item isn't mirrored, or its repo
     /// isn't linked.
@@ -255,19 +246,6 @@ impl Db {
         Ok(made)
     }
 
-    /// Every reason an item is in an account's inbox for, seen, done or
-    /// not: what the shadow comparison holds against a block's.
-    pub fn inbox_reasons(&self, account: &str, item: &str) -> anyhow::Result<Vec<String>> {
-        self.c().query_map(
-            &format!(
-                "SELECT reason FROM inbox_items WHERE account = ?1 AND item = ?2 AND reason <> '{THREAD_MENTION}'
-                 ORDER BY reason"
-            ),
-            params![account, item],
-            |r| r.get(0),
-        )
-    }
-
     /// The repos an account's inbox has items of: what a read of it checks.
     pub fn inbox_repos(&self, account: &str) -> anyhow::Result<Vec<u64>> {
         self.c().query_map(
@@ -282,19 +260,6 @@ impl Db {
         self.c()
             .query_row("SELECT repo_id, number FROM drafts WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()
-    }
-
-    /// Of these drafts, the waiting ones that are `author`'s.
-    pub fn waiting_drafts_of(&self, author: &str, ids: &[String]) -> anyhow::Result<Vec<String>> {
-        let mut out = Vec::new();
-        for id in ids {
-            out.extend(self.c().query_map(
-                "SELECT id FROM drafts WHERE id = ?1 AND author = ?2 AND state = 'waiting'",
-                params![id, author],
-                |r| r.get::<String>(0),
-            )?);
-        }
-        Ok(out)
     }
 
     /// An account's inbox on the readable repos, newest first, with what
