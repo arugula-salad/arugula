@@ -149,11 +149,14 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   --machine m2 :3000`, `arugula edit --machine m2 ~/app`, `arugula view
   m2:src/main.rs`, `arugula fs cat m2:~/log.txt`, `arugula agent --machine
   m3 …`, and `arugula --host s1 ls` for a sandbox with a resident daemon
-  (`arugula hosts promote`), which wakes it.
+  (`arugula sandboxes promote`), which wakes it.
 
 ### Where machines come from
 
-One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`):
+One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`),
+opened at startup only when `sandbox-providers` is on: with the flag off
+the daemon reads no token and opens no adapter, and turning it on takes a
+restart (the refusal says so).
 
 - **A Sprites API** (`crates/arugulad-labs/src/sprites.rs`): a wispd
   (`--wisp-url`, default `http://127.0.0.1:7788`, token in

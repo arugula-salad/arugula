@@ -243,7 +243,7 @@ type Parts = mpsc::UnboundedSender<(ResponseHead, Vec<u8>)>;
 /// A standing channel to one machine (#856).
 struct Conn {
     ch: Arc<Channel>,
-    sink: tokio::sync::Mutex<SplitSink<crate::dial::Ws, Message>>,
+    sink: tokio::sync::Mutex<SplitSink<crate::relay_ws::Ws, Message>>,
     /// The requests waiting for their answer's parts, by id.
     waiting: Mutex<HashMap<u32, Parts>>,
     next: AtomicU32,
@@ -348,7 +348,7 @@ async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
     // A hosted machine that's asleep is woken (M182): a channel is opened
     // for something an agent or a person asked of the machine.
     let headers = [(name, auth.as_str()), ("origin", base), ("x-arugula-wake", "1")];
-    let mut ws = tokio::time::timeout(TIMEOUT, crate::dial::open_ws(&url, &headers))
+    let mut ws = tokio::time::timeout(TIMEOUT, crate::relay_ws::open_ws(&url, &headers))
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
     // Noise IK, this daemon the initiator.

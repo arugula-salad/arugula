@@ -76,6 +76,7 @@ mod board_block;
 mod board_state;
 mod people_block;
 pub mod push;
+pub mod relay_ws;
 mod remote;
 pub mod review;
 pub mod roots;
@@ -801,6 +802,51 @@ fn kinds(
     kinds
 }
 
+/// What VM panes could get their machines from: loam when `--loam-url`
+/// names it, else a wispd (or Fly's sprites) by its token file.
+struct ProviderArgs<'a> {
+    loam_url: Option<&'a str>,
+    loam_key_file: &'a std::path::Path,
+    wisp_url: &'a str,
+    wisp_token_file: &'a std::path::Path,
+    /// `--wisp-url` or `--wisp-token-file` was given, not left at its default.
+    wisp_given: bool,
+}
+
+/// The sandbox provider VM panes run on, opened only where the machine's
+/// `sandbox-providers` flag is on (#489): with it off, neither adapter is
+/// opened, so a token on disk or a loam key doesn't put a provider behind
+/// a feature the machine doesn't have. Read at startup: turning the flag
+/// on takes a restart, which the refusal says.
+fn open_provider(
+    labs: &dyn lab_hooks::Hooks,
+    state_dir: &std::path::Path,
+    a: ProviderArgs<'_>,
+) -> Option<std::sync::Arc<dyn provider::Provider>> {
+    if !arugula_proto::flags::get(state_dir, arugula_proto::flags::SANDBOX_PROVIDERS) {
+        if a.loam_url.is_some() || a.wisp_given || a.wisp_token_file.exists() {
+            info!(
+                flag = arugula_proto::flags::SANDBOX_PROVIDERS,
+                "VM panes are off: the flag is off (arugulad flags {} on, then restart)",
+                arugula_proto::flags::SANDBOX_PROVIDERS
+            );
+        }
+        return None;
+    }
+    match a.loam_url {
+        Some(url) => {
+            let p = labs.open_loam(url, a.loam_key_file);
+            info!(url, on = p.is_some(), "VM panes on loam");
+            p
+        }
+        None => {
+            let p = labs.open_provider(a.wisp_url, a.wisp_token_file, a.wisp_given);
+            info!(url = a.wisp_url, on = p.is_some(), "VM panes");
+            p
+        }
+    }
+}
+
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
     // Bound first: a port that's taken fails at once, and port 0 is known
     // before anything uses it (#66).
@@ -987,22 +1033,17 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
         arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
     });
-    let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
-        Some(url) if !url.is_empty() => {
-            let p = lab_hooks::labs().open_loam(url, &loam_key_file);
-            info!(url, on = p.is_some(), "VM panes on loam");
-            p
-        }
-        _ => {
-            let p = lab_hooks::labs().open_provider(
-                &args.wisp_url,
-                &token_file,
-                args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
-            );
-            info!(url = args.wisp_url, on = p.is_some(), "VM panes");
-            p
-        }
-    };
+    let provider = open_provider(
+        lab_hooks::labs(),
+        &state_dir,
+        ProviderArgs {
+            loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()),
+            loam_key_file: &loam_key_file,
+            wisp_url: &args.wisp_url,
+            wisp_token_file: &token_file,
+            wisp_given: args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
+        },
+    );
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
@@ -1333,5 +1374,66 @@ pub mod whole {
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Labs that counts how often each adapter was asked for.
+    #[derive(Default)]
+    struct Asked {
+        loam: AtomicUsize,
+        wisp: AtomicUsize,
+    }
+
+    impl lab_hooks::Hooks for Asked {
+        fn open_provider(&self, _: &str, _: &std::path::Path, _: bool) -> Option<Arc<dyn provider::Provider>> {
+            self.wisp.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+        fn open_loam(&self, _: &str, _: &std::path::Path) -> Option<Arc<dyn provider::Provider>> {
+            self.loam.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+    }
+
+    #[test]
+    fn neither_provider_opens_with_the_flag_off() {
+        let dir = std::env::temp_dir().join(format!("arugula-provider-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let token = dir.join("wisp-token");
+        std::fs::write(&token, "wisp_t").unwrap();
+        let key = dir.join("loam-key");
+        std::fs::write(&key, "loam_k").unwrap();
+        let labs = Asked::default();
+        let args = |loam: Option<&'static str>| ProviderArgs {
+            loam_url: loam,
+            loam_key_file: &key,
+            wisp_url: "http://127.0.0.1:7788",
+            wisp_token_file: &token,
+            wisp_given: false,
+        };
+
+        // Off (the default): a token file and a loam URL open nothing.
+        assert!(open_provider(&labs, &dir, args(None)).is_none());
+        assert!(open_provider(&labs, &dir, args(Some("https://loam.example"))).is_none());
+        assert_eq!((labs.wisp.load(Ordering::SeqCst), labs.loam.load(Ordering::SeqCst)), (0, 0));
+
+        // On: loam when named, else the Sprites adapter.
+        arugula_proto::flags::set(&dir, arugula_proto::flags::SANDBOX_PROVIDERS, true).unwrap();
+        open_provider(&labs, &dir, args(None));
+        assert_eq!((labs.wisp.load(Ordering::SeqCst), labs.loam.load(Ordering::SeqCst)), (1, 0));
+        open_provider(&labs, &dir, args(Some("https://loam.example")));
+        assert_eq!((labs.wisp.load(Ordering::SeqCst), labs.loam.load(Ordering::SeqCst)), (1, 1));
+
+        // Off again, by its old name too.
+        arugula_proto::flags::set(&dir, "vms", false).unwrap();
+        assert!(open_provider(&labs, &dir, args(Some("https://loam.example"))).is_none());
+        assert_eq!(labs.loam.load(Ordering::SeqCst), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

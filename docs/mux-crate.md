@@ -205,7 +205,7 @@ the line in one test: see ticket 6.
 Everything else, about 64k lines:
 
 - the edge: `server.rs`, `api.rs`, `mcp/`, `share.rs`, `upload.rs`,
-  `dial.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
+  `relay_ws.rs`, `dial.rs`, `e2e.rs`, `control.rs`, `pipe.rs` (the server);
 - the HTTP access checks: `access.rs`, `localauth.rs`, `authz.rs`,
   `acl.rs`'s `api` (as `acl_api.rs`), `rules.rs`;
 - every block type except the ones the core makes itself: `agent/`,

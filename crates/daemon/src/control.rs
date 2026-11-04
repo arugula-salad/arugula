@@ -2589,7 +2589,7 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
             Err(err) => {
                 warn!(error = %err, "can't reach control's relay");
                 control.set_link(|l| l.relay_error = Some(format!("can't reach control's relay: {err}")));
-                wait = err.downcast_ref::<crate::dial::Busy>().map(|b| b.wait);
+                wait = err.downcast_ref::<crate::relay_ws::Busy>().map(|b| b.wait);
             }
         }
         // Control may have hung up because this machine was removed
@@ -2645,7 +2645,7 @@ async fn relay_once(
     let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_scheme(scheme).map_err(|()| anyhow::anyhow!("bad control URL"))?;
     let signed = format!("{}?{}", url.path(), url.query().unwrap_or_default());
-    let ws = crate::dial::open_ws(&url, &[(AUTH, &control.sign(e, "GET", &signed, b""))]).await?;
+    let ws = crate::relay_ws::open_ws(&url, &[(AUTH, &control.sign(e, "GET", &signed, b""))]).await?;
     info!(control = e.saved.url, "connected to control's relay");
     control.set_link(|l| {
         l.relay = true;
@@ -2665,8 +2665,8 @@ async fn relay_once(
     let mut out = vec![crate::forges::ops_message(), control.activity.subscribe()];
     out.extend(crate::lab_hooks::labs().control_out());
     out.extend(crate::forges::watch_messages());
-    let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
-    crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
+    let texts = crate::relay_ws::Texts { on_text: &on_text, out, queue: Some(queue) };
+    crate::relay_ws::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
 }
 
 /// Why a call to control's platform routes didn't happen
