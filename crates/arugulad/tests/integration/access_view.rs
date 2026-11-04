@@ -72,6 +72,23 @@ fn the_owner_reads_who_reaches_the_machine_and_nobody_else_does() {
     assert_eq!(d.get("/api/acl")["grants"][0]["principal"], share["principal"]);
     assert_eq!(d.get("/api/shares")[0]["expires_ms"], l["until_ms"]);
 
+    // A read-only link to the session (`POST /api/links`, a key of its
+    // own): one row with its end, and neither its key nor the pane link's
+    // token anywhere in the answer.
+    let key = "ab".repeat(32);
+    let made = d.post("/api/links", json!({ "session": session, "key": key, "ttl_secs": 600 }));
+    assert!(made["link"].as_str().is_some_and(|l| l.starts_with("link:")), "{made}");
+    let (status, text) = d.raw("GET", "/api/access", None);
+    assert_eq!(status, 200);
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let session_link = rows(&v, "link").into_iter().find(|r| r["pane"].is_null()).expect("the session link's row");
+    assert_eq!(session_link["session"].as_u64(), Some(session));
+    assert_eq!(session_link["until_ms"], made["expires"]);
+    let token = link["token"].as_str().unwrap();
+    for secret in [key.as_str(), token, "\"key\"", "\"token\""] {
+        assert!(!text.contains(secret), "{secret} is in the answer: {text}");
+    }
+
     // The editor the session was shared with gets none of it: the
     // operation is the owner's on the tailnet as on the socket.
     let (status, body) = d.raw_as(FRIEND, "GET", "/api/access", None);

@@ -1426,7 +1426,12 @@ fn load_waiting(state_dir: &Path) -> Vec<Waiting> {
 pub struct RosterView {
     /// A hosted machine: who gets in is its project's people.
     pub hosted: bool,
-    /// A hosted box made for one deploy or a snapshot: nobody gets in.
+    /// What a hosted machine is for (`people`, `deploy`, `snapshot`,
+    /// `both`); nothing on another kind.
+    pub purpose: Option<String>,
+    /// A deploy's box: nobody gets in, as [`Enrolled::build`] decides. A
+    /// snapshot's box admits its project's people as a workspace does;
+    /// only control's routing keeps them out of it.
     pub nobody: bool,
     /// A team machine's team (pinned at join), roster checked or not yet.
     pub team_id: Option<String>,
@@ -2130,7 +2135,16 @@ impl Control {
             .collect();
         Some(RosterView {
             hosted: s.is_hosted(),
-            nobody: s.purpose().is_some_and(|p| p.deploys() || p.builds_snapshot()),
+            purpose: s.purpose().map(|p| {
+                match p {
+                    Purpose::People => "people",
+                    Purpose::Deploy => "deploy",
+                    Purpose::Snapshot => "snapshot",
+                    Purpose::Both => "both",
+                }
+                .to_owned()
+            }),
+            nobody: s.purpose().is_some_and(Purpose::deploys),
             team_id: s.team_pin().map(|p| p.team.clone()),
             account: s.cert.account.clone(),
             login: s.login.clone(),
@@ -6715,6 +6729,73 @@ pub(crate) mod tests {
                 Err(_) => "err".to_owned(),
             })
             .collect()
+    }
+
+    /// The access view (Arugula #681) says exactly whom [`Enrolled::build`]
+    /// admits through control, as what, on every kind of machine and every
+    /// purpose the fixtures cover: the owner's account, the roster's people
+    /// by the role the machine gives them (a hosted editor as the owner,
+    /// nobody on a deploy's box, everyone on a snapshot's), and no one else.
+    #[test]
+    fn the_access_view_admits_whom_the_enrollment_admits() {
+        let names = std::fs::read_dir(FIXTURES).unwrap().filter_map(|e| {
+            let n = e.unwrap().file_name().into_string().unwrap();
+            n.strip_suffix(".json").filter(|n| !n.ends_with(".who") && !n.ends_with(".accept")).map(str::to_owned)
+        });
+        let mut seen = 0;
+        for name in names {
+            let dir = std::env::temp_dir().join(format!("arugula-access-fixtures-{}-{name}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            let saved: Saved = serde_json::from_str(&text).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+            // Whom control's routing admits, by account, as what: the
+            // account's own devices as the owner, and the others as their
+            // principal says.
+            let mut admits: BTreeMap<String, &str> = BTreeMap::new();
+            for c in e.trusted.devices.values() {
+                admits.insert(c.account.clone(), "owner");
+            }
+            for (c, p) in &e.others {
+                let role = match p {
+                    Principal::Owner => "owner",
+                    Principal::User { id, .. } => match e.team_roles.get(id) {
+                        Some(Role::Editor) => "editor",
+                        Some(Role::Viewer) => "viewer",
+                        other => panic!("{name}: {id} admitted with no team role: {other:?}"),
+                    },
+                };
+                admits.insert(c.account.clone(), role);
+            }
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(e));
+            let view = crate::ops::access::compose(crate::ops::access::Pieces {
+                name: "box".into(),
+                owner: "owner".into(),
+                roster: c.roster_view(),
+                grants: vec![],
+                shares: vec![],
+                guests: None,
+                guest_ssh: false,
+                trust: vec![],
+                panes: vec![],
+            });
+            let mut says: BTreeMap<String, &str> = BTreeMap::new();
+            for r in &view.rows {
+                assert!(matches!(r.kind.as_str(), "owner" | "team_owner" | "team_role"), "{name}: {r:?}");
+                let account = r
+                    .principal
+                    .as_deref()
+                    .and_then(|p| p.strip_prefix("account:"))
+                    .unwrap_or_else(|| panic!("{name}: {r:?}"));
+                says.insert(account.to_owned(), r.role.as_str());
+            }
+            assert_eq!(says, admits, "{name}: the view and the enrollment disagree");
+            let _ = std::fs::remove_dir_all(&dir);
+            seen += 1;
+        }
+        assert_eq!(seen, 12, "every fixture was read");
     }
 
     /// #672: `control.json` files written by the code before the kind was

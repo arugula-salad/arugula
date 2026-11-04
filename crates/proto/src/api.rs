@@ -776,6 +776,12 @@ pub struct GuestInvite {
 pub struct AccessView {
     /// `local` (joined to no control), `personal`, `team` or `hosted`.
     pub kind: String,
+    /// A hosted machine's purpose: `people` (a workspace), `deploy` (one
+    /// deploy's box, which nobody gets into), `snapshot` (a box building a
+    /// snapshot: its people are admitted, and control routes nobody to it)
+    /// or `both`.
+    #[serde(default)]
+    pub purpose: Option<String>,
     /// The machine's name, and (joined) its device id in control's
     /// directory and that control's URL: what its agents' powers are
     /// listed under there, and where.

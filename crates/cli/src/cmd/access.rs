@@ -214,12 +214,18 @@ fn power_line(g: &Value) -> String {
 /// The view as lines: the machine, its notes, then one line per row.
 pub fn lines(v: &AccessView) -> Vec<String> {
     let mut out = Vec::new();
-    let kind = match (v.kind.as_str(), &v.team) {
-        ("local", _) => "not joined to Arugula cloud".to_owned(),
-        ("team", Some(t)) => format!("a machine of the team {}{}", t.name, if t.locked { " (locked)" } else { "" }),
-        ("team", None) => "a team machine (its roster isn't checked yet)".to_owned(),
-        ("hosted", Some(t)) => format!("a Cloud workspace of the team {}'s project", t.name),
-        ("hosted", None) => "a Cloud workspace of a personal project".to_owned(),
+    let whose = match &v.team {
+        Some(t) => format!("the team {}'s project", t.name),
+        None => "a personal project".to_owned(),
+    };
+    let kind = match (v.kind.as_str(), v.purpose.as_deref(), &v.team) {
+        ("local", _, _) => "not joined to Arugula cloud".to_owned(),
+        ("team", _, Some(t)) => format!("a machine of the team {}{}", t.name, if t.locked { " (locked)" } else { "" }),
+        ("team", _, None) => "a team machine (its roster isn't checked yet)".to_owned(),
+        ("hosted", Some("deploy" | "both"), _) => format!("a deploy's box of {whose}: nobody gets in"),
+        ("hosted", Some("snapshot"), _) => format!("a box building a snapshot of {whose}"),
+        ("hosted", _, Some(t)) if t.locked => format!("a Cloud workspace of {whose} (locked)"),
+        ("hosted", _, _) => format!("a Cloud workspace of {whose}"),
         _ => "joined to Arugula cloud".to_owned(),
     };
     out.push(format!("{}: {kind}", v.name));
@@ -324,6 +330,13 @@ mod tests {
         .unwrap();
         let l = lines(&v);
         assert_eq!(l[0], "box: a machine of the team Acme");
+        let deploy = AccessView {
+            kind: "hosted".into(),
+            purpose: Some("deploy".into()),
+            name: "box".into(),
+            ..Default::default()
+        };
+        assert_eq!(lines(&deploy)[0], "box: a deploy's box of a personal project: nobody gets in");
         assert_eq!(l[1], "note: The team Acme is locked: only its owners get in.");
         assert!(l[2].starts_with("who"));
         assert_eq!(

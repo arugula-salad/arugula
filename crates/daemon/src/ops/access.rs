@@ -133,17 +133,49 @@ pub fn compose(p: Pieces) -> AccessView {
         locked: t.locked,
     });
 
+    // Not here, said plainly: the machines that may call this machine's
+    // agents (`agent_callers`, A2A only) and MCP tokens.
+    notes.push(
+        "Not listed: the machines that may call this machine's agents and nothing else, and MCP tokens (`arugula mcp tokens`)."
+            .into(),
+    );
+
+    // A deploy's box: nobody gets in, as `Enrolled::build` decides, so its
+    // shares, links and guests reach no one and aren't listed either.
+    if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
+        let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
+        notes.push(format!(
+            "A box made for {what}: nobody gets in, not even the project's owners. Shares, links and guests it holds reach no one."
+        ));
+        return AccessView {
+            kind: kind.into(),
+            purpose: r.purpose.clone(),
+            name,
+            machine: Some(r.device.clone()),
+            control: Some(r.url.clone()),
+            team,
+            guest_ssh: guests.as_ref().map(|_| guest_ssh),
+            sessions,
+            rows,
+            notes,
+        };
+    }
+    if roster.as_ref().is_some_and(|r| r.purpose.as_deref() == Some("snapshot")) {
+        notes.push(
+            "A box building a snapshot: its project's people are admitted here, as on a workspace, and Arugula cloud routes nobody to it."
+                .into(),
+        );
+    }
+
     // The owner: this machine's, or a hosted machine's project's people.
     match &roster {
-        Some(r) if r.nobody => {
-            notes
-                .push("A box made for one deploy or a snapshot: nobody gets in, not even the project's owners.".into());
-        }
         Some(r) if r.hosted && r.team.is_none() => {
+            // A personal project's box: no roster; the account's devices,
+            // pinned at enrollment and checked by this machine.
             let who = if r.login.is_empty() { r.account.clone() } else { r.login.clone() };
-            let mut o = row("owner", ROSTER, who, Role::Owner);
+            let mut o = row("owner", THIS_MACHINE, who, Role::Owner);
             o.principal = Some(format!("account:{}", r.account));
-            o.note = Some("the project's account: its own devices".into());
+            o.note = Some("the project's account, pinned when this box enrolled: its own devices".into());
             rows.push(o);
         }
         Some(r) if r.hosted => {}
@@ -164,17 +196,20 @@ pub fn compose(p: Pieces) -> AccessView {
     }
 
     // The roster's people: the machine's own team's, checked here.
-    if let Some(r) = roster.as_ref().filter(|r| !r.nobody)
+    if let Some(r) = &roster
         && let Some(t) = &r.team
     {
         if t.locked {
             notes.push(format!("The team {} is locked: only its owners get in.", t.name));
         }
         if hosted {
-            notes.push(
+            notes.push(if t.locked {
+                "A Cloud workspace of a locked team: its owners get in, with full use; its editors and viewers don't until it's unlocked."
+                    .into()
+            } else {
                 "A Cloud workspace: its project's people get in by their team role, and an editor has full use of it, as an owner does."
-                    .into(),
-            );
+                    .into()
+            });
             notes.push(
                 "Their own machines drive it as the owner too, while Arugula cloud holds a live cloud.drive power for them: that part is control's word."
                     .into(),
@@ -318,6 +353,7 @@ pub fn compose(p: Pieces) -> AccessView {
 
     AccessView {
         kind: kind.into(),
+        purpose: roster.as_ref().and_then(|r| r.purpose.clone()),
         name,
         machine: roster.as_ref().map(|r| r.device.clone()),
         control: roster.as_ref().map(|r| r.url.clone()),
@@ -379,6 +415,7 @@ mod tests {
     fn enrolled(team: Option<RosterTeam>, hosted: bool) -> RosterView {
         RosterView {
             hosted,
+            purpose: hosted.then(|| "people".to_owned()),
             nobody: false,
             team_id: team.as_ref().map(|t| t.id.clone()),
             account: "a1".into(),
@@ -449,7 +486,9 @@ mod tests {
             ]
         );
         assert!(v.rows[1].session.is_none() && v.rows[1].pane.is_none(), "every session");
-        assert!(v.notes.is_empty(), "{:?}", v.notes);
+        // Only what every view says: what isn't listed.
+        assert_eq!(v.notes.len(), 1, "{:?}", v.notes);
+        assert!(v.notes[0].starts_with("Not listed:"), "{:?}", v.notes);
     }
 
     /// Locked: only the owners get in, and the view says so.
@@ -459,7 +498,7 @@ mod tests {
         let who: Vec<&str> = v.rows.iter().map(|r| r.who.as_str()).collect();
         assert_eq!(who, ["alex", "ola"]);
         assert!(v.team.as_ref().is_some_and(|t| t.locked));
-        assert_eq!(v.notes, ["The team Acme is locked: only its owners get in."]);
+        assert!(v.notes.contains(&"The team Acme is locked: only its owners get in.".to_owned()), "{:?}", v.notes);
     }
 
     /// A hosted machine of a team's project: its people by role, an editor
@@ -481,32 +520,92 @@ mod tests {
             ]
         );
         assert_eq!(v.rows[1].note.as_deref(), Some("an editor of the project: full use, as an owner"));
-        assert!(v.notes[0].contains("an editor has full use"), "{:?}", v.notes);
-        assert!(v.notes[1].contains("control's word"), "{:?}", v.notes);
-        // Locked: the editor is out too.
+        assert!(v.notes.iter().any(|n| n.contains("an editor has full use")), "{:?}", v.notes);
+        assert!(v.notes.iter().any(|n| n.contains("control's word")), "{:?}", v.notes);
+        // Locked: the editor is out too, and the notes don't say they have full use.
         let v = compose(pieces(Some(enrolled(Some(acme(true)), true))));
         let who: Vec<&str> = v.rows.iter().map(|r| r.who.as_str()).collect();
         assert_eq!(who, ["alex", "ola"]);
+        assert!(v.notes.iter().any(|n| n.contains("locked team: its owners get in")), "{:?}", v.notes);
+        assert!(!v.notes.iter().any(|n| n.contains("an editor has full use")), "{:?}", v.notes);
     }
 
-    /// A hosted machine of a personal project: the account alone.
+    /// A snapshot's box admits its project's people as a workspace does
+    /// (`Enrolled::build` closes only on a deploy); the view says that
+    /// control routes nobody to it.
+    #[test]
+    fn a_snapshots_box_admits_its_people_and_says_control_routes_nobody() {
+        let mut r = enrolled(Some(acme(false)), true);
+        r.purpose = Some("snapshot".into());
+        let v = compose(pieces(Some(r)));
+        assert_eq!(v.purpose.as_deref(), Some("snapshot"));
+        let who: Vec<&str> = v.rows.iter().map(|r| r.who.as_str()).collect();
+        assert_eq!(who, ["alex", "bea", "cy", "ola"]);
+        assert!(v.notes.iter().any(|n| n.contains("admitted here") && n.contains("routes nobody")), "{:?}", v.notes);
+    }
+
+    /// A hosted machine of a personal project: the account alone, and no
+    /// roster to be the word of it: this machine's.
     #[test]
     fn a_personal_projects_hosted_machine_is_its_accounts() {
         let v = compose(pieces(Some(enrolled(None, true))));
         assert_eq!(v.kind, "hosted");
         assert_eq!(v.rows.len(), 1);
         assert_eq!((v.rows[0].kind.as_str(), v.rows[0].who.as_str(), v.rows[0].role), ("owner", "alex", Role::Owner));
-        assert_eq!(v.rows[0].principal.as_deref(), Some("account:a1"));
+        assert_eq!((v.rows[0].principal.as_deref(), v.rows[0].word.as_str()), (Some("account:a1"), THIS_MACHINE));
     }
 
-    /// A box for one deploy: nobody, and a sentence saying so.
+    /// A box for one deploy: nobody, a sentence saying so, and none of its
+    /// shares, links or guests listed, since they reach no one either.
     #[test]
     fn a_deploys_box_lets_nobody_in() {
         let mut r = enrolled(Some(acme(false)), true);
+        r.purpose = Some("deploy".into());
         r.nobody = true;
-        let v = compose(pieces(Some(r)));
+        let mut p = pieces(Some(r));
+        p.grants = vec![grant(3, "tailnet:friend@example.com", "friend@example.com", Role::Editor)];
+        p.shares = vec![Share { id: 1, pane: 9, created_ms: 1, expires_ms: 8_000, token: None, path: None, url: None }];
+        p.trust = vec![(9, "tailnet:friend@example.com".into(), 99_999)];
+        let v = compose(p);
         assert!(v.rows.is_empty(), "{:?}", v.rows);
-        assert!(v.notes[0].starts_with("A box made for one deploy"));
+        assert_eq!(v.purpose.as_deref(), Some("deploy"));
+        assert!(
+            v.notes.iter().any(|n| n.starts_with("A box made for one deploy") && n.contains("reach no one")),
+            "{:?}",
+            v.notes
+        );
+    }
+
+    /// Nothing secret: a link's key, a pane link's token and an invite's
+    /// token never reach the answer, whatever the pieces carry.
+    #[test]
+    fn no_key_or_token_is_in_the_answer() {
+        let mut p = pieces(None);
+        let mut link = grant(3, "link:abc", "someone with a link", Role::Viewer);
+        link.key = Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into());
+        link.expires = Some(7_000);
+        p.grants = vec![link];
+        p.shares = vec![Share {
+            id: 1,
+            pane: 9,
+            created_ms: 1,
+            expires_ms: 8_000,
+            token: Some("ils_secret_token".into()),
+            path: Some("/share/ils_secret_token".into()),
+            url: Some("https://x/share/ils_secret_token".into()),
+        }];
+        p.guest_ssh = true;
+        p.guests = Some(vec![GuestInvite {
+            token: Some("ilg_secret".into()),
+            command: Some("ssh -p 1 ilg_secret@h".into()),
+            known_hosts: Some("h ssh-ed25519 KEY".into()),
+            fingerprint: Some("SHA256:fp".into()),
+            ..serde_json::from_value(serde_json::json!({ "id": 1, "pane": 9, "expires_ms": 9000 })).unwrap()
+        }]);
+        let text = serde_json::to_string(&compose(p)).unwrap();
+        for secret in ["0123456789abcdef", "ils_secret", "ilg_secret", "KEY", "SHA256", "\"key\"", "\"token\""] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
     }
 
     /// A session shared with a team (M30): each member at most their role

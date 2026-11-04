@@ -65,10 +65,13 @@ export function kindLine(v: AccessView): string {
       return v.team
         ? `A machine of the team ${v.team.name}${v.team.locked ? " (locked)" : ""}: its people reach it by their team role.`
         : "A team machine whose roster this machine hasn't checked yet: nobody gets in through the team until it has.";
-    case "hosted":
-      return v.team
-        ? `A Cloud workspace of the team ${v.team.name}'s project: its people reach it by their team role.`
-        : "A Cloud workspace of a personal project: its account alone.";
+    case "hosted": {
+      const whose = v.team ? `the team ${v.team.name}'s project` : "a personal project";
+      if (v.purpose === "deploy" || v.purpose === "both") return `A deploy's box of ${whose}: nobody gets in, not even the project's owners.`;
+      if (v.purpose === "snapshot") return `A box building a snapshot of ${whose}: its people are admitted here, and Arugula cloud routes nobody to it.`;
+      if (v.team?.locked) return `A Cloud workspace of ${whose}, locked: only the team's owners get in.`;
+      return v.team ? `A Cloud workspace of ${whose}: its people reach it by their team role.` : `A Cloud workspace of ${whose}: its account alone.`;
+    }
     default:
       return "Joined to Arugula cloud as a personal machine: its account's devices, and whoever it shares a session with.";
   }
@@ -184,8 +187,8 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
     <Modal close={close} label="Access" class="rules access-view">
       <h2>Who can reach {name}</h2>
       <p class="hint">
-        Everyone who reaches this machine and as what, from what it holds. Each row says whose word it is: this machine&apos;s own files, the
-        team&apos;s roster it checked itself, or Arugula cloud.
+        The people, links and guests that reach this machine, and as what, from what it holds. Each row says whose word it is: this
+        machine&apos;s own files, the team&apos;s roster it checked itself, or Arugula cloud.
       </p>
       {error && (
         <p class="error" data-access-error>
