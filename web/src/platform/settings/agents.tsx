@@ -309,7 +309,9 @@ export function AgentGrants() {
             return card(
               s,
               p.name,
-              p.team ? `${p.team.name}'s channels and issues` : "Your personal project",
+              p.team
+                ? `${p.team.name}'s channels and issues${p.team.role === "viewer" ? ". You only view it, so a write power here reads and comments only" : ""}`
+                : "Your personal project",
               COLUMNS,
               COLUMNS.map((c) => HEADS[c]),
               { "data-agent-project": p.id },

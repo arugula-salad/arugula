@@ -400,12 +400,13 @@ enum Command {
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// What your machines' agents may do in a project on Arugula control.
+    /// The powers your machines' agents hold: what they may do in a project on
+    /// Arugula control.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
-    /// takes grants from one machine, `restore` gives `cloud.drive` back; `ls`
+    /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
     /// (the default) lists them. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
