@@ -281,6 +281,26 @@ async fn an_agent_only_drafts_the_export() {
     let _ = app;
 }
 
+/// On an exported issue, a viewer's own comment goes to GitHub as them
+/// (a draft their device sends), and their agent's stays a native comment,
+/// saying why: a viewer's machine makes no drafts.
+#[tokio::test]
+async fn a_viewers_comment_goes_out_and_their_agents_stays() {
+    let (hub, _gh, app, base, team) = start().await;
+    let (id, room) = exported(&hub, &base, &team, "Seen by a viewer").await;
+    hub.daemon("cbox", "carol", None);
+    let v = post(&base, "carol", &room, json!({ "text": "from carol" })).await;
+    // Hers goes out as her, through one of her machines.
+    assert_eq!(v["github"]["sending"], true, "{v}");
+    assert!(v["github"]["draft"].as_str().unwrap().starts_with("dft_"), "her own draft: {v}");
+    let got = export::posted(&app, &id, &room, "carol", Some("cbox"), 43, "the agent's note").await.unwrap();
+    assert!(got.draft.is_empty(), "no draft: {got:?}");
+    assert!(got.why.as_deref().unwrap_or_default().contains("your owner only views"), "{got:?}");
+    let (_, ds) = call(&base, "carol", "GET", "/api/forge/drafts?state=all", None).await;
+    let texts: Vec<&str> = ds["drafts"].as_array().unwrap().iter().filter_map(|d| d["body"].as_str()).collect();
+    assert_eq!(texts, ["from carol"], "only hers: {ds}");
+}
+
 /// Once it's on a public repo: a person's comment goes there as them (and
 /// GitHub's copy of it, even one that comes before the send's answer, isn't
 /// brought back); a GitHub comment comes into the thread as GitHub's, once,

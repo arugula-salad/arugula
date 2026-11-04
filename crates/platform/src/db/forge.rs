@@ -996,8 +996,9 @@ pub struct DraftFilter<'a> {
     pub limit: u32,
 }
 
-/// Who discards a draft: one who may read its repo (the viewer check's
-/// [`Readable`]), or its author, who may whether or not they still can.
+/// Who discards a draft: an owner or editor who may read its repo (the
+/// viewer check's [`Readable`]; the route decides the role), or its
+/// author, who may whether or not they still can read it.
 #[derive(Debug, Clone, Copy)]
 pub enum Discarder<'a> {
     Reader(&'a Readable),
@@ -1042,6 +1043,25 @@ impl Db {
     /// The repos an account's drafts are on: what a list of its own checks.
     pub fn draft_repos(&self, author: &str) -> anyhow::Result<Vec<u64>> {
         self.c().query_map("SELECT DISTINCT repo_id FROM drafts WHERE author = ?1", params![author], |r| r.get(0))
+    }
+
+    /// The draft a machine's upload made before, by its `import_key`
+    /// (`<machine>:<key>`), if it's on a readable repo: what a second
+    /// upload is answered with before anything else is decided.
+    pub fn kept_upload(&self, r: &Readable, import_key: &str) -> anyhow::Result<Option<DraftRow>> {
+        if r.repos().is_empty() {
+            return Ok(None);
+        }
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.import_key = ?1 AND d.repo_id IN ({})",
+                    repos_in(r)
+                ),
+                params![import_key],
+                draft_row,
+            )
+            .optional()
     }
 
     /// Keep a draft on a readable repo: it, and whether it's new. One with

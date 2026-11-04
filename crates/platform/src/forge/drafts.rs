@@ -8,15 +8,25 @@
 //! - **Who makes one:** a person, for themselves, or a machine with a live
 //!   `cloud.drive` grant ([`CloudDriver`]), for its owner: then the draft
 //!   names the machine and the agent. Either way the author must be able
-//!   to read the repo now.
+//!   to read the repo now. A machine drafts only for an owner or editor
+//!   of the repo's project ([`drafter`]), and so does one that names an
+//!   agent (`agent`, as the CLI does when an agent runs it): that rests on
+//!   the client saying so. A viewer's agents read items and
+//!   drafts and make none here, whatever the machine was granted, while
+//!   the viewer themselves still drafts (and sends, with their own GitHub
+//!   rights). A block's own drafts never come here from a viewer's
+//!   machine; they stay on the block. The project is the repo's link's: a
+//!   repo is linked to one project at a time, and the role is the one
+//!   there, as the roster says now.
 //! - **Uploads:** a daemon brings the drafts it kept in `layout.json` for a
 //!   linked repo with an `import_key` of its own. The platform makes it the
 //!   machine's (`<machine>:<key>`), so one machine's keys never meet
 //!   another's, and a second upload of the same key is answered with the
 //!   first draft: a daemon that crashed before it dropped its copy uploads
 //!   it again and gets the same row.
-//! - **Who discards one:** its author, or anyone who may read it, but not
-//!   while it's being sent.
+//! - **Who discards one:** its author, or an owner or editor who may read
+//!   it; a viewer, and a viewer's machine, discards only the viewer's own.
+//!   Not while it's being sent.
 //! - **Who sends one:** its person, as themselves ([`super::send`], M168).
 //! - **Is a repo linked** ([`repo`]): what a daemon asks before it keeps a
 //!   block's drafts here. A repo linked to a project the reader isn't in
@@ -24,9 +34,9 @@
 
 use std::sync::Arc;
 
-use arugula_control_common::{ApiError, Principal, err};
+use arugula_control_common::{ApiError, Principal, err, refusal};
 use arugula_control_wire::projects as wire;
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
     extract::{FromRequestParts, Path, Query, State},
@@ -43,10 +53,15 @@ use crate::{
         Taken,
         forge::{Discarder, DraftFilter, DraftRow, NewDraftRow},
     },
+    grants::VIEWER_WRITE,
 };
 
 /// Drafts made per account per hour: an agent in a loop stops here.
 pub const DRAFTS_MADE: (&str, usize) = ("forge-draft", 600);
+
+/// Drafts asked for per machine per hour, before its owner's role is read:
+/// a daemon retrying a refusal spends its own allowance, not its owner's.
+pub const DRAFTS_ASKED: (&str, usize) = ("forge-draft-machine", 600);
 
 /// How many drafts a list holds at most, and when it doesn't say.
 const MOST: u32 = 500;
@@ -83,6 +98,26 @@ pub(super) fn no_draft() -> ApiError {
 
 fn not_linked(repo: &str) -> ApiError {
     err(StatusCode::NOT_FOUND, &format!("{repo} isn't linked to a project you can read it in"))
+}
+
+/// Whether `account`'s machines may draft on `project`'s repos, and
+/// `account` discard others' drafts there: an owner or editor, as the
+/// roster says now. A viewer may not (module docs). The role is decided
+/// as every project write decides it ([`super::links::membership`]).
+async fn drafter(app: &Platform, account: &str, project: &str) -> Result<bool, ApiError> {
+    let (_, role) = super::links::membership(app, account, project, true).await?;
+    Ok(role != TeamRole::Viewer)
+}
+
+/// A viewer's machine asked to draft (403, [`VIEWER_WRITE`]): the daemon
+/// keeps the draft on its block for good, rather than trying again.
+fn viewer_drafts() -> ApiError {
+    refusal(
+        StatusCode::FORBIDDEN,
+        VIEWER_WRITE,
+        "you only view this project, so your agents make no drafts on its repos: they stay on the block. \
+         Ask an owner for the editor role first",
+    )
 }
 
 /// As the wire says it, with each machine's name where the hub still has
@@ -186,6 +221,27 @@ pub async fn create(
     let checked = viewer::check(&app, &v, std::slice::from_ref(&repo)).await?;
     if !checked.readable.has(repo.repo_id) {
         return Err(not_linked(repo_name));
+    }
+    // An upload whose answer was lost is answered again before anything
+    // else: a draft that's here already stays one, not two.
+    if let Some(k) = &import_key
+        && let Some(row) = app.db.kept_upload(&checked.readable, k)?
+    {
+        if row.author != d.account {
+            return Err(err(StatusCode::CONFLICT, "that import_key is another draft's"));
+        }
+        let draft = wire_drafts(&app, vec![row]).await?.remove(0);
+        return Ok(Json(wire::DraftCreated { draft, created: false }));
+    }
+    // A machine's asks are counted as its own before the role is read, so
+    // an old daemon retrying a refusal never spends its owner's allowance.
+    if let Some(m) = &d.machine {
+        app.limits.check_daemon(DRAFTS_ASKED, m)?;
+    }
+    // An agent's draft, from its machine or from a CLI that says an agent
+    // runs it (`agent`), only for an owner or editor.
+    if (d.machine.is_some() || agent.is_some()) && !drafter(&app, &d.account, &repo.project_id).await? {
+        return Err(viewer_drafts());
     }
     app.limits.check_account(DRAFTS_MADE, &d.account)?;
     let new = NewDraftRow {
@@ -331,19 +387,28 @@ pub async fn get(
     Ok(Json(wire_drafts(&app, vec![row]).await?.remove(0)))
 }
 
-/// `POST /api/forge/drafts/{id}/discard`: by its author or a reader. Again
-/// is a no-op; a sent one can't be (409).
+/// `POST /api/forge/drafts/{id}/discard`: by its author (whether or not
+/// they still read the repo), or an owner or editor who may read it; a
+/// viewer who may read another's is refused (403). Again is a no-op; a
+/// sent one can't be (409).
 pub async fn discard(
     State(app): State<Arc<Platform>>,
     v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::DraftDiscarded>, ApiError> {
     let (repo_id, author) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
-    let r = readable(&app, &v, repo_id).await?;
-    let who = match &r {
-        Some(r) => Discarder::Reader(r),
-        None if author == v.account => Discarder::Author(&v.account),
-        None => return Err(no_draft()),
+    let theirs;
+    let who = if author == v.account {
+        Discarder::Author(&v.account)
+    } else {
+        let (Some(link), Some(r)) = (app.db.linked_repo(repo_id)?, readable(&app, &v, repo_id).await?) else {
+            return Err(no_draft());
+        };
+        if !drafter(&app, &v.account, &link.project_id).await? {
+            return Err(err(StatusCode::FORBIDDEN, "a viewer discards only their own drafts"));
+        }
+        theirs = r;
+        Discarder::Reader(&theirs)
     };
     let state = app.db.discard_draft(who, &id, now_ms())?.ok_or_else(no_draft)?;
     match state.as_str() {
@@ -416,6 +481,9 @@ pub async fn repo(
         out.project = Some(link.project_id.clone());
         out.repo_id = Some(link.repo_id);
         out.login = v.github.as_ref().map(|u| u.login.clone());
+        // A viewer's blocks raise only the owner's own drafts (module docs).
+        let (_, role) = super::links::membership(&app, &v.account, &link.project_id, false).await?;
+        out.role = Some(role.as_str().to_owned());
         out.merge_styles = merge_styles(&app, &v, &link).await;
     } else if let Some((_, why)) =
         c.withheld.iter().find(|(_, w)| !matches!(w, Withheld::NotMember | Withheld::Unlinked))

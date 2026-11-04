@@ -376,6 +376,12 @@ pub struct ForgeRepo {
     /// GitHub of its own.
     #[serde(default)]
     pub login: Option<String>,
+    /// The reader's role in the project it's linked to (`owner`, `editor`
+    /// or `viewer`), when it's linked for them: a viewer's machine makes
+    /// no drafts on the platform, so its blocks raise only the owner's own.
+    /// Absent from a control before this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
     /// #427: the ways the repository lets a pull request be merged, in the
     /// `merge` method's words (`merge`, `squash`, `rebase`), read from
     /// GitHub with the App and kept an hour, for a block pinned to one of

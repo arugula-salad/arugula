@@ -348,6 +348,77 @@ async fn who_may_do_what() {
     assert_eq!(call(&base, "alice", "GET", "/api/projects", None).await.1["hosted"], false);
 }
 
+/// A workspace names who made it only while they're in the project: one
+/// a former member made names nobody, in the project's list, on its own,
+/// in the caller's list of every project's, and in what a wake, a
+/// rebuild, a new spec and a delete answer. The row keeps the name. A
+/// personal project's names its account; a locked team's still names its
+/// members.
+#[tokio::test]
+async fn a_former_members_workspace_names_nobody() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (status, alices) = make(&base, "alice", &project, "alices").await;
+    assert_eq!((status, alices["created_by"].as_str()), (201, Some("alice")), "{alices}");
+    let (status, bobs) = make(&base, "bob", &project, "bobs").await;
+    assert_eq!((status, bobs["created_by"].as_str()), (201, Some("bob")), "{bobs}");
+    let bobs = bobs["id"].as_str().unwrap().to_owned();
+    let now = now_ms();
+    drive(&app, now).await;
+    for (i, id) in [alices["id"].as_str().unwrap(), &bobs].into_iter().enumerate() {
+        hub.enroll(id, &format!("m{i}"));
+    }
+    drive(&app, now + 3_000).await;
+    assert_eq!(show(&base, &project, &bobs).await["state"], "ready");
+    // Locked, bob is still a member.
+    hub.lock("t1", true);
+    app.cache.team_changed("t1");
+    assert_eq!(show(&base, &project, &bobs).await["created_by"], "bob");
+    hub.lock("t1", false);
+    // bob leaves, and the hub tells the platform.
+    hub.team("t1", &[("alice", TeamRole::Owner), ("vic", TeamRole::Viewer)]);
+    app.cache.team_changed("t1");
+
+    let by_name = |v: &Value| -> Vec<(String, Value)> {
+        v["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| (w["name"].as_str().unwrap().to_owned(), w["created_by"].clone()))
+            .collect()
+    };
+    let (status, listed) = call(&base, "vic", "GET", &format!("/api/projects/{project}/workspaces"), None).await;
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(by_name(&listed), [("alices".to_owned(), json!("alice")), ("bobs".to_owned(), Value::Null)]);
+    assert_eq!(show(&base, &project, &bobs).await["created_by"], Value::Null);
+    assert_eq!(show(&base, &project, "alices").await["created_by"], "alice");
+    let (status, all) = call(&base, "alice", "GET", "/api/workspaces", None).await;
+    assert_eq!(status, 200, "{all}");
+    assert_eq!(by_name(&all), [("alices".to_owned(), json!("alice")), ("bobs".to_owned(), Value::Null)]);
+    assert_eq!(app.db.hosted_workspace(&project, &bobs).unwrap().unwrap().created_by.as_deref(), Some("bob"));
+
+    // What's done to it answers the same way: a wake, a new spec, a
+    // rebuild, a delete.
+    fake.pause_all();
+    drive(&app, now + 70_000).await;
+    let w = show(&base, &project, &bobs).await;
+    assert_eq!((w["asked"].as_str(), w["created_by"].clone()), (Some("wake"), Value::Null), "{w}");
+    let path = format!("/api/projects/{project}/workspaces/{bobs}");
+    let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "small" });
+    let (status, w) = call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+    let (status, w) = call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+    let (status, w) = call(&base, "alice", "DELETE", &path, None).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+
+    // A personal project's workspace names its account.
+    let (status, w) = make(&base, "alice", "personal", "own").await;
+    assert_eq!((status, w["created_by"].as_str()), (201, Some("alice")), "{w}");
+    let (status, listed) = call(&base, "alice", "GET", "/api/projects/personal/workspaces", None).await;
+    assert_eq!((status, by_name(&listed)), (200, vec![("own".to_owned(), json!("alice"))]), "{listed}");
+}
+
 /// A create whose answer was lost is found by its metadata, never made
 /// again; one that made nothing fails once it's had time to show up, and
 /// one the provider refused fails at once.

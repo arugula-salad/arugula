@@ -1227,7 +1227,10 @@ impl ForgeBlock {
         if self.asking.lock().unwrap().is_some() || self.live.closed() {
             return;
         }
-        let first = self.state.lock().unwrap().drafts.iter().find(|d| d.status == DraftStatus::Waiting).cloned();
+        let first = {
+            let st = self.state.lock().unwrap();
+            st.drafts.iter().find(|d| d.status == DraftStatus::Waiting && self.may_settle(d)).cloned()
+        };
         let Some(d) = first else { return };
         let (repo, number) = self.repo();
         let ask = draft_ask(&d, &repo, number);
@@ -1336,6 +1339,22 @@ impl ForgeBlock {
             .collect()
     }
 
+    /// Whether this machine's owner may settle a draft from its card. On a
+    /// project the owner only views, a platform draft is theirs to settle
+    /// only if they wrote it: they can neither send nor drop another's. The
+    /// block still lists those; the card never asks about them.
+    fn may_settle(&self, d: &Draft) -> bool {
+        if !platform::is_platform_id(&d.id) {
+            return true;
+        }
+        let p = self.platform.lock().unwrap();
+        if p.link.as_ref().and_then(|l| l.role.as_deref()) != Some("viewer") {
+            return true;
+        }
+        let owner = live::control().and_then(|c| c.account());
+        p.drafts.iter().any(|f| f.id == d.id && owner.as_deref() == Some(f.author.as_str()))
+    }
+
     /// Log a failure to sync once, not every poll.
     fn say_once(&self, why: String) {
         let mut p = self.platform.lock().unwrap();
@@ -1377,6 +1396,7 @@ impl ForgeBlock {
         };
         self.platform.lock().unwrap().link = Some(link.clone());
         let mut changed = false;
+        let mut quiet = true;
         let waiting: Vec<Draft> = {
             let refused = self.platform.lock().unwrap().refused.clone();
             self.config.lock().unwrap().drafts.iter().filter(|d| !refused.contains(&d.id)).cloned().collect()
@@ -1398,6 +1418,7 @@ impl ForgeBlock {
                 }
                 Err(platform::Failed::Later(why)) => {
                     self.say_once(why);
+                    quiet = false;
                     break;
                 }
             }
@@ -1411,7 +1432,11 @@ impl ForgeBlock {
                     p.errors.retain(|id, _| list.iter().any(|d| d.id == *id));
                     changed |= p.drafts != list;
                     p.drafts = list;
-                    p.said = None;
+                    // What the upload just said stays said: a list that
+                    // works doesn't make the next poll say it again.
+                    if quiet {
+                        p.said = None;
+                    }
                 }
                 Err(platform::Failed::NotLinked) => platform::forget(&repo),
                 Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.say_once(why),

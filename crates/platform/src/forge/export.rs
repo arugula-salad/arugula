@@ -57,7 +57,7 @@ use arugula_control_wire::{
     chat::{ChatLive, ChatToGithub},
     projects as wire,
 };
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 use arugula_forge_github::Github;
 use axum::http::StatusCode;
 use serde_json::Value;
@@ -525,6 +525,20 @@ pub async fn posted(
         Ok(_) => return stays(format!("{} isn't linked to its project now: it stays here", g.repo)),
         Err(e) => return stays(format!("{e:#}")),
     };
+    // A viewer's own comment goes out as them; their agent's makes no
+    // draft (`drafts`' rule), and stays a native comment.
+    if machine.is_some() {
+        match super::links::membership(app, author, &i.project, true).await {
+            Ok((_, TeamRole::Viewer)) => {
+                return stays(format!(
+                    "your owner only views this project, so this comment stays here, not on {}",
+                    g.repo
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => return stays(e.1),
+        }
+    }
     let made = async {
         let v = Viewer::of(app, author).await?;
         let checked = viewer::check(app, &v, std::slice::from_ref(&link)).await?;
