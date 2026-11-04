@@ -143,7 +143,9 @@ impl Db {
             return Ok(Added::Seen);
         }
         let newest: Option<u64> =
-            tx.query_row("SELECT max(made_at) FROM run_grants WHERE project_id = ?1", params![g.project], |r| r.get(0))?;
+            tx.query_row("SELECT max(made_at) FROM run_grants WHERE project_id = ?1", params![g.project], |r| {
+                r.get(0)
+            })?;
         if newest.is_some_and(|n| g.made <= n) {
             return Ok(Added::Older);
         }

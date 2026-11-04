@@ -808,7 +808,9 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
     let session_env = marks.join("tools-env");
     std::fs::write(&session_env, "CARGO_TARGET_DIR=~/.cache/arugula/cargo-target\n").unwrap();
     let fake = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon")).join("tests/fake_acp.py");
-    let agent = format!("sh -c 'FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
+    // `FAKE_ACP_NAME`, in `more`: the adapter it says it is.
+    let name = more.iter().find(|(k, _)| *k == "FAKE_ACP_NAME").map_or("fake-acp", |(_, v)| *v);
+    let agent = format!("sh -c 'FAKE_ACP_NAME={name} FAKE_ACP_DIR=$HOME/.fake-acp exec python3 {}'", fake.display());
 
     let mut b = arugulad!(tag);
     for (k, v) in more {
@@ -1876,6 +1878,31 @@ fn a_mention_after_the_grant_went_starts_no_turn() {
     let _ = std::fs::remove_dir_all(&marks);
 }
 
+/// An agent that wakes itself (a background task ended) comes through no
+/// prompt. With the grant gone by then, the box stops the agent and says why,
+/// and the session stays, its conversation kept for when there's a grant.
+#[test]
+fn an_agent_waking_itself_after_the_grant_went_is_stopped() {
+    let Rig { _rt, f, marks, d, .. } = rig_with("grant-wake", &[("FAKE_ACP_NAME", "claude-agent-acp")]);
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    wait(&marks, &f, "a's background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+    let good = f.grant.lock().unwrap().take();
+    let block = block_of(&f, &a);
+    let said = || f.of(&a).iter().filter_map(|(_, d)| d.error.clone()).collect::<Vec<_>>();
+    wait(&marks, &f, "the turn it began stopped", || said().iter().any(|e| e.starts_with("no_grant")));
+    wait(&marks, &f, "its agent gone", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    assert_eq!(f.state(&a), "done");
+    assert!(!f.moves(&a).iter().any(|(_, _, to)| to == "failed"), "it stays: {:?}", f.moves(&a));
+    *f.grant.lock().unwrap() = good;
+    f.queue(&a, prompt(3, "acct1", "remember plum"));
+    wait(&marks, &f, "a reply, under a grant again", || f.turns(&a).len() == 3 && f.state(&a) == "done");
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
 /// A fix the ledger saved before a restart: with no pull answered yet, it
 /// waits, however long control takes. Once one answers, it goes.
 #[test]
@@ -2050,18 +2077,28 @@ fn a_session_runs_under_a_passkey_grant() {
     let refused = [
         ('b', f.passkey_grant("someone", &stranger, "pk"), None, "grant_not_an_owner"),
         ('c', f.passkey_grant("acct1", &stranger, "pk"), None, "grant_passkey"),
-        ('d', {
-            let now = arugula_e2e::now_ms();
-            let mut g = ProjectGrant::v2(&f.delegation, "acct1", now, now + 86_400_000);
-            g.passkey = Some(passkey_over(&f.root, "pk", &g.passkey_challenge(), "https://elsewhere.test"));
-            g
-        }, None, "grant_passkey"),
-        ('e', f.passkey_grant("acct1", &f.root, "pk"), {
-            let mut log = f.passkey_log();
-            let gone = log.events[0].removal(arugula_e2e::now_ms() - 1, "reset").placed_after(log.events.last());
-            log.events.push(gone);
-            Some(log)
-        }, "grant_passkey"),
+        (
+            'd',
+            {
+                let now = arugula_e2e::now_ms();
+                let mut g = ProjectGrant::v2(&f.delegation, "acct1", now, now + 86_400_000);
+                g.passkey = Some(passkey_over(&f.root, "pk", &g.passkey_challenge(), "https://elsewhere.test"));
+                g
+            },
+            None,
+            "grant_passkey",
+        ),
+        (
+            'e',
+            f.passkey_grant("acct1", &f.root, "pk"),
+            {
+                let mut log = f.passkey_log();
+                let gone = log.events[0].removal(arugula_e2e::now_ms() - 1, "reset").placed_after(log.events.last());
+                log.events.push(gone);
+                Some(log)
+            },
+            "grant_passkey",
+        ),
     ];
     for (n, g, carried, code) in refused {
         set(g);

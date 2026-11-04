@@ -1418,6 +1418,34 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 say(Box::new(move |now| now.turns_seen = Some(turns)));
                 return true;
             };
+            // A turn the agent began by itself (a background task's end woke
+            // it) came through no prompt to check: it's checked here, on the
+            // next look. If the grant doesn't let it, the agent goes as a
+            // parked session's does, and what its user left with it; the
+            // conversation stays, for when there's a grant again.
+            if l.now() == State::Done && s.turns > seen_turns && s.typed_at(seen_turns).is_none() {
+                match work.as_ref().map(|w| allowed(app, w)) {
+                    None => return true,
+                    Some(check) => {
+                        if let Err(NotNow::Refused(why)) = check.await {
+                            info!(session = id, why, "hosted: stopping a turn its agent began by itself");
+                            let (k, m, turns) = (keys.clone(), me.clone(), s.turns);
+                            say(Box::new(move |now| {
+                                now.turns_seen = Some(turns);
+                                if now.error.as_deref() != Some(why.as_str()) {
+                                    let to = now.now();
+                                    let d = SessionDetail { error: Some(why.clone()), ..Default::default() };
+                                    now.push(&k, &m, Kind::Error, to, d);
+                                    now.error = Some(why);
+                                }
+                            }));
+                            park(app, &l, block, &b).await;
+                            send(app, id).await;
+                            return true;
+                        }
+                    }
+                }
+            }
             if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
                 // A turn started in the block itself (someone typed there,
                 // or the agent woke itself): followed like the box's own,
