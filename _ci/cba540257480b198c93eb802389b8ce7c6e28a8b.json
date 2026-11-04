@@ -3,7 +3,7 @@
   "commit": "cba540257480b198c93eb802389b8ce7c6e28a8b",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T06:31:08Z",
+  "at": "2026-11-04T06:35:18Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 126426641253,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41784935432/job/126426641253"
         }
       ]
@@ -150,13 +150,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 126426641315,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41784935432/job/126426641315"
         }
       ]
