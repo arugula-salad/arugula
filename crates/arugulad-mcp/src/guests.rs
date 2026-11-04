@@ -203,7 +203,7 @@ mod tests {
             let why = refusal(tool, &args, on()).unwrap_or_else(|| panic!("{tool} with cloud_workspace is refused"));
             assert!(why.contains("on a Cloud workspace"), "{why}");
         }
-        assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "agent": "4" }), on()).is_some());
+        assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "agent_block": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "tab": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "run": "run_1" }), on()).unwrap().contains("wait with run"));
         let why = refusal("wait", &json!({ "agent_session": "ses_1" }), on()).unwrap();

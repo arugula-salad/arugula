@@ -70,14 +70,14 @@ pub fn with_workspace(tool: &str, schema: Arc<serde_json::Map<String, Value>>) -
 }
 
 /// The cloud workspace a machine tool's call names, taken out of its
-/// arguments. A `wait` on a Cloud workspace's agent block (`agent`, or its
-/// old name `tab`) is `wait`'s own.
+/// arguments. A `wait` on a Cloud workspace's agent block (`agent_block`,
+/// or its old name `tab`) is `wait`'s own.
 pub fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<String, String>> {
     if !TOOLS.contains(&tool) {
         return None;
     }
     let o = args.as_object_mut()?;
-    if tool == "wait" && ["agent", "tab"].iter().any(|k| o.get(*k).is_some_and(|t| !t.is_null())) {
+    if tool == "wait" && ["agent_block", "tab"].iter().any(|k| o.get(*k).is_some_and(|t| !t.is_null())) {
         return None;
     }
     // The kind that names a Cloud workspace itself.
@@ -300,12 +300,12 @@ mod tests {
         assert_eq!(take_workspace("cloud", &mut other), None, "not a machine tool");
         assert_eq!(other["cloud_workspace"], "dev");
         // wait: a pane on a hosted one's machine, by id or name; an agent
-        // block (agent, or tab, its old name) is wait's own.
+        // block (agent_block, or tab, its old name) is wait's own.
         let mut w = json!({ "cloud_workspace": "hw_ab", "pane": 3, "until": "idle" });
         assert_eq!(take_workspace("wait", &mut w), Some(Ok("hw_ab".into())));
         let mut w = json!({ "cloud_workspace": "dev", "pane": 3, "until": "idle" });
         assert_eq!(take_workspace("wait", &mut w), Some(Ok("dev".into())));
-        assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "agent": "3" })), None);
+        assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "agent_block": "3" })), None);
         assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "tab": "3" })), None);
         // list kind cloud_agents (cloud_tabs, its old name) names one itself.
         assert_eq!(take_workspace("list", &mut json!({ "kind": "cloud_agents", "cloud_workspace": "hw_ab" })), None);

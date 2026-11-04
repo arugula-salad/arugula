@@ -218,8 +218,9 @@ pub enum Until {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WaitArgs {
-    /// The pane or block. Or, instead, a Cloud workspace's agent
-    /// (cloud_workspace and agent).
+    /// The pane or block here. Or, instead, one of a Cloud workspace's
+    /// agent blocks (cloud_workspace and agent_block), a run, or agent
+    /// sessions.
     #[serde(default)]
     pub pane: Option<PaneArg>,
     pub until: Until,
@@ -229,14 +230,14 @@ pub struct WaitArgs {
     /// Seconds before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
-    /// A Cloud workspace (its hw_… id or its name): with agent (one of its
-    /// agent blocks), or with pane to wait on its machine.
+    /// A Cloud workspace (its hw_… id or its name): with agent_block (one
+    /// of its agent blocks), or with pane to wait on its machine.
     #[serde(default)]
     pub cloud_workspace: Option<String>,
-    /// A Cloud workspace's agent (an agent block on its machine, by pane
-    /// number; list kind cloud_agents), to wait until idle or needs_input.
+    /// One of a Cloud workspace's agent blocks, by pane number (list kind
+    /// cloud_agents), to wait until idle or needs_input.
     #[serde(default, alias = "tab")]
-    pub agent: Option<String>,
+    pub agent_block: Option<String>,
     /// Or a run in Arugula control (run_…, from start_run), not pane: until
     /// it ends (until command_end).
     #[serde(default)]
@@ -844,23 +845,37 @@ const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
 /// `session` (an agent session, `ses_…`) is `agent_session`, since
 /// `session` means the group of tabs on `run` and `start_agent`;
 /// `start_run`'s `box` is `cloud_workspace`, as on every other tool; a
-/// Cloud workspace's `tab` (an agent block, by pane number) is `agent`.
+/// Cloud workspace's `tab` (an agent block, by pane number) is
+/// `agent_block` (not `agent`, which on `cloud` kind `open_agent` is the
+/// program to run: [`MISNAMED`]).
 pub const ARG_ALIASES: &[(&str, &str, &str)] = &[
     ("wait", "session", "agent_session"),
     ("session_reply", "session", "agent_session"),
     ("session_stop", "session", "agent_session"),
     ("read_session", "session", "agent_session"),
     ("start_run", "box", "cloud_workspace"),
-    ("wait", "tab", "agent"),
-    ("read_cloud", "tab", "agent"),
-    ("cloud", "tab", "agent"),
+    ("wait", "tab", "agent_block"),
+    ("read_cloud", "tab", "agent_block"),
+    ("cloud", "tab", "agent_block"),
 ];
+
+/// A name a caller might guess for an argument, by tool, and the name
+/// it has: refused with the right name, never read as it (Arugula #668).
+/// `wait` has no `agent`: an agent block there is `agent_block`. (On the
+/// grouped tools, `pick_kind` says the same for a kind that takes
+/// `agent_block`.)
+pub const MISNAMED: &[(&str, &str, &str)] = &[("wait", "agent", "agent_block")];
 
 /// A kind's old name, by tool, accepted for good (Arugula #668): `list`
 /// kind `sessions` (a project's agent sessions) is `agent_sessions`, and
-/// `cloud_tabs` (a Cloud workspace's agent blocks) is `cloud_agents`.
-pub const KIND_ALIASES: &[(&str, &str, &str)] =
-    &[("list", "sessions", "agent_sessions"), ("list", "cloud_tabs", "cloud_agents")];
+/// `cloud_tabs` (a Cloud workspace's agent blocks) is `cloud_agents`;
+/// `cloud`'s `open_tab` and `close_tab` are `open_agent` and `close_agent`.
+pub const KIND_ALIASES: &[(&str, &str, &str)] = &[
+    ("list", "sessions", "agent_sessions"),
+    ("list", "cloud_tabs", "cloud_agents"),
+    ("cloud", "open_tab", "open_agent"),
+    ("cloud", "close_tab", "close_agent"),
+];
 
 /// Reads a call's old argument and kind names as the new ones
 /// ([`ARG_ALIASES`], [`KIND_ALIASES`]), before anything looks at the
@@ -886,6 +901,13 @@ pub fn old_names(tool: &str, args: &mut Value) -> Result<(), String> {
         && let Some((_, _, new)) = KIND_ALIASES.iter().find(|(t, old, _)| *t == tool && *old == k)
     {
         o.insert("kind".into(), json!(new));
+    }
+    for (_, wrong, right) in MISNAMED.iter().filter(|(t, _, _)| *t == tool) {
+        if o.get(*wrong).is_some_and(|v| !v.is_null()) {
+            return Err(format!(
+                "{tool} has no {wrong}: one of a Cloud workspace's agent blocks is {right}, its pane number"
+            ));
+        }
     }
     Ok(())
 }
@@ -1068,7 +1090,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's agent (cloud_workspace and agent, an agent block there by pane number; not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1491,6 +1513,13 @@ fn pick_kind(
     let takes = kind_args(k);
     for key in args.as_object().into_iter().flatten().map(|(n, _)| n) {
         if !takes.iter().any(|t| t.trim_end_matches('?') == key) {
+            // A guessed name for the agent block (Arugula #668): say its name.
+            if key == "agent" && takes.iter().any(|t| t == "agent_block") {
+                return Err(format!(
+                    "{tool} kind {} has no agent: one of a Cloud workspace's agent blocks is agent_block, its pane number",
+                    k.name
+                ));
+            }
             let takes = match takes.is_empty() {
                 true => "it takes nothing else".to_owned(),
                 false => format!("it takes {}", takes.join(", ")),
@@ -2276,8 +2305,10 @@ impl ToolCall<'_, '_> {
     async fn wait(&self, a: WaitArgs) -> Out {
         // Fleet 5: agent sessions, in control.
         if let Some(ses) = &a.agent_session {
-            if a.pane.is_some() || a.agent.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
-                return Err("give a pane, a Cloud workspace's agent, a run, or agent sessions: one of them".into());
+            if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
+                return Err(
+                    "give a pane, a Cloud workspace's agent block, a run, or agent sessions: one of them".into()
+                );
             }
             if !matches!(a.until, Until::Done | Until::Idle) {
                 return Err("an agent session waits until its turn is done: until done".into());
@@ -2292,8 +2323,8 @@ impl ToolCall<'_, '_> {
         }
         // M216: a run, in control.
         if let Some(run) = &a.run {
-            if a.pane.is_some() || a.agent.is_some() || a.cloud_workspace.is_some() {
-                return Err("give a pane, a Cloud workspace's agent, or a run: one of them".into());
+            if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() {
+                return Err("give a pane, a Cloud workspace's agent block, or a run: one of them".into());
             }
             if !matches!(a.until, Until::CommandEnd | Until::Exit) {
                 return Err("a run waits until it ends: until command_end".into());
@@ -2301,29 +2332,32 @@ impl ToolCall<'_, '_> {
             return crate::mcp::registry::wait_run(self, run, Call::limit(a.timeout)).await;
         }
         // #1094: a Cloud workspace's agent block, in control.
-        if let Some(agent) = &a.agent {
+        if let Some(block) = &a.agent_block {
             if a.pane.is_some() {
-                return Err("give a pane, or a Cloud workspace's agent (cloud_workspace and agent), not both".into());
+                return Err(
+                    "give a pane, or a Cloud workspace's agent block (cloud_workspace and agent_block), not both"
+                        .into(),
+                );
             }
             let workspace = a
                 .cloud_workspace
                 .as_deref()
                 .map(str::trim)
                 .filter(|w| !w.is_empty())
-                .ok_or("a Cloud workspace's agent needs its cloud_workspace (hw_… or its name) too")?;
+                .ok_or("a Cloud workspace's agent block needs its cloud_workspace (hw_… or its name) too")?;
             let until = match a.until {
                 Until::Idle => "idle",
                 Until::NeedsInput => "needs_input",
-                _ => return Err("a Cloud workspace's agent waits until idle or needs_input".into()),
+                _ => return Err("a Cloud workspace's agent block waits until idle or needs_input".into()),
             };
-            return self.hosted_wait(workspace, agent, until, Some(Call::limit(a.timeout).as_secs_f64())).await;
+            return self.hosted_wait(workspace, block, until, Some(Call::limit(a.timeout).as_secs_f64())).await;
         }
         if a.cloud_workspace.is_some() {
-            return Err("cloud_workspace goes with agent (a Cloud workspace's agent block) or pane".into());
+            return Err("cloud_workspace goes with agent_block (one of its agent blocks) or pane".into());
         }
         let pane = a
             .pane
-            .ok_or("wait for what? give a pane, or a Cloud workspace's agent (cloud_workspace and agent)")?
+            .ok_or("wait for what? give a pane, or a Cloud workspace's agent block (cloud_workspace and agent_block)")?
             .id()?;
         let p = self.readable(pane).await?;
         let until = match a.until {

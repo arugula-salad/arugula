@@ -238,7 +238,7 @@ fn read_cloud_def() -> Def {
     Def {
         name: "read_cloud",
         title: "Read a Cloud workspace",
-        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_agents their agents): an agent's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, named by pane number, and reading one wakes it.",
+        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_agents their agent blocks): an agent block's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, each named by its pane number (agent_block), and reading one wakes it.",
         args: Args::Kinds { kinds: table(cloud::READ), default: None },
         read_only: true,
         destructive: false,
@@ -254,7 +254,7 @@ fn cloud_def() -> Def {
     Def {
         name: "cloud",
         title: "Drive a Cloud workspace",
-        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open an agent on its machine (open_tab), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_tab), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project: its agents are agent blocks on it (claude or codex), named by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
+        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open an agent block on its machine (open_agent), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_agent), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project; its agent blocks (claude or codex), named by pane number (agent_block), are the project's people's too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
         args: Args::Kinds { kinds: table(cloud::DRIVE), default: None },
         read_only: false,
         destructive: true,

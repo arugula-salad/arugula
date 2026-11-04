@@ -397,7 +397,7 @@ pub fn old_argument_and_kind_names_are_read_as_the_new() {
             "wait",
             json!({ "until": "idle", "cloud_workspace": "hw_1", "tab": "3" }),
             None,
-            json!({ "until": "idle", "cloud_workspace": "hw_1", "agent": "3" }),
+            json!({ "until": "idle", "cloud_workspace": "hw_1", "agent_block": "3" }),
         ),
         (
             "session_reply",
@@ -417,13 +417,25 @@ pub fn old_argument_and_kind_names_are_read_as_the_new() {
             "read_cloud",
             json!({ "kind": "events", "cloud_workspace": "hw_1", "tab": "3" }),
             Some("events"),
-            json!({ "cloud_workspace": "hw_1", "agent": "3" }),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3" }),
         ),
         (
             "cloud",
             json!({ "kind": "prompt", "cloud_workspace": "hw_1", "tab": "3", "text": "go" }),
             Some("prompt"),
-            json!({ "cloud_workspace": "hw_1", "agent": "3", "text": "go" }),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3", "text": "go" }),
+        ),
+        (
+            "cloud",
+            json!({ "kind": "open_tab", "cloud_workspace": "hw_1", "prompt": "go", "agent": "codex" }),
+            Some("open_agent"),
+            json!({ "cloud_workspace": "hw_1", "prompt": "go", "agent": "codex" }),
+        ),
+        (
+            "cloud",
+            json!({ "kind": "close_tab", "cloud_workspace": "hw_1", "tab": "3" }),
+            Some("close_agent"),
+            json!({ "cloud_workspace": "hw_1", "agent_block": "3" }),
         ),
         ("list", json!({ "kind": "sessions" }), Some("agent_sessions"), json!({})),
         (
@@ -456,10 +468,22 @@ pub fn old_argument_and_kind_names_are_read_as_the_new() {
         let a: WaitArgs = parse(json!({ "until": "done", name: "ses_1" })).unwrap();
         assert_eq!(a.agent_session.as_deref(), Some("ses_1"), "{name}");
     }
-    for name in ["agent", "tab"] {
+    for name in ["agent_block", "tab"] {
         let a: WaitArgs = parse(json!({ "until": "idle", "cloud_workspace": "hw_1", name: "3" })).unwrap();
-        assert_eq!(a.agent.as_deref(), Some("3"), "{name}");
+        assert_eq!(a.agent_block.as_deref(), Some("3"), "{name}");
     }
+    // agent is the program on cloud kind open_agent, and nothing else:
+    // sent as a pane number, the refusal names agent_block.
+    let e = r("wait", json!({ "until": "idle", "cloud_workspace": "hw_1", "agent": "3" })).unwrap_err();
+    assert!(e.contains("wait has no agent") && e.contains("agent_block"), "{e}");
+    let e = r("cloud", json!({ "kind": "prompt", "cloud_workspace": "hw_1", "agent": "3", "text": "go" })).unwrap_err();
+    assert!(e.contains("cloud kind prompt has no agent") && e.contains("agent_block"), "{e}");
+    let e = r("read_cloud", json!({ "kind": "events", "cloud_workspace": "hw_1", "agent": "3" })).unwrap_err();
+    assert!(e.contains("read_cloud kind events has no agent") && e.contains("agent_block"), "{e}");
+    assert!(
+        r("cloud", json!({ "kind": "open_agent", "cloud_workspace": "hw_1", "prompt": "go", "agent": "claude" }))
+            .is_ok()
+    );
     // The tool list says only the new names.
     for d in all_defs() {
         let schema = serde_json::to_value(match &d.args {

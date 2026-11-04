@@ -73,7 +73,8 @@ in M190. From: M175 (#1236), M184 (#1245).
 They went on 2026-10-23 with Managoat itself ("Cloud execution is owned by
 Arugula control", amended): `list` kinds `cloud_workspaces` and
 `cloud_agents` (`cloud_tabs` until #668, still accepted), `read_cloud`,
-`cloud` and `wait` on an agent block (`agent`, which was `tab`) serve hosted
+`cloud` (its `open_agent` and `close_agent` were `open_tab` and `close_tab`)
+and `wait` on an agent block (`agent_block`, which was `tab`) serve hosted
 workspaces (`hw_…`) only, and the Cloud workspace block (`show` kind
 `cloud_workspace`), Managoat's `list` kind `cloud_agents` and the
 `/api/cloud/…` routes are gone. The power and its grant are unchanged. From: M190 (#1251).

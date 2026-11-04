@@ -23,9 +23,13 @@ and acting as its owner through their grants; nothing is kept here.
   `agent_sessions`, aru-121).
 
 The old names of some arguments and kinds (`session` for an agent
-session, `box`, `tab`, `sessions`, `cloud_tabs`) are accepted for good:
-`arugulad-mcp`'s `ARG_ALIASES` and `KIND_ALIASES` read them as the new
-ones before a call is routed (Arugula #668).
+session, `box`, `tab`, `sessions`, `cloud_tabs`, `open_tab`, `close_tab`)
+are accepted for good: `arugulad-mcp`'s `ARG_ALIASES` and `KIND_ALIASES`
+read them as the new ones (`agent_session`, `cloud_workspace`,
+`agent_block`, `agent_sessions`, `cloud_agents`, `open_agent`,
+`close_agent`) before a call is routed, and a result carries the old
+field beside the new (`cloud_tabs`, `tab`) for older callers (Arugula
+#668).
 
 `register()`, which the binary always calls before `arugulad-invite` (whose
 tools list after `forge_draft`), puts the tools and kinds into the base's
