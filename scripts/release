@@ -15,14 +15,21 @@
 # release-pack.sh does, so the binaries carry it; the files in git keep the
 # version they had.
 #
+# Its notes travel with the tag, in the annotated tag's message (#707): they're
+# written for that one commit, so merges landing during a release change
+# nothing. `stamp` writes them into a build's checkout, `draft` reads them for
+# the GitHub release, and `bump` adds docs/releases/X.Y.Z.md to main after the
+# tag, beside the client fixtures.
+#
 # The daemon (v*):
 #   release check-version TAG      TAG's commit can be the daemon's release of
 #                                  TAG's version: it passed the rare jobs
 #                                  (check-rare)
 #   release check-fixtures TAG     main has TAG's client fixtures
-#                                  (crates/proto/fixtures/releases/X.Y.Z), which
-#                                  `bump` commits there after the tag; a warning
-#                                  (in CI, in the job's summary) when it hasn't,
+#                                  (crates/proto/fixtures/releases/X.Y.Z) and
+#                                  notes (docs/releases/X.Y.Z.md), which `bump`
+#                                  commits there after the tag; a warning (in
+#                                  CI, in the job's summary) when it hasn't,
 #                                  never a failure
 #   release check-rare TAG         TAG's commit passed rare-nightly.yml's jobs,
 #                                  which ci/green doesn't count (#305): GitHub
@@ -44,14 +51,19 @@
 #   release stamp TAG              TAG's version into this checkout: the
 #                                  daemon's (every arugula crate but the app,
 #                                  and the server's workspace) for v*, the
-#                                  app's (crates/desktop) for app-v*
+#                                  app's (crates/desktop) for app-v*; and TAG's
+#                                  notes as docs/releases/, where What's new's
+#                                  build reads them, with those of any earlier
+#                                  release the commit doesn't have yet
 #   release sums TAG DIR           SHA256SUMS in DIR of TAG's files there: a
 #                                  daemon release's four tarballs and Windows
 #                                  zip, or an app release's every download
 #   release draft TAG              TAG's GitHub release as a draft, titled, with
-#                                  its notes from docs/releases/ as TAG has
-#                                  them (a daemon release's without the headline
-#                                  section); the publish fills and publishes it
+#                                  its notes from TAG's message, or for a tag
+#                                  with none from docs/releases/ as TAG has them
+#                                  (without the headline and no-notes sections);
+#                                  the publish fills and publishes it
+#   release notes TAG              print TAG's notes, read the same way
 #   release check-latest           releases/latest is still a daemon release
 #
 # Both lanes:
@@ -67,19 +79,24 @@
 #                                  tag and no revoked one (default daemon), as
 #                                  `bump` picks it; `last-green server` is the
 #                                  server's newest deployable commit
-#   release bump [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
+#   release bump [patch|minor|major] [--app] [COMMIT|--older] [--notes FILE] [--rare] [--dry-run]
 #                                  (`just release`) tag the newest green commit
 #                                  on main (or COMMIT; --app: the newest with
 #                                  ci/green-app) vX.Y.Z (--app: app-vX.Y.Z),
 #                                  the next version after the lane's newest
-#                                  tag, and push the tag. The commit must
-#                                  already have the release's notes
-#                                  (docs/releases/). For the daemon, it then
-#                                  commits the tag's client fixtures to main
-#                                  (crates/proto/fixtures/releases/X.Y.Z, #200)
+#                                  tag, and push the tag. The notes are FILE, or
+#                                  docs/releases/ as the commit has them, and go
+#                                  in the tag's message. It lists the PRs since
+#                                  the lane's last release, and refuses when one
+#                                  is neither mentioned (#N) in the notes nor
+#                                  listed in a ```no-notes block in them, or when
+#                                  the notes mention one that landed after the
+#                                  commit. It then commits to main the notes and,
+#                                  for the daemon, the tag's client fixtures
+#                                  (crates/proto/fixtures/releases/X.Y.Z, #200),
 #                                  and pushes that; if main refuses it, the
-#                                  release still stands and it prints the
-#                                  `just release-fixtures X.Y.Z` to run.
+#                                  release still stands and it prints what to
+#                                  run: `just release-fixtures X.Y.Z`.
 #                                  When main has newer commits that
 #                                  aren't green, it lists them and stops;
 #                                  --older releases without them (#1679).
@@ -111,9 +128,21 @@ app_downloads="arugula-desktop-linux-{x86_64,aarch64}.{deb,rpm,AppImage} arugula
 
 # A daemon release's headline section in its notes (docs/releases/X.Y.Z.md):
 # a fenced block the web client's What's new is built from
-# (scripts/whats-new.mjs). It's left out of the GitHub release's body.
+# (scripts/whats-new.mjs). The no-notes section lists the PRs that don't need
+# a word, as #N, for `bump`. Both are left out of the GitHub release's body.
+# The backticks are the notes' fences, not commands (SC2016).
+# shellcheck disable=SC2016
 headlines='```whats-new'
-without_headlines() { sed '/^```whats-new$/,/^```$/d'; }
+# shellcheck disable=SC2016
+without_headlines() { sed -e '/^```whats-new$/,/^```$/d' -e '/^```no-notes$/,/^```$/d'; }
+
+# Where a release's notes go in a tree.
+notes_path() { case "$1" in app-v*) echo "docs/releases/app-${1#app-v}.md" ;; *) echo "docs/releases/${1#v}.md" ;; esac; }
+
+# A release's notes sit between these lines in its tag's message (#707), so a
+# tag from before that, whose message is a title and maybe a trailer, has none.
+notes_begin='<!-- release notes -->'
+notes_end='<!-- end of release notes -->'
 
 # The release for a tag, made as a draft if it isn't there yet.
 ensure_release() {
@@ -390,50 +419,128 @@ newest_tag() {
 fixtures_dir() { echo "crates/proto/fixtures/releases/$1"; }
 tag_fixtures() { git ls-tree "$1" crates/proto/fixtures/ | awk -F'\t' '$1 ~ / blob / && $2 ~ /\.jsonl$/'; }
 
-# fixtures_to_main TAG SHA V: after the tag is out, SHA's client fixtures
-# into crates/proto/fixtures/releases/V on main, one commit on top of it,
-# pushed straight there. The version-bump commit used to carry them; since
-# #1986 there's none. The arugula-release deploy driver's token is the
-# arugula-io App's, which the "binaries check" ruleset lets push to main;
-# from a person's shell it's their own login. Built in a scratch index, so
-# the checkout isn't touched. Skipped when main has that set already. When
-# main moves under it, it tries again on the new main, a few times. It never
-# fails the release, which is out already: it warns and says what to run.
-fixtures_to_main() {
-  local tag=$1 sha=$2 v=$3 dir entries how n main idx tree commit meta path err=''
-  dir=$(fixtures_dir "$v")
-  how="run \`just release-fixtures $v\` and merge it to main"
-  entries=$(tag_fixtures "$sha")
-  if [ -z "$entries" ]; then
-    echo "warning: ${sha:0:12} has no crates/proto/fixtures/*.jsonl, so main gets no $dir; $how" >&2
-    return 0
+# tag_message TAG: TAG's message as GitHub has it. Never the local tag's: on a
+# tag push actions/checkout replaces the annotated tag with a lightweight one
+# (`+<sha>:refs/tags/TAG`, in every job, whatever its fetch-depth), so a
+# checkout's has only the commit's message. Into FETCH_HEAD, no ref moves and
+# the tree isn't touched, so a publish still sees a clean checkout. A shallow
+# checkout stays shallow: without --depth this would fetch an older tag's whole
+# history; a full one stays full, which control's build needs.
+tag_message() {
+  local depth=()
+  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then depth=(--depth=1); fi
+  git fetch -q --no-tags ${depth[@]+"${depth[@]}"} "$url" "refs/tags/$1" || { echo "can't read the tag $1 at $url" >&2; return 1; }
+  if [ "$(git cat-file -t FETCH_HEAD)" = tag ]; then git cat-file tag FETCH_HEAD | sed '1,/^$/d'; fi
+}
+
+# tag_notes TAG: the notes in TAG's message; nothing when it has none.
+tag_notes() {
+  local m
+  m=$(tag_message "$1") || return 1
+  awk -v b="$notes_begin" -v e="$notes_end" '$0 == e { on = 0 } on { print } $0 == b { on = 1 }' <<<"$m"
+}
+
+# older_notes TAG DIR: into DIR (a tree's docs/releases), the notes of each
+# release before TAG that DIR lacks, from their tags. The commit a release is
+# cut from can be older than the commit that put the last release's notes on
+# main, and What's new lists every release up to its own. A tag older than
+# DIR's oldest notes is from before there were notes.
+older_notes() {
+  local v=${1#v} dir=$2 oldest tags t n
+  [ -d "$dir" ] || return 0
+  oldest=$(printf '%s\n' "$dir"/[0-9]*.md | sed -n 's|.*/\([0-9]*\.[0-9]*\.[0-9]*\)\.md$|\1|p' | sort -V | sed -n 1p)
+  [ -n "$oldest" ] || return 0
+  tags=$(git ls-remote --refs "$url" 'refs/tags/v*') || return 1
+  for t in $(printf '%s\n' "$tags" | sed -n 's|.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$|\1|p' | sort -V); do
+    [ ! -f "$dir/$t.md" ] && [ "$t" != "$v" ] || continue
+    [ "$(printf '%s\n' "$t" "$oldest" | sort -V | sed -n 1p)" = "$oldest" ] || continue
+    [ "$(printf '%s\n' "$t" "$v" | sort -V | sed -n 1p)" = "$t" ] || continue
+    n=$(tag_notes "v$t") || return 1
+    [ -n "$n" ] || continue
+    printf '%s\n' "$n" >"$dir/$t.md"
+    echo "wrote v$t's notes into $dir/$t.md, from its tag"
+  done
+}
+
+# prs_in RANGE LANE: a line for each commit of RANGE on main's first parents
+# that a release's notes answer for, oldest first: its PR's number (`-` when its
+# subject names none), its short id and its subject, split by tabs. Not one
+# that only records a release, its notes or its fixtures' copy, and for the
+# app's lane only those that touch crates/desktop. Trees alone, for the deploy
+# driver's partial clone.
+prs_in() {
+  local c s n paths=()
+  if [ "$2" = app ]; then paths=(-- crates/desktop); fi
+  git log --first-parent --reverse --format='%H %s' "$1" ${paths[@]+"${paths[@]}"} | while read -r c s; do
+    git diff-tree --no-commit-id --name-only -r --no-renames "$c" | grep -vE '^(docs/releases/|crates/proto/fixtures/releases/)' >/dev/null || continue
+    n=$(printf '%s\n' "$s" | sed -n 's/.*(#\([0-9][0-9]*\))\( \[skip ci\]\)\{0,1\}$/\1/p')
+    printf '%s\t%s\t%s\n' "${n:--}" "${c:0:9}" "$s"
+  done
+}
+
+# record_to_main TAG SHA V NOTES: after the tag is out, what later commits need
+# on main, in one commit on top of it, pushed straight there: the release's
+# notes (the file NOTES, at docs/releases/) unless main has that file already,
+# and for the daemon SHA's client fixtures in crates/proto/fixtures/releases/V.
+# The version-bump commit used to carry the fixtures; since #1986 there's none.
+# The arugula-release deploy driver's token is the arugula-io App's, which the
+# "binaries check" ruleset lets push to main; from a person's shell it's their
+# own login. Built in a scratch index, so the checkout isn't touched. Skipped
+# when main has it all already. When main moves under it, it tries again on the
+# new main, a few times. It never fails the release, which is out already: it
+# warns and says what to run.
+record_to_main() {
+  local tag=$1 sha=$2 v=$3 body=$4 dir='' notes how entries='' blob what n main idx tree commit meta path err=''
+  notes=$(notes_path "$tag")
+  what=$notes
+  how="run \`scripts/release notes $tag >$notes\` and merge it to main"
+  if [ "$(tag_lane "$tag")" = daemon ]; then
+    dir=$(fixtures_dir "$v")
+    what=$dir
+    how="run \`just release-fixtures $v\` and merge it to main"
+    entries=$(tag_fixtures "$sha")
+    if [ -z "$entries" ]; then
+      echo "warning: ${sha:0:12} has no crates/proto/fixtures/*.jsonl, so main gets no $dir; $how" >&2
+    fi
   fi
+  blob=$(git hash-object -w "$body")
   idx=$(mktemp -d)/index
   for n in 1 2 3 4 5; do
     if ! err=$(git fetch -q "$url" main 2>&1); then continue; fi
     main=$(git rev-parse FETCH_HEAD)
     rm -f "$idx"
     GIT_INDEX_FILE=$idx git read-tree "$main"
-    # Not --force-remove with xargs: BSD's and GNU's differ on no input.
-    while IFS= read -r -d '' path; do
-      GIT_INDEX_FILE=$idx git update-index --force-remove -- "$path"
-    done < <(GIT_INDEX_FILE=$idx git ls-files -z -- "$dir")
-    while IFS=$'\t' read -r meta path; do
-      GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$(echo "$meta" | cut -d' ' -f3),$dir/${path##*/}"
-    done <<<"$entries"
+    what=''
+    if [ -n "$entries" ]; then
+      # Not --force-remove with xargs: BSD's and GNU's differ on no input.
+      while IFS= read -r -d '' path; do
+        GIT_INDEX_FILE=$idx git update-index --force-remove -- "$path"
+      done < <(GIT_INDEX_FILE=$idx git ls-files -z -- "$dir")
+      while IFS=$'\t' read -r meta path; do
+        GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$(echo "$meta" | cut -d' ' -f3),$dir/${path##*/}"
+      done <<<"$entries"
+      what=$dir
+    fi
+    # Notes main has already stay as they are: someone may have corrected them.
+    if [ -z "$(git ls-tree "$main" -- "$notes")" ]; then
+      GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$blob,$notes"
+      what=${what:+$what and }$notes
+    elif [ -z "$what" ]; then
+      what=$notes
+    fi
     # --missing-ok: a partial clone (the driver's) has the trees, not every file.
     tree=$(GIT_INDEX_FILE=$idx git write-tree --missing-ok)
     if [ "$tree" = "$(git rev-parse "$main^{tree}")" ]; then
-      echo "main has $dir already, as $tag has it"
+      echo "main has $what already, as $tag has it"
       return 0
     fi
-    commit=$(git commit-tree "$tree" -p "$main" -m "Fixtures: the client fixtures $tag shipped, in $dir (#200)")
+    commit=$(git commit-tree "$tree" -p "$main" -m "Release record: what $tag shipped, in $what")
     if err=$(git push -q "$url" "$commit:refs/heads/main" 2>&1); then
-      echo "committed $dir to main (${commit:0:12})"
+      echo "committed $what to main (${commit:0:12})"
       return 0
     fi
   done
-  echo "warning: main refused $dir (tried $n times). $tag is released all the same; $how" >&2
+  echo "warning: main refused $what (tried $n times). $tag is released all the same; $how" >&2
   [ -z "$err" ] || printf '%s\n' "$err" | sed 's/^/  git: /' >&2
   return 0
 }
@@ -442,31 +549,38 @@ case "${1:-}" in
   check-version)
     # The daemon's release of TAG's version from TAG's commit, as it is: no
     # commit moves the version (#1986), so this checks what the commit has.
-    # Not its client fixtures: `bump` commits those to main after the tag
-    # (check-fixtures).
+    # Not its client fixtures or notes: `bump` commits those to main after
+    # the tag (check-fixtures).
     tag=${2:?usage: release check-version TAG}
     tag_version "$tag" >/dev/null
     check_rare "$tag"
     ;;
   check-fixtures)
     # What this release's clients send and see, for later daemons to replay
-    # (#200), on main once the release is out. Only ever a warning.
+    # (#200), and its notes, on main once the release is out. Only ever a
+    # warning.
     tag=${2:?usage: release check-fixtures TAG}
     v=$(tag_version "$tag")
-    dir=$(fixtures_dir "$v")
-    if git fetch -q "$url" main && [ -n "$(git ls-tree --name-only FETCH_HEAD "$dir/")" ]; then
-      echo "main has $dir"
-    else
-      msg="main has no $dir, the client fixtures $tag shipped (scripts/release bump commits them after the tag; that didn't go through): run \`just release-fixtures $v\` and merge it to main"
-      echo "warning: $msg" >&2
-      if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; fi
-      if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '### Client fixtures\n\n%s\n' "$msg" >>"$GITHUB_STEP_SUMMARY"; fi
-    fi
+    fetched=0
+    if git fetch -q "$url" main; then fetched=1; fi
+    for path in "$(fixtures_dir "$v")/" "$(notes_path "$tag")"; do
+      if [ "$fetched" = 1 ] && [ -n "$(git ls-tree --name-only FETCH_HEAD "$path")" ]; then
+        echo "main has ${path%/}"
+      else
+        msg="main has no ${path%/}, which $tag shipped (scripts/release bump commits it after the tag; that didn't go through): run \`just release-fixtures $v\` and merge it to main"
+        echo "warning: $msg" >&2
+        if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; fi
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '### What main keeps of a release\n\n%s\n' "$msg" >>"$GITHUB_STEP_SUMMARY"; fi
+      fi
+    done
     ;;
   stamp)
     # TAG's version into this checkout's files, before a build (#1986), as
     # chant's scripts/release-pack.sh does: the binaries carry it, and git
-    # keeps what it had. Run again, it changes nothing more.
+    # keeps what it had. TAG's notes too (#707): What's new reads docs/releases/
+    # at build time. Run again, it changes nothing more. Never in the publish
+    # job: `chant release publish` refuses a tree with anything changed or
+    # untracked.
     tag=${2:?usage: release stamp TAG}
     v=$(tag_version "$tag")
     lane=$(tag_lane "$tag")
@@ -482,6 +596,20 @@ case "${1:-}" in
       [ "$sv" = "$v" ] || { echo "server/Cargo.toml's version is $sv after stamping $v (it was not $old)" >&2; exit 1; }
     fi
     echo "stamped $tag: $old -> $v ($lane)"
+    notes=$(notes_path "$tag")
+    if [ "$lane" = daemon ]; then
+      older_notes "$tag" docs/releases || echo "warning: an earlier release's notes couldn't be read: What's new may leave them out" >&2
+    fi
+    body=$(tag_notes "$tag") || exit 1
+    if [ -n "$body" ]; then
+      mkdir -p docs/releases
+      printf '%s\n' "$body" >"$notes"
+      echo "stamped $tag's notes into $notes"
+    elif [ -f "$notes" ]; then
+      echo "$tag's message has no notes: $notes stays as the commit has it"
+    else
+      echo "warning: $tag has no notes, in its message or as $notes" >&2
+    fi
     ;;
   check-green)
     check_green "$2" "${3:-}"
@@ -502,29 +630,35 @@ case "${1:-}" in
   bump)
     # The newest green commit on main, tagged with the lane's next version
     # (#1986): the tag names the commit CI passed, as it is, and no commit
-    # moves the version. For the daemon, the tag's client fixtures then go to
-    # main in a commit of their own. The release workflow writes the version
-    # into its build (`stamp`). Green is the lane's (#307): ci/green for the daemon,
-    # ci/green-app for --app, the tags chant's `release cut --lane` reads.
+    # moves the version. The notes go in the tag's message (#707), and then to
+    # main in a commit of their own, with the daemon's client fixtures. The
+    # release workflow writes the version and the notes into its build (`stamp`).
+    # Green is the lane's (#307): ci/green for the daemon, ci/green-app for
+    # --app, the tags chant's `release cut --lane` reads.
     shift
-    part=patch lane=daemon commit='' dry=0 older=0 start_rare=0
-    for a in "$@"; do
+    part=patch lane=daemon commit='' dry=0 older=0 start_rare=0 notes_arg=''
+    while [ "$#" != 0 ]; do
+      a=$1; shift
       case "$a" in
         major|minor|patch) part=$a ;;
         --app) lane=app ;;
         --dry-run|-n) dry=1 ;;
         --older) older=1 ;;
         --rare) start_rare=1 ;;
+        --notes)
+          [ "$#" != 0 ] || { echo "release bump: --notes FILE" >&2; exit 2; }
+          notes_arg=$1; shift ;;
         -*) echo "release bump: unknown flag $a" >&2; exit 2 ;;
         *) if [ -n "$commit" ]; then echo "release bump: two commits ($commit, $a)" >&2; exit 2; fi; commit=$a ;;
       esac
     done
+    if [ -n "$notes_arg" ] && [ ! -s "$notes_arg" ]; then echo "release bump: no notes in $notes_arg" >&2; exit 2; fi
     # The deploy that ran it (M221), as a trailer: one line, `Key: value`.
     trailer=${ARUGULA_RELEASE_TRAILER:-}
     case "$trailer" in
       *$'\n'*) echo "ARUGULA_RELEASE_TRAILER is one line" >&2; exit 2 ;;
       '') ;;
-      *': '*) trailer=$'\n\n'$trailer ;;
+      *': '*) ;;
       *) echo "ARUGULA_RELEASE_TRAILER is \`Key: value\`" >&2; exit 2 ;;
     esac
     git fetch -q "$url" main
@@ -561,8 +695,9 @@ case "${1:-}" in
     at_sha=$(version_at "$sha" "$lane") at_tag=$(newest_tag "$lane" "$tags")
     cur=$(printf '%s\n' "$at_sha" "$at_tag" | sed '/^$/d' | sort -V | tail -1)
     new=$(next_version "$cur" "$part")
-    if [ "$lane" = app ]; then tag=app-v$new notes=docs/releases/app-$new.md title="Arugula app $new"
-    else tag=v$new notes=docs/releases/$new.md title="Arugula $new"; fi
+    if [ "$lane" = app ]; then tag=app-v$new title="Arugula app $new"
+    else tag=v$new title="Arugula $new"; fi
+    notes=$(notes_path "$tag")
     if printf '%s\n' "$tags" | grep -q "	refs/tags/$tag\$"; then echo "$tag already exists" >&2; exit 1; fi
     # Not a commit this lane already released.
     prefix=${tag%"$new"}
@@ -573,18 +708,79 @@ case "${1:-}" in
         echo "${sha:0:12} is already released in $prefix${last% *}" >&2; exit 1
       fi
     fi
-    # What the release needs in the commit itself: its notes, and for the
-    # daemon the notes' headline section (the web client's What's new,
+    # What the release needs: its notes (--notes, or as the commit has them,
+    # which is how the arugula-release deploy driver brings them), and for the
+    # daemon their headline section (the web client's What's new,
     # scripts/whats-new.mjs, read from the build). Not its client fixtures,
-    # which go to main after the tag (fixtures_to_main). A dry run lists
-    # what's missing.
+    # which go to main after the tag (record_to_main). A dry run lists what's
+    # missing.
     missing=()
-    if ! git cat-file -e "$sha:$notes" 2>/dev/null; then
-      missing+=("${sha:0:12} has no $notes: merge the release's notes, and release once that commit is green")
-    elif [ "$lane" = daemon ] && ! git show "$sha:$notes" | grep -x "$headlines" >/dev/null; then
-      missing+=("$notes has no headline section (a \`\`\`whats-new block, scripts/whats-new.mjs) at ${sha:0:12}")
+    body=$(mktemp)
+    trap 'rm -f "$body"' EXIT
+    have=1 from=$notes
+    if [ -n "$notes_arg" ]; then
+      cp "$notes_arg" "$body"
+      from=$notes_arg
+    elif ! git show "$sha:$notes" >"$body" 2>/dev/null; then
+      have=0
+      missing+=("${sha:0:12} has no $notes: write the notes against the PRs above and pass them with --notes FILE")
+    fi
+    if [ "$have" = 1 ]; then
+      if [ "$lane" = daemon ] && ! grep -x "$headlines" "$body" >/dev/null; then
+        missing+=("$from has no headline section (a \`\`\`whats-new block, scripts/whats-new.mjs)")
+      fi
+      if grep -Fx -e "$notes_begin" -e "$notes_end" "$body" >/dev/null; then
+        missing+=("$from has a line the tag's message keeps the notes between ($notes_begin, $notes_end)")
+      fi
     fi
     echo "$tag: ${cur:-none} -> $new on ${sha:0:12} ($(git log -1 --format=%s "$sha")), the newest green commit; main is at ${main:0:12}"
+    # The PRs this release adds, which the notes answer for (#707): each is
+    # mentioned (#N, anywhere in the notes), or listed in a ```no-notes block,
+    # or there's no release. So a release's GitHub page and What's new say what
+    # its tag has: a PR that landed after the commit, which the tag doesn't
+    # have, can't be mentioned either.
+    mentions=''
+    if [ "$have" = 1 ]; then mentions=$(grep -oE '#[0-9]+' "$body" | sort -u || true); fi
+    mentioned() { case $'\n'"$mentions"$'\n' in *$'\n'"#$1"$'\n'*) return 0 ;; *) return 1 ;; esac; }
+    if [ -n "$last" ]; then
+      left_out=()
+      list=$(prs_in "${last#* }..$sha" "$lane")
+      if [ -n "$list" ]; then
+        echo "What $tag adds to $prefix${last% *}, for its notes to answer for:"
+        while IFS=$'\t' read -r pr short subject; do
+          if [ "$pr" = - ]; then echo "  (no PR) $short $subject"
+          elif [ "$have" = 1 ] && ! mentioned "$pr"; then echo "  #$pr $short $subject  <- not in the notes"; left_out+=("#$pr")
+          else echo "  #$pr $short $subject"; fi
+        done <<<"$list"
+      fi
+      if [ "${#left_out[@]}" != 0 ]; then
+        missing+=("$from leaves out ${left_out[*]}: mention each, or list it in a \`\`\`no-notes block")
+      fi
+    fi
+    if [ "$have" = 1 ] && [ -n "$mentions" ] && [ "$sha" != "$main" ]; then
+      while IFS=$'\t' read -r pr short subject; do
+        if [ "$pr" != - ] && mentioned "$pr"; then
+          missing+=("$from mentions #$pr, which landed on main after ${sha:0:12} ($short $subject), so $tag doesn't have it")
+        fi
+      done <<<"$(prs_in "$sha..$main" daemon)"
+    fi
+    # Headlines the build would choke on, after the tag, are refused before it:
+    # the file a build will read, among the notes it will read it with. CI's
+    # lint already passed on notes the commit has.
+    if [ -n "$notes_arg" ] && [ "$lane" = daemon ]; then
+      if ! command -v node >/dev/null; then
+        missing+=("--notes needs node, to check the headline section with scripts/whats-new.mjs")
+      else
+        scratch=$(mktemp -d)
+        trap 'rm -rf "$body" "$scratch"' EXIT
+        git archive "$sha" docs/releases scripts/whats-new.mjs | tar -x -C "$scratch"
+        cp "$body" "$scratch/$notes"
+        older_notes "$tag" "$scratch/docs/releases" >/dev/null || echo "warning: an earlier release's notes couldn't be read, to check against them" >&2
+        if ! err=$(node "$scratch/scripts/whats-new.mjs" 2>&1 >/dev/null); then
+          missing+=("the notes' headlines: $err")
+        fi
+      fi
+    fi
     if [ "${#missing[@]}" != 0 ]; then
       printf '%s\n' "${missing[@]}" >&2
       [ "$dry" = 1 ] || exit 1
@@ -605,13 +801,30 @@ case "${1:-}" in
     fi
     if [ "$dry" = 1 ]; then
       if [ "$lane" = daemon ]; then
-        echo "Dry run: would tag ${sha:0:12} $tag, push the tag, then commit its client fixtures to main as $(fixtures_dir "$new"); nothing tagged or pushed."
+        echo "Dry run: would tag ${sha:0:12} $tag with its notes, push the tag, then commit its client fixtures and notes to main ($(fixtures_dir "$new"), $notes); nothing tagged or pushed."
       else
-        echo "Dry run: would tag ${sha:0:12} $tag and push the tag; nothing tagged or pushed."
+        echo "Dry run: would tag ${sha:0:12} $tag with its notes, push the tag, then commit its notes to main ($notes); nothing tagged or pushed."
       fi
+      # The pick is fixed here: naming the commit holds it however main moves.
+      again="just release"
+      if [ "$part" != patch ]; then again+=" $part"; fi
+      if [ "$lane" = app ]; then again+=" --app"; fi
+      again+=" $sha --notes ${notes_arg:-FILE}"
+      if [ "$lane" = daemon ] && ! rare "$sha"; then again+=" --rare"; fi
+      echo "To release it: $again"
       exit 0
     fi
-    git tag -a "$tag" "$sha" -m "${title/Arugula/arugula}$trailer"
+    # Verbatim: git's default cleanup takes every `# heading` line out as a
+    # comment, even from a message given on the command line.
+    message=$(mktemp)
+    {
+      printf '%s\n\n%s\n' "${title/Arugula/arugula}" "$notes_begin"
+      cat "$body"
+      printf '\n%s\n' "$notes_end"
+      if [ -n "$trailer" ]; then printf '\n%s\n' "$trailer"; fi
+    } >"$message"
+    git tag -a "$tag" "$sha" -F "$message" --cleanup=verbatim
+    rm -f "$message"
     if ! git push -q "$url" "refs/tags/$tag"; then
       git tag -d "$tag" >/dev/null
       echo "pushing $tag was refused: nothing was pushed; run it again" >&2
@@ -620,14 +833,12 @@ case "${1:-}" in
     # The arugula-release deploy driver (M221) reads this line (the last
     # that starts `pushed `).
     echo "pushed $tag (${sha:0:12})"
-    # The daemon's client fixtures, which the release no longer needs in
-    # its commit: onto main now (#200). Never a failure from here on.
-    # (Called with ||, so set -e doesn't stop it part way: nothing it does
+    # What the release no longer needs in its commit, onto main now: the notes
+    # (#707) and the daemon's client fixtures (#200). Never a failure from here
+    # on. (Called with ||, so set -e doesn't stop it part way: nothing it does
     # may fail the run now that the tag is out.)
-    if [ "$lane" = daemon ]; then
-      fixtures_to_main "$tag" "$sha" "$new" ||
-        echo "warning: copying $tag's client fixtures to main failed; run \`just release-fixtures $new\` and merge it to main" >&2
-    fi
+    record_to_main "$tag" "$sha" "$new" "$body" ||
+      echo "warning: copying what $tag shipped to main failed; run \`just release-fixtures $new\` (an app release: \`scripts/release notes $tag\`) and merge it to main" >&2
     ;;
   sidecars)
     # From the latest daemon release (releases/latest), which this app then
@@ -679,26 +890,49 @@ case "${1:-}" in
     ;;
   draft)
     # Before `chant release publish` (#1986): TAG's release, made as a draft
-    # with its title, and its notes from docs/releases/ as TAG's commit has
-    # them (merged before the release). chant's forge target finds the draft,
-    # attaches the files and publishes it, so the release appears whole.
-    # A daemon release's notes leave out the headline section, which is the
-    # web client's (What's new). A release that's out already is left alone.
+    # with its title, and its notes from TAG's message (#707), or, for a tag
+    # from before that, from docs/releases/ as TAG's commit has them. chant's
+    # forge target finds the draft, attaches the files and publishes it, so the
+    # release appears whole. A daemon release's notes leave out the headline
+    # section, which is the web client's (What's new), and the no-notes one. A
+    # release that's out already is left alone. It reads the tag into
+    # FETCH_HEAD and writes outside the tree, as the publish after it needs.
     tag=${2:?usage: release draft TAG}
     ensure_release "$tag"
     if [ "$(gh release view "$tag" -R "$repo" --json isDraft --jq .isDraft)" != true ]; then
       echo "$tag's release is published already"; exit 0
     fi
-    case "$tag" in app-v*) notes=docs/releases/app-${tag#app-v}.md ;; *) notes=docs/releases/${tag#v}.md ;; esac
+    notes=$(notes_path "$tag")
     body=$(mktemp)
-    if git show "$tag:$notes" >"$body" 2>/dev/null; then
+    in_tag=$(tag_notes "$tag") || exit 1
+    if [ -n "$in_tag" ]; then
+      printf '%s\n' "$in_tag" >"$body"
+      from="$tag's message"
+    elif git show "$tag:$notes" >"$body" 2>/dev/null; then
+      from=$notes
+    else
+      from=''
+    fi
+    if [ -n "$from" ]; then
       without_headlines <"$body" >"$body.out"
       gh release edit "$tag" -R "$repo" --notes-file "$body.out" >/dev/null
-      echo "$tag's draft has the notes in $notes"
+      echo "$tag's draft has the notes in $from"
     else
-      echo "$tag has no $notes: the draft keeps its default notes"
+      echo "$tag has no notes, in its message or as $notes: the draft keeps its default notes"
     fi
     rm -f "$body" "$body.out"
+    ;;
+  notes)
+    # What `just release-fixtures` copies to main when bump couldn't.
+    tag=${2:?usage: release notes TAG}
+    tag_version "$tag" >/dev/null
+    in_tag=$(tag_notes "$tag") || exit 1
+    if [ -n "$in_tag" ]; then
+      printf '%s\n' "$in_tag"
+    elif ! git show "$tag:$(notes_path "$tag")" 2>/dev/null; then
+      echo "$tag has no notes, in its message or as $(notes_path "$tag")" >&2
+      exit 1
+    fi
     ;;
   check-latest)
     check_latest
