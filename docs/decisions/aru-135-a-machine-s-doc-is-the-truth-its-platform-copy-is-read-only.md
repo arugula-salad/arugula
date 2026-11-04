@@ -1,6 +1,6 @@
 ---
 schema: 1
-id: "aru-134"
+id: "aru-135"
 title: "A machine's Doc is the truth; its platform copy is read-only"
 state: "decided"
 area: "Federation and control"
@@ -37,6 +37,7 @@ decided_on: "2026-11-03"
 reviews: []
 constrains:
   - "aru-118"
+  - "aru-134"
   - "path:crates/control-wire/src/project_docs.rs"
   - "path:crates/platform/src/project_docs.rs"
   - "path:crates/platform/src/project_docs_machine.rs"
@@ -51,7 +52,9 @@ on every change. The copy was a project Doc like any other ("A project has
 Docs of its own, on the platform", aru-118): owners and editors could write
 it on the web, and the machine's next put replaced the title and sections
 and dropped the ones it didn't have, so the edit was lost without a word
-(Arugula #678). Decided (Jake, 2026-11-03):
+(Arugula #678). Decided (Jake, 2026-11-03), and said in one line by "One
+data model" (aru-134); this record is how the platform and the page keep
+it:
 
 - **The machine's Doc is the truth.** A copy is read-only on the platform.
   A write to it over the Doc routes, by a person or an agent session, is
