@@ -10,7 +10,7 @@
 //! What older daemons kept and this one drops as it starts, each with a
 //! log line: a `provider` entry (a daemon resident in a sandbox, M4b,
 //! removed in 0.67) and a `dial_out` entry (a host that dialed in with a
-//! per-host token, M4c, removed in 0.68) in `hosts.json`, keeping the
+//! per-host token, M4c, since removed) in `hosts.json`, keeping the
 //! other hosts; `provider-tokens.json`, `host-tokens.json` and the host
 //! invites in `invites.json`, which were credentials for those.
 
@@ -59,7 +59,7 @@ impl Hosts {
         // be emptied whole, so the transport words stay readable).
         let gone = |t: Transport| match t {
             Transport::Provider => Some("daemons resident in a provider's sandbox were removed (0.67)"),
-            Transport::DialOut => Some("hosts that dial in with a per-host token were removed (0.68)"),
+            Transport::DialOut => Some("hosts that dial in with a per-host token were removed"),
             Transport::Tailnet | Transport::Ssh => None,
         };
         let old: Vec<(String, &str)> =
@@ -77,7 +77,7 @@ impl Hosts {
         // Their credentials: spent, and nothing reads them.
         for (file, what) in [
             ("provider-tokens.json", "the tunnel tokens of resident daemons (removed in 0.67)"),
-            ("host-tokens.json", "the hashes of dial-in host tokens (removed in 0.68)"),
+            ("host-tokens.json", "the hashes of dial-in host tokens (removed with dial-in hosts)"),
         ] {
             let p = state_dir.join(file);
             if p.exists() {
@@ -88,23 +88,21 @@ impl Hosts {
             }
         }
         // `invites.json` in this list's own shape (`{"invites": [...]}`)
-        // held host invites, removed in 0.68: spent tokens, deleted. A bare
+        // held host invites, since removed: spent tokens, deleted. A bare
         // list there is the waiting person invites a daemon before native
         // #677 kept in it, which `control.rs` moves into its own file as it
         // opens (before this list does): left alone until that file exists,
         // then deleted as the copy it is. Anything else is left alone.
         let invites = state_dir.join("invites.json");
         let moved_out = state_dir.join("person-invites.json").exists();
-        let delete = match std::fs::read(&invites)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        {
-            Some(serde_json::Value::Object(o)) if o.contains_key("invites") => Some("host invites (removed in 0.68)"),
-            Some(serde_json::Value::Array(_)) if moved_out => {
-                Some("waiting person invites that control moved into person-invites.json")
-            }
-            _ => None,
-        };
+        let delete =
+            match std::fs::read(&invites).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+                Some(serde_json::Value::Object(o)) if o.contains_key("invites") => Some("host invites (removed)"),
+                Some(serde_json::Value::Array(_)) if moved_out => {
+                    Some("waiting person invites that control moved into person-invites.json")
+                }
+                _ => None,
+            };
         if let Some(what) = delete {
             match std::fs::remove_file(&invites) {
                 Ok(()) => warn!(file = %invites.display(), "deleted: {what}"),
@@ -236,8 +234,7 @@ impl Hosts {
 /// plain origins (a client appends `/ws` and `/api/...`).
 fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
     let name = req.name.trim();
-    // Names end up in paths (`--host NAME`, a remote block's config), so
-    // not `.` or `..`.
+    // Names end up in paths (`--host NAME`), so not `.` or `..`.
     if name.is_empty()
         || name.len() > 63
         || name.starts_with('.')
@@ -396,7 +393,7 @@ mod tests {
 
     /// An older daemon's `hosts.json` may hold a daemon made resident in a
     /// provider's sandbox (M4b, removed in 0.67) or a host that dialed in
-    /// (M4c, removed in 0.68): those entries are dropped and the others
+    /// (M4c, since removed): those entries are dropped and the others
     /// kept, since a list that fails to parse is emptied whole; their
     /// credential files are deleted.
     #[test]

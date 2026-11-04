@@ -1,11 +1,8 @@
 //! `arugula close`: panes, and what runs in them.
 
 use super::Ctx;
-use crate::http::{call, request};
-use crate::{
-    hosts,
-    util::{Pane, REMOTE},
-};
+use crate::http::call;
+use crate::util::Pane;
 use arugula_proto::{
     api::{Empty, WorktreeFate},
     op::ops::ClosePane,
@@ -18,24 +15,9 @@ pub struct Args {
 }
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
-    let Ctx { sock, local_sock, .. } = ctx;
+    let Ctx { sock, .. } = ctx;
     let Args { panes } = args;
     for p in panes {
-        // A remote pane (#17): close it on its host too. If that
-        // can't be reached, it stays in the host's own layout.
-        let remote = match request(&sock, "GET", &format!("/api/blocks/{}", p.0), None).and_then(|r| r.json()) {
-            Ok(d) if d["info"]["type"] == "remote" && !REMOTE.load(std::sync::atomic::Ordering::Relaxed) => {
-                Some((d["state"]["host"].as_str().unwrap_or_default().to_owned(), d["state"]["pane"].clone()))
-            }
-            _ => None,
-        };
-        if let Some((host, pane)) = remote {
-            let closed = hosts::target(local_sock.clone(), Some(&host))
-                .and_then(|t| request(&t, "POST", &format!("/api/panes/{pane}/close"), None)?.parse::<Empty>());
-            if let Err(e) = closed {
-                eprintln!("arugula: %{pane} on {host} stays open there: {e:#}");
-            }
-        }
         let closed = call::<ClosePane>(&sock, &p.0, &Empty {})?;
         // The block's worktree (AR-2): removed, or kept and why.
         if let Some(w) = closed.worktree {

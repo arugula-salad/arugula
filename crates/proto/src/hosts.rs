@@ -12,7 +12,7 @@ pub enum Transport {
     /// Straight to its URLs.
     #[default]
     Tailnet,
-    /// From before 0.68: a host that dialed the home daemon (M4c, removed)
+    /// From before dial-in hosts were removed (M4c): one that dialed the home daemon
     /// and was reached through it at `/h/<name>/…`. Still read, so an old
     /// `hosts.json` parses; the daemon drops such entries as it starts and
     /// keeps the rest.

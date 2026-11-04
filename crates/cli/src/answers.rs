@@ -259,7 +259,7 @@ fn request_bodies_are_what_the_json_was() {
                 "from_pane": 1 }),
         &[],
     );
-    // `run --home`'s first request never named `vm_tab`, `join`, `split` or `from_pane`.
+    // An older daemon's `run` request never named `vm_tab`, `join`, `split` or `from_pane`.
     body(
         RunRequest { command: Some("ls".into()), session: Some("me".into()), ..Default::default() },
         json!({ "command": "ls", "vm": false, "image": null, "sandbox": null, "session": "me", "cwd": null,

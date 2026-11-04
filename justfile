@@ -542,7 +542,7 @@ shellcheck:
     [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
     shellcheck -s sh scripts/install.sh scripts/glibc-floor
     shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-    shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
@@ -856,17 +856,6 @@ testnet cmd="test" profile="ssh" *claims:
       down) testnet/down.sh ;;
       *) echo "usage: just testnet up|test|break|measure|down [profile] [claim...]" >&2; exit 2 ;;
     esac
-
-# #17 on two Docker machines, one dropping off the network (testnet/hosts/README.md).
-testnet-hosts:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # No Docker: a failure, or with ARUGULA_SKIP_DOCKER=1 a loud skip.
-    if ! docker info >/dev/null 2>&1; then testnet/hosts/net.sh check; exit $?; fi
-    a=$(uname -m); [ "$a" = arm64 ] && a=aarch64
-    just static "$a"
-    {{cargo}} build -p arugulad
-    cd web && ARUGULA_TESTNET_HOSTS=1 pnpm exec playwright test e2e/testnet-hosts.spec.ts
 
 # M28 for real: VS Code over Remote-SSH into a Docker box (testnet/editors/README.md).
 testnet-editors:

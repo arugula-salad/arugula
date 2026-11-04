@@ -903,6 +903,14 @@ impl Daemon {
                 },
                 _ => self.config.restore(id, &meta),
             };
+            if meta.kind == BlockType::Remote {
+                // A place for a pane on another daemon (#17, removed): the
+                // pane is still that daemon's own; this leaf goes, and the
+                // rest of the layout stays as it was.
+                info!(block = id, "dropped a remote block from the layout: remote blocks were removed");
+                let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                continue;
+            }
             if meta.kind != BlockType::Terminal {
                 let config = meta.config.clone().unwrap_or_default();
                 // What systemd kept for it (an agent server's pipes).

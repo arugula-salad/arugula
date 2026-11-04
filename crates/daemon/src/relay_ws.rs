@@ -7,7 +7,7 @@
 //! Every machine's connection to control rides on it (`control.rs`, M18),
 //! a hosted box's redial after a resume too, and so does the standing
 //! channel to another machine's agents (`peer.rs`, #856). The dial-out
-//! tunnel to a home daemon (M4c, removed in 0.68) was its first use.
+//! tunnel to a home daemon (M4c, since removed) was its first use.
 
 use std::{
     sync::Arc,

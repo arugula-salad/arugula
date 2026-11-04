@@ -77,7 +77,6 @@ mod board_state;
 mod people_block;
 pub mod push;
 pub mod relay_ws;
-mod remote;
 pub mod review;
 pub mod roots;
 pub mod rules;
@@ -751,7 +750,6 @@ fn kinds(
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
     editors::kinds(&mut kinds);
-    kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
@@ -1284,7 +1282,8 @@ pub mod whole {
 
     /// Every type that was made when `block::create` was a `match` has an
     /// entry in the table, in a build with Labs and in one without; the
-    /// two that never were (`Terminal`, `Unknown`) still have none.
+    /// two that never were (`Terminal`, `Unknown`) still have none, nor
+    /// does `Remote`, a word kept only so a stored layout parses.
     pub fn every_type_the_daemon_makes_has_a_kind() {
         let kinds = super::kinds(
             None,
@@ -1334,7 +1333,7 @@ pub mod whole {
                 | BlockType::People
                 | BlockType::Unknown => {}
             }
-            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown | BlockType::Remote);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
     }
