@@ -142,14 +142,20 @@ runs check.yml before a pull request lands (development.md, "Merging
 through the queue").
 
 Every pull request also runs `.github/workflows/pull-request.yml` (#306),
-on GitHub's `ubuntu-24.04` runners only: **pr-lint** (check.yml's lint
-action), **pr-build** (the debug binaries, as check.yml's build:
-`.github/actions/build-debug`) and **pr-e2e (N)**, the twelve shards
-(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with
-**pr-gate** as the verdict. It needs no secret: with sccache's password
-(a branch of this repository) the build goes through sccache, and a fork's
-compiles cold. A new push cancels the run before. It's advisory for now:
-no ruleset requires pr-gate, and its summary says so. Its jobs are named
+on GitHub's `ubuntu-24.04` runners only: **pr-plan** picks what the change
+is likely to reach, then **pr-build** (the debug binaries, as check.yml's
+build: `.github/actions/build-debug`) and **pr-e2e (N)** run those specs
+(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with **pr-gate**
+as the verdict. A change to docs alone runs neither. Otherwise it takes the
+journeys and a few others, any spec it changes, and any spec whose name shares
+a word with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
+every spec reads (`helpers.ts`, Playwright's config) runs them all. So a green
+pr-gate doesn't mean every spec passes: the merge queue runs them all before
+anything lands. The `full-check` label runs check.yml on the branch for an
+earlier answer. pr-plan needs no secret: with sccache's password (a branch
+of this repository) the build goes through sccache, and a fork's compiles
+cold. A new push cancels the run before. It's advisory: no ruleset requires
+pr-gate, and its summary says so. Its jobs are named
 `pr-*` so no `ci.green` phase matches them.
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`

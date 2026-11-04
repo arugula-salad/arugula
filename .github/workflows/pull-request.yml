@@ -1,17 +1,14 @@
 name: pull request (hosted)
 
-# A pull request's run of what main's check.yml would fail it for, on
-# GitHub's runners alone (#306): lint, the debug binaries and the e2e
-# shards. Nothing here runs on arugula-amd64 or the Macs: those take only
-# main's pushes, merge groups and the full-check label (full-check.yml).
-# GitHub's Linux runners are free for this public repository, so what it
-# costs is wall time.
+# A pull request's first answer, on GitHub's runners alone (#306): the debug
+# binaries and the Playwright specs its change is likely to reach (#718,
+# scripts/pr-plan). Every spec, and all the rest, runs before anything lands:
+# the merge queue's group runs check.yml. So a spec this leaves out costs a
+# trip through the queue, not a red main. Nothing here runs on arugula-amd64
+# or the Macs. GitHub's Linux runners are free for this public repository, so
+# what it costs is wall time.
 #
-# Advisory for now: no ruleset requires it, and pr-gate's summary says so.
-# Making it required is adding `pr-gate` to the "binaries check" ruleset's
-# required status checks. This workflow doesn't run on merge groups, so
-# with the merge queue on (docs/development.md, "Merging through the
-# queue"), a required pr-gate would also need reporting on a group.
+# Advisory: no ruleset requires pr-gate, and its summary says so.
 #
 # A fork's pull request gets no secrets, and nothing here needs one:
 # without SCCACHE_WEBDAV_PASSWORD .github/actions/setup leaves sccache out
@@ -51,22 +48,28 @@ env:
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
-  # check.yml's lint, without gitleaks (binaries.yml's quick scans the pull
-  # request's commits).
-  lint:
-    name: pr-lint
+  # What this change takes. binaries.yml's quick has the lint, so this run doesn't.
+  plan:
+    name: pr-plan
     runs-on: ubuntu-24.04
+    outputs:
+      e2e: ${{ steps.plan.outputs.e2e }}
+      shards: ${{ steps.plan.outputs.shards }}
+      only: ${{ steps.plan.outputs.only }}
     steps:
       - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
         with:
-          tool: just
-      - uses: ./.github/actions/lint
+          # The merge commit and its parents: the diff against the base.
+          fetch-depth: 2
+      - id: plan
+        run: scripts/pr-plan | tee -a "$GITHUB_OUTPUT"
 
   # check.yml's build, on a hosted runner: Ubuntu 24.04, the glibc the
   # shards run on.
   build:
     name: pr-build
+    needs: plan
+    if: needs.plan.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -80,15 +83,16 @@ jobs:
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # check.yml's e2e shards, on this run's binaries.
+  # check.yml's e2e shards, on this run's binaries: as many as the chosen specs fill.
   e2e:
     name: pr-e2e (${{ matrix.shard }})
-    needs: build
+    needs: [plan, build]
+    if: needs.plan.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -100,12 +104,13 @@ jobs:
         with:
           shard: ${{ matrix.shard }}
           total: ${{ strategy.job-total }}
+          only: ${{ needs.plan.outputs.only }}
 
   # The run's one verdict, the check a ruleset would require: every job
-  # above passed. Its summary says the run is advisory.
+  # above passed, or wasn't needed. Its summary says the run is advisory.
   gate:
     name: pr-gate
-    needs: [lint, build, e2e]
+    needs: [plan, build, e2e]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -117,14 +122,14 @@ jobs:
             echo "## pull request (hosted): advisory"
             echo
             echo "No ruleset requires this run yet (#306): a red one doesn't block the merge."
-            echo "main's check.yml still runs the whole suite after the merge."
+            echo "These are the specs this change is likely to reach. The merge queue runs the whole suite before it lands."
             echo
             echo "| job | result |"
             echo "| --- | --- |"
             echo "$NEEDS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success")' >/dev/null; then
+          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success" and .result != "skipped")' >/dev/null; then
             echo "::error::a job failed or was cancelled (advisory: this doesn't block the merge)"
             exit 1
           fi
