@@ -3,12 +3,24 @@
   "commit": "e6d7c1778ab43b1ecb49dbbb54e63de56220379c",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T02:32:04Z",
+  "at": "2026-11-04T02:37:27Z",
   "phases": {
     "lint": {
       "verdict": "pending",
       "build": "newest",
       "runs": [
+        {
+          "name": "lint",
+          "id": 126351300045,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41760322496/job/126351300045"
+        },
+        {
+          "name": "changes",
+          "id": 126351299893,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41760322496/job/126351299893"
+        },
         {
           "name": "suite-changed",
           "id": 126347380679,
