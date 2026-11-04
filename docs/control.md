@@ -294,10 +294,14 @@ each turn's prompt goes to the agent.
   ends a push under way too. A grant signed after the revoke doesn't bring back
   a session it ended. Revoking a grant another has replaced ends nothing that
   runs under the other. The platform ends them as the revoke arrives, and the
-  box does as it hears the revoke, without waiting on control.
+  box does as it hears the revoke, without waiting on control. A restart
+  finishes the cleanup of a session that ended before it was done.
 - **Any turn, from anywhere.** The box checks as the prompt goes to the agent,
   whatever queued it: a follow-up, a mention, a person typing in the block.
-  Refused, what was queued is dropped and the card says why. After a restart a
+  Refused, what was queued is dropped and the card says why. A turn an agent
+  starts by itself is checked as it's seen, on a look a few times a second that
+  waits on nothing else; if it isn't allowed, or can't be checked yet, its agent
+  goes and its conversation stays, for a reply to open again. After a restart a
   turn waits until a pull has answered; if the check needs what a refresh would
   bring and control can't be reached, it waits too, and fails only when a
   refresh that got through still refuses.
