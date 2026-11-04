@@ -1913,6 +1913,15 @@ a.work-chip:hover {
   gap: 8px;
 }
 
+/* A long transcript's older entries aren't laid out or painted until they
+   scroll into view. The newest stay as they are: the log holds its end by
+   scrollHeight, which they'd throw off by growing from the estimate once
+   drawn. So does a terminal, which measures itself as it opens. */
+.agent-log > :nth-last-child(n + 16):not(.agent-tool-term) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}
+
 .agent-user {
   align-self: flex-end;
   max-width: 85%;
@@ -2046,6 +2055,11 @@ a.work-chip:hover {
   overflow: auto;
   color: var(--fg);
   background: var(--letterbox);
+}
+
+.agent-tool-tail {
+  display: flex;
+  flex-direction: column-reverse;
 }
 
 .agent-output {
