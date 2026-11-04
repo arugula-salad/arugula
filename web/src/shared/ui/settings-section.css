@@ -196,7 +196,8 @@ html[data-corners="square"] :is(.platform, .settings-place) input.sw-switch {
   :is(.platform, .settings-place) .settings-index a {
     display: block;
     margin-left: -1px;
-    padding: var(--space-1) 0 var(--space-1) 12px;
+    /* At least 24 px tall, a pointer's target. */
+    padding: 5px 0 5px 12px;
     border-left: 2px solid transparent;
     font: 500 11px/1.3 var(--f-mono);
     letter-spacing: 0.03em;
