@@ -937,7 +937,6 @@ test-scripts:
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
-    scripts/tests/ci-branch-run.sh
     node scripts/quarantine.mjs check
     scripts/check-nvim-tips
 

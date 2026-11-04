@@ -194,33 +194,19 @@ specs, and Windows'.
 ### Changing CI
 
 A pull request that changes `.github/`, the `justfile`,
-`chant.workspace.json`, `.config/nextest.toml` or the CI scripts
-(`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a passing
-check.yml run on its head commit before it merges (#304). Main's longest
+`chant.workspace.json`, `.config/nextest.toml` or the CI scripts goes
+through the merge queue like any other. Its group runs the workflows as
+the pull request changes them, on the commit that would land, so a CI
+change that breaks a job leaves the queue instead of turning main red. That
+replaces the branch run these changes used to need (#304). Main's longest
 red stretch, 20 runs on 2026-10-27, was four CI rewrites and the first
-daemon-split steps landing within 100 minutes, none of them run on a
-branch first. The `full-check` label runs check.yml on the branch
-(full-check.yml; by hand, `gh workflow run check.yml --ref BRANCH`). A
-run counts only for the commit it ran on, so after another push remove
-the label and add it again.
+daemon-split steps landing within 100 minutes, untested together. The
+`full-check` label still runs check.yml on the branch for an earlier
+answer (full-check.yml; by hand, `gh workflow run check.yml --ref BRANCH`).
 
 A phase added to `ci.green` goes in `require` and in each lane in
 `ci.green.lanes` whose deployable it checks; "Releasing" has the lanes
 and why each needs what it does.
-
-binaries.yml's `ci-branch-run` job enforces it, and its `queue` waits
-for that job. The list of files is in `scripts/ci-branch-run`
-(`touches`), which `scripts/tests/ci-branch-run.sh` tests. The job reads
-the pull request's files and check.yml's runs on its head through the
-API with the job's own token, so it needs no secrets and runs on a
-fork's pull request too. It passes when nothing on the list changed or
-a run on the head passed, waits (up to 2 hours) while one is in
-progress, and otherwise fails, saying what to do. The label's workflow
-re-runs the job once binaries.yml's run has finished, so the job finds
-the new run and waits for it. After a run started by hand, re-run the
-job yourself. A fork's branch can't run check.yml: someone who can push
-here puts the commit on a branch of this repository and runs it there,
-and the job finds that run by its commit.
 
 ### When main goes red
 
@@ -247,40 +233,47 @@ the group passes.
 
 `chant.workspace.json` sets `ci.green.mergeQueue` (chant#4644), so `chant
 ci workflow` puts `merge_group` on check.yml, windows.yml and
-windows-desktop.yml and writes `chant-merge-queue.yml`. A group runs every
-job, since `scripts/changed` skips nothing for any event but a push.
-`chant-merge-queue.yml`'s `chant-verdict` job is the group's verdict: `chant
-ci verdict --wait` passes once every phase `ci.green` requires passed on
-the group's commit, judged as the tick judges main. On a pull request,
-binaries.yml's job of the same name stands in for it, once `binaries`,
-`quick` and `ci-branch-run` have passed. binaries.yml has no `merge_group`
-trigger, because its `chant-verdict`, skipped on a group, would count as
-passed. On a pull request that changes the desktop app, binaries.yml
-also runs `just desktop-xvfb`, and `chant-verdict` waits for it. The `full-check`
-label on a pull request runs check.yml on its branch (full-check.yml).
+windows-desktop.yml and writes `chant-merge-queue.yml`. A group runs what
+its diff against main reaches, and that diff holds whatever is queued
+ahead of it (`scripts/changed`), so a docs-only pull request behind a code
+one still runs everything. `chant-merge-queue.yml`'s `chant-verdict` job is
+the group's verdict: `chant ci verdict --wait` passes once every phase
+`ci.green` requires passed on the group's commit, judged as the tick judges
+main. On a pull request, binaries.yml's job of the same name stands in for
+it, once `binaries` and `quick` have passed. binaries.yml has no
+`merge_group` trigger, because its `chant-verdict`, skipped on a group,
+would count as passed. On a pull request that changes the desktop app,
+binaries.yml also runs `just desktop-xvfb`, and `chant-verdict` waits for it.
 Only someone who may merge can queue a pull request, so a group's code
 reaches the home cloud's runners no sooner than a merge would bring it.
 
-The queue is off until Jake turns it on. In the repository's
-**Settings → Rules → Rulesets**, in the ruleset on the default branch
-(or a new one targeting it):
+To land a pull request: `gh pr merge N` (or Merge when ready on GitHub). It
+lands when its group passes; `gh pr view N` says where it is. A failed group
+takes the pull request out of the queue, and queueing it again re-runs it.
 
-1. **Require merge queue**: the merge method main uses now; *Build
-   concurrency* 1 or 2 (each group takes three pods and a Mac); *Minimum group
-   size* 1, *Maximum* 5, *Wait time* 0; *Only merge non-failing pull
-   requests*; *Status check timeout* 90 minutes (a run is ~35 min, plus
-   pods' queues).
-2. **Require status checks to pass**: add `chant-verdict`, from GitHub
-   Actions. It stands for `binaries`, `quick` and `ci-branch-run` too: if they're
-   required on their own now, take them out, or a group waits for checks
-   no workflow reports on it.
-
-Then a pull request's *Merge when ready* queues it. A rollup's queue
-entry is the lead's `just rollup-check`, on main as it will be.
 The queue lands the commit its group tested, so the group's check runs are
-on main's commit already and chant's tick counts them. Main's push runs
-check.yml once more after the merge; a job that run skips or a newer push
-cancels doesn't replace the group's result (chant#4644).
+on main's commit already and chant's tick counts them. Main's push run on
+that commit skips what the group passed (`scripts/queue-tested`); chant
+keeps the group's result over a skipped job (chant#4644). So main stops
+saving the build caches on most pushes, and a group or a tag reads main's
+alone: `main-full-run.yml` runs every job on main's head each night, which
+saves them and runs what groups skip by path.
+
+**Settings**, in the "binaries check" ruleset on the default branch:
+*Require merge queue* with squash; *Build concurrency* 3, since GitHub builds
+each queued pull request apart, so this caps throughput, and each build takes
+a Mac (there are three) and about 20 of the plan's 60 hosted jobs; *Maximum
+group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
+(`HEADGREEN`), since a later group contains the ones ahead and its pass clears
+them, so a flake rarely ejects anyone while a real break still fails every
+later group; *Status check timeout* 45 minutes. *Require status checks to pass*
+requires `chant-verdict`, from GitHub Actions.
+
+**To turn it off**, take the merge queue rule out of that ruleset and require
+`binaries` again in place of `chant-verdict`. Pull requests then merge
+directly, and main's pushes run everything again, since no `merge_group` run
+passes on their commits. The ruleset's bypass (admins, and the `arugula-io`
+App) lets `scripts/release` push the fixtures commit straight to main.
 
 `just testnet up ssh` starts a local stack in Docker (`testnet/`, #200): a
 bastion and a box with no Arugula that only ssh reaches. `just testnet

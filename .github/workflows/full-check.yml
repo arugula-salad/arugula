@@ -1,18 +1,13 @@
 name: full-check
 
 # The `full-check` label on a pull request runs check.yml on its branch: what
-# `gh workflow run check.yml --ref BRANCH` does by hand (#1677). Pull requests
-# otherwise run only binaries.yml; check.yml's tests run on the home cloud's
-# pods and our Macs.
+# `gh workflow run check.yml --ref BRANCH` does by hand (#1677). Nothing
+# requires it: the merge queue runs check.yml before a pull request lands. It's
+# for an answer sooner than the queue's, such as the Rust tests, which the pull
+# request's own run doesn't have. Add the label again (remove it, add it) for
+# another run.
 # Same-repository branches only: a fork's pull request gets a read-only token
 # here, and its code mustn't reach our machines before a merge would bring it.
-# Add the label again (remove it, add it) for another run. Then, once the
-# pull request's binaries.yml run has finished, it re-runs that run's
-# ci-branch-run job if it failed (no check.yml run on the head yet), so
-# the job waits for this one and passes with it (#304,
-# scripts/ci-branch-run). A run can be re-run only once it has finished,
-# so this job waits for it (desktop-xvfb's, when it runs, is the longest),
-# a look a minute.
 on:
   pull_request:
     types: [labeled]
@@ -23,7 +18,7 @@ jobs:
   dispatch:
     if: github.event.label.name == 'full-check' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 125
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: write
@@ -34,13 +29,3 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: gh workflow run check.yml --ref "$BRANCH"
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: scripts/ci-branch-run
-          sparse-checkout-cone-mode: false
-      - name: binaries.yml's ci-branch-run again, to wait for it
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-        run: scripts/ci-branch-run rerun "$SHA"
