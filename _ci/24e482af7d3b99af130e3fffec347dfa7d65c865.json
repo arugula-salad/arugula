@@ -3,7 +3,7 @@
   "commit": "24e482af7d3b99af130e3fffec347dfa7d65c865",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T03:55:39Z",
+  "at": "2026-11-04T04:02:43Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 126376191189,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126376191189"
         }
       ]
@@ -78,7 +78,7 @@
         {
           "name": "e2e (1)",
           "id": 126377195258,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195258"
         },
         {
@@ -90,25 +90,25 @@
         {
           "name": "e2e (11)",
           "id": 126377195268,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195268"
         },
         {
           "name": "e2e (12)",
           "id": 126377195312,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195312"
         },
         {
           "name": "e2e (2)",
           "id": 126377195241,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195241"
         },
         {
           "name": "e2e (3)",
           "id": 126377195218,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195218"
         },
         {
@@ -120,7 +120,7 @@
         {
           "name": "e2e (5)",
           "id": 126377195227,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195227"
         },
         {
@@ -132,31 +132,31 @@
         {
           "name": "e2e (7)",
           "id": 126377195313,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195313"
         },
         {
           "name": "e2e (8)",
           "id": 126377195219,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195219"
         },
         {
           "name": "e2e (9)",
           "id": 126377195235,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126377195235"
         }
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 126376191025,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286725/job/126376191025"
         }
       ]
@@ -174,19 +174,19 @@
       ]
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 126376924670,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286501/job/126376924670"
         },
         {
           "name": "workspace-clippy",
           "id": 126376924779,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41769286501/job/126376924779"
         }
       ]
