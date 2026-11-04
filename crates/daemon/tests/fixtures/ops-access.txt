@@ -1,4 +1,5 @@
 # name method path access drives credential
+access.get GET /api/access Owner drives=false credential=false
 acl.get GET /api/acl Owner drives=false credential=false
 acl.set POST /api/acl Owner drives=false credential=false
 adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false credential=false

@@ -1420,6 +1420,47 @@ fn load_waiting(state_dir: &Path) -> Vec<Waiting> {
     old
 }
 
+/// What the access view (Arugula #681) reads of an enrollment:
+/// [`Control::roster_view`].
+#[derive(Debug, Clone, Default)]
+pub struct RosterView {
+    /// A hosted machine: who gets in is its project's people.
+    pub hosted: bool,
+    /// A hosted box made for one deploy or a snapshot: nobody gets in.
+    pub nobody: bool,
+    /// A team machine's team (pinned at join), roster checked or not yet.
+    pub team_id: Option<String>,
+    /// This machine's own account (a hosted team machine's: the founder's).
+    pub account: String,
+    /// Its login on control, once control said.
+    pub login: String,
+    /// Its device id in control's directory.
+    pub device: String,
+    /// That control's URL.
+    pub url: String,
+    /// Its own team's roster, as last checked.
+    pub team: Option<RosterTeam>,
+    /// Teams sessions were shared with (M30), by id, as checked.
+    pub shared: BTreeMap<String, RosterTeam>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RosterTeam {
+    pub id: String,
+    pub name: String,
+    /// Locked: only its owners get in.
+    pub locked: bool,
+    pub members: Vec<RosterMember>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RosterMember {
+    pub account: String,
+    /// As they set it (#208), else the roster's word.
+    pub name: String,
+    pub role: TeamRole,
+}
+
 /// Someone a roster this daemon checked names (#233): its own team's, or
 /// a team's the owner pinned or shared with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2044,6 +2085,58 @@ impl Control {
             }
         }
         out
+    }
+
+    /// What the access view reads of this enrollment (Arugula #681): the
+    /// machine's kind, its own team's roster as this machine checked it
+    /// (a team machine's, or a hosted machine's project's), and the teams
+    /// sessions were shared with, each from a roster that checked out from
+    /// its pin. Nothing control said that this machine didn't check for
+    /// itself: a team control withheld (`held_teams`) isn't here, since
+    /// nobody gets in through it.
+    pub fn roster_view(&self) -> Option<RosterView> {
+        let e = self.enrolled()?;
+        let s = &e.saved;
+        let members = |r: &Roster, names: &BTreeMap<String, String>| -> Vec<RosterMember> {
+            r.members
+                .iter()
+                .map(|m| RosterMember {
+                    account: m.account.clone(),
+                    name: names.get(&m.account).unwrap_or(&m.name).clone(),
+                    role: m.role,
+                })
+                .collect()
+        };
+        let team = s.roster.as_ref().map(|r| RosterTeam {
+            id: r.team.clone(),
+            name: r.name.clone(),
+            locked: s.locked,
+            members: members(r, &s.team_names),
+        });
+        let shared = s
+            .shared_teams
+            .iter()
+            .map(|(id, t)| {
+                let team = RosterTeam {
+                    id: id.clone(),
+                    name: t.roster.name.clone(),
+                    locked: t.locked,
+                    members: members(&t.roster, &t.names),
+                };
+                (id.clone(), team)
+            })
+            .collect();
+        Some(RosterView {
+            hosted: s.hosted.is_some(),
+            nobody: s.hosted.as_ref().is_some_and(|h| h.deploy || h.builder),
+            team_id: s.team.as_ref().map(|p| p.team.clone()),
+            account: s.cert.account.clone(),
+            login: s.login.clone(),
+            device: s.cert.device.clone(),
+            url: s.url.clone(),
+            team,
+            shared,
+        })
     }
 
     /// Who `account` is, if they're a team's other owner here (#935): they

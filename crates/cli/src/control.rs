@@ -97,7 +97,9 @@ impl Saved {
 
 /// This CLI, enrolled.
 pub struct Enrolled {
-    url: String,
+    /// The control it's logged in to (Arugula #681: `arugula access` asks
+    /// it for a machine's powers only when the machine is joined there).
+    pub(crate) url: String,
     cert: Cert,
     trust: Trust,
     pins: BTreeMap<String, String>,

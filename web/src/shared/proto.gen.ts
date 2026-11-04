@@ -9,6 +9,104 @@ export type ClientId = number;
 export type MachineId = number;
 
 /**
+ * One person, team, link or guest that reaches the machine, and as what.
+ */
+export type AccessRow = { 
+/**
+ * `owner` (the machine's), `team_owner` (a team's other owner, an
+ * owner here), `team_role` (a team member by the roster), `share` (a
+ * session share), `team_share` (a member of a team a session was
+ * shared with), `link` (a read-only link: to a session, or to one
+ * pane), `guest` (an ssh invite), `trust` (minutes to type into one
+ * pane).
+ */
+kind: string, 
+/**
+ * Whose word: `this_machine` (its own files and memory) or `roster`
+ * (the team's signed roster, checked by this machine).
+ */
+word: string, 
+/**
+ * What to call them.
+ */
+who: string, 
+/**
+ * Their principal id (`account:…`, `tailnet:…`, `team:…`, `link:…`),
+ * where there is one.
+ */
+principal?: string | null, role: Role, 
+/**
+ * Where they reach: one session, one pane (in `session`), or every
+ * session (neither).
+ */
+session?: number | null, pane?: number | null, 
+/**
+ * A "from now" share: since when (ms), and nothing before it.
+ */
+from_ms?: number | null, 
+/**
+ * When it ends (ms): a link, an invite, trust.
+ */
+until_ms?: number | null, 
+/**
+ * A word more: "full use, as an owner" on a hosted machine's editor,
+ * how an invite may be used, which team a share came through.
+ */
+note?: string | null, };
+
+export type AccessSession = { id: number, name: string, };
+
+export type AccessTeam = { id: string, name: string, 
+/**
+ * Locked: only its owners get in.
+ */
+locked: boolean, };
+
+/**
+ * `GET /api/access` (Arugula #681, the `access.get` operation): who can
+ * reach this machine, and as what, from what the machine holds: its owner,
+ * the roster it checked itself (team owners as owners, the others by their
+ * team role), the session shares in `acl.json` with their floors, links and
+ * when they end, ssh guests, and trust live now. The owner's, read-only, and
+ * nothing an owner can't read from `GET /api/acl`, `/api/shares`,
+ * `/api/guests` and the roster. Each row says whose word it is
+ * ([`AccessRow::word`]). This machine's agents' powers are control's word
+ * (`GET /api/grants`): the page and `arugula access` add them, labelled so.
+ */
+export type AccessView = { 
+/**
+ * `local` (joined to no control), `personal`, `team` or `hosted`.
+ */
+kind: string, 
+/**
+ * The machine's name, and (joined) its device id in control's
+ * directory and that control's URL: what its agents' powers are
+ * listed under there, and where.
+ */
+name: string, machine?: string | null, control?: string | null, 
+/**
+ * A team machine's team, or a hosted machine's project's.
+ */
+team?: AccessTeam | null, 
+/**
+ * Guest SSH access: the setting (`None`: this build has no guest ssh).
+ */
+guest_ssh?: boolean | null, 
+/**
+ * The sessions, so a row's session has a name.
+ */
+sessions: Array<AccessSession>, 
+/**
+ * Who can reach it, the owner first.
+ */
+rows: Array<AccessRow>, 
+/**
+ * What holds for the whole machine, in sentences: a locked team, a
+ * hosted machine's editors having full use.
+ */
+notes: Array<string>, };
+
+/**
  * `POST /api/attention/act`: do something about one pane's reason, or
  * several at once ("allow all 3", "dismiss all 11"). Each pane needs
  * editor on its session.
@@ -5732,6 +5830,7 @@ pane: number | null, };
 
 /** Each operation's method and path (`arugula_proto::op`), by name. */
 export const OPS = {
+  "access.get": { method: "GET", path: "/api/access" },
   "acl.get": { method: "GET", path: "/api/acl" },
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },

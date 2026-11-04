@@ -9,6 +9,7 @@
 //! its errors ([`OpError`]) are worded by each surface as before. The design
 //! is in `docs/operations.md`.
 
+mod access;
 mod acl;
 mod close;
 mod flags;

@@ -290,6 +290,9 @@ pub enum Api {
     Trust(PaneId, String, u32, oneshot::Sender<bool>),
     /// A notice for whoever (by principal id) is connected.
     Tell(String, String),
+    /// Who is trusted with which pane on this machine now (Arugula #681):
+    /// each live grant of trust as (pane, principal id, until ms).
+    Trusted(oneshot::Sender<Vec<(PaneId, String, u64)>>),
     /// The panes `who` may read the history and events of (M112): every
     /// pane of a session (`Some`), or of every session they reach, that's
     /// readable to them. `None` when there's no such session, or `who` has
