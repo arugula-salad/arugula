@@ -172,6 +172,12 @@ pub struct Session {
     /// It ended, and why: this box stops following it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// It ended, and what it left (its agent, what its user runs, its
+    /// slot's files) hasn't all gone yet: a restart finishes that. Written
+    /// with `ended`, and cleared once it's done. Its slot goes to nobody else
+    /// until then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cleanup_owed: bool,
     /// Every prompt handed to its agent: none is handed again.
     #[serde(default)]
     pub handed: Vec<String>,

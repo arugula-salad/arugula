@@ -113,28 +113,54 @@ fn git(dir: &Path) -> tokio::process::Command {
 }
 
 async fn run(mut c: tokio::process::Command, what: &str) -> Result<String, String> {
+    use tokio::io::AsyncReadExt as _;
     // In a group of its own: git hands a push to helpers of its own, and
     // stopping one stops them all.
     #[cfg(unix)]
     c.process_group(0);
-    let child = c
+    let mut child = c
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("can't run git to {what}: {e}"))?;
-    let group = KillGroup(child.id());
-    let out = child.wait_with_output().await.map_err(|e| format!("can't run git to {what}: {e}"))?;
-    std::mem::forget(group);
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
+    // After `child`, so it's dropped first: the group is signalled before the
+    // child's own drop gives up its claim on the leader.
+    let mut group = KillGroup(child.id());
+    let reaped = async {
+        let status = child.wait().await;
+        // Nothing yields between the reaping and this, and this future is
+        // what could be dropped: while the guard is armed, the leader hasn't
+        // been reaped, so its id can't have gone to anyone else.
+        group.0 = None;
+        status
+    };
+    // Each drained as it fills: git blocks on a full pipe.
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let read_out = async {
+        if let Some(o) = out.as_mut() {
+            let _ = o.read_to_end(&mut stdout).await;
+        }
+    };
+    let read_err = async {
+        if let Some(e) = err.as_mut() {
+            let _ = e.read_to_end(&mut stderr).await;
+        }
+    };
+    let (status, (), ()) = tokio::join!(reaped, read_out, read_err);
+    let status = status.map_err(|e| format!("can't run git to {what}: {e}"))?;
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
     } else {
-        let said = String::from_utf8_lossy(&out.stderr);
+        let said = String::from_utf8_lossy(&stderr);
         Err(format!("git couldn't {what}: {}", said.trim().chars().take(400).collect::<String>()))
     }
 }
 
 /// Kills a git and what it started, when what's waiting on it is dropped: a
-/// session that ended while it pushes ([`push_turn`]).
+/// session that ended while it pushes ([`push_turn`]). It holds the group's id
+/// only while the leader is unreaped ([`run`]): after that the id could be
+/// anyone's, and helpers still running get no signal.
 struct KillGroup(Option<u32>);
 
 impl Drop for KillGroup {
@@ -438,4 +464,67 @@ pub async fn clone_shallow(stage: &Path, remote: &str, token: Option<&str>) -> R
         c.env("ARUGULA_PUSH_TOKEN", t);
     }
     run(c, "clone it").await.map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::run;
+
+    fn command(script: &str) -> tokio::process::Command {
+        let mut c = tokio::process::Command::new("sh");
+        c.args(["-c", script]).kill_on_drop(true);
+        c
+    }
+
+    fn alive(pid: &str) -> bool {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        stat.rsplit(") ").next().is_some_and(|rest| !rest.is_empty() && !rest.starts_with('Z'))
+    }
+
+    fn pid_in(file: &std::path::Path) -> String {
+        for _ in 0..200 {
+            if let Ok(p) = std::fs::read_to_string(file)
+                && !p.trim().is_empty()
+            {
+                return p.trim().to_owned();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("no pid in {}", file.display());
+    }
+
+    /// Stopped while its leader runs, the group goes, helper and all. Once the
+    /// leader has been reaped its id may be someone else's, so nothing is
+    /// signalled, though a helper holding its pipe keeps the wait going.
+    #[tokio::test]
+    async fn a_group_is_signalled_only_while_its_leader_is_unreaped() {
+        let dir = std::env::temp_dir().join(format!("arugula-kill-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let helper = dir.join("running.pid");
+        let script = format!("sleep 60 & echo $! > {}; wait", helper.display());
+        let got = tokio::time::timeout(Duration::from_millis(500), run(command(&script), "run")).await;
+        assert!(got.is_err(), "it runs until it's stopped");
+        let pid = pid_in(&helper);
+        for _ in 0..200 {
+            if !alive(&pid) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!alive(&pid), "the helper goes with its leader");
+
+        let helper = dir.join("reaped.pid");
+        let script = format!("sleep 60 & echo $! > {}; exit 0", helper.display());
+        let got = tokio::time::timeout(Duration::from_millis(500), run(command(&script), "run")).await;
+        assert!(got.is_err(), "the helper holds its pipe, so the wait goes on");
+        let pid = pid_in(&helper);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(alive(&pid), "its leader was reaped: nothing was signalled");
+        let _ = std::process::Command::new("kill").args(["-KILL", &pid]).status();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -2173,3 +2173,133 @@ fn a_new_passkey_waits_for_a_refresh_and_only_a_good_one_refuses() {
     drop(d);
     let _ = std::fs::remove_dir_all(&marks);
 }
+
+/// An agent wakes itself while its grant can't be checked: one signed with a
+/// passkey this box hasn't pinned, and a refresh that can't get through. The
+/// turn doesn't become the session's: its agent goes, the card says why. Once
+/// a refresh gets through, a reply opens it again.
+#[test]
+fn a_self_started_turn_that_cant_be_checked_is_stopped() {
+    let Rig { _rt, f, marks, d, .. } = rig_with("grant-wake-wait", &[("FAKE_ACP_NAME", "claude-agent-acp")]);
+    let added = DeviceKeys::generate();
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    wait(&marks, &f, "the background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    let before = f.moves(&a).len();
+
+    f.trust_down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let log = f.log_with(&[("pk2", &added)]);
+    if let Some((e, _)) = f.enrolled.lock().unwrap().as_mut() {
+        e.passkey_logs = Some([("acct1".to_owned(), log.clone())].into());
+    }
+    *f.carried.lock().unwrap() = Some(log);
+    *f.grant.lock().unwrap() = Some(f.passkey_grant("acct1", &added, "pk2"));
+    let said = || f.of(&a).iter().filter_map(|(_, d)| d.error.clone()).collect::<Vec<_>>();
+    wait(&marks, &f, "its agent gone", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    wait(&marks, &f, "the card told why", || said().iter().any(|e| e.starts_with("grant_passkey")));
+    assert_eq!(f.moves(&a).len(), before, "it never became the session's turn: {:?}", f.moves(&a));
+    assert_eq!(f.state(&a), "done");
+
+    f.trust_down.store(false, std::sync::atomic::Ordering::SeqCst);
+    f.queue(&a, prompt(3, "acct1", "remember plum"));
+    wait(&marks, &f, "a reply, once it can be checked", || f.turns(&a).len() == 3 && f.state(&a) == "done");
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// An agent wakes itself while the box follows another turn, in its finish
+/// step: stopped there, with that step still running.
+#[test]
+fn a_self_started_turn_during_a_finish_step_is_stopped() {
+    let Rig { _rt, f, marks, d, .. } = rig_with("grant-wake-finish", &[("FAKE_ACP_NAME", "claude-agent-acp")]);
+    let slow = marks.join("slow-finish");
+    let step = FinishStep { command: format!("[ -e {} ] && sleep 8; true", slow.display()), timeout_s: 0 };
+    let a = ses('a');
+    f.start_with(&a, "one", prompt(1, "acct1", "hello"), Some(step));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    std::fs::write(&slow, "").unwrap();
+    f.queue(&a, prompt(2, "acct1", "bg 1"));
+    wait(&marks, &f, "the turn's start", || f.turns(&a).len() == 2);
+    *f.grant.lock().unwrap() = None;
+    wait(&marks, &f, "its agent gone", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    assert_eq!(f.turn_reports(&a).len(), 1, "the finish step still runs: {:?}", f.moves(&a));
+    let said = || f.of(&a).iter().filter_map(|(_, d)| d.error.clone()).collect::<Vec<_>>();
+    wait(&marks, &f, "the card told why", || said().iter().any(|e| e.starts_with("no_grant")));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// With control not answering, an agent that wakes itself with its grant gone
+/// is stopped all the same: nothing waits for a report, and its transcript goes
+/// after. The report comes once control answers.
+#[test]
+fn a_self_started_turn_is_stopped_with_control_not_answering() {
+    let Rig { _rt, f, marks, d, .. } = rig_with("grant-wake-stall", &[("FAKE_ACP_NAME", "claude-agent-acp")]);
+    let a = ses('a');
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    wait(&marks, &f, "the background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
+    let block = block_of(&f, &a);
+    *f.grant.lock().unwrap() = None;
+    let pulls = f.pulls();
+    wait(&marks, &f, "a pull with none", || f.pulls() > pulls + 1);
+    f.stalled.store(true, std::sync::atomic::Ordering::SeqCst);
+    let reports = f.reports.lock().unwrap().len();
+    wait(&marks, &f, "its agent gone", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
+    assert_eq!(f.reports.lock().unwrap().len(), reports, "control has heard nothing");
+    f.stalled.store(false, std::sync::atomic::Ordering::SeqCst);
+    let said = || f.of(&a).iter().filter_map(|(_, d)| d.error.clone()).collect::<Vec<_>>();
+    wait(&marks, &f, "the card told why", || said().iter().any(|e| e.starts_with("no_grant")));
+    wait(&marks, &f, "its transcript archived", || f.transcripts.lock().unwrap().iter().any(|t| t["block"] == block));
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A session recorded as ended, its cleanup not finished when the daemon
+/// stopped: a restart finishes it, its restored block closed and its slot's
+/// files gone, and says it's done. One from before cleanup was kept track of
+/// isn't touched: its slot may be another session's by now.
+#[test]
+fn a_restart_finishes_what_an_ended_session_left() {
+    let Rig { _rt, f, marks, homes, mut d, state, .. } = rig("grant-cleanup");
+    let (a, b) = (ses('a'), ses('b'));
+    f.start(&a, "one", prompt(1, "acct1", "hello"));
+    wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
+    f.start(&b, "two", prompt(2, "acct1", "hello"));
+    wait(&marks, &f, "b's first turn", || f.state(&b) == "done");
+    let block = block_of(&f, &a);
+    let (home_a, home_b) = (homes.join("ses1"), homes.join("ses2"));
+    let (co_a, co_b) = (home_a.join("work").join(&a), home_b.join("work").join(&b));
+    assert!(co_a.exists() && co_b.exists());
+    d.stop();
+
+    let ledger = |id: &str| state.join("work").join("sessions").join(format!("{id}.json"));
+    let edit = |id: &str, owed: bool| {
+        let mut l: Value = serde_json::from_str(&std::fs::read_to_string(ledger(id)).unwrap()).unwrap();
+        l["ended"] = json!("stopped: the project's standing grant was revoked");
+        if owed {
+            l["cleanup_owed"] = json!(true);
+        }
+        std::fs::write(ledger(id), serde_json::to_vec(&l).unwrap()).unwrap();
+    };
+    edit(&a, true);
+    edit(&b, false);
+    f.stop(&a);
+    f.stop(&b);
+    d.start();
+
+    wait(&marks, &f, "its checkout gone", || !co_a.exists());
+    assert_eq!(d.raw("GET", &format!("/api/blocks/{block}"), None).0, 404, "its restored block closed");
+    wait(&marks, &f, "the ledger says it's done", || {
+        let l: Value = serde_json::from_str(&std::fs::read_to_string(ledger(&a)).unwrap()).unwrap();
+        l.get("cleanup_owed").is_none()
+    });
+    assert!(co_b.exists(), "the one that didn't owe any is left alone");
+    drop(d);
+    let _ = std::fs::remove_dir_all(&marks);
+}

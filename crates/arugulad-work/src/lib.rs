@@ -1302,6 +1302,9 @@ pub fn start(app: Arc<App>) {
             warn!(why, "hosted: sessions and runs can't be kept off the daemon's ports yet");
         }
         sessions::resume(&app).await;
+        if sessions::takes() {
+            sessions::watch(app.clone());
+        }
         let mut open: BTreeSet<String> = all(&dir)
             .into_iter()
             .filter(|l| l.state == State::Running.as_str() || l.events.iter().any(|k| !k.answered))

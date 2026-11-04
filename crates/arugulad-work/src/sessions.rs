@@ -182,6 +182,9 @@ const CANCEL_MAX: Duration = Duration::from_secs(5);
 /// The daemon, for what asks with no handle on it
 /// ([`turn_allowed`]). Set when the work starts.
 pub static APP: std::sync::OnceLock<Arc<App>> = std::sync::OnceLock::new();
+/// How far each session's block's turns have been looked at for ones its agent
+/// began by itself ([`watch_wakes`]): the block, and that many of its turns.
+static WAKES_SEEN: Mutex<BTreeMap<String, (u32, u64)>> = Mutex::new(BTreeMap::new());
 /// The latest pull's sessions, by id: `None` before the first.
 static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
 /// Sessions followed now.
@@ -517,7 +520,7 @@ fn revoked_now(app: &App, l: &Session) -> bool {
 /// End the sessions a revoke kept here takes back, now: each is marked here
 /// and its agent stopped in a task of its own, so nothing about control's
 /// answers holds it up. As a revoke is kept (relayed, or with a pull); and
-/// each session's [`step`] looks, for the turn that ends later.
+/// [`watch`] looks, for the turn that ends later.
 pub fn stop_revoked(app: &Arc<App>) {
     for l in live(app.control.state_dir()) {
         if !revoked_now(app, &l) {
@@ -526,8 +529,112 @@ pub fn stop_revoked(app: &Arc<App>) {
         info!(session = l.session, "hosted: ending a session: its standing grant was revoked");
         if let Some(l) = mark_failed(app, &l.session, super::REVOKED) {
             let app = app.clone();
-            crate::task::spawn(async move { wind_down(&app, &l).await });
+            crate::task::spawn(async move { wind_down(&app, &l, false).await });
         }
+    }
+}
+
+/// While the box runs: every [`FOLLOW`], the sessions a revoke ends and the
+/// turns agents began by themselves. It's its own loop, not a session's
+/// [`step`], which waits on finish steps, pushes and reports: nothing here
+/// waits on control, and what it stops, it stops in a task of its own.
+pub fn watch(app: Arc<App>) {
+    crate::task::spawn(async move {
+        loop {
+            stop_revoked(&app);
+            watch_wakes(&app).await;
+            tokio::time::sleep(FOLLOW).await;
+        }
+    });
+}
+
+/// Whether any of `from..to`, a block's turns, was one its agent began by
+/// itself: a turn with no prompt.
+fn woke_between(s: &Seen, from: u64, to: u64) -> bool {
+    (from..to).any(|n| s.typed_at(n).is_none())
+}
+
+/// A turn an agent began by itself (a background task's end woke it) came
+/// through no prompt to check, so it's checked here, whatever else the session
+/// is doing. What can't be checked as of now counts as refused: no pull since
+/// this daemon started, or a grant this box can't check until a refresh. Its
+/// agent goes ([`stop_woken`]), and a reply opens it again once a check answers.
+async fn watch_wakes(app: &Arc<App>) {
+    for l in live(app.control.state_dir()) {
+        let Some(block) = l.block else { continue };
+        let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() else { continue };
+        let s = seen(&b.state());
+        let start = l.turns_seen.unwrap_or(s.turns);
+        let from = {
+            let seen = WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+            seen.get(&l.session).filter(|(b, _)| *b == block).map_or(start, |(_, n)| *n)
+        };
+        if woke_between(&s, from, s.turns) {
+            let why = match latest(&l.session) {
+                None => Err("no_pull: this box hasn't heard from control since it started".to_owned()),
+                Some(w) => checked(app, &w).map_err(|r| format!("{}: {}", r.code, r.says)),
+            };
+            if let Err(why) = why {
+                stop_woken(app, &l, block, &b, s.turns, why);
+                continue;
+            }
+        }
+        WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner()).insert(l.session.clone(), (block, s.turns));
+    }
+}
+
+/// Stop the agent of session `l`, which began a turn by itself that isn't
+/// allowed: the ledger says so here, parked with its conversation kept, and
+/// the rest goes in a task of its own: its block closed and what its user runs
+/// killed first, then its transcript (closing a block sends it) and the report.
+fn stop_woken(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::block::Block>, turns: u64, why: String) {
+    let Some((keys, me, ..)) = me(app) else { return };
+    let agent_session = b.state()["session_id"].as_str().map(str::to_owned);
+    warn!(session = l.session, why, "hosted: stopping a turn its agent began by itself");
+    let done = update(app.control.state_dir(), &l.session, |now| {
+        if now.now() == State::NeedsInput {
+            now.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());
+        }
+        if now.now() == State::Working {
+            now.push(&keys, &me, Kind::State, State::Done, SessionDetail::default());
+        }
+        now.turn = None;
+        now.turns_seen = Some(turns);
+        now.parked = Some(Parked { at: now_ms(), block: Some(block), agent_session });
+        now.block = None;
+        let to = now.now();
+        now.push(&keys, &me, Kind::Error, to, SessionDetail { error: Some(why.clone()), ..Default::default() });
+        now.error = Some(why);
+    });
+    if done.is_none() {
+        return;
+    }
+    BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
+    let (app, l) = (app.clone(), l.clone());
+    crate::task::spawn(async move {
+        kill_agent(&app, &l, Some(block)).await;
+        block_gone(block);
+        send(&app, &l.session).await;
+    });
+}
+
+/// Close `block` and kill what `l`'s user runs, at once: neither waits for the
+/// other, or for the agent.
+async fn kill_agent(app: &App, l: &Session, block: Option<u32>) {
+    let close = async {
+        if let Some(block) = block {
+            app.mux.api(|r| Api::Close(block, r)).await;
+        }
+    };
+    let kill = async {
+        if slots().is_some_and(|s| s.real) {
+            super::kill_user(&l.user.user).await;
+        }
+    };
+    tokio::join!(close, kill);
+    // A block's agent that went down first may have started again.
+    if slots().is_some_and(|s| s.real) {
+        super::kill_user(&l.user.user).await;
     }
 }
 
@@ -536,11 +643,22 @@ pub fn stop_revoked(app: &Arc<App>) {
 pub async fn resume(app: &Arc<App>) {
     let dir = app.control.state_dir().to_owned();
     // Its blocks' turns are their sessions' from the start, before a
-    // restored block sends what it had queued.
-    for l in live(&dir) {
+    // restored block sends what it had queued. One that ended is asked too,
+    // and refused.
+    for l in all(&dir).into_iter().filter(|l| l.ended.is_none() || l.cleanup_owed) {
         if let Some(b) = l.block {
             block_is(b, &l.session);
         }
+    }
+    // What a session that ended left, when the daemon stopped before it had
+    // all gone: its agent, a block the restart brought back, what its user
+    // runs, its slot's files.
+    for l in all(&dir).into_iter().filter(|l| l.ended.is_some() && l.cleanup_owed) {
+        info!(session = l.session, "hosted: finishing what an ended session left");
+        if let Some(b) = l.parked.as_ref().and_then(|p| p.block) {
+            app.mux.api(|r| Api::Close(b, r)).await;
+        }
+        clean_up(app, &l, false).await;
     }
     let real = slots().is_some_and(|s| s.real);
     for l in live(&dir) {
@@ -613,8 +731,14 @@ fn model_for(w: &SessionWork, harness: Option<&str>) -> Option<String> {
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
-    let held: BTreeSet<String> = live(dir).into_iter().map(|l| l.user.user).collect();
-    slots.users.iter().find(|u| !held.contains(&u.user)).cloned().map(|u| (u, slots.real))
+    let sessions = all(dir);
+    let held: BTreeSet<&str> = sessions.iter().filter(|l| l.ended.is_none()).map(|l| l.user.user.as_str()).collect();
+    let user = slots.users.iter().find(|u| !held.contains(u.user.as_str()))?;
+    // What the session before it left goes first: it waits for that.
+    if sessions.iter().any(|l| l.cleanup_owed && l.user.user == user.user) {
+        return None;
+    }
+    Some((user.clone(), slots.real))
 }
 
 /// Take queued session `w` if there's a slot: its ledger, its checkout,
@@ -655,6 +779,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         block: None,
         taken_at: now_ms(),
         grant: None,
+        cleanup_owed: false,
         n: w.n,
         state: State::Queued.as_str().into(),
         ended: None,
@@ -1181,10 +1306,6 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
     if l.ended.is_some() {
         return false;
     }
-    if revoked_now(app, &l) {
-        fail(app, id, super::REVOKED).await;
-        return false;
-    }
     let Some((keys, me, ..)) = me(app) else { return true };
     if l.parked.is_some() {
         unpark(app, &l, &keys, &me).await;
@@ -1418,33 +1539,14 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 say(Box::new(move |now| now.turns_seen = Some(turns)));
                 return true;
             };
-            // A turn the agent began by itself (a background task's end woke
-            // it) came through no prompt to check: it's checked here, on the
-            // next look. If the grant doesn't let it, the agent goes as a
-            // parked session's does, and what its user left with it; the
-            // conversation stays, for when there's a grant again.
-            if l.now() == State::Done && s.turns > seen_turns && s.typed_at(seen_turns).is_none() {
-                match work.as_ref().map(|w| allowed(app, w)) {
-                    None => return true,
-                    Some(check) => {
-                        if let Err(NotNow::Refused(why)) = check.await {
-                            info!(session = id, why, "hosted: stopping a turn its agent began by itself");
-                            let (k, m, turns) = (keys.clone(), me.clone(), s.turns);
-                            say(Box::new(move |now| {
-                                now.turns_seen = Some(turns);
-                                if now.error.as_deref() != Some(why.as_str()) {
-                                    let to = now.now();
-                                    let d = SessionDetail { error: Some(why.clone()), ..Default::default() };
-                                    now.push(&k, &m, Kind::Error, to, d);
-                                    now.error = Some(why);
-                                }
-                            }));
-                            park(app, &l, block, &b).await;
-                            send(app, id).await;
-                            return true;
-                        }
-                    }
-                }
+            // A turn the agent began by itself becomes the session's only once
+            // [`watch_wakes`] has checked it.
+            let looked = {
+                let seen = WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+                seen.get(id).filter(|(b, _)| *b == block).is_some_and(|(_, n)| *n >= s.turns)
+            };
+            if !looked && woke_between(&s, seen_turns, s.turns) {
+                return true;
             }
             if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
                 // A turn started in the block itself (someone typed there,
@@ -1892,16 +1994,20 @@ async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
 /// agent, close its block, kill what its user left, and free its slot.
 async fn end(app: &Arc<App>, id: &str, why: &str) {
     let dir = app.control.state_dir().to_owned();
-    let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
+    let Some((l, _)) = update(&dir, id, |now| {
+        now.ended = Some(why.to_owned());
+        now.cleanup_owed = true;
+    }) else {
+        return;
+    };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
-    stop_agent(app, &l).await;
-    clean_slot(&dir, &l).await;
+    clean_up(app, &l, true).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
 async fn fail(app: &Arc<App>, id: &str, why: &str) {
     if let Some(l) = mark_failed(app, id, why) {
-        wind_down(app, &l).await;
+        wind_down(app, &l, true).await;
     }
 }
 
@@ -1919,6 +2025,7 @@ fn mark_failed(app: &App, id: &str, why: &str) -> Option<Session> {
             SessionDetail { reason: Some(why.to_owned()), ..Default::default() },
         );
         now.ended = Some(why.to_owned());
+        now.cleanup_owed = true;
     })?;
     warn!(session = id, why, "hosted: a session failed");
     Some(l)
@@ -1926,24 +2033,32 @@ fn mark_failed(app: &App, id: &str, why: &str) -> Option<Session> {
 
 /// What a session that failed leaves: its agent stopped first, then its slot
 /// cleaned, then the report sent, so a control that doesn't answer holds up
-/// nothing that matters.
-async fn wind_down(app: &Arc<App>, l: &Session) {
-    stop_agent(app, l).await;
-    clean_slot(app.control.state_dir(), l).await;
+/// nothing that matters. `polite`: as [`stop_agent`].
+async fn wind_down(app: &Arc<App>, l: &Session, polite: bool) {
+    clean_up(app, l, polite).await;
     send(app, &l.session).await;
 }
 
-async fn stop_agent(app: &App, l: &Session) {
+/// What an ended session leaves goes: its agent, then its slot's files. Only
+/// then does its ledger stop saying that's owed.
+async fn clean_up(app: &App, l: &Session, polite: bool) {
+    stop_agent(app, l, polite).await;
+    let dir = app.control.state_dir();
+    clean_slot(dir, l).await;
+    update(dir, &l.session, |now| now.cleanup_owed = false);
+}
+
+/// Stop session `l`'s agent and what its user runs. `polite`: its agent is
+/// asked to cancel its turn first, for a few seconds at most. A stop isn't.
+async fn stop_agent(app: &App, l: &Session, polite: bool) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
-    if let Some(block) = l.block {
-        if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
-            let _ = tokio::time::timeout(CANCEL_MAX, b.call("cancel", json!({}))).await;
-        }
-        app.mux.api(|r| Api::Close(block, r)).await;
+    if polite
+        && let Some(block) = l.block
+        && let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten()
+    {
+        let _ = tokio::time::timeout(CANCEL_MAX, b.call("cancel", json!({}))).await;
     }
-    if slots().is_some_and(|s| s.real) {
-        super::kill_user(&l.user.user).await;
-    }
+    kill_agent(app, l, l.block).await;
 }
 
 /// Leave an ended session's slot clean for the next session in it: what
