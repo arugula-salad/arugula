@@ -15,12 +15,10 @@ import { boards } from "../../shared/boards/store";
 import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
-import { StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
-import { issueTone, toneClass } from "../swarm";
 import { blindLine, blindMachines, type Grant } from "../settings/grants";
 import { toast } from "../toast";
 import { chat } from "../../shared/chat-store";
@@ -309,37 +307,35 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
   );
 }
 
-/** One board in a list, a card as an issue's is, its bar the board's state (open ok, closed muted): its title, the goal's first line (a closed board has the done note's instead), its progress and its state. */
+/** One board in a list, a compact card: its title (the whole card is the link), the goal's first line (a closed board has the done note's instead), the bar and its words. A Done board's has no bar. */
 function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean; drop?: Triage }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
-  const tone = closed ? "closed" : "open";
   return (
-    <li class={`board-card sw-card ${toneClass(issueTone(tone))}`} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
-      <div class="board-card-head">
-        <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
-          {b.title}
-        </a>
-        <StateChip tone={issueTone(tone)}>{closed ? "Done" : "Open"}</StateChip>
-      </div>
+    <li class="board-card" data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
+      <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
+        {b.title}
+      </a>
       {waiting && (
         <p class="board-card-line dim" data-board-not-started>
           {NOT_STARTED}
         </p>
       )}
       {line && <p class="board-card-line dim">{line}</p>}
-      <div class="board-card-progress dim" data-board-progress>
-        {b.progress.total > 0 && (
-          <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
-            {e.segments.map((s) => (
-              <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
-            ))}
-          </div>
-        )}
-        <span>{e.words}</span>
-      </div>
+      {!closed && (
+        <div class="board-card-progress dim" data-board-progress>
+          {b.progress.total > 0 && (
+            <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
+              {e.segments.map((s) => (
+                <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+              ))}
+            </div>
+          )}
+          <span>{e.words}</span>
+        </div>
+      )}
     </li>
   );
 }
@@ -355,7 +351,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
   const waiting = plane.filter((b) => !b.source?.started);
   return (
     <>
-      <ul class="board-list sw-cards" {...{ [data]: true }}>
+      <ul class="board-list" {...{ [data]: true }}>
         {made.map((b) => (
           <BoardItem key={b.id} p={p} b={b} drop={drop} />
         ))}
@@ -363,7 +359,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
       {plane.length > 0 && (
         <section class="board-plane-group" aria-labelledby={`plane-boards-${p.id}`} data-boards-plane>
           <h3 id={`plane-boards-${p.id}`}>From Plane</h3>
-          <ul class="board-list sw-cards">
+          <ul class="board-list">
             {started.map((b) => (
               <BoardItem key={b.id} p={p} b={b} drop={drop} />
             ))}
@@ -377,7 +373,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
       {done.length > 0 && (
         <details class="board-done-list" data-boards-done open={q.trim() ? true : undefined}>
           <summary>Done ({done.length})</summary>
-          <ul class="board-list sw-cards">
+          <ul class="board-list">
             {done.map((b) => (
               <BoardItem key={b.id} p={p} b={b} />
             ))}
