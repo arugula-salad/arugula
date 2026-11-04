@@ -3,7 +3,7 @@
   "commit": "2328c451ea686ffee9297941d69e1e76e5484315",
   "branch": "main",
   "state": "green",
-  "at": "2026-11-04T08:43:07Z",
+  "at": "2026-11-04T08:44:01Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -11,20 +11,20 @@
       "runs": [
         {
           "name": "lint",
-          "id": 126473254505,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800030958/job/126473254505"
+          "id": 126478735674,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800899469/job/126478735674"
         },
         {
           "name": "changes",
-          "id": 126473254650,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800030958/job/126473254650"
+          "id": 126478735154,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800899469/job/126478735154"
         },
         {
           "name": "suite-changed",
           "id": 126478356927,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41800899384/job/126478356927"
         }
       ]
@@ -113,15 +113,15 @@
       "runs": [
         {
           "name": "workspace",
-          "id": 126474198789,
+          "id": 126478704760,
           "conclusion": "skipped",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800031020/job/126474198789"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800899384/job/126478704760"
         },
         {
           "name": "workspace-clippy",
-          "id": 126474198933,
+          "id": 126478704733,
           "conclusion": "skipped",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800031020/job/126474198933"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41800899384/job/126478704733"
         }
       ]
     },
