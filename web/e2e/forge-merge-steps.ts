@@ -53,6 +53,11 @@ export function mergeSpecs(tag: string) {
       let raw = "";
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
+        // A merge asks first whether the branch has a merge queue: this one hasn't.
+        if (req.method === "POST" && u.pathname === "/graphql") {
+          const pullRequest = { id: "PR_node", isInMergeQueue: false, isMergeQueueEnabled: false };
+          return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: { repository: { pullRequest } } }));
+        }
         if (req.method === "PUT" && p === `/pulls/${N}/merge`) {
           merges.push({ style: JSON.parse(raw).merge_method, auth: req.headers.authorization! });
           Object.assign(item, { state: "closed", merged: true, merged_at: "2026-10-03T02:00:00Z", merged_by: { login: "jhgaylor" } });

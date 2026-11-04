@@ -19,8 +19,8 @@
 //! of your team; red checks with a *Rerun* that posts
 //! `rerun-failed-jobs`; an agent's writes as drafts and a person's going
 //! out in GitHub's shapes; the rate limit backing off; the timeline's last
-//! page; the PR's code from `refs/pull/N/head`; and a merge GitHub refuses
-//! because the branch needs its merge queue going in the queue instead.
+//! page; the PR's code from `refs/pull/N/head`; and a merge on a branch
+//! with a merge queue going in the queue, never over REST.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -84,6 +84,8 @@ struct Inner {
     in_queue: bool,
     /// `enqueuePullRequest` says no with this.
     enqueue_refused: Option<String>,
+    /// The read of the PR's queue says no with this.
+    queue_read_refused: Option<String>,
 }
 
 #[derive(Clone)]
@@ -317,6 +319,9 @@ async fn graphql(State(f): State<Fake>, h: HeaderMap, Json(body): Json<Value>) -
     f.with(|i| {
         if !query.contains("enqueuePullRequest") {
             assert_eq!(body["variables"], json!({ "owner": "cli", "name": "cli", "number": N }));
+            if let Some(message) = &i.queue_read_refused {
+                return Json(json!({ "data": null, "errors": [{ "message": message }] }));
+            }
             return Json(json!({ "data": { "repository": { "pullRequest": {
                 "id": "PR_node", "isInMergeQueue": i.in_queue, "isMergeQueueEnabled": i.queue_enabled } } } }));
         }
@@ -701,15 +706,15 @@ fn an_agents_writes_are_drafts_and_a_persons_go_out() {
     assert_eq!(status, 400, "{body}");
 }
 
-/// A branch that requires a merge queue: GitHub refuses the merge, so a
-/// person's and a sent draft's go in the queue, and nothing says "merged".
+/// A branch with a merge queue goes through it, for a person and a sent
+/// draft, and nothing says "merged". The fake's REST merge answers 200, as
+/// GitHub did for an admin who may bypass the ruleset, so anything that
+/// reached it would merge and fail the "open" and no-merge checks here.
 #[test]
 fn a_merge_the_branch_queues_is_queued_and_not_merged() {
     let dir = scratch("queue");
     let hub = Hub::start(&dir, "jhgaylor", &[], &[]);
     hub.f.with(|i| {
-        i.merge_refused =
-            Some("Repository rule violations found\n\nChanges must be made through the merge queue".into());
         i.queue_enabled = true;
         i.enqueue_refused = Some("Pull request is in clean status but not ready".into());
     });
@@ -717,7 +722,8 @@ fn a_merge_the_branch_queues_is_queued_and_not_merged() {
     let block = open_pr(&d);
     read(&d, block);
 
-    // GitHub saying no to the queue too is the person's to see.
+    // GitHub saying no to the queue is the person's to see, and REST isn't
+    // tried behind it.
     let url = format!("/api/blocks/{block}/call/merge");
     let (status, body) = d.raw("POST", &url, Some(json!({ "style": "squash" })));
     assert_eq!(status, 400, "{body}");
@@ -757,6 +763,23 @@ fn a_merge_the_branch_queues_is_queued_and_not_merged() {
     assert!(d.state(block)["said"].as_str().unwrap().starts_with("queued to merge by "));
     assert_eq!(d.state(block)["pr"]["item"]["state"], "open");
     assert_eq!(hub.f.writes().iter().filter(|w| w.0 == "merge").count(), 0);
+}
+
+/// Not knowing whether the branch has a queue sends nothing: REST could skip
+/// a queue it can't see.
+#[test]
+fn a_failed_read_of_the_queue_merges_nothing() {
+    let dir = scratch("queueread");
+    let hub = Hub::start(&dir, "jhgaylor", &[], &[]);
+    hub.f.with(|i| i.queue_read_refused = Some("Something went wrong".into()));
+    let d = hub.daemon();
+    let block = open_pr(&d);
+    read(&d, block);
+    let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/merge"), Some(json!({ "style": "squash" })));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("not merged") && body.contains("Something went wrong"), "{body}");
+    assert!(hub.f.writes().is_empty(), "something went out: {:?}", hub.f.writes());
+    assert_eq!(d.state(block)["pr"]["item"]["state"], "open");
 }
 
 /// A 405 on a branch with no queue stays what it was, and nothing's enqueued.
