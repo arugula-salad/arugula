@@ -3,7 +3,7 @@
   "commit": "19e33d6042895ba519f4f48e45d7bc360a09cb46",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T06:59:04Z",
+  "at": "2026-11-04T07:01:14Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -18,7 +18,7 @@
         {
           "name": "changes",
           "id": 126437992624,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126437992624"
         },
         {
@@ -32,12 +32,47 @@
     "build": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "build",
+          "id": 126438178035,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438178035"
+        },
+        {
+          "name": "static",
+          "id": 126438177951,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438177951"
+        },
+        {
+          "name": "clippy",
+          "id": 126438178060,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438178060"
+        }
+      ],
+      "reason": "retrying",
+      "culprit": "d9b3ce8bd4bbacef23bd454e5ff9fe983b644afa"
     },
     "test": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "test",
+          "id": 126438177886,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438177886"
+        },
+        {
+          "name": "test-2",
+          "id": 126438177978,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438177978"
+        }
+      ],
+      "reason": "retrying"
     },
     "e2e": {
       "verdict": "pending",
@@ -47,13 +82,29 @@
     "claims": {
       "verdict": "pending",
       "build": "newest",
-      "runs": [],
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 126438178021,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438178021"
+        }
+      ],
+      "reason": "retrying",
       "culprit": "d9b3ce8bd4bbacef23bd454e5ff9fe983b644afa"
     },
     "macos": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 126438178079,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880223/job/126438178079"
+        }
+      ],
+      "reason": "retrying"
     },
     "windows": {
       "verdict": "pending",
@@ -68,23 +119,46 @@
         {
           "name": "workspace-clippy",
           "id": 126437457544,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880274/job/126437457544"
         }
       ],
+      "reason": "retrying",
       "culprit": "d9b3ce8bd4bbacef23bd454e5ff9fe983b644afa"
     },
     "windows-desktop": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop",
           "id": 126437500299,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41788880228/job/126437500299"
         }
       ]
+    }
+  },
+  "retried": {
+    "static": {
+      "run": 126438177951,
+      "at": "2026-11-04T07:01:14Z"
+    },
+    "test": {
+      "run": 126438177886,
+      "at": "2026-11-04T07:01:14Z"
+    },
+    "desktop-xvfb": {
+      "run": 126438178021,
+      "at": "2026-11-04T07:01:14Z"
+    },
+    "macos (test)": {
+      "run": 126438178079,
+      "at": "2026-11-04T07:01:14Z"
+    },
+    "workspace-clippy": {
+      "run": 126437457544,
+      "at": "2026-11-04T07:01:14Z"
     }
   }
 }
