@@ -410,8 +410,8 @@ notes. The copy of its client fixtures comes after the tag (step 2).
    `chant ci last-green --lane daemon` names, then `just release-fixtures
    X.Y.Z` merged to main.
    `.github/workflows/release.yml` cuts the release first (`cut`, [below](#publishing-through-chant)),
-   then builds the Linux tarballs in the home cloud (`arugula-amd64`,
-   [CI](#ci)), the macOS ones on jake-mini (Apple silicon natively, Intel
+   then builds the x86_64 Linux tarball in the home cloud (`arugula-amd64`,
+   [CI](#ci)), the arm64 one on GitHub's runner, the macOS ones on jake-mini (Apple silicon natively, Intel
    cross-compiled with `just build-macos-x86_64`) and the Windows zip on
    GitHub's runner. chant publishes them: it attaches them, the editor
    extension and `SHA256SUMS` to the GitHub release and publishes it as
@@ -536,7 +536,7 @@ that release is out (lex00, 2026-10-08, #524).
    lane, downloads arugulad and arugula from the latest daemon release
    (checked against its `SHA256SUMS`) for the app to carry, builds and
    signs the apps with the tag's version stamped into `crates/desktop`
-   (Linux in the home cloud, macOS on jake-mini, notarized with the
+   (Linux on GitHub's runners, macOS on jake-mini, notarized with the
    Developer ID when its secrets are set, Windows on GitHub's runner), and
    chant publishes the release with its own `SHA256SUMS`
    ([above](#publishing-through-chant)). It's never marked latest.
@@ -682,9 +682,10 @@ across them. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
-The release workflows' Linux jobs (release.yml's and app-release.yml's
-`linux` and `publish`) and forges-nightly.yml's `forges` run on the pods too, on the same
-pods and the same setup, plus `gh` for publishing. A tag's run can only
+release.yml's `linux` and forges-nightly.yml's `forges` run on the pods too,
+with the same setup; deploys wait for `linux`, which takes 4-7 min there against
+about 11 on GitHub's runner. `linux-arm64` and app-release.yml's `linux` run on
+GitHub's runners, where nothing deploys from them (since 2026-11-04). A tag's run can only
 read main's caches and its own, and main never saves release.yml's
 (`release-static`, at full opt-level, unlike check.yml's `static`), so
 its rust-cache starts cold: sccache, through the setup action as in

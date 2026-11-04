@@ -43,12 +43,11 @@ env:
   ARUGULA_RELEASE_SKIP_GREEN: ${{ vars.ARUGULA_RELEASE_SKIP_GREEN }}
 
 jobs:
-  # On the home cloud's runners (arugula-amd64, docs/development.md). The
-  # app builds in its own container (`just desktop-linux`), as linux-arm64's
-  # does on GitHub's runner.
+  # On GitHub's runner. The app builds in its own container (`just
+  # desktop-linux`), as linux-arm64's does.
   linux:
     needs: cut
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
