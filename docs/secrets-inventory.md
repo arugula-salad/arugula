@@ -113,7 +113,7 @@ GitHub Actions on `arugula-salad/arugula`:
 | `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `release.yml` | none; Fly mints new ones | Operator |
 | `E2B_API_KEY` | `release.yml` (the hosted template) | Infisical | Operator |
 | `HOMEBREW_TAP_KEY` | `release.yml` | none | Operator |
-| `CI_GREEN_TOKEN` | `app-release.yml`, `chant-ci-green.yml` | none | Operator |
+| `CI_GREEN_TOKEN` | `app-release.yml`, `auto-revert.yml`, `chant-ci-green.yml` | none | Operator |
 | `SCCACHE_WEBDAV_PASSWORD` | `check.yml`, `testnet-break.yml` | none | Operator |
 | `ARUGULA_GH_APP_PRIVATE_KEY` (the forge-test App) | `forges-nightly.yml` | Infisical `/illogical/forge-tests` (with `ARUGULA_GH_APP_ID`) | Operator |
 | `ARUGULA_GH_AUTHOR_TOKEN`, `ARUGULA_GH_REVIEWER_TOKEN` (the test bots') | `forges-nightly.yml` | none | Operator |

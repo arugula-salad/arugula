@@ -925,6 +925,7 @@ test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
     scripts/tests/ci-nightly-red.sh
+    scripts/tests/ci-auto-revert.sh
     scripts/tests/quarantine.sh
     scripts/tests/capabilities.sh
     scripts/tests/install.sh

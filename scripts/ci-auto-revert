@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Takes a commit that turned main red back out, through the merge queue
+# (auto-revert.yml). The queue stops most breaks from landing; this is for what
+# gets past it: a push that bypasses it, or a nightly full run finding what a
+# group skipped by path.
+#
+#   scripts/ci-auto-revert
+#
+# It acts when main's newest decided commit in chant's records is red after the
+# tick's one retry, so the failure repeats, and there's one clear culprit: the
+# one the tick's bisect names, or the red commit itself when the commit below
+# it is green. It opens a pull request reverting that commit, queues it, and
+# tells the commit's author. The revert passes through a group like any change.
+#
+# It leaves it to a person, saying why, when:
+#   ARUGULA_AUTO_REVERT is off
+#   more than one commit could be the culprit
+#   the culprit is itself a revert, so reverting would put the break back
+#   a revert of it is on main, or its branch already exists
+#   the culprit is older than ARUGULA_REVERT_HOURS (6): others have built on it
+#   it doesn't revert cleanly
+#
+# Reads main, chant/lifecycle and the ci/ tags from this checkout (fetch them
+# first), and writes with git and gh. GH_TOKEN must not be the job's own token:
+# a pull request opened with that one runs no workflows, so it could never pass
+# the check the queue requires. ARUGULA_RED_CHANT and ARUGULA_RED_MAIN are for
+# tests, as in scripts/ci-red; ARUGULA_RED_NOW too.
+set -euo pipefail
+
+repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
+hours=${ARUGULA_REVERT_HOURS:-6}
+now=${ARUGULA_RED_NOW:-$(date +%s)}
+chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.61}
+main=$(git rev-parse --verify "${ARUGULA_RED_MAIN:-origin/main}^{commit}")
+
+stay_out() {
+  echo "auto-revert: $1"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf 'Not reverting: %s\n' "$1" >>"$GITHUB_STEP_SUMMARY"; fi
+  exit 0
+}
+
+[ "${ARUGULA_AUTO_REVERT:-on}" != off ] || stay_out "ARUGULA_AUTO_REVERT is off"
+
+export GITHUB_TOKEN=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+# shellcheck disable=SC2086 # chant is a command and its arguments
+list=$($chant ci list --json --forge github --limit 30) || stay_out "chant ci list failed"
+jq -e '.commits | type == "array"' <<<"$list" >/dev/null 2>&1 || stay_out "chant ci list printed no commits"
+
+# Main's newest decided commit, as scripts/ci-red reads it.
+sha='' state='' named=''
+while IFS=$'\t' read -r s st c; do
+  case "$st" in
+    green | revoked | red)
+      sha=$s state=$st named=$c
+      break
+      ;;
+  esac
+done < <(jq -r '.commits[] | [.sha, (if .state == "revoked" then "revoked" else (.record.state // .state) end), (.record.culprit // "")] | @tsv' <<<"$list")
+[ -n "$sha" ] || stay_out "no commit in chant's records is decided"
+[ "$state" = red ] || stay_out "main's newest decided commit, ${sha:0:12}, is $state"
+
+rec=$(git show "refs/heads/chant/lifecycle:_ci/$sha.json" 2>/dev/null ||
+  git show "refs/remotes/origin/chant/lifecycle:_ci/$sha.json" 2>/dev/null) ||
+  stay_out "no _ci/$sha.json on chant/lifecycle"
+jq -e '(.retried // {}) | length > 0' <<<"$rec" >/dev/null 2>&1 || stay_out "${sha:0:12} is red but hasn't failed its retry yet"
+
+culprit=$named
+if [ -z "$culprit" ]; then
+  parent=$(git rev-parse "$sha^" 2>/dev/null) || stay_out "${sha:0:12} has no parent"
+  if git rev-parse -q --verify "refs/tags/ci/green/$parent" >/dev/null && ! git rev-parse -q --verify "refs/tags/ci/revoked/$parent" >/dev/null; then
+    culprit=$sha
+  else
+    stay_out "${sha:0:12} is red, the commit below it isn't green, and the bisect hasn't named a culprit"
+  fi
+fi
+culprit=$(git rev-parse --verify "$culprit^{commit}") || stay_out "the culprit $culprit isn't in this checkout"
+short=${culprit:0:12}
+subject=$(git log -1 --format=%s "$culprit")
+
+case "$subject" in
+  Revert\ * | \"Revert*) stay_out "$short is itself a revert ($subject): a person decides" ;;
+esac
+age=$((now - $(git log -1 --format=%ct "$culprit")))
+[ "$age" -lt $((hours * 3600)) ] || stay_out "$short is more than $hours hours old: others may have built on it"
+# Into a variable: under pipefail, grep -q stopping early fails the pipe.
+since=$(git log --format=%B "$culprit..$main")
+if [[ "$since" == *"This reverts commit $culprit"* ]]; then
+  stay_out "$short has been reverted on main already"
+fi
+
+# One segment, starting with a letter: the merge hook reads a segment that
+# starts with a number as a native issue, and a sha can.
+branch=auto-revert-$short
+if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+  stay_out "$branch exists already"
+fi
+
+# The failure and the person, for the pull request's text.
+IFS=$'\t' read -r phase job url < <(jq -r '[.failure.phase // "unknown", .failure.run.name // "unknown", .failure.run.url // "no link"] | @tsv' <<<"$rec")
+author=$(gh api "repos/$repo/commits/$culprit" --jq '.author.login // empty' 2>/dev/null) || author=''
+case "$author" in
+  *'[bot]' | '') tell='' ;;
+  *) tell="@$author" ;;
+esac
+number=$(printf '%s\n' "$subject" | sed -n 's/.*(#\([0-9][0-9]*\))\( \[skip ci\]\)\{0,1\}$/\1/p')
+# Any `Arugula #N` in a merged pull request's text closes that native issue, and
+# this one takes the work back out. Its subject's name for it stays out.
+safe=$(printf '%s' "$subject" | sed -e 's/Arugula #\([0-9]\)/issue \1/g' -e 's/ *\[skip ci\]//g')
+title="Revert \"$safe\""
+
+git switch -q -c "$branch" "$main"
+if ! git revert --no-commit "$culprit" >/dev/null 2>&1; then
+  git revert --abort >/dev/null 2>&1 || git reset -q --hard "$main"
+  git switch -q - 2>/dev/null || true
+  stay_out "$short doesn't revert cleanly on main: a person decides"
+fi
+git commit -q -F - <<MESSAGE
+$title
+
+This reverts commit $culprit.
+
+main went red in $phase ($job) and stayed red after chant's retry.
+$url
+MESSAGE
+git push -q origin "$branch"
+
+body=$(
+  cat <<BODY
+${tell:+$tell }main went red after $short landed, so this takes it back out. It goes through the merge queue, so it lands only if main passes without it.
+
+- **Failed:** $phase, in \`$job\`, again on chant's retry: $url
+- **Reverts:** $short ($safe)
+
+To bring the change back, fix it and open a new pull request. To stop this revert, close this pull request. \`scripts/ci-auto-revert\` opened it, and setting the repository variable \`ARUGULA_AUTO_REVERT\` to \`off\` turns it off (docs/development.md, "When main goes red").
+BODY
+)
+pr=$(gh pr create -R "$repo" --head "$branch" --title "$title" --body "$body")
+echo "auto-revert: opened $pr for $short"
+gh pr merge "$pr" -R "$repo" --auto --squash || echo "auto-revert: $pr isn't queued: queue it by hand"
+if [ -n "$number" ]; then
+  gh pr comment "$number" -R "$repo" --body "${tell:+$tell }main went red after this landed, and it stayed red after chant's retry. $pr reverts it through the merge queue." ||
+    echo "auto-revert: couldn't comment on #$number"
+fi
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf 'Reverting %s: %s\n' "$short" "$pr" >>"$GITHUB_STEP_SUMMARY"; fi
