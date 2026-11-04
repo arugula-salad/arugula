@@ -227,7 +227,6 @@ pub fn search(
                 offset: n as u64,
                 line: line.to_owned(),
                 command: None,
-                host: None,
                 doc: Some(meta.id.clone()),
                 at_ms: Some(meta.updated),
             });

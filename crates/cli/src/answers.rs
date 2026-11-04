@@ -175,11 +175,9 @@ fn conversations_and_adapters() {
 }
 
 #[test]
-fn machines_synced_hosts_and_act_results_of_an_older_daemon() {
+fn machines_and_act_results_of_an_older_daemon() {
     let m: Vec<arugula_proto::Machine> = old(json!([{ "id": 1, "owner": { "pane": 3 } }]));
     assert_eq!((m[0].provider.as_str(), m[0].sprite.as_str()), ("", ""));
-    let h: Vec<SyncedHost> = old(json!([{}]));
-    assert_eq!((h[0].name.as_str(), h[0].panes.len()), ("", 0));
     let a: ActResponse = old(json!({}));
     assert!(a.results.is_empty());
 }

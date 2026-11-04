@@ -217,9 +217,8 @@ operations, and may call an operation's handler.
   Hand-written routes.
 - **Binary and plain text:** `GET /api/panes/N/capture` (text),
   `GET /api/panes/N/export.cast` (asciicast), `GET /api/editors/vsix`,
-  `POST /api/panes/N/upload` (raw bytes in, with its own body limit), the
-  history pushes `POST /api/sync/N/{log,index,closed}` (raw bytes, a host
-  token). Hand-written routes.
+  `POST /api/panes/N/upload` (raw bytes in, with its own body limit).
+  Hand-written routes.
 - **Block calls:** `POST /api/blocks/N/call/METHOD`. The arguments depend on
   the block's type and the method, and `authz.rs` decides per method
   (`enter`, `login`, `checkout` … are the owner's). These stay one
@@ -401,9 +400,9 @@ what it calls; each CLI request site by its route.
   `tail`, `export.cast`, `events`, `vsix`, `upload`, and block `call`.
   So about 61 of 68.
 - **HTTP, other modules** (`fs`, `hosts`, `share`, `labs/guest_ssh`, `acl`,
-  `invite`, `setup`, `mcp/tokens`, `sync`, about 40 more):
-  most convert the same way; the sync pushes, `fs/watch`, the share viewer
-  and the tunnels don't. Not counted route by route.
+  `invite`, `setup`, `mcp/tokens`, about 40 more):
+  most convert the same way; `fs/watch`, the share viewer and the tunnels
+  don't. Not counted route by route.
 - **MCP:** 17 tools of their own plus 18 kinds of the three grouped tools,
   35 surfaces. 7 convert cleanly: `close`, `read_thread`, `post_thread`,
   `list` kinds `panes`, `conversations` and `managoat_agents`, `show` kind
@@ -454,7 +453,7 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    `thread.read`, HTTP only), `fountain.agents`, `conversations.list` and
    `conversation.open`; `managoat_agents` stays a hand-written kind.
 7. (#578) **Operations: the other modules.** `fs` (not `watch`), `hosts`,
-   `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`, `synced`,
+   `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`,
    `sandboxes`. May split by module. After 2.
 8. (#579) **Optional: the operations table for the web client.** Emit each
    operation's method and path into `proto.gen.ts` beside its types, so

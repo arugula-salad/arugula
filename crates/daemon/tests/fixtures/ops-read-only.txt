@@ -33,5 +33,4 @@ sharing.get GET /api/sharing
 shell_env.get GET /api/hosts/self/shell-env
 studio.apps GET /api/studio/apps
 studio.get GET /api/studio
-synced.list GET /api/synced
 team_pins.get GET /api/team-pins

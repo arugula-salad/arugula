@@ -56,8 +56,6 @@ pub struct App {
     pub dial_outs: Arc<crate::dial::DialOuts>,
     /// Read-only share links.
     pub shares: Arc<crate::share::Shares>,
-    /// History other hosts synced to us.
-    pub synced: Arc<crate::sync::Synced>,
     /// Enrollment in Arugula control: trusted devices, the relay.
     pub control: Arc<crate::control::Control>,
     /// Who else may reach which sessions (M12).
@@ -90,7 +88,6 @@ impl App {
         ide: Option<Arc<dyn crate::editors::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
-        synced: Arc<crate::sync::Synced>,
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
@@ -107,7 +104,6 @@ impl App {
             hosts,
             dial_outs: Default::default(),
             shares,
-            synced,
             control,
             acl,
             mcp,
@@ -138,11 +134,10 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
         .merge(crate::selfupdate::routes())
 }
 
-/// Plus what makes it a home daemon: hosts dialing in and pushing history,
-/// the way through to dial-out hosts (`/h/NAME`), and its provider's
-/// sandboxes.
+/// Plus what makes it a home daemon: hosts dialing in, the way through to
+/// dial-out hosts (`/h/NAME`), and its provider's sandboxes.
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
-    crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
+    crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()))
 }
 
 /// Over TCP (loopback, behind `tailscale serve`, or a tailnet address):
@@ -472,7 +467,6 @@ fn class(req: &Request, access: &Access) -> Class {
     if (m == Method::POST && path == crate::hosts::JOIN_PATH)
         || (m == Method::GET && path == crate::dial::DIAL_PATH)
         || (m == Method::GET && path == crate::e2e::PATH)
-        || path.starts_with(crate::sync::PUSH_PREFIX)
         || (m == Method::POST && crate::lab_hooks::labs().is_hook(path))
     {
         Class::Token

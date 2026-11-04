@@ -9,7 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 base64 = { workspace = true }
@@ -69,6 +68,8 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Network
 workspace = true
 
 [dev-dependencies]
+# A push notice's envelope, opened as a browser would (control.rs's tests).
+aes-gcm = { workspace = true }
 futures-util = { workspace = true }
 arugula-proto = { workspace = true, features = ["fixtures"] }
 arugula-testkit = { path = "../testkit" }

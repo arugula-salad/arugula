@@ -1,9 +1,7 @@
 // M4c: a sandbox that can only dial out. It dials the home daemon with a
 // per-host token and is used from the home page through it (the browser
 // never connects to the sandbox itself); a read-only share link shows a
-// pane live and takes no input; and after the sandbox is deleted, its
-// synced history is still searchable on the home daemon, as ciphertext on
-// disk.
+// pane live and takes no input.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -74,10 +72,7 @@ test.beforeAll(async () => {
   // The sandbox listens on loopback only for its own CLI; nothing here
   // ever connects to that port. It dials home.
   sandboxState = temp("sbx");
-  SANDBOX = await startDaemon("sbx", sandboxState, [
-    ...["--peer", `ws://127.0.0.1:${HOME}`, "--token", tokenFile],
-    ...["--sync", "--sync-live", "--sync-every", "1"],
-  ]);
+  SANDBOX = await startDaemon("sbx", sandboxState, ["--peer", `ws://127.0.0.1:${HOME}`, "--token", tokenFile]);
   await expect.poll(async () => (await fetch(`${homeUrl}/h/sbx/api/host`)).status, { timeout: 15_000 }).toBe(200);
 });
 
@@ -178,40 +173,4 @@ test("a read-only share link shows a pane live and refuses input", async ({ page
   expect(res.ok).toBe(true);
   await expect.poll(ended).toMatch(/expired or was revoked/);
   expect((await fetch(url)).status).toBe(404);
-});
-
-test("after the sandbox is deleted, its history is searchable at home and ciphertext on disk", async () => {
-  type Hit = { host?: string; pane: number; line: string };
-  const search = () => json<Hit[]>(`/api/search?re=${encodeURIComponent("via-home-[0-9]+")}&host=sbx`);
-  // Synced as it grew (--sync-live).
-  await expect.poll(async () => (await search()).length, { timeout: 15_000 }).toBeGreaterThan(0);
-
-  // The sandbox goes away for good: killed, its disk gone, off the list.
-  const sbx = daemons.get("sbx")!;
-  const exited = new Promise((r) => sbx.once("exit", r));
-  sbx.kill("SIGKILL");
-  await exited;
-  rmSync(sandboxState, { recursive: true, force: true });
-  expect((await fetch(`${homeUrl}/api/hosts/sbx`, { method: "DELETE" })).ok).toBe(true);
-  expect((await fetch(`${homeUrl}/h/sbx/api/host`)).status).toBe(502);
-
-  const hits = await search();
-  expect(hits[0]).toEqual(expect.objectContaining({ host: "sbx", line: expect.stringContaining("via-home-42") }));
-  const history = await json<{ text: string | null; host?: string }[]>("/api/history?host=sbx");
-  expect(history.some((c) => c.host === "sbx" && (c.text ?? "").includes("via-home"))).toBe(true);
-  const tail = await (await fetch(`${homeUrl}/api/panes/${hits[0].pane}/tail?host=sbx&text=1`)).text();
-  expect(tail).toContain("via-home-42");
-
-  // On disk: sealed files, and a private key.
-  const files: string[] = [];
-  const walk = (d: string) => {
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      if (e.isDirectory()) walk(join(d, e.name));
-      else files.push(join(d, e.name));
-    }
-  };
-  walk(join(homeState, "synced", "sbx"));
-  expect(files.some((f) => f.endsWith(".enc"))).toBe(true);
-  for (const f of files) expect(readFileSync(f).includes("via-home")).toBe(false);
-  expect(statSync(join(homeState, "synced", "key")).mode & 0o777).toBe(0o600);
 });
