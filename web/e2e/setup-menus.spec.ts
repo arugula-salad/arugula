@@ -83,7 +83,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   // Sharing says nothing about VMs it has no way to make (#208).
   await page.getByRole("button", { name: "Share session" }).click();
   await expect(page.locator("[data-share-note]")).toHaveText(
-    "People you share with see its panes but can't open their own here. Unless this machine is in their team, even people who drive ask you before typing in one of its panes.",
+    "People you share with see its panes but can't open their own here. Unless this machine is in their team, even people who drive ask you before typing in its panes. An owner here owns the session, not the machine.",
   );
   // Escape closes it (#551).
   await page.keyboard.press("Escape");
