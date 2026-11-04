@@ -8,14 +8,13 @@
 //!   `warm`, `cold`), from its API: asking never wakes a sandbox;
 //! - **create**, **delete** and **wake** one;
 //! - open a **byte stream** to a port inside one (the Sprites proxy): how a
-//!   browser block reaches a dev server, and how the home daemon reaches a
-//!   resident daemon's port (the provider tunnel);
+//!   browser block reaches a dev server;
 //! - run an **exec TTY** (create, attach, resize, kill): VM panes, and a
 //!   shell on a sandbox with no daemon in it;
 //! - run a non-TTY exec with pipes (agent servers in VMs), and a command to
 //!   completion;
 //! - optionally write files and keep a **service** running (start on boot,
-//!   restart on exit): how a daemon becomes resident;
+//!   restart on exit);
 //! - optionally **browse files** (M7, [`Caps::fs_browse`]): list a
 //!   directory and read part of a file, which is how the picker and `fs`
 //!   reach a machine with no daemon of ours in it.

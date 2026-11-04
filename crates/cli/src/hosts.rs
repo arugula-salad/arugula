@@ -1,23 +1,18 @@
 //! `--host` and `arugula hosts`: other daemons, from the home daemon's
 //! list. A name is looked up in that list (over the local socket); a URL is
 //! used as it is. Either way the commands then talk to that daemon
-//! directly, over HTTP(S), where its usual access checks apply. A resident
-//! daemon in a sandbox (a provider host) is reached through the home
-//! daemon's provider tunnel instead, which also wakes it.
+//! directly, over HTTP(S), where its usual access checks apply.
 //!
-//! `arugula sandboxes`: the home daemon's provider's sandboxes, a shell
-//! on one with no daemon there (`run --sandbox`), and making a daemon
-//! resident in one.
+//! `arugula sandboxes`: the home daemon's provider's sandboxes, for a
+//! shell on one with no daemon there (`run --sandbox`).
 
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 use arugula_proto::{
     api::Empty,
-    hosts::{AddHost, HostList, Invite, PromoteRequest, Transport},
-    op::ops::{
-        HostAdd, HostRemove, HostTokenMint, HostTokenRevoke, HostsList, SandboxDemote, SandboxPromote, SandboxesList,
-    },
+    hosts::{AddHost, HostList, Invite, Transport},
+    op::ops::{HostAdd, HostRemove, HostTokenMint, HostTokenRevoke, HostsList, SandboxesList},
 };
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -56,60 +51,20 @@ pub enum HostsCmd {
     Revoke { name: String },
 }
 
-#[derive(Subcommand)]
-pub enum SandboxesCmd {
-    /// Make a daemon resident in a sandbox.
-    ///
-    /// Copy the static daemon into it and keep it running there as a provider
-    /// service; it joins the host list, reached through this daemon's tunnel
-    /// (`--host NAME`).
-    Promote {
-        sandbox: String,
-        /// Its name in the host list [default: the sandbox's].
-        #[arg(long = "as", value_name = "HOST")]
-        name: Option<String>,
-        /// Its port inside the sandbox [default: 7681].
-        #[arg(long)]
-        port: Option<u16>,
-    },
-    /// Stop a sandbox's resident daemon and take it off the host list.
-    Demote { sandbox: String },
-}
-
-pub fn sandboxes(target: &Target, cmd: Option<SandboxesCmd>, json_out: bool) -> anyhow::Result<()> {
-    let v = match cmd {
-        None => {
-            let (list, v) = call_raw::<SandboxesList>(target, &(), &Empty {})?;
-            if !json_out {
-                let p = &list.provider;
-                println!(
-                    "{}: a shell with no daemon (`run --sandbox NAME`) keeps {} KB while detached",
-                    or_unknown(&p.name),
-                    p.exec_replay / 1024
-                );
-                for s in &list.sandboxes {
-                    let host = s.host.as_ref().map(|h| format!("resident: --host {h}")).unwrap_or_default();
-                    println!("{:<34} {:<8} {host}", or_unknown(&s.name), or_unknown(&s.status));
-                }
-                return Ok(());
-            }
-            v
-        }
-        Some(SandboxesCmd::Promote { sandbox, name, port }) => {
-            let body = PromoteRequest { host: name, port };
-            let (host, v) = call_raw::<SandboxPromote>(target, &crate::http::enc(&sandbox), &body)?;
-            if !json_out {
-                println!("{} is resident in {sandbox}: `arugula --host {0} …`", or_unknown(&host.name));
-                return Ok(());
-            }
-            v
-        }
-        Some(SandboxesCmd::Demote { sandbox }) => {
-            call_raw::<SandboxDemote>(target, &crate::http::enc(&sandbox), &Empty {})?.1
-        }
-    };
+pub fn sandboxes(target: &Target, json_out: bool) -> anyhow::Result<()> {
+    let (list, v) = call_raw::<SandboxesList>(target, &(), &Empty {})?;
     if json_out {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+        return Ok(());
+    }
+    let p = &list.provider;
+    println!(
+        "{}: a shell with no daemon (`run --sandbox NAME`) keeps {} KB while detached",
+        or_unknown(&p.name),
+        p.exec_replay / 1024
+    );
+    for s in &list.sandboxes {
+        println!("{:<34} {:<8}", or_unknown(&s.name), or_unknown(&s.status));
     }
     Ok(())
 }
@@ -144,21 +99,14 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
             Ok(_) => bail!("no host {host} (see `arugula hosts`){hint}"),
         };
     };
-    // A host reached through the home daemon: one that dials out to it
-    // (M4c), or a resident daemon in a sandbox, through the provider tunnel
-    // (M4b; that also wakes it).
     // Over ssh, from this client (M51).
     if entry.transport == Transport::Ssh {
         let dest = entry.ssh.as_deref().with_context(|| format!("host {host} has no ssh destination"))?;
         return Ok(Target::Ssh(crate::ssh::Remote::parse(dest)?));
     }
-    let via = match entry.transport {
-        Transport::DialOut => Some("h"),
-        Transport::Provider => Some("tunnel"),
-        _ => None,
-    };
-    if let Some(via) = via {
-        return Ok(Target::Via(socket_of(&local), format!("/{via}/{}", crate::http::enc(host))));
+    // A host that dials out to the home daemon (M4c) is reached through it.
+    if entry.transport == Transport::DialOut {
+        return Ok(Target::Via(socket_of(&local), format!("/h/{}", crate::http::enc(host))));
     }
     // The first URL that answers.
     let mut last = None;
@@ -260,19 +208,7 @@ pub fn run(
                         urls.push(&ssh);
                     }
                     let seen = h.last_seen_ms.map(|t| format!("seen {}", ago(t))).unwrap_or("never seen".into());
-                    let place = match &h.provider {
-                        Some(p) => format!(
-                            "{} {} (tunnel){}",
-                            or_unknown(&p.provider),
-                            or_unknown(&p.sandbox),
-                            if urls.is_empty() { String::new() } else { format!(" {}", urls.join(" ")) }
-                        ),
-                        None => urls.join(" "),
-                    };
-                    let seen = match h.status.as_deref() {
-                        Some(st) => format!("{st}, {seen}"),
-                        None => seen,
-                    };
+                    let place = urls.join(" ");
                     println!("{:<20} {place:<44} {seen}", or_unknown(&h.name));
                 }
                 return Ok(());
@@ -318,8 +254,6 @@ pub fn run(
 /// What one host said to `--host all`.
 pub enum Answer {
     Json(Value),
-    /// A sandbox that isn't running: not woken just to be asked.
-    Asleep,
     Failed(String),
     /// Nothing by the deadline.
     Silent,
@@ -339,14 +273,7 @@ pub fn each(
     let list: HostList = send_op::<HostsList>(&local, &(), &Empty {})?.parse()?;
     let mut names = vec![if list.this.is_empty() { "this".to_owned() } else { list.this.clone() }];
     let (tx, rx) = std::sync::mpsc::channel();
-    for h in &list.hosts {
-        let name = h.name.as_str();
-        if h.transport == Transport::Provider && h.status.as_deref().is_some_and(|s| s != "running") {
-            each(name, Answer::Asleep);
-            continue;
-        }
-        names.push(name.to_owned());
-    }
+    names.extend(list.hosts.iter().map(|h| h.name.clone()));
     for (i, name) in names.iter().enumerate() {
         let (tx, socket, name, path) = (tx.clone(), socket.clone(), name.clone(), path.to_owned());
         std::thread::spawn(move || {

@@ -383,12 +383,8 @@ mod tests {
             (&d, "/api/synced/geek"),
             // A name that is a number is still not a pane.
             (&d, "/api/synced/7"),
-            (&p, "/api/sandboxes/7/promote"),
-            (&d, "/api/sandboxes/7/resident"),
             (&u, "/api/studio/followers/7"),
             (&g, "/api/sandboxes"),
-            (&p, "/api/sandboxes/box/promote"),
-            (&d, "/api/sandboxes/box/resident"),
             (&g, "/api/studio"),
             (&p, "/api/studio"),
             (&d, "/api/studio"),

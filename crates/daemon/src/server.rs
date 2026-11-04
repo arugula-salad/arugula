@@ -139,8 +139,8 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
 }
 
 /// Plus what makes it a home daemon: hosts dialing in and pushing history,
-/// the way through to dial-out hosts (`/h/NAME`), its provider's sandboxes,
-/// and the provider tunnel to resident daemons in them (`/tunnel/NAME`).
+/// the way through to dial-out hosts (`/h/NAME`), and its provider's
+/// sandboxes.
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
     crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
 }
@@ -271,7 +271,6 @@ async fn guard(
     let class = match class(&req, &app.access) {
         Class::Shell
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && !req.headers().contains_key("tailscale-user-login")
                 && !app.access.is_public_host(req.headers()) =>
         {
@@ -286,7 +285,6 @@ async fn guard(
         Class::Owner => {
             // serve's identity header, on loopback: only from tailscaled.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && req.headers().contains_key("tailscale-user-login")
                 && !crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -298,7 +296,6 @@ async fn guard(
             // From serve: a person's request (the header), or a tagged
             // node's (none, for a tailnet name), which is refused below.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && (req.headers().contains_key("tailscale-user-login") || app.access.is_public_host(req.headers()))
                 && crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -326,7 +323,7 @@ async fn guard(
         Class::Viewer => app.access.check_viewer(req.headers(), &peer),
         Class::Token => Ok(()),
         // The link carries the credential; a browser on this machine only.
-        Class::SignIn if peer == crate::access::Peer::Local && !app.access.tunnelled() => Ok(()),
+        Class::SignIn if peer == crate::access::Peer::Local => Ok(()),
         Class::SignIn => Err((StatusCode::FORBIDDEN, "sign-in links are for this machine's browsers".into())),
         // A browser asking first, for one of our origins (`cors` answers
         // it; it carries no credentials, and its answer gives nothing away).
@@ -364,7 +361,6 @@ async fn guard(
             // rather than any 401 an API call answers for its own reasons.
             if status == StatusCode::UNAUTHORIZED
                 && peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && app.access.needs_local_token()
             {
                 res.headers_mut().insert("x-arugula-sign-in", HeaderValue::from_static("/auth"));

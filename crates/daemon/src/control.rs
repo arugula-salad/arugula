@@ -4190,7 +4190,7 @@ pub(crate) mod tests {
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
         assert_eq!(c.invites.lock().unwrap().len(), 1, "the old file's waiting list is read once");
 
-        let hosts = crate::hosts::Hosts::open(&dir, "geek".into(), None);
+        let hosts = crate::hosts::Hosts::open(&dir, "geek".into());
         let inv = hosts.invite(600);
         c.wait_invite(w("invite-new"));
         assert_eq!(c.invites.lock().unwrap().len(), 1, "a newer invite into the same session replaced it");
@@ -4200,7 +4200,7 @@ pub(crate) mod tests {
         let c = Control::new(&dir, vec![], String::new(), acl, false);
         let tags: Vec<_> = c.invites.lock().unwrap().iter().map(|w| w.extra["tag"].clone()).collect();
         assert_eq!(tags, ["invite-new"], "the waiting invite survives the host list's save");
-        let hosts = crate::hosts::Hosts::open(&dir, "geek".into(), None);
+        let hosts = crate::hosts::Hosts::open(&dir, "geek".into());
         let req = |n: &str| arugula_proto::hosts::AddHost {
             name: n.into(),
             urls: vec![format!("https://{n}.example")],

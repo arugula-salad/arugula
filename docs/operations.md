@@ -243,7 +243,7 @@ operations, and may call an operation's handler.
   `draft` kind, the `show` kinds that open a block with extra work after)
   stay hand-written rows.
 - **Not HTTP at all:** the WebSocket (`/ws`, the share viewer's), the
-  dial-out and provider tunnels (`/h/NAME/…`, `/tunnel/…`), `/mcp` itself.
+  dial-out tunnel (`/h/NAME/…`), `/mcp` itself.
 
 ## Required role across surfaces
 
@@ -401,7 +401,7 @@ what it calls; each CLI request site by its route.
   `tail`, `export.cast`, `events`, `vsix`, `upload`, and block `call`.
   So about 61 of 68.
 - **HTTP, other modules** (`fs`, `hosts`, `share`, `labs/guest_ssh`, `acl`,
-  `invite`, `setup`, `mcp/tokens`, `sync`, `resident`, about 40 more):
+  `invite`, `setup`, `mcp/tokens`, `sync`, about 40 more):
   most convert the same way; the sync pushes, `fs/watch`, the share viewer
   and the tunnels don't. Not counted route by route.
 - **MCP:** 17 tools of their own plus 18 kinds of the three grouped tools,

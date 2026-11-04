@@ -141,7 +141,6 @@ pub fn claude_ls_all(socket: PathBuf, path: String, json_out: bool) -> anyhow::R
         if json_out {
             out.push(match a {
                 hosts::Answer::Json(v) => json!({ "host": host, "conversations": v["conversations"] }),
-                hosts::Answer::Asleep => json!({ "host": host, "asleep": true }),
                 hosts::Answer::Failed(e) => json!({ "host": host, "error": e }),
                 hosts::Answer::Silent => json!({ "host": host, "error": "no answer in 5 s" }),
             });
@@ -161,7 +160,6 @@ pub fn claude_ls_all(socket: PathBuf, path: String, json_out: bool) -> anyhow::R
                     print_conversation(c, c["block"].as_u64().and_then(|b| u32::try_from(b).ok()), home);
                 }
             }
-            hosts::Answer::Asleep => println!("{host}: asleep (not woken to ask)"),
             hosts::Answer::Failed(e) => println!("{host}: {e}"),
             hosts::Answer::Silent => println!("{host}: no answer in 5 s"),
         }

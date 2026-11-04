@@ -5,8 +5,6 @@
 //! (its `ttl` is a query on a POST) and `join` (a token is its credential)
 //! stay written out.
 
-use std::time::Duration;
-
 use arugula_proto::{
     api::Empty,
     hosts::{AddHost, Host, HostAnswer, HostList, HostToken},
@@ -29,9 +27,6 @@ impl Handle for HostGet {
 
 impl Handle for HostsList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<HostList, OpError> {
-        // Sandboxes' states are cheap to ask for (and asking doesn't wake
-        // them), so the list a client gets is current.
-        let _ = tokio::time::timeout(Duration::from_secs(3), cx.app.hosts.ask_providers()).await;
         Ok(cx.app.hosts.list())
     }
 }

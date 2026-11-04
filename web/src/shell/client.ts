@@ -1035,7 +1035,7 @@ export class Client {
 
   connect() {
     // Already connecting or connected (a retry and a wake can both ask).
-    if (this.closed || this.asleep || this.link) return;
+    if (this.closed || this.link) return;
     let link: Link;
     if (this.e2e) {
       const wake = this.wakeNext && !this.summary;
@@ -1124,25 +1124,11 @@ export class Client {
   }
 
   private closed = false;
-  private asleep = false;
-
-  /** Let go of the connection while nobody is looking (a sandbox host:
-   * an open connection keeps it awake); `wake` reconnects. */
-  sleep() {
-    if (this.closed || !this.link) return;
-    this.asleep = true;
-    const link = this.link;
-    this.link = undefined;
-    this.connected = false;
-    link.close();
-    this.emit();
-  }
 
   /** Reconnect now if the socket is down (a phone coming back), from the
    * shortest delay again. `fresh: false` keeps the backoff: a reconnect
    * the fleet queued (#369), which otherwise never backed off. */
   wake(fresh = true) {
-    this.asleep = false;
     // M182: someone's here (or pressed Wake): a hosted machine's box is
     // woken by the next try, even one already under way's successor.
     if (fresh) this.wakeNext = true;

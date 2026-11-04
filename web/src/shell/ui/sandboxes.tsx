@@ -1,23 +1,20 @@
 // The home daemon's sandboxes (M4b): a shell on one with no daemon there
-// (disposable), or a daemon made resident in it (a host of its own, whose
-// layout and scrollback survive the sandbox sleeping or rebooting). Opened
-// from the session menu and the phone's sheet. Always asks the home daemon
-// (this page's own), whichever host is shown: it holds the provider.
+// (disposable). Opened from the session menu and the phone's sheet. Always
+// asks the home daemon (this page's own), whichever host is shown: it
+// holds the provider.
 
 import { opPath } from "../ops";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "../../shared/ui/modal";
-import { directory } from "../hosts";
 import type { RunRequest, RunResponse } from "../../shared/proto";
 
 interface SandboxInfo {
   name: string;
   status: string;
-  host: string | null;
 }
 
 interface SandboxList {
-  provider: { name: string; exec_replay: number; resident: boolean };
+  provider: { name: string; exec_replay: number };
   sandboxes: SandboxInfo[];
 }
 
@@ -94,24 +91,6 @@ function Sandboxes({ close }: { close: () => void }) {
     }
   };
 
-  const promote = async (name: string) => {
-    setBusy(name);
-    try {
-      const h = (await post(opPath("sandbox.promote", { name }), {})) as { name: string };
-      await directory.refresh();
-      close();
-      directory.select(h.name);
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(null);
-    }
-  };
-
-  const open = (host: string) => {
-    close();
-    directory.select(host);
-  };
-
   const rows = (list?.sandboxes ?? [])
     .filter((s) => s.name.includes(filter.trim()))
     .sort((a, b) => (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) || a.name.localeCompare(b.name));
@@ -123,13 +102,7 @@ function Sandboxes({ close }: { close: () => void }) {
         {list && (
           <p class="hint">
             <b>Shell</b>: no daemon there, so it's disposable. While nothing follows it, {list.provider.name} keeps only{" "}
-            {size(list.provider.exec_replay)} of its output, and it ends when its pane closes.{" "}
-            {list.provider.resident && (
-              <>
-                <b>Make resident</b>: the daemon runs there as a service, a host of its own whose layout and scrollback come
-                back after the sandbox sleeps or reboots.
-              </>
-            )}
+            {size(list.provider.exec_replay)} of its output, and it ends when its pane closes.
           </p>
         )}
         {error && <p class="error">{error}</p>}
@@ -149,22 +122,9 @@ function Sandboxes({ close }: { close: () => void }) {
               <span class="sandbox-name">{s.name}</span>
               <span class={`sandbox-status ${s.status}`}>{s.status}</span>
               <span class="sandbox-actions">
-                {s.host ? (
-                  <button class="primary" onClick={() => open(s.host!)}>
-                    Open {s.host}
-                  </button>
-                ) : (
-                  <>
-                    <button disabled={busy !== null} onClick={() => void shell(s.name)}>
-                      Shell
-                    </button>
-                    {list?.provider.resident && (
-                      <button disabled={busy !== null} onClick={() => void promote(s.name)}>
-                        {busy === s.name ? "Working…" : "Make resident"}
-                      </button>
-                    )}
-                  </>
-                )}
+                <button disabled={busy !== null} onClick={() => void shell(s.name)}>
+                  {busy === s.name ? "Working…" : "Shell"}
+                </button>
               </span>
             </li>
           ))}

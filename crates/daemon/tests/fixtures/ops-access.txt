@@ -78,8 +78,6 @@ push.test POST /api/push/test Handler drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false
 rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false
-sandbox.demote DELETE /api/sandboxes/{name}/resident Owner drives=false credential=false
-sandbox.promote POST /api/sandboxes/{name}/promote Owner drives=false credential=false
 sandboxes.list GET /api/sandboxes Owner drives=false credential=false
 setup.agent POST /api/setup/agents/{kind} Owner drives=false credential=false
 setup.claude POST /api/setup/claude Owner drives=false credential=false

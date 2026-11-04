@@ -40,7 +40,7 @@ blocks' MCP token MAC (`illogical block N`), control's hash of a deleted
 machine (`illogical gone daemon`), the
 browser's IndexedDB `illogical-device`, and the names a restarted daemon or
 another version finds running panes and sandboxes by (holder socket, Windows'
-pane pipe, systemd scopes, `illogical-eph-`, the resident service). The
+pane pipe, systemd scopes, `illogical-eph-`). The
 state, config, data and cache directories made under the old name are used
 where they are. Names that only cross between versions (headers,
 `ILLOGICAL_*` variables, service and binary names, download names,

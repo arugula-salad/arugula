@@ -54,8 +54,8 @@ use crate::{
 // as it named them when it was the daemon's.
 use arugula_mux::{acl, block, mux, pane, perm, provider, store, sys, sys::home};
 use arugulad_base::{
-    agent, api, browser, dial, e2e, fs, gate, hostname, hosts, http1, invite, lab_flags, lab_hooks, mcp, ops, peer,
-    ports, push, review, roots, server, sites, task,
+    agent, api, browser, e2e, fs, gate, hostname, hosts, invite, lab_flags, lab_hooks, mcp, ops, peer, ports, push,
+    review, roots, server, sites, task,
 };
 use arugulad_forge as forge;
 // Agent recipes and their A2A cards (M76): the `agent-delegation` flag.
@@ -76,8 +76,7 @@ pub mod guest_ssh;
 // VMs: the machines panes run on, and the sandboxes they come from. The
 // terminal on one is the core's (`arugula_mux::labs::machine`).
 pub mod loam;
-pub mod provider_tunnel;
-pub mod resident;
+pub mod sandboxes;
 pub mod sprites;
 pub mod tea;
 pub mod wearing;
@@ -151,7 +150,6 @@ impl Hooks for Labs {
 
     fn open(&self, start: Start) {
         guest_ssh::open(&start.state_dir, start.guest_listen, start.guest_host);
-        resident::find_binaries(start.static_dir);
     }
 
     /// Each is made only where the machine has its flag on ([`Flagged`]).
@@ -188,7 +186,7 @@ impl Hooks for Labs {
     }
 
     fn home_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
-        r.merge(resident::routes()).merge(provider_tunnel::routes()).merge(guest_ssh::routes())
+        r.merge(sandboxes::routes()).merge(guest_ssh::routes())
     }
 
     fn hook_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {

@@ -538,13 +538,9 @@ enum Command {
     },
     /// The sandbox provider's sandboxes.
     ///
-    /// This daemon's: open a shell on one (`run --sandbox`), or make a daemon
-    /// resident there.
+    /// This daemon's: open a shell on one (`run --sandbox`).
     #[command(hide = true)]
-    Sandboxes {
-        #[command(subcommand)]
-        cmd: Option<hosts::SandboxesCmd>,
-    },
+    Sandboxes,
     /// An MCP server on stdio, for agents that start one as a command.
     ///
     /// `claude mcp add arugula -- arugula mcp`: Arugula's tools, bridged to
@@ -964,8 +960,8 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
             hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
             Ok(0)
         }
-        Command::Sandboxes { cmd } => {
-            hosts::sandboxes(&ctx.sock, cmd, ctx.json_out)?;
+        Command::Sandboxes => {
+            hosts::sandboxes(&ctx.sock, ctx.json_out)?;
             Ok(0)
         }
         // Only with --ssh: the box daemon's link, over the bridge to its

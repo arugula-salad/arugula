@@ -2,8 +2,8 @@
 //! chunked (streamed) responses. Over the daemon's Unix socket by default,
 //! or to another daemon's URL (`--host`), with TLS for `https://`, or to a
 //! host reached through the local daemon (on its socket, under `/h/<host>`
-//! for a dial-out host, `/tunnel/<host>` for a provider host), or to a box
-//! over ssh (one ssh channel per connection; `crate::ssh`).
+//! for a dial-out host), or to a box over ssh (one ssh channel per
+//! connection; `crate::ssh`).
 
 #[cfg(unix)]
 use std::os::{
@@ -28,7 +28,7 @@ pub enum Target {
     Url(Url),
     /// A host reached through the local daemon (its home daemon): the local
     /// socket, with every path under this prefix: `/h/NAME` for a dial-out
-    /// host, `/tunnel/NAME` for a provider host (M4b).
+    /// host.
     Via(PathBuf, String),
     /// A box's daemon over ssh (M51): each connection is a channel running
     /// `arugula bridge` there.
@@ -873,7 +873,6 @@ mod tests {
         use super::{enc, route};
         use arugula_proto::{
             api::{Empty, FollowerLinkRequest, StudioLoginRequest},
-            hosts::PromoteRequest,
             op::{Op, Request, ops::*},
         };
         // A path argument is filled in as it is, so the commands pass `enc(name)`.
@@ -883,8 +882,6 @@ mod tests {
         assert_eq!(SyncedRotate::path(&()), "/api/synced/rotate-key");
         assert_eq!(SyncedForget::path(&encoded), "/api/synced/a%20b%2F%C3%A9");
         assert_eq!(route::<SandboxesList>(&(), &Empty {}).unwrap(), "/api/sandboxes");
-        assert_eq!(SandboxPromote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/promote");
-        assert_eq!(SandboxDemote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/resident");
         assert_eq!(route::<StudioGet>(&(), &Empty {}).unwrap(), "/api/studio");
         assert_eq!(StudioLogin::path(&()), "/api/studio");
         assert_eq!(StudioLogout::path(&()), "/api/studio");
@@ -892,8 +889,6 @@ mod tests {
         assert_eq!(StudioFollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
         assert_eq!(StudioUnfollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
         assert!(Empty::without_body().is_some());
-        let promote = PromoteRequest { host: Some("h".into()), port: None };
-        assert_eq!(serde_json::to_value(promote).unwrap().to_string(), r#"{"host":"h","port":null}"#);
         let login = StudioLoginRequest { url: "u".into(), token: "t".into() };
         assert_eq!(serde_json::to_value(login).unwrap().to_string(), r#"{"token":"t","url":"u"}"#);
         let link = serde_json::to_value(FollowerLinkRequest { link: "l".into() }).unwrap();

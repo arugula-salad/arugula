@@ -850,9 +850,9 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   after `--warm-ttl` (1h) by dropping its memory snapshot, which makes the
   next wake a real boot. Its web UI's operator endpoints do the same at
   once (`POST /ui/api/sprites/NAME/suspend`, then `/cool`, with a session
-  from `/ui/login`), which is how `resident.spec.ts` tests a cold wake.
-  Suspending syncs the guest's disks first, so the resident daemon's log
-  and checkpoints are there after the reboot.
+  from `/ui/login`), which is how the removed `resident.spec.ts` tested a
+  cold wake. Suspending syncs the guest's disks first, so a daemon's log
+  and checkpoints in the sandbox are there after the reboot.
 - **A TUI on the main screen leaves the cursor mid-screen.** Claude Code
   draws in place and doesn't use the alternate screen, so after a restore
   the marker landed on top of it; it now goes below the last row with

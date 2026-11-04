@@ -461,7 +461,7 @@ const ROUTERS: &[(&str, &str)] = &[
     ("src/server.rs", "pub fn local_router("),
     // #578 part c.
     ("src/sync.rs", "pub fn routes()"),
-    ("../arugulad-labs/src/resident.rs", "pub fn routes()"),
+    ("../arugulad-labs/src/sandboxes.rs", "pub fn routes()"),
     ("../arugulad-labs/src/apps/routes.rs", "pub fn routes("),
 ];
 

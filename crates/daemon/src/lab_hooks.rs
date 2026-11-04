@@ -42,8 +42,6 @@ pub struct Start {
     pub guest_host: Option<String>,
     /// `--guest-ssh` or `--guest-ssh-host` wasn't left at its default.
     pub guest_given: bool,
-    /// Where the static binaries a resident daemon runs are.
-    pub static_dir: PathBuf,
 }
 
 /// Which decision and run made each hunk of a file (#619), as Labs reads it
@@ -114,7 +112,7 @@ pub trait Hooks: Send + Sync + 'static {
     }
 
     /// Adds what makes a daemon a home daemon for VMs (its provider's
-    /// sandboxes, the tunnel to resident daemons) and the owner's guest ssh
+    /// sandboxes) and the owner's guest ssh
     /// invites (`/api/guests`, which a build without Labs answers with 501
     /// and "Guest ssh isn't in this build", so `arugula share --guest` says
     /// so).

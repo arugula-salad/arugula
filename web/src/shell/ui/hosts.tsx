@@ -17,8 +17,6 @@ import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 function seen(name: string): string {
   const h = directory.find(name);
   if (!h) return "";
-  // A sandbox's state comes from its provider; it may be asleep.
-  if (h.transport === "provider") return `${h.status ?? "?"} · ${h.provider?.provider ?? "sandbox"}`;
   if (h.transport === "control" && h.status === "online") return "online";
   if (h.last_seen_ms === null) return "not seen yet";
   return `seen ${seenAgo(h.last_seen_ms)}`;
@@ -44,7 +42,6 @@ const seenAgo = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
  * keeps trying it), then this page's own connection to it. */
 export function machineState(name: string): string {
   const d = directory.find(name);
-  if (d?.transport === "provider") return `${d.status ?? "?"} · ${d.provider?.provider ?? "sandbox"}`;
   if (d?.transport === "control" && d.status === "offline") return d.last_seen_ms ? `offline, seen ${seenAgo(d.last_seen_ms)}` : "offline";
   const h = fleet?.host(name);
   switch (h?.state) {
