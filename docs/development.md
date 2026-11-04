@@ -646,8 +646,7 @@ drift apart.
 
 <a id="ci"></a>CI's Linux jobs run in two places. Most run on GitHub's runners
 (`ubuntu-24.04`, free for this public repository): check.yml's lint, `build`,
-`clippy`, `desktop-xvfb` and e2e, and the nightlies other than
-forges-nightly.yml's `forges` (since 2026-11-03, #2131). check.yml's `static`,
+`clippy`, `desktop-xvfb` and e2e, and the nightlies (since 2026-11-03, #2131). check.yml's `static`,
 `test` and `test-2` stayed behind: on GitHub's runners `test` and `test-2` took
 20-32 min against the pods' 9-11, and `static`, which they and `desktop-xvfb`
 wait for, up to 10.7 against the pods' 2-5. They run in the
@@ -682,16 +681,16 @@ across them. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
-release.yml's `linux` and forges-nightly.yml's `forges` run on the pods too,
-with the same setup; deploys wait for `linux`, which takes 4-7 min there against
-about 11 on GitHub's runner. `linux-arm64` and app-release.yml's `linux` run on
-GitHub's runners, where nothing deploys from them (since 2026-11-04). A tag's run can only
+release.yml's `linux` runs on the pods too, with the same setup; deploys wait
+for it, and it takes 4-7 min there against about 11 on GitHub's runner.
+`linux-arm64` and app-release.yml's `linux` run on GitHub's runners, where
+nothing deploys from them (since 2026-11-04). A tag's run can only
 read main's caches and its own, and main never saves release.yml's
 (`release-static`, at full opt-level, unlike check.yml's `static`), so
 its rust-cache starts cold: sccache, through the setup action as in
 check.yml, is what spares a release's unchanged crates. release.yml builds
 x86_64 (`linux`, which the deploys wait for) and aarch64 (`linux-arm64`)
-in jobs of their own. The nightly saves its own cache. Until 2026-10-10 they ran on a host
+in jobs of their own. Until 2026-10-10 they ran on a host
 runner on geek that kept its builds in `~/.cache/illogical-ci/`, which
 `scripts/ci-cap-target` kept under 30 GB a job: cargo never prunes it, and
 on 2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home
