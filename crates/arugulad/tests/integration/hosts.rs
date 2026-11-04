@@ -56,12 +56,9 @@ impl Http for Daemon {
         let body = body.map(|b| b.to_string()).unwrap_or_default();
         let mut headers = headers.to_vec();
         // A program on this machine shows the local token (serve's
-        // requests carry an identity instead, and hosts' paths a token of
-        // their own).
-        let own_credential = ["/api/hosts/join", "/api/dial"].iter().any(|p| path.starts_with(p));
+        // requests carry an identity instead).
         let bearer = self.bearer();
-        if !own_credential
-            && !self.token().is_empty()
+        if !self.token().is_empty()
             && !headers
                 .iter()
                 .any(|(k, _)| k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("tailscale-user-login"))
@@ -196,8 +193,12 @@ async fn another_daemon_accepts_the_home_page_and_nobody_else() {
     .unwrap();
 }
 
+/// Nothing on the tailnet gets in without the owner's identity: the
+/// routes a host once reached with a token of its own (`/api/hosts/join`,
+/// `/api/dial`, M4c) are gone, so a tagged node or a stranger with a
+/// bearer is refused everywhere, and a foreign Host before anything else.
 #[test]
-fn tailnet_requests_need_the_owner_except_to_join_with_an_invite() {
+fn tailnet_requests_need_the_owner() {
     let home = start("home", &[]);
     let login = ("tailscale-user-login", OWNER);
     let host = ("host", PUBLIC);
@@ -206,32 +207,19 @@ fn tailnet_requests_need_the_owner_except_to_join_with_an_invite() {
     assert_eq!(home.http("GET", "/api/hosts", &[host, login], None).0, 200);
     assert_eq!(home.http("GET", "/api/hosts", &[host], None).0, 403);
     assert_eq!(home.http("GET", "/api/hosts", &[host, ("tailscale-user-login", "friend@example.com")], None).0, 403);
-    assert_eq!(home.http("POST", "/api/hosts/invite", &[host], None).0, 403, "only the owner mints invites");
-    // A foreign Host is refused before anything else, join included.
-    assert_eq!(home.http("POST", "/api/hosts/join", &[("host", "evil.example")], Some(json!({}))).0, 421);
-
-    // A sandbox (no identity) joins with an invite, once.
-    let (status, _, body) = home.http("POST", "/api/hosts/invite", &[host, login], None);
-    assert_eq!(status, 200);
-    let token = serde_json::from_str::<Value>(&body).unwrap()["token"].as_str().unwrap().to_owned();
-    let join = |token: &str| {
-        let body = json!({"token": token, "host": {"name": "sbx", "urls": ["https://sbx.example.ts.net"]}});
-        home.http("POST", "/api/hosts/join", &[host], Some(body))
-    };
-    assert_eq!(join("ilj_not-a-token").0, 403);
-    let (status, _, body) = join(&token);
-    assert_eq!(status, 200, "{body}");
-    // The sandbox learns whom to let in: the home daemon's owner.
-    let joined: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(joined["owner"], OWNER);
-    assert_eq!(joined["host"]["name"], "sbx");
-    assert_eq!(join(&token).0, 403, "an invite is spent");
-    let (_, _, list) = home.http("GET", "/api/hosts", &[host, login], None);
-    let list: Value = serde_json::from_str(&list).unwrap();
-    assert_eq!(list["hosts"][0]["name"], "sbx");
-    // Joining doesn't open anything else up.
-    assert_eq!(home.http("GET", "/api/hosts/join", &[host], None).0, 403);
     assert_eq!(home.http("POST", "/api/run", &[host], Some(json!({}))).0, 403);
+    // A foreign Host is refused before anything else.
+    assert_eq!(home.http("POST", "/api/hosts", &[("host", "evil.example")], Some(json!({}))).0, 421);
+    // The old token-class paths are nobody's now: no route, no credential.
+    let bearer = ("authorization", "Bearer ilh_forged");
+    for (method, path) in [("POST", "/api/hosts/join"), ("GET", "/api/dial"), ("GET", "/h/sbx/api/host")] {
+        let (status, _, _) = home.http(method, path, &[host, bearer], Some(json!({})));
+        assert_eq!(status, 403, "{method} {path}");
+        // No handler for the owner either: 404, or 405 where another method
+        // shares the shape (`DELETE /api/hosts/{name}`).
+        let (status, _, _) = home.http(method, path, &[host, login], Some(json!({})));
+        assert!(matches!(status, 404 | 405), "{method} {path}: {status}");
+    }
 }
 
 /// #17: a pane that runs on another daemon, with its place in the home
@@ -438,10 +426,7 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
         ("GET", "/api/fs/read?path=/etc/hosts", None),
         ("GET", "/api/hosts", None),
         ("POST", "/api/hosts", Some(r#"{"name":"x","urls":["https://x.example"]}"#)),
-        ("POST", "/api/hosts/invite", None),
         ("DELETE", "/api/hosts/x", None),
-        ("POST", "/api/hosts/x/token", None),
-        ("DELETE", "/api/hosts/x/token", None),
         ("GET", "/api/setup", None),
         ("POST", "/api/setup/tailscale", None),
         ("POST", "/api/setup/control", None),

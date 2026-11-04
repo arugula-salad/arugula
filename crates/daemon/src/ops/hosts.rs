@@ -1,14 +1,12 @@
 //! The host list's routes (#578): who this daemon is, the other daemons it
-//! lists, adding and removing them, and their tokens. HTTP only, on
-//! `hosts.rs`'s router. `GET /api/host` is anyone's (the owner also hears how
-//! the machine stands with control); the rest are the owner's. `invite`
-//! (its `ttl` is a query on a POST) and `join` (a token is its credential)
-//! stay written out.
+//! lists, adding and removing them. HTTP only, on `hosts.rs`'s router.
+//! `GET /api/host` is anyone's (the owner also hears how the machine stands
+//! with control); the rest are the owner's.
 
 use arugula_proto::{
     api::Empty,
-    hosts::{AddHost, Host, HostAnswer, HostList, HostToken},
-    op::ops::{HostAdd, HostGet, HostRemove, HostTokenMint, HostTokenRevoke, HostsList},
+    hosts::{AddHost, Host, HostAnswer, HostList},
+    op::ops::{HostAdd, HostGet, HostRemove, HostsList},
 };
 use axum::http::StatusCode;
 
@@ -42,33 +40,10 @@ impl Handle for HostAdd {
 
 impl Handle for HostRemove {
     async fn handle(cx: &Cx<'_>, name: String, _: Empty) -> Result<Empty, OpError> {
-        // Its tunnel goes with it.
-        cx.app.dial_outs.drop_host(&name);
         if cx.app.hosts.remove(&name) {
             Ok(Empty {})
         } else {
             Err(OpError::Status(StatusCode::NOT_FOUND, format!("no host {name}")))
-        }
-    }
-}
-
-impl Handle for HostTokenMint {
-    async fn handle(cx: &Cx<'_>, name: String, _: Empty) -> Result<HostToken, OpError> {
-        let t = cx.app.hosts.mint_token(&name).map_err(|e| OpError::Status(StatusCode::BAD_REQUEST, e))?;
-        // A new token replaces the old one: so does the connection.
-        cx.app.dial_outs.drop_host(&name);
-        Ok(t)
-    }
-}
-
-impl Handle for HostTokenRevoke {
-    async fn handle(cx: &Cx<'_>, name: String, _: Empty) -> Result<Empty, OpError> {
-        let had = cx.app.hosts.revoke_token(&name);
-        let connected = cx.app.dial_outs.drop_host(&name);
-        if had || connected {
-            Ok(Empty {})
-        } else {
-            Err(OpError::Status(StatusCode::NOT_FOUND, format!("{name} has no token")))
         }
     }
 }

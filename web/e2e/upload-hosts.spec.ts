@@ -1,7 +1,6 @@
 // M70 past one hop: a file pasted into a pane lands on the host that pane
-// runs on, whichever way the page reaches it. A sandbox that only dials
-// out (through the home daemon, `/h/NAME`), and a pane from another host
-// in the home layout (its own daemon, reached directly). Each daemon has a
+// runs on, whichever way the page reaches it: a pane from another host in
+// the home layout (its own daemon, reached directly). Each daemon has a
 // temp directory of its own, so where a file lands says which host took it.
 // (Through control's relay: control.spec.ts.)
 
@@ -58,12 +57,6 @@ async function startDaemon(name: string, extra: string[] = []) {
 
 test.beforeAll(async () => {
   homeUrl = await startDaemon("home");
-  // A sandbox that dials home with a token home minted.
-  const { token } = (await (await fetch(`${homeUrl}/api/hosts/sbx/token`, { method: "POST" })).json()) as { token: string };
-  const tokenFile = join(temp("token"), "token");
-  writeFileSync(tokenFile, token, { mode: 0o600 });
-  await startDaemon("sbx", ["--peer", homeUrl.replace("http", "ws"), "--token", tokenFile]);
-  await expect.poll(async () => (await fetch(`${homeUrl}/h/sbx/api/host`)).status, { timeout: 15_000 }).toBe(200);
   // Another host the page reaches directly.
   const otherUrl = await startDaemon("other", ["--allow-origin", homeUrl]);
   const res = await fetch(`${homeUrl}/api/hosts`, {
@@ -88,16 +81,6 @@ async function landsOn(page: Page, pane: number, host: string) {
   expect(path.startsWith(join(tmpOf.get(host)!, "arugula-uploads"))).toBe(true);
   expect(readFileSync(path)).toEqual(png);
 }
-
-test("through a sandbox that only dials out, the file lands on the sandbox", async ({ page }) => {
-  await open(page);
-  await page.evaluate(() => window.__arugula.hosts.select("sbx"));
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.base)).toBe("/h/sbx");
-  await expect.poll(() => page.evaluate(() => !!window.__arugula.client.connected && window.__arugula.client.state !== null)).toBe(true);
-  const pane = await active(page);
-  await ready(page, pane);
-  await landsOn(page, pane, "sbx");
-});
 
 test("in a pane from another host, the file lands on that host", async ({ page }) => {
   await open(page);

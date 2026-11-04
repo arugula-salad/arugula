@@ -4532,12 +4532,13 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Native #677: the host list's one-time invite tokens and the invites
-    /// waiting for their person each have a file, so saving one keeps the
-    /// other. A waiting list a daemon before this one left in `invites.json`
-    /// (the host list's file now) is read once, so an upgrade loses none.
+    /// Native #677: a waiting list a daemon before this one left in
+    /// `invites.json` is read once into its own file, so an upgrade loses
+    /// none. The host list, which once kept its own invites there (removed
+    /// in 0.68) and opens after control, deletes the old copy only once the
+    /// move is done, and a file in its own shape at once.
     #[test]
-    fn host_invites_and_waiting_invites_keep_each_other() {
+    fn an_upgrade_keeps_the_waiting_invites_left_in_invites_json() {
         let dir = std::env::temp_dir().join(format!("arugula-invites-677-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -4556,31 +4557,30 @@ pub(crate) mod tests {
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
         assert_eq!(c.invites.lock().unwrap().len(), 1, "the old file's waiting list is read once");
 
+        assert!(dir.join("person-invites.json").exists(), "moved into its own file");
+        // The host list opens after control: the moved-out copy goes, the
+        // waiting invites stay where control put them.
         let hosts = crate::hosts::Hosts::open(&dir, "geek".into());
-        let inv = hosts.invite(600);
+        assert!(!dir.join("invites.json").exists(), "the old copy is deleted once moved");
         c.wait_invite(w("invite-new"));
         assert_eq!(c.invites.lock().unwrap().len(), 1, "a newer invite into the same session replaced it");
-        let more = hosts.invite(600);
         drop((c, hosts));
 
         let c = Control::new(&dir, vec![], String::new(), acl, false);
         let tags: Vec<_> = c.invites.lock().unwrap().iter().map(|w| w.extra["tag"].clone()).collect();
-        assert_eq!(tags, ["invite-new"], "the waiting invite survives the host list's save");
-        let hosts = crate::hosts::Hosts::open(&dir, "geek".into());
-        let req = |n: &str| arugula_proto::hosts::AddHost {
-            name: n.into(),
-            urls: vec![format!("https://{n}.example")],
-            transport: arugula_proto::hosts::Transport::Tailnet,
-            ssh: None,
-        };
-        assert!(
-            hosts.join(arugula_proto::hosts::JoinRequest { token: inv.token.clone(), host: req("box") }).is_ok(),
-            "the host invite survives the waiting invite's save"
-        );
-        assert!(
-            hosts.join(arugula_proto::hosts::JoinRequest { token: more.token.clone(), host: req("other") }).is_ok()
-        );
+        assert_eq!(tags, ["invite-new"], "the waiting invite is in its own file");
+        // An upgrade from a daemon whose invites.json held host invites (the
+        // list's own shape): nothing waiting is read from it, and it goes.
+        let dir2 = std::env::temp_dir().join(format!("arugula-invites-677b-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir2);
+        std::fs::create_dir_all(&dir2).unwrap();
+        std::fs::write(dir2.join("invites.json"), r#"{"invites":[["abcd",9999999999999]]}"#).unwrap();
+        let c2 = Control::new(&dir2, vec![], String::new(), Arc::new(Acl::open(&dir2)), false);
+        assert!(c2.invites.lock().unwrap().is_empty() && !dir2.join("person-invites.json").exists());
+        let _ = crate::hosts::Hosts::open(&dir2, "geek".into());
+        assert!(!dir2.join("invites.json").exists(), "spent host invites are deleted");
         let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
     }
 
     /// #232: someone just granted (whom control routes here) is reachable

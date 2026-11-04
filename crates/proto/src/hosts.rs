@@ -12,9 +12,10 @@ pub enum Transport {
     /// Straight to its URLs.
     #[default]
     Tailnet,
-    /// The host dials the home daemon (M4c) and is reached through it, at
-    /// `<home>/h/<name>/ws` and `<home>/h/<name>/api/...`. It has no URLs of
-    /// its own.
+    /// From before 0.68: a host that dialed the home daemon (M4c, removed)
+    /// and was reached through it at `/h/<name>/…`. Still read, so an old
+    /// `hosts.json` parses; the daemon drops such entries as it starts and
+    /// keeps the rest.
     DialOut,
     /// From before 0.67: a daemon made resident in a provider's sandbox,
     /// reached through the home daemon's tunnel (M4b, removed). Still read,
@@ -59,7 +60,7 @@ pub struct HostList {
     pub hosts: Vec<Host>,
 }
 
-/// `POST /api/hosts`, and what a dial-out host sends to `join`.
+/// `POST /api/hosts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddHost {
     pub name: String,
@@ -293,45 +294,6 @@ pub struct HostFeatures {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub flags: Option<Vec<String>>,
-}
-
-/// `POST /api/hosts/invite`: a one-time token that lets a dial-out host add
-/// itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Invite {
-    #[serde(default)]
-    pub token: String,
-    pub expires_ms: u64,
-}
-
-/// `POST /api/hosts/join`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JoinRequest {
-    pub token: String,
-    pub host: AddHost,
-}
-
-/// What `join` answers: the entry, and the login the home daemon lets in,
-/// which the joining daemon should let in too.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Joined {
-    pub host: Host,
-    pub owner: Option<String>,
-    /// For a `dial_out` host: its per-host token (see [`HostToken`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
-}
-
-/// `POST /api/hosts/NAME/token`: a per-host token, minted by the home
-/// daemon for a host without tailnet identity. It lets that host, and only
-/// it, dial in (`arugulad --peer … --token …`). The home daemon keeps only
-/// its hash; minting another replaces it, and `DELETE /api/hosts/NAME/token`
-/// revokes it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HostToken {
-    pub name: String,
-    #[serde(default)]
-    pub token: String,
 }
 
 /// A sandbox provider's capabilities, as far as a client cares.

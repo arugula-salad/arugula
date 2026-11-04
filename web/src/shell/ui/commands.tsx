@@ -157,21 +157,16 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(owner && client.sessionOfPane(id) !== null
       ? [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]
       : []),
-    // A dial-out host's links would be on a daemon nobody can reach.
-    ...(client.base.startsWith("/")
-      ? []
-      : [
-          {
-            label: "Share read-only link…",
-            run: async () => {
-              const url = await client.share(id);
-              if (url) await askText("Read-only link to this pane, for an hour (copied)", url);
-            },
-          } as MenuItem,
-        ]),
+    {
+      label: "Share read-only link…",
+      run: async () => {
+        const url = await client.share(id);
+        if (url) await askText("Read-only link to this pane, for an hour (copied)", url);
+      },
+    } as MenuItem,
     // An ssh command for a guest with only OpenSSH. The owner's. Only where
     // they've turned on Guest SSH access, a sharing setting (native #205).
-    ...(client.base.startsWith("/") || !owner || !client.guestSsh()
+    ...(!owner || !client.guestSsh()
       ? []
       : [
           {

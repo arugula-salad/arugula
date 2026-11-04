@@ -945,7 +945,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
         Command::Hosts { cmd } => {
-            hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
+            hosts::run(&ctx.sock, cmd, ctx.json_out)?;
             Ok(0)
         }
         Command::Sandboxes => {

@@ -12,11 +12,10 @@ export interface Host {
   urls: string[];
   /** A daemon in Arugula control's directory: its device id. */
   id?: string;
-  /** How it's reached: `tailnet`, straight to its URLs; `dial_out` (M4c),
-   * it dials the home daemon and is reached through it at `/h/<name>/…`
-   * (on this page's own origin); `control`, through control's directory;
-   * `ssh` (M51), reached by a terminal's own ssh, never from a page. */
-  transport: "tailnet" | "dial_out" | "control" | "ssh";
+  /** How it's reached: `tailnet`, straight to its URLs; `control`, through
+   * control's directory; `ssh` (M51), reached by a terminal's own ssh,
+   * never from a page. */
+  transport: "tailnet" | "control" | "ssh";
   /** An ssh host's destination (`user@box`). */
   ssh?: string;
   added_ms: number;
@@ -154,7 +153,6 @@ export class HostDirectory {
     if (name === null || name === this.home) return "";
     const h = this.find(name);
     // The one place a host's URL is chosen.
-    if (h?.transport === "dial_out") return `/h/${encodeURIComponent(h.name)}`;
     return h?.urls[0] ?? "";
   }
 

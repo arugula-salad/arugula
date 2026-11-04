@@ -833,10 +833,11 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   asked then got no tailnet name (and refused its own URL), and an install
   that asked then logged in again. Both wait for it to settle now.
 - **Through the home daemon, a host's answer is the home daemon's.** A
-  dial-out host's responses are served on geek's origin, so a hostile
-  sandbox could have put a page there with the run of geek's API. Only its
-  WebSocket and `/api` are forwarded, and every answer is defanged (a
-  `sandbox` CSP, `nosniff`, no cookies or CORS).
+  dial-out host's responses (the `/h/NAME` tunnel, since removed) were
+  served on geek's origin, so a hostile sandbox could have put a page
+  there with the run of geek's API. Only its WebSocket and `/api` were
+  forwarded, and every answer was defanged (a `sandbox` CSP, `nosniff`, no
+  cookies or CORS). The block sites' proxy (`sites.rs`) keeps the lesson.
 - **Match paths exactly where identity is relaxed.** A prefix check let
   `/share/<token>/../api/panes` through the viewer's door (the router then
   found nothing, but only by luck); the guard now accepts the exact shapes.

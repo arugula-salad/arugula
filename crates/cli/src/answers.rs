@@ -8,7 +8,7 @@ use arugula_proto::{
     Attention,
     api::*,
     fs::{FsEntry, FsList},
-    hosts::{HostList, HostToken, Invite, SandboxList, Transport},
+    hosts::{HostList, SandboxList, Transport},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -196,8 +196,6 @@ fn hosts_sandboxes_and_tokens_of_an_older_daemon() {
     assert_eq!((s.provider.name.as_str(), s.provider.exec_replay, s.sandboxes.len()), ("", 0, 0));
     let s: SandboxList = old(json!({ "provider": {}, "sandboxes": [{ "host": "res" }] }));
     assert_eq!(s.sandboxes[0].status, "");
-    assert_eq!(old::<Invite>(json!({ "expires_ms": 1 })).token, "");
-    assert_eq!(old::<HostToken>(json!({ "name": "x" })).token, "");
 }
 
 #[test]
