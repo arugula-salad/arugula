@@ -52,7 +52,6 @@ Short paths below are under `crates/platform/src`.
 - The pin block keeps what the platform last said, marked stale, while the platform is out of reach.
 
 ## Not known
-- aru-130's body says GitHub's copy of a comment is matched to its draft by text. The code now holds look-alikes in `issue_github_held` and lets the send's answer decide, using text only when the answer named no comment.
 - Is there meant to be a way to bring a GitHub-first issue in as native? I found none, and aru-089 speaks only to going out.
 - Is drift between the two copies acceptable to people using them, or only a limit of the current design? The decision accepts it as a tradeoff, and only a person can say what we tell users.
 - What do we promise about export staying complete as new things attach to issues? The test covers issues, events and comments.

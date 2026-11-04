@@ -53,7 +53,6 @@ Short paths below are under `crates/platform/src`.
 - With a machine asleep, its block keeps the state it last reported.
 
 ## Not known
-- aru-125 and the comments in `boards.rs` say nobody sets a lane and that a lane is never stored. `set_lane` and `db::LaneSet` do both, for people, and I found no decision record for that change. Which is the intended rule?
 - `docs/labs.md` says the `boards` flag gates nothing on the daemon. The code gates the pin block, block reports, attaching and the MCP tools on it.
 - I found no expiry on `board_block_states`. A machine that goes away mid-turn may leave its row in Doing. Is that accepted? I traced this from the code and found no test of it.
 - Are boards staying behind a Labs flag? What would a stranger get when they leave it? Only a person can say.
