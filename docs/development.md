@@ -267,7 +267,9 @@ group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests
 (`HEADGREEN`), since a later group contains the ones ahead and its pass clears
 them, so a flake rarely ejects anyone while a real break still fails every
 later group; *Status check timeout* 45 minutes. *Require status checks to pass*
-requires `chant-verdict`, from GitHub Actions.
+requires `chant-verdict`, from GitHub Actions. The repository's *Allow
+auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
+requires are still running, which a pull request's own run usually is.
 
 **To turn it off**, take the merge queue rule out of that ruleset and require
 `binaries` again in place of `chant-verdict`. Pull requests then merge
