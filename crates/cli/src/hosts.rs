@@ -39,7 +39,7 @@ pub enum HostsCmd {
     Rm { name: String },
     /// A one-time token that lets another daemon add itself.
     ///
-    /// Used as `arugulad install --tailnet … --join TOKEN`.
+    /// Used as `arugulad --peer wss://this-daemon --token FILE --join TOKEN`.
     Invite {
         /// How long it's good for (e.g. 30m, 2h).
         #[arg(long, default_value = "1h")]

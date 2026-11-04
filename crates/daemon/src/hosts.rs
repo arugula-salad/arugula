@@ -3,9 +3,9 @@
 //! host directly, so terminal bytes never pass through here.
 //!
 //! A host gets on the list by being added (`arugula hosts add`, by the
-//! owner), by joining with a one-time invite token (a sandbox installing
-//! itself, which has no user identity to be checked), or by being made
-//! resident in a provider's sandbox (M4b, `labs/resident.rs`). The home daemon
+//! owner), by joining with a one-time invite token (a dial-out host's
+//! `--join`, M4c, which has no user identity to be checked), or by being
+//! made resident in a provider's sandbox (M4b, `labs/resident.rs`). The home daemon
 //! checks on each host every minute and records when it last answered; a
 //! provider host's sandbox is asked about through its provider instead,
 //! which doesn't wake it.
@@ -268,7 +268,7 @@ impl Hosts {
         }
     }
 
-    /// A one-time token a sandbox can `join` with until it expires.
+    /// A one-time token a dial-out host can `join` with until it expires.
     pub fn invite(&self, ttl_secs: u64) -> Invite {
         let token = format!("ilj_{}", hex(&random::<24>()));
         let expires_ms = now_ms() + ttl_secs.saturating_mul(1000);

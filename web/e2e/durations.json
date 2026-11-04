@@ -107,7 +107,6 @@
   "resident.spec.ts": 0.5,
   "restore.spec.ts": 4.4,
   "runs-platform.spec.ts": 18.3,
-  "sandbox.spec.ts": 0.4,
   "session-asks.spec.ts": 13.3,
   "session-done.spec.ts": 13.1,
   "session-said.spec.ts": 3.8,

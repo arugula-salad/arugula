@@ -93,9 +93,9 @@
 //! identity: a host token or a share token is the credential there, and it
 //! grants nothing else.
 //!
-//! `join` is how a sandbox adds itself to the home daemon's list. Sandboxes
-//! are tagged tailnet nodes with no user identity, so the access checks
-//! refuse them everything else.
+//! `join` is how a dial-out host (`arugulad --peer … --join INVITE`) adds
+//! itself to the home daemon's list. It has no user identity, so the
+//! access checks refuse it everything else.
 //!
 //! Errors are `{"error": "..."}` with a 4xx/5xx status.
 

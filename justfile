@@ -821,13 +821,6 @@ screenshots:
     (cd web && SHOTS_OUT="$img" pnpm exec playwright test -c screenshots.config.ts)
     scripts/webp "$img"
 
-# M4a for real: a wisp sprite installs the static daemon on the tailnet and
-# joins a throwaway home daemon's list; the phone gets vim there. Needs
-# ARUGULA_E2E_TAILNET_AUTHKEY_FILE (an ephemeral tag:sandbox key) and wispd.
-e2e-sandbox: static
-    {{cargo}} build -p arugulad
-    cd web && pnpm exec playwright test e2e/sandbox.spec.ts
-
 # The local Docker test stack (testnet/README.md): up|test|break|measure|down [profile] [claim...].
 # The control profile builds what it runs: the static binaries for Docker's
 # architecture (unless ARUGULA_TESTNET_BINARIES names others) and the CLI.

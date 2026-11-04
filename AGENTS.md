@@ -210,8 +210,8 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
   the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
-  Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
-  `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
+  Sprites adapter, `labs/provider_tunnel.rs` and `labs/resident.rs` in
+  Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
@@ -287,7 +287,7 @@ file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
 only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
-daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
+daemons and the provider tunnel) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,

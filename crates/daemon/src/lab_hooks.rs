@@ -59,22 +59,6 @@ pub trait FileWhy: Send + Sync {
 pub trait Hooks: Send + Sync + 'static {
     // ------------------------------------------------------------ start-up
 
-    /// `arugulad install --tailnet`: joins a tailnet with a userspace
-    /// tailscaled and keeps the daemon running there.
-    #[cfg(unix)]
-    fn tailnet_install(&self, _cmd: crate::args::Command) -> anyhow::Result<()> {
-        anyhow::bail!(not_built("A tailnet sandbox"))
-    }
-
-    /// `arugulad sandbox`: keeps tailscaled and the daemon running, as
-    /// `install --tailnet` set them up.
-    fn supervise_sandbox(&self) -> anyhow::Result<()> {
-        if cfg!(unix) {
-            anyhow::bail!(not_built("The sandbox supervisor"))
-        }
-        anyhow::bail!("the sandbox supervisor is for Linux boxes")
-    }
-
     /// The sandbox provider VM panes get their machines from: the Sprites
     /// API at `url`, with the token in `token_file`. `given`: the flags
     /// weren't left at their defaults.
