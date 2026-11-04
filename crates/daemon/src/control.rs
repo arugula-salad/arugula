@@ -1139,7 +1139,7 @@ impl Enrolled {
     /// owners, on a team or hosted machine, locked or not; nobody on a
     /// deploy's box, where nobody gets in.
     fn co_owner(&self, account: &str) -> Option<Principal> {
-        if account == self.saved.cert.account || self.saved.hosted.as_ref().is_some_and(|h| h.deploy) {
+        if account == self.saved.cert.account || self.saved.purpose().is_some_and(Purpose::deploys) {
             return None;
         }
         let t = self.saved.team()?;
@@ -5561,24 +5561,26 @@ pub(crate) mod tests {
             by: String::new(),
             sig: String::new(),
         };
+        let team_certs: AccountCerts =
+            [("o".to_owned(), (vec![owner.clone()], vec![])), ("e".to_owned(), (vec![editor.clone()], vec![]))]
+                .into_iter()
+                .collect();
+        let in_team = |r: Roster, locked: bool| InTeam {
+            pin: TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() },
+            roster: Some(r),
+            certs: team_certs.clone(),
+            former: Default::default(),
+            names: Default::default(),
+            locked,
+            lock: None,
+        };
         let personal = Saved {
             url: String::new(),
             trust: Trust { account: "m".into(), root: root.device.clone() },
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
-            team: None,
-            roster: None,
-            team_certs: [
-                ("o".to_owned(), (vec![owner.clone()], vec![])),
-                ("e".to_owned(), (vec![editor.clone()], vec![])),
-            ]
-            .into_iter()
-            .collect(),
-            former_members: Default::default(),
-            team_names: Default::default(),
-            locked: false,
-            lock: None,
+            kind: MachineKind::Personal,
             seen: Default::default(),
             peers: Default::default(),
             shared_teams: Default::default(),
@@ -5586,13 +5588,8 @@ pub(crate) mod tests {
             held_peers: Default::default(),
             login: String::new(),
             moved_at: 0,
-            hosted: None,
         };
-        let team = Saved {
-            team: Some(TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() }),
-            roster: Some(roster(1, TeamRole::Owner)),
-            ..personal.clone()
-        };
+        let team = Saved { kind: MachineKind::Team(in_team(roster(1, TeamRole::Owner), false)), ..personal.clone() };
         let key = arugula_e2e::hosted::HostedKey::generate();
         let d = arugula_e2e::hosted::Delegation {
             project: "prj_1".into(),
@@ -5602,15 +5599,18 @@ pub(crate) mod tests {
             by: root.device.clone(),
             sig: String::new(),
         };
-        let hosted_pin = |deploy: bool| HostedPin {
-            cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
-            delegation: d.clone(),
-            revocations: vec![],
-            deploy,
-            builder: false,
-            legacy_app_children: None,
-            passkey_logs: Default::default(),
-            passkey_origins: None,
+        let hosted = |purpose: Purpose| {
+            let pin = HostedPin {
+                cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+                delegation: d.clone(),
+                revocations: vec![],
+                purpose,
+                team: team.team().cloned(),
+                legacy_app_children: None,
+                passkey_logs: Default::default(),
+                passkey_origins: None,
+            };
+            Saved { kind: MachineKind::Hosted(pin), ..team.clone() }
         };
         let dir = std::env::temp_dir().join(format!("arugula-co-owner-kinds-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -5629,19 +5629,20 @@ pub(crate) mod tests {
         };
         assert_eq!(look(&personal), (vec![], vec![]), "a personal machine has no roster");
         assert_eq!(look(&team), (vec!["account:o".into()], vec!["o".into()]), "a team machine");
+        let locked = Saved { kind: MachineKind::Team(in_team(roster(1, TeamRole::Owner), true)), ..team.clone() };
+        assert_eq!(look(&locked), (vec!["account:o".into()], vec!["o".into()]), "locked");
         assert_eq!(
-            look(&Saved { locked: true, ..team.clone() }),
-            (vec!["account:o".into()], vec!["o".into()]),
-            "locked"
+            look(&hosted(Purpose::People)),
+            (vec!["account:o".into()], vec!["e".into(), "o".into()]),
+            "hosted: e isn't an owner"
         );
-        let hosted = Saved { hosted: Some(hosted_pin(false)), ..team.clone() };
-        assert_eq!(look(&hosted), (vec!["account:o".into()], vec!["e".into(), "o".into()]), "hosted: e isn't an owner");
-        assert_eq!(look(&Saved { hosted: Some(hosted_pin(true)), ..team.clone() }), (vec![], vec![]), "a deploy's box");
-        let demoted = Saved { roster: Some(roster(2, TeamRole::Editor)), ..team.clone() };
+        assert_eq!(look(&hosted(Purpose::Deploy)), (vec![], vec![]), "a deploy's box");
+        let demoted = Saved { kind: MachineKind::Team(in_team(roster(2, TeamRole::Editor), false)), ..team.clone() };
         assert_eq!(look(&demoted), (vec![], vec![]), "a former owner, now an editor");
         let mut gone = roster(3, TeamRole::Editor);
         gone.members.retain(|m| m.account != "o");
-        assert_eq!(look(&Saved { roster: Some(gone), ..team.clone() }), (vec![], vec![]), "an owner taken out");
+        let taken_out = Saved { kind: MachineKind::Team(in_team(gone, false)), ..team.clone() };
+        assert_eq!(look(&taken_out), (vec![], vec![]), "an owner taken out");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

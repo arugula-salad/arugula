@@ -3,12 +3,12 @@
   "agent_accounts": [],
   "agent_callers": [],
   "already_in": [
-    "this machine is already in the team Acme on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in the team Acme on https://control.example. To move it, use Team \u2026 beside it in Devices and machines\u2026 (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
     "this machine is already in the team Acme on https://control.example",
-    "this machine is already in the team Acme on https://control.example, and a machine is in one team at a time. To work with the team t2 and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+    "this machine is already in the team Acme on https://control.example, and a machine is in one team at a time. To work with the team t2 and keep this machine where it is, share a session with that team (Share session\u2026, in the session menu). To move it there, use Team \u2026 beside it in Devices and machines\u2026 (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
   ],
   "co_owner": {
-    "a": "User { id: \"account:a\", name: \"a\", pic: None }",
+    "a": null,
     "acct1": null,
     "e": null,
     "m": null,
@@ -21,7 +21,7 @@
     "x": null
   },
   "co_owner_of": {
-    "a": "User { id: \"account:a\", name: \"a\", pic: None }",
+    "a": null,
     "acct1": null,
     "e": null,
     "m": null,
@@ -33,9 +33,7 @@
     "v": null,
     "x": null
   },
-  "co_owners": [
-    "User { id: \"account:a\", name: \"a\", pic: None }"
-  ],
+  "co_owners": [],
   "drivers": [],
   "hosted": true,
   "is_me": {
