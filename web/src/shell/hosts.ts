@@ -79,8 +79,14 @@ export class HostDirectory {
     // A link to a machine (`?machine=geek`) shows it, over the one this
     // browser showed last.
     const asked = linkedMachine();
-    if (asked !== null && this.find(asked)) this.shown = asked;
-    if (this.shown !== null && !this.find(this.shown)) this.shown = null;
+    if (asked !== null && this.reaches(asked)) this.shown = asked;
+    if (this.shown !== null && !this.reaches(this.shown)) this.shown = null;
+  }
+
+  /** Whether `name` is a host this page can show. */
+  private reaches(name: string): boolean {
+    const h = this.find(name);
+    return !!h && reachable(h);
   }
 
   /** Keep the address on the machine shown (`?machine=NAME`), so the view
@@ -112,11 +118,13 @@ export class HostDirectory {
 
   /** Every host, the home daemon first. */
   /** The hosts this page can switch to. ssh hosts aren't among them: only
-   * a terminal reaches those (`sshOnly`). */
+   * a terminal reaches those (`sshOnly`). Nor is an entry of a kind since
+   * removed (`dial_out`, `provider`), which a cached list may still hold:
+   * it's gone, not this page's daemon. */
   get names(): string[] {
-    const reachable = (this.list?.hosts ?? []).filter((h) => h.transport !== "ssh").map((h) => h.name);
-    if (this.control) return reachable;
-    return this.list ? [this.list.this, ...reachable] : [];
+    const shown = (this.list?.hosts ?? []).filter(reachable).map((h) => h.name);
+    if (this.control) return shown;
+    return this.list ? [this.list.this, ...shown] : [];
   }
 
   /** ssh hosts (M51): listed so they aren't a surprise, reached from a
@@ -135,7 +143,7 @@ export class HostDirectory {
       const asked = linkedMachine();
       this.shown = asked !== null && this.find(asked) ? asked : load<string>(CONTROL_SHOWN_KEY);
     }
-    if (this.shown !== null && !this.find(this.shown)) this.shown = null;
+    if (this.shown !== null && !this.reaches(this.shown)) this.shown = null;
     if (hosts.length) this.syncUrl();
     this.emit();
   }
@@ -152,8 +160,10 @@ export class HostDirectory {
     }
     if (name === null || name === this.home) return "";
     const h = this.find(name);
-    // The one place a host's URL is chosen.
-    return h?.urls[0] ?? "";
+    // The one place a host's URL is chosen. A host of a kind since
+    // removed has no URL to go to: never this page's daemon in its stead.
+    if (!h || !reachable(h)) throw new Error(`${name} is gone from the host list`);
+    return h.urls[0];
   }
 
   /** The shown host's name ("" until the home daemon's is known). */
@@ -180,13 +190,13 @@ export class HostDirectory {
       this.stale = false;
       save(LIST_KEY, this.list);
       // A host that left the list can't stay shown.
-      if (this.shown !== null && !this.find(this.shown)) {
+      if (this.shown !== null && !this.reaches(this.shown)) {
         this.shown = null;
         save(SHOWN_KEY, null);
       }
       // A link to a machine the cached list didn't have yet.
       const asked = linkedMachine();
-      if (asked !== null && asked !== this.shown && this.find(asked)) this.shown = asked;
+      if (asked !== null && asked !== this.shown && this.reaches(asked)) this.shown = asked;
       this.syncUrl();
     } catch {
       this.stale = true;
@@ -199,6 +209,14 @@ export class HostDirectory {
     }
     this.emit();
   }
+}
+
+/** A host this page can show: one in control's directory, or a tailnet
+ * host with a URL. An ssh host is a terminal's; an entry of a kind the
+ * daemon no longer makes (`dial_out`, `provider`, kept by an older cached
+ * list) is nobody's. */
+function reachable(h: Host): boolean {
+  return h.transport === "control" || (h.transport === "tailnet" && h.urls.length > 0);
 }
 
 /** The machine the address names (`?machine=NAME`), if any. */

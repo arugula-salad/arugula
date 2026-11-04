@@ -77,7 +77,6 @@ mod board_state;
 mod people_block;
 pub mod push;
 pub mod relay_ws;
-mod remote;
 pub mod review;
 pub mod roots;
 pub mod rules;
@@ -751,7 +750,6 @@ fn kinds(
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
     editors::kinds(&mut kinds);
-    kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);

@@ -177,21 +177,3 @@ test("`code` typed in a pane: Open the editor beside it", async ({ page }) => {
   await expect(page.locator("[data-hint]")).toHaveCount(0);
 });
 
-test("another machine in the host menu: Split right on it", async ({ page }) => {
-  const other = await start("other", ["--allow-origin", homeUrl]);
-  const res = await fetch(`${homeUrl}/api/hosts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "other", urls: [other] }),
-  });
-  expect(res.ok).toBe(true);
-  await seenAlready(page, ["command-mark"]);
-  await reset(page);
-  const [term] = await panes(page);
-  const chip = chipOf(page, term, "remote-split");
-  await expect(chip).toContainText("Split a shell on that machine into this tab");
-  await expect(chip.locator("[data-hint-act]")).toHaveText("Split right on other");
-  await chip.locator("[data-hint-act]").click();
-  await expect.poll(() => blockOf(page, "remote")).not.toBeNull();
-  await expect(page.locator("[data-hint]")).toHaveCount(0);
-});

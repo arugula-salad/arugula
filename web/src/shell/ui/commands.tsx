@@ -10,7 +10,7 @@ import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -42,9 +42,6 @@ import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, u
 export function paneItems(client: Client, id: PaneId, phone: boolean, workspace: string | null): MenuItem[] {
   const info = client.info(id);
   const entry = client.panes.get(id);
-  // #17: a shell on another host, beside this pane.
-  const elsewhere = (): MenuItem[] =>
-    remoteHosts().map((h) => ({ label: `Split right on ${h}`, run: () => void newRemote(client, h, { split: id }) }));
   const moveToTab: MenuItem = {
     label: "Move to new tab",
     disabled: (client.tabOfPane(id) && paneIds(client.tabOfPane(id)!).length < 2) ?? true,
@@ -63,21 +60,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
       ...threadItems(client, id),
     ];
-
-  if (info?.type === "remote") {
-    // Its terminal is its host's: here, only where it is.
-    const at = client.blocks.get(id)?.state as { host: string; pane: PaneId } | null;
-    return [
-      ...(at ? [{ header: `%${at.pane} on ${at.host}` } as MenuItem] : []),
-      ...focus,
-      { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
-      { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
-      ...elsewhere(),
-      "separator",
-      moveToTab,
-      closePane,
-    ];
-  }
 
   const tabId = client.tabOfPane(id)?.id;
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
@@ -112,7 +94,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   };
   const openBeside: MenuItem[] = [
     ...(client.has("vms") ? [{ label: "New VM pane on the right", run: () => void client.newVm({ split: id }) } as MenuItem] : []),
-    ...elsewhere(),
     {
       label: "Open a web page…",
       run: async () => {
@@ -267,8 +248,6 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { session }) } as MenuItem] : []),
-    // #17: a tab here whose shell runs on another host.
-    ...remoteHosts().map((h): MenuItem => ({ label: `New tab on ${h}`, run: () => void newRemote(client, h, { session }) })),
   ];
 }
 
@@ -458,8 +437,6 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "nvim.help-card": (client, { pane, section }) => openHelpCard(client, Number(pane), section === undefined ? undefined : String(section)),
   "nvim.help": (client, { pane, help }) => void openHelp(client, Number(pane), String(help)),
   "nvim.docs": () => void window.open(NVIM_DOCS, "_blank", "noopener"),
-  /** A shell on another host, split right of the pane (#17). */
-  "remote.split": (client, { pane, host }) => void newRemote(client, String(host), { split: Number(pane) }),
   /** Sign-in and account, where Add a passkey is. */
   "control.passkeys": () => openPanel("account")(),
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),

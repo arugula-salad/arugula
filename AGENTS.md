@@ -214,7 +214,7 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host

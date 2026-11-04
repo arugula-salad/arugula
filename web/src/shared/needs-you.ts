@@ -17,17 +17,15 @@ type Info = Pick<PaneInfo, "attention" | "reason" | "type">;
 /** Its reason is a failure: a command or checks failed, or it exited. */
 export const failedReason = (r: Reason | null | undefined): boolean => r?.kind === "failed" || r?.kind === "exited";
 
-/** It needs you: it asks, or it failed. A remote pane's own machine lists
- * it, so it isn't counted twice. */
+/** It needs you: it asks, or it failed. */
 export function needsYou(info: Info): boolean {
-  if (info.type === "remote") return false;
   if (info.attention === "needs_input") return true;
   return info.attention === "done" && failedReason(info.reason);
 }
 
 /** It finished while nobody was looking, and that's all: done. */
 export function finished(info: Info): boolean {
-  return info.type !== "remote" && info.attention === "done" && !failedReason(info.reason);
+  return info.attention === "done" && !failedReason(info.reason);
 }
 
 /** Where it goes in a list of what wants you (#451): what waits on a

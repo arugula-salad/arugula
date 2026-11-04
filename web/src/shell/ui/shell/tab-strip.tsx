@@ -262,7 +262,6 @@ function TabItem({
         )
       )}
       <span class="tab-label">{label}</span>
-      <RemoteTag client={client} tab={tab} />
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
       <ChatTabBadge client={client} panes={paneIds(tab)} />
@@ -284,22 +283,3 @@ function TabItem({
   );
 }
 
-/** The other hosts a tab's panes run on (#17): remote panes' only (a PR's
- * `host` is its forge's, not where anything runs). After the title, and
- * only while it fits beside it (UI audit #177). */
-function RemoteTag({ client, tab }: { client: Client; tab: TabView }) {
-  const hosts = [
-    ...new Set(
-      paneIds(tab)
-        .filter((p) => client.info(p)?.type === "remote")
-        .map((p) => client.blocks.get(p)?.state as { host?: string } | null | undefined)
-        .flatMap((s) => (s?.host ? [s.host] : [])),
-    ),
-  ];
-  if (!hosts.length) return null;
-  return (
-    <span class="host-tag remote" title={`Runs on ${hosts.join(", ")}`}>
-      {hosts.join(" ")}
-    </span>
-  );
-}

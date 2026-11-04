@@ -60,8 +60,6 @@ pub mod wait;
 pub mod web;
 pub mod workspace;
 
-use std::path::PathBuf;
-
 use crate::http::Target;
 
 /// What a command that talks to a daemon has: the daemon it reaches, whether to print JSON, and where
@@ -69,7 +67,4 @@ use crate::http::Target;
 pub struct Ctx {
     pub sock: Target,
     pub json_out: bool,
-    /// `run --home` and `close` use the local daemon too.
-    pub local_sock: PathBuf,
-    pub host_name: Option<String>,
 }

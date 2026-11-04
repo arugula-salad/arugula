@@ -934,9 +934,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         r.prepare()?;
     }
     let json_out = cli.json;
-    // `run --home`: the local daemon too, and the host's name in its list.
-    let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name };
+    let ctx = cmd::Ctx { sock, json_out };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),

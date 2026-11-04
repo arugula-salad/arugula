@@ -6,7 +6,6 @@ import type { Cell } from "../cells";
 import { paneItems } from "../commands";
 import { startDrag } from "../drag";
 import { keyHint } from "../keys";
-import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
@@ -26,8 +25,6 @@ export function paneType(info: PaneInfo | undefined): string {
       return "changes";
     case "browser":
       return "web";
-    case "remote":
-      return "remote shell";
     case "team_chat":
       return "chat";
     default:
@@ -52,7 +49,7 @@ export function paneStatus(info: PaneInfo | undefined): { cls: string; word: str
 /** Blocks with a program behind them, whose header says how it is; the
  * rest (a page, a file, a PR) have no run state, so no "idle" (UI audit
  * #177). Needing you, or done, still shows on any. */
-const RUNS = new Set<string | undefined>([undefined, "terminal", "remote", "agent", "chat"]);
+const RUNS = new Set<string | undefined>([undefined, "terminal", "agent", "chat"]);
 
 /** The glyph a pane's header draws (UI audit #177: one per block type): a
  * forge block is a pull request, an issue, or a project's own issue. */
@@ -67,9 +64,8 @@ export function paneGlyph(client: Client, id: PaneId, info: PaneInfo | undefined
   return { glyph: info?.type ?? "terminal", word: paneType(info) };
 }
 
-/** Where a pane runs when that isn't here: a remote pane's host, a VM. */
-function hostOf(client: Client, id: PaneId, info: PaneInfo | undefined): string | null {
-  if (info?.type === "remote") return (client.blocks.get(id)?.state as { host?: string } | null)?.host ?? "remote";
+/** Where a pane runs when that isn't here: a VM. */
+function hostOf(client: Client, id: PaneId): string | null {
   const m = client.machine(id);
   return m ? (m.name ?? m.sprite) : null;
 }
@@ -110,7 +106,7 @@ export function PaneHeader({
   const { glyph, word: type } = paneGlyph(client, id, info);
   const said = paneStatus(info);
   const status = RUNS.has(info?.type) || said.cls === "needs_input" || said.cls === "done" ? said : { cls: "idle", word: "" };
-  const host = hostOf(client, id, info);
+  const host = hostOf(client, id);
   const branch = info?.branch ?? null;
   const focused = tab.focus === id;
   const why = layoutRefusal(client, tab);
@@ -124,8 +120,7 @@ export function PaneHeader({
     const at = { clientX: r.left, clientY: r.bottom, preventDefault() {} };
     give();
     const items = () => paneItems(client, id, false, null);
-    if (info?.type === "remote") openMenu(at, items());
-    else openFresh(client, at, items);
+    openFresh(client, at, items);
   };
   return (
     <div

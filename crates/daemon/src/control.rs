@@ -4535,7 +4535,7 @@ pub(crate) mod tests {
     /// Native #677: a waiting list a daemon before this one left in
     /// `invites.json` is read once into its own file, so an upgrade loses
     /// none. The host list, which once kept its own invites there (removed
-    /// in 0.68) and opens after control, deletes the old copy only once the
+    /// since) and opens after control, deletes the old copy only once the
     /// move is done, and a file in its own shape at once.
     #[test]
     fn an_upgrade_keeps_the_waiting_invites_left_in_invites_json() {

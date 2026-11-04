@@ -4401,12 +4401,6 @@ export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_f
 export type RelationSource = "person" | "agent" | "plane" | "github";
 
 /**
- * Where a remote block's pane lives (#17): a host in the home daemon's
- * list, and the pane's id there.
- */
-export type RemoteRef = { host: string, pane: number, };
-
-/**
  * `PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked
  * repo's settings; the answer is its [`LinkedRepo`]. `mirror_content`
  * on keeps its PRs' and issues' bodies and comments on the platform
