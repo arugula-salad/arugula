@@ -579,11 +579,6 @@
       "handler": "crates/platform/src/project_docs.rs#asset_route",
       "bytes": "The picture"
     },
-    "POST /api/projects/{project}/docs/{id}/move": {
-      "handler": "crates/platform/src/project_docs.rs#move_route",
-      "request": "MoveProjectDoc",
-      "response": "DocView"
-    },
     "GET /api/projects/{project}/drafts": {
       "handler": "crates/platform/src/forge/drafts.rs#project",
       "response": "ForgeDrafts",

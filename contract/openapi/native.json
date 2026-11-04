@@ -4900,73 +4900,6 @@
         ]
       }
     },
-    "/api/projects/{project}/docs/{id}/move": {
-      "post": {
-        "operationId": "POST_api_projects_project_docs_id_move",
-        "x-arugula-clients": [
-          "page",
-          "native"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocView"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MoveProjectDoc"
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects/{project}/drafts": {
       "get": {
         "operationId": "GET_api_projects_project_drafts",
@@ -11191,19 +11124,6 @@
             ]
           }
         },
-        "type": "object"
-      },
-      "MoveProjectDoc": {
-        "description": "`POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.",
-        "properties": {
-          "to": {
-            "description": "A project's id, or `personal` for the mover's own.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "to"
-        ],
         "type": "object"
       },
       "NewAsk": {

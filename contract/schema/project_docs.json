@@ -309,19 +309,6 @@
       ],
       "type": "object"
     },
-    "MoveProjectDoc": {
-      "description": "`POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.",
-      "properties": {
-        "to": {
-          "description": "A project's id, or `personal` for the mover's own.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "to"
-      ],
-      "type": "object"
-    },
     "NewDoc": {
       "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
       "properties": {
