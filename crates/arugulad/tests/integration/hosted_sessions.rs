@@ -1887,7 +1887,7 @@ fn an_agent_waking_itself_after_the_grant_went_is_stopped() {
     let a = ses('a');
     f.start(&a, "one", prompt(1, "acct1", "hello"));
     wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
-    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    f.queue(&a, prompt(2, "acct1", "bg 12"));
     wait(&marks, &f, "a's background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
     let good = f.grant.lock().unwrap().take();
     let block = block_of(&f, &a);
@@ -2185,7 +2185,7 @@ fn a_self_started_turn_that_cant_be_checked_is_stopped() {
     let a = ses('a');
     f.start(&a, "one", prompt(1, "acct1", "hello"));
     wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
-    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    f.queue(&a, prompt(2, "acct1", "bg 12"));
     wait(&marks, &f, "the background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
     let block = block_of(&f, &a);
     let before = f.moves(&a).len();
@@ -2216,13 +2216,13 @@ fn a_self_started_turn_that_cant_be_checked_is_stopped() {
 fn a_self_started_turn_during_a_finish_step_is_stopped() {
     let Rig { _rt, f, marks, d, .. } = rig_with("grant-wake-finish", &[("FAKE_ACP_NAME", "claude-agent-acp")]);
     let slow = marks.join("slow-finish");
-    let step = FinishStep { command: format!("[ -e {} ] && sleep 8; true", slow.display()), timeout_s: 0 };
+    let step = FinishStep { command: format!("[ -e {} ] && sleep 25; true", slow.display()), timeout_s: 0 };
     let a = ses('a');
     f.start_with(&a, "one", prompt(1, "acct1", "hello"), Some(step));
     wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
     let block = block_of(&f, &a);
     std::fs::write(&slow, "").unwrap();
-    f.queue(&a, prompt(2, "acct1", "bg 1"));
+    f.queue(&a, prompt(2, "acct1", "bg 8"));
     wait(&marks, &f, "the turn's start", || f.turns(&a).len() == 2);
     *f.grant.lock().unwrap() = None;
     wait(&marks, &f, "its agent gone", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 404);
@@ -2242,7 +2242,7 @@ fn a_self_started_turn_is_stopped_with_control_not_answering() {
     let a = ses('a');
     f.start(&a, "one", prompt(1, "acct1", "hello"));
     wait(&marks, &f, "a's first turn", || f.state(&a) == "done");
-    f.queue(&a, prompt(2, "acct1", "bg 3"));
+    f.queue(&a, prompt(2, "acct1", "bg 12"));
     wait(&marks, &f, "the background task's turn", || f.turns(&a).len() == 2 && f.state(&a) == "done");
     let block = block_of(&f, &a);
     *f.grant.lock().unwrap() = None;
