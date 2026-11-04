@@ -752,6 +752,39 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
     }
 }
 
+/// Native #673: a Doc's row says where its copy on the platform is, which
+/// sits in the owner's personal project. The owner's list has it; a team's
+/// other owner, `Owner` here but not that account, isn't pointed at it.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_teams_other_owner_isnt_pointed_at_a_docs_copy() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    arugula_testkit::labs(&d.state, true);
+    let (pane, _) = first(&d);
+    let via_mcp = |args: Value| -> Value {
+        std::thread::scope(|t| t.spawn(|| Mcp::bridge(&d, Some(pane)).call("doc", args).unwrap()).join().unwrap())
+    };
+    let sections = json!([{ "heading": "One", "intent": "first" }]);
+    via_mcp(json!({ "kind": "new", "title": "Plan", "sections": sections }));
+    let rows = d.get("/api/docs");
+    let id = rows[0]["id"].as_str().unwrap().to_owned();
+    // Where the copy landed, as the machine notes it after a put.
+    let file = d.state.join("docs").join(&id).join("meta.json");
+    let mut meta: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    meta["platform"] = json!({ "project": "prj_1", "id": "pdc_1", "link": "https://app.test/p/prj_1/docs/pdc_1", "rev": 1, "assets": {} });
+    std::fs::write(&file, meta.to_string()).unwrap();
+
+    let mine = d.get("/api/docs");
+    assert_eq!(mine[0]["platform"]["link"], "https://app.test/p/prj_1/docs/pdc_1", "{mine}");
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (status, theirs) = channel_call(&mut dee, &dee_ch, "GET", "/api/docs", Value::Null).await;
+    assert_eq!(status, 200, "{theirs}");
+    assert_eq!(theirs[0]["id"], json!(id), "the other owner lists the Doc: {theirs}");
+    assert!(theirs[0].get("platform").is_none(), "and isn't pointed at its copy: {theirs}");
+}
+
 /// #1067: the card an agent's `doc share` raises is the owner's to answer, and
 /// a team's other owner is `owner` to the mux, so only the routes' own check
 /// stops them: both the act route and `call answer` say 403, the card stays,
