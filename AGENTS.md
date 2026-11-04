@@ -6,7 +6,9 @@ reach them from a browser, a phone, the desktop app or a shell. One daemon,
 
 Building, running and releasing are in [docs/development.md](docs/development.md);
 tests in [docs/testing.md](docs/testing.md); contributing in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). What each noun means and where its truth
+lives is in [docs/data-model.md](docs/data-model.md): read it before adding a
+noun or reusing a word.
 
 ## Size the work to the task
 

@@ -60,8 +60,8 @@ one.
   numbered issues", aru-088): a title and an ordered list of sections,
   each a heading and its Markdown, pending with an intent until written,
   which is a machine Doc's shape. It's plain text in control's database,
-  as issues and chat are, and control reads it. It has no pictures of its
-  own.
+  as issues and chat are, and control reads it. Pictures came later, with
+  the copies below.
 - **Who.** Its project's members read it (a personal project's account,
   a team's roster). A team's owners and editors make, write and delete
   Docs; viewers read. Anyone else gets 404, and a Doc is named with its
@@ -82,8 +82,12 @@ one.
 - **Size.** A section is at most 64 KB, a Doc 40 sections and 1 MiB, as a
   machine Doc's; a project has at most 1,000.
 
-What doesn't change: a machine's Docs stay in its library, its share links
-stay end-to-end encrypted, and nothing copies one into a project yet.
+What doesn't change: a machine's Docs stay in its library, and its share links
+stay end-to-end encrypted.
+
+Later, a machine in control came to copy its Docs into its owner's personal
+project (`crates/arugulad-docs/src/docs/copies.rs`). The machine's Doc is the
+truth, and the copy is to be read-only ("One data model", aru-134).
 
 Where: `crates/control-wire/src/project_docs.rs` (the wire),
 `crates/platform/src/project_docs.rs` (who may do what, the routes),
