@@ -1,6 +1,5 @@
 # Nightly: forge blocks against real forges (#93). Never on pull requests:
-# github has the test organization's secrets, and forges runs on our own
-# machines (on GitHub's runner GitLab's webhook timed out once, 2026-11-03).
+# github has the test organization's secrets.
 #
 # - github: crates/daemon/tests/integration/forges_github_real.rs against github.com,
 #   with a test organization's repository, two bot accounts and a copy of
@@ -50,7 +49,7 @@ jobs:
         run: "mise exec -- cargo test -p arugulad --test integration forges_github_real:: -- --nocapture"
 
   forges:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
