@@ -1246,22 +1246,30 @@ as control's copy stands; each machine checks the roster itself); whose
 machines hold `cloud.drive`, one row per member, since every machine
 joined to an account holds it over the account from its join and acts as
 its owner, within the owner's role, on everything a `CloudDriver` route
-serves: the project's cloud workspaces (making, opening, rebuilding,
-deleting; their specs, secrets, ports, previews and transcripts), its
-linked repos and their pull requests, issues and drafts, its Plane
-connections, its inference keys and its Claude spend; no one revokes it
-per project (its owner does, per machine, with `arugula grants revoke`);
-the powers over the project (every live grant, machines' and agent
-tokens', whose each is and what it does now if less than the power: a
-write power on a viewer's, by the grants list's own definition, a giver
-who left the project or is locked out of it, a machine that isn't its
-giver's now; a giver who left is "a former member", unnamed, and neither
-is their machine or token named; a locked-out member is named and said to
-be locked out); what an owner
-allowed (the delegation for cloud workspaces on control, the standing run
-grant with its expiry, confirmed with a passkey, and stale when it names
-an earlier delegation) and the project's cloud workspaces, where an owner
-or editor has full use and a viewer watches. Each part says whose word it
+serves: the project's cloud workspaces (opening, rebuilding, deleting;
+their specs, secrets, ports, previews and transcripts; making one needs
+the hosted allowlist too) and its linked repos and their pull requests,
+issues and drafts, and it reads the project's Plane connections, its
+inference keys and its Claude spend (setting those is a person's); a
+viewer's machine reads what a viewer reads, can wake a paused cloud
+workspace, and doesn't make or discard drafts; no one revokes it per project
+(its owner does, per machine, with `arugula grants revoke`); the other
+powers over the project (every live grant, machines' and agent tokens',
+whose each is and what it does now if less than the power: a write power
+on a viewer's, by the grants list's own definition, a giver who left the
+project or is locked out of it, a machine that isn't its giver's now; a
+giver who left is "a former member", unnamed, and neither is their
+machine or token named, nor is a machine that isn't its giver's any more;
+a locked-out member is named and said to be locked out; a machine's id,
+like a grant's, is the owners'); what an owner allowed (the delegation
+for cloud workspaces on control, the standing run grant with its expiry,
+confirmed with a passkey, stale when it names an earlier delegation and
+not working when the owner who confirmed it isn't one of the project's
+owners now) and the project's cloud workspaces, where an owner or editor
+has full use and a viewer watches, or only owners get in while the team
+is locked. An owner's revoke of a grant whose giver left the project
+(`POST /api/grants/{id}/revoke`) answers the same way: the giver and
+their machine unnamed. Each part says whose word it
 is. It's read-only and changes nothing of what's enforced; it never
 lists another account's grant over their DMs, a token, a signature or a
 secret, and a token's or a grant's id (what a revoke needs) only to the

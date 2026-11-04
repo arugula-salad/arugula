@@ -9,27 +9,33 @@
 //!   account holds `cloud.drive` over it from its join
 //!   ([`crate::grants::can_drive_cloud`]) and acts as its owner, within the
 //!   owner's role, on every route that takes a [`crate::cloud::CloudDriver`]:
-//!   the project's cloud workspaces (making, opening, rebuilding and
-//!   deleting them, their specs, secrets, ports and public previews, their
-//!   archived transcripts), its linked repos (linking, unlinking, content
-//!   mirroring) and their pull requests, issues and drafts, its Plane
-//!   connections and their history, its inference keys and its Claude
-//!   spend: how many of their machines hold it, and that nobody revokes it
-//!   per project (its owner does, per machine). The view never says "no
-//!   other power" as if nothing reached the project while this is true;
+//!   the project's cloud workspaces (opening, rebuilding and deleting
+//!   them, their specs, secrets, ports and public previews, their archived
+//!   transcripts; making one needs the hosted allowlist too), its linked
+//!   repos (linking, unlinking, content mirroring) and their pull requests,
+//!   issues and drafts; and it reads the project's Plane connections and
+//!   their history, its inference keys and its Claude spend (setting those
+//!   is a person's). A viewer's machine reads what a viewer reads and can
+//!   wake a paused cloud workspace, and doesn't make or discard drafts. How
+//!   many of their machines hold it, and that nobody revokes it per project
+//!   (its owner does, per machine). The view never says "no other power"
+//!   as if nothing reached the project while this is true;
 //! - **powers:** every live grant whose scope is this project, machines'
 //!   and agent grant tokens', with whose each is and, when it does less
 //!   than the power now, what (`limited`: a label and why): a write power
 //!   on a viewer's (the one definition the grants list uses,
 //!   [`crate::grants::limited_for`]), a giver who left the project or is
-//!   locked out of it, a machine that isn't its giver's any more;
+//!   locked out of it, a machine that isn't its giver's any more (unnamed
+//!   then, as a former member's is);
 //! - **allow:** what a project owner signed: the delegation for hosted
 //!   machines (control's) and the standing run grant with its expiry (the
 //!   platform's, confirmed with a passkey), stale when it names an earlier
-//!   delegation ([`crate::run_grant::is_stale`]);
+//!   delegation ([`crate::run_grant::is_stale`]) and not working when the
+//!   owner who confirmed it isn't one of the project's owners now (a
+//!   machine refuses it: `GrantRefusal::NotAnOwner`);
 //! - **cloud workspaces:** the project's, and that an owner or editor has
 //!   full use of each (the daemon inside takes the roster and checks it
-//!   itself).
+//!   itself), or only its owners while the team is locked.
 //!
 //! Each part says whose word it is, so nobody reads control's copy as a
 //! machine's decision. Who may list is who may read the project at all:
@@ -38,10 +44,10 @@
 //! Every member sees that a token holds powers here, its name, who minted
 //! it and what it may do (Jake, 2026-11-04); a token's id and a grant's
 //! id, which only a revoke needs, are in the answer for the project's
-//! owners alone, since only they revoke what they didn't give. A giver who
-//! left the project is "a former member", with no name or account, and
-//! neither is their machine or token named; a locked-out member is named
-//! and said to be locked out. Never
+//! owners alone, since only they revoke what they didn't give, and so is a
+//! machine's id. A giver who left the project is "a former member", with
+//! no name or account, and neither is their machine or token named; a
+//! locked-out member is named and said to be locked out. Never
 //! here: another account's grant over their DMs, a token, a workspace's
 //! sandbox id, a grant's signature. Only who, what and when. 600 reads an
 //! hour per account ([`ACCESS_READS`]).
@@ -62,7 +68,7 @@ use crate::{
     auth::Person,
     db::projects::{CLOUD_DRIVE, subject_kind},
     forge::links::membership,
-    grants::{AgentScope, agent_names, limited_for},
+    grants::{AgentScope, limited_for, token_label},
 };
 
 type R = Result<Json<Value>, ApiError>;
@@ -77,18 +83,23 @@ pub const ROSTER_SAYS: &str =
 pub const PERSONAL_SAYS: &str = "this account's own project: its owner alone";
 pub const CLOUD_DRIVE_SAYS: &str = "the platform's cloud.drive grants, one per machine over its owner's account, given when the \
                                     machine joins: its agents act as its owner, within the owner's role, on this project's \
-                                    cloud workspaces (making, opening, rebuilding, deleting; their specs, secrets, ports, \
-                                    previews and transcripts), its linked repos and their pull requests, issues and drafts, \
-                                    its Plane connections, its inference keys and its Claude spend. Its owner revokes it per \
-                                    machine (arugula grants revoke); nobody revokes it per project";
+                                    cloud workspaces (opening, rebuilding, deleting; their specs, secrets, ports, previews \
+                                    and transcripts; making one needs the hosted allowlist too) and its linked repos and \
+                                    their pull requests, issues and drafts, and read its Plane connections, inference keys \
+                                    and Claude spend. A viewer's reads what a viewer reads and can wake a paused cloud \
+                                    workspace, and doesn't make or discard drafts. Its owner revokes it per machine (arugula \
+                                    grants revoke); nobody revokes it per project";
 pub const POWERS_SAYS: &str = "the platform's grants, asked again on every call an agent makes; a grant reaches nothing past what its owner reads";
 pub const ALLOW_SAYS: &str =
     "signed by a project owner: the delegation on control, the standing run grant with a passkey";
 pub const WORKSPACES_SAYS: &str =
     "the platform's list; the machine inside each takes the project's roster from control and checks it itself";
 /// Who has full use of a cloud workspace (Jake, 2026-10-21: an editor
-/// there is as an owner, `crates/daemon/src/control.rs`).
+/// there is as an owner, `crates/daemon/src/control.rs`), and while the
+/// team is locked (the same place: only owners get in).
 pub const FULL_USE: &str = "owners and editors have full use; viewers watch";
+pub const FULL_USE_LOCKED: &str =
+    "the team is locked: only its owners get in; otherwise owners and editors have full use";
 /// What a grant's row says of a giver who isn't in the project now.
 pub const FORMER_MEMBER: &str = "a former member";
 
@@ -160,17 +171,32 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
     };
     let role_of = |account: &str| standing(account).role();
 
-    // Powers: every live grant over the project, named.
+    // Powers: every live grant over the project, its machines named from
+    // the cache and its tokens read in one query.
     let grants = app.db.grants_over_project(&project)?;
     let mut subjects: Vec<String> = grants.iter().map(|g| g.subject_id.clone()).collect();
     subjects.sort();
     subjects.dedup();
-    let named = agent_names(&app, &subjects).await?;
-    let token_ids: Vec<String> = subjects.iter().filter(|id| subject_kind(id) == "agent").cloned().collect();
+    let (token_ids, machine_ids): (Vec<String>, Vec<String>) =
+        subjects.into_iter().partition(|id| subject_kind(id) == "agent");
+    let machines = app.cache.daemons(&*app.hub, &machine_ids).await?;
     let tokens: HashMap<String, _> =
         app.db.agent_tokens_by_id(&token_ids)?.into_iter().map(|t| (t.id.clone(), t)).collect();
+    // Whose a subject is now, and its name: a machine's from the hub, a
+    // token's (named as `token_label` does) from its row.
+    let subject_of = |id: &str| -> Option<(String, String)> {
+        if subject_kind(id) == "agent" {
+            tokens.get(id).filter(|t| t.revoked_at.is_none()).map(|t| (t.account.clone(), token_label(&t.name)))
+        } else {
+            machines.get(id).map(|d| (d.account.clone(), d.name.clone()))
+        }
+    };
 
-    // cloud.drive: each member's own machines, and which of them drive.
+    // cloud.drive: each member's own machines, and which of them hold it:
+    // the hub's directory through the cache, and one query for every
+    // member's revoked ones.
+    let accounts_in: Vec<String> = members.iter().map(|(a, _, _)| a.clone()).collect();
+    let revoked = app.db.revoked_cloud_drive(&accounts_in)?;
     let mut drives = Vec::with_capacity(members.len());
     for (account, _, role) in &members {
         let ids = app.cache.machines_for(&*app.hub, account).await?;
@@ -182,9 +208,8 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
             .filter(|d| d.account == *account)
             .map(|d| d.id)
             .collect();
-        let revoked = app.db.revoked_cloud_drive(account)?;
-        let driving = mine.iter().filter(|m| !revoked.contains(m)).count();
-        drives.push((account.clone(), *role, mine.len(), driving));
+        let holding = mine.iter().filter(|m| !revoked.iter().any(|(a, d)| a == account && d == *m)).count();
+        drives.push((account.clone(), *role, mine.len(), holding));
     }
 
     // What a project owner signed.
@@ -243,9 +268,13 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
             }
         }
     };
-    // The run grant's signer, named the same way (never a raw account).
+    // The run grant's signer, named the same way (never a raw account),
+    // and whether they're one of the project's owners now: a machine
+    // checks that against the roster it holds and refuses the grant when
+    // they aren't (`GrantRefusal::NotAnOwner`), so it's as good as none.
     let run_grant = run_grant.map(|mut g| {
         g["by"] = signer_of.as_deref().map_or(Value::Null, name_of);
+        g["signer_owner"] = json!(signer_of.as_deref().is_some_and(|a| role_of(a) == Some(TeamRole::Owner)));
         g
     });
 
@@ -266,17 +295,13 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
     let powers: Vec<Value> = grants
         .iter()
         .map(|g| {
-            let d = named.get(&g.subject_id);
+            let subject = subject_of(&g.subject_id);
             let owner_role = role_of(&g.granted_by);
             // Why it does nothing now, if it doesn't: the giver left; the
             // machine isn't the giver's (a token isn't live, or its
             // minter's); or the one definition, a write on a viewer's.
             let token = g.subject_kind == "agent";
-            let theirs = if token {
-                tokens.get(&g.subject_id).is_some_and(|t| t.account == g.granted_by && t.revoked_at.is_none())
-            } else {
-                d.is_some_and(|d| d.account == g.granted_by)
-            };
+            let theirs = subject.as_ref().is_some_and(|(account, _)| *account == g.granted_by);
             let giver = standing(&g.granted_by);
             // What it does now, when less than the power: the label is
             // the word a list shows ("idle"), `why` the sentence. A viewer's
@@ -289,16 +314,17 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
                 Standing::Member(_) if !theirs => Some(idle(IDLE_NOT_THEIRS)),
                 Standing::Member(role) => limited_for(&g.power, role, &scope, &owner.name).map(|l| json!(l)),
             };
-            // A former member's machine or token isn't named either: the
-            // row says a former member's agents held the power, no more.
-            let named = giver != Standing::Former;
+            // A former member's machine or token isn't named either, nor
+            // one that isn't its giver's any more: the row says whose
+            // agents held the power, no more.
+            let named = giver != Standing::Former && theirs;
             json!({
                 // Ids are what a revoke needs: the owners', who may.
                 "id": is_owner.then_some(&g.id),
                 "subject": {
                     "kind": g.subject_kind,
-                    "id": (named && (is_owner || !token)).then_some(&g.subject_id),
-                    "name": if named { d.map(|d| d.name.clone()) } else { None },
+                    "id": (named && is_owner).then_some(&g.subject_id),
+                    "name": if named { subject.as_ref().map(|(_, n)| n.clone()) } else { None },
                 },
                 "owner": name_of(&g.granted_by),
                 "owner_role": owner_role.map(TeamRole::as_str),
@@ -322,6 +348,8 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
         })
         .collect();
 
+    let locked = team.as_ref().is_some_and(|t| t.locked);
+    let full_use = if locked { FULL_USE_LOCKED } else { FULL_USE };
     let workspaces: Vec<Value> = workspaces
         .iter()
         .map(|w| {
@@ -331,7 +359,7 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
                 "state": w.state,
                 "created_by": w.created_by.as_deref().map(name_of),
                 "created_at": w.created_at,
-                "full_use": FULL_USE,
+                "full_use": full_use,
             })
         })
         .collect();
@@ -342,7 +370,7 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
             "name": owner.name.clone(),
             "owner": owner.team.as_ref().map_or_else(
                 || json!({ "kind": "account", "id": owner.account }),
-                |t| json!({ "kind": "team", "id": t, "name": team.as_ref().map(|t| t.name.clone()), "locked": team.as_ref().is_some_and(|t| t.locked) }),
+                |t| json!({ "kind": "team", "id": t, "name": team.as_ref().map(|t| t.name.clone()), "locked": locked }),
             ),
         },
         "role": role.as_str(),
@@ -355,6 +383,6 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
             "delegation": delegation.map(|id| json!({ "live": id.is_some(), "id": id })),
             "run_grant": run_grant,
         },
-        "workspaces": { "says": WORKSPACES_SAYS, "full_use": FULL_USE, "list": workspaces },
+        "workspaces": { "says": WORKSPACES_SAYS, "full_use": full_use, "list": workspaces },
     })))
 }

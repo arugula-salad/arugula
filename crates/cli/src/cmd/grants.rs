@@ -75,11 +75,15 @@ pub enum GrantsCmd {
     ///
     /// With --project, the project's Access view, for any of its members:
     /// its team roles (the roster, as control's copy stands; each machine
-    /// checks the roster itself), the powers over it (every live grant,
-    /// whose machine or agent token holds it, and whether it reaches
-    /// anything now), what an owner allowed (the delegation for cloud
-    /// workspaces, the standing run grant and its expiry) and its cloud
-    /// workspaces, where an editor has full use. Read-only.
+    /// checks the roster itself); whose machines hold cloud.drive, a row
+    /// per member (given on join, it acts as its owner within their role
+    /// on the project's cloud workspaces and linked repos, and reads the
+    /// rest; a viewer's reads, wakes a paused workspace and makes no
+    /// drafts; never revoked per project); the other powers over it (every
+    /// live grant, whose machine or agent token holds it, and what it does
+    /// now if less than the power); what an owner allowed (the delegation
+    /// for cloud workspaces, the standing run grant and its expiry) and
+    /// its cloud workspaces, where an editor has full use. Read-only.
     Ls {
         /// A project, by its name or id: its Access view.
         #[arg(long)]
@@ -291,22 +295,25 @@ fn access_text(v: &Value) -> String {
         out.push_str("  none\n");
     }
     for m in &drivers {
-        let (machines, driving) = (m["machines"].as_u64().unwrap_or(0), m["driving"].as_u64().unwrap_or(0));
-        let what = match (machines, driving) {
+        let (machines, holding) = (m["machines"].as_u64().unwrap_or(0), m["driving"].as_u64().unwrap_or(0));
+        let what = match (machines, holding) {
             (0, _) => "no machine joined".to_owned(),
-            (n, d) if n == d => format!("{n} machine{} drive as an {}", if n == 1 { "" } else { "s" }, s(&m["role"])),
+            (n, d) if n == d => format!("{n} machine{} {}", if n == 1 { "" } else { "s" }, as_role(&s(&m["role"]), n)),
             (n, d) => format!(
-                "{d} of {n} machines drive as an {} (the rest: cloud.drive revoked by its owner)",
-                s(&m["role"])
+                "{d} of {n} machines {} (the rest had cloud.drive revoked by their owner)",
+                as_role(&s(&m["role"]), d)
             ),
         };
         out.push_str(&format!("  {:<24} {what}\n", name(&m["owner"])));
     }
 
-    out.push_str(&format!("\nPowers over it, by {}:\n", s(&v["powers"]["says"])));
+    out.push_str(&format!("\nOther powers over it, by {}:\n", s(&v["powers"]["says"])));
     let grants = v["powers"]["grants"].as_array().cloned().unwrap_or_default();
     if grants.is_empty() {
-        out.push_str("  no other power: no machine's or agent token's agents hold one here\n");
+        out.push_str(
+            "  none given: no machine's or agent token's agents hold one here (an owner's or editor's machine still \
+             keeps its own Doc copies here)\n",
+        );
     }
     for g in &grants {
         // A former member's machine or token isn't named: "a former
@@ -348,6 +355,12 @@ fn access_text(v: &Value) -> String {
             "not now: the standing grant names an earlier delegation, so workspaces enrolled since refuse it; an \
              owner signs it again"
                 .to_owned()
+        } else if rg["signer_owner"] == false {
+            format!(
+                "not now: {} confirmed the standing grant and isn't an owner of the project any more, so its \
+                 workspaces refuse it; an owner signs it again",
+                if rg["by"].is_null() { "someone who".to_owned() } else { name(&rg["by"]) }
+            )
         } else {
             format!(
                 "allowed by {} {}, {}",
@@ -372,6 +385,21 @@ fn access_text(v: &Value) -> String {
         out.push_str(&format!("  {:<24} {:<10} {}{by}\n", s(&w["name"]), s(&w["state"]), s(&w["full_use"])));
     }
     out
+}
+
+/// What `n` machines with cloud.drive do for their owner's role: act as an
+/// owner or editor, or read as a viewer (a viewer's machine reaches only
+/// what a viewer reads: it can wake a paused cloud workspace, and doesn't
+/// make or discard drafts).
+fn as_role(role: &str, n: u64) -> String {
+    let verb = |one: &'static str, many: &'static str| -> &'static str { if n == 1 { one } else { many } };
+    match role {
+        "viewer" => {
+            format!("{} the project as a viewer (can wake a paused cloud workspace; no drafts)", verb("reads", "read"))
+        }
+        "editor" => format!("{} as an editor", verb("acts", "act")),
+        _ => format!("{} as an owner", verb("acts", "act")),
+    }
 }
 
 /// How long until `ms`: `3d`, `5h`, `12m`, or `now` once passed.
@@ -460,7 +488,13 @@ fn over(g: &Value, scope: &Value) -> bool {
 /// limit while you only view the project (Arugula #683: `idle`, `reads
 /// only`; `--json` says why).
 fn line(g: &Value) -> String {
-    let name = g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()).unwrap_or_default();
+    // A grant over a project whose giver left it answers with neither the
+    // machine nor the giver named (Arugula #682): say so.
+    let name = match g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()) {
+        Some(n) => n,
+        None if g["former_giver"] == true => "a former member's",
+        None => "",
+    };
     let state = match g["revoked_at"].as_u64() {
         Some(at) => {
             let by = &g["revoked_by"];
@@ -542,7 +576,8 @@ mod tests {
                 { "account": "a1", "name": "alice", "role": "owner" }, { "account": "b1", "name": "bob", "role": "editor" } ] },
             "cloud_drive": { "says": "the platform's cloud.drive grants", "members": [
                 { "owner": { "account": "a1", "name": "alice", "former": false }, "role": "owner", "power": "cloud.drive", "machines": 2, "driving": 1 },
-                { "owner": { "account": "b1", "name": "bob", "former": false }, "role": "editor", "power": "cloud.drive", "machines": 1, "driving": 1 } ] },
+                { "owner": { "account": "b1", "name": "bob", "former": false }, "role": "editor", "power": "cloud.drive", "machines": 1, "driving": 1 },
+                { "owner": { "account": "v1", "name": "viv", "former": false }, "role": "viewer", "power": "cloud.drive", "machines": 2, "driving": 2 } ] },
             "powers": { "says": "the platform's grants", "grants": [
                 { "id": null, "subject": { "kind": "daemon", "id": "d1", "name": "geek" }, "owner": { "account": "a1", "name": "alice", "former": false },
                   "owner_role": "owner", "power": "issues.write", "created_at": 1, "limited": null },
@@ -553,7 +588,7 @@ mod tests {
                   "owner_role": null, "power": "threads.post", "created_at": 1,
                   "limited": { "label": "idle", "why": "does nothing while the team is locked" } } ] },
             "allow": { "says": "signed by a project owner", "delegation": { "live": true, "id": "dlg_1" },
-                "run_grant": { "id": "pg_1", "made": 1, "expires": u64::MAX, "by": { "account": "a1", "name": "alice" }, "created_at": 1, "stale": false } },
+                "run_grant": { "id": "pg_1", "made": 1, "expires": u64::MAX, "by": { "account": "a1", "name": "alice" }, "created_at": 1, "stale": false, "signer_owner": true } },
             "workspaces": { "says": "the platform's list", "full_use": "owners and editors have full use; viewers watch", "list": [
                 { "id": "hw_1", "name": "dev", "state": "ready", "created_by": { "account": "b1", "name": "bob", "former": false }, "created_at": 1,
                   "full_use": "owners and editors have full use; viewers watch" } ] }
@@ -564,9 +599,10 @@ mod tests {
             "Project roles, by the team's roster:",
             "alice                    owner",
             "Cloud workspaces' drivers, by the platform's cloud.drive grants:",
-            "alice                    1 of 2 machines drive as an owner (the rest: cloud.drive revoked by its owner)",
-            "bob                      1 machine drive as an editor",
-            "Powers over it, by the platform's grants:",
+            "alice                    1 of 2 machines acts as an owner (the rest had cloud.drive revoked by their owner)",
+            "bob                      1 machine acts as an editor",
+            "viv                      2 machines read the project as a viewer (can wake a paused cloud workspace; no drafts)",
+            "Other powers over it, by the platform's grants:",
             "geek (alice's)",
             "issues.write",
             "a token (a former member's)",
@@ -586,6 +622,18 @@ mod tests {
         let mut stale = v.clone();
         stale["allow"]["run_grant"]["stale"] = json!(true);
         assert!(access_text(&stale).contains("names an earlier delegation"));
+        let mut demoted = v.clone();
+        demoted["allow"]["run_grant"]["signer_owner"] = json!(false);
+        assert!(access_text(&demoted).contains("alice confirmed the standing grant and isn't an owner"));
+        demoted["allow"]["run_grant"]["by"] = json!({ "account": null, "name": null, "former": true });
+        assert!(access_text(&demoted).contains("a former member confirmed the standing grant"));
+        // A revoked grant whose giver left, as `arugula grants revoke grt_…`
+        // prints it: no machine, no giver.
+        let gone = json!({ "subject": { "kind": "daemon", "id": null, "name": null }, "power": "threads.post", "granted_by": null,
+            "scope": { "kind": "project", "id": "prj_2", "name": "Acme" }, "id": "grt_1", "revoked_at": 1,
+            "revoked_by": { "account": "a1", "name": "Ana" }, "former_giver": true });
+        let l = line(&gone);
+        assert!(l.starts_with("a former member's") && l.contains("revoked") && l.contains("by Ana"), "{l}");
         let empty = json!({ "project": { "name": "Personal", "owner": { "kind": "account", "id": "a1" } }, "role": "owner",
             "roles": { "says": "this account's own project", "members": [{ "account": "a1", "name": "alice", "role": "owner" }] },
             "cloud_drive": { "says": "the platform's cloud.drive grants", "members": [
@@ -597,7 +645,7 @@ mod tests {
         for want in [
             "Personal (personal project)",
             "alice                    no machine joined",
-            "no other power: no machine's",
+            "none given: no machine's",
             "control couldn't say",
             "no live standing grant",
             "  none\n",

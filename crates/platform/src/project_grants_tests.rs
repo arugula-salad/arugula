@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use crate::{
     agents_tests::{give, seeded},
     chat_tests::call,
+    db::sql::{Sql as _, params},
     db::{
         agent_tokens::NewToken,
         projects::{BOARDS_WRITE, ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -109,6 +110,7 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
     let (hub, _app, base, t, u) = seeded().await;
     hub.daemon("bobs", "b", Some("t"));
     hub.daemon("bobs2", "b", None);
+    hub.daemon("xbox", "x", None);
     let project = |id: &str| json!({ "kind": "project", "id": id });
     for (who, machine, power, scope) in [
         ("a", "geek", THREADS_READ, project(&t)),
@@ -136,29 +138,32 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
         "the project's grants only: a's over their DMs isn't here"
     );
     // cloud.drive: every member's own machines, however many, a row
-    // each; a viewer with no machine has a row too, saying so.
+    // each, a viewer's too (its machine reads what a viewer reads).
     assert_eq!(
         drives(&owner),
-        [("a", "owner", 1, 1), ("b", "editor", 2, 2), ("x", "viewer", 0, 0)].map(|(a, r, m, d)| (s(a), s(r), m, d))
+        [("a", "owner", 1, 1), ("b", "editor", 2, 2), ("x", "viewer", 1, 1)].map(|(a, r, m, d)| (s(a), s(r), m, d))
+    );
+    assert!(
+        owner["cloud_drive"]["says"].as_str().unwrap().contains("A viewer's reads what a viewer reads and can wake")
     );
     assert!(owner["cloud_drive"]["says"].as_str().unwrap().contains("nobody revokes it per project"), "{owner}");
     assert!(owner["roles"]["says"].as_str().unwrap().contains("roster"), "{owner}");
     assert!(owner["powers"]["says"].as_str().unwrap().contains("platform"), "{owner}");
     // a's grant over their DMs is in a's own list and nowhere in the
-    // view, by its id; nor is anyone's cloud.drive grant.
+    // view, by its id; and no cloud.drive grant is listed as a power.
     let (_, as_own) = call(&base, "a", "GET", "/api/grants", None).await;
-    let dms = as_own["grants"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|g| g["scope"]["kind"] == "account" && g["power"] == THREADS_READ);
-    let dms_id = dms.unwrap()["id"].as_str().unwrap();
-    assert!(dms_id.starts_with("grt_"));
+    let own = as_own["grants"].as_array().unwrap();
+    let dms_id = own.iter().find(|g| g["scope"]["kind"] == "account" && g["power"] == THREADS_READ).unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let drive_id = own.iter().find(|g| g["power"] == "cloud.drive").unwrap()["id"].as_str().unwrap();
     let text = owner.to_string();
-    assert!(!text.contains(dms_id) && !text.contains("\"cloud.drive\",\"created_at\""), "{text}");
+    assert!(!text.contains(dms_id) && !text.contains(drive_id), "{text}");
+    assert!(owner["powers"]["grants"].as_array().unwrap().iter().all(|g| g["power"] != "cloud.drive"));
     assert_eq!(owner["powers"]["grants"].as_array().unwrap().iter().filter(|g| g["power"] == THREADS_READ).count(), 1);
-    // The owner sees ids, to revoke.
+    // The owner sees ids, to revoke: the grant's and the machine's.
     assert!(owner["powers"]["grants"][0]["id"].as_str().unwrap().starts_with("grt_"), "{owner}");
+    assert_eq!(owner["powers"]["grants"][0]["subject"]["id"], "geek");
 
     // An editor and a viewer read the same list, without the ids.
     for who in ["b", "x"] {
@@ -169,7 +174,8 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
         assert_eq!(drives(&v), drives(&owner), "{who}");
         assert_eq!(v["role"], if who == "b" { "editor" } else { "viewer" });
         assert_eq!(v["powers"]["grants"][0]["id"], Value::Null, "{who}: a grant's id is an owner's");
-        assert!(!v.to_string().contains("grt_"), "{who}: {v}");
+        assert_eq!(v["powers"]["grants"][0]["subject"]["id"], Value::Null, "{who}: so is a machine's");
+        assert!(!v.to_string().contains("grt_") && !v.to_string().contains("\"geek\""), "{who}: {v}");
     }
     // A stranger: no such project, the same words the repos route uses.
     let (st, v) = access(&base, "c", &t).await;
@@ -210,6 +216,53 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
     assert_eq!(powers(&v).len(), 1, "{v}");
     assert_eq!(powers(&v)[0].0, "geek-box");
     assert_eq!(drives(&v)[1], (s("b"), s("editor"), 2, 1), "{v}");
+}
+
+/// A grant whose giver left the project, revoked by an owner through
+/// `POST /api/grants/{id}/revoke`: the answer names neither the giver nor
+/// their machine, now or when it's revoked again; a grant whose giver is
+/// still in the project answers as it always did.
+#[tokio::test]
+async fn an_owners_revoke_of_a_former_members_grant_names_nobody() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.daemon("bobs", "b", Some("t"));
+    let (st, g) =
+        call(&base, "b", "POST", "/api/grants", give("bobs", THREADS_POST, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, g2) =
+        call(&base, "b", "POST", "/api/grants", give("bobs", THREADS_READ, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g2}");
+    // While b is in: the owner's revoke names the machine and the giver.
+    let (st, r) = call(&base, "a", "POST", &format!("/api/grants/{}/revoke", g2["id"].as_str().unwrap()), None).await;
+    assert_eq!(st, 200, "{r}");
+    assert_eq!(
+        (&r["granted_by"], &r["subject"]["name"], &r["former_giver"]),
+        (&json!("b"), &json!("bobs-box"), &Value::Null)
+    );
+    // b leaves. The owner revokes the other: no name, no id, no account.
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    let path = format!("/api/grants/{}/revoke", g["id"].as_str().unwrap());
+    for again in [false, true] {
+        let (st, r) = call(&base, "a", "POST", &path, None).await;
+        assert_eq!(st, 200, "again {again}: {r}");
+        assert_eq!(r["former_giver"], true, "{r}");
+        assert_eq!(
+            (&r["granted_by"], &r["subject"]["id"], &r["subject"]["name"]),
+            (&Value::Null, &Value::Null, &Value::Null),
+            "{r}"
+        );
+        assert_eq!((&r["live"], &r["power"]), (&json!(false), &json!(THREADS_POST)));
+        let text = r.to_string();
+        for word in ["\"b\"", "bobs", "bobs-box"] {
+            assert!(!text.contains(word), "again {again}: {word} names a former member: {text}");
+        }
+    }
+    // The grant is revoked for real.
+    assert_eq!(app.db.live_grant("bobs", THREADS_POST, ("project", &t), "b").unwrap(), None);
 }
 
 /// The roster is read through the cache, as `agent_may` reads it: a
@@ -331,13 +384,17 @@ async fn the_roster_comes_through_the_cache() {
     assert_eq!(roles(&v).len(), 2);
     assert_eq!(drives(&v).len(), 2, "no cloud.drive row for someone who left");
 
-    // A machine that's no longer its giver's: the grant does nothing.
+    // A machine that's no longer its giver's: the grant does nothing,
+    // and the machine isn't named (it's someone else's now).
     hub.daemon("bobs", "x", Some("t"));
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     crate::cache::catch_up(&app).await.unwrap();
     crate::projects::follow(&app).await.unwrap();
-    let (_, v) = access(&base, "x", &t).await;
-    assert!(powers(&v).iter().all(|r| r.1 == "b" && r.3 == IDLE_NOT_THEIRS), "{v}");
+    for who in ["x", "a"] {
+        let (_, v) = access(&base, who, &t).await;
+        assert!(powers(&v).iter().all(|r| r.0.is_empty() && r.1 == "b" && r.3 == IDLE_NOT_THEIRS), "{who}: {v}");
+        assert!(v["powers"]["grants"].as_array().unwrap().iter().all(|g| g["subject"]["id"].is_null()), "{who}: {v}");
+    }
 }
 
 /// An agent grant token's powers over the project are listed to every
@@ -358,6 +415,7 @@ async fn tokens_show_by_name_and_a_personal_project_by_its_owner() {
     app.db.mint_agent_token(&token("agt_live", "ci"), &[(BOARDS_WRITE, &t)], 1).unwrap();
     app.db.mint_agent_token(&token("agt_gone", "old"), &[(ISSUES_WRITE, &t)], 1).unwrap();
     app.db.revoke_agent_token("b", "agt_gone", 2).unwrap();
+    let hub = _hub;
     for who in ["x", "b", "a"] {
         let (st, v) = access(&base, who, &t).await;
         assert_eq!(st, 200, "{v}");
@@ -378,6 +436,55 @@ async fn tokens_show_by_name_and_a_personal_project_by_its_owner() {
             assert!(!v.to_string().contains("agt_") && !v.to_string().contains("grt_"), "{who}: {v}");
         }
     }
+
+    // b is made a viewer: boards.write on b's token still reads boards,
+    // and the row says so with the grants list's own label and words.
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Viewer), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    let (_, v) = access(&base, "x", &t).await;
+    let l = &v["powers"]["grants"][0]["limited"];
+    assert_eq!(l["label"], "reads only", "{v}");
+    assert!(l["why"].as_str().unwrap().contains("reads its boards"), "{v}");
+    // A grant on b's token that someone else gave (a row the routes never
+    // write; the database can): the token isn't its giver's, so it does
+    // nothing, and the token isn't named.
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+             VALUES ('grt_00000000000000000000000000000001', 'agent', 'agt_live', ?1, 'project', ?2, 'x', 3)",
+            params![THREADS_READ, t],
+        )
+        .unwrap();
+    let (_, v) = access(&base, "a", &t).await;
+    let odd = v["powers"]["grants"].as_array().unwrap().iter().find(|g| g["power"] == THREADS_READ).unwrap();
+    assert_eq!(odd["limited"]["why"], crate::project_grants::IDLE_TOKEN_GONE, "{v}");
+    assert_eq!(
+        (&odd["subject"]["id"], &odd["subject"]["name"], &odd["owner"]["account"]),
+        (&Value::Null, &Value::Null, &json!("x"))
+    );
+    // b leaves: the platform revokes b's token's grants over the team's
+    // projects with the roster (`revoke_departed`), so b's own row goes;
+    // the odd one x gave stays, and names neither b nor the token, to
+    // anyone.
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    for who in ["x", "a"] {
+        let (_, v) = access(&base, who, &t).await;
+        let rows = v["powers"]["grants"].as_array().unwrap();
+        assert!(rows.iter().all(|g| g["power"] != BOARDS_WRITE), "{who}: b's token's own grant went with b: {v}");
+        let g = rows.iter().find(|g| g["power"] == THREADS_READ).unwrap();
+        assert_eq!((&g["subject"]["id"], &g["subject"]["name"]), (&Value::Null, &Value::Null), "{who}: {v}");
+        let text = v.to_string();
+        for word in ["agt_live", "\"ci", "\"b\""] {
+            assert!(!text.contains(word), "{who}: {word} names a former member's token: {text}");
+        }
+    }
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
 
     // a's personal project: a alone, as its owner; c can't read it.
     let personal = crate::projects::personal_project(&app, "a").await.unwrap().unwrap();
@@ -438,10 +545,10 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
         (&rg["id"], &rg["by"]["account"], &rg["by"]["name"], &rg["expires"]),
         (&json!(g.id), &json!("a"), &json!("a"), &json!(now + 86_400_000))
     );
-    assert_eq!(rg["stale"], false);
+    assert_eq!((&rg["stale"], &rg["signer_owner"]), (&json!(false), &json!(true)));
     assert_eq!(
         rg.as_object().unwrap().keys().collect::<Vec<_>>(),
-        ["by", "created_at", "expires", "id", "made", "stale"]
+        ["by", "created_at", "expires", "id", "made", "signer_owner", "stale"]
     );
     let ws = &v["workspaces"]["list"][0];
     assert_eq!((&ws["name"], &ws["created_by"]["account"]), (&json!("dev"), &json!("b")));
@@ -465,6 +572,47 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
     assert_eq!(v["allow"]["delegation"], json!({ "live": false, "id": null }));
     assert_eq!(v["allow"]["run_grant"]["stale"], false);
 
+    // The owner who confirmed the grant stops being one: a machine refuses
+    // the grant (NotAnOwner), so the view says the signer isn't an owner.
+    // Here o signs it; o is demoted, then leaves, and the workspace's
+    // maker leaves too: a former member, unnamed. (The maker's row isn't
+    // checked here: a workspace's `created_by` goes to null when its
+    // maker leaves, in a change landing beside this one.) While the team
+    // is locked, full use is the owners' alone.
+    hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    let mut by_o = ProjectGrant::v2(&d, "o", now + 1, now + 86_400_000);
+    by_o.passkey = g.passkey.clone();
+    app.db.add_run_grant(&by_o, "o", now + 1).unwrap();
+    let (_, v) = access(&base, "a", &t).await;
+    let rg = &v["allow"]["run_grant"];
+    assert_eq!((&rg["by"]["account"], &rg["signer_owner"]), (&json!("o"), &json!(true)), "{v}");
+    hub.team("t", &[("a", TeamRole::Owner), ("o", TeamRole::Editor), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    let (_, v) = access(&base, "a", &t).await;
+    let rg = &v["allow"]["run_grant"];
+    assert_eq!((&rg["by"]["account"], &rg["signer_owner"]), (&json!("o"), &json!(false)), "{v}");
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    crate::projects::follow(&app).await.unwrap();
+    let (_, v) = access(&base, "a", &t).await;
+    let rg = &v["allow"]["run_grant"];
+    assert_eq!(rg["by"], json!({ "account": null, "name": null, "former": true, "locked_out": false }), "{v}");
+    assert_eq!(rg["signer_owner"], false);
+    let text = v.to_string();
+    for word in ["\"o\"", "\"b\""] {
+        assert!(!text.contains(word), "{word} names a former member: {text}");
+    }
+    hub.lock("t", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (_, v) = access(&base, "a", &t).await;
+    assert!(v["workspaces"]["full_use"].as_str().unwrap().starts_with("the team is locked"), "{v}");
+    assert_eq!(v["workspaces"]["list"][0]["full_use"], v["workspaces"]["full_use"]);
+    hub.lock("t", false);
+    crate::cache::catch_up(&app).await.unwrap();
+
     // Rate-limited per account: once x's hour is spent (the reads above
     // counted), the next read is refused, and another account's aren't
     // counted.
@@ -474,5 +622,5 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
         assert!(spent <= crate::project_grants::ACCESS_READS.1, "the limit counts");
     }
     assert_eq!(access(&base, "x", &t).await.0, 429);
-    assert_eq!(access(&base, "b", &t).await.0, 200);
+    assert_eq!(access(&base, "a", &t).await.0, 200);
 }

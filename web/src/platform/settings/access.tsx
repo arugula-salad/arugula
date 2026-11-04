@@ -4,10 +4,10 @@
 // Five parts, each saying whose word it is, so nobody reads control's copy
 // as a machine's decision: the project roles (the team's roster as
 // control's copy stands; each machine checks the roster itself); whose
-// machines act as them on the project's cloud workspaces, linked repos
-// and their items, Plane connections, inference keys and spend, one row
-// per member, by `cloud.drive` given on join and never revoked per
-// project; the powers
+// machines act as them on the project's cloud workspaces and linked repos
+// and their items, and read its Plane connections, inference keys and
+// spend, one row per member, by `cloud.drive` given on join and never
+// revoked per project; the powers
 // over the project (every live grant, machines' and agent tokens', whose
 // each is and what it does now if less than the power; a giver who left
 // is a former member, unnamed, their machine too; a locked-out member is
@@ -58,7 +58,7 @@ export interface AccessView {
   allow: {
     says: string;
     delegation: { live: boolean; id: string | null } | null;
-    run_grant: { id: string; made: number; expires: number | null; by: Who | null; created_at: number; stale: boolean } | null;
+    run_grant: { id: string; made: number; expires: number | null; by: Who | null; created_at: number; stale: boolean; signer_owner: boolean } | null;
   };
   workspaces: { says: string; full_use: string; list: { id: string; name: string; state: string; created_by: Who | null; created_at: number; full_use: string }[] };
 }
@@ -72,12 +72,21 @@ const who = (w: Who | null | undefined) => {
   return w.locked_out ? `${n} (locked out)` : n;
 };
 
-/** A member's cloud.drive row: how many of their machines drive. */
+/** What `n` machines with cloud.drive do for their owner's role: act as an
+ * owner or editor, or read as a viewer (a viewer's machine reaches only
+ * what a viewer reads). */
+function asRole(role: string, n: number): string {
+  const verb = (one: string, many: string) => (n === 1 ? one : many);
+  if (role === "viewer") return `${verb("reads", "read")} the project as a viewer: can wake a paused cloud workspace, makes and discards no drafts`;
+  return `${verb("acts", "act")} as an ${role === "editor" ? "editor" : "owner"}`;
+}
+
+/** A member's cloud.drive row: how many of their machines hold it, and
+ * what that lets them do. */
 export function driversLine(m: AccessView["cloud_drive"]["members"][number]): string {
-  const role = ROLE[m.role]?.toLowerCase() ?? m.role;
   if (m.machines === 0) return "no machine joined";
-  if (m.machines === m.driving) return `${m.machines} machine${m.machines === 1 ? "" : "s"} drive as an ${role}`;
-  return `${m.driving} of ${m.machines} machines drive as an ${role}; the rest had cloud.drive revoked by their owner`;
+  if (m.machines === m.driving) return `${m.machines} machine${m.machines === 1 ? "" : "s"} ${asRole(m.role, m.machines)}`;
+  return `${m.driving} of ${m.machines} machines ${asRole(m.role, m.driving)}; the rest had cloud.drive revoked by their owner`;
 }
 
 export function Access({ p }: { p: PlatformProject }) {
@@ -114,8 +123,9 @@ export function Access({ p }: { p: PlatformProject }) {
           <p>
             A <b>project role</b> is the team's role, from the roster: an owner, an editor or a viewer. Every machine joined to an account holds
             <code>cloud.drive</code> over it from its join, so its agents act as its owner, within the owner's role, on this project's cloud
-            workspaces, linked repos and their pull requests, issues and drafts, Plane connections, inference keys and Claude spend; its owner
-            revokes that per machine, nobody per project. A <b>power</b> is what a machine's agents or an agent token may do here, given by its owner
+            workspaces (making one needs the hosted allowlist too) and its linked repos and their pull requests, issues and drafts, and read its
+            Plane connections, inference keys and Claude spend; a viewer's machine reads what a viewer reads, can wake a paused cloud workspace,
+            and doesn't make or discard drafts. Its owner revokes that per machine, nobody per project. A <b>power</b> is what a machine's agents or an agent token may do here, given by its owner
             under Settings, Agents, and never more than its owner reads; a row says when it does less than that now. <b>Allow</b> is what a project owner
             signed: cloud workspaces for the project, and runs on them with every device asleep. On a cloud workspace an editor has full use, as an
             owner does; a viewer watches.
@@ -173,7 +183,9 @@ export function Access({ p }: { p: PlatformProject }) {
                     <th scope="row">
                       {g.owner.former
                         ? `a former member's ${g.subject.kind === "agent" ? "agent token" : "machine"}`
-                        : agentLabel(who(g.owner), { machine: g.subject.id ?? (g.subject.kind === "agent" ? "agt_" : ""), machine_name: g.subject.name ?? undefined })}
+                        : g.subject.name === null
+                          ? `${who(g.owner)}'s former ${g.subject.kind === "agent" ? "agent token" : "machine"}`
+                          : agentLabel(who(g.owner), { machine: g.subject.id ?? (g.subject.kind === "agent" ? "agt_" : ""), machine_name: g.subject.name })}
                       {g.owner_role && <span class="settings-tag">{ROLE[g.owner_role] ?? g.owner_role}</span>}
                     </th>
                     <td data-col="Power">
@@ -193,7 +205,7 @@ export function Access({ p }: { p: PlatformProject }) {
             </table>
           ) : (
             <p class="dim" data-access-powers-none>
-              No other power: no machine's or agent token's agents hold one here.
+              None given: no machine's or agent token's agents hold one here. An owner's or editor's machine still keeps its own Doc copies here.
             </p>
           )}
           <p class="dim settings-note">By {v.powers.says}.</p>
@@ -210,11 +222,13 @@ export function Access({ p }: { p: PlatformProject }) {
                     : "not allowed: no live delegation"}
               </span>
             </li>
-            <li data-access-run-grant={v.allow.run_grant ? (v.allow.run_grant.stale ? "stale" : "yes") : "no"}>
+            <li data-access-run-grant={v.allow.run_grant ? (v.allow.run_grant.stale ? "stale" : v.allow.run_grant.signer_owner ? "yes" : "signer") : "no"}>
               <span>Runs with every device asleep</span>
               <span class="dim">
                 {v.allow.run_grant?.stale ? (
                   "not now: the standing grant names an earlier delegation, so workspaces enrolled since refuse it; an owner signs it again"
+                ) : v.allow.run_grant && !v.allow.run_grant.signer_owner ? (
+                  `not now: ${v.allow.run_grant.by ? who(v.allow.run_grant.by) : "someone who"} confirmed the standing grant and isn't an owner of the project any more, so its workspaces refuse it; an owner signs it again`
                 ) : v.allow.run_grant ? (
                   <>
                     allowed by {v.allow.run_grant.by ? who(v.allow.run_grant.by) : "an owner"} <Time at={v.allow.run_grant.made} on />

@@ -105,7 +105,7 @@ test("Alice and Bob read the same Access section of the project's settings", asy
     await expect(access.locator(".settings-note").first()).toContainText("roster");
     await expect(access.locator("[data-access-driver]")).toHaveCount(2);
     await expect(access.locator("[data-access-drivers]")).toContainText("alice's machines");
-    await expect(access.locator("[data-access-drivers]")).toContainText("1 machine drive as an owner");
+    await expect(access.locator("[data-access-drivers]")).toContainText("1 machine acts as an owner");
     await expect(access.locator("[data-access-drivers]")).toContainText("no machine joined");
     const power = access.locator("[data-access-power]");
     await expect(power).toHaveCount(1);

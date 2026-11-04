@@ -557,7 +557,27 @@ pub async fn revoke(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<
         );
     }
     let g = named(&app, vec![g]).await?.remove(0);
-    Ok(Json(wire(&g)))
+    let mut answer = wire(&g);
+    // A grant over a project whose giver doesn't read it now (they left
+    // the team, or it's locked to its owners): the project's Access view
+    // names neither them nor their machine (Arugula #682), and neither
+    // does an owner's revoke of it, now or when it's revoked again.
+    if g.scope_kind == "project"
+        && owner_role(&app, &g.granted_by, &AgentScope::Project(g.scope_id.clone()), false).await?.is_none()
+    {
+        unname_giver(&mut answer);
+    }
+    Ok(Json(answer))
+}
+
+/// Take the giver, and their machine's or token's id and name, out of a
+/// grant's answer: a former member of the project it's over is "a former
+/// member", no more.
+pub fn unname_giver(g: &mut Value) {
+    g["granted_by"] = Value::Null;
+    g["subject"]["id"] = Value::Null;
+    g["subject"]["name"] = Value::Null;
+    g["former_giver"] = json!(true);
 }
 
 /// What a project's owner revoked (Arugula #683), for its giver to be

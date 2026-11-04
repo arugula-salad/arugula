@@ -1777,7 +1777,7 @@ path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project."
+note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project. A grant whose giver doesn't read the project now answers with neither the giver nor their machine named (former_giver), as the project's Access view does."
 
 [[route]]
 method = "GET"
@@ -1785,7 +1785,7 @@ path = "/api/projects/{project}/grants"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A project's Access view: its roster roles (through the platform's cache, as agent_may reads them); whose machines hold cloud.drive (given on join, never revoked per project: they act as their owner, within the owner's role, on the project's cloud workspaces, linked repos and their items and drafts, Plane connections, inference keys and spend); every live grant over the project (machines' and agent tokens', with whose each is and what it does now if less than the power; a giver who left is a former member, unnamed, their machine too); the delegation and the standing run grant with its expiry (stale when it names an earlier delegation); and its cloud workspaces (owners and editors have full use). For any member; a stranger gets no such project. A token's or a grant's id, which only a revoke needs, is in the answer for the project's owners alone. Never a token, a signature or a secret: who, what and when. Read-only; 600 reads an hour per account."
+note = "A project's Access view: its roster roles (through the platform's cache, as agent_may reads them); whose machines hold cloud.drive (given on join, never revoked per project: they act as their owner, within the owner's role, on the project's cloud workspaces and linked repos and their items and drafts, and read its Plane connections, inference keys and spend; a viewer's reads, wakes a paused workspace and makes no drafts); every live grant over the project (machines' and agent tokens', with whose each is and what it does now if less than the power; a giver who left is a former member, unnamed, their machine too, as is a machine that isn't its giver's now; a machine's id is the owners', as a grant's is); the delegation and the standing run grant with its expiry (stale when it names an earlier delegation); and its cloud workspaces (owners and editors have full use). For any member; a stranger gets no such project. A token's or a grant's id, which only a revoke needs, is in the answer for the project's owners alone. Never a token, a signature or a secret: who, what and when. Read-only; 600 reads an hour per account."
 
 # ---- platform: agents with no machine (M230, platform step 8)
 # An owner mints a bearer agent grant token over projects they read, with an
