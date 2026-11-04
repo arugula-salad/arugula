@@ -19,11 +19,14 @@
 // Groups (aru-125, decision 6): a board whose author made groups shows each as
 // a section with its progress and the four lanes of its rows under it, the
 // rows with none last; a board without any looks as it did.
+// #313: with a machine of Alice's that has no Boards grant, the Boards page says
+// its agents can't see the boards and links to Settings → Agents; the grant
+// takes the line away, and a viewer never sees it.
 
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl, home } from "./team-fixture";
+import { TeamControl, home, live } from "./team-fixture";
 
 const t = new TeamControl("boards");
 /** A folder to write the Boards page's screenshot to, when set. */
@@ -1211,4 +1214,34 @@ test("with more than 100 not on a board: the filter, order and labels are the se
   await expect(progress).toContainText(`0 of ${before + total - 1} done`, { timeout: 15_000 });
   await expect(alice.locator("[data-platform-toast]").filter({ hasText: `${total - 1} issues are on Bulk, in Next` })).toBeVisible();
   expect(posts.filter((p) => !p.includes("/entries/many"))).toEqual([]);
+});
+
+test("a machine with no Boards grant is named under the header, with a link to Settings → Agents, until it has one (#313)", async () => {
+  test.setTimeout(180_000);
+  await t.addMachine(alice, "quiet");
+  await home(alice);
+  await expect.poll(() => live(alice, ["quiet"]), { timeout: 30_000 }).toBe(true);
+  const machine = await alice.evaluate(() => window.__arugula.fleet.host("quiet")!.id!);
+
+  await platform(alice, `/p/${project}/boards`);
+  const hint = alice.locator("[data-boards-blind]");
+  await expect(hint).toHaveText("Agents on quiet can't see these boards. Let them", { timeout: 15_000 });
+  if (SHOTS) await alice.screenshot({ path: `${SHOTS}/boards-grant-hint.png` });
+  // A viewer can't give the grant, so isn't told, though the machine is his.
+  await t.addMachine(bob, "bobs");
+  await platform(bob, `/p/${project}/boards`);
+  await expect(bob.locator("[data-boards-page]")).toBeVisible();
+  await expect(bob.locator("[data-boards-blind]")).toHaveCount(0);
+
+  await hint.locator("[data-boards-blind-link]").click();
+  await expect(alice).toHaveURL(/\/settings#agents$/);
+  await expect(alice.locator("[data-settings-section=agents]")).toBeVisible({ timeout: 15_000 });
+
+  // Read is enough: the line is gone after a reload.
+  expect((await api(alice, "POST", "/api/grants", { daemon: machine, power: "boards.read", scope: { kind: "project", id: project } })).status).toBe(200);
+  const grants = alice.waitForResponse((r) => new URL(r.url()).pathname === "/api/grants" && r.request().method() === "GET");
+  await platform(alice, `/p/${project}/boards`);
+  await grants;
+  await expect(alice.locator("[data-boards]")).toBeAttached({ timeout: 15_000 });
+  await expect(alice.locator("[data-boards-blind]")).toHaveCount(0);
 });

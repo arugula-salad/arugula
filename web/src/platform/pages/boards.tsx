@@ -8,6 +8,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { platformFetch } from "../../shared/maintenance";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
 import { boards } from "../../shared/boards/store";
@@ -20,8 +21,10 @@ import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { issueTone, toneClass } from "../swarm";
+import { blindLine, blindMachines, type Grant } from "../settings/grants";
 import { toast } from "../toast";
 import { chat } from "../../shared/chat-store";
+import { roleIn } from "../settings/environments";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
 import { NotOnBoard, dropOn, useTriage, useUntriaged, type Triage } from "./triage";
@@ -177,6 +180,37 @@ export function BoardsPage({ project, scroll }: { project: string; scroll?: bool
   return <BoardList p={p} scroll={scroll} />;
 }
 
+/** The names of the machines of the reader's whose agents can't see the project's boards (#313); none while the grants load or when they can't be read. */
+function useBlindMachines(project: string, may: boolean): string[] {
+  const [blind, setBlind] = useState<string[]>([]);
+  useEffect(() => {
+    setBlind([]);
+    if (!may) return;
+    let live = true;
+    void platformFetch("/api/grants", { credentials: "same-origin" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ grants: Grant[] }>) : null))
+      .then((v) => live && v && setBlind(blindMachines(v.grants, project)))
+      .catch(() => {});
+    return () => void (live = false);
+  }, [project, may]);
+  return blind;
+}
+
+/** A quiet line under the header when some of the reader's machines have no Boards grant over the project (#313): their agents' first `board_read` would be refused. It only points at Settings → Agents, where the grant is given. */
+function BlindMachines({ project, may }: { project: string; may: boolean }) {
+  const line = blindLine(useBlindMachines(project, may));
+  if (!line) return null;
+  const to = `${pathOf({ page: "settings" }, names)}#agents`;
+  return (
+    <p class="dim" data-boards-blind>
+      {line}{" "}
+      <a href={to} data-boards-blind-link onClick={(e) => follow(e, to)}>
+        Let them
+      </a>
+    </p>
+  );
+}
+
 function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const list = useBoards(p.id);
@@ -201,6 +235,7 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
   return (
     <section class="platform-section sw-page" data-boards-page data-tab={tab}>
       <PageHeader title="Boards" />
+      <BlindMachines project={p.id} may={roleIn(p) !== "viewer"} />
       {issues && list && (
         <div class="boards-tabs" role="tablist" aria-label="Boards page" data-boards-tabs>
           <button type="button" role="tab" id="boards-tab-boards" aria-selected={tab === "boards"} data-tab="boards" onClick={() => setTab("boards")}>

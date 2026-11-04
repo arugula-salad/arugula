@@ -76,6 +76,23 @@ export function boardsLevel(grants: Grant[], machine: string, project: string): 
   return singleGrant(grants, machine, project, BOARDS_READ) ? "read" : "off";
 }
 
+/** The names of the machines whose agents can't see a project's boards
+ * (#313): the ones with no live `boards.read` or `boards.write` over it. */
+export function blindMachines(grants: Grant[], project: string): string[] {
+  return machinesOf(grants)
+    .filter((m) => boardsLevel(grants, m.id, project) === "off")
+    .map((m) => m.name);
+}
+
+/** The Boards page's line for those machines (#313): up to three by name,
+ * then "<a>, <b> and 2 more". Empty for none. */
+export function blindLine(names: string[]): string {
+  if (names.length === 0) return "";
+  const shown = names.length <= 3 ? names : [...names.slice(0, 2), `${names.length - 2} more`];
+  const who = shown.length === 1 ? shown[0] : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  return `Agents on ${who} can't see these boards.`;
+}
+
 /** What moving to `to` takes: the powers to give, and the live grants to
  * revoke. Down from write to read takes `boards.write` and keeps (or gives)
  * `boards.read`; off takes both. */
