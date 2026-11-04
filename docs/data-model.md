@@ -180,8 +180,54 @@ forge.
 |---|---|---|---|
 | **Library Doc** | A Doc on a machine | `<state>/docs/<id>/` | 16 hex |
 | **Project Doc** | A Doc made on the platform, in a project | Platform `project_docs` | `pdc_` |
-| **Copy** | A library Doc's copy in its owner's personal project. Read-only: the machine's Doc is the truth | Machine | `pdc_` |
+| **Copy** | A library Doc's copy in its owner's personal project, put again on every change. Read-only: the machine's Doc is the truth, and the copy goes with it | Machine | `pdc_` |
 | **Shared Doc** | An encrypted snapshot behind a link, frozen until someone updates it | Hub `doc_links`; the key stays out of control | 32 hex |
+
+A library Doc has one truth, on its machine (aru-134, aru-135). What follows
+from that, settled in native #673:
+
+- **The copy follows the Doc.** The machine puts the whole Doc on every
+  change, and takes the copy down when the Doc is deleted, from a tombstone
+  the library writes first, never from a file it can't read; a take-down
+  the platform refuses is tried three times, then given up. The copy stays
+  its project's to delete on the platform, as any Doc there is. A personal
+  machine whose account gave the word brings a new one at its next change
+  to the Doc, and the page says so; a team's machine never does.
+- **The machine knows where its copy is.** The put's answer (the project,
+  the `pdc_` id, the link) is kept in the Doc's `meta.json` as `platform`,
+  and `doc list`, `/api/docs` and the Docs page show it; it's forgotten when
+  the machine leaves control, and a team's other owner isn't shown it.
+- **A board reads the copy where the copy sits.** On a board of the
+  owner's own project, a machine Doc's chip shows the title and sections as
+  the machine last put them and opens the copy, so the Doc reads with the
+  machine asleep; the shell on that machine opens the live Doc first. On a
+  team's board the chip keeps the title it was linked with, since the
+  board's readers may not read the copy's project.
+- **Copying is the account's own word, on its personal machines.** A
+  machine joined to an account alone copies its Docs up only when that
+  account turned "Your Docs on the platform" on (Teams on the machines
+  page), a word of its own, `doc-copies`, apart from chat, which it
+  neither needs nor turns on. A team can't set it, and a team's machine
+  copies nothing, so no member's Docs land in another member's project:
+  the platform refuses its copies whatever daemon it runs, and its Docs
+  stay on the machine. Copies a team's machine made before stay where they
+  are, and nothing removes them. An account that had its own
+  chat on was given the word. Off stops new and changed copies, on an
+  older daemon too, whose puts the platform refuses on an explicit no;
+  copies already there stay until deleted, and a deleted Doc's copy still
+  comes down. A personal machine hears its teams' chat as `chat-heard` for its
+  threads' readers, which never copies anything.
+- **A hosted machine's library is the box's.** Its state directory goes with
+  a rebuild, and nothing is copied up: the workspace's owner is whoever made
+  it, so a session's Docs would land in their personal project. A session's
+  write-ups for the project go in project Docs, through the session's tools.
+- **A copy stays in its owner's personal project.** The route that moved a
+  Doc between projects is gone: nothing but tests called it, and it was the
+  one way a machine's puts reached a team's project. A Doc for a team is
+  made in the team's project. A copy a move put in a team's project before
+  then takes a personal machine's puts there only while the team's chat is
+  on and its owner may write there; a team's machine's puts are refused
+  everywhere. None is expected in production.
 
 ## Don't merge these
 
@@ -202,7 +248,8 @@ purpose, and the records say why:
 | Where the code differs | Tracked in |
 |---|---|
 | "Session" and "agent session" name other things in Rust types | #671 |
-| A board's chip for a machine Doc shows the title from when it was linked, not its copy; deleting a copy leaves links to it dead; the route that moves a Doc has no caller | #673 |
+| A machine Doc's chip on a team's board keeps the title it was linked with, not its copy's | Settled as far as #673 goes: a copy lives in its owner's project |
+| A board's link to a copy that was deleted, on the platform or with its Doc, reads "a deleted Doc" for good: the machine's next copy of the same Doc gets a new id, which the link doesn't follow | Not tracked |
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
