@@ -179,6 +179,30 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
 export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
 
 /**
+ * [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
+ * `untriaged` (everything that matches, but the `except` pointers). More
+ * than [`ADD_MANY_MAX`] is refused, 400: narrow the filter.
+ */
+export type BoardAddMany = { pointers?: Array<BoardPointer>, untriaged?: BoardUntriagedQuery, 
+/**
+ * With `untriaged`: pointers to leave out.
+ */
+except?: Array<BoardPointer>, };
+
+/**
+ * [`BOARD_ENTRIES_MANY`]' answer.
+ */
+export type BoardAddedMany = { 
+/**
+ * Rows made. An item on the board already isn't counted.
+ */
+added: number, 
+/**
+ * PRs attached to the row of the issue they close, as a single add does.
+ */
+attached: number, board: BoardView, };
+
+/**
  * An ask that was answered, kept in the row's history.
  */
 export type BoardAnsweredAsk = { id: string, question: string, answer: string, asked_by: string, answered_by: string, answered_at: number, };
@@ -682,6 +706,12 @@ started: boolean, };
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
 
 /**
+ * Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`
+ * set, of the board's own project.
+ */
+export type BoardUntriagedQuery = { project: string, q?: string, label?: string, };
+
+/**
  * A board with its four lanes, in order (`lane_next`, `lane_doing`,
  * `lane_review`, `lane_done`), each with its rows, and its groups, in
  * order. The rows of a group are those with [`Row::group`] set to its id; a
@@ -751,12 +781,35 @@ state: string,
 /**
  * GitHub logins for a mirrored item; account ids for a native issue.
  */
-assignees: Array<string>, updated_at: number, };
+assignees: Array<string>, 
+/**
+ * The item's label names: a native issue's, a mirrored GitHub or Plane
+ * item's. A run has none.
+ */
+labels?: Array<string>, updated_at: number, };
 
 /**
  * [`PROJECT_WORK`]'s answer: the newest first, across sources.
  */
-export type BoardWorkItems = { project: string, items: Array<BoardWorkItem>, };
+export type BoardWorkItems = { project: string, items: Array<BoardWorkItem>, 
+/**
+ * With `untriaged`: the cursor of the next page, null at the end.
+ */
+next: string | null, 
+/**
+ * With `untriaged`: how many items match `q` and `label` in all.
+ */
+total?: number, 
+/**
+ * With `untriaged`: the labels of everything that matches `q`, `label`
+ * aside (so the chips keep their counts), most items first, then by name.
+ */
+labels?: Array<BoardWorkLabel>, };
+
+/**
+ * A label and how many of a query's matches carry it.
+ */
+export type BoardWorkLabel = { name: string, count: number, };
 
 /**
  * [`PROJECT_WORK`]'s query.
@@ -779,7 +832,22 @@ untriaged: boolean,
 /**
  * At most this many (default 30, at most 100).
  */
-limit: number | null, };
+limit: number | null, 
+/**
+ * With `untriaged`: the page after the one that answered this
+ * [`WorkItems::next`]. Opaque; it holds its place when items leave the
+ * list between pages.
+ */
+cursor: string | null, 
+/**
+ * With `untriaged`, `new` (the default) or `old`: by when an item was
+ * last updated.
+ */
+order: string | null, 
+/**
+ * With `untriaged`: only items with this label.
+ */
+label: string | null, };
 
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 

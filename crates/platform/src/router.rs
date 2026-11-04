@@ -105,6 +105,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
         .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
+        .route(boards::BOARD_ENTRIES_MANY, post(crate::boards::add_many_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
         .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))
         .route(boards::BOARD_ATTACHMENTS, post(crate::boards::attach_route))

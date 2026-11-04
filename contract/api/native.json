@@ -163,6 +163,11 @@
       "request": "PutEntry",
       "response": "BoardView"
     },
+    "POST /api/boards/{id}/entries/many": {
+      "handler": "crates/platform/src/boards.rs#add_many_route",
+      "request": "AddMany",
+      "response": "AddedMany"
+    },
     "DELETE /api/boards/{id}/entries/{entry}": {
       "handler": "crates/platform/src/boards.rs#delete_route",
       "response": "BoardView"
