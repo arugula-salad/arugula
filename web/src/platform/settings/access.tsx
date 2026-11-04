@@ -4,11 +4,14 @@
 // Five parts, each saying whose word it is, so nobody reads control's copy
 // as a machine's decision: the project roles (the team's roster as
 // control's copy stands; each machine checks the roster itself); whose
-// machines drive the project's cloud workspaces, one row per member, by
-// `cloud.drive` given on join and never revoked per project; the powers
+// machines act as them on the project's cloud workspaces, linked repos
+// and their items, Plane connections, inference keys and spend, one row
+// per member, by `cloud.drive` given on join and never revoked per
+// project; the powers
 // over the project (every live grant, machines' and agent tokens', whose
-// each is and why it does nothing if it doesn't; a giver who left is a
-// former member, unnamed; ids only for an owner, who may revoke); what an
+// each is and what it does now if less than the power; a giver who left
+// is a former member, unnamed, their machine too; a locked-out member is
+// said so; ids only for an owner, who may revoke); what an
 // owner allowed (the delegation for cloud workspaces on control, the
 // standing run grant and its expiry, confirmed with a passkey, stale when
 // it names an earlier delegation) and its cloud workspaces, where an
@@ -23,14 +26,15 @@ import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
 
 /** Someone named in the view; `former`: they left the project, and the
- * view doesn't name them. */
-type Who = { account: string | null; name: string | null; former?: boolean };
+ * view doesn't name them; `locked_out`: on the roster, but out while the
+ * team is locked. */
+type Who = { account: string | null; name: string | null; former?: boolean; locked_out?: boolean };
 
 /** The view, as the route answers it. */
 export interface AccessView {
   project: { id: string; name: string; owner: { kind: "team" | "account"; id: string; name?: string | null; locked?: boolean } };
   role: "owner" | "editor" | "viewer";
-  roles: { says: string; members: { account: string; name: string; role: string }[] };
+  roles: { says: string; members: { account: string; name: string; role: string; locked_out: boolean }[] };
   /** One row per member: how many of their machines drive the project's
    * cloud workspaces by `cloud.drive`, as their role allows. */
   cloud_drive: { says: string; members: { owner: Who; role: string; power: string; machines: number; driving: number }[] };
@@ -44,23 +48,29 @@ export interface AccessView {
       owner_role: string | null;
       power: string;
       created_at: number;
-      /** Why it does nothing now (the grants list's definition for a
-       * write on a viewer's; a giver who left; a machine that isn't its
+      /** What it does now, when less than the power: a label ("idle")
+       * and why (the grants list's definition for a write on a viewer's;
+       * a giver who left or is locked out; a machine that isn't its
        * giver's), else null. */
-      idle: string | null;
+      limited: { label: string; why: string } | null;
     }[];
   };
   allow: {
     says: string;
     delegation: { live: boolean; id: string | null } | null;
-    run_grant: { id: string; made: number; expires: number | null; account: string | null; created_at: number; stale: boolean } | null;
+    run_grant: { id: string; made: number; expires: number | null; by: Who | null; created_at: number; stale: boolean } | null;
   };
   workspaces: { says: string; full_use: string; list: { id: string; name: string; state: string; created_by: Who | null; created_at: number; full_use: string }[] };
 }
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
-const who = (w: Who | null | undefined) => (w ? (w.former ? "a former member" : w.name || w.account || "someone") : "someone");
+const who = (w: Who | null | undefined) => {
+  if (!w) return "someone";
+  if (w.former) return "a former member";
+  const n = w.name || w.account || "someone";
+  return w.locked_out ? `${n} (locked out)` : n;
+};
 
 /** A member's cloud.drive row: how many of their machines drive. */
 export function driversLine(m: AccessView["cloud_drive"]["members"][number]): string {
@@ -103,9 +113,10 @@ export function Access({ p }: { p: PlatformProject }) {
         <>
           <p>
             A <b>project role</b> is the team's role, from the roster: an owner, an editor or a viewer. Every machine joined to an account holds
-            <code>cloud.drive</code> over it from its join, so its agents drive this project's cloud workspaces as its owner's role allows; its owner
+            <code>cloud.drive</code> over it from its join, so its agents act as its owner, within the owner's role, on this project's cloud
+            workspaces, linked repos and their pull requests, issues and drafts, Plane connections, inference keys and Claude spend; its owner
             revokes that per machine, nobody per project. A <b>power</b> is what a machine's agents or an agent token may do here, given by its owner
-            under Settings, Agents, and never more than its owner reads; a row says when it does nothing now. <b>Allow</b> is what a project owner
+            under Settings, Agents, and never more than its owner reads; a row says when it does less than that now. <b>Allow</b> is what a project owner
             signed: cloud workspaces for the project, and runs on them with every device asleep. On a cloud workspace an editor has full use, as an
             owner does; a viewer watches.
           </p>
@@ -127,6 +138,7 @@ export function Access({ p }: { p: PlatformProject }) {
               <li key={m.account} data-access-role={m.account}>
                 <span>{m.name || m.account}</span>
                 <span class="settings-tag">{ROLE[m.role] ?? m.role}</span>
+                {m.locked_out && <span class="dim">locked out while the team is locked</span>}
               </li>
             ))}
           </ul>
@@ -159,14 +171,16 @@ export function Access({ p }: { p: PlatformProject }) {
                 {grants.map((g) => (
                   <tr key={g.id ?? `${g.subject.kind}:${g.subject.name}:${g.power}:${g.created_at}`} data-access-power={g.power} data-access-subject={g.subject.id ?? ""}>
                     <th scope="row">
-                      {agentLabel(who(g.owner), { machine: g.subject.id ?? (g.subject.kind === "agent" ? "agt_" : ""), machine_name: g.subject.name ?? undefined })}
+                      {g.owner.former
+                        ? `a former member's ${g.subject.kind === "agent" ? "agent token" : "machine"}`
+                        : agentLabel(who(g.owner), { machine: g.subject.id ?? (g.subject.kind === "agent" ? "agt_" : ""), machine_name: g.subject.name ?? undefined })}
                       {g.owner_role && <span class="settings-tag">{ROLE[g.owner_role] ?? g.owner_role}</span>}
                     </th>
                     <td data-col="Power">
                       <code>{g.power}</code>
-                      {g.idle && (
-                        <span class="settings-tag" data-access-idle>
-                          {g.idle}
+                      {g.limited && (
+                        <span class="settings-tag" data-access-idle title={g.limited.why}>
+                          {g.limited.label}: {g.limited.why}
                         </span>
                       )}
                     </td>
@@ -203,7 +217,7 @@ export function Access({ p }: { p: PlatformProject }) {
                   "not now: the standing grant names an earlier delegation, so workspaces enrolled since refuse it; an owner signs it again"
                 ) : v.allow.run_grant ? (
                   <>
-                    allowed by {v.allow.run_grant.account ?? "an owner"} <Time at={v.allow.run_grant.made} on />
+                    allowed by {v.allow.run_grant.by ? who(v.allow.run_grant.by) : "an owner"} <Time at={v.allow.run_grant.made} on />
                     {v.allow.run_grant.expires ? (
                       <>
                         , expires <Time at={v.allow.run_grant.expires} />

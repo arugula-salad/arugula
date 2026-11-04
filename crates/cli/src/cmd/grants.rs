@@ -265,7 +265,8 @@ fn access_text(v: &Value) -> String {
         if who["former"] == true {
             return "a former member".to_owned();
         }
-        who["name"].as_str().filter(|n| !n.is_empty()).map_or_else(|| s(&who["account"]), str::to_owned)
+        let n = who["name"].as_str().filter(|n| !n.is_empty()).map_or_else(|| s(&who["account"]), str::to_owned);
+        if who["locked_out"] == true { format!("{n} (locked out)") } else { n }
     };
     let mut out = String::new();
     let project = &v["project"];
@@ -274,7 +275,8 @@ fn access_text(v: &Value) -> String {
 
     out.push_str(&format!("\nProject roles, by {}:\n", s(&v["roles"]["says"])));
     for m in v["roles"]["members"].as_array().into_iter().flatten() {
-        out.push_str(&format!("  {:<24} {}\n", s(&m["name"]), s(&m["role"])));
+        let locked = if m["locked_out"] == true { "  (locked out)" } else { "" };
+        out.push_str(&format!("  {:<24} {}{locked}\n", s(&m["name"]), s(&m["role"])));
     }
     if project["owner"]["locked"] == true {
         out.push_str("  (the team is locked: only its owners get in while it is)\n");
@@ -307,13 +309,17 @@ fn access_text(v: &Value) -> String {
         out.push_str("  no other power: no machine's or agent token's agents hold one here\n");
     }
     for g in &grants {
-        let subject = if g["subject"]["kind"] == "agent" {
-            format!("token \u{201c}{}\u{201d}", s(&g["subject"]["name"]).trim_end_matches(" (MCP)"))
-        } else {
-            g["subject"]["name"].as_str().map_or_else(|| s(&g["subject"]["id"]), str::to_owned)
+        // A former member's machine or token isn't named: "a former
+        // member's machine".
+        let token = g["subject"]["kind"] == "agent";
+        let subject = match g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()) {
+            Some(n) if token => format!("token \u{201c}{}\u{201d}", n.trim_end_matches(" (MCP)")),
+            Some(n) => n.to_owned(),
+            None if token => "a token".to_owned(),
+            None => "a machine".to_owned(),
         };
         let whose = format!("{subject} ({}'s)", name(&g["owner"]));
-        let state = match g["idle"].as_str() {
+        let state = match g["limited"]["why"].as_str() {
             Some(why) => why.to_owned(),
             None => format!("since {}", crate::hosts::ago(g["created_at"].as_u64().unwrap_or(0))),
         };
@@ -345,7 +351,7 @@ fn access_text(v: &Value) -> String {
         } else {
             format!(
                 "allowed by {} {}, {}",
-                rg["account"].as_str().unwrap_or("an owner"),
+                if rg["by"].is_null() { "an owner".to_owned() } else { name(&rg["by"]) },
                 crate::hosts::ago(rg["made"].as_u64().unwrap_or(0)),
                 match rg["expires"].as_u64() {
                     Some(at) => format!("expires in {}", in_(at)),
@@ -539,11 +545,15 @@ mod tests {
                 { "owner": { "account": "b1", "name": "bob", "former": false }, "role": "editor", "power": "cloud.drive", "machines": 1, "driving": 1 } ] },
             "powers": { "says": "the platform's grants", "grants": [
                 { "id": null, "subject": { "kind": "daemon", "id": "d1", "name": "geek" }, "owner": { "account": "a1", "name": "alice", "former": false },
-                  "owner_role": "owner", "power": "issues.write", "created_at": 1, "idle": null },
-                { "id": null, "subject": { "kind": "agent", "id": null, "name": "ci (MCP)" }, "owner": { "account": null, "name": null, "former": true },
-                  "owner_role": null, "power": "boards.write", "created_at": 1, "idle": "does nothing: its giver doesn't read this project now" } ] },
+                  "owner_role": "owner", "power": "issues.write", "created_at": 1, "limited": null },
+                { "id": null, "subject": { "kind": "agent", "id": null, "name": null }, "owner": { "account": null, "name": null, "former": true },
+                  "owner_role": null, "power": "boards.write", "created_at": 1,
+                  "limited": { "label": "idle", "why": "does nothing: its giver doesn't read this project now" } },
+                { "id": null, "subject": { "kind": "daemon", "id": "d2", "name": "box" }, "owner": { "account": "b1", "name": "bob", "locked_out": true },
+                  "owner_role": null, "power": "threads.post", "created_at": 1,
+                  "limited": { "label": "idle", "why": "does nothing while the team is locked" } } ] },
             "allow": { "says": "signed by a project owner", "delegation": { "live": true, "id": "dlg_1" },
-                "run_grant": { "id": "pg_1", "made": 1, "expires": u64::MAX, "account": "alice", "created_at": 1, "stale": false } },
+                "run_grant": { "id": "pg_1", "made": 1, "expires": u64::MAX, "by": { "account": "a1", "name": "alice" }, "created_at": 1, "stale": false } },
             "workspaces": { "says": "the platform's list", "full_use": "owners and editors have full use; viewers watch", "list": [
                 { "id": "hw_1", "name": "dev", "state": "ready", "created_by": { "account": "b1", "name": "bob", "former": false }, "created_at": 1,
                   "full_use": "owners and editors have full use; viewers watch" } ] }
@@ -559,15 +569,20 @@ mod tests {
             "Powers over it, by the platform's grants:",
             "geek (alice's)",
             "issues.write",
-            "token \u{201c}ci\u{201d} (a former member's)",
+            "a token (a former member's)",
             "does nothing: its giver doesn't read this project now",
+            "box (bob (locked out)'s)",
+            "does nothing while the team is locked",
             "cloud workspaces: allowed (delegation dlg_1)",
             "runs with every device asleep: allowed by alice",
             "dev                      ready      owners and editors have full use; viewers watch, made by bob",
         ] {
             assert!(text.contains(want), "{want:?} in:\n{text}");
         }
-        assert!(!text.contains("agt_") && !text.contains("(MCP)") && !text.contains("grt_"), "{text}");
+        assert!(
+            !text.contains("agt_") && !text.contains("(MCP)") && !text.contains("grt_") && !text.contains("ci"),
+            "{text}"
+        );
         let mut stale = v.clone();
         stale["allow"]["run_grant"]["stale"] = json!(true);
         assert!(access_text(&stale).contains("names an earlier delegation"));

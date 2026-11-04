@@ -81,7 +81,7 @@ test("Alice and Bob read the same Access section of the project's settings", asy
   expect(view.status).toBe(200);
   expect(view.body!.role).toBe("owner");
   expect((view.body!.roles.members as { name: string; role: string }[]).map((m) => `${m.name}:${m.role}`).sort()).toEqual(["alice:owner", "bob:viewer"]);
-  expect((view.body!.powers.grants as { power: string; idle: string | null; subject: { name: string } }[]).map((g) => [g.subject.name, g.power, g.idle])).toEqual([["geek", "issues.write", null]]);
+  expect((view.body!.powers.grants as { power: string; limited: unknown; subject: { name: string } }[]).map((g) => [g.subject.name, g.power, g.limited])).toEqual([["geek", "issues.write", null]]);
   expect(view.body!.powers.grants[0].id).toBe(given.body!.id);
   // cloud.drive: one row per member, Alice's geek driving as an owner.
   expect((view.body!.cloud_drive.members as { owner: { name: string }; role: string; machines: number; driving: number }[]).map((m) => [m.owner.name, m.role, m.machines, m.driving])).toEqual([

@@ -1243,14 +1243,21 @@ who can do what there in one place: `arugula grants ls --project acme`, or
 Access under the project's settings on the platform page, both from `GET
 /api/projects/{id}/grants`. It lists the project roles (the team's roster
 as control's copy stands; each machine checks the roster itself); whose
-machines drive the project's cloud workspaces, one row per member, since
-every machine joined to an account holds `cloud.drive` over it from its
-join and drives as its owner's role allows, which no one revokes per
-project (its owner does, per machine, with `arugula grants revoke`); the
-powers over the project (every live grant, machines' and agent tokens',
-whose each is and why it does nothing if it doesn't: a write power on a
-viewer's, a giver who left the project, a machine that isn't its giver's
-now; a giver who left is "a former member", unnamed); what an owner
+machines hold `cloud.drive`, one row per member, since every machine
+joined to an account holds it over the account from its join and acts as
+its owner, within the owner's role, on everything a `CloudDriver` route
+serves: the project's cloud workspaces (making, opening, rebuilding,
+deleting; their specs, secrets, ports, previews and transcripts), its
+linked repos and their pull requests, issues and drafts, its Plane
+connections, its inference keys and its Claude spend; no one revokes it
+per project (its owner does, per machine, with `arugula grants revoke`);
+the powers over the project (every live grant, machines' and agent
+tokens', whose each is and what it does now if less than the power: a
+write power on a viewer's, by the grants list's own definition, a giver
+who left the project or is locked out of it, a machine that isn't its
+giver's now; a giver who left is "a former member", unnamed, and neither
+is their machine or token named; a locked-out member is named and said to
+be locked out); what an owner
 allowed (the delegation for cloud workspaces on control, the standing run
 grant with its expiry, confirmed with a passkey, and stale when it names
 an earlier delegation) and the project's cloud workspaces, where an owner

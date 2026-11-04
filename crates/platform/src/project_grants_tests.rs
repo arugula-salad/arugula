@@ -23,7 +23,7 @@ use crate::{
         agent_tokens::NewToken,
         projects::{BOARDS_WRITE, ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
-    project_grants::{IDLE_LEFT, IDLE_NOT_THEIRS},
+    project_grants::{IDLE_LEFT, IDLE_LOCKED_OUT, IDLE_NOT_THEIRS},
 };
 
 async fn access(base: &str, who: &str, project: &str) -> (u16, Value) {
@@ -42,8 +42,9 @@ async fn as_machine(base: &str, who: &str, machine: &str, project: &str) -> u16 
         .as_u16()
 }
 
-/// Each power row: the subject's name, the giver's account (or "" for a
-/// former member), the power, and why it does nothing ("" when it does).
+/// Each power row: the subject's name ("" when unnamed), the giver's
+/// account (or "" for a former member), the power, and why it does less
+/// than the power ("" when it does it all).
 fn powers(v: &Value) -> Vec<(String, String, String, String)> {
     v["powers"]["grants"]
         .as_array()
@@ -54,18 +55,22 @@ fn powers(v: &Value) -> Vec<(String, String, String, String)> {
                 g["subject"]["name"].as_str().unwrap_or_default().to_owned(),
                 g["owner"]["account"].as_str().unwrap_or_default().to_owned(),
                 g["power"].as_str().unwrap().to_owned(),
-                g["idle"].as_str().unwrap_or_default().to_owned(),
+                g["limited"]["why"].as_str().unwrap_or_default().to_owned(),
             )
         })
         .collect()
 }
 
-fn roles(v: &Value) -> Vec<(String, String)> {
+/// Each roster row: the account, the role, and whether they're locked
+/// out now.
+fn roles(v: &Value) -> Vec<(String, String, bool)> {
     v["roles"]["members"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|m| (m["account"].as_str().unwrap().to_owned(), m["role"].as_str().unwrap().to_owned()))
+        .map(|m| {
+            (m["account"].as_str().unwrap().to_owned(), m["role"].as_str().unwrap().to_owned(), m["locked_out"] == true)
+        })
         .collect()
 }
 
@@ -119,7 +124,7 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
     assert_eq!(owner["role"], "owner");
     assert_eq!(owner["project"]["id"], t);
     assert_eq!(owner["project"]["owner"]["kind"], "team");
-    assert_eq!(roles(&owner), [("a", "owner"), ("b", "editor"), ("x", "viewer")].map(|(a, r)| (s(a), s(r))));
+    assert_eq!(roles(&owner), [("a", "owner"), ("b", "editor"), ("x", "viewer")].map(|(a, r)| (s(a), s(r), false)));
     assert_eq!(
         powers(&owner),
         [("geek-box", "a", THREADS_READ, ""), ("bobs-box", "b", THREADS_POST, "")].map(|(m, o, p, i)| (
@@ -139,8 +144,19 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
     assert!(owner["cloud_drive"]["says"].as_str().unwrap().contains("nobody revokes it per project"), "{owner}");
     assert!(owner["roles"]["says"].as_str().unwrap().contains("roster"), "{owner}");
     assert!(owner["powers"]["says"].as_str().unwrap().contains("platform"), "{owner}");
+    // a's grant over their DMs is in a's own list and nowhere in the
+    // view, by its id; nor is anyone's cloud.drive grant.
+    let (_, as_own) = call(&base, "a", "GET", "/api/grants", None).await;
+    let dms = as_own["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["scope"]["kind"] == "account" && g["power"] == THREADS_READ);
+    let dms_id = dms.unwrap()["id"].as_str().unwrap();
+    assert!(dms_id.starts_with("grt_"));
     let text = owner.to_string();
-    assert!(!text.contains("\"scope\""), "no account-scoped grant: {text}");
+    assert!(!text.contains(dms_id) && !text.contains("\"cloud.drive\",\"created_at\""), "{text}");
+    assert_eq!(owner["powers"]["grants"].as_array().unwrap().iter().filter(|g| g["power"] == THREADS_READ).count(), 1);
     // The owner sees ids, to revoke.
     assert!(owner["powers"]["grants"][0]["id"].as_str().unwrap().starts_with("grt_"), "{owner}");
 
@@ -165,7 +181,7 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
     let (st, v) = access(&base, "c", &u).await;
     assert_eq!(st, 200, "{v}");
     assert_eq!(powers(&v), []);
-    assert_eq!(roles(&v), [(s("c"), s("owner"))]);
+    assert_eq!(roles(&v), [(s("c"), s("owner"), false)]);
     assert_eq!(drives(&v), [(s("c"), s("owner"), 0, 0)]);
     // A machine's signature isn't a person's.
     assert_eq!(as_machine(&base, "a", "geek", &t).await, 401);
@@ -197,7 +213,8 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
 }
 
 /// The roster is read through the cache, as `agent_may` reads it: a
-/// second list asks the hub nothing; a member taken off the roster still
+/// second list asks the hub nothing but the project's delegation (the one
+/// thing the cache doesn't keep); a member taken off the roster still
 /// reads it until the feed brings the change, and is a stranger from
 /// then on; a locked team's editors and viewers are out while it's
 /// locked. A grant whose giver left does nothing and says so, with the
@@ -213,10 +230,11 @@ async fn the_roster_comes_through_the_cache() {
         assert_eq!(st, 200, "{v}");
     }
     assert_eq!(access(&base, "b", &t).await.0, 200);
-    let before = hub.calls_of("teams");
+    let (before, delegations) = (hub.calls(), hub.calls_of("live_delegation"));
     let (st, v) = access(&base, "b", &t).await;
     assert_eq!(st, 200, "{v}");
-    assert_eq!(hub.calls_of("teams"), before, "the roster is the cache's");
+    assert_eq!(hub.calls_of("live_delegation"), delegations + 1, "the delegation is asked each time");
+    assert_eq!(hub.calls(), before + 1, "and nothing else: the roster, machines and names are the cache's");
     assert_eq!(
         powers(&v),
         [("bobs-box", "b", ISSUES_WRITE, ""), ("bobs-box", "b", THREADS_POST, "")].map(|(m, o, p, i)| (
@@ -239,12 +257,14 @@ async fn the_roster_comes_through_the_cache() {
     assert_eq!(rows[1].3, "", "{v}");
     let (_, mine) = call(&base, "b", "GET", "/api/grants", None).await;
     let theirs = mine["grants"].as_array().unwrap().iter().find(|g| g["power"] == ISSUES_WRITE).unwrap();
-    assert_eq!(theirs["idle"], v["powers"]["grants"][0]["idle"], "one definition");
+    assert_eq!(theirs["idle"], v["powers"]["grants"][0]["limited"]["why"], "one definition");
+    assert_eq!(v["powers"]["grants"][0]["limited"]["label"], "idle");
     assert_eq!(v["powers"]["grants"][0]["owner_role"], "viewer");
 
     // The team is locked: only its owners are in it. b and x are out
-    // (404, no such project), and the view a sees lists a alone, with
-    // b's grants doing nothing.
+    // (404, no such project), and the view a sees names them as locked
+    // out, not former: on the roster, with their roles, and b's grants
+    // doing nothing while the lock holds, b named.
     hub.lock("t", true);
     crate::cache::catch_up(&app).await.unwrap();
     for who in ["b", "x"] {
@@ -252,9 +272,18 @@ async fn the_roster_comes_through_the_cache() {
     }
     let (st, v) = access(&base, "a", &t).await;
     assert_eq!(st, 200, "{v}");
-    assert_eq!(roles(&v), [(s("a"), s("owner"))]);
+    assert_eq!(
+        roles(&v),
+        [("a", "owner", false), ("b", "viewer", true), ("x", "viewer", true)].map(|(a, r, l)| (s(a), s(r), l))
+    );
     assert_eq!(v["project"]["owner"]["locked"], true);
-    assert!(powers(&v).iter().all(|r| r.3 == IDLE_LEFT), "{v}");
+    assert_eq!(drives(&v), [(s("a"), s("owner"), 1, 1)], "only a drives while the team is locked");
+    let rows = powers(&v);
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.1 == "b" && r.3 == IDLE_LOCKED_OUT), "{v}");
+    let g = &v["powers"]["grants"][0];
+    assert_eq!(g["owner"], json!({ "account": "b", "name": "b", "former": false, "locked_out": true }), "{v}");
+    assert_eq!(g["subject"]["name"], "bobs-box", "a locked-out member's machine is still named");
     hub.lock("t", false);
     crate::cache::catch_up(&app).await.unwrap();
     assert_eq!(access(&base, "x", &t).await.0, 200);
@@ -272,11 +301,33 @@ async fn the_roster_comes_through_the_cache() {
     assert_eq!(st, 200, "{v}");
     let rows = powers(&v);
     assert_eq!(rows.len(), 2, "{v}");
-    assert!(rows.iter().all(|r| r.1.is_empty() && r.3 == IDLE_LEFT), "{v}");
-    let g = &v["powers"]["grants"][0];
-    assert_eq!(g["owner"], json!({ "account": null, "name": null, "former": true }), "{v}");
-    assert_eq!(g["owner_role"], Value::Null);
-    assert!(!v.to_string().contains("\"b\""), "a former member isn't named: {v}");
+    assert!(rows.iter().all(|r| r.0.is_empty() && r.1.is_empty() && r.3 == IDLE_LEFT), "{v}");
+    for g in v["powers"]["grants"].as_array().unwrap() {
+        assert_eq!(g["owner"], json!({ "account": null, "name": null, "former": true, "locked_out": false }), "{v}");
+        assert_eq!(g["owner_role"], Value::Null);
+        assert_eq!(
+            (&g["subject"]["id"], &g["subject"]["name"]),
+            (&Value::Null, &Value::Null),
+            "nor their machine: {v}"
+        );
+        assert_eq!(g["id"], Value::Null, "x isn't an owner");
+    }
+    // Nothing of b's is in the answer: not the account, not the machine's
+    // id or name, by any key.
+    let text = v.to_string();
+    for word in ["\"b\"", "bobs", "bobs-box"] {
+        assert!(!text.contains(word), "{word} names a former member: {text}");
+    }
+    // An owner's view hides them the same way, ids included.
+    let (_, as_a) = access(&base, "a", &t).await;
+    let text = as_a.to_string();
+    for word in ["\"b\"", "bobs", "bobs-box"] {
+        assert!(!text.contains(word), "{word} names a former member to an owner: {text}");
+    }
+    assert!(
+        as_a["powers"]["grants"][0]["id"].as_str().unwrap().starts_with("grt_"),
+        "the owner still gets the grant's id"
+    );
     assert_eq!(roles(&v).len(), 2);
     assert_eq!(drives(&v).len(), 2, "no cloud.drive row for someone who left");
 
@@ -315,7 +366,7 @@ async fn tokens_show_by_name_and_a_personal_project_by_its_owner() {
         assert_eq!(g[0]["subject"]["kind"], "agent");
         assert_eq!(g[0]["subject"]["name"], "ci (MCP)");
         assert_eq!(
-            (&g[0]["owner"]["account"], &g[0]["power"], &g[0]["idle"]),
+            (&g[0]["owner"]["account"], &g[0]["power"], &g[0]["limited"]),
             (&json!("b"), &json!(BOARDS_WRITE), &Value::Null)
         );
         assert!(!v.to_string().contains("hash-of"), "{v}");
@@ -333,7 +384,7 @@ async fn tokens_show_by_name_and_a_personal_project_by_its_owner() {
     let (st, v) = access(&base, "a", &personal).await;
     assert_eq!(st, 200, "{v}");
     assert_eq!(v["project"]["owner"], json!({ "kind": "account", "id": "a" }));
-    assert_eq!(roles(&v), [(s("a"), s("owner"))]);
+    assert_eq!(roles(&v), [(s("a"), s("owner"), false)]);
     assert_eq!(drives(&v), [(s("a"), s("owner"), 1, 1)]);
     assert!(v["roles"]["says"].as_str().unwrap().contains("own project"), "{v}");
     assert_eq!(powers(&v), []);
@@ -342,7 +393,7 @@ async fn tokens_show_by_name_and_a_personal_project_by_its_owner() {
     // `personal` names the caller's own.
     let (st, mine) = access(&base, "c", "personal").await;
     assert_eq!(st, 200, "{mine}");
-    assert_eq!(roles(&mine), [(s("c"), s("owner"))]);
+    assert_eq!(roles(&mine), [(s("c"), s("owner"), false)]);
 }
 
 /// What an owner allowed: the delegation as control says it, and the
@@ -383,11 +434,14 @@ async fn allow_and_workspaces_say_what_an_owner_signed() {
     assert_eq!(st, 200, "{v}");
     assert_eq!(v["allow"]["delegation"], json!({ "live": true, "id": d.id() }));
     let rg = &v["allow"]["run_grant"];
-    assert_eq!((&rg["id"], &rg["account"], &rg["expires"]), (&json!(g.id), &json!("a"), &json!(now + 86_400_000)));
+    assert_eq!(
+        (&rg["id"], &rg["by"]["account"], &rg["by"]["name"], &rg["expires"]),
+        (&json!(g.id), &json!("a"), &json!("a"), &json!(now + 86_400_000))
+    );
     assert_eq!(rg["stale"], false);
     assert_eq!(
         rg.as_object().unwrap().keys().collect::<Vec<_>>(),
-        ["account", "created_at", "expires", "id", "made", "stale"]
+        ["by", "created_at", "expires", "id", "made", "stale"]
     );
     let ws = &v["workspaces"]["list"][0];
     assert_eq!((&ws["name"], &ws["created_by"]["account"]), (&json!("dev"), &json!("b")));
