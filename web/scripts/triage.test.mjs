@@ -2,7 +2,7 @@
 // Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { itemHref, sourceLabel, targets, without } from "../src/platform/pages/triage-text.ts";
+import { addedWords, boxState, itemHref, rangeKeys, sourceLabel, targets, without } from "../src/platform/pages/triage-text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -41,4 +41,25 @@ test("Triage is /p/:project/triage", () => {
   assert.deepEqual(parse(`/p/${P}/triage`), { page: "triage", project: P });
   assert.equal(pathOf({ page: "triage", project: P }), `/p/${P}/triage`);
   assert.equal(parse(`/p/${P}/triage/extra`).page, "missing");
+});
+
+test("a Shift range runs from the anchor to the row, either way round, and is the row alone with no anchor", () => {
+  const keys = ["a", "b", "c", "d", "e"];
+  assert.deepEqual(rangeKeys(keys, "b", "d"), ["b", "c", "d"]);
+  assert.deepEqual(rangeKeys(keys, "d", "b"), ["b", "c", "d"]);
+  assert.deepEqual(rangeKeys(keys, null, "c"), ["c"]);
+  assert.deepEqual(rangeKeys(keys, "gone", "c"), ["c"]);
+  assert.deepEqual(rangeKeys(keys, "a", "zzz"), []);
+});
+
+test("the select-all box is mixed between none and all of the rows", () => {
+  assert.equal(boxState(0, 5), "none");
+  assert.equal(boxState(2, 5), "some");
+  assert.equal(boxState(5, 5), "all");
+  assert.equal(boxState(0, 0), "none");
+});
+
+test("the toast after an add names the board and the lane", () => {
+  assert.equal(addedWords(1, "#12", "Launch"), "#12 is on Launch, in Next");
+  assert.equal(addedWords(4, "#12", "Launch"), "4 issues are on Launch, in Next");
 });
