@@ -408,6 +408,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
+    /// A machine's name on Arugula control.
+    ///
+    /// `rename` changes what the machines list, chat and `@machine` mentions
+    /// call it. Needs `arugula login`.
+    Machine {
+        #[command(subcommand)]
+        cmd: cmd::machine::MachineCmd,
+    },
     /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
     ///
     /// They're made on the platform page (Settings, Agents with no machine),
@@ -652,6 +660,7 @@ const GROUPS: &[(&str, &[&str])] = &[
             "login",
             "logout",
             "grants",
+            "machine",
             "agent-tokens",
             "telemetry",
             "machines",
@@ -834,6 +843,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Machine { cmd } = cli.cmd {
+        return cmd::machine::run(cmd, cli.json);
+    }
     if let Command::AgentTokens { cmd } = cli.cmd {
         return cmd::agent_tokens::run(cmd, cli.json);
     }
@@ -974,6 +986,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::Machine { .. }
         | Command::AgentTokens { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }

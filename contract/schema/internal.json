@@ -592,6 +592,13 @@
           "description": "The account it's joined to: its owner.",
           "type": "string"
         },
+        "aliases": {
+          "description": "The handles ([`crate::machine::handle`]) it went by before it was\nrenamed (#500): `@old` still reaches it, unless another machine is\ncalled that now.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },

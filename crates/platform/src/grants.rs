@@ -187,7 +187,10 @@ pub async fn agent_names(app: &Platform, ids: &[String]) -> HubResult<std::colle
         if machines.is_empty() { Default::default() } else { app.cache.daemons(&*app.hub, &machines).await? };
     for id in tokens {
         if let Some(t) = app.db.agent_token(&id)? {
-            out.insert(id.clone(), Daemon { id, account: t.account, team: None, name: token_label(&t.name) });
+            out.insert(
+                id.clone(),
+                Daemon { id, account: t.account, team: None, name: token_label(&t.name), aliases: vec![] },
+            );
         }
     }
     Ok(out)

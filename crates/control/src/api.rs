@@ -998,6 +998,44 @@ fn in_team(app: &App, account: &str, id: &str, owner: bool, no: &str) -> Result<
 /// How far a move's time may be from control's clock.
 const MOVE_SKEW_MS: u64 = 10 * 60 * 1000;
 
+/// *Rename* on a machine (#500): its owner's, or, for a team's machine, its
+/// team's owners'. The name is a display name (its id is who it is, and
+/// nothing authorizes by name), so no device signs it. Its old name keeps
+/// working in `@mentions`; a name another machine of its owner or team goes
+/// by is refused.
+pub async fn rename_daemon(
+    State(app): State<Arc<App>>,
+    s: Session,
+    Path(id): Path<String>,
+    Json(b): Json<wire::machine::MachineRename>,
+) -> R {
+    let (owner, d) = app.db.daemon_row(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
+    if owner != s.account {
+        let team = app.db.daemon_team(&id)?;
+        let Some(t) = team else {
+            return Err(err(StatusCode::FORBIDDEN, "only the machine's owner renames it"));
+        };
+        in_team(&app, &s.account, &t, true, "only the machine's owner and the team's owners rename it")?;
+    }
+    let name = wire::machine::clean_name(&b.name).map_err(|why| err(StatusCode::BAD_REQUEST, why))?;
+    match app.db.rename_daemon(&id, &name)? {
+        crate::db::Renamed::Done => {}
+        crate::db::Renamed::Gone => return Err(err(StatusCode::NOT_FOUND, "no such machine")),
+        crate::db::Renamed::Taken(other) => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                &format!(
+                    "another machine here is already called {other}: @{} would reach both",
+                    wire::machine::handle(&name)
+                ),
+            ));
+        }
+    }
+    app.relay.nudge(std::slice::from_ref(&id));
+    app.analytics.capture(&s.account, "machine renamed", json!({ "own": owner == s.account }));
+    Ok(Json(json!({ "id": id, "name": name, "was": d.name })))
+}
+
 /// *Move to…* on a machine (#100): its own account moves it into a team
 /// it's in, between them, or back to the account (#332: members too).
 /// A device of the account signs it; the daemon checks. A team's owners

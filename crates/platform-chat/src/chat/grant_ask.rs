@@ -65,7 +65,7 @@ pub(super) async fn unheard(app: &Platform, facts: &Facts, room: &Room, words: &
     };
     let mut out: Vec<Daemon> = vec![];
     for w in words {
-        let Some(d) = machines.iter().find(|d| d.name.to_lowercase() == *w) else { continue };
+        let Some(d) = super::machines_named(&machines, w).first().copied() else { continue };
         if !out.iter().any(|o| o.id == d.id) {
             out.push(d.clone());
         }

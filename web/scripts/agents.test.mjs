@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
   blindLine,
   blindMachines,
@@ -309,11 +309,22 @@ test("@ offers the machines a mention reaches, each with its sessions under it",
     agent({ machine: "m4", machine_name: "Aaron's Mac" }),
   ];
   const tokens = (typed) => machineMentions(agents, typed).map((m) => m.token);
-  assert.deepEqual(tokens(""), ["mini", "mini/ux-improvements", "mini/billing", "geek-box", "geek-box/docs"]);
+  assert.deepEqual(tokens(""), ["mini", "mini/ux-improvements", "mini/billing", "geek-box", "geek-box/docs", "aaron-s-mac"], "a name with a space or an apostrophe is a word too (#500)");
   assert.deepEqual(tokens("g"), ["geek-box", "geek-box/docs"]);
   assert.deepEqual(tokens("mini/u"), ["mini", "mini/ux-improvements"]);
   assert.deepEqual(tokens("mini/zzz"), []);
   assert.deepEqual(tokens("pad"), [], "without the grant it isn't offered");
+});
+
+test("a machine's word is control's (#500): the hostname as before, a renamed one by its new name", () => {
+  assert.equal(machineHandle("Aarons-Mac-mini.local"), "aarons-mac-mini.local");
+  assert.equal(machineHandle("My Mini"), "my-mini");
+  assert.equal(machineHandle("  mini. "), "mini");
+  assert.equal(machineHandle("***"), "");
+  // Only the current name is offered, never an old one.
+  const renamed = [agent({ machine_name: "mini" })];
+  assert.deepEqual(machineMentions(renamed, "").map((m) => m.token), ["mini"]);
+  assert.deepEqual(machineMentions(renamed, "aarons").map((m) => m.token), []);
 });
 
 test("the Boards page names the machines whose agents can't see a project's boards (#313)", () => {

@@ -17,7 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom, ChatThreadAgent, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "./agents";
+import { authorLabel, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "./agents";
 import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
@@ -558,7 +558,7 @@ export function RoomMessage({
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
   const machineIcon = useCallback(
     (word: string) =>
-      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && a.machine_name.toLowerCase() === word)) ? <MachineIcon size={13} /> : null,
+      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size={13} /> : null,
     [room.id, heard.join(" ")],
   );
   // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet

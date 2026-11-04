@@ -213,6 +213,13 @@ pub struct ChatRoomAgent {
     /// the room's detail fills it.
     #[serde(default)]
     pub sessions: Vec<String>,
+    /// The handles its machine went by before it was renamed (#500): `@old`
+    /// still reaches it, unless another machine here is called that now.
+    /// Never sent: control resolves a mention with it, and the picker lists
+    /// the current name alone.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub aliases: Vec<String>,
 }
 
 /// The agent that wrote a message (M197): the machine whose grant it acted

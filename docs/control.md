@@ -1256,7 +1256,15 @@ snippet's allow list and the post in its ask list; an agent a guest stands
 behind is refused. `@` and a machine's name (`@geek`, or `@geek's agent`)
 in a room its `threads.read` grant reaches is a mention of its agents
 (posting or `issues.write` alone isn't: they couldn't read it), kept as
-`machine:<id>` among the message's mentions. It pushes no person; the agents
+`machine:<id>` among the message's mentions. A machine's name is a display name
+(#500): its owner, or its team's owners, rename it (`arugula machine rename
+mini`, `POST /api/daemons/{id}/name`, or *Rename machine…* in Settings), and
+the mention word follows the name (`Aarons-Mac-mini.local` is
+`@aarons-mac-mini.local`, `mini` is `@mini`). The word it had keeps working
+(control keeps each machine's old words), unless another machine of the
+owner or team is called that now; two of them can't have the same word. The
+`@` list offers the new name only, and a machine's id is what it is: a
+reconnect never resets the name. It pushes no person; the agents
 are told over their machine's connection (below). `capabilities`
 says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
