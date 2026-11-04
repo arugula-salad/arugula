@@ -826,9 +826,10 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   Zig rejects, and Zig turns on UBSan for unoptimized C (aws-lc's
   jitterentropy), whose runtime nothing links. `scripts/zig-cc-musl` drops
   the one and turns off the other.
-- **Children inherit a blocked signal mask.** The sandbox supervisor
-  blocks SIGTERM to wait for it, and std's `Command` passed that on: the
-  daemon never heard SIGTERM and was killed instead of saving its panes.
+- **Children inherit a blocked signal mask.** The tailnet sandbox
+  supervisor (`arugulad sandbox`, since removed) blocked SIGTERM to wait
+  for it, and std's `Command` passed that on: the daemon never heard
+  SIGTERM and was killed instead of saving its panes.
 - **A restarted tailscaled says `Starting` for a moment.** A daemon that
   asked then got no tailnet name (and refused its own URL), and an install
   that asked then logged in again. Both wait for it to settle now.

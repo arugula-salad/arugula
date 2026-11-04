@@ -58,10 +58,6 @@ use arugulad_base::{
     ports, push, review, roots, server, sites, task,
 };
 use arugulad_forge as forge;
-// The tailnet sandbox's (Linux boxes).
-#[cfg(unix)]
-use {arugula_mux::procinfo, arugulad_base::args, arugulad_base::install, arugulad_base::tailscale};
-
 // Agent recipes and their A2A cards (M76): the `agent-delegation` flag.
 pub mod agents;
 pub mod apps;
@@ -82,9 +78,6 @@ pub mod guest_ssh;
 pub mod loam;
 pub mod provider_tunnel;
 pub mod resident;
-// The tailnet sandbox supervisor: Linux boxes.
-#[cfg(unix)]
-pub mod sandbox;
 pub mod sprites;
 pub mod tea;
 pub mod wearing;
@@ -144,32 +137,6 @@ impl FileWhy for workspace::why::Why {
 }
 
 impl Hooks for Labs {
-    #[cfg(unix)]
-    fn tailnet_install(&self, cmd: crate::args::Command) -> anyhow::Result<()> {
-        let crate::args::Command::Install {
-            tailnet: Some(authkey),
-            home,
-            join,
-            owner,
-            hostname,
-            port,
-            no_serve,
-            daemon_args,
-            ..
-        } = cmd
-        else {
-            anyhow::bail!("not a tailnet install")
-        };
-        sandbox::install(sandbox::TailnetOpts { authkey, hostname, home, join, owner, port, no_serve, daemon_args })
-    }
-
-    fn supervise_sandbox(&self) -> anyhow::Result<()> {
-        #[cfg(unix)]
-        return sandbox::supervise();
-        #[cfg(not(unix))]
-        anyhow::bail!("the sandbox supervisor is for Linux boxes")
-    }
-
     fn open_provider(&self, url: &str, token_file: &Path, _given: bool) -> Option<Arc<dyn Provider>> {
         sprites::Sprites::open(url, token_file).map(|p| Arc::new(p) as Arc<dyn Provider>)
     }

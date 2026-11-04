@@ -23,47 +23,20 @@ pub enum Command {
     /// a Mac with no GUI login (reached over ssh) the agent runs in the
     /// background session: it outlives the ssh login but not a reboot;
     /// --system starts it at boot instead.
-    /// With --tailnet (no systemd): joins the tailnet with a
-    /// userspace tailscaled and runs the daemon there, both kept running by
-    /// `arugulad sandbox`.
     Install {
         /// Write and enable the unit without starting it now.
         #[arg(long)]
         no_start: bool,
         /// Only put arugulad and arugula in ~/.local/bin, and that on your
         /// shell's PATH: no service (a machine without systemd).
-        #[arg(long, conflicts_with_all = ["system", "tailnet", "no_start"])]
+        #[arg(long, conflicts_with_all = ["system", "no_start"])]
         no_service: bool,
         /// macOS: a LaunchDaemon that runs it as you from boot, with nobody
         /// logged in (/Library/LaunchDaemons/arugulad.USER.plist). Runs
         /// sudo, which may ask for your password. `arugulad uninstall`
         /// removes it.
-        #[arg(long, conflicts_with = "tailnet")]
+        #[arg(long)]
         system: bool,
-        /// A Tailscale auth key (ephemeral, tagged), as `file:PATH`, `-` for
-        /// stdin, or the key itself (kept off command lines it starts).
-        #[arg(long, value_name = "AUTHKEY")]
-        tailnet: Option<String>,
-        /// The home daemon's URL: its page may use this daemon.
-        #[arg(long, requires = "tailnet")]
-        home: Option<String>,
-        /// An invite from the home daemon (`arugula hosts invite`), or
-        /// `file:PATH`: adds this daemon to its host list.
-        #[arg(long, requires = "home")]
-        join: Option<String>,
-        /// The tailnet login allowed in [default: the home daemon's owner,
-        /// learned when joining].
-        #[arg(long, requires = "tailnet")]
-        owner: Option<String>,
-        /// This machine's tailnet name (and host name in lists).
-        #[arg(long, requires = "tailnet")]
-        hostname: Option<String>,
-        /// The daemon's port on loopback.
-        #[arg(long, default_value_t = 7681, requires = "tailnet")]
-        port: u16,
-        /// Don't put it behind `tailscale serve` (plain http only).
-        #[arg(long, requires = "tailnet")]
-        no_serve: bool,
         /// Drop the daemon arguments an earlier install wrote, instead of
         /// keeping them when none are given.
         #[arg(long)]
@@ -77,9 +50,6 @@ pub enum Command {
     /// background agent or the --system LaunchDaemon, which needs sudo; on
     /// Linux the systemd user service). The binaries and panes' state stay.
     Uninstall,
-    /// Keep tailscaled and the daemon running, as `install --tailnet` set
-    /// them up (for machines without systemd); stops on SIGTERM.
-    Sandbox,
     /// Add this machine to your account on an Arugula control
     /// (`https://control.example.com`): prints a link to approve from a
     /// device that's signed in, and finishes once that device approves (an

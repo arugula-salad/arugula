@@ -547,15 +547,12 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
         panic!("{} is set: crashing as asked", crash::TEST_PANIC_ENV);
     }
     match args.command {
-        #[cfg(unix)]
-        Some(install @ Command::Install { tailnet: Some(_), .. }) => lab_hooks::labs().tailnet_install(install),
         Some(Command::Install { no_service: true, .. }) => install::binaries_only(),
         Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args, system)
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        Some(Command::Sandbox) => lab_hooks::labs().supervise_sandbox(),
         Some(Command::Join { url, name, team, account, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
