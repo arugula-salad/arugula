@@ -1476,8 +1476,6 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     if let Some(ptr) = &p.pointer {
         primary_ok(ptr)?;
     }
-    let mut said = None;
-    let mut change = true;
     let put = Put {
         id: p.id.as_deref(),
         rev: p.rev,
@@ -1489,31 +1487,13 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
         status: p.status,
         agent: by.agent,
     };
+    let (mut said, mut change) = (None, true);
     if p.id.is_some() || p.entry == Some(wire::EntryKind::Zone) {
         app.db.put_entry(id, &put, &[], now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
     } else {
-        let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
-        let plan = match pointer {
-            Some(ptr) => plan_add(app, by.account, &stored, ptr).await?,
-            None => Plan::Add { absorb: vec![], said: None },
-        };
-        match plan {
-            Plan::Already(s) => {
-                change = false;
-                said = Some(s);
-            }
-            Plan::Attach { row, said: s } => {
-                let ptr = pointer.ok_or_else(|| bad("an attachment points at something"))?;
-                app.db
-                    .attach(id, &row, wire::AttachRole::Work, ptr, by.agent, now_ms(), wire::ATTACHMENTS_MAX)?
-                    .map_err(refused)?;
-                said = Some(s);
-            }
-            Plan::Add { absorb, said: s } => {
-                app.db.put_entry(id, &put, &absorb, now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
-                said = s;
-            }
-        }
+        let (did, s) = add_row(app, by, id, &put, pointer).await?;
+        change = did != Did::Already;
+        said = s;
     }
     if change {
         changed(app, &board.project, id);
@@ -1521,6 +1501,111 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     let mut v = read(app, by.account, id).await?;
     v.said = said;
     Ok(v)
+}
+
+/// What adding an item to a board did.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Did {
+    Row,
+    Attached,
+    Already,
+}
+
+/// Add one item as a new row, last: [`plan_add`]'s rules, for a single add
+/// and for [`add_many`]. What it did, and what it says about it.
+async fn add_row(
+    app: &Platform,
+    by: Actor<'_>,
+    id: &str,
+    put: &Put<'_>,
+    pointer: Option<&wire::Pointer>,
+) -> Result<(Did, Option<String>), ApiError> {
+    let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
+    let plan = match pointer {
+        Some(ptr) => plan_add(app, by.account, &stored, ptr).await?,
+        None => Plan::Add { absorb: vec![], said: None },
+    };
+    Ok(match plan {
+        Plan::Already(s) => (Did::Already, Some(s)),
+        Plan::Attach { row, said } => {
+            let ptr = pointer.ok_or_else(|| bad("an attachment points at something"))?;
+            app.db
+                .attach(id, &row, wire::AttachRole::Work, ptr, by.agent, now_ms(), wire::ATTACHMENTS_MAX)?
+                .map_err(refused)?;
+            (Did::Attached, Some(said))
+        }
+        Plan::Add { absorb, said } => {
+            app.db.put_entry(id, put, &absorb, now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
+            (Did::Row, said)
+        }
+    })
+}
+
+/// `POST /api/boards/{id}/entries/many`: add the pointers, or the untriaged
+/// items that match and aren't in `except`, each as a single add does (owners
+/// and editors, people only). More than [`wire::ADD_MANY_MAX`] is a 400.
+pub async fn add_many(
+    app: &Platform,
+    account: &str,
+    id: &str,
+    body: &wire::AddMany,
+) -> Result<wire::AddedMany, ApiError> {
+    let by = Actor::person(account);
+    let board = board_place(app, by, id, true).await?;
+    let pointers: Vec<wire::Pointer> = match (&body.pointers, &body.untriaged) {
+        (Some(p), None) if body.except.is_empty() => p.clone(),
+        (Some(_), None) => return Err(bad("except goes with untriaged")),
+        (None, Some(u)) => {
+            let (project, items) =
+                work::untriaged(app, account, &u.project, u.q.as_deref(), u.label.as_deref()).await?;
+            if project != board.project {
+                return Err(bad("untriaged names the board's own project"));
+            }
+            items.into_iter().map(|i| i.pointer).filter(|p| !body.except.contains(p)).collect()
+        }
+        _ => return Err(bad("add either pointers or untriaged, one of the two")),
+    };
+    if pointers.len() > wire::ADD_MANY_MAX {
+        return Err(bad(&format!(
+            "that is {} items and one call adds at most {}: narrow the filter, or add them in several calls",
+            pointers.len(),
+            wire::ADD_MANY_MAX
+        )));
+    }
+    for p in &pointers {
+        primary_ok(p)?;
+    }
+    let (mut added, mut attached) = (0, 0);
+    let mut failed = None;
+    for ptr in &pointers {
+        let put = Put { pointer: Some(ptr), ..Put::default() };
+        match add_row(app, by, id, &put, Some(ptr)).await {
+            Ok((Did::Row, _)) => added += 1,
+            Ok((Did::Attached, _)) => attached += 1,
+            Ok((Did::Already, _)) => {}
+            Err(e) => {
+                failed = Some(e);
+                break;
+            }
+        }
+    }
+    if added + attached > 0 {
+        changed(app, &board.project, id);
+    }
+    if let Some(e) = failed {
+        return Err(e);
+    }
+    Ok(wire::AddedMany { added, attached, board: read(app, account, id).await? })
+}
+
+/// `POST /api/boards/{id}/entries/many`; see [`add_many`].
+pub async fn add_many_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(b): Json<wire::AddMany>,
+) -> J<wire::AddedMany> {
+    Ok(Json(add_many(&app, &s.account, &id, &b).await?))
 }
 
 /// Attach work or proof to a row: a PR, an agent block or a run as `work`

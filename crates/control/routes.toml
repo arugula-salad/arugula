@@ -2927,6 +2927,14 @@ clients = ["page", "cli", "native"]
 note = "Adds a row, or changes a row's note or pointer (owners and editors). A change names the rev it read and is refused with 409 stale_rev if the row moved on. A zone, a title and a status are refused (lanes follow the work). Adding a PR that references the issue of a row on the board attaches it to that row; adding an issue that PR rows reference takes those rows in as its work."
 
 [[route]]
+method = "POST"
+path = "/api/boards/{id}/entries/many"  # wire::boards::BOARD_ENTRIES_MANY
+process = "platform"
+auth = "session"
+clients = ["page", "native"]
+note = "Adds many rows at once, each as a single add does (owners and editors, people only): the pointers given, or the untriaged items of a query but the except pointers. More than 500 is a 400, narrow the filter. Answers how many rows were added and how many PRs attached, and the board."
+
+[[route]]
 method = "DELETE"
 path = "/api/boards/{id}/entries/{entry}"  # wire::boards::BOARD_ENTRY
 process = "platform"
@@ -3036,7 +3044,7 @@ path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
 process = "platform"
 auth = "session"
 clients = ["page", "native"]
-note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at."
+note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at, and then pages by cursor (order new or old) and answers the total, the labels with counts (label narrows to one) and each item's labels."
 
 # ---- platform: project Docs (aru-118)
 # A project's own Docs, for its members: a team's owners and editors make,

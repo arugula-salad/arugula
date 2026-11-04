@@ -237,6 +237,8 @@ fn generate() -> String {
         c.visit::<SetLane>();
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
+        c.visit::<AddMany>();
+        c.visit::<AddedMany>();
         c.visit::<BoardSettings>();
         c.visit::<DocBoards>();
     }

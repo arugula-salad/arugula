@@ -43,6 +43,9 @@ pub const BOARD_REOPEN: &str = "/api/boards/{id}/reopen";
 /// `PUT` [`PutEntry`]: add a row or a group, or change a row's note or
 /// pointer or a group's title, answered with the board, [`BoardView`].
 pub const BOARD_ENTRIES: &str = "/api/boards/{id}/entries";
+/// `POST` [`AddMany`]: add many rows at once, each as [`BOARD_ENTRIES`]
+/// adds one (owners and editors, people only); answered [`AddedMany`].
+pub const BOARD_ENTRIES_MANY: &str = "/api/boards/{id}/entries/many";
 /// `DELETE`: a row, or a group and its rows; answered [`BoardView`].
 pub const BOARD_ENTRY: &str = "/api/boards/{id}/entries/{entry}";
 /// `POST` [`MoveEntry`]: change a row's group and its place in it, or move a
@@ -2146,6 +2149,18 @@ pub struct WorkQuery {
     /// At most this many (default 30, at most 100).
     #[serde(default)]
     pub limit: Option<u32>,
+    /// With `untriaged`: the page after the one that answered this
+    /// [`WorkItems::next`]. Opaque; it holds its place when items leave the
+    /// list between pages.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// With `untriaged`, `new` (the default) or `old`: by when an item was
+    /// last updated.
+    #[serde(default)]
+    pub order: Option<String>,
+    /// With `untriaged`: only items with this label.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 /// One thing a row may point at.
@@ -2177,7 +2192,20 @@ pub struct WorkItem {
     pub state: String,
     /// GitHub logins for a mirrored item; account ids for a native issue.
     pub assignees: Vec<String>,
+    /// The item's label names: a native issue's, a mirrored GitHub or Plane
+    /// item's. A run has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     pub updated_at: u64,
+}
+
+/// A label and how many of a query's matches carry it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkLabel"))]
+pub struct WorkLabel {
+    pub name: String,
+    pub count: u64,
 }
 
 /// [`PROJECT_WORK`]'s answer: the newest first, across sources.
@@ -2187,6 +2215,65 @@ pub struct WorkItem {
 pub struct WorkItems {
     pub project: String,
     pub items: Vec<WorkItem>,
+    /// With `untriaged`: the cursor of the next page, null at the end.
+    #[serde(default)]
+    pub next: Option<String>,
+    /// With `untriaged`: how many items match `q` and `label` in all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub total: Option<u64>,
+    /// With `untriaged`: the labels of everything that matches `q`, `label`
+    /// aside (so the chips keep their counts), most items first, then by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<WorkLabel>,
+}
+
+/// The most [`AddMany`] adds in one call.
+pub const ADD_MANY_MAX: usize = 500;
+
+/// [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
+/// `untriaged` (everything that matches, but the `except` pointers). More
+/// than [`ADD_MANY_MAX`] is refused, 400: narrow the filter.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddMany"))]
+pub struct AddMany {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pointers: Option<Vec<Pointer>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub untriaged: Option<UntriagedQuery>,
+    /// With `untriaged`: pointers to leave out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub except: Vec<Pointer>,
+}
+
+/// Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`
+/// set, of the board's own project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardUntriagedQuery"))]
+pub struct UntriagedQuery {
+    pub project: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub q: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub label: Option<String>,
+}
+
+/// [`BOARD_ENTRIES_MANY`]' answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddedMany"))]
+pub struct AddedMany {
+    /// Rows made. An item on the board already isn't counted.
+    pub added: u64,
+    /// PRs attached to the row of the issue they close, as a single add does.
+    pub attached: u64,
+    pub board: BoardView,
 }
 
 #[cfg(test)]
