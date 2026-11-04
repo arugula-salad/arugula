@@ -15,6 +15,10 @@
 #                                       and the dump machine moved onto it;
 #                                       `deploy` runs it after its check
 #
+# A deploy that doesn't come up healthy goes back to the image it replaced
+# (scripts/ci-fly-rollback), and the job fails either way, so the hub's deploy,
+# which needs the platform first, doesn't take that for a good one.
+#
 # Until the app exists there's nothing to deploy: without FLY_API_TOKEN (a
 # deploy token for arugula-platform, which can only be made once the app
 # exists, kept as the repository secret FLY_PLATFORM_API_TOKEN) `deploy`
@@ -58,12 +62,12 @@ check_once() {
 
 check() {
   local tag=${1:?usage: ci-platform-deploy check TAG}
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 "${ARUGULA_DEPLOY_CHECK_TRIES:-12}"); do
     if check_once "$tag"; then
       echo "$app runs $tag"
       return 0
     fi
-    sleep 10
+    sleep "${ARUGULA_DEPLOY_CHECK_WAIT:-10}"
   done
   echo "::error::$app isn't running $tag after its deploy (above: what fly status said)"
   return 1
@@ -143,6 +147,34 @@ dump() {
   fi
 }
 
+summary() {
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '%s\n' "$@" >>"$GITHUB_STEP_SUMMARY"
+}
+
+# back_out TAG PRIOR WHY: the new release didn't come up healthy. Puts PRIOR back
+# and fails either way: the job stays red, so nobody takes this for a good deploy.
+back_out() {
+  local tag=$1 prior=$2 why=$3 was
+  echo "::error::$app: $tag $why"
+  if [ -z "$prior" ]; then
+    echo "::error::$app: its machines didn't all run one image before this deploy, so there's nothing to go back to. It needs a person."
+    exit 1
+  fi
+  was=${prior##*:}
+  if [ "$was" = "$tag" ]; then
+    echo "::error::$app already ran $tag before this deploy, so going back wouldn't change anything. It needs a person."
+    exit 1
+  fi
+  if scripts/ci-fly-rollback restore "$app" "$prior" "$toml" --no-public-ips && check "$was"; then
+    echo "::error::$app went back to $was: $tag didn't come up healthy, and isn't running"
+    summary "$app went back to \`$was\`. \`$tag\` didn't come up healthy, and isn't running."
+  else
+    echo "::error::$app is down: $tag didn't come up healthy, and going back to $was didn't either. It needs a person now. An older build refuses a migration that isn't additive."
+    summary "**$app needs a person.** \`$tag\` didn't come up healthy, and going back to \`$was\` didn't work either."
+  fi
+  exit 1
+}
+
 deploy() {
   local tag=${1:?usage: ci-platform-deploy deploy TAG DIR} dir=${2:?usage: ci-platform-deploy deploy TAG DIR}
   if [ -z "${FLY_API_TOKEN:-}" ]; then
@@ -164,8 +196,12 @@ deploy() {
   trap "rm -rf '$ctx'" EXIT
   cp "$dir/arugula-platform" packaging/platform/Dockerfile "$toml" "$ctx"/
   chmod +x "$ctx/arugula-platform"
-  (cd "$ctx" && flyctl deploy --local-only --ha=false --no-public-ips --image-label "$tag")
-  check "$tag"
+  local prior
+  prior=$(scripts/ci-fly-rollback prior "$app") || prior=''
+  if ! (cd "$ctx" && flyctl deploy --local-only --ha=false --no-public-ips --image-label "$tag"); then
+    back_out "$tag" "$prior" "failed to deploy"
+  fi
+  check "$tag" || back_out "$tag" "$prior" "isn't healthy after its deploy"
   dump "$tag" "$dir"
 }
 

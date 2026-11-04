@@ -13,6 +13,9 @@
 #                                      every machine runs TAG's image with
 #                                      its health check passing (read-only)
 #
+# A deploy that doesn't come up healthy goes back to the image it replaced
+# (scripts/ci-fly-rollback), and the job fails either way.
+#
 # The image is built here, as `just control-deploy` builds it (fly deploy
 # --local-only, so it needs Docker). `deploy` leaves a newer release alone:
 # re-running an old tag's job doesn't take control back a version.
@@ -118,15 +121,40 @@ unchanged() {
 # the health check, so the first try usually passes.
 check() {
   local tag=${1:?usage: ci-control-deploy check TAG}
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 "${ARUGULA_DEPLOY_CHECK_TRIES:-12}"); do
     if check_once "$tag"; then
       echo "control at $url runs $tag"
       return 0
     fi
-    sleep 10
+    sleep "${ARUGULA_DEPLOY_CHECK_WAIT:-10}"
   done
   echo "::error::control isn't running $tag after its deploy (above: what fly status and $url/control.json said)"
   return 1
+}
+
+
+# back_out TAG PRIOR WHY: the new release didn't come up healthy. Puts PRIOR back
+# and fails either way: the job stays red, so nobody takes this for a good deploy.
+back_out() {
+  local tag=$1 prior=$2 why=$3 was
+  echo "::error::$app: $tag $why"
+  if [ -z "$prior" ]; then
+    echo "::error::$app: its machines didn't all run one image before this deploy, so there's nothing to go back to. It needs a person."
+    exit 1
+  fi
+  was=${prior##*:}
+  if [ "$was" = "$tag" ]; then
+    echo "::error::$app already ran $tag before this deploy, so going back wouldn't change anything. It needs a person."
+    exit 1
+  fi
+  if scripts/ci-fly-rollback restore "$app" "$prior" "$toml" && check "$was"; then
+    echo "::error::$app went back to $was: $tag didn't come up healthy, and isn't running"
+    summary "$app went back to \`$was\`. \`$tag\` didn't come up healthy, and isn't running."
+  else
+    echo "::error::$app is down: $tag didn't come up healthy, and going back to $was didn't either. It needs a person now. An older build refuses a migration that isn't additive."
+    summary "**$app needs a person.** \`$tag\` didn't come up healthy, and going back to \`$was\` didn't work either."
+  fi
+  exit 1
 }
 
 deploy() {
@@ -160,8 +188,12 @@ deploy() {
   trap "rm -rf '$ctx'" EXIT
   cp "$dir/arugula-control" packaging/control/Dockerfile "$toml" "$ctx"/
   chmod +x "$ctx/arugula-control"
-  (cd "$ctx" && flyctl deploy --local-only --ha=false --image-label "$tag")
-  check "$tag"
+  local prior
+  prior=$(scripts/ci-fly-rollback prior "$app") || prior=''
+  if ! (cd "$ctx" && flyctl deploy --local-only --ha=false --image-label "$tag"); then
+    back_out "$tag" "$prior" "failed to deploy"
+  fi
+  check "$tag" || back_out "$tag" "$prior" "isn't healthy after its deploy"
 }
 
 case ${1:-} in
