@@ -1195,7 +1195,30 @@ impl From<BlockStateReport> for BlockState {
 pub struct PutBlockState {
     pub pane: String,
     pub block: BlockStateReport,
+    /// How long ago, in milliseconds, the machine saw the block in this
+    /// state: more than none when the report waited out a failure to reach
+    /// control. A machine that sends it (0 included) also sends each live
+    /// block's state again every [`BLOCK_STATE_EVERY_MS`], so control counts
+    /// one of its reports older than [`BLOCK_STATE_STALE_MS`] as unknown.
+    /// None: a daemon from before Arugula #745, whose report is as of now
+    /// and never goes stale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub age_ms: Option<u64>,
 }
+
+/// How often a daemon sends each live agent block's state again, changed or
+/// not (Arugula #745), so control can tell a block it hears from from one it
+/// has lost.
+pub const BLOCK_STATE_EVERY_MS: u64 = 5 * 60_000;
+
+/// How old a report from a daemon that sends again
+/// ([`PutBlockState::age_ms`]) may be before a board counts its block as
+/// unknown, for lanes and claims: four of [`BLOCK_STATE_EVERY_MS`], so
+/// three missed in a row (a short outage, a laptop asleep for a while) keep
+/// the row, and a machine that is gone frees it within twenty minutes. A
+/// closed report never goes stale.
+pub const BLOCK_STATE_STALE_MS: u64 = 4 * BLOCK_STATE_EVERY_MS;
 
 /// A question on a row that a person answers on the board (Arugula #367):
 /// asked by a person or an agent, or raised by the board itself from the

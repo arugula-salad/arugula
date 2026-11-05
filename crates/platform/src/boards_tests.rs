@@ -1606,3 +1606,113 @@ async fn a_doing_row_with_only_idle_blocks_is_stalled_past_n_minutes() {
     assert_eq!((marks(&v), asked(&v)), (Value::Null, None), "{v}");
     assert_eq!(lane(&v, &row), "next", "{v}");
 }
+
+/// A report from a daemon that sends again (it says its age) is unknown to
+/// lanes and claims once it is older than `BLOCK_STATE_STALE_MS`: the row
+/// leaves Doing and another machine's block may take it, while the chip
+/// still shows what was last said. A report older than the one kept
+/// doesn't replace it (Arugula #745).
+#[tokio::test]
+async fn a_stale_report_is_unknown_to_lanes_and_claims() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BLOCK_STATE_STALE_MS, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |machine: &str, pane: &str| json!({ "issue": "#1", "machine": machine, "pane": pane });
+    let read = || {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7"))).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    assert_eq!(lane(&read().await, &row), "doing");
+
+    // A close seen a minute before the working that was kept: older, so the
+    // working stands.
+    let late = json!({ "pane": "7", "block": { "state": "closed" }, "age_ms": 60_000 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(late)).await.0, 200);
+    let v = read().await;
+    assert_eq!(row_in(&v, &row)["attachments"][0]["block"]["state"], json!("working"), "{v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 409, "geek's block holds it: {v}");
+
+    // Nothing heard for longer than the stale line: unknown.
+    let long_ago = arugula_e2e::now_ms() - BLOCK_STATE_STALE_MS - 60_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![long_ago]).unwrap();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(row_in(&v, &row)["attachments"][0]["block"]["state"], json!("working"), "still shown: {v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 200, "a stale block holds nothing: {v}");
+}
+
+/// A daemon from before Arugula #745 says no age: its report is as of now
+/// and never goes stale, as before. A machine that left control holds
+/// nothing, whatever it last said.
+#[tokio::test]
+async fn an_old_daemons_report_holds_until_its_machine_leaves() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |machine: &str, pane: &str| json!({ "issue": "#1", "machine": machine, "pane": pane });
+
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7"))).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let day_ago = arugula_e2e::now_ms() - 86_400_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![day_ago]).unwrap();
+    app.db.c().execute("UPDATE board_attachments SET created_at = ?1", params![day_ago]).unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "doing", "{v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 409, "an old daemon's block still holds it: {v}");
+
+    crate::cache::catch_up(&app).await.unwrap();
+    hub.leave("geek");
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 200, "geek left control: {v}");
+}
+
+/// A person's lane isn't cleared on a read that couldn't look up a block's
+/// grant: that read can't tell the work's lane (Arugula #745).
+#[tokio::test]
+async fn a_grant_that_cant_be_read_keeps_a_persons_lane() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let lane_path = format!("/api/boards/{board}/rows/{row}/lane");
+    let (st, v) = call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "next" }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row), "next", "set by hand over Doing: {v}");
+
+    app.db.c().execute("ALTER TABLE grants RENAME TO grants_away", params![]).unwrap();
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row), "next", "the person's lane holds: {v}");
+    let (st, _) = call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "review" }))).await;
+    assert_eq!(st, 503, "no lane is set against a basis it can't read");
+    app.db.c().execute("ALTER TABLE grants_away RENAME TO grants", params![]).unwrap();
+
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "next", "and wasn't cleared: {v}");
+    assert_eq!(row_in(&v, &row)["lane_set"]["lane"], json!("next"), "{v}");
+}

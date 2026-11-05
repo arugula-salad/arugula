@@ -514,16 +514,21 @@ fn live_run(run: &Run) -> wire::Live {
 }
 
 /// Whether `machine` holds a live `boards.write` grant over `project`, one
-/// its owner may still give ([`agent_may`]).
-async fn machine_writes(app: &Platform, machine: &str, project: &str) -> bool {
-    let Ok(grants) = app.db.machine_write_projects(machine, BOARDS_WRITE) else { return false };
+/// its owner may still give ([`agent_may`]). An error is a lookup that
+/// failed, not a refusal: the caller can't tell, and mustn't act as if the
+/// grant were gone (Arugula #745).
+async fn machine_writes(app: &Platform, machine: &str, project: &str) -> Result<bool, ApiError> {
+    let grants = app.db.machine_write_projects(machine, BOARDS_WRITE)?;
     for (scope, owner) in grants.into_iter().filter(|(p, _)| p == project) {
         let m = Machine { account: owner, daemon: machine.to_owned() };
-        if agent_may(app, &m, BOARDS_WRITE, &AgentScope::Project(scope)).await.is_ok() {
-            return true;
+        match agent_may(app, &m, BOARDS_WRITE, &AgentScope::Project(scope)).await {
+            Ok(_) => return Ok(true),
+            // Refused: not this grant.
+            Err(e) if e.0.is_client_error() => {}
+            Err(e) => return Err(e),
         }
     }
-    false
+    Ok(false)
 }
 
 /// Each of `ids` the reader may see, as a chip says it: items of the
@@ -670,7 +675,8 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
             f.by_id.insert(id.clone(), Fact::Run { running: run.state == RunState::Running });
         }
     }
-    for (k, b) in &blocks.state {
+    // A stale report is unknown: the block moves no lane.
+    for (k, b) in blocks.state.iter().filter(|(k, _)| !blocks.stale.contains(*k)) {
         f.blocks.insert(k.clone(), Fact::Block { closed: b.state == wire::BlockWord::Closed });
     }
     Ok(f)
@@ -735,17 +741,33 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
 
 /// The lane a row shows, and the override behind it (#494). A person's lane
 /// holds only while the work still derives the lane it did when they set it:
-/// once that changes, the row goes back to following the work.
-fn shown(derived: wire::Lane, set: Option<&db::LaneSet>) -> (wire::Lane, Option<&db::LaneSet>) {
-    match set.filter(|s| s.holds(derived)) {
+/// once that changes, the row goes back to following the work. While a
+/// block's report couldn't be looked up, it holds as it is.
+fn shown<'a>(
+    derived: wire::Lane,
+    set: Option<&'a db::LaneSet>,
+    blocks: &Blocks,
+) -> (wire::Lane, Option<&'a db::LaneSet>) {
+    match set.filter(|s| blocks.unsure() || s.holds(derived)) {
         Some(s) => (s.lane, Some(s)),
         None => (derived, None),
     }
 }
 
 /// Drop the override of `row` that `derived` has outgrown, so it can't come
-/// back if the work returns to the lane it was set in.
-fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set: Option<&db::LaneSet>) {
+/// back if the work returns to the lane it was set in. Not when a block's
+/// report couldn't be looked up (`blocks.unsure`): `derived` may be wrong.
+fn forget_stale(
+    app: &Platform,
+    board: &str,
+    row: &str,
+    derived: wire::Lane,
+    set: Option<&db::LaneSet>,
+    blocks: &Blocks,
+) {
+    if blocks.unsure() {
+        return;
+    }
     let Some(set) = set.filter(|s| !s.holds(derived)) else { return };
     if let Err(e) = app.db.clear_stale_lane(board, row, set.at) {
         tracing::warn!(error = %e, "boards: clearing a lane that was set by hand");
@@ -829,9 +851,20 @@ struct Blocks {
     owner: HashMap<(String, String), String>,
     /// The machines that hold `boards.write` over the project now.
     writing: HashSet<String>,
+    /// Reports older than [`wire::BLOCK_STATE_STALE_MS`] from a machine that
+    /// sends again, and not of a close: shown, but unknown to lanes and
+    /// claims (Arugula #745).
+    stale: HashSet<(String, String)>,
+    /// Machines whose grant couldn't be looked up: what they reported isn't
+    /// here, and isn't known to be gone.
+    unsure: HashSet<String>,
 }
 
 impl Blocks {
+    fn unsure(&self) -> bool {
+        !self.unsure.is_empty()
+    }
+
     fn idle_since(&self, machine: &str, pane: &str) -> Option<u64> {
         let b = self.state.get(&(machine.to_owned(), pane.to_owned()))?;
         (b.state == wire::BlockWord::Idle).then_some(b.since).flatten()
@@ -913,14 +946,29 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
         by_machine.entry(machine).or_default().push(pane);
     }
     let mut found = Blocks::default();
+    let now = now_ms();
     for (machine, panes) in by_machine {
-        if !machine_writes(app, machine, project).await {
-            continue;
+        match machine_writes(app, machine, project).await {
+            Ok(true) => {
+                found.writing.insert(machine.to_owned());
+            }
+            Ok(false) => continue,
+            Err(e) => {
+                tracing::warn!(machine, error = %e.1, "boards: looking up a machine's grant");
+                found.unsure.insert(machine.to_owned());
+                continue;
+            }
         }
-        found.writing.insert(machine.to_owned());
-        for (pane, state, owner) in app.db.block_states(machine, &panes)? {
-            found.owner.insert((machine.to_owned(), pane.clone()), owner);
-            found.state.insert((machine.to_owned(), pane), state);
+        for r in app.db.block_states(machine, &panes)? {
+            let key = (machine.to_owned(), r.pane);
+            if r.sends_again
+                && r.state.state != wire::BlockWord::Closed
+                && now.saturating_sub(r.seen) > wire::BLOCK_STATE_STALE_MS
+            {
+                found.stale.insert(key.clone());
+            }
+            found.owner.insert(key.clone(), r.owner);
+            found.state.insert(key, r.state);
         }
     }
     Ok(found)
@@ -951,8 +999,8 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
                 .filter_map(|a| a.role.map(|r| (r, &a.pointer, false)))
                 .collect();
             let a = assess(&t.pointer, &attached, &facts);
-            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref());
-            let (lane, _) = shown(a.lane, t.lane_set.as_ref());
+            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref(), &blocks);
+            let (lane, _) = shown(a.lane, t.lane_set.as_ref(), &blocks);
             b.progress.total += 1;
             b.progress.done += u32::from(lane == wire::Lane::Done);
             b.progress.review += u32::from(lane == wire::Lane::Review);
@@ -1057,8 +1105,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let mut a = assess(&e.pointer, &attached, &facts);
         let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
-        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref());
-        let (lane, set) = shown(a.lane, e.lane_set.as_ref());
+        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), &blocks);
+        let (lane, set) = shown(a.lane, e.lane_set.as_ref(), &blocks);
         a.lane = lane;
         let (row_live, row_block) = chip(&e.pointer, e.agent.as_deref());
         // The attachments of a replaced agent come last.
@@ -1455,8 +1503,11 @@ fn already(stored: &db::Stored, pointer: &wire::Pointer) -> Option<String> {
 
 /// Whether another machine's block holds `row` against a block of `machine`
 /// (#404): one that is work on the row, was not taken over and isn't
-/// reported closed. A block that hasn't reported yet holds it: it is
-/// attached and isn't closed. The machine's own other panes are no
+/// reported closed. A block that hasn't reported yet holds it for
+/// [`wire::BLOCK_STATE_STALE_MS`] after it was attached (or while its
+/// machine's grant can't be looked up); after that, and once its report is
+/// stale, it is unknown and holds nothing. Nor does a block whose machine
+/// left control (Arugula #745). The machine's own other panes are no
 /// conflict (a pane it restarted). Refused 409 `claimed`, saying that
 /// `what` ("#12") is being worked by the holder, since when it attached.
 pub(crate) async fn claim_conflict(
@@ -1496,21 +1547,28 @@ pub(crate) async fn claim_holder(
         })
         .collect();
     let blocks = block_states(app, project, &panes).await?;
+    let mut machines: Vec<String> = panes.iter().map(|(m, _)| m.clone()).collect();
+    machines.dedup();
+    // Only machines still in control: one that left is missing.
+    let joined = agent_names(app, &machines).await?;
+    let now = now_ms();
     for a in holders {
         let wire::Pointer::Block { machine: m, pane } = &a.pointer else { continue };
-        let state = blocks.state.get(&(m.clone(), pane.clone()));
-        if state.is_some_and(|b| b.state == wire::BlockWord::Closed) {
+        let Some(d) = joined.get(m) else { continue };
+        let key = (m.clone(), pane.clone());
+        let state = blocks.state.get(&key);
+        let holds = match state {
+            Some(b) => b.state != wire::BlockWord::Closed && !blocks.stale.contains(&key),
+            None => blocks.unsure.contains(m) || now.saturating_sub(a.created_at) <= wire::BLOCK_STATE_STALE_MS,
+        };
+        if !holds {
             continue;
         }
         // Its title and machine only for a block its own machine's agent
         // attached, as a board shows it to everyone.
         let own = a.agent.as_deref() == Some(m.as_str());
         let title = state.filter(|_| own).and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
-        let name = match own {
-            true => agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default(),
-            false => String::new(),
-        };
-        let on = if name.is_empty() { "another machine".to_owned() } else { name };
+        let on = if own && !d.name.is_empty() { d.name.clone() } else { "another machine".to_owned() };
         let at = (a.created_at / 60_000) % 1440;
         return Ok(Some(format!(
             "{what} is being worked by {title} on {on}, since {:02}:{:02} UTC: pass take: true to take it over",
@@ -1878,6 +1936,10 @@ async fn derived_lane(
     let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
     let ids = Ids::of(std::iter::once(&row.pointer).chain(mine.iter().map(|a| &a.pointer)));
     let blocks = block_states(app, project, &ids.blocks).await?;
+    if blocks.unsure() {
+        // A lane set against a wrong basis would hold, or lapse, wrongly.
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "couldn't read the row's work just now: try again"));
+    }
     let facts = facts(app, project, &ids, &blocks)?;
     Ok(assess(&row.pointer, &attached, &facts).lane)
 }

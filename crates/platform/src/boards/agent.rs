@@ -280,7 +280,10 @@ pub async fn put_block_state(
     super::name_ok(&p.pane, "pane")?;
     let block = wire::BlockState::from(p.block);
     state_ok(&block)?;
-    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, arugula_e2e::now_ms())?;
+    // As of when the machine saw it: a report that waited out an outage is
+    // as old as it says. A daemon from before Arugula #745 says no age: now.
+    let seen = arugula_e2e::now_ms().saturating_sub(p.age_ms.unwrap_or(0));
+    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, seen, p.age_ms.is_some())?;
     match app.db.boards_on_block(&d.daemon, &p.pane) {
         Ok(boards) => boards.iter().for_each(|(b, project)| super::changed(&app, project, b)),
         Err(e) => tracing::warn!(error = %e, "boards: finding those on a block"),

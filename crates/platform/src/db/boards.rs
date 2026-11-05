@@ -123,6 +123,20 @@ pub struct Entry {
     pub lane_set: Option<LaneSet>,
 }
 
+/// What a machine last said of one of its blocks ([`Db::block_states`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub pane: String,
+    pub state: BlockState,
+    /// The account the machine reported for: the block's owner.
+    pub owner: String,
+    /// When the machine saw the state, in milliseconds.
+    pub seen: u64,
+    /// The machine sends each live block's state again (Arugula #745), so
+    /// an old report means it lost the block, or control lost it.
+    pub sends_again: bool,
+}
+
 /// A lane a person set on a row: `lane` (never Done), the lane the work
 /// derived when they set it (`basis`), who and when. It shows only while the
 /// derived lane is still the basis ([`LaneSet::holds`]).
@@ -1371,13 +1385,25 @@ impl Db {
         )
     }
 
-    /// Keep what `machine` says of its block `pane`, replacing the last.
-    pub fn put_block_state(&self, machine: &str, account: &str, pane: &str, b: &BlockState, at: u64) -> Result<()> {
+    /// Keep what `machine` says of its block `pane`, as it saw it at `seen`,
+    /// replacing the last unless that was seen later (a report that waited
+    /// out an outage never undoes a newer one). `sends_again`: the machine
+    /// sends each live block's state again, so this one can go stale
+    /// (Arugula #745).
+    pub fn put_block_state(
+        &self,
+        machine: &str,
+        account: &str,
+        pane: &str,
+        b: &BlockState,
+        seen: u64,
+        sends_again: bool,
+    ) -> Result<()> {
         let d = b.diffstat;
         self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at, title, state_since)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
+                 diff_files, diff_added, diff_removed, updated_at, title, state_since, sends_again)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?14)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
                  title = COALESCE(excluded.title, board_block_states.title),
                  branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
@@ -1386,7 +1412,8 @@ impl Db {
                  state_since = CASE WHEN board_block_states.state = excluded.state
                      THEN COALESCE(board_block_states.state_since, board_block_states.updated_at)
                      ELSE excluded.updated_at END,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at, sends_again = excluded.sends_again
+             WHERE excluded.updated_at >= board_block_states.updated_at",
             params![
                 machine,
                 pane,
@@ -1399,16 +1426,16 @@ impl Db {
                 d.map(|d| d.files),
                 d.map(|d| d.added),
                 d.map(|d| d.removed),
-                at,
-                b.title
+                seen,
+                b.title,
+                sends_again
             ],
         )?;
         Ok(())
     }
 
-    /// What `machine` last said of these `panes`, by pane, with the account
-    /// the machine reported for (the block's owner).
-    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState, String)>> {
+    /// What `machine` last said of these `panes`.
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<Reported>> {
         if panes.is_empty() {
             return Ok(vec![]);
         }
@@ -1416,7 +1443,7 @@ impl Db {
         c.query_map(
             &format!(
                 "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title,
-                        COALESCE(state_since, updated_at), account
+                        COALESCE(state_since, updated_at), account, updated_at, sends_again
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1436,7 +1463,7 @@ impl Db {
                     },
                     since: Some(r.get(10)?),
                 };
-                Ok((r.get(0)?, state, r.get(11)?))
+                Ok(Reported { pane: r.get(0)?, state, owner: r.get(11)?, seen: r.get(12)?, sends_again: r.get(13)? })
             },
         )
     }

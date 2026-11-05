@@ -672,6 +672,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0096_grants_revoked_by.sql"),
         additive: true,
     },
+    Migration {
+        version: 97,
+        name: "block_state_sends_again",
+        sql: include_str!("../../migrations/sqlite/0097_block_state_sends_again.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -1252,6 +1258,12 @@ const POSTGRES: &[Migration] = &[
         version: 96,
         name: "grants_revoked_by",
         sql: include_str!("../../migrations/postgres/0096_grants_revoked_by.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 97,
+        name: "block_state_sends_again",
+        sql: include_str!("../../migrations/postgres/0097_block_state_sends_again.sql"),
         additive: true,
     },
 ];

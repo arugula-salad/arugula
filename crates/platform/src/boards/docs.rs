@@ -132,7 +132,7 @@ pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[
     let mut named =
         Named { reach: super::reach_label(app, account, &linked, "a Doc's machine").await, writing: HashSet::new() };
     for m in by_agent {
-        if super::machine_writes(app, &m, project).await {
+        if matches!(super::machine_writes(app, &m, project).await, Ok(true)) {
             named.writing.insert(m);
         }
     }
