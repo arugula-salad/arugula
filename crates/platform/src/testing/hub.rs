@@ -88,6 +88,8 @@ struct State {
     enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
+    /// `hosted_enrolled` fails.
+    enrolled_down: bool,
     gone: Vec<String>,
     /// Whether each hosted machine says it's working (M180), and whether
     /// the hub can't say.
@@ -270,10 +272,15 @@ impl TestHub {
         s.online.insert(machine.into());
     }
 
-    /// The hub removed `workspace`'s machine (an owner did, at control):
-    /// it's no longer listed as enrolled.
+    /// The hub no longer lists `workspace`'s machine as enrolled (an owner
+    /// removed it, or the hub lost its rows).
     pub fn remove(&self, workspace: &str) {
         self.state.lock().unwrap().enrolled.remove(workspace);
+    }
+
+    /// Whether the hub can say which workspaces' boxes enrolled.
+    pub fn enrolled_down(&self, down: bool) {
+        self.state.lock().unwrap().enrolled_down = down;
     }
 
     /// Someone tried the enrollment of `workspace`'s box again.
@@ -645,6 +652,9 @@ impl HubPort for TestHub {
     ) -> BoxFuture<'a, HubResult<Vec<crate::hosted::enroll::Enrolled>>> {
         self.called("hosted_enrolled");
         let s = self.state.lock().unwrap();
+        if s.enrolled_down {
+            return Box::pin(async { Err(anyhow::anyhow!("the hub is away")) });
+        }
         done(
             workspaces
                 .iter()

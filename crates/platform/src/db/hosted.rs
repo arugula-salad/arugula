@@ -381,16 +381,39 @@ impl Db {
         Ok(self.c().execute(&sql, params![id, now])? == 1)
     }
 
-    /// Have the worker look at workspace `id` now, when it's `ready` or
-    /// `paused` as `machine` (the hub says it removed that machine,
-    /// `hosted::machine_removed`): whether it will. A row a step holds is
-    /// left to that step's next look.
-    pub fn look_at_hosted(&self, id: &str, machine: &str) -> Result<bool> {
-        let sql = format!(
-            "UPDATE hosted_workspaces SET {DUE_NOW}
-             WHERE id = ?1 AND machine = ?2 AND deleted_at IS NULL AND state IN ('ready', 'paused')"
-        );
-        Ok(self.c().execute(&sql, params![id, machine])? == 1)
+    /// Keep the hub's word that it removed workspace `id`'s machine
+    /// `machine` (`hosted::machine_removed`), and make the workspace due
+    /// now: whether it was kept. Only while it's `ready`, `paused` or
+    /// `waking` as that machine, with no delete or rebuild asked (either
+    /// makes the machine go anyway).
+    pub fn note_hosted_removed(&self, id: &str, machine: &str, now: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let due = tx.execute(
+            &format!(
+                "UPDATE hosted_workspaces SET {DUE_NOW}
+                 WHERE id = ?1 AND machine = ?2 AND deleted_at IS NULL AND state IN ('ready', 'paused', 'waking')
+                     AND COALESCE(asked, '') NOT IN ('delete', 'rebuild')"
+            ),
+            params![id, machine],
+        )? == 1;
+        if due {
+            tx.execute(
+                "INSERT INTO hosted_removed_machines (workspace, machine, at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (workspace) DO UPDATE SET machine = excluded.machine, at = excluded.at",
+                params![id, machine, now],
+            )?;
+        }
+        tx.commit()?;
+        Ok(due)
+    }
+
+    /// The machine the hub said it removed from workspace `id`, kept until
+    /// the worker fails it ([`Db::note_hosted_removed`]).
+    pub fn hosted_removed_machine(&self, id: &str) -> Result<Option<String>> {
+        self.c()
+            .query_row("SELECT machine FROM hosted_removed_machines WHERE workspace = ?1", params![id], |r| r.get(0))
+            .optional()
     }
 
     /// Lease a workspace with something to do at `now`: one being made,
@@ -499,6 +522,13 @@ impl Db {
                 params![w.id],
             )?;
         }
+        // The hub's word that it removed the machine is done with once the
+        // workspace failed, or has another machine (a rebuild) or none.
+        tx.execute(
+            "DELETE FROM hosted_removed_machines
+             WHERE workspace = ?1 AND (?2 IN ('failed', 'deleting', 'deleted') OR machine <> COALESCE(?3, ''))",
+            params![w.id, w.state, w.machine],
+        )?;
         if job.deleted_at.is_some() {
             tx.execute("DELETE FROM hosted_workspace_secrets WHERE workspace_id = ?1", params![w.id])?;
             tx.execute("DELETE FROM hosted_ports WHERE workspace_id = ?1", params![w.id])?;

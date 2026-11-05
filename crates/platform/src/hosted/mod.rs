@@ -540,69 +540,86 @@ pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
 /// [`worker`]'s rebuild). A session already on `new_machine` is left as it is, so this
 /// may run again for the same enrollment.
 pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machine: &str) -> anyhow::Result<()> {
-    use crate::db::sessions::{NewPrompt, Source, State};
     for s in app.db.live_sessions_on(workspace)? {
-        if s.machine.as_deref() == Some(new_machine) {
-            continue;
-        }
-        // Its prompt on the new box, and whether its conversation was lost
-        // with the old one (Arugula #209), as its card says.
-        let (text, lost) = match s.state {
-            State::Queued => (String::new(), false),
-            // A review (M264) starts again from its own prompt: the diff
-            // and the thread as they were asked about.
-            _ if s.role == crate::db::sessions::Role::Review => {
-                (app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default(), false)
-            }
-            _ => match crate::features::chat().after_rebuild(app, &s).await {
-                Ok(r) => (r.text, r.lost),
-                Err(e) => {
-                    tracing::warn!(
-                        session = s.id,
-                        workspace,
-                        error = format!("{e:#}"),
-                        "can't hydrate a session's thread for its new box"
-                    );
-                    continue;
-                }
-            },
-        };
-        let prompt = NewPrompt { author: &s.asker, source: Source::Member, association: None, text: &text };
-        let now = arugula_e2e::now_ms();
-        match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, lost, now)? {
-            Ok(_) => {
-                tracing::info!(
-                    session = s.id,
-                    workspace,
-                    machine = new_machine,
-                    "a session moved to its workspace's new box"
-                );
-                crate::features::chat().told(app, std::slice::from_ref(&s.id))?;
-                app.db.nudge_session(&s.id, now)?;
-            }
-            // It moved meanwhile (it ended, say): its job sees to it.
-            Err(e) => {
-                tracing::warn!(session = s.id, workspace, refused = %e, "a session didn't move to its workspace's new box")
-            }
-        }
+        move_session(app, &s, new_machine).await?;
     }
     Ok(())
 }
 
+/// Move one live session to its workspace's `new_machine`, as
+/// [`sessions_on_box_changed`] does each: whether it moved. One already
+/// there is left as it is (`false`), and so is one whose thread can't be
+/// hydrated or that moved meanwhile (logged). A session's job calls this
+/// for its own session when a rebuild's move didn't go through.
+pub async fn move_session(
+    app: &Platform,
+    s: &crate::db::sessions::AgentSession,
+    new_machine: &str,
+) -> anyhow::Result<bool> {
+    use crate::db::sessions::{NewPrompt, Source, State};
+    let workspace = s.workspace.as_str();
+    if s.machine.as_deref() == Some(new_machine) {
+        return Ok(false);
+    }
+    // Its prompt on the new box, and whether its conversation was lost
+    // with the old one (Arugula #209), as its card says.
+    let (text, lost) = match s.state {
+        State::Queued => (String::new(), false),
+        // A review (M264) starts again from its own prompt: the diff
+        // and the thread as they were asked about.
+        _ if s.role == crate::db::sessions::Role::Review => {
+            (app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default(), false)
+        }
+        _ => match crate::features::chat().after_rebuild(app, s).await {
+            Ok(r) => (r.text, r.lost),
+            Err(e) => {
+                tracing::warn!(
+                    session = s.id,
+                    workspace,
+                    error = format!("{e:#}"),
+                    "can't hydrate a session's thread for its new box"
+                );
+                return Ok(false);
+            }
+        },
+    };
+    let prompt = NewPrompt { author: &s.asker, source: Source::Member, association: None, text: &text };
+    let now = arugula_e2e::now_ms();
+    match app.db.session_rebuilt(&s.id, s.state, new_machine, &prompt, lost, now)? {
+        Ok(_) => {
+            tracing::info!(
+                session = s.id,
+                workspace,
+                machine = new_machine,
+                "a session moved to its workspace's new box"
+            );
+            crate::features::chat().told(app, std::slice::from_ref(&s.id))?;
+            app.db.nudge_session(&s.id, now)?;
+            Ok(true)
+        }
+        // It moved meanwhile (it ended, say): its job sees to it.
+        Err(e) => {
+            tracing::warn!(session = s.id, workspace, refused = %e, "a session didn't move to its workspace's new box");
+            Ok(false)
+        }
+    }
+}
+
 /// The hub removed hosted machine `machine`, `workspace`'s box
-/// (`PlatformPort::hosted_removed`, Arugula #744): the worker looks at the
-/// workspace now rather than at its next minute, asks the hub, and fails
-/// it ([`worker`]'s `removed`), which ends its runs and sessions. Whether
-/// it will look: not for a machine the workspace no longer has, or a
-/// workspace being made, rebuilt, deleted or already failed. Taking it
-/// twice changes nothing.
+/// (`PlatformPort::hosted_removed`, Arugula #744): its word, which the
+/// hub keeps saying until it's taken. It's kept (`hosted_removed_machines`)
+/// and the worker, due now, fails the workspace at its next step
+/// ([`worker`]'s `removed`), which ends its runs and stops waking its
+/// sessions. Whether it was kept: not for a machine the workspace no
+/// longer has (a rebuild made another), or a workspace being made,
+/// rebuilt, deleted or already failed. Taking it twice changes nothing.
 pub fn machine_removed(app: &Platform, workspace: &str, machine: &str) -> anyhow::Result<bool> {
-    let looking = app.db.look_at_hosted(workspace, machine)?;
-    if looking {
-        tracing::info!(workspace, machine, "the hub removed a hosted workspace's machine: looking at it now");
+    let asked = app.db.note_hosted_removed(workspace, machine, arugula_e2e::now_ms())?;
+    if asked {
+        tracing::info!(workspace, machine, "the hub removed a hosted workspace's machine");
         app.wakes.kick();
     }
-    Ok(looking)
+    Ok(asked)
 }
 
 /// The lifecycle's background work, when this platform has a compute

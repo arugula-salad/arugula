@@ -1582,6 +1582,16 @@ note = "It stops naming the account as its maker. Workspaces in its personal pro
 seen_by = ["litestream", "e2b"]
 
 [[table]]
+name = "hosted_removed_machines"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted machine the hub says an owner removed (Arugula #744): the workspace, the machine and when, until the platform's worker fails the workspace."
+why_asleep = "The platform's worker fails the workspace, and ends its runs and sessions, with every machine asleep."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
 name = "hosted_workspace_secrets"
 plane = "platform"
 process = "platform"

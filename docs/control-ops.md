@@ -3961,10 +3961,11 @@ happen, in CI.
   deploys not ended that no job follows, and every deploy box that isn't
   deleted, marking the ones no job follows `LEFT OVER`. Runs are listed
   by age too: one made more than 6h 15m ago and not ended is there
-  whatever its job's state, oldest first, with how old it is. That's
-  longer than any run may wait for its box (15 minutes) and then run (6
-  hours, after which its job fails it), so a run listed for its age is
-  stuck.
+  whatever its job's state, oldest first, with how old it is. Past 6
+  hours a run goes on while its box says it's busy, and its job fails it
+  once its box has been idle or off the relay for 10 minutes; so a run
+  listed for its age is a long one on a busy box, or one its job no
+  longer follows (its job's state says which).
 - **A run or a deploy** on the platform page: its log and its events
   (`/p/<project>/past/<run>`, a deploy's page). A run's log in the bucket:
   `arugula-platform run-logs` ("The run-log bucket" above).

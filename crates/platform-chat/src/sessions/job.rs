@@ -6,9 +6,10 @@
 //! Each step, for a session that hasn't ended:
 //! - **Its workspace gone** (deleted, or being deleted): the session
 //!   stops, saying so.
-//! - **Its workspace failed** (Arugula #744): the session stops, saying
-//!   so ([`WORKSPACE_FAILED`]), unless it's `done` with nothing queued,
-//!   which a rebuild still moves and the idle rule ends.
+//! - **Its workspace failed** (Arugula #744): its box isn't woken, and a
+//!   queued session isn't failed as not taken: it waits for a rebuild,
+//!   which moves it to the new box. One whose workspace stays failed for
+//!   [`FAILED_END_MS`] stops, saying so ([`WORKSPACE_FAILED`]).
 //! - **Left on the old box:** a session still on a machine its workspace
 //!   no longer has (a rebuild's move that didn't go through) is moved
 //!   again each look (`hosted::sessions_on_box_changed`); one that hasn't
@@ -79,9 +80,12 @@ pub const IDLE_END_MS: u64 = 24 * 60 * 60_000;
 /// it), then the words.
 pub const IDLE: &str = "idle";
 
-/// Why a session stopped when its workspace failed (Arugula #744).
-pub const WORKSPACE_FAILED: &str =
-    "workspace_failed: its cloud workspace failed. Rebuild it, then ask again in the thread to start a new session";
+/// How long a session waits on a failed workspace for a rebuild to move it
+/// before it ends ([`WORKSPACE_FAILED`]): a day, as an idle one does.
+pub const FAILED_END_MS: u64 = IDLE_END_MS;
+
+/// Why a session stopped when its workspace stayed failed (Arugula #744).
+pub const WORKSPACE_FAILED: &str = "workspace_failed: its cloud workspace failed and wasn't rebuilt within a day. Ask again in the thread to start a new session";
 
 /// Why a session failed when it didn't move to its workspace's new box
 /// within [`work::TAKE_MS`] of the job first seeing it on the old one.
@@ -124,6 +128,10 @@ pub struct Checkpoint {
     /// still is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stranded_at: Option<u64>,
+    /// When the job first saw the session's workspace failed, while it
+    /// still is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_since: Option<u64>,
 }
 
 /// The `session` kind's handler.
@@ -165,24 +173,6 @@ impl Follow {
             .as_ref()
             .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
             .unwrap_or_default();
-        // Its workspace failed (its box is gone, its daemon didn't come
-        // back, or the hub removed its machine): nothing will take its
-        // turn, and waking the box answers the same each time. It ends,
-        // unless it's `done` with nothing queued: that one waits for
-        // nothing, so a rebuild still moves it to the new box, and the
-        // idle rule below ends it if none comes.
-        if w.state == "failed" {
-            let queued = db.session_prompts(&s.id)?.iter().any(|p| p.state == PromptState::Queued);
-            if !(s.state == State::Done && !queued) {
-                let why = json!({ "reason": WORKSPACE_FAILED });
-                if control(&self.app, &s.id, s.state, State::Stopped, why, now)? {
-                    info!(session = s.id, workspace = w.id, "a session on a failed workspace stopped");
-                    return Ok(Step::Done);
-                }
-                // It moved meanwhile: look again soon.
-                return Ok(Step::Again(now + work::WAITING_MS));
-            }
-        }
         // Still on a machine its workspace no longer has: a rebuild's move
         // (`hosted::sessions_on_box_changed`, once as the new box enrolled)
         // didn't go through, and the new box doesn't take a session bound
@@ -193,12 +183,11 @@ impl Follow {
             _ => false,
         };
         if stranded {
-            if let Some(m) = &w.machine
-                && let Err(e) = crate::hosted::sessions_on_box_changed(&self.app, &w.id, m).await
-            {
-                warn!(session = s.id, workspace = w.id, error = %format!("{e:#}"), "a session's move to its workspace's new box failed again");
-            }
-            let moved = db.session(&s.id)?.is_none_or(|after| after.machine != s.machine || after.state.terminal());
+            // This session alone: its own job moves each of the others.
+            let moved = match &w.machine {
+                Some(m) => crate::hosted::move_session(&self.app, &s, m).await?,
+                None => false,
+            };
             if moved {
                 cp.stranded_at = None;
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
@@ -240,6 +229,29 @@ impl Follow {
                 info!(session = s.id, "a session whose PR merged ended");
                 return Ok(Step::Done);
             }
+        }
+        // Its workspace failed (its box is gone, its daemon didn't come
+        // back, or the hub removed its machine): waking it answers the same
+        // each time, so it isn't woken, and a queued session isn't failed
+        // as not taken. It waits as it is, for a rebuild to move it to the
+        // new box; one that hasn't come in [`FAILED_END_MS`] ends.
+        if w.state == "failed" {
+            let since = *cp.failed_since.get_or_insert(now);
+            if now.saturating_sub(since) >= FAILED_END_MS {
+                let why = json!({ "reason": WORKSPACE_FAILED });
+                if control(&self.app, &s.id, state, State::Stopped, why, now)? {
+                    info!(session = s.id, workspace = w.id, "a session on a workspace failed a day stopped");
+                    return Ok(Step::Done);
+                }
+                return Ok(Step::Again(now + work::WAITING_MS));
+            }
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
+            return Ok(Step::Again(now + IDLE_MS.min((since + FAILED_END_MS).saturating_sub(now).max(1))));
+        }
+        if cp.failed_since.take().is_some() {
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
         }
         let prompts = db.session_prompts(&s.id)?;
         let queued = prompts.iter().any(|p| p.state == PromptState::Queued);

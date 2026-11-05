@@ -60,12 +60,11 @@ pub trait PlatformPort: Send + Sync {
     }
 
     /// The hub removed hosted machine `machine`, `workspace`'s box (its
-    /// owner did, at control; Arugula #744). The platform looks at the
-    /// workspace now, and fails it when the hub no longer lists the
-    /// machine, which ends its runs and sessions. Taking it twice changes
-    /// nothing. The platform also notices on its own within a minute, so
-    /// a call that's lost costs only that; a platform from before this
-    /// doesn't have it.
+    /// owner did, at control; Arugula #744). This is the hub's word, and
+    /// the only way the platform learns of it: the platform fails the
+    /// workspace, which ends its runs and stops waking its sessions. The
+    /// hub keeps saying it until the platform answers. Taking it twice
+    /// changes nothing; a platform from before this doesn't have it.
     fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
         let _ = (workspace, machine);
         Box::pin(async { Ok(()) })

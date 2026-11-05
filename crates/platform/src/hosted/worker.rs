@@ -7,7 +7,8 @@
 //! | anything, delete asked | delete every box it has (by its metadata too), then `deleted` |
 //! | `creating` | the create's journal: ask the hub for a ticket (ticket mode), note `sent`, make the box; `sent` with no answer kept: find it by its metadata, never make it again; `made`: record its enrollment by sandbox id |
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
-//! | `ready`, `paused` | a rebuild (which first asks a running box to archive its open agents' transcripts, Arugula #209, and clears what the old box's setup said), wake or pause asked; else `failed` when the hub no longer lists its machine (its box paused), else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
+//! | `ready`, `paused`, `waking`, no rebuild asked | the hub said it removed its machine (`failed`, its box paused) |
+//! | `ready`, `paused` | a rebuild (which first asks a running box to archive its open agents' transcripts, Arugula #209, and clears what the old box's setup said), wake or pause asked; else read its state (never waking it), then delete the box and fail when the hub says its enrollment was contested, and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
 //! | `waking` | resumed (a wake, or the runtime cap's pause and resume): `ready` once its daemon dials in; past [`super::Config::dial_wait`], `failed` as needing a rebuild, its box paused, and the project's owners and editors pushed (M258) |
 //! | a snapshot's builder, enrolled | wait for its setup and wipe, snapshot it, delete it ([`super::snapshot`], M263) |
 //!
@@ -88,8 +89,8 @@ const NOT_MADE: &str = "The provider didn't make the box. Rebuild the workspace 
 /// A woken box whose daemon didn't dial in (M258, Arugula #124).
 pub(crate) const NO_DAEMON: &str = "The box woke, but Arugula in it didn't connect. Rebuild the workspace to make its box again: work in it that wasn't pushed is lost.";
 
-/// The hub no longer lists the workspace's machine (its owner removed it
-/// at control, or someone tried its enrollment again): it can't connect.
+/// The hub said it removed the workspace's machine (its owner did, at
+/// control): it can't connect.
 pub(crate) const REMOVED: &str =
     "Its machine was removed from Arugula control, so it can't connect. Rebuild the workspace to make a new box.";
 
@@ -169,6 +170,15 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
         "enrolling" => return enrolling(app, sub, job, now).await,
         _ if super::snapshot::is_builder(job) => return super::snapshot::build(app, sub, job, now).await,
         _ => {}
+    }
+    // The hub said it removed its machine: it fails, unless a rebuild
+    // (which makes another) is asked.
+    if asked.as_deref() != Some("rebuild")
+        && matches!(job.w.state.as_str(), "ready" | "paused" | "waking")
+        && job.w.machine.is_some()
+        && app.db.hosted_removed_machine(&job.w.id)? == job.w.machine
+    {
+        return removed(sub, job, now).await;
     }
     match asked.as_deref() {
         Some("rebuild") => {
@@ -640,18 +650,16 @@ async fn owners_and_editors(app: &Platform, project: &str) -> Result<Vec<String>
 /// mid-turn is woken.
 async fn refresh(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(fail(job, GONE, now)) };
-    if removed(app, job).await {
-        tracing::warn!(workspace = %job.w.id, machine = ?job.w.machine, "the hub no longer lists a hosted workspace's machine");
-        // Nothing reaches it now: paused, its disk kept until a rebuild
-        // or a delete deletes it.
-        if let Err(e) = sub.pause(&sandbox).await {
-            tracing::warn!(workspace = %job.w.id, error = %e, "a box whose machine was removed didn't pause");
-        }
-        return Ok(fail(job, REMOVED, now));
-    }
     match sub.status(&sandbox).await {
         Ok(Some(s)) => {
             job.seen = seen(&s);
+            // Asked only once the provider answered, so an outage there
+            // doesn't ask the hub at each retry.
+            if contested(app, job).await {
+                tracing::warn!(workspace = %job.w.id, "a hosted box's enrollment was tried again: deleting it");
+                delete(app, sub, job).await?;
+                return Ok(fail(job, TAKEN, now));
+            }
             match s.state {
                 State::Running => {
                     job.w.state = "ready".into();
@@ -668,23 +676,47 @@ async fn refresh(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: 
     }
 }
 
-/// Whether the hub no longer lists the workspace's machine as live: an
-/// owner removed it at control (`DELETE /api/hosted/machines/{id}`, which
-/// changes only the hub), or someone tried its enrollment again. Its
-/// signatures are refused and it's hung up on, so its runs and sessions
-/// can't go on: the workspace fails, and they end with it (Arugula #744).
-/// The hub tells the platform when it removes one, which makes this look
-/// at once ([`super::machine_removed`]); this look is what decides. A hub
-/// that doesn't answer can't say, and nothing changes.
-async fn removed(app: &Platform, job: &HostedJob) -> bool {
-    let Some(machine) = job.w.machine.as_deref() else { return false };
+/// Whether the hub says, in so many words, that someone tried the
+/// workspace's enrollment again (`taken`): the hub removed the machine
+/// that used it, and the box goes as an enrolling one's would (fail
+/// closed). Only that explicit answer counts. A machine missing from the
+/// hub's answer, or a hub that doesn't answer, changes nothing: a hub
+/// restored from a backup, or on an empty volume, lists none, and failing
+/// every workspace for that would cost each its box at the rebuild. An
+/// owner's removal comes as the hub's own notice instead
+/// ([`super::machine_removed`], [`removed`]).
+async fn contested(app: &Platform, job: &HostedJob) -> bool {
+    if job.w.machine.is_none() {
+        return false;
+    }
     match app.hub.hosted_enrolled(std::slice::from_ref(&job.w.id)).await {
-        Ok(found) => !found.iter().any(|e| e.workspace == job.w.id && e.machine == machine && !e.taken),
+        Ok(found) => found.iter().any(|e| e.workspace == job.w.id && e.taken),
         Err(e) => {
-            tracing::debug!(workspace = %job.w.id, error = %e, "the hub didn't say whether a hosted machine is live");
+            tracing::debug!(workspace = %job.w.id, error = %e, "the hub didn't say whether a hosted enrollment was contested");
             false
         }
     }
+}
+
+/// The hub said it removed the workspace's machine (an owner did, at
+/// control: `PlatformPort::hosted_removed`, kept by
+/// [`super::machine_removed`]). It can't connect or sign anything now, so
+/// the workspace fails, saying so, and its box is paused, its disk kept
+/// until a rebuild or a delete deletes it. A wake or pause asked is done
+/// with: there's nothing to wake.
+async fn removed(sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
+    tracing::warn!(workspace = %job.w.id, machine = ?job.w.machine, "the hub removed a hosted workspace's machine");
+    if let Some(sandbox) = job.sandbox.clone()
+        && let Err(e) = sub.pause(&sandbox).await
+    {
+        tracing::warn!(workspace = %job.w.id, error = %e, "a box whose machine was removed didn't pause");
+    }
+    let step = fail(job, REMOVED, now);
+    Ok(match job.w.asked.as_deref() {
+        Some("wake") => with(step, Ask::Wake),
+        Some("pause") => with(step, Ask::Pause),
+        _ => step,
+    })
 }
 
 /// Whether the workspace's daemon says it's working: `None` when it isn't

@@ -9,10 +9,10 @@
 //!   (each time the step crashed, hung or failed);
 //! - jobs that ended `failed` in the last week, with why;
 //! - runs and deploys not ended that no job follows any more, which
-//!   nothing will end without the operator; and runs older than any run
-//!   may live ([`OLD_RUN_MS`]) whatever their job's state, since a job
-//!   that keeps following a run that never ends looks like any other
-//!   (Arugula #744). Oldest first, with their age;
+//!   nothing will end without the operator; and runs older than
+//!   [`OLD_RUN_MS`] whatever their job's state, since a job that keeps
+//!   following a run that never ends looks like any other (Arugula
+//!   #744). Oldest first, with their age;
 //! - every deploy box not deleted, with its deploy's state and whether its
 //!   job still follows it (one it doesn't is left over).
 //!
@@ -52,8 +52,9 @@ pub const FAILED_WINDOW_MS: u64 = 7 * 86_400_000;
 
 /// How old a run not ended has to be to be listed whatever its job's
 /// state: the longest it may wait for its box ([`crate::work::TAKE_MS`])
-/// and then run ([`crate::work::RUN_MAX_MS`]). Its job should have ended
-/// it by then, so one listed for this is stuck.
+/// and then run before its job starts asking whether its box still runs
+/// it ([`crate::work::RUN_MAX_MS`]). One listed for this is either
+/// running long on a busy box, or stuck: its age and its job say which.
 pub const OLD_RUN_MS: u64 = crate::work::TAKE_MS + crate::work::RUN_MAX_MS;
 
 /// A run or a deploy not ended that no job follows (or, for a run, older

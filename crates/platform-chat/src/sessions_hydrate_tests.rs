@@ -731,42 +731,98 @@ async fn reason(base: &str, s: &str) -> (Value, Value) {
     (view["card"]["reason"].clone(), view["events"].as_array().unwrap().last().unwrap()["text"].clone())
 }
 
-/// A failed workspace (Arugula #744) keeps its machine, and its box never
-/// answers: a session waiting for it, or mid-turn, stops, saying why in
-/// words, rather than waking it again and again. A `done` one with
-/// nothing queued waits for nothing, so it stays for a rebuild to move,
-/// until a reply queues it: then it stops too.
-#[tokio::test]
-async fn a_failed_workspaces_sessions_stop() {
-    use crate::sessions::job::WORKSPACE_FAILED;
-    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
-    post_in(&base, "ch_general", "b", "@arugula one", None).await;
-    let waiting = sessions(&app, &t).pop().unwrap();
-    let p = post_in(&base, "ch_general", "b", "@arugula two", None).await["seq"].as_i64().unwrap();
-    let done = sessions(&app, &t).into_iter().find(|s| s.id != waiting.id).unwrap();
-    take(&app, &keys, &done.id);
-    box_says(&app, &keys, &done.id, 2, State::Working, State::Done, "{}");
-    app.db.c().execute("UPDATE hosted_workspaces SET state = 'failed' WHERE id = 'hw_dev'", params![]).unwrap();
-
-    let now = arugula_e2e::now_ms() + 1;
-    for s in [&waiting.id, &done.id] {
-        app.db.nudge_session(s, now).unwrap();
+/// Sessions of each kind on `hw_dev`, as `keys`' box has them: queued
+/// (never taken), working, gone quiet (`unresponsive`, as of the time
+/// returned) and done. In that order.
+async fn one_of_each(app: &Arc<Platform>, base: &str, t: &str, keys: &DeviceKeys) -> (Vec<String>, u64) {
+    let mut ids = Vec::new();
+    for ask in ["one", "two", "three", "four"] {
+        post_in(base, "ch_general", "b", &format!("@arugula {ask}"), None).await;
+        ids.push(sessions(app, t).into_iter().find(|s| !ids.contains(&s.id)).unwrap().id);
     }
-    follow_all(&app, now).await;
-    assert_eq!(app.db.session(&waiting.id).unwrap().unwrap().state, State::Stopped);
-    let (said, line) = reason(&base, &waiting.id).await;
+    for id in &ids[1..] {
+        take(app, keys, id);
+    }
+    box_says(app, keys, &ids[3], 2, State::Working, State::Done, "{}");
+    let heard = app.db.session(&ids[2]).unwrap().unwrap().heard_at.unwrap();
+    let quiet = heard + crate::db::sessions::QUIET_MS + 1;
+    // Only the third goes quiet: the second is heard from just before.
+    box_says(app, keys, &ids[1], 2, State::Working, State::NeedsInput, r#"{"question":"which?"}"#);
+    box_says(app, keys, &ids[1], 3, State::NeedsInput, State::Working, "{}");
+    app.db.c().execute("UPDATE agent_sessions SET heard_at = ?2 WHERE id = ?1", params![ids[1], quiet]).unwrap();
+    for id in &ids {
+        app.db.nudge_session(id, quiet).unwrap();
+    }
+    follow_all(app, quiet).await;
+    let states: Vec<State> = ids.iter().map(|id| app.db.session(id).unwrap().unwrap().state).collect();
+    assert_eq!(states, [State::Queued, State::Working, State::Unresponsive, State::Done]);
+    (ids, quiet)
+}
+
+/// A failed workspace (Arugula #744) keeps its machine, and waking its
+/// box answers the same each time: its sessions aren't woken for, and a
+/// queued one isn't failed as not taken. They wait, whatever their state,
+/// for a rebuild to move them; a day on, with none, each stops, saying
+/// why in words.
+#[tokio::test]
+async fn a_failed_workspaces_sessions_wait_a_day_for_a_rebuild() {
+    use crate::sessions::job::{FAILED_END_MS, WORKSPACE_FAILED};
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let (ids, at) = one_of_each(&app, &base, &t, &keys).await;
+    app.db.c().execute("UPDATE hosted_workspaces SET state = 'failed' WHERE id = 'hw_dev'", params![]).unwrap();
+    // Forget the wakes asked while it was ready.
+    for id in &ids {
+        app.db.nudge_session(id, at).unwrap();
+        app.db.c().execute("UPDATE platform_jobs SET checkpoint = NULL WHERE id = ?1", params![id]).unwrap();
+    }
+    follow_all(&app, at).await;
+    follow_all(&app, at + crate::work::TAKE_MS + crate::work::WAITING_MS).await;
+    let states: Vec<State> = ids.iter().map(|id| app.db.session(id).unwrap().unwrap().state).collect();
+    // Waiting, none failed or stopped: the turn under way went quiet, as
+    // its silent box makes it.
+    assert_eq!(states, [State::Queued, State::Unresponsive, State::Unresponsive, State::Done], "waiting, not failed");
+    for id in &ids {
+        let cp = app.db.platform_job(id).unwrap().unwrap().checkpoint.unwrap_or_default();
+        assert!(cp.get("woke_at").is_none(), "its box isn't woken: {cp}");
+    }
+
+    follow_all(&app, at + FAILED_END_MS + crate::work::WAITING_MS).await;
+    for id in &ids {
+        assert_eq!(app.db.session(id).unwrap().unwrap().state, State::Stopped, "{id}");
+    }
+    let (said, line) = reason(&base, &ids[0]).await;
     assert_eq!(said, json!(WORKSPACE_FAILED));
     // In words: the code is for the page.
     assert_eq!(
         line,
-        "Stopped: its cloud workspace failed. Rebuild it, then ask again in the thread to start a new session"
+        "Stopped: its cloud workspace failed and wasn't rebuilt within a day. Ask again in the thread to start a new session"
     );
-    assert_eq!(app.db.session(&done.id).unwrap().unwrap().state, State::Done, "kept for a rebuild");
+}
 
-    post_in(&base, "ch_general", "b", "and the docs", Some(p)).await;
-    assert!(app.db.session_prompts(&done.id).unwrap().iter().any(|p| p.state == PromptState::Queued));
-    follow_all(&app, arugula_e2e::now_ms() + 1).await;
-    assert_eq!(app.db.session(&done.id).unwrap().unwrap().state, State::Stopped);
+/// A failed workspace rebuilt: each session it kept, done, working, gone
+/// quiet or never taken, moves to the new box (Arugula #744).
+#[tokio::test]
+async fn a_failed_workspace_rebuilt_moves_its_sessions() {
+    let fake = Arc::new(crate::hosted::tests::Fake::default());
+    let (hub, app, base, t, _u, old) = platform_with(&["https://github.com/o/app"], |p| {
+        p.compute = Some(fake);
+        p.hosted.template = Some("tpl".into());
+    })
+    .await;
+    hub.delegate(&t);
+    let (ids, at) = one_of_each(&app, &base, &t, &old).await;
+    app.db
+        .c()
+        .execute("UPDATE hosted_workspaces SET state = 'failed', error = 'gone' WHERE id = 'hw_dev'", params![])
+        .unwrap();
+    follow_all(&app, at + 1).await;
+    let s = app.db.session(&ids[3]).unwrap().unwrap();
+    let new = DeviceKeys::generate();
+    rebuild(&hub, &app, &s, &new).await;
+    for id in &ids {
+        let after = app.db.session(id).unwrap().unwrap();
+        assert_eq!((after.state, after.machine.as_deref()), (State::Queued, Some(new.id().as_str())), "{id}");
+    }
 }
 
 /// A rebuild moves its sessions to the new box once, as it enrolls; one

@@ -619,60 +619,90 @@ async fn wake_rebuild_and_delete() {
     assert_eq!(super::usage::reconcile(&app, later + 1).await.unwrap(), 0);
 }
 
-/// An owner removes a workspace's machine at the hub, which changes only
-/// the hub (Arugula #744): the worker's next look asks the hub, and the
-/// workspace fails, saying why, its box paused. The hub's notice makes
-/// that look happen at once; one about another machine, or told twice,
-/// changes nothing. A rebuild makes a new box as ever.
+/// A ready workspace, `dev`, whose box enrolled as `m1`: its id and when
+/// it became ready.
+async fn ready_workspace(hub: &TestHub, app: &Platform, base: &str, project: &str) -> (String, u64) {
+    hub.delegate(project);
+    let (_, w) = make(base, "alice", project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let now = now_ms();
+    drive(app, now).await;
+    hub.enroll(&id, "m1");
+    drive(app, now + 3_000).await;
+    assert_eq!(show(base, project, &id).await["state"], "ready");
+    (id, now + 3_000)
+}
+
+/// An owner removes a workspace's machine at the hub (Arugula #744). The
+/// hub's notice is its word: the workspace fails at once, saying why, its
+/// box paused. One about another machine, or told twice, changes nothing.
+/// A rebuild makes a new box as ever.
 #[tokio::test]
 async fn a_machine_removed_at_the_hub_fails_its_workspace() {
     let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
-    hub.delegate(&project);
-    let (_, w) = make(&base, "alice", &project, "dev").await;
-    let id = w["id"].as_str().unwrap().to_owned();
-    let now = now_ms();
-    drive(&app, now).await;
-    hub.enroll(&id, "m1");
-    drive(&app, now + 3_000).await;
-    assert_eq!(show(&base, &project, &id).await["state"], "ready");
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
     fake.calls();
-
-    hub.remove(&id);
-    drive(&app, now + 4_000).await;
-    assert_eq!(show(&base, &project, &id).await["state"], "ready", "not looked at yet");
     assert!(!super::machine_removed(&app, &id, "m-other").unwrap(), "not its machine");
     assert!(super::machine_removed(&app, &id, "m1").unwrap());
-    drive(&app, now + 4_000).await;
+    drive(&app, at + 1_000).await;
     let w = show(&base, &project, &id).await;
     assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(worker::REMOVED)), "{w}");
+    assert_eq!(w["asked"], Value::Null, "{w}");
     assert_eq!(fake.calls(), ["pause sbx0"]);
     assert!(!super::machine_removed(&app, &id, "m1").unwrap(), "failed already");
 
     let path = format!("/api/projects/{project}/workspaces/{id}");
     let (status, _) = call(&base, "bob", "POST", &format!("{path}/rebuild"), None).await;
     assert_eq!(status, 200);
-    drive(&app, now + 5_000).await;
+    drive(&app, at + 2_000).await;
     hub.enroll(&id, "m2");
-    drive(&app, now + 8_000).await;
+    drive(&app, at + 5_000).await;
     let w = show(&base, &project, &id).await;
     assert_eq!((w["state"].as_str(), w["machine"].as_str()), (Some("ready"), Some("m2")), "{w}");
+    assert!(!super::machine_removed(&app, &id, "m1").unwrap(), "the old machine's notice, late");
 }
 
-/// With no notice from the hub, the worker's own look finds a removed
-/// machine within a minute.
+/// Only the hub's word fails a workspace: a hub that can't answer, or one
+/// that no longer lists the machine (restored from a backup, or on an
+/// empty volume), leaves it ready, and a paused one paused. The notice
+/// fails a paused one too.
 #[tokio::test]
-async fn a_removed_machine_is_found_without_the_hubs_notice() {
-    let (hub, _fake, app, base, project) = serve(EnrollBy::Sandbox).await;
-    hub.delegate(&project);
-    let (_, w) = make(&base, "alice", &project, "dev").await;
-    let id = w["id"].as_str().unwrap().to_owned();
-    let now = now_ms();
-    drive(&app, now).await;
-    hub.enroll(&id, "m1");
-    drive(&app, now + 3_000).await;
+async fn a_machine_missing_from_the_hub_fails_nothing() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
+    // Read as the worker left it: opening a paused workspace wakes it.
+    let state = || app.db.hosted_workspace(&project, &id).unwrap().unwrap().state;
+    hub.enrolled_down(true);
+    drive(&app, at + 61_000).await;
+    assert_eq!(state(), "ready", "the hub can't say");
+    hub.enrolled_down(false);
     hub.remove(&id);
-    drive(&app, now + 3_000 + 60_000).await;
-    assert_eq!(show(&base, &project, &id).await["state"], "failed");
+    drive(&app, at + 122_000).await;
+    assert_eq!(state(), "ready", "missing isn't removed");
+    fake.pause_all();
+    drive(&app, at + 183_000).await;
+    assert_eq!(state(), "paused");
+    drive(&app, at + 800_000).await;
+    assert_eq!(state(), "paused", "still");
+    assert!(super::machine_removed(&app, &id, "m1").unwrap());
+    drive(&app, at + 800_001).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(worker::REMOVED)), "{w}");
+}
+
+/// The hub says someone tried a ready workspace's enrollment again
+/// (`taken`): the box goes, as an enrolling one's would, and the workspace
+/// fails saying so.
+#[tokio::test]
+async fn a_ready_workspaces_contested_enrollment_deletes_its_box() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
+    hub.take(&id);
+    drive(&app, at + 61_000).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(enroll::TAKEN)), "{w}");
+    assert_eq!(fake.deleted.lock().unwrap().as_slice(), ["sbx0"]);
+    assert_eq!(hub.gone(), std::slice::from_ref(&id));
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.
