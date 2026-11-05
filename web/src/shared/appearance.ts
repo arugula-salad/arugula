@@ -536,9 +536,10 @@ export function legible(p: Palette): Ui {
   // only darker or lighter).
   for (const k of TEXT) {
     // The accent is also the "on" text (--on-fill's), so it reads on its own
-    // tint over the page. Over a card (surface) it's checked, not forced:
-    // the tint stays off surface where it doesn't (Latte), not darkened.
-    u[k] = legibleOn(u[k], on, end, k === "accent" ? (c) => contrast(c, onFill(c, u.bg)) >= 4.5 : undefined);
+    // tint over the page and over a card: block bars and popovers sit on
+    // surface.
+    const onTint = (c: string) => [u.bg, u.surface].every((b) => contrast(c, onFill(c, b)) >= 4.5);
+    u[k] = legibleOn(u[k], on, end, k === "accent" ? onTint : undefined);
   }
   const label = [u["on-color"], "#000000", "#ffffff"].sort((a, b) => contrast(b, u.accent) - contrast(a, u.accent));
   if (contrast(u["on-color"], u.accent) < 4.5) u["on-color"] = label[0];
