@@ -3135,7 +3135,7 @@ async fn fake_plan(f: FakePlan) -> String {
 /// control refuses fails alone.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_plans_a_board_in_one_call() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakePlan::default();
     let url = fake_plan(fake.clone()).await;
