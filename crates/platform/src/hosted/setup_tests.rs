@@ -303,9 +303,36 @@ async fn a_box_clones_a_linked_repo_with_a_token_of_its_own() {
     let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
     assert_eq!((plan.repos[0].via.as_str(), plan.repos[0].revoke.as_deref()), ("secret", None));
     assert_eq!(gh.lock().unwrap().minted.len(), minted);
-    // Nor once it ended, even at a clone.
+    // It doesn't go back to cloning: a report that says so isn't kept, and
+    // there's still no App token.
+    for step in ["clone app", "start", ""] {
+        let back = report(SetupStatus::SettingUp, step, "");
+        assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap(), "{step:?}");
+        let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+        assert_eq!(plan.repos[0].via, "secret", "{step:?}");
+    }
+    assert_eq!(show(&base, &project, &id).await["setup"]["step"], "packages");
+    // Forward is kept: it ended, even at a clone, and stays done.
     let r = report(SetupStatus::Failed, "clone app", "exit");
     assert!(app.hosted_setup(&project, &id, "hosted-machine-1", &r).await.unwrap());
+    let back = report(SetupStatus::SettingUp, "clone app", "");
+    assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap());
     let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
     assert_eq!(plan.repos[0].via, "secret");
+    assert_eq!(gh.lock().unwrap().minted.len(), minted);
+
+    // A rebuild: a new box, which gets the App's token for its clones.
+    let t = now_ms();
+    hub.enroll(&id, "hosted-machine-1");
+    drive(&app, t + 3_000).await;
+    assert_eq!(show(&base, &project, &id).await["state"], "ready");
+    assert_eq!(call(&base, "bob", "POST", &format!("{path}/rebuild"), None).await.0, 200);
+    drive(&app, t + 6_000).await;
+    hub.enroll(&id, "hosted-machine-3");
+    drive(&app, t + 9_000).await;
+    let w = show(&base, &project, &id).await;
+    assert!(w["setup"].is_null(), "a new box hasn't said anything: {w}");
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-3").await.unwrap().expect("the new box");
+    assert_eq!(plan.repos[0].via, "github_app");
+    assert!(app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().is_none(), "the old box");
 }

@@ -40,7 +40,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use arugula_control_wire::hosted::{FROM_SNAPSHOT, SEALED, SetupPlan, SetupReport, SetupStatus};
+use arugula_control_wire::hosted::{FROM_SNAPSHOT, SEALED, SetupPlan, SetupReport, SetupStatus, past_clones};
 use arugula_proto::{
     PaneId, Policy,
     api::{HostedRepo, HostedSetup, RunRequest},
@@ -421,12 +421,6 @@ fn places(home: &Path, urls: &[String]) -> Vec<Cloned> {
             Cloned { url: url.clone(), dir: home.join(name) }
         })
         .collect()
-}
-
-/// Whether the setup's step is past its clones: the packages or the setup
-/// script.
-fn past_clones(step: &str) -> bool {
-    !step.is_empty() && step != "start" && !step.starts_with("clone ")
 }
 
 /// Revoke each installation token the plan gave this box to clone with,

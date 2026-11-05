@@ -99,17 +99,19 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     (`crates/platform/src/forge/app.rs`) mints every installation token,
     and nothing else asks GitHub for one. Each names one repository and
     the least it needs: read-only for reads and the mirror's ingest (kept
-    until five minutes before they expire, or until the repo is unlinked,
-    when the kept one is dropped and revoked), `contents: read` for a
-    cloud workspace's setup clone (`hosted:clone`, logged under the
-    machine, minted for that box, one per machine and repo every five
-    minutes, none once it's past its clones, and revoked by the box once
-    its clones are done and by an unlink), and
-    `issues: write` or
-    `pull_requests: write` for one send (minted for that send, never
-    kept, and revoked at GitHub, `DELETE /installation/token`, right after
-    its one call). A token whose answer from GitHub doesn't cover exactly
-    the repository asked for is revoked and refused. Every mint is a row
+    until five minutes before they expire); `contents: read` for a cloud
+    workspace's setup clone (`hosted:clone`, logged under the machine,
+    minted for that box, one per machine and repo every five minutes and
+    kept in memory for those five minutes, none once the box has said it's
+    past its clones until it's rebuilt, and revoked by the box once its
+    clones are done); and `issues: write` or `pull_requests: write` for one
+    send (minted for that send, never kept, and revoked at GitHub, `DELETE
+    /installation/token`, right after
+    its one call). An unlink drops and revokes the read and clone tokens
+    that the platform process handling it holds. Each process keeps its
+    own, so another process's end when they expire, within the hour. A
+    token whose answer from GitHub doesn't cover exactly the repository
+    asked for is revoked and refused. Every mint is a row
     in `github_token_mints`: installation, repository id, the permissions
     asked for, the account (or `platform`, or a hosted machine), what
     for, and when, never the

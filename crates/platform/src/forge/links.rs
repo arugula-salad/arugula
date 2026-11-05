@@ -186,8 +186,9 @@ pub async fn link(
 }
 
 /// `DELETE /api/projects/{project}/repos/{owner}/{name}`: unlink it.
-/// Nothing is read from GitHub for it from now on: the read token the
-/// platform kept for it is dropped and revoked. Its rows go at the purge
+/// Nothing is read from GitHub for it from now on: the read and clone
+/// tokens this process kept for it are dropped and revoked (another
+/// process's end when they expire). Its rows go at the purge
 /// unless it's linked again first.
 pub async fn unlink(
     State(app): State<Arc<Platform>>,
@@ -220,8 +221,8 @@ fn installation_of(v: &Value) -> Option<Installation> {
 }
 
 /// What an `installation` or `installation_repositories` event changes:
-/// the installation kept, and the repos it unlinks, whose kept read tokens
-/// are dropped and revoked. Anything else, or an action this doesn't know,
+/// the installation kept, and the repos it unlinks, whose tokens this
+/// process kept are dropped and revoked. Anything else, or an action this doesn't know,
 /// changes nothing.
 pub fn installation_event(app: &Platform, event: &str, v: &Value, now: u64) -> anyhow::Result<()> {
     let Some(i) = installation_of(&v["installation"]) else { return Ok(()) };

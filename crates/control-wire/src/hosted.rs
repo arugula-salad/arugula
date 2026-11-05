@@ -394,6 +394,19 @@ pub const SETUP_REASONS: &[&str] = &["exit", "pane_closed", "start", "seal_short
 /// wiped itself for the snapshot, with `ready`. A box made from the
 /// snapshot says [`FROM_SNAPSHOT`], with `ready`, and runs no setup.
 pub const SEALED: &str = "sealed";
+
+/// Whether a setup's step is past its clones: its packages or its setup
+/// script, as the box's `setup.sh` names its steps (`start`, then `clone
+/// NAME` for each repo).
+pub fn past_clones(step: &str) -> bool {
+    !step.is_empty() && step != "start" && !step.starts_with("clone ")
+}
+
+/// Whether a setup that says `status` at `step` is done cloning: past its
+/// clones, or ended. Once it is, it stays so until the box is rebuilt.
+pub fn clones_done(status: SetupStatus, step: &str) -> bool {
+    status != SetupStatus::SettingUp || past_clones(step)
+}
 pub const FROM_SNAPSHOT: &str = "snapshot";
 
 // Never the sandbox id or the ticket: each is a bearer secret while its

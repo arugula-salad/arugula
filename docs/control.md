@@ -153,9 +153,13 @@ step and a fixed reason code). Control never gets the pane's text: `cloud
 ls` and `open` say "failed at <step>: open the setup pane", and `--wait`
 reads a failed setup's last lines from the box over the relay, end to end. A GitHub repo linked to the project is
 cloned with an installation token that reads that repo's contents alone,
-minted for this box and kept nowhere else, which the box revokes once its
-clones are done. It's given only while the box hasn't said it's past its
-clones, and one per box and repo every few minutes. Any other repo is
+minted for this box, which the box revokes once its clones are done. It's
+given only while the box hasn't said it's past its clones, and that stays
+so until the box is rebuilt. Each box gets one per repo every five
+minutes: the platform keeps it in memory that long, so asking again gives
+the same token. Unlinking the repo revokes it too, on a best-effort basis:
+the platform process that handles the unlink revokes the tokens it holds,
+and a token another process minted ends within the hour. Any other repo is
 cloned with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
 `x-access-token`). The daemon hands them to git in its
 environment for the clone alone, from a file in memory the setup removes as

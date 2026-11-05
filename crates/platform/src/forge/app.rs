@@ -731,9 +731,9 @@ impl GithubApp {
         Ok((secret, expires_at))
     }
 
-    /// A repo is unlinked (or the App lost it): the cache's read tokens
-    /// for it by GitHub's id under `install`, which links, the mirror and
-    /// boxes use, dropped now. With no `repos`, every repo's under
+    /// A repo is unlinked (or the App lost it): this process's cached read
+    /// tokens for it by GitHub's id under `install`, which links and the
+    /// mirror use, dropped now. With no `repos`, every repo's under
     /// `install`; and a hosted machine's clone token for one of `repos`.
     /// Their secrets, to revoke ([`GithubApp::revoke_all`]). A
     /// token cached by the repo's name went to a person's own daemon,

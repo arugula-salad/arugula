@@ -32,7 +32,7 @@
 
 use std::collections::BTreeMap;
 
-use arugula_control_wire::hosted::{SETUP_REASONS, SetupPlan, SetupRepo, SetupReport};
+use arugula_control_wire::hosted::{SETUP_REASONS, SetupPlan, SetupRepo, SetupReport, SetupStatus, clones_done};
 use tracing::{info, warn};
 
 use crate::{
@@ -95,12 +95,6 @@ async fn app_token(app: &Platform, project: &str, machine: &str, url: &str) -> O
     }
 }
 
-/// Whether a box's setup step is past its clones: the packages or the
-/// setup script (the box's own `setup.sh` says them).
-fn past_clones(step: &str) -> bool {
-    !step.is_empty() && step != "start" && !step.starts_with("clone ")
-}
-
 /// Workspace `workspace` of `project`, by its id: a people's workspace, or
 /// a snapshot's builder (M263), never a deploy's box.
 fn set_up(app: &Platform, project: &str, workspace: &str) -> anyhow::Result<Option<super::HostedWorkspace>> {
@@ -121,8 +115,11 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
     let secrets_of = w.parent.clone().unwrap_or_else(|| w.id.clone());
     let token = secret(app, project, &secrets_of, GIT_TOKEN)?;
     let user = secret(app, project, &secrets_of, GIT_USERNAME)?.filter(|u| !u.is_empty());
-    // The box said it's past its clones (or done): no more App tokens.
-    let cloning = w.setup.as_ref().is_none_or(|s| s.status == "setting_up" && !past_clones(&s.step));
+    // The box said it's done cloning: no more App tokens until it's rebuilt.
+    let cloning = w
+        .setup
+        .as_ref()
+        .is_none_or(|s| SetupStatus::parse(&s.status).is_some_and(|status| !clones_done(status, &s.step)));
     let mut repos = Vec::new();
     for url in &w.spec.repos {
         let app_token = match cloning {
