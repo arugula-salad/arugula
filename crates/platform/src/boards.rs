@@ -63,6 +63,18 @@
 //! what aru-116 allows ([`wire::BlockState`]). A report pushes an object
 //! change for the boards whose rows or attachments point at the block.
 //!
+//! **Whose blocks:** an agent attaches only its own machine's blocks; a
+//! person, only a block on a machine control routes them to (the hub's
+//! `may_reach`, asked on every attach, and refused while the hub can't
+//! say). A read shows a block's state, and its machine's id, as a machine
+//! Doc names its machine ([`docs`]): one its own machine's agent attached
+//! while that machine writes the project, and any to a reader who may reach
+//! its machine. To anyone else the chip is a plain agent block, so an
+//! attachment made before the check says nothing to those it doesn't
+//! concern. That is a label: it waits on the hub [`LABEL_WAIT`] at most,
+//! and on an error shows less and goes on. A row's lane comes from its
+//! blocks whoever reads, as from an item the reader can't read.
+//!
 //! **Work** ([`work`]): a project's issues, PRs and runs, for a row to point
 //! at, and the open issues that no board of the project has a row for.
 //!
@@ -72,7 +84,11 @@
 //!
 //! [`db::boards`]: crate::db::boards
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::{boards as wire, chat::ChatAgent};
@@ -279,6 +295,52 @@ fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
             name_ok(machine, "machine")?;
             name_ok(doc, "Doc")?;
             title_ok(title).map(|_| ())
+        }
+    }
+}
+
+/// A block pointer as `by` may attach it: an agent attaches only a block on
+/// its own machine, a person only one on a machine they may reach (asked of
+/// the hub each time, so a machine just joined or shared counts; an error
+/// refuses).
+async fn block_ok(app: &Platform, by: Actor<'_>, machine: &str) -> Result<(), ApiError> {
+    match by.agent {
+        Some(own) if own != machine => {
+            Err(err(StatusCode::FORBIDDEN, "an agent attaches only blocks on its own machine"))
+        }
+        Some(_) => Ok(()),
+        None => {
+            let asked = [machine.to_owned()];
+            if app.cache.may_reach(&*app.hub, by.account, &asked).await?.contains(machine) {
+                Ok(())
+            } else {
+                Err(err(StatusCode::FORBIDDEN, "a person attaches only blocks on a machine they can reach"))
+            }
+        }
+    }
+}
+
+/// The most a read waits on the hub to say which machines its reader may
+/// reach, for what it shows them.
+const LABEL_WAIT: Duration = Duration::from_secs(2);
+
+/// Of `machines`, those `account` may reach, for what a read shows them, not
+/// a check: [`crate::cache::Cache::may_reach_label`] within [`LABEL_WAIT`].
+/// An error or a longer wait is none, with a warning, so the read shows
+/// less rather than failing. `what` says what it was for, in the warning.
+async fn reach_label(app: &Platform, account: &str, machines: &[String], what: &str) -> HashSet<String> {
+    if machines.is_empty() {
+        return HashSet::new();
+    }
+    match tokio::time::timeout(LABEL_WAIT, app.cache.may_reach_label(&*app.hub, account, machines)).await {
+        Ok(Ok(reach)) => reach,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "boards: asking whom the hub routes to {what}: showing less");
+            HashSet::new()
+        }
+        Err(_) => {
+            tracing::warn!("boards: the hub took over {LABEL_WAIT:?} to say whom it routes to {what}: showing less");
+            HashSet::new()
         }
     }
 }
@@ -765,6 +827,8 @@ struct Blocks {
     state: HashMap<(String, String), wire::BlockState>,
     /// The account of the machine that reported the block: its owner.
     owner: HashMap<(String, String), String>,
+    /// The machines that hold `boards.write` over the project now.
+    writing: HashSet<String>,
 }
 
 impl Blocks {
@@ -775,6 +839,68 @@ impl Blocks {
 
     fn owned_by(&self, machine: &str, pane: &str, account: &str) -> bool {
         self.owner.get(&(machine.to_owned(), pane.to_owned())).is_some_and(|o| o == account)
+    }
+}
+
+/// Which blocks a read shows its reader (the module's top says which): those
+/// on a machine the reader may reach, and those its own machine's agent
+/// attached while that machine writes the project.
+struct Shown<'a> {
+    blocks: &'a Blocks,
+    reach: HashSet<String>,
+}
+
+impl<'a> Shown<'a> {
+    /// What `account` is told of the blocks `pointers` point at, each with the
+    /// machine whose agent attached it (none: a person): one hub call, kept a
+    /// tick, for the machines the attachment doesn't settle.
+    async fn of<'p>(
+        app: &Platform,
+        account: &str,
+        blocks: &'a Blocks,
+        pointers: impl Iterator<Item = (&'p wire::Pointer, Option<&'p str>)>,
+    ) -> Shown<'a> {
+        let mut ask: Vec<String> = pointers
+            .filter_map(|(p, by)| match p {
+                wire::Pointer::Block { machine, .. } if !Self::own(blocks, machine, by) => Some(machine.clone()),
+                _ => None,
+            })
+            .collect();
+        ask.sort();
+        ask.dedup();
+        let reach = reach_label(app, account, &ask, "a block's machine").await;
+        Shown { blocks, reach }
+    }
+
+    /// Its own machine's agent attached it, and the machine writes the
+    /// project.
+    fn own(blocks: &Blocks, machine: &str, by: Option<&str>) -> bool {
+        by == Some(machine) && blocks.writing.contains(machine)
+    }
+
+    fn shows(&self, machine: &str, by: Option<&str>) -> bool {
+        Self::own(self.blocks, machine, by) || self.reach.contains(machine)
+    }
+
+    /// The block's state as this reader is told it: none when they aren't.
+    fn state(&self, p: &wire::Pointer, by: Option<&str>) -> Option<wire::BlockState> {
+        match p {
+            wire::Pointer::Block { machine, pane } if self.shows(machine, by) => {
+                self.blocks.state.get(&(machine.clone(), pane.clone())).cloned()
+            }
+            _ => None,
+        }
+    }
+
+    /// The pointer as this reader is told it: a block's machine blanked when
+    /// they aren't told the block.
+    fn pointer(&self, p: &wire::Pointer, by: Option<&str>) -> wire::Pointer {
+        match p {
+            wire::Pointer::Block { machine, pane } if !self.shows(machine, by) => {
+                wire::Pointer::Block { machine: String::new(), pane: pane.clone() }
+            }
+            p => p.clone(),
+        }
     }
 }
 
@@ -791,6 +917,7 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
         if !machine_writes(app, machine, project).await {
             continue;
         }
+        found.writing.insert(machine.to_owned());
         for (pane, state, owner) in app.db.block_states(machine, &panes)? {
             found.owner.insert((machine.to_owned(), pane.clone()), owner);
             found.state.insert((machine.to_owned(), pane), state);
@@ -874,14 +1001,24 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let blocks = block_states(app, &project, &ids.blocks).await?;
     let facts = facts(app, &project, &ids, &blocks)?;
     let (now, minutes) = (now_ms(), app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)?);
-    let chip = |p: &wire::Pointer| -> (Option<wire::Live>, Option<wire::BlockState>) {
+    let told = Shown::of(
+        app,
+        account,
+        &blocks,
+        stored
+            .rows
+            .iter()
+            .map(|r| (&r.pointer, r.agent.as_deref()))
+            .chain(stored.attachments.iter().map(|a| (&a.pointer, a.agent.as_deref()))),
+    )
+    .await;
+    // `by`: the machine whose agent put the pointer there, none for a person.
+    let chip = |p: &wire::Pointer, by: Option<&str>| -> (Option<wire::Live>, Option<wire::BlockState>) {
         match p {
             wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } | wire::Pointer::Run { id } => {
                 (live.get(id).cloned(), None)
             }
-            wire::Pointer::Block { machine, pane } => {
-                (None, blocks.state.get(&(machine.clone(), pane.clone())).cloned())
-            }
+            wire::Pointer::Block { .. } => (None, told.state(p, by)),
             _ => (None, None),
         }
     };
@@ -923,7 +1060,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref());
         let (lane, set) = shown(a.lane, e.lane_set.as_ref());
         a.lane = lane;
-        let (row_live, row_block) = chip(&e.pointer);
+        let (row_live, row_block) = chip(&e.pointer, e.agent.as_deref());
         // The attachments of a replaced agent come last.
         let mut ordered = mine.clone();
         ordered.sort_by_key(|a| is_earlier(a, &facts));
@@ -934,13 +1071,16 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
             ready.push(e.id.clone());
         }
-        let marks = marks_of(&a, stalled, &e.pointer, &mine, &facts, blocked, &|p| chip(p).0.and_then(|l| l.repo));
+        let marks =
+            marks_of(&a, stalled, &e.pointer, &mine, &facts, blocked, &|p| chip(p, None).0.and_then(|l| l.repo));
         let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {
-                let (live, block) = chip(&a.pointer);
+                let by = a.agent.as_deref();
+                let (live, block) = chip(&a.pointer, by);
                 let released = a.released_at.is_some();
-                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released }
+                let pointer = told.pointer(&a.pointer, by);
+                wire::Attachment { id: a.id.clone(), role: a.role, pointer, live, block, released }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
@@ -968,7 +1108,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         zones[at].rows.push(wire::Row {
             id: e.id.clone(),
             rev: e.rev,
-            pointer: e.pointer.clone(),
+            pointer: told.pointer(&e.pointer, e.agent.as_deref()),
             note: e.note.clone(),
             status: match (&ask, e.status) {
                 (Some(_), _) => wire::Status::NeedsInput,
@@ -1362,8 +1502,14 @@ pub(crate) async fn claim_holder(
         if state.is_some_and(|b| b.state == wire::BlockWord::Closed) {
             continue;
         }
-        let title = state.and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
-        let name = agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default();
+        // Its title and machine only for a block its own machine's agent
+        // attached, as a board shows it to everyone.
+        let own = a.agent.as_deref() == Some(m.as_str());
+        let title = state.filter(|_| own).and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
+        let name = match own {
+            true => agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default(),
+            false => String::new(),
+        };
         let on = if name.is_empty() { "another machine".to_owned() } else { name };
         let at = (a.created_at / 60_000) % 1440;
         return Ok(Some(format!(
@@ -1633,6 +1779,9 @@ pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow
         }));
     }
     pointer_ok(&a.pointer)?;
+    if let wire::Pointer::Block { machine, .. } = &a.pointer {
+        block_ok(app, by, machine).await?;
+    }
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     if !stored.rows.iter().any(|r| r.id == a.row) {
         return Err(refused(Refused::Missing("no such row")));

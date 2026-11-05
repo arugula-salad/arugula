@@ -26,7 +26,7 @@
 //! "a machine", with the machine's id blanked too, so a link made before
 //! the check, or by someone the project has since lost, names nothing to
 //! those it doesn't concern. That is a label, not a check: it waits on the
-//! hub [`NAME_WAIT`] at most, and on an error says "a machine" and goes on.
+//! hub [`super::LABEL_WAIT`] at most, and on an error says "a machine" and goes on.
 //!
 //! **What a Doc is not:** a row's Doc is no attachment: nothing that works
 //! out a lane, the ready set, progress or a proof ever reads it.
@@ -34,7 +34,6 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
 };
 
 use arugula_control_common::{ApiError, err};
@@ -100,9 +99,6 @@ pub(super) async fn doc_ok(
     }
 }
 
-/// The most a read waits on the hub to say whose machine a Doc is on.
-const NAME_WAIT: Duration = Duration::from_secs(2);
-
 /// Which machine Docs a read names to its reader (the module's top says
 /// which): the machines the reader may reach, and the machines whose agent
 /// writes the project now.
@@ -120,7 +116,7 @@ impl Named {
 
 /// What `account` is told of the machines of `docs` (the Docs of a board,
 /// strip and rows): one hub call for the reach, kept a tick ("no" too),
-/// within [`NAME_WAIT`]; an error or a wait past it names nothing, with a
+/// within [`super::LABEL_WAIT`]; an error or a wait past it names nothing, with a
 /// warning, rather than failing the read.
 pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[db::Strip]) -> Named {
     let (mut linked, mut by_agent) = (vec![], vec![]);
@@ -133,16 +129,8 @@ pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[
     linked.dedup();
     by_agent.sort();
     by_agent.dedup();
-    let mut named = Named::default();
-    if !linked.is_empty() {
-        match tokio::time::timeout(NAME_WAIT, app.cache.may_reach_label(&*app.hub, account, &linked)).await {
-            Ok(Ok(reach)) => named.reach = reach,
-            Ok(Err(e)) => tracing::warn!(error = %e, "boards: naming a Doc's machine: saying \"a machine\""),
-            Err(_) => tracing::warn!(
-                "boards: the hub took over {NAME_WAIT:?} to say whose machine a Doc is on: saying \"a machine\""
-            ),
-        }
-    }
+    let mut named =
+        Named { reach: super::reach_label(app, account, &linked, "a Doc's machine").await, writing: HashSet::new() };
     for m in by_agent {
         if super::machine_writes(app, &m, project).await {
             named.writing.insert(m);
