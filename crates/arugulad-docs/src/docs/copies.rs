@@ -11,9 +11,19 @@
 //!   thirty sections is a few puts, not thirty. One put per Doc at a time,
 //!   and [`FLYING`] in all; its pictures go after it, those whose `rev` the
 //!   copy hasn't got.
-//! - **Chat off:** native Docs come with chat, so while control says chat is
-//!   off for the machine's account or team (as it sends it with the flags,
-//!   as `chat_readers` reads it) nothing is put; Docs still become dirty.
+//! - **Only on the account's own word, on a personal machine** (native
+//!   #673): `DOC_COPIES`, "Your Docs on the platform", which control sends
+//!   only to the account's personal machines and which a team never sets.
+//!   A team's machine, a hosted box, and a personal machine without the
+//!   word copy nothing; chat, a team's or heard, has no say here (it moves
+//!   reader lists, `chat_readers`). An account that had its own chat on
+//!   when the word came in was given it by control.
+//! - **Off:** nothing is put, and a machine in control that never queued
+//!   its library for its account marks nothing either, since that first
+//!   queueing takes every Doc; after it, a Doc that changes while off
+//!   stays dirty for when it's on again, as does one that changes while
+//!   the machine is out of control, for the next control it joins.
+//!   Copies already on the platform stay.
 //! - **Not now:** out of control or out of reach, a Doc stays dirty and
 //!   waits for the next refresh with control. Refused (403: chat off after
 //!   all, or the owner may no longer write where the Doc now is) or told to
@@ -83,8 +93,8 @@ const GONE_TRIES: u32 = 3;
 const DIRTY: &str = ".copies.json";
 /// In the library: every Doc there was queued once, for this account.
 const DONE: &str = ".copied-1";
-/// Control's chat setting, sent with the flags: Docs come with chat.
-const CHAT: &str = "chat";
+/// The account's own word for copies, sent with the flags.
+const WORD: &str = arugula_control_wire::DOC_COPIES;
 
 static COPIES: OnceLock<Arc<Copies>> = OnceLock::new();
 
@@ -210,6 +220,19 @@ fn read_dirty(state_dir: &Path) -> Vec<String> {
 
 impl Copies {
     fn mark(&self, ids: impl IntoIterator<Item = String>) {
+        // In control, not allowed, and never queued for this account: the
+        // first queueing takes every Doc, so nothing waits in the meantime.
+        // Out of control nothing is known: a change waits for the next
+        // control, which may be the same account again.
+        // A deleted Doc's take-down is queued whatever: it may have a copy
+        // from before.
+        let mut ids: Vec<String> = ids.into_iter().collect();
+        if self.control.enrolled().is_some() && !self.allowed() && !self.queued_once() {
+            ids.retain(|id| is_gone(&self.state_dir, id));
+            if ids.is_empty() {
+                return;
+            }
+        }
         let now = Instant::now();
         let mut q = self.queue.lock().unwrap();
         let mut new = false;
@@ -244,7 +267,7 @@ impl Copies {
         let mut refreshed = self.control.on_refresh();
         while refreshed.changed().await.is_ok() {
             if let Some(account) = self.control.account()
-                && self.chat_on()
+                && self.allowed()
             {
                 self.copy_all(&account);
             }
@@ -256,8 +279,19 @@ impl Copies {
         }
     }
 
-    fn chat_on(&self) -> bool {
-        arugula_proto::flags::control_says(&self.state_dir, CHAT) == Some(true)
+    /// Copies are allowed: a personal machine, with its account's own
+    /// word (never a team's, nor chat).
+    fn allowed(&self) -> bool {
+        let personal =
+            self.control.enrolled().is_some_and(|e| matches!(e.saved.kind, crate::control::MachineKind::Personal));
+        personal && arugula_proto::flags::control_account_says(&self.state_dir, WORD) == Some(true)
+    }
+
+    /// Whether the library was queued once for the account this machine
+    /// is joined to now.
+    fn queued_once(&self) -> bool {
+        let Some(account) = self.control.account() else { return false };
+        std::fs::read_to_string(library::root(&self.state_dir).join(DONE)).is_ok_and(|a| a.trim() == account)
     }
 
     /// Every Doc in the library, once for each account the machine joins.
@@ -298,7 +332,7 @@ impl Copies {
             return (Vec::new(), None);
         }
         // Not allowed to copy: a deleted Doc's copy still comes down.
-        let allowed = self.chat_on();
+        let allowed = self.allowed();
         let now = Instant::now();
         let mut q = self.queue.lock().unwrap();
         if q.paused {

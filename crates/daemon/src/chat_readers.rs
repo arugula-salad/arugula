@@ -14,7 +14,11 @@
 //!
 //! Chat's on/off is control's setting, not a Labs flag here (native #203):
 //! it comes with the flags control sends ([`arugula_proto::flags::control_says`]),
-//! and this machine's `flags.json` has no say in it. The threads an older
+//! and this machine's `flags.json` has no say in it. A machine joined to
+//! the account alone hears its owner's teams' chat as
+//! [`CHAT_HEARD`](arugula_control_wire::CHAT_HEARD) (native #673), which
+//! counts here, as the platform would take the lists, and not for copying
+//! Docs up. The threads an older
 //! daemon kept itself (M61) in `<state>/threads/` are no longer brought
 //! into control (the import of M124 is gone, native #203): nothing reads
 //! them, and they stay on disk as they are.
@@ -46,6 +50,15 @@ const QUIET: Duration = Duration::from_secs(1);
 /// hour however the changes come, well under control's limit of 600 for
 /// this route from one machine (`check_daemon`'s `chat-readers`).
 const GAP: Duration = Duration::from_secs(10);
+
+/// Whether control has chat on for this machine: its account's or its
+/// team's word, else heard from the owner's teams.
+fn chat_on(state_dir: &std::path::Path) -> bool {
+    match arugula_proto::flags::control_says(state_dir, CHAT) {
+        Some(on) => on,
+        None => arugula_proto::flags::control_says(state_dir, arugula_control_wire::CHAT_HEARD) == Some(true),
+    }
+}
 
 /// Run beside the control loop: after each refresh, and whenever who may
 /// read what changes here, keep control's reader lists current.
@@ -110,7 +123,7 @@ impl Sync {
     async fn run(&mut self, control: &Control, app: &App) {
         self.due = None;
         let Some(owner) = control.account() else { return };
-        if arugula_proto::flags::control_says(control.state_dir(), CHAT) != Some(true) {
+        if !chat_on(control.state_dir()) {
             self.sent = None;
             return;
         }

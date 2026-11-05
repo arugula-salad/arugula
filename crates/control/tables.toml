@@ -445,7 +445,7 @@ name = "settings"
 plane = "machine"
 process = "hub"
 holds = "plaintext"
-what = "Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation."
+what = "Control's own VAPID key pair, which signs the pushes it sends, its hosted key (M178), which signs the hosted machines enrolled under a project's delegation, and which one-time data steps it has taken."
 with_account = "none"
 seen_by = ["litestream"]
 

@@ -83,6 +83,15 @@ pub async fn chat_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
     flag_on(app, account, FLAG).await
 }
 
+/// Whether the account itself said its personal machines copy their Docs
+/// up (native #673, `DOC_COPIES`): its own word only, never a team's. It
+/// lets a machine's copies in without chat, and turns nothing else on.
+pub async fn copies_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
+    let owner = account_owner(account);
+    let flags = app.cache.flags(&*app.hub, std::slice::from_ref(&owner)).await?;
+    Ok(flag_of(&flags, &owner, arugula_control_wire::DOC_COPIES) == Some(true))
+}
+
 /// Whether the Labs flag `flag` is on for an account, by the rule chat's
 /// is: its own if it set one, else on when any team it's in turned it on.
 pub async fn flag_on(app: &Platform, account: &str, flag: &str) -> anyhow::Result<bool> {

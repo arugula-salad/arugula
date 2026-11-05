@@ -98,11 +98,40 @@ pub(crate) fn bad(msg: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, msg)
 }
 
+/// What lets someone at a project's Docs, besides being in the project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Gate {
+    /// Chat on for them: native Docs come with chat.
+    Chat,
+    /// Chat on, or the account's own word for its machines' copies
+    /// (native #673): a machine's puts.
+    Copies,
+    /// Nothing more: a machine taking its own copy down, and a person
+    /// opening or deleting a copy of theirs, whatever chat or the word say.
+    None,
+}
+
 /// The project `asked` names (its id, or [`PERSONAL`]) as `account` sees
 /// it: 404 for a stranger; with `write`, the team's roster comes from the
 /// hub, not the cache, and a viewer is refused.
 pub(crate) async fn place(app: &Platform, account: &str, asked: &str, write: bool) -> Result<Place, ApiError> {
-    if !chat_on(app, account).await? {
+    place_gated(app, account, asked, write, Gate::Chat).await
+}
+
+/// [`place`], behind `gate`.
+pub(crate) async fn place_gated(
+    app: &Platform,
+    account: &str,
+    asked: &str,
+    write: bool,
+    gate: Gate,
+) -> Result<Place, ApiError> {
+    let open = match gate {
+        Gate::None => true,
+        Gate::Chat => chat_on(app, account).await?,
+        Gate::Copies => chat_on(app, account).await? || crate::chat::copies_on(app, account).await?,
+    };
+    if !open {
         return Err(refusal(
             StatusCode::FORBIDDEN,
             CHAT_OFF,
@@ -291,6 +320,19 @@ pub fn link(app: &Platform, project: &str, id: &str) -> String {
 
 /// A project's Docs as `by` may read them, the latest changed first.
 pub async fn list(app: &Platform, by: By<'_>, project: &str) -> Result<wire::DocList, ApiError> {
+    // Chat off: a person's own project lists its copies alone (native #673),
+    // which are theirs whatever chat says; nothing to make there.
+    if let By::Person(account) = by
+        && !chat_on(app, account).await?
+        && let Some(personal) = crate::projects::personal_project(app, account).await?
+        && (project == PERSONAL || project == personal)
+    {
+        let docs: Vec<db::Stored> =
+            app.db.project_docs(&personal)?.into_iter().filter(|d| d.machine.is_some()).collect();
+        let names = machine_names(app, docs.iter()).await?;
+        let docs = docs.iter().map(|d| doc_wire(d, &names)).collect();
+        return Ok(wire::DocList { writer: false, project: personal, docs });
+    }
     let place = place(app, by.account(), project, false).await?;
     let docs = app.db.project_docs(&place.project)?;
     let names = machine_names(app, docs.iter()).await?;
@@ -320,8 +362,37 @@ pub async fn create(app: &Platform, by: By<'_>, project: &str, new: &wire::NewDo
 /// A Doc with its sections, as `by` may read it.
 pub async fn get(app: &Platform, by: By<'_>, project: &str, id: &str) -> Result<wire::DocView, ApiError> {
     id_ok(id)?;
-    let (place, doc) = doc_in(app, by, project, id, false).await?;
+    let (place, doc) = match own_copy(app, by, project, id, false).await? {
+        Some(found) => found,
+        None => doc_in(app, by, project, id, false).await?,
+    };
     view(app, by, &place, &doc).await
+}
+
+/// A copy of a person's own machine's Doc, in their personal project: theirs
+/// to open and delete whether or not chat is on for them (native #673), so
+/// an account with no team can use its copies. `None` for anything else,
+/// which the usual rules answer.
+async fn own_copy(
+    app: &Platform,
+    by: By<'_>,
+    asked: &str,
+    id: &str,
+    write: bool,
+) -> Result<Option<(Place, db::Stored)>, ApiError> {
+    let By::Person(account) = by else { return Ok(None) };
+    let Some(personal) = crate::projects::personal_project(app, account).await? else { return Ok(None) };
+    if asked != PERSONAL && asked != personal {
+        return Ok(None);
+    }
+    // In their own project: gone is 404, whatever chat says; a Doc made
+    // there, not a copy, goes by the usual rules.
+    let Some(doc) = app.db.project_doc(id)?.filter(|d| d.project == personal) else { return Err(no_doc()) };
+    if doc.machine.is_none() {
+        return Ok(None);
+    }
+    let place = place_gated(app, account, &personal, write, Gate::None).await?;
+    Ok(Some((place, doc)))
 }
 
 /// Change a Doc as `by` (see [`wire::DocWrite`]).
@@ -363,17 +434,23 @@ pub async fn asset(
     name: &str,
 ) -> Result<(String, Vec<u8>), ApiError> {
     id_ok(id)?;
-    let (_, doc) = doc_in(app, by, project, id, false).await?;
+    let (_, doc) = match own_copy(app, by, project, id, false).await? {
+        Some(found) => found,
+        None => doc_in(app, by, project, id, false).await?,
+    };
     app.db.project_doc_asset(&doc.id, name)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such picture"))
 }
 
-/// Delete a Doc: owners and editors, never a session. A copy too: the
-/// machine's next change to the Doc makes a new copy, and the page says
-/// so (native #673).
+/// Delete a Doc: owners and editors, never a session. A copy too, and a
+/// copy of their own machine's Doc whatever chat says: the machine's next
+/// change to the Doc makes a new copy, and the page says so (native #673).
 pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> Result<(), ApiError> {
     id_ok(id)?;
     let by = By::Person(account);
-    let (place, _) = doc_in(app, by, project, id, true).await?;
+    let (place, _) = match own_copy(app, by, project, id, true).await? {
+        Some(found) => found,
+        None => doc_in(app, by, project, id, true).await?,
+    };
     app.db.delete_project_doc(id)?;
     changed(app, &place.project, id);
     Ok(())

@@ -1,7 +1,10 @@
 //! #418: a machine's Docs copied up to the platform, against the real
-//! daemon and a fake control that keeps what it's put. Nothing is put while
-//! control says chat is off; a Doc made before the machine joined is copied
-//! once it's in with chat on, and only once; a Doc filled
+//! daemon and a fake control that keeps what it's put. Nothing is put, and
+//! nothing more marked, until the account's own word for copies comes
+//! (native #673): not with it off, not on chat heard from the owner's
+//! teams, and not on chat itself, the account's or a team's; a Doc made
+//! before the machine joined is copied once the word is there, and only
+//! once; a Doc filled
 //! section by section is a put or two with its last content, its picture
 //! after it, and where its copy is lands in its `meta.json`; a refused put
 //! keeps the Doc dirty, and neither it nor another Doc is tried again
@@ -16,7 +19,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -52,9 +55,12 @@ struct Fake {
     refuse: Arc<AtomicU16>,
     /// Out of reach: the refresh and the puts fail.
     down: Arc<AtomicBool>,
-    /// Control's chat setting for the machine's account, sent with the
-    /// flags: off, a put is refused, as the platform refuses it.
-    chat: Arc<AtomicBool>,
+    /// What control sends with the flags (native #673): 0 the account's
+    /// word for copies off (a put is refused, as the platform refuses it
+    /// with chat off too), 1 the word on, 2 chat on, the account's and a
+    /// team's, with no word (the platform would take a put), 3 chat heard
+    /// from the owner's teams (the platform would take a put).
+    chat: Arc<AtomicU8>,
     /// The account the machine is joined to now ("" for the first), and
     /// the account each Doc's copy was made for: as the platform does, a
     /// put for another account's copy is refused (403).
@@ -77,9 +83,13 @@ async fn trust(State(f): State<Fake>) -> Response {
         return unreachable();
     }
     f.refreshes.fetch_add(1, Ordering::SeqCst);
-    let chat = f.chat.load(Ordering::SeqCst);
-    Json(json!({ "certs": [], "revocations": [], "flags": { "account": { "chat": chat }, "team": {} } }))
-        .into_response()
+    let flags = match f.chat.load(Ordering::SeqCst) {
+        1 => json!({ "account": { "doc-copies": true }, "team": {} }),
+        2 => json!({ "account": { "chat": true }, "team": { "chat": true } }),
+        3 => json!({ "account": {}, "team": { "chat-heard": true } }),
+        _ => json!({ "account": { "doc-copies": false }, "team": {} }),
+    };
+    Json(json!({ "certs": [], "revocations": [], "flags": flags })).into_response()
 }
 
 async fn put_doc(State(f): State<Fake>, Path(doc): Path<String>, Json(b): Json<Value>) -> Response {
@@ -96,7 +106,7 @@ async fn put_doc(State(f): State<Fake>, Path(doc): Path<String>, Json(b): Json<V
         )
             .into_response();
     }
-    let refuse = if f.chat.load(Ordering::SeqCst) { f.refuse.load(Ordering::SeqCst) } else { 403 };
+    let refuse = if f.chat.load(Ordering::SeqCst) == 0 { 403 } else { f.refuse.load(Ordering::SeqCst) };
     if refuse == 0 {
         f.copied_for.lock().unwrap().entry(doc.clone()).or_insert(account);
     }
@@ -221,17 +231,37 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     enroll(&d.state, &url);
     d.start();
 
-    // In control with chat off: not one put, whatever changes.
+    // In control with the word off: not one put, whatever changes, and
+    // nothing marked: the first queueing takes every Doc.
     d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > 0);
-    call(&d, old_block, "doc_fill", json!({ "section": "s1", "markdown": "Written with chat off." }));
+    call(&d, old_block, "doc_fill", json!({ "section": "s1", "markdown": "Written with the word off." }));
     std::thread::sleep(Duration::from_secs(4));
     assert!(f.puts.lock().unwrap().is_empty(), "chat is off: {:?}", f.puts.lock().unwrap());
+    // The Doc made before the join waits (a change out of control is kept
+    // for the next control); nothing joins it while control says off.
+    assert_eq!(dirty(&d), std::slice::from_ref(&old), "only the Doc from before the join waits");
     assert!(!d.state.join("docs/.copied-1").exists());
 
-    // Chat on: the next refresh copies it, once, and notes for whom.
-    f.chat.store(true, Ordering::SeqCst);
+    // Chat heard from the owner's teams, and then chat itself, the
+    // account's and a team's: the platform would take a put each time, and
+    // none goes, nothing more is marked, and the library isn't counted as
+    // queued. Chat isn't the word.
+    for (state, words) in [(3, "Written with chat heard."), (2, "Written with chat on.")] {
+        f.chat.store(state, Ordering::SeqCst);
+        let refreshed = f.refreshes.load(Ordering::SeqCst);
+        d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
+        call(&d, old_block, "doc_fill", json!({ "section": "s1", "markdown": words }));
+        std::thread::sleep(Duration::from_secs(4));
+        assert!(f.puts.lock().unwrap().is_empty(), "{words}: nothing copied: {:?}", f.puts.lock().unwrap());
+        assert_eq!(dirty(&d), std::slice::from_ref(&old), "{words}: nothing more waits to flood out later");
+        assert!(!d.state.join("docs/.copied-1").exists());
+    }
+
+    // The account's word: the next refresh copies it, once, and notes for
+    // whom.
+    f.chat.store(1, Ordering::SeqCst);
     d.wait_for("the old Doc's copy", || !f.puts_of(&old).is_empty());
-    assert_eq!(bodies(&f.puts_of(&old)[0]), [Some("Written with chat off.".to_owned())]);
+    assert_eq!(bodies(&f.puts_of(&old)[0]), [Some("Written with chat on.".to_owned())]);
     assert_eq!(f.puts_of(&old)[0]["title"], "Old");
     assert_eq!(std::fs::read_to_string(d.state.join("docs/.copied-1")).unwrap(), "a1");
 
@@ -266,6 +296,20 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     assert_eq!((on["project"].as_str(), on["id"].as_str()), (Some("prj_me"), Some(format!("pdc_{plan}").as_str())));
     assert!(on["link"].as_str().unwrap().ends_with(&format!("/docs/pdc_{plan}")), "{on}");
     d.wait_for("nothing left to copy", || dirty(&d).is_empty());
+
+    // Off again, with chat on: a change isn't put, and waits for the word.
+    f.chat.store(2, Ordering::SeqCst);
+    let refreshed = f.refreshes.load(Ordering::SeqCst);
+    d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
+    let puts = f.puts_of(&old).len();
+    call(&d, old_block, "doc_fill", json!({ "section": "s1", "markdown": "Written while off." }));
+    std::thread::sleep(Duration::from_secs(4));
+    assert_eq!(f.puts_of(&old).len(), puts, "off: not put");
+    assert!(dirty(&d).contains(&old), "it waits: {:?}", dirty(&d));
+    f.chat.store(1, Ordering::SeqCst);
+    d.wait_for("the change put once the word is back", || {
+        f.puts_of(&old).last().is_some_and(|p| bodies(p)[0].as_deref() == Some("Written while off."))
+    });
 
     // Refused (the owner may no longer write where it is): the Doc stays
     // dirty, on disk, and neither it nor another Doc is put before the next
@@ -311,11 +355,27 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     });
     d.wait_for("nothing left to copy", || dirty(&d).is_empty());
 
-    // The one-time copy ran once: the old Doc, unchanged, was put once.
+    // The one-time copy ran once: the old Doc was put once then, and once
+    // for its change as a team's machine.
     let refreshed = f.refreshes.load(Ordering::SeqCst);
     d.wait_for("another refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
     std::thread::sleep(Duration::from_secs(3));
-    assert_eq!(f.puts_of(&old).len(), 1, "the old Doc was copied once");
+    assert_eq!(f.puts_of(&old).len(), 2, "the old Doc was copied once, then once for a change");
+
+    // Out of control, a change is kept for the next control: joined to the
+    // same account again (its library queued once already), the change
+    // is put.
+    d.stop();
+    std::fs::remove_file(d.state.join("control.json")).unwrap();
+    d.start();
+    call(&d, old_block, "doc_fill", json!({ "section": "s1", "markdown": "Changed out of control." }));
+    d.wait_for("the change kept while out of control", || dirty(&d).contains(&old));
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("the change put once control is back", || {
+        f.puts_of(&old).last().is_some_and(|p| bodies(p)[0].as_deref() == Some("Changed out of control."))
+    });
 
     // Deleted here, its copy goes too (native #673), from the tombstone
     // the library wrote, which goes once the copy is down.
@@ -325,13 +385,14 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     d.wait_for("nothing left to copy", || dirty(&d).is_empty() && !gone(&d).contains(&other));
     assert_eq!(f.deletes.lock().unwrap().len(), 1, "once: {:?}", f.deletes.lock().unwrap());
 
-    // Left control: where each copy was is forgotten (native #673).
-    assert!(meta(&d, &plan)["platform"].is_object());
+    // Left control: where each copy was is forgotten (native #673). (The
+    // old Doc's was noted again when it was put after the re-join.)
+    assert!(meta(&d, &old)["platform"].is_object());
     d.stop();
     std::fs::remove_file(d.state.join("control.json")).unwrap();
     d.start();
-    d.wait_for("the copies' places forgotten", || meta(&d, &plan).get("platform").is_none());
-    assert!(meta(&d, &old).get("platform").is_none());
+    d.wait_for("the copies' places forgotten", || meta(&d, &old).get("platform").is_none());
+    assert!(meta(&d, &plan).get("platform").is_none());
 }
 
 /// The tombstones' ids, as the library keeps them.
@@ -367,7 +428,7 @@ fn a_copy_comes_down_from_a_tombstone_alone_and_a_refused_take_down_is_given_up(
     let mut d = Daemon::child_in(&args, &[], |_| {});
     d.stop();
     enroll(&d.state, &url);
-    f.chat.store(true, Ordering::SeqCst);
+    f.chat.store(1, Ordering::SeqCst);
     d.start();
     let (plan_block, plan) = new_doc(&d, "Plan", 1);
     let (_, other) = new_doc(&d, "Other", 1);
@@ -438,14 +499,14 @@ fn a_copy_comes_down_from_a_tombstone_alone_and_a_refused_take_down_is_given_up(
     // Copies off: a deleted Doc's copy still goes.
     let (_, off) = new_doc(&d, "Off", 1);
     d.wait_for("the Off Doc copied", || !f.puts_of(&off).is_empty());
-    f.chat.store(false, Ordering::SeqCst);
+    f.chat.store(0, Ordering::SeqCst);
     let refreshed = f.refreshes.load(Ordering::SeqCst);
     d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
     let (st, v) = d.raw("DELETE", &format!("/api/docs/{off}"), None);
     assert_eq!(st, 200, "{v}");
     d.wait_for("the copy taken down with copies off", || f.deletes.lock().unwrap().contains(&off));
     d.wait_for("its tombstone gone", || !gone(&d).contains(&off));
-    f.chat.store(true, Ordering::SeqCst);
+    f.chat.store(1, Ordering::SeqCst);
     let refreshed = f.refreshes.load(Ordering::SeqCst);
     d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
 

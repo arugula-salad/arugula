@@ -371,10 +371,13 @@ async fn a_sessions_agent_makes_writes_and_reads_its_projects_docs() {
 /// still reads the copy.
 #[tokio::test]
 async fn a_session_doesnt_write_a_machines_copy() {
-    let (_hub, app, base, t, _u) = seeded().await;
+    let (hub, app, base, t, _u) = seeded().await;
+    // a's personal machine: a team's machine copies nothing (native #673).
+    hub.daemon("apad", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
     let ses = session(&app, &t, "hw_2", "a");
     let m = machine(&t, "hw_2", "box1");
-    // geek (a's machine) copies a Doc up; the copy sits in the team's
+    // apad (a's machine) copies a Doc up; the copy sits in the team's
     // project, as a move left it before the move route went (native #673).
     let body = serde_json::to_vec(
         &json!({ "title": "From geek", "sections": [{ "id": "s1", "heading": "One", "body": "v1" }] }),
@@ -382,7 +385,7 @@ async fn a_session_doesnt_write_a_machines_copy() {
     .unwrap();
     let r = reqwest::Client::new()
         .put(format!("{base}/api/daemon/docs/d1"))
-        .header("x-test-daemon", "a geek")
+        .header("x-test-daemon", "a apad")
         .header("content-type", "application/json")
         .body(body)
         .send()
@@ -398,11 +401,11 @@ async fn a_session_doesnt_write_a_machines_copy() {
     }
 
     let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocRead { id: Some(id.clone()) }).await else { panic!() };
-    assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("geek-box")));
+    assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("apad-box")));
     let w = Op::DocWrite { id, write: fill("s1", "the session's") };
     let refused = ask(&app, &m, &ses, w).await;
     let why = why(&refused);
-    assert!(why.contains("copy") && why.contains("geek-box"), "{why}");
+    assert!(why.contains("copy") && why.contains("apad-box"), "{why}");
 }
 
 /// A session's Doc calls are checked as its asker's and against the

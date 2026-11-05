@@ -96,8 +96,8 @@ pub mod work;
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};
 pub use team::{
-    AccessList, DEV_SETTINGS, FLAG_ALIASES, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery, SharedTeamAnswer,
-    TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
+    AccessList, CHAT_HEARD, DEV_SETTINGS, DOC_COPIES, FLAG_ALIASES, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts,
+    PeersQuery, SharedTeamAnswer, TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
 };
 
 /// What control says about itself, to browsers, the CLI and daemons.
