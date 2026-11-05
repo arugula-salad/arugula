@@ -692,7 +692,7 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
                 println!("deleting deploy box {id}");
             }
             println!("in {db}, at {now}:\n");
-            print!("{}", d.stuck(now)?.render());
+            print!("{}", d.stuck(now)?.render_at(now));
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

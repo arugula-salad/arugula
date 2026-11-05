@@ -234,6 +234,18 @@ export function idleOf(c: SessionCard): string | null {
   return c.state === "stopped" && c.reason?.startsWith("idle: ") ? c.reason.slice("idle: ".length) : null;
 }
 
+/** Why a session ended or waits, in words, when the card has no line of
+ * its own for it: control's reason with its code taken off. A stopped
+ * one's too (its workspace failed or was deleted, Arugula #744), except
+ * the stops the label or a line already says (idle, merged, not picked,
+ * reviewed) and a person's, whose reason has no code. */
+export function reasonLine(c: { state: string; reason: string | null }): string | null {
+  if (!c.reason) return null;
+  const code = /^([a-z_]+): /.exec(c.reason)?.[1];
+  if (c.state === "stopped" && (!code || ["idle", "merged", "not_picked", "reviewed"].includes(code))) return null;
+  return c.reason.replace(/^[a-z_]+: /, "");
+}
+
 /** What a try's or a review's state says, past the plain states: a try
  * that wasn't kept is "not picked", a queued one with no slot on its box
  * "waiting for a slot", a posted review "reviewed", and one whose PR
@@ -758,9 +770,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.last_error}
         </p>
       )}
-      {c.reason && c.state !== "stopped" && (
+      {reasonLine(c) && (
         <p class={c.state === "queued" ? "session-card-line dim" : "session-card-line bad"} data-session-reason>
-          {c.reason.replace(/^[a-z_]+: /, "")}
+          {reasonLine(c)}
         </p>
       )}
       {idle && (

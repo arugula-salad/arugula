@@ -590,7 +590,7 @@ async fn the_operator_sees_whats_stuck_and_unsticks_it() {
     );
     let b = &s.boxes[0];
     assert_eq!((s.boxes.len(), b.deploy.as_str(), b.left_over()), (1, id.as_str(), true));
-    let shown = s.render();
+    let shown = s.render_at(now);
     assert!(shown.contains("LEFT OVER") && shown.contains(&run), "{shown}");
 
     // The other is canceled, as the platform; its job ends.

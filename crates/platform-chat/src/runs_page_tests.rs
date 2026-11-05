@@ -149,7 +149,8 @@ async fn a_failed_run_is_in_its_starters_and_owners_inbox() {
     assert_eq!(to, ["a", "e", "o"]);
     for (who, msg, _) in &pushes {
         assert_eq!(msg["inbox"], json!({ "item": r.id }));
-        let mine = if who == "e" { "your run failed" } else { "a run failed" };
+        // Why, in words: the reason's code stays out.
+        let mine = if who == "e" { "your run failed: a test" } else { "a run failed: a test" };
         assert_eq!(msg["title"], json!(format!("t: {mine}")), "{who}");
         assert_eq!(msg["body"], json!("echo hi"));
     }

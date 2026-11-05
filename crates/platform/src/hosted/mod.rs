@@ -589,6 +589,22 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
     Ok(())
 }
 
+/// The hub removed hosted machine `machine`, `workspace`'s box
+/// (`PlatformPort::hosted_removed`, Arugula #744): the worker looks at the
+/// workspace now rather than at its next minute, asks the hub, and fails
+/// it ([`worker`]'s `removed`), which ends its runs and sessions. Whether
+/// it will look: not for a machine the workspace no longer has, or a
+/// workspace being made, rebuilt, deleted or already failed. Taking it
+/// twice changes nothing.
+pub fn machine_removed(app: &Platform, workspace: &str, machine: &str) -> anyhow::Result<bool> {
+    let looking = app.db.look_at_hosted(workspace, machine)?;
+    if looking {
+        tracing::info!(workspace, machine, "the hub removed a hosted workspace's machine: looking at it now");
+        app.wakes.kick();
+    }
+    Ok(looking)
+}
+
 /// The lifecycle's background work, when this platform has a compute
 /// provider.
 pub fn start(app: &std::sync::Arc<Platform>) {

@@ -59,6 +59,18 @@ pub trait PlatformPort: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// The hub removed hosted machine `machine`, `workspace`'s box (its
+    /// owner did, at control; Arugula #744). The platform looks at the
+    /// workspace now, and fails it when the hub no longer lists the
+    /// machine, which ends its runs and sessions. Taking it twice changes
+    /// nothing. The platform also notices on its own within a minute, so
+    /// a call that's lost costs only that; a platform from before this
+    /// doesn't have it.
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        let _ = (workspace, machine);
+        Box::pin(async { Ok(()) })
+    }
+
     /// A read-only installation token for one repository, for a hosted
     /// box's `POST /api/daemon/github/token` (M161: the App's key is the
     /// platform's), or why not.

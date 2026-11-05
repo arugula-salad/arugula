@@ -270,6 +270,12 @@ impl TestHub {
         s.online.insert(machine.into());
     }
 
+    /// The hub removed `workspace`'s machine (an owner did, at control):
+    /// it's no longer listed as enrolled.
+    pub fn remove(&self, workspace: &str) {
+        self.state.lock().unwrap().enrolled.remove(workspace);
+    }
+
     /// Someone tried the enrollment of `workspace`'s box again.
     pub fn take(&self, workspace: &str) {
         let mut s = self.state.lock().unwrap();

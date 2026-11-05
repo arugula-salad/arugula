@@ -7,7 +7,7 @@
 //! | anything, delete asked | delete every box it has (by its metadata too), then `deleted` |
 //! | `creating` | the create's journal: ask the hub for a ticket (ticket mode), note `sent`, make the box; `sent` with no answer kept: find it by its metadata, never make it again; `made`: record its enrollment by sandbox id |
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
-//! | `ready`, `paused` | a rebuild (which first asks a running box to archive its open agents' transcripts, Arugula #209, and clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
+//! | `ready`, `paused` | a rebuild (which first asks a running box to archive its open agents' transcripts, Arugula #209, and clears what the old box's setup said), wake or pause asked; else `failed` when the hub no longer lists its machine (its box paused), else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
 //! | `waking` | resumed (a wake, or the runtime cap's pause and resume): `ready` once its daemon dials in; past [`super::Config::dial_wait`], `failed` as needing a rebuild, its box paused, and the project's owners and editors pushed (M258) |
 //! | a snapshot's builder, enrolled | wait for its setup and wipe, snapshot it, delete it ([`super::snapshot`], M263) |
 //!
@@ -87,6 +87,11 @@ pub(crate) const UNAVAILABLE: &str = "The compute provider isn't answering. Arug
 const NOT_MADE: &str = "The provider didn't make the box. Rebuild the workspace to try again.";
 /// A woken box whose daemon didn't dial in (M258, Arugula #124).
 pub(crate) const NO_DAEMON: &str = "The box woke, but Arugula in it didn't connect. Rebuild the workspace to make its box again: work in it that wasn't pushed is lost.";
+
+/// The hub no longer lists the workspace's machine (its owner removed it
+/// at control, or someone tried its enrollment again): it can't connect.
+pub(crate) const REMOVED: &str =
+    "Its machine was removed from Arugula control, so it can't connect. Rebuild the workspace to make a new box.";
 
 /// Two workers on each of the platform's machines, as the cloud worker
 /// runs: a claim leases its workspace, so two machines never take the
@@ -635,6 +640,15 @@ async fn owners_and_editors(app: &Platform, project: &str) -> Result<Vec<String>
 /// mid-turn is woken.
 async fn refresh(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(fail(job, GONE, now)) };
+    if removed(app, job).await {
+        tracing::warn!(workspace = %job.w.id, machine = ?job.w.machine, "the hub no longer lists a hosted workspace's machine");
+        // Nothing reaches it now: paused, its disk kept until a rebuild
+        // or a delete deletes it.
+        if let Err(e) = sub.pause(&sandbox).await {
+            tracing::warn!(workspace = %job.w.id, error = %e, "a box whose machine was removed didn't pause");
+        }
+        return Ok(fail(job, REMOVED, now));
+    }
     match sub.status(&sandbox).await {
         Ok(Some(s)) => {
             job.seen = seen(&s);
@@ -651,6 +665,25 @@ async fn refresh(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: 
         }
         Ok(None) | Err(compute::Error::NotFound) => Ok(fail(job, GONE, now)),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Whether the hub no longer lists the workspace's machine as live: an
+/// owner removed it at control (`DELETE /api/hosted/machines/{id}`, which
+/// changes only the hub), or someone tried its enrollment again. Its
+/// signatures are refused and it's hung up on, so its runs and sessions
+/// can't go on: the workspace fails, and they end with it (Arugula #744).
+/// The hub tells the platform when it removes one, which makes this look
+/// at once ([`super::machine_removed`]); this look is what decides. A hub
+/// that doesn't answer can't say, and nothing changes.
+async fn removed(app: &Platform, job: &HostedJob) -> bool {
+    let Some(machine) = job.w.machine.as_deref() else { return false };
+    match app.hub.hosted_enrolled(std::slice::from_ref(&job.w.id)).await {
+        Ok(found) => !found.iter().any(|e| e.workspace == job.w.id && e.machine == machine && !e.taken),
+        Err(e) => {
+            tracing::debug!(workspace = %job.w.id, error = %e, "the hub didn't say whether a hosted machine is live");
+            false
+        }
     }
 }
 

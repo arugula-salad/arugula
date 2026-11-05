@@ -332,7 +332,21 @@ async fn run_failed_or(app: &Platform, run: &Run) -> anyhow::Result<()> {
     if to.is_empty() {
         return Ok(());
     }
-    let why = run.exit_code.map_or_else(|| "failed".to_owned(), |c| format!("failed (exit {c})"));
+    // Why, in words, when its failing said (control's reasons, and a
+    // box's); else its exit code.
+    let said = app
+        .db
+        .run_events(&run.id)?
+        .into_iter()
+        .rev()
+        .find(|e| e.to == crate::db::runs::State::Failed)
+        .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.detail).ok())
+        .and_then(|d| d["reason"].as_str().and_then(crate::work::reason_words).map(str::to_owned));
+    let why = match (said, run.exit_code) {
+        (Some(w), _) => format!("failed: {w}"),
+        (None, Some(c)) => format!("failed (exit {c})"),
+        (None, None) => "failed".to_owned(),
+    };
     let mine = |a: &String| starter.as_ref() == Some(a);
     let to = to
         .into_iter()

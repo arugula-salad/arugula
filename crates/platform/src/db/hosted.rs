@@ -381,6 +381,18 @@ impl Db {
         Ok(self.c().execute(&sql, params![id, now])? == 1)
     }
 
+    /// Have the worker look at workspace `id` now, when it's `ready` or
+    /// `paused` as `machine` (the hub says it removed that machine,
+    /// `hosted::machine_removed`): whether it will. A row a step holds is
+    /// left to that step's next look.
+    pub fn look_at_hosted(&self, id: &str, machine: &str) -> Result<bool> {
+        let sql = format!(
+            "UPDATE hosted_workspaces SET {DUE_NOW}
+             WHERE id = ?1 AND machine = ?2 AND deleted_at IS NULL AND state IN ('ready', 'paused')"
+        );
+        Ok(self.c().execute(&sql, params![id, machine])? == 1)
+    }
+
     /// Lease a workspace with something to do at `now`: one being made,
     /// enrolled or deleted, one with something asked, or a box whose state
     /// is due to be looked at. A failed one waits for a person.

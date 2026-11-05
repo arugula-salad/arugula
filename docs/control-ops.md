@@ -3959,7 +3959,12 @@ happen, in CI.
   platform runs in its process.) It lists jobs whose machine died holding
   them, jobs claimed again and again, jobs that failed this week, runs and
   deploys not ended that no job follows, and every deploy box that isn't
-  deleted, marking the ones no job follows `LEFT OVER`.
+  deleted, marking the ones no job follows `LEFT OVER`. Runs are listed
+  by age too: one made more than 6h 15m ago and not ended is there
+  whatever its job's state, oldest first, with how old it is. That's
+  longer than any run may wait for its box (15 minutes) and then run (6
+  hours, after which its job fails it), so a run listed for its age is
+  stuck.
 - **A run or a deploy** on the platform page: its log and its events
   (`/p/<project>/past/<run>`, a deploy's page). A run's log in the bucket:
   `arugula-platform run-logs` ("The run-log bucket" above).
