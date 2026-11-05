@@ -1415,7 +1415,10 @@ pub fn rebuilt_in(
         if s.state != State::Queued {
             return Ok(Err(Refused::Moved { now: s.state }));
         }
-        c.execute("UPDATE agent_sessions SET machine = ?2 WHERE id = ?1", params![id, machine])?;
+        // Its wait for a box to take it starts over on the new one: a
+        // session asked long before the rebuild isn't failed as not taken
+        // at the first look after it (Arugula #744).
+        c.execute("UPDATE agent_sessions SET machine = ?2, updated_at = ?3 WHERE id = ?1", params![id, machine, at])?;
         return Ok(Ok(session_for_update(c, id)?.context("the session it moved")?));
     }
     let reason = if lost { BOX_REBUILT_LOST } else { BOX_REBUILT };

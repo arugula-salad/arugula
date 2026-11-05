@@ -20,7 +20,8 @@
 //!   most once every [`work::WAKE_EVERY_MS`]. A box that runs a turn says
 //!   it's busy, which holds it (M181).
 //! - **Not taken:** a `queued` session no box took in [`work::TAKE_MS`]
-//!   while its box had room fails, saying so. One waiting for room (the
+//!   while its box had room fails, saying so. A failed workspace, or one
+//!   being made again, has no box to take it: its wait starts over then. One waiting for room (the
 //!   box runs `MAX_SESSIONS_PER_BOX` sessions, done ones not yet parked
 //!   too, or holds `MAX_HELD_SESSIONS_PER_BOX`, parked ones too:
 //!   `Db::box_has_room`) waits, and its wait is counted from when room
@@ -120,7 +121,8 @@ pub struct Checkpoint {
     /// When the job last asked for its box's wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub woke_at: Option<u64>,
-    /// When the job last saw a queued session's box with no room for it.
+    /// When the job last saw a queued session's box with no room for it,
+    /// or no box at all (its workspace failed, or being made again).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_at: Option<u64>,
     /// When the job first saw the session on a machine its workspace no
@@ -237,6 +239,8 @@ impl Follow {
         // new box; one that hasn't come in [`FAILED_END_MS`] ends.
         if w.state == "failed" {
             let since = *cp.failed_since.get_or_insert(now);
+            // No box to take it: its 15 minutes don't run (Arugula #744).
+            cp.full_at = Some(now);
             if now.saturating_sub(since) >= FAILED_END_MS {
                 let why = json!({ "reason": WORKSPACE_FAILED });
                 if control(&self.app, &s.id, state, State::Stopped, why, now)? {
@@ -272,10 +276,11 @@ impl Follow {
             _ => false,
         };
         let room = db.box_has_room(&s.workspace, &s.id, now)?;
-        // Not taken while its box had room: counted from its making, or
-        // from when the job last saw the box full.
+        // Not taken while its box had room: counted from its making (or its
+        // move to a rebuilt box), or from when the job last saw the box
+        // full, failed, or being made again (no box to take it then).
         if state == State::Queued {
-            if !room {
+            if !room || matches!(w.state.as_str(), "creating" | "enrolling") {
                 cp.full_at = Some(now);
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
                 db.checkpoint_job(job, now)?;

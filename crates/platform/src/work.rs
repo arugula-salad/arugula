@@ -73,6 +73,13 @@ pub const RUNNING_MS: u64 = 30_000;
 /// run fails only once its box has been off the relay, paused or idle for
 /// [`STALLED_MS`] ([`TOO_LONG`]): it stopped reporting, or hangs with
 /// nothing running.
+///
+/// Busy is the whole box's (M180's activity: an agent turn or a
+/// foreground command anywhere on it), not this run's. So a run that
+/// hangs on a box kept busy by something else, such as its agent
+/// sessions' turns, isn't failed while that goes on; it fails once the
+/// box has been quiet for [`STALLED_MS`], or an operator fails it (the
+/// stuck view lists it by its age).
 pub const RUN_MAX_MS: u64 = 6 * 60 * 60_000;
 /// How long a run past [`RUN_MAX_MS`] may go with its box not busy before
 /// it fails: long enough for an agent's pause between turns, and for a box
@@ -197,9 +204,10 @@ impl Dispatch {
                 c
             }
         };
-        // Running past six hours: it goes on while its box is busy, and
-        // fails once its box has been off the relay, paused or idle for
-        // [`STALLED_MS`]. A hub that can't say changes nothing.
+        // Running past six hours: it goes on while its box is busy (with
+        // anything: [`RUN_MAX_MS`] says why that's the box's, not the
+        // run's), and fails once its box has been off the relay, paused or
+        // idle for [`STALLED_MS`]. A hub that can't say changes nothing.
         if run.state == State::Running && run.started_at.is_some_and(|t| now.saturating_sub(t) >= RUN_MAX_MS) {
             match self.app.hub.activity(std::slice::from_ref(&run.daemon)).await {
                 Ok(said) => {

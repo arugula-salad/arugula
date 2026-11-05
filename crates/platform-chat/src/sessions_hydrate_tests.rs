@@ -800,7 +800,9 @@ async fn a_failed_workspaces_sessions_wait_a_day_for_a_rebuild() {
 }
 
 /// A failed workspace rebuilt: each session it kept, done, working, gone
-/// quiet or never taken, moves to the new box (Arugula #744).
+/// quiet or never taken, moves to the new box (Arugula #744). One asked
+/// more than 15 minutes before the rebuild, while the workspace was
+/// failed, isn't failed as not taken at the first look after it.
 #[tokio::test]
 async fn a_failed_workspace_rebuilt_moves_its_sessions() {
     let fake = Arc::new(crate::hosted::tests::Fake::default());
@@ -816,12 +818,26 @@ async fn a_failed_workspace_rebuilt_moves_its_sessions() {
         .execute("UPDATE hosted_workspaces SET state = 'failed', error = 'gone' WHERE id = 'hw_dev'", params![])
         .unwrap();
     follow_all(&app, at + 1).await;
+    // Failed for 20 minutes, looked at all the while.
+    let later = at + 20 * 60_000;
+    for id in &ids {
+        app.db.nudge_session(id, later).unwrap();
+    }
+    follow_all(&app, later).await;
     let s = app.db.session(&ids[3]).unwrap().unwrap();
     let new = DeviceKeys::generate();
     rebuild(&hub, &app, &s, &new).await;
     for id in &ids {
         let after = app.db.session(id).unwrap().unwrap();
         assert_eq!((after.state, after.machine.as_deref()), (State::Queued, Some(new.id().as_str())), "{id}");
+    }
+    // The first look after the rebuild: each waits for the new box.
+    for id in &ids {
+        app.db.nudge_session(id, later + 1_000).unwrap();
+    }
+    follow_all(&app, later + 1_000).await;
+    for id in &ids {
+        assert_eq!(app.db.session(id).unwrap().unwrap().state, State::Queued, "not failed as not taken: {id}");
     }
 }
 
