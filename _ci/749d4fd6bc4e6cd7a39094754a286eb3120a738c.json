@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "commit": "749d4fd6bc4e6cd7a39094754a286eb3120a738c",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-05T08:38:21Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "lint",
+          "id": 127139037357,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139037357"
+        },
+        {
+          "name": "changes",
+          "id": 127139037153,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139037153"
+        },
+        {
+          "name": "suite-changed",
+          "id": 127139035614,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954604/job/127139035614"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "build",
+          "id": 127139169353,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139169353"
+        },
+        {
+          "name": "static",
+          "id": 127139169321,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139169321"
+        },
+        {
+          "name": "clippy",
+          "id": 127139168503,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139168503"
+        }
+      ]
+    },
+    "test": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "test",
+          "id": 127139169223,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139169223"
+        },
+        {
+          "name": "test-2",
+          "id": 127139168966,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139168966"
+        }
+      ]
+    },
+    "e2e": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "e2e",
+          "id": 127139169512,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139169512"
+        }
+      ]
+    },
+    "claims": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 127139169072,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139169072"
+        }
+      ]
+    },
+    "macos": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 127139168130,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954694/job/127139168130"
+        }
+      ]
+    },
+    "windows": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 127139147806,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954604/job/127139147806"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 127139148006,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954604/job/127139148006"
+        }
+      ]
+    },
+    "windows-desktop": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 127139114456,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41995954882/job/127139114456"
+        }
+      ]
+    }
+  }
+}
