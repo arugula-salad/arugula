@@ -6,7 +6,8 @@
 //! platform, like issues and chat; nothing here leaves the project.
 //!
 //! A project in a path is its id (`prj_…`), or `personal` for the reader's
-//! own. Native Docs come with chat, as native issues do.
+//! own. Membership and roles alone say who reads them, as for native
+//! issues: a person's chat setting doesn't (Arugula #746).
 //!
 //! **Who may do what:** its members read; a team's owners and editors make,
 //! write and delete (a personal project's account does all of it); a viewer

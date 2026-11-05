@@ -88,8 +88,8 @@ export function ProjectHome({ id }: { id: string }) {
           </ul>
           {/* With boards on, they lead; the issues on no board are on the Boards page (#656). */}
           {boardsOn && <ProjectBoards p={p} list={boards} />}
-          {chat.on && <ProjectIssues p={p} />}
-          {chat.on && <ProjectDocs p={p} />}
+          <ProjectIssues p={p} />
+          <ProjectDocs p={p} />
           <ProjectRuns p={p} workspaces={workspaces} />
           <ProjectSetup p={p} />
           {!boardsOn && <ProjectBoards p={p} list={boards} />}
@@ -115,7 +115,7 @@ function ChatOff({ p }: { p: PlatformProject }) {
   if (!p.team)
     return (
       <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat comes with a team: its channels, direct messages and issues. Make a team, or turn chat on for one you own, under Teams on your machines page.</p>
+        <p class="dim">Chat comes with a team: its channels and direct messages. Make a team, or turn chat on for one you own, under Teams on your machines page.</p>
         <a class="secondary" href={teams} data-chat-teams>
           Teams on your machines page
         </a>
@@ -124,7 +124,7 @@ function ChatOff({ p }: { p: PlatformProject }) {
   if (p.team.role === "owner")
     return (
       <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels, direct messages and issues, here and on your machines page.</p>
+        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels and direct messages, here and on your machines page.</p>
         <a class="primary" href={teams} data-chat-turn-on>
           Turn on chat
         </a>

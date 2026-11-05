@@ -11,8 +11,9 @@
 //! - no one deletes a single issue (deleting the project takes them);
 //! - anyone else gets 404, as if the project or issue weren't there.
 //!
-//! Native issues come with chat, so they're behind control's chat setting
-//! (`chat_on`), as their threads are.
+//! Membership and roles alone say who may do what (Arugula #746): a
+//! person's chat setting doesn't, nor an agent's owner's. An issue's
+//! comments are chat's object thread, so they still come with chat.
 //!
 //! **Who acts** is an [`Actor`]: a person (the routes here, from a browser
 //! or a CLI device), or a person's agent on a machine (M197; [`agent`]'s
@@ -36,7 +37,7 @@ pub mod agent;
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use arugula_control_common::{ApiError, err, refusal};
+use arugula_control_common::{ApiError, err};
 use arugula_control_wire::{chat::ChatAgent, issues as wire};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -49,7 +50,6 @@ use axum::{
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat::{CHAT_OFF, chat_on},
     db::{
         chat::{Page, Word},
         issues::{self as db, Actor, CloseReason, Filter, ListEdit, State as IssueState},
@@ -115,13 +115,6 @@ fn no_issue() -> ApiError {
 /// write), so it never reaches more than its owner. [`agent`]'s routes
 /// (M200) call these functions with one.
 pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<Place, ApiError> {
-    if !chat_on(app, by.account).await? {
-        return Err(refusal(
-            StatusCode::FORBIDDEN,
-            CHAT_OFF,
-            "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)",
-        ));
-    }
     let id = if asked == PERSONAL {
         crate::projects::personal_project(app, by.account).await?.ok_or_else(no_project)?
     } else {

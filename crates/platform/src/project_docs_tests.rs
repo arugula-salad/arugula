@@ -72,6 +72,30 @@ async fn members_read_a_doc_and_owners_and_editors_write_it() {
     assert_eq!(st, 404);
 }
 
+/// Membership and roles alone decide (Arugula #746): with chat off, an
+/// editor makes and writes a Doc and a viewer reads it and changes nothing;
+/// someone outside the project gets 404 though chat is on for them.
+#[tokio::test]
+async fn chat_off_changes_nothing_about_docs() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.flag("account:b", false);
+    hub.flag("account:x", false);
+    hub.flag("team:u", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, v) = make(&base, "b", &t, json!({ "title": "b's plan", "sections": [{ "heading": "One" }] })).await;
+    assert_eq!(st, 200, "{v}");
+    let id = v["doc"]["id"].as_str().unwrap().to_owned();
+    let (st, _) = put(&base, "b", &t, &id, json!({ "section": "s1", "markdown": "hi" })).await;
+    assert_eq!(st, 200);
+    let (st, v) = call(&base, "x", "GET", &path(&t, &id), None).await;
+    assert_eq!((st, &v["writer"]), (200, &json!(false)), "{v}");
+    let (st, l) = call(&base, "x", "GET", &format!("/api/projects/{t}/docs"), None).await;
+    assert_eq!((st, &l["docs"][0]["id"]), (200, &json!(id)), "{l}");
+    assert_eq!(put(&base, "x", &t, &id, json!({ "section": "s1", "markdown": "mine" })).await.0, 403);
+    assert_eq!(call(&base, "c", "GET", &path(&t, &id), None).await.0, 404);
+    assert_eq!(call(&base, "c", "GET", &format!("/api/projects/{t}/docs"), None).await.0, 404);
+}
+
 /// A Doc is its project's: a stranger gets 404, and so does a member of
 /// another project naming it under their own; a section that isn't there
 /// is 404 too.

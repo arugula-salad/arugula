@@ -21,7 +21,6 @@ import { SectionHead } from "../section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { blindLine, blindMachines, type Grant } from "../settings/grants";
 import { toast } from "../toast";
-import { chat } from "../../shared/chat-store";
 import { roleIn } from "../settings/environments";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
@@ -129,9 +128,8 @@ export function AllBoardsPage() {
     return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
   });
   const kept = shown.filter((s) => s.list.some((b) => boardMatches(b, q)));
-  // Each shown project's issues on no board, with chat on; read together.
-  useSubscribe((fn) => chat.subscribe(fn));
-  const counted = chat.on === false ? [] : shown.map((s) => s.p.id);
+  // Each shown project's issues on no board, read together.
+  const counted = shown.map((s) => s.p.id);
   const open = useUntriaged(counted);
   return (
     <section class="platform-section sw-page" data-all-boards-page>
@@ -210,15 +208,12 @@ function BlindMachines({ project, may }: { project: string; may: boolean }) {
 }
 
 function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
-  useSubscribe((fn) => chat.subscribe(fn));
   const list = useBoards(p.id);
   const [title, setTitle] = useState("");
   const [q, setQ] = useState("");
-  // The issues come with chat: only chat saying it's off takes them away.
-  const issues = chat.on !== false;
-  const tri = useTriage(p.id, issues, () => boardsChanged(p.id));
+  const tri = useTriage(p.id, () => boardsChanged(p.id));
   // On a phone the page is two tabs; `/triage` opens the second.
-  const [tab, setTab] = useState<"boards" | "loose">(scroll && issues ? "loose" : "boards");
+  const [tab, setTab] = useState<"boards" | "loose">(scroll ? "loose" : "boards");
   const open = (list ?? []).filter((b) => b.closed_at == null);
   const make = async (e: Event) => {
     e.preventDefault();
@@ -234,7 +229,7 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
     <section class="platform-section sw-page" data-boards-page data-tab={tab}>
       <PageHeader title="Boards" />
       <BlindMachines project={p.id} may={roleIn(p) !== "viewer"} />
-      {issues && list && (
+      {list && (
         <div class="boards-tabs" role="tablist" aria-label="Boards page" data-boards-tabs>
           <button type="button" role="tab" id="boards-tab-boards" aria-selected={tab === "boards"} data-tab="boards" onClick={() => setTab("boards")}>
             Boards<span class="boards-tab-n">{open.length}</span>
@@ -247,7 +242,7 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
       {list === null && <p class="dim">Loading…</p>}
       {list?.length === 0 && <p class="dim">No boards yet.</p>}
       {list && list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
-      {list && <BoardItems p={p} list={list} data="data-boards" q={q} drop={issues ? tri : undefined} between={issues && <NotOnBoard p={p} tri={tri} open={open} scroll={scroll} />} />}
+      {list && <BoardItems p={p} list={list} data="data-boards" q={q} drop={tri} between={<NotOnBoard p={p} tri={tri} open={open} scroll={scroll} />} />}
       {mayWrite(p) && (
         <form class="board-form" onSubmit={(e) => void make(e)}>
           <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />

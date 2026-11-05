@@ -19,8 +19,9 @@
 //!
 //! **Native or GitHub:** the project's issue home says, `--native` and
 //! `--github` override it. GitHub's issues are its blocks', as before
-//! (`crate::cmd::issue`). Without a login, or with chat (a Labs flag) off,
-//! it's GitHub unless `--native` or `--project` asked for the platform.
+//! (`crate::cmd::issue`). Without a login it's GitHub unless `--native` or
+//! `--project` asked for the platform. Chat being off changes none of this
+//! (Arugula #746): only an issue's comments, chat's thread, need it.
 //!
 //! An agent (CLAUDECODE or AI_AGENT set) reads native issues here but
 //! doesn't write them: this CLI acts as its person, so what an agent wrote
@@ -44,8 +45,9 @@ use serde_json::{Value, json};
 use crate::{control::Enrolled, http, util::print_json};
 
 const LOGIN: &str = "this CLI isn't logged in to Arugula control: `arugula login` first";
-const CHAT_OFF: &str =
-    "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)";
+/// Said in place of an issue's comments when chat is off for the reader:
+/// the issue is theirs to read (Arugula #746), its thread is chat's.
+const NO_COMMENTS: &str = "Its comments are in chat, which is off for you.";
 
 /// Where an issue command goes. The rule's in `arugula issue --help`.
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -268,7 +270,7 @@ pub fn decide(home: &Home, r: Option<&Ref>) -> anyhow::Result<Decided> {
 }
 
 /// [`decide`], for a command only the platform has (`list`, `close`,
-/// `export`, …): no login, or chat off, is an error, not GitHub's.
+/// `export`, …): no login is an error, not GitHub's.
 fn decide_for(home: &Home, r: Option<&Ref>, platform_only: bool) -> anyhow::Result<Decided> {
     if home.github {
         return Ok(Decided::GitHub { repo: None });
@@ -286,13 +288,13 @@ fn decide_for(home: &Home, r: Option<&Ref>, platform_only: bool) -> anyhow::Resu
         }
         return Ok(Decided::GitHub { repo: None });
     };
-    // Only a definite answer (chat off, a repo no project links, a GitHub
-    // home) is GitHub's. Control unreachable or failing is an error: `N`
+    // Only a definite answer (a repo no project links, a GitHub home) is
+    // GitHub's. Control unreachable or failing is an error: `N`
     // there would be the block %N, which may be public.
-    ask(e, home, r, explicit).context("asking Arugula control where this project's issues are")
+    ask(e, home, r).context("asking Arugula control where this project's issues are")
 }
 
-fn ask(e: Enrolled, home: &Home, r: Option<&Ref>, explicit: bool) -> anyhow::Result<Decided> {
+fn ask(e: Enrolled, home: &Home, r: Option<&Ref>) -> anyhow::Result<Decided> {
     let projects: Projects = get(&e, "/api/projects")?;
     if let Some(Ref::Id(_)) = r {
         return Ok(Decided::Native(Box::new(Here { e, projects, project: String::new() })));
@@ -316,17 +318,15 @@ fn ask(e: Enrolled, home: &Home, r: Option<&Ref>, explicit: bool) -> anyhow::Res
             Dir::GitHub(repo) => {
                 let mut linked = Vec::new();
                 for p in &projects.projects {
-                    match home_of(&e, &p.id)? {
-                        // Chat's off for this account: GitHub's, as before.
-                        None => return where_to(home.native, None, explicit, e, projects, String::new()),
-                        Some(h) if h.repos.iter().any(|r| r.eq_ignore_ascii_case(&repo)) => linked.push(h),
-                        Some(_) => {}
+                    let h = home_of(&e, &p.id)?;
+                    if h.repos.iter().any(|r| r.eq_ignore_ascii_case(&repo)) {
+                        linked.push(h);
                     }
                 }
                 match linked.len() {
                     1 => {
                         let h = linked.remove(0);
-                        (h.project.clone(), Some(h))
+                        (h.project.clone(), h)
                     }
                     0 if !home.native => return Ok(Decided::GitHub { repo: None }),
                     0 => {
@@ -347,19 +347,7 @@ fn ask(e: Enrolled, home: &Home, r: Option<&Ref>, explicit: bool) -> anyhow::Res
             }
         },
     };
-    where_to(home.native, issue_home.as_ref(), explicit, e, projects, project)
-}
-
-/// Native or GitHub, by the project's issue home (`None`: chat is off).
-fn where_to(
-    native: bool,
-    home: Option<&IssueHome>,
-    explicit: bool,
-    e: Enrolled,
-    projects: Projects,
-    project: String,
-) -> anyhow::Result<Decided> {
-    match home_says(native, home, explicit)? {
+    match home_says(home.native, &issue_home) {
         None => Ok(Decided::Native(Box::new(Here { e, projects, project }))),
         Some(repo) => Ok(Decided::GitHub { repo }),
     }
@@ -367,24 +355,17 @@ fn where_to(
 
 /// `None`: native. `Some(repo)`: GitHub's, and the project's one linked
 /// repo if it has one.
-fn home_says(native: bool, home: Option<&IssueHome>, explicit: bool) -> anyhow::Result<Option<Option<String>>> {
-    match home {
-        None if explicit => bail!("{CHAT_OFF}"),
-        None => Ok(Some(None)),
-        Some(_) if native => Ok(None),
-        Some(h) if h.home == "github" => Ok(Some(if h.repos.len() == 1 { h.repos.first().cloned() } else { None })),
-        Some(_) => Ok(None),
+fn home_says(native: bool, home: &IssueHome) -> Option<Option<String>> {
+    if !native && home.home == "github" {
+        Some(if home.repos.len() == 1 { home.repos.first().cloned() } else { None })
+    } else {
+        None
     }
 }
 
-/// A project's issue home, or `None` when chat is off for this account.
-fn home_of(e: &Enrolled, project: &str) -> anyhow::Result<Option<IssueHome>> {
-    let (status, got) = e.api_raw("GET", &format!("/api/projects/{project}/issue-home"), None)?;
-    if status == 403 && serde_json::from_slice::<Value>(&got).is_ok_and(|v| v["reason"] == "chat_off") {
-        return Ok(None);
-    }
-    let v = http::json_answer(status, got)?;
-    Ok(Some(serde_json::from_value(v)?))
+/// A project's issue home.
+fn home_of(e: &Enrolled, project: &str) -> anyhow::Result<IssueHome> {
+    get(e, &format!("/api/projects/{project}/issue-home"))
 }
 
 /// A project named on the command line: its id, its name (any case), or
@@ -604,9 +585,15 @@ impl Here {
         send(&self.e, "POST", "/api/chat/targets", &open)
     }
 
-    /// An issue's comments, oldest first.
-    fn comments(&self, issue: &str) -> anyhow::Result<Vec<ChatMessage>> {
-        let room = self.room(issue)?;
+    /// An issue's comments, oldest first: `None` when chat is off for the
+    /// reader, as its thread is chat's.
+    fn comments(&self, issue: &str) -> anyhow::Result<Option<Vec<ChatMessage>>> {
+        let open = ChatOpenTarget { machine: String::new(), kind: ChatTargetKind::Object, target: issue.to_owned() };
+        let (status, got) = self.e.api_raw("POST", "/api/chat/targets", Some(&serde_json::to_value(&open)?))?;
+        if status == 403 && serde_json::from_slice::<Value>(&got).is_ok_and(|v| v["reason"] == "chat_off") {
+            return Ok(None);
+        }
+        let room: ChatRoom = serde_json::from_value(http::json_answer(status, got)?)?;
         let mut all: Vec<ChatMessage> = Vec::new();
         let mut before: Option<i64> = None;
         // A thousand at most: 200 a page.
@@ -620,7 +607,7 @@ impl Here {
                 _ => break,
             }
         }
-        Ok(all.into_iter().filter(|m| m.deleted.is_none()).collect())
+        Ok(Some(all.into_iter().filter(|m| m.deleted.is_none()).collect()))
     }
 
     fn comment(&self, issue: &str, text: String) -> anyhow::Result<ChatPosted> {
@@ -752,7 +739,10 @@ fn show(here: &Here, r: &Ref, json_out: bool) -> anyhow::Result<i32> {
         return Ok(0);
     }
     let names = here.names(&issue.project);
-    print!("{}", shown(&issue, &events.events, &comments, &names));
+    print!("{}", shown(&issue, &events.events, comments.as_deref().unwrap_or_default(), &names));
+    if comments.is_none() {
+        println!("\n{NO_COMMENTS}");
+    }
     Ok(0)
 }
 
@@ -1081,7 +1071,7 @@ pub fn agent(
     if issue.state != "open" {
         bail!("#{} is closed", issue.number);
     }
-    let comments = here.comments(&issue.id)?;
+    let comments = here.comments(&issue.id)?.unwrap_or_default();
     let names = here.names(&issue.project);
     let project = here.projects.projects.iter().find(|p| p.id == issue.project).map_or("", |p| p.name.as_str());
     let dir = crate::util::absolute(dir.as_deref().unwrap_or("."))?;
@@ -1315,8 +1305,7 @@ mod tests {
         assert_eq!(shown, ["https://ghe.example.com/a/b.git"], "no token shown");
     }
 
-    /// The issue home picks native or GitHub; `--native` overrides it, and
-    /// with chat off it's GitHub unless the platform was asked for.
+    /// The issue home picks native or GitHub; `--native` overrides it.
     #[test]
     fn where_issues_go() {
         let home = |h: &str, repos: &[&str]| IssueHome {
@@ -1329,15 +1318,10 @@ mod tests {
             both: false,
             labels: vec![],
         };
-        assert_eq!(home_says(false, Some(&home("native", &[])), false).unwrap(), None);
-        assert_eq!(
-            home_says(false, Some(&home("github", &["acme/app"])), false).unwrap(),
-            Some(Some("acme/app".into()))
-        );
-        assert_eq!(home_says(false, Some(&home("github", &["a/b", "a/c"])), false).unwrap(), Some(None));
-        assert_eq!(home_says(true, Some(&home("github", &["acme/app"])), false).unwrap(), None);
-        assert_eq!(home_says(false, None, false).unwrap(), Some(None));
-        assert!(home_says(true, None, true).unwrap_err().to_string().contains("turn it on in control"));
+        assert_eq!(home_says(false, &home("native", &[])), None);
+        assert_eq!(home_says(false, &home("github", &["acme/app"])), Some(Some("acme/app".into())));
+        assert_eq!(home_says(false, &home("github", &["a/b", "a/c"])), Some(None));
+        assert_eq!(home_says(true, &home("github", &["acme/app"])), None);
     }
 
     #[test]

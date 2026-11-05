@@ -141,14 +141,41 @@ async fn a_personal_projects_issues_are_its_accounts() {
     assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(0)), "{v}");
 }
 
-/// Issues are a Labs feature, with chat.
+/// Membership and roles alone decide (Arugula #746): an editor with chat
+/// off opens, reads and changes issues, and a viewer with chat off reads
+/// them and changes nothing. Someone outside the project gets 404 with chat
+/// on, and so does someone with no team at all.
 #[tokio::test]
-async fn issues_come_with_chat() {
+async fn chat_off_changes_nothing_about_issues() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let (p, _) = seed(&app, &hub);
     hub.flag("account:e", false);
-    let (st, v) = get(&base, "e", &format!("/api/projects/{p}/issues")).await;
+    hub.flag("account:v", false);
+    hub.flag("account:z", true);
+    app.cache.drop_all();
+    let (st, i) = new_issue(&base, "e", &p, json!({ "title": "no chat here" })).await;
+    assert_eq!(st, 200, "{i}");
+    let id = i["id"].as_str().unwrap();
+    assert_eq!(patch(&base, "e", id, json!({ "labels": { "add": ["p1"] } })).await.0, 200);
+    for who in ["e", "v"] {
+        let (st, v) = get(&base, who, &format!("/api/projects/{p}/issues")).await;
+        assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(1)), "{who}: {v}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}/events")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issue-home")).await.0, 200, "{who}");
+    }
+    assert_eq!(patch(&base, "v", id, json!({ "title": "theirs" })).await.0, 403, "a viewer still changes nothing");
+    for who in ["c", "z"] {
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issues")).await.0, 404, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 404, "{who}");
+        assert_eq!(patch(&base, who, id, json!({ "title": "theirs" })).await.0, 404, "{who}");
+    }
+    // An agent acting for e, with no grant over the project, reaches nothing.
+    let agent = Actor { account: "e", agent: Some("geek") };
+    assert!(read(&app, agent, id).await.is_err());
+    // Its comments are still chat's: e's thread is refused while chat is off.
+    let (st, v) = call(&base, "e", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
     assert_eq!((st, &v["reason"]), (403, &json!(crate::chat::CHAT_OFF)), "{v}");
 }
 
