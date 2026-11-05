@@ -792,8 +792,8 @@ function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform
   const c = chipOf(a);
   const p = a.pointer;
   const href = pointerHref({ pointer: p, live: a.live }, platform);
-  // The pane: a link to control's page here; in the shell, when the machine is one of the reader's.
-  const pane = p.kind === "block" ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
+  // The pane: a link to control's page here; in the shell, when the machine is one of the reader's. A block whose machine the reader isn't told (a blank id) links nowhere.
+  const pane = p.kind === "block" && p.machine ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
   const name = pane?.href ? (
     <a class="board-ptr" href={pane.href} target="_blank" rel="noopener noreferrer" title="Open its pane" data-board-block-open>
       {c.label}

@@ -1408,6 +1408,126 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     assert_eq!(st, 200, "a closed block holds nothing: {v}");
 }
 
+/// A person attaches only a block on a machine they may reach, asked of the
+/// hub every time and refused while the hub can't answer; an agent only its
+/// own machine's. A block's state, and its machine's id, show to a reader
+/// who may reach the machine, and to everyone when its own machine's agent
+/// attached it; an attachment from before the check shows nothing to the
+/// rest. A hub that fails on a read shows less and the board still reads.
+#[tokio::test]
+async fn a_block_shows_to_those_who_reach_its_machine_or_by_its_own_agent() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, AttachRole, Pointer, agent_board_attachments};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("apad", "a", None);
+    hub.daemon("xbox", "c", Some("u"));
+    crate::cache::catch_up(&app).await.unwrap();
+    grant_write(&base, "a", "apad", &t).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    let block = |machine: &str, pane: &str| json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": machine, "pane": pane } });
+    let read = |who: &'static str| {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, who, "GET", &format!("/api/boards/{board}"), None).await }
+    };
+    // The attachment on `pane`: its machine as the reader is told it, and the title it reported.
+    let seen = |v: &Value, pane: &str| -> (String, Option<String>) {
+        let at = row_in(v, &row)["attachments"].as_array().unwrap();
+        let a = at.iter().find(|a| a["pointer"]["pane"] == pane).unwrap_or_else(|| panic!("pane {pane}: {v}"));
+        (a["pointer"]["machine"].as_str().unwrap().to_owned(), a["block"]["title"].as_str().map(str::to_owned))
+    };
+    let told = |m: &str, title: &str| (m.to_owned(), Some(title.to_owned()));
+    let untold = || (String::new(), None);
+
+    // A person: not another's machine nor one that isn't there, asked each
+    // time; not while the hub can't say.
+    let (st, v) = attach(&base, "b", &board, block("apad", "1")).await;
+    assert_eq!(st, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("a machine they can reach"), "{v}");
+    assert_eq!(attach(&base, "a", &board, block("xbox", "1")).await.0, 403);
+    assert_eq!(attach(&base, "a", &board, block("nobox", "1")).await.0, 403);
+    let asked = hub.calls_of("may_reach");
+    assert_eq!(attach(&base, "a", &board, block("xbox", "1")).await.0, 403);
+    assert_eq!(hub.calls_of("may_reach"), asked + 1, "a check asks again");
+    hub.reach_down(true);
+    let (st, v) = attach(&base, "a", &board, block("apad", "1")).await;
+    assert!(st >= 500, "the hub down: nothing attached: {st} {v}");
+    hub.reach_down(false);
+    let (_, v) = read("a").await;
+    assert_eq!(row_in(&v, &row)["attachments"], json!([]), "{v}");
+
+    // An agent: only its own machine's blocks.
+    let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(block("apad", "1"))).await;
+    assert_eq!(st, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("its own machine"), "{v}");
+    let (st, v) = signed(&base, "a apad", "POST", &agent_board_attachments(&board), Some(block("apad", "2"))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // a attaches apad's pane 1 (theirs) and geek's pane 3 (the team's);
+    // each machine reports.
+    assert_eq!(attach(&base, "a", &board, block("apad", "1")).await.0, 200);
+    assert_eq!(attach(&base, "b", &board, block("geek", "3")).await.0, 200, "b reaches the team's machine");
+    let report = |pane: &str, title: &str| json!({ "pane": pane, "block": { "state": "working", "title": title } });
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("1", "by a"))).await.0, 200);
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("2", "by apad"))).await.0, 200);
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("3", "on geek"))).await.0, 200);
+
+    // a reaches both machines; b and x reach geek only, and are told apad's
+    // block only where apad's own agent attached it.
+    let (_, v) = read("a").await;
+    assert_eq!(
+        (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+        (told("apad", "by a"), told("apad", "by apad"), told("geek", "on geek")),
+        "{v}"
+    );
+    for who in ["b", "x"] {
+        let (st, v) = read(who).await;
+        assert_eq!(st, 200, "{v}");
+        assert_eq!(
+            (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+            (untold(), told("apad", "by apad"), told("geek", "on geek")),
+            "{who}: {v}"
+        );
+        assert_eq!(lane(&v, &row), "doing", "the lane is the same whoever reads: {v}");
+    }
+
+    // An attachment from before the check: b's of apad's pane 4, and geek's
+    // agent's of apad's pane 5. Only a, who reaches apad, is told either.
+    let pane = |p: &str| Pointer::Block { machine: "apad".to_owned(), pane: p.to_owned() };
+    let now = arugula_e2e::now_ms();
+    app.db.attach(&board, &row, AttachRole::Work, &pane("4"), None, now, 50).unwrap().unwrap();
+    app.db.attach(&board, &row, AttachRole::Work, &pane("5"), Some("geek"), now, 50).unwrap().unwrap();
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("4", "old"))).await.0, 200);
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("5", "older"))).await.0, 200);
+    let (_, v) = read("b").await;
+    assert_eq!((seen(&v, "4"), seen(&v, "5")), (untold(), untold()), "{v}");
+    let (_, v) = read("a").await;
+    assert_eq!((seen(&v, "4"), seen(&v, "5")), (told("apad", "old"), told("apad", "older")), "{v}");
+
+    // A share reaches what the read shows.
+    hub.share("apad", "b", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(seen(&read("b").await.1, "1"), told("apad", "by a"), "shared with b now");
+    hub.share("apad", "b", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(seen(&read("b").await.1, "1"), untold(), "and no longer");
+
+    // While the hub can't say, the board still reads, showing only what its
+    // own agents attached; then it shows again.
+    hub.reach_down(true);
+    app.cache.advance(crate::cache::CACHE_TICK);
+    let (st, v) = read("a").await;
+    assert_eq!(st, 200, "the hub down: {v}");
+    assert_eq!(
+        (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+        (untold(), told("apad", "by apad"), untold()),
+        "the hub down: {v}"
+    );
+    hub.reach_down(false);
+    assert_eq!(seen(&read("a").await.1, "1"), told("apad", "by a"), "nothing kept of the failure");
+}
+
 /// Stalled: a Doing row whose open blocks have all been idle longer than the
 /// project's `stall_minutes`, with no PR on it. It is a mark for every
 /// reader, in Needs you only for the person who owns the block, and a reader
