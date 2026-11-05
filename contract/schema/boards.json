@@ -1792,6 +1792,15 @@
       "additionalProperties": false,
       "description": "[`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and\nits state.",
       "properties": {
+        "age_ms": {
+          "description": "How long ago, in milliseconds, the machine saw the block in this\nstate: more than none when the report waited out a failure to reach\ncontrol. A machine that sends it (0 included) also sends each live\nblock's state again every [`BLOCK_STATE_EVERY_MS`], so control counts\none of its reports older than [`BLOCK_STATE_STALE_MS`] as unknown.\nNone: a daemon from before Arugula #745, whose report is as of now\nand never goes stale.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "block": {
           "$ref": "#/$defs/BlockStateReport"
         },
