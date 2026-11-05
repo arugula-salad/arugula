@@ -514,17 +514,23 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
 }
 
 /// Every issue in a project with its timeline and comments, as `by` may
-/// read them (M195: custody's one-way door).
+/// read them (M195: custody's one-way door). The comments are chat's, so
+/// they come only while chat is on for `by` (its owner, for an agent).
 pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire::IssueExport, ApiError> {
     let place = place(app, by, project, false).await?;
     app.limits.check_account(ISSUE_EXPORTS, by.account)?;
+    let with_comments = crate::chat::chat_on(app, by.account).await?;
     let all = app.db.export_issues(&place.project.id)?;
     let mut people = BTreeSet::new();
     let mut agents = BTreeSet::new();
     let mut threads = Vec::with_capacity(all.len());
     for e in &all {
         let mut comments = vec![];
-        if let Some(room) = app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)? {
+        let room = match with_comments {
+            true => app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)?,
+            false => None,
+        };
+        if let Some(room) = room {
             let mut after = i64::MIN;
             loop {
                 let (page, more) = app.db.chat_messages(&room.id, Page::After(after), 500)?;
@@ -602,6 +608,7 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
         exported_at: now_ms(),
         issues,
         people,
+        comments_in_chat: !with_comments,
     })
 }
 
@@ -774,6 +781,9 @@ pub fn markdown(x: &wire::IssueExport) -> String {
         when(x.exported_at),
         x.project
     );
+    if x.comments_in_chat {
+        out.push_str("\nThe comments are left out: they're in chat, which is off for you.\n");
+    }
     for e in &x.issues {
         let i = &e.issue;
         let _ = write!(out, "\n## #{} {}\n\n", i.number, line(&i.title));

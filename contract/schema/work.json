@@ -2528,6 +2528,10 @@
               },
               "type": "array"
             },
+            "comments_in_chat": {
+              "description": "The comments were left out: they're in chat, which is off for\nthe session's asker (Arugula #746). Absent when they're there.",
+              "type": "boolean"
+            },
             "events": {
               "items": {
                 "$ref": "#/$defs/IssueEvent"

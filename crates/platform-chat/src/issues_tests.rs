@@ -179,6 +179,34 @@ async fn chat_off_changes_nothing_about_issues() {
     assert_eq!((st, &v["reason"]), (403, &json!(crate::chat::CHAT_OFF)), "{v}");
 }
 
+/// Issue comments stay with chat (Arugula #746): a member with chat off
+/// exports the issues without their comments, and the export says so, in
+/// JSON and in Markdown. With chat on, the same export has them.
+#[tokio::test]
+async fn an_export_leaves_comments_out_while_chat_is_off() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, i) = new_issue(&base, "a", &p, json!({ "title": "talked about" })).await;
+    let id = i["id"].as_str().unwrap();
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let room = room["id"].as_str().unwrap();
+    let post = Some(json!({ "text": "a word in the thread" }));
+    assert_eq!(call(&base, "a", "POST", &format!("/api/chat/rooms/{room}/messages"), post).await.0, 200);
+
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    assert_eq!((x.issues[0].comments.len(), x.comments_in_chat), (1, false));
+    hub.flag("account:v", false);
+    app.cache.drop_all();
+    let (st, v) = get(&base, "v", &format!("/api/projects/{p}/issues/export")).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((&v["issues"][0]["comments"], &v["comments_in_chat"]), (&json!([]), &json!(true)), "{v}");
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    let md = markdown(&x);
+    assert!(md.contains("comments are left out") && !md.contains("a word in the thread"), "{md}");
+}
+
 /// What a patch takes and what it refuses; lists filter and page.
 #[tokio::test]
 async fn patches_lists_and_what_they_refuse() {

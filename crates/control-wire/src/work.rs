@@ -788,6 +788,10 @@ pub enum SessionIssuesGiven {
         comments: Vec<crate::chat::ChatMessage>,
         /// There are older comments than these.
         more_comments: bool,
+        /// The comments were left out: they're in chat, which is off for
+        /// the session's asker (Arugula #746). Absent when they're there.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        comments_in_chat: bool,
     },
     /// Posted, as this message of the issue's thread.
     Commented {

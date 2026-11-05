@@ -55,10 +55,13 @@ export function hasChat(): boolean {
   return !!platformOrigin() && !!chatStore();
 }
 
-/** Whether to offer Boards: with chat (the machine has joined control) and
- * the machine's owner (as Docs). */
+/** Whether to offer Boards: once control has answered for a person signed
+ * in to it, whether or not chat is on for them, since a project's boards and
+ * issues follow the project (Arugula #746); and to the machine's owner (as
+ * Docs). */
 export function hasBoards(client: Client): boolean {
-  return hasChat() && !client.state?.roles;
+  const known = chat.on === true || (chat.on === false && !chat.signedOut);
+  return !!platformOrigin() && known && !client.state?.roles;
 }
 
 /** Unread messages in the rooms chat lists, and whether one mentions

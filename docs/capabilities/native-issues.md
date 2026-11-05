@@ -13,7 +13,7 @@ decisions: ["aru-041", "aru-084", "aru-085", "aru-086", "aru-088", "aru-089", "a
 ## What a person can do
 A project has numbered issues of its own on the platform: open, edit, label, assign, close, reopen, comment and export them, with every machine asleep. A person can send one native issue to a repo linked to its project, as a new GitHub issue in their own name, and after that new top-level comments cross between the two.
 
-Project membership and roles alone decide who reads and changes native issues. Control's chat setting doesn't (Arugula #746), for a person or for an agent acting for them. An issue's comments are its chat thread, so they still need chat: with chat off, the page and `arugula issue show` say so in place of the comments.
+Project membership and roles alone decide who reads and changes native issues. Control's chat setting doesn't (Arugula #746), for a person or for an agent acting for them. An issue's comments are its chat thread, so they still need chat. With chat off for the reader (the asker, for a hosted session), the page, `arugula issue show` and `arugula issue agent`, the export and a session's read of an issue leave the comments out and say they're in chat.
 
 ## Where it runs
 Short paths below are under `crates/platform/src`.

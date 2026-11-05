@@ -494,6 +494,8 @@ fn the_issue_home_decides() {
     assert!(rig.ok(&["issue", "list", "--native"]).contains("Native anyway"));
     let shown = rig.ok(&["issue", "show", "#1", "--native"]);
     assert!(shown.contains("Native anyway") && shown.contains("comments are in chat, which is off"), "{shown}");
+    let v: Value = serde_json::from_str(&rig.ok(&["--json", "issue", "show", "#1", "--native"])).unwrap();
+    assert_eq!((&v["comments"], &v["comments_in_chat"]), (&json!([]), &json!(true)), "{v}");
     assert!(rig.fails(false, &["issue", "comment", "#1", "x", "--native"]).contains("chat isn't on"));
 }
 

@@ -735,7 +735,10 @@ fn show(here: &Here, r: &Ref, json_out: bool) -> anyhow::Result<i32> {
     let events: IssueEvents = get(&here.e, &format!("/api/issues/{}/events", issue.id))?;
     let comments = here.comments(&issue.id)?;
     if json_out {
-        print_json(&json!({ "issue": issue, "events": events.events, "comments": comments }));
+        print_json(
+            &json!({ "issue": issue, "events": events.events, "comments": comments.as_deref().unwrap_or_default(),
+            "comments_in_chat": comments.is_none() }),
+        );
         return Ok(0);
     }
     let names = here.names(&issue.project);
@@ -1071,7 +1074,10 @@ pub fn agent(
     if issue.state != "open" {
         bail!("#{} is closed", issue.number);
     }
-    let comments = here.comments(&issue.id)?.unwrap_or_default();
+    let comments = here.comments(&issue.id)?;
+    if comments.is_none() {
+        eprintln!("arugula: {NO_COMMENTS} The agent gets the issue without them.");
+    }
     let names = here.names(&issue.project);
     let project = here.projects.projects.iter().find(|p| p.id == issue.project).map_or("", |p| p.name.as_str());
     let dir = crate::util::absolute(dir.as_deref().unwrap_or("."))?;
@@ -1089,7 +1095,7 @@ pub fn agent(
     // time, as on a GitHub issue's agent.
     let mut config = json!({ "agent": kind, "cwd": wt, "allow": [], "user_settings": false,
         "title": format!("#{}", issue.number),
-        "prompt": prompt(&issue, project, &comments, &names, &branch, base, extra.as_deref()) });
+        "prompt": prompt(&issue, project, comments.as_deref(), &names, &branch, base, extra.as_deref()) });
     if kind == "claude" {
         let d = std::env::var("CLAUDE_CONFIG_DIR").ok().filter(|d| !d.is_empty());
         config["claude_config_dir"] = json!(d.map(|d| crate::util::absolute(&d)).transpose()?.unwrap_or_default());
@@ -1139,7 +1145,8 @@ fn defang(s: &str) -> String {
 fn prompt(
     issue: &Issue,
     project: &str,
-    comments: &[ChatMessage],
+    // `None`: chat is off for the person, so they aren't here.
+    comments: Option<&[ChatMessage]>,
     names: &HashMap<String, String>,
     branch: &str,
     base: &str,
@@ -1161,11 +1168,14 @@ fn prompt(
     if !issue.body.trim().is_empty() {
         p.push_str(&format!("\n{}\n", defang(issue.body.trim())));
     }
-    for c in comments {
+    for c in comments.unwrap_or_default() {
         let name = if c.name.is_empty() { names.get(&c.author).cloned().unwrap_or_default() } else { c.name.clone() };
         p.push_str(&format!("\nComment by {}:\n{}\n", via(who(&name, c.agent.as_ref()), c), defang(c.text.trim())));
     }
     p.push_str(&format!("</{MARK}>\n"));
+    if comments.is_none() {
+        p.push_str("\nThe issue's comments aren't above: they're in chat, which is off for me.\n");
+    }
     p.push_str(&format!(
         "\nYou're in a git worktree of your own, on a new branch `{branch}` made from `{base}`. Do the work here. \
          When it's ready, commit it, push the branch, and open a pull request from `{branch}` into `{base}` that \
@@ -1411,9 +1421,12 @@ mod tests {
 
         assert_eq!(branch_for(7, "Fix the </issue-text> thing"), "i7-fix-the-issue-text-thing");
         assert_eq!(branch_for(8, "!!"), "i8");
-        let p = prompt(&issue, "Acme", &[comment], &names, "i7-fix", "main", Some("Be brief."));
+        let p = prompt(&issue, "Acme", Some(&[comment]), &names, "i7-fix", "main", Some("Be brief."));
         assert_eq!(p.matches("</issue-text>").count(), 1, "the title can't close the marked text: {p}");
         assert!(p.contains("issue #7 in the project Acme") && p.contains("Comment by Jake:\nSeen it."), "{p}");
         assert!(p.contains("branch `i7-fix` made from `main`") && p.ends_with("Be brief.\n"), "{p}");
+        // Chat off: the prompt says the comments are in chat, not that there are none.
+        let p = prompt(&issue, "Acme", None, &names, "i7-fix", "main", None);
+        assert!(!p.contains("Comment by") && p.contains("comments aren't above: they're in chat"), "{p}");
     }
 }

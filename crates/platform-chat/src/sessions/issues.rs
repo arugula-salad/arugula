@@ -173,7 +173,13 @@ async fn show(app: &Platform, by: Actor<'_>, s: &AgentSession, number: u64) -> S
     let go = async {
         let issue = issues::read_number(app, by, &s.project, number).await?;
         let events = issues::timeline(app, by, &issue.id).await?.events;
-        let (comments, more_comments) = match app.db.chat_room_on(&format!("project:{}", issue.project), &issue.id)? {
+        // The comments are chat's: only while chat is on for the asker.
+        let with_comments = crate::chat::chat_on(app, by.account).await?;
+        let room = match with_comments {
+            true => app.db.chat_room_on(&format!("project:{}", issue.project), &issue.id)?,
+            false => None,
+        };
+        let (comments, more_comments) = match room {
             Some(room) => {
                 let (ms, more) = app.db.chat_messages(&room.id, Page::Newest, COMMENTS)?;
                 let ms: Vec<_> = ms.into_iter().filter(|m| m.deleted.is_none()).collect();
@@ -181,7 +187,13 @@ async fn show(app: &Platform, by: Actor<'_>, s: &AgentSession, number: u64) -> S
             }
             None => (vec![], false),
         };
-        Ok::<_, arugula_control_common::ApiError>(SessionIssuesGiven::Shown { issue, events, comments, more_comments })
+        Ok::<_, arugula_control_common::ApiError>(SessionIssuesGiven::Shown {
+            issue,
+            events,
+            comments,
+            more_comments,
+            comments_in_chat: !with_comments,
+        })
     };
     go.await.unwrap_or_else(said)
 }

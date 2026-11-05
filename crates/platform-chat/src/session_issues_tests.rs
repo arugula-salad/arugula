@@ -62,6 +62,30 @@ async fn file(base: &str, by: &str, project: &str, title: &str) -> serde_json::V
     v
 }
 
+/// Issue comments stay with chat (Arugula #746): with chat off for its
+/// asker, a session reads the issue without its comments, and is told
+/// they're in chat.
+#[tokio::test]
+async fn a_session_whose_asker_has_chat_off_gets_no_comments() {
+    let (hub, app, base, t, _u) = seeded().await;
+    file(&base, "a", &t, "x").await;
+    let ses = session(&app, &t, "hw_1", "b");
+    let m = machine(&t, "hw_1", "box1");
+    let comment = Op::Comment { number: 1, text: "a word in the thread".into() };
+    assert!(matches!(ask(&app, &m, &ses, comment).await, Given::Commented { .. }));
+    let Given::Shown { comments, .. } = ask(&app, &m, &ses, Op::Show { number: 1 }).await else { panic!() };
+    assert_eq!(comments.len(), 1);
+
+    hub.flag("account:b", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    let Given::Shown { issue, comments, more_comments, comments_in_chat, .. } =
+        ask(&app, &m, &ses, Op::Show { number: 1 }).await
+    else {
+        panic!()
+    };
+    assert_eq!((issue.number, comments.len(), more_comments, comments_in_chat), (1, 0, false, true));
+}
+
 /// The asker's agent lists, reads and comments on its own project's
 /// issues, and a comment is the session's own (no author, `via`
 /// `said:<ses>`, as its answers are), in the issue's thread, where people
@@ -79,13 +103,14 @@ async fn a_sessions_agent_reads_and_comments_in_its_project() {
     let titles: Vec<&str> = list.issues.iter().map(|i| i.title.as_str()).collect();
     assert_eq!((list.project.as_str(), titles), (t.as_str(), vec!["the canary fails"]), "never u's");
 
-    let Given::Shown { issue, events, comments, more_comments } = ask(&app, &m, &ses, Op::Show { number: 1 }).await
+    let Given::Shown { issue, events, comments, more_comments, comments_in_chat } =
+        ask(&app, &m, &ses, Op::Show { number: 1 }).await
     else {
         panic!()
     };
     assert_eq!(
-        (issue.id.as_str(), events.len(), comments.len(), more_comments),
-        (one["id"].as_str().unwrap(), 1, 0, false)
+        (issue.id.as_str(), events.len(), comments.len(), more_comments, comments_in_chat),
+        (one["id"].as_str().unwrap(), 1, 0, false, false)
     );
 
     let comment = Op::Comment { number: 1, text: "bisected it to Tuesday".into() };
