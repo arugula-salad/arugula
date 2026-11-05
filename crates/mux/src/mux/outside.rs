@@ -44,7 +44,7 @@ pub trait People: Send + Sync + Debug {
 }
 
 /// The Claude Code conversations on this machine (#146).
-pub trait AgentSessions: Send + Sync + Debug {
+pub trait Conversations: Send + Sync + Debug {
     /// The transcript of a conversation, by id or a unique prefix.
     fn transcript(&self, id: &str) -> Option<PathBuf>;
     /// The conversation each of our panes' Claude Code holds now, by pane,

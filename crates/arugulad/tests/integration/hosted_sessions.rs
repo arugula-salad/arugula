@@ -50,7 +50,9 @@ use std::{
 
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
-    work::{FinishResult, FinishStep, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, Work},
+    work::{
+        AgentSessionWork, FinishResult, FinishStep, SessionAction, SessionDetail, SessionPrompt, SessionReport, Work,
+    },
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -73,7 +75,7 @@ const WORKSPACE: &str = "hw_1";
 /// A session as the platform has it.
 #[derive(Clone)]
 struct Ses {
-    work: SessionWork,
+    work: AgentSessionWork,
     /// Stopped by a person: no longer listed, and its reports refused.
     stopped: bool,
 }
@@ -202,7 +204,7 @@ impl Fake {
         model: Option<&str>,
         repo: &str,
     ) {
-        let work = SessionWork {
+        let work = AgentSessionWork {
             session: id.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),

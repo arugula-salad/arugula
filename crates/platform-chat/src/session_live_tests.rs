@@ -17,7 +17,7 @@ use crate::{
     db::jobs::JobKind,
     db::{
         Db,
-        sessions::{NewPrompt, NewSession, Source},
+        sessions::{NewAgentSession, NewPrompt, Source},
         sql::{Sql as _, params},
     },
     jobs::{Clock, Handler as _},
@@ -27,7 +27,7 @@ use crate::{
 /// Team t: a owns it, b edits, v views; c is in no team of it. A channel
 /// with a's message asking for the session, a hosted workspace whose box
 /// is `machine`, and the session, its card posted.
-async fn seed(app: &Platform, hub: &TestHub, base: &str, machine: &str) -> (Session, String, i64) {
+async fn seed(app: &Platform, hub: &TestHub, base: &str, machine: &str) -> (AgentSession, String, i64) {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("v", TeamRole::Viewer)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
     hub.flag("team:t", true);
@@ -55,7 +55,7 @@ async fn seed(app: &Platform, hub: &TestHub, base: &str, machine: &str) -> (Sess
         panic!("no workspace");
     };
     app.db.c().execute("UPDATE hosted_workspaces SET machine = ?2 WHERE id = ?1", params![ws.id, machine]).unwrap();
-    let new = NewSession {
+    let new = NewAgentSession {
         project: &project,
         room: &room,
         parent_seq: parent,
@@ -88,7 +88,7 @@ impl HostedBox {
     }
 
     /// The machine as the hub vouches for it on `s`'s workspace.
-    fn machine(&self, s: &Session) -> HostedMachine {
+    fn machine(&self, s: &AgentSession) -> HostedMachine {
         HostedMachine {
             project: s.project.clone(),
             workspace: s.workspace.clone(),
@@ -139,7 +139,7 @@ impl HostedBox {
     }
 
     /// Report on `s` through the hub's route, and see it taken.
-    async fn say(&self, app: &Platform, s: &str, kind: Kind, to: Option<State>, detail: Value) -> Session {
+    async fn say(&self, app: &Platform, s: &str, kind: Kind, to: Option<State>, detail: Value) -> AgentSession {
         let session = app.db.session(s).unwrap().unwrap();
         let r = self.signed(app, s, kind, to, detail);
         assert_eq!(report(app, &self.machine(&session), &r).await.unwrap(), Reported::Taken);

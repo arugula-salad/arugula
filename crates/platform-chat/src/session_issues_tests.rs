@@ -9,7 +9,7 @@ use crate::{
     PlatformPort as _,
     agents_tests::seeded,
     chat_tests::call,
-    db::sessions::{NewPrompt, NewSession, Source},
+    db::sessions::{NewAgentSession, NewPrompt, Source},
     work::HostedMachine,
 };
 
@@ -22,7 +22,7 @@ fn session(app: &crate::Platform, project: &str, ws: &str, asker: &str) -> Strin
     else {
         panic!("no workspace");
     };
-    let new = NewSession {
+    let new = NewAgentSession {
         project,
         room: "ch_general",
         parent_seq: ws.len() as u64 + ws.bytes().last().map_or(0, u64::from),

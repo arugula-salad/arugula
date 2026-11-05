@@ -70,7 +70,7 @@ pub struct Config {
     /// `pane_env` sets them.
     pub shell_env_skip: Vec<String>,
     /// The Claude Code conversations here (#146).
-    pub sessions: Arc<dyn super::AgentSessions>,
+    pub sessions: Arc<dyn super::Conversations>,
     /// What a pane leaves behind when it closes.
     pub pane_gone: Arc<dyn super::PaneGone>,
     /// Told of each new terminal and block, to count them.

@@ -33,7 +33,7 @@ use crate::{
     Platform,
     db::{
         chat::{NewMessage, Room},
-        sessions::{Event, Kind, Session, SessionDetail, State},
+        sessions::{AgentSession, Event, Kind, SessionDetail, State},
     },
 };
 
@@ -106,7 +106,7 @@ pub fn close(app: &Platform, room: &Room, thread: u64, of: &str) -> Result<()> {
 }
 
 /// Session `s`'s asks are answered.
-pub fn close_session(app: &Platform, s: &Session) -> Result<()> {
+pub fn close_session(app: &Platform, s: &AgentSession) -> Result<()> {
     let Some(room) = app.db.chat_room(&s.room)? else { return Ok(()) };
     close(app, &room, s.parent_seq, &s.id)
 }
@@ -116,7 +116,7 @@ pub fn close_session(app: &Platform, s: &Session) -> Result<()> {
 /// so whoever reads the thread (its page, an agent's `read_thread`) sees
 /// the answer the agent got, not only that there was one. It mentions
 /// nobody now.
-pub fn answered(app: &Platform, s: &Session, who: &str, said: &str) -> Result<()> {
+pub fn answered(app: &Platform, s: &AgentSession, who: &str, said: &str) -> Result<()> {
     let Some(room) = app.db.chat_room(&s.room)? else { return Ok(()) };
     let (parent, _) = place(&room, s.parent_seq);
     let who = if who.trim().is_empty() { "someone" } else { who.trim() };
@@ -187,7 +187,7 @@ fn clip(s: &str) -> String {
 
 /// Session `s` moved: once it isn't waiting on a person, what it asked is
 /// answered.
-pub fn settle(app: &Platform, s: &Session) {
+pub fn settle(app: &Platform, s: &AgentSession) {
     if s.seen_as() == State::NeedsInput {
         return;
     }
@@ -198,7 +198,7 @@ pub fn settle(app: &Platform, s: &Session) {
 
 /// Session `s`'s box reported `events`: when its agent asks something now
 /// (`working` to `needs_input`), that's an ask for its asker.
-pub async fn opened(app: &Platform, s: &Session, events: &[Event]) {
+pub async fn opened(app: &Platform, s: &AgentSession, events: &[Event]) {
     let asked = events.iter().rev().find(|e| {
         e.kind == Kind::State && e.from == Some(State::Working) && e.to == State::NeedsInput && e.daemon.is_some()
     });
@@ -208,7 +208,7 @@ pub async fn opened(app: &Platform, s: &Session, events: &[Event]) {
     }
 }
 
-async fn ask_for(app: &Platform, s: &Session, e: &Event) -> Result<()> {
+async fn ask_for(app: &Platform, s: &AgentSession, e: &Event) -> Result<()> {
     let Some(room) = app.db.chat_room(&s.room)? else { return Ok(()) };
     let d: SessionDetail = serde_json::from_str(&e.detail).unwrap_or_default();
     let q = d.question.as_deref().map(str::trim).filter(|q| !q.is_empty()).unwrap_or("it waits for an answer");

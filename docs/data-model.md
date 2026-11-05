@@ -247,7 +247,7 @@ purpose, and the records say why:
 
 | Where the code differs | Tracked in |
 |---|---|
-| "Session" and "agent session" name other things in Rust types | #671 |
+| What Claude Code says about its conversation is `SessionSignal` in Rust, after the `session-signal` verb and route | Not tracked: CLI verbs stay (#668) |
 | A machine Doc's chip on a team's board keeps the title it was linked with, not its copy's | Settled as far as #673 goes: a copy lives in its owner's project |
 | A board's link to a copy that was deleted, on the platform or with its Doc, reads "a deleted Doc" for good: the machine's next copy of the same Doc gets a new id, which the link doesn't follow | Not tracked |
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |

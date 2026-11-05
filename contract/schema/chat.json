@@ -1,35 +1,5 @@
 {
   "$defs": {
-    "AgentMachineSessions": {
-      "description": "A machine's sessions an agent may mention in a room (#577).",
-      "properties": {
-        "machine_name": {
-          "type": "string"
-        },
-        "offline": {
-          "default": false,
-          "description": "The machine isn't on control's relay now, or didn't answer.",
-          "type": "boolean"
-        },
-        "sessions": {
-          "description": "Newest active first, at most 20.",
-          "items": {
-            "$ref": "#/$defs/MachineSession"
-          },
-          "type": "array"
-        },
-        "shared": {
-          "description": "False when its owner shows no session names.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "machine_name",
-        "shared",
-        "sessions"
-      ],
-      "type": "object"
-    },
     "AgentMessages": {
       "properties": {
         "messages": {
@@ -311,20 +281,6 @@
         "rooms",
         "reach"
       ],
-      "type": "object"
-    },
-    "AgentSessionsQuery": {
-      "description": "[`agent_machine_sessions`]' query.",
-      "properties": {
-        "from_session": {
-          "default": null,
-          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
       "type": "object"
     },
     "ChatAddMembers": {
@@ -2799,7 +2755,7 @@
       ],
       "type": "string"
     },
-    "MachineSession": {
+    "MachineAgent": {
       "description": "A session of a machine a teammate's agent may mention (#577).",
       "properties": {
         "active_ms_ago": {
@@ -2818,7 +2774,7 @@
         "state": {
           "anyOf": [
             {
-              "$ref": "#/$defs/MachineSessionState"
+              "$ref": "#/$defs/MachineAgentState"
             },
             {
               "type": "null"
@@ -2853,7 +2809,7 @@
       ],
       "type": "object"
     },
-    "MachineSessionState": {
+    "MachineAgentState": {
       "description": "What a machine's session is doing (#645).",
       "enum": [
         "working",
@@ -2861,6 +2817,50 @@
         "needs_input"
       ],
       "type": "string"
+    },
+    "MachineAgents": {
+      "description": "A machine's sessions an agent may mention in a room (#577).",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "offline": {
+          "default": false,
+          "description": "The machine isn't on control's relay now, or didn't answer.",
+          "type": "boolean"
+        },
+        "sessions": {
+          "description": "Newest active first, at most 20.",
+          "items": {
+            "$ref": "#/$defs/MachineAgent"
+          },
+          "type": "array"
+        },
+        "shared": {
+          "description": "False when its owner shows no session names.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine_name",
+        "shared",
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "MachineAgentsQuery": {
+      "description": "[`agent_machine_sessions`]' query.",
+      "properties": {
+        "from_session": {
+          "default": null,
+          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "MentionTurn": {
       "description": "What the session's turn that took a mention is doing (#540).",

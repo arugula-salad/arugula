@@ -226,7 +226,7 @@ pr_block?: number, };
  * strip at the top of a thread (#646). Only with agent mentions on; off,
  * they learn nothing whatever this says.
  */
-export type AgentSessions = "none" | "names" | "work";
+export type AgentListing = "none" | "names" | "work";
 
 /**
  * The open question or approval behind an `ask` reason.
@@ -4948,7 +4948,7 @@ moves: Array<SessionPlace>,
  * The issue it was started on, with the first board that has a row for
  * it (#372).
  */
-work: SessionWork | null, };
+work: SessionIssueLink | null, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -4964,6 +4964,21 @@ export type SessionIssue = { id: string, number: number, title: string, labels: 
  * `open` or `closed`.
  */
 state: string, };
+
+/**
+ * The issue a session was started on, as its header's chip shows it:
+ * `#N · ‹board›`, linking to the board's row.
+ */
+export type SessionIssueLink = { 
+/**
+ * The issue (`iss_…`) and its number.
+ */
+issue: string, number: number, 
+/**
+ * The board that has a row for it, when boards are on for the reader,
+ * its title and the row.
+ */
+board: string | null, board_title: string | null, row: string | null, };
 
 /**
  * One entry of a session's history, in words.
@@ -5302,21 +5317,6 @@ going?: boolean,
 limit?: number, };
 
 /**
- * The issue a session was started on, as its header's chip shows it:
- * `#N · ‹board›`, linking to the board's row.
- */
-export type SessionWork = { 
-/**
- * The issue (`iss_…`) and its number.
- */
-issue: string, number: number, 
-/**
- * The board that has a row for it, when boards are on for the reader,
- * its title and the row.
- */
-board: string | null, board_title: string | null, row: string | null, };
-
-/**
  * A read-only share of one pane. `token`, `path` and `url` are only in the
  * answer that minted it; the daemon keeps a hash.
  */
@@ -5360,7 +5360,7 @@ agent_mentions?: boolean,
  * (#577). `work` by default, since a thread's strip shows it (Jake,
  * 2026-11-03, aru-133).
  */
-agent_sessions?: AgentSessions, 
+agent_sessions?: AgentListing, 
 /**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
@@ -5371,7 +5371,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentSessions, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentListing, };
 
 /**
  * A split's area and how long each child is along the split's direction,

@@ -95,7 +95,7 @@ pub struct PaneMeta {
     /// The agent conversation running in it (#146), for a restart to
     /// resume.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<AgentSession>,
+    pub session: Option<PaneConversation>,
     /// Someone picked its restart policy (a pane left at the default that
     /// runs Claude Code resumes its conversation).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -109,7 +109,7 @@ pub struct PaneMeta {
 /// An agent's conversation in a pane (#146), as its hooks or Claude
 /// Code's session files said.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSession {
+pub struct PaneConversation {
     /// `claude`, `codex`.
     pub agent: String,
     /// Its session id: checked by [`crate::resume::valid_id`] before it's
@@ -584,6 +584,24 @@ mod tests {
         let d = std::env::temp_dir().join(format!("arugula-store-{name}-{}-{}", std::process::id(), now_ms()));
         let _ = fs::remove_dir_all(&d);
         d
+    }
+
+    /// A `layout.json` a release saved loads, its panes' conversations
+    /// with it, and saves back as it was: a renamed type drops no field.
+    #[test]
+    fn release_layout_loads() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/layout.json");
+        let bytes = fs::read(&fixture).unwrap();
+        let root = tmp("release-layout");
+        let store = StateDir::open(root.clone()).unwrap();
+        fs::write(root.join("layout.json"), &bytes).unwrap();
+        let saved = store.load_layout().unwrap().unwrap();
+        let conversations: Vec<&PaneConversation> = saved.panes.values().filter_map(|m| m.session.as_ref()).collect();
+        assert_eq!(conversations.len(), 14);
+        assert!(conversations.iter().all(|c| c.agent == "claude" && c.transcript.is_some() && c.cwd.is_some()));
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_value(&saved).unwrap(), was);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

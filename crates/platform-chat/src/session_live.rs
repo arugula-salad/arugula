@@ -31,8 +31,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
-    SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionLine, SessionOpen, SessionPort, SessionTry,
-    SessionTurn, SessionView, SessionWork,
+    SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionIssueLink, SessionLine, SessionOpen, SessionPort,
+    SessionTry, SessionTurn, SessionView,
 };
 use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
@@ -49,8 +49,8 @@ use crate::{
     db::{
         session_merged::MERGED,
         sessions::{
-            ActionKind, BOX_REBUILT_LOST, DaemonReport, Event, Kind, MOVED_LOST, Move, NOT_PICKED, NewAction, Refused,
-            Role, Session, SessionDetail, State,
+            ActionKind, AgentSession, BOX_REBUILT_LOST, DaemonReport, Event, Kind, MOVED_LOST, Move, NOT_PICKED,
+            NewAction, Refused, Role, SessionDetail, State,
         },
     },
     forge::links::membership,
@@ -61,7 +61,7 @@ use crate::{
 /// Move session `id` and tell the pages showing its card. What
 /// [`Db::move_session`](crate::db::Db::move_session) answers, as it
 /// answers it.
-pub fn record(app: &Platform, id: &str, m: &Move) -> anyhow::Result<Result<(Session, Vec<Event>), Refused>> {
+pub fn record(app: &Platform, id: &str, m: &Move) -> anyhow::Result<Result<(AgentSession, Vec<Event>), Refused>> {
     let tool = match m {
         Move::Daemon { .. } => app.db.session(id)?.and_then(|s| s.last_tool),
         Move::Control { .. } => None,
@@ -162,7 +162,12 @@ fn no_session() -> ApiError {
 
 /// The session, if `account` is a member of its project, with whether they
 /// may act on it (an owner or editor).
-pub(crate) async fn readable(app: &Platform, account: &str, id: &str, now: bool) -> Result<(Session, bool), ApiError> {
+pub(crate) async fn readable(
+    app: &Platform,
+    account: &str,
+    id: &str,
+    now: bool,
+) -> Result<(AgentSession, bool), ApiError> {
     let s = app.db.session(id)?.ok_or_else(no_session)?;
     match membership(app, account, &s.project, now).await {
         Ok((_, role)) => Ok((s, role != TeamRole::Viewer)),
@@ -171,7 +176,7 @@ pub(crate) async fn readable(app: &Platform, account: &str, id: &str, now: bool)
     }
 }
 
-pub(crate) async fn actor(app: &Platform, account: &str, id: &str) -> Result<Session, ApiError> {
+pub(crate) async fn actor(app: &Platform, account: &str, id: &str) -> Result<AgentSession, ApiError> {
     let (s, may) = readable(app, account, id, true).await?;
     if !may {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't stop or answer a session"));
@@ -294,7 +299,7 @@ fn pushed_in(events: &[Event]) -> bool {
 }
 
 /// Why it ended, or why it's queued again (its box was rebuilt).
-pub(crate) fn reason_of(s: &Session, events: &[Event]) -> Option<String> {
+pub(crate) fn reason_of(s: &AgentSession, events: &[Event]) -> Option<String> {
     let again = s.state == State::Queued && s.last_seq > 1;
     (s.state.terminal() || again)
         .then(|| events.iter().rev().find(|e| e.kind == Kind::State && e.to == s.state))
@@ -304,7 +309,7 @@ pub(crate) fn reason_of(s: &Session, events: &[Event]) -> Option<String> {
 
 /// The Try 3 `s` is in (M264): its parent, then the siblings, and the one
 /// kept. Nothing for a session in none.
-fn tries(app: &Platform, s: &Session) -> anyhow::Result<(Vec<SessionTry>, Option<String>)> {
+fn tries(app: &Platform, s: &AgentSession) -> anyhow::Result<(Vec<SessionTry>, Option<String>)> {
     let parent = match (s.role, &s.parent_session) {
         (Role::Thread, _) => s.clone(),
         (Role::Try, Some(p)) => match app.db.session(p)? {
@@ -339,7 +344,7 @@ fn tries(app: &Platform, s: &Session) -> anyhow::Result<(Vec<SessionTry>, Option
 }
 
 /// Session `s`'s card and history, for `reader`, who `may` act on it.
-pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -> Result<SessionView, ApiError> {
+pub(crate) async fn view(app: &Platform, s: &AgentSession, may: bool, reader: &str) -> Result<SessionView, ApiError> {
     let events = app.db.session_events(&s.id)?;
     let actions = app.db.session_actions(&s.id)?;
     let pending: Vec<_> = actions.iter().filter(|a| a.state == crate::db::sessions::ActionState::Pending).collect();
@@ -382,7 +387,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
             Some(i) => {
                 let rows = app.db.rows_of_issue(item)?;
                 let first = rows.into_iter().next();
-                Some(SessionWork {
+                Some(SessionIssueLink {
                     issue: i.id,
                     number: i.number,
                     board: first.as_ref().map(|r| r.0.clone()),
@@ -497,7 +502,7 @@ pub async fn stop(
 /// Move `s` to `stopped` (control's move, from whatever state it's in; once
 /// more if it moved meanwhile), `detail` the event's: a person's stop from
 /// the card, and an agent's.
-pub(crate) async fn stop_now(app: &Platform, mut s: Session, detail: &str) -> Result<Session, ApiError> {
+pub(crate) async fn stop_now(app: &Platform, mut s: AgentSession, detail: &str) -> Result<AgentSession, ApiError> {
     let id = s.id.clone();
     for _ in 0..2 {
         if s.state.terminal() {

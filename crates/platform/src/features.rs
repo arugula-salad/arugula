@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::{
     Platform,
     auth::Machine,
-    db::{Db, mirror::ItemRow, runs::Run, sessions::Session},
+    db::{Db, mirror::ItemRow, runs::Run, sessions::AgentSession},
     forge::send::{How, Outcome},
     jobs::Worker,
     triggers::events::Seen,
@@ -218,7 +218,7 @@ pub trait Chat: Send + Sync + 'static {
     fn merged_seen(&self, _app: &Platform, _repo: u64, _items: &[&ItemRow]) {}
     /// A session's prompt on its workspace's new box, and whether its
     /// conversation was lost with the old one (Arugula #209).
-    fn after_rebuild<'a>(&'a self, _app: &'a Platform, _s: &'a Session) -> BoxFuture<'a, anyhow::Result<Rebuilt>> {
+    fn after_rebuild<'a>(&'a self, _app: &'a Platform, _s: &'a AgentSession) -> BoxFuture<'a, anyhow::Result<Rebuilt>> {
         Box::pin(async { anyhow::bail!("no sessions here") })
     }
     /// Sessions `ids` changed: their cards and their asks hear it.

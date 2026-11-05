@@ -542,8 +542,8 @@ impl crate::agent::Agents for AgentBlock {
         open_transcripts()
     }
 
-    fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
-        Arc::new(crate::conversations::Sessions)
+    fn sessions(&self) -> Arc<dyn crate::mux::Conversations> {
+        Arc::new(crate::conversations::ClaudeConversations)
     }
 
     fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {

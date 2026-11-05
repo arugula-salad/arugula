@@ -1719,7 +1719,7 @@ pub struct AgentReach {
 }
 
 /// The sessions of a machine in a room that an agent may mention (`GET`,
-/// [`AgentSessionsQuery`], answered [`AgentMachineSessions`], #577).
+/// [`MachineAgentsQuery`], answered [`MachineAgents`], #577).
 /// `machine` is its name as in `@machine`. Refused unless the asking
 /// machine reads `room` and `machine` hears it.
 pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
@@ -1735,7 +1735,7 @@ pub fn agent_thread_agents(room: &str, seq: i64) -> String {
 /// [`agent_machine_sessions`]' query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentSessionsQuery {
+pub struct MachineAgentsQuery {
     /// The asking session's name, so a machine asked about itself leaves it
     /// out (#575).
     #[serde(default)]
@@ -1745,7 +1745,7 @@ pub struct AgentSessionsQuery {
 /// A machine's sessions an agent may mention in a room (#577).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentMachineSessions {
+pub struct MachineAgents {
     pub machine_name: String,
     /// The machine isn't on control's relay now, or didn't answer.
     #[serde(default)]
@@ -1753,7 +1753,7 @@ pub struct AgentMachineSessions {
     /// False when its owner shows no session names.
     pub shared: bool,
     /// Newest active first, at most 20.
-    pub sessions: Vec<crate::forge::MachineSession>,
+    pub sessions: Vec<crate::forge::MachineAgent>,
 }
 
 /// The replies to this machine's agents' posts that no session has read yet

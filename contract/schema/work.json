@@ -1,5 +1,105 @@
 {
   "$defs": {
+    "AgentSessionWork": {
+      "description": "An agent session on this machine's workspace that hasn't ended.",
+      "properties": {
+        "actions": {
+          "description": "What people asked of the session that the box hasn't done yet,\noldest first: listed on every pull until a report names them done\n([`SessionDetail::actions`]).",
+          "items": {
+            "$ref": "#/$defs/SessionAction"
+          },
+          "type": "array"
+        },
+        "asker": {
+          "description": "The account it runs as: whose mention started it.",
+          "type": "string"
+        },
+        "branch": {
+          "description": "The one ref it may push: `arugula/<8 hex of the id>-<slug>`.",
+          "type": "string"
+        },
+        "finish": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FinishStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The workspace's finish step (M261), if its spec has one: what the\nbox runs after each turn, before it pushes."
+        },
+        "harness": {
+          "description": "The agent it runs ([`HARNESSES`]): `claude` unless it says (M264,\na Try 3's sibling or a review). A box without the one asked for\nruns `claude`, and its first report says which it ran\n([`SessionDetail::harness`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "The model its agent uses (Arugula #215), one of [`MODELS`]: the\none its ask named (\"use sonnet\"), else its project's setting. `None`:\nthe strongest, which the box picks ([`DEFAULT_MODEL`] for Claude\nCode, Codex's own choice for Codex). The box reports the one it runs\non ([`SessionDetail::model`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "n": {
+          "description": "The machine's latest report's number: its next report is `n + 1`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "park": {
+          "description": "Parked (Arugula #215): `done`, with no prompt listed, for at least\n[`SESSION_PARK_MS`]. The box closes its agent block, keeping its\nuser, checkout and conversation; once it lists prompts again the\nbox opens a block on them, loading the conversation. The platform\nlists a parked one's prompts only when the box has a running slot\nfor it ([`MAX_SESSIONS_PER_BOX`]).",
+          "type": "boolean"
+        },
+        "project": {
+          "type": "string"
+        },
+        "prompts": {
+          "default": [],
+          "description": "Its queued prompts, oldest first: what the next turn starts with.",
+          "items": {
+            "$ref": "#/$defs/SessionPrompt"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "default": null,
+          "description": "The linked repo it works in (`owner/name`), if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review": {
+          "description": "A review (M264, `@codex review`): read-only. The box runs no finish\nstep and pushes nothing, and its turn's report carries the agent's\nreply ([`SessionDetail::reply`]), which the platform posts in the\nthread.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "`ses_` and 32 hex characters.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state as the machine sees it: `queued`, `working`,\n`needs_input` or `done` (an `unresponsive` one is listed in the\nstate it was in).",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "project",
+        "workspace",
+        "asker",
+        "branch",
+        "state",
+        "n"
+      ],
+      "type": "object"
+    },
     "Approval": {
       "properties": {
         "account": {
@@ -2798,106 +2898,6 @@
       ],
       "type": "object"
     },
-    "SessionWork": {
-      "description": "An agent session on this machine's workspace that hasn't ended.",
-      "properties": {
-        "actions": {
-          "description": "What people asked of the session that the box hasn't done yet,\noldest first: listed on every pull until a report names them done\n([`SessionDetail::actions`]).",
-          "items": {
-            "$ref": "#/$defs/SessionAction"
-          },
-          "type": "array"
-        },
-        "asker": {
-          "description": "The account it runs as: whose mention started it.",
-          "type": "string"
-        },
-        "branch": {
-          "description": "The one ref it may push: `arugula/<8 hex of the id>-<slug>`.",
-          "type": "string"
-        },
-        "finish": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/FinishStep"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The workspace's finish step (M261), if its spec has one: what the\nbox runs after each turn, before it pushes."
-        },
-        "harness": {
-          "description": "The agent it runs ([`HARNESSES`]): `claude` unless it says (M264,\na Try 3's sibling or a review). A box without the one asked for\nruns `claude`, and its first report says which it ran\n([`SessionDetail::harness`]).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "description": "The model its agent uses (Arugula #215), one of [`MODELS`]: the\none its ask named (\"use sonnet\"), else its project's setting. `None`:\nthe strongest, which the box picks ([`DEFAULT_MODEL`] for Claude\nCode, Codex's own choice for Codex). The box reports the one it runs\non ([`SessionDetail::model`]).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "n": {
-          "description": "The machine's latest report's number: its next report is `n + 1`.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "park": {
-          "description": "Parked (Arugula #215): `done`, with no prompt listed, for at least\n[`SESSION_PARK_MS`]. The box closes its agent block, keeping its\nuser, checkout and conversation; once it lists prompts again the\nbox opens a block on them, loading the conversation. The platform\nlists a parked one's prompts only when the box has a running slot\nfor it ([`MAX_SESSIONS_PER_BOX`]).",
-          "type": "boolean"
-        },
-        "project": {
-          "type": "string"
-        },
-        "prompts": {
-          "default": [],
-          "description": "Its queued prompts, oldest first: what the next turn starts with.",
-          "items": {
-            "$ref": "#/$defs/SessionPrompt"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "default": null,
-          "description": "The linked repo it works in (`owner/name`), if any.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "review": {
-          "description": "A review (M264, `@codex review`): read-only. The box runs no finish\nstep and pushes nothing, and its turn's report carries the agent's\nreply ([`SessionDetail::reply`]), which the platform posts in the\nthread.",
-          "type": "boolean"
-        },
-        "session": {
-          "description": "`ses_` and 32 hex characters.",
-          "type": "string"
-        },
-        "state": {
-          "description": "Its state as the machine sees it: `queued`, `working`,\n`needs_input` or `done` (an `unresponsive` one is listed in the\nstate it was in).",
-          "type": "string"
-        },
-        "workspace": {
-          "description": "The hosted workspace (`hw_…`) the machine is.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "session",
-        "project",
-        "workspace",
-        "asker",
-        "branch",
-        "state",
-        "n"
-      ],
-      "type": "object"
-    },
     "Work": {
       "description": "[`WORK`]'s answer.",
       "properties": {
@@ -2919,7 +2919,7 @@
         "sessions": {
           "description": "The sessions on this machine's workspace that haven't ended, for a\nmachine that takes them ([`TAKES_SESSION`]).",
           "items": {
-            "$ref": "#/$defs/SessionWork"
+            "$ref": "#/$defs/AgentSessionWork"
           },
           "type": "array"
         }

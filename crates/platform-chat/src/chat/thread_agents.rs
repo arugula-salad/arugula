@@ -10,11 +10,11 @@ use super::*;
 use crate::db::{
     chat::Message,
     chat_mention_status::MentionStatus,
-    sessions::{Session, State as SessionState},
+    sessions::{AgentSession, State as SessionState},
 };
 use arugula_control_wire::{
     chat::{ChatThreadAgent, ChatThreadAgentState, ChatThreadAgents},
-    forge::{AgentSessionsAsk, MachineSession, MachineSessionState, session_slug},
+    forge::{MachineAgent, MachineAgentState, MachineAgentsAsk, session_slug},
     sessions::{CARD_VIA, SAID_VIA},
 };
 use std::collections::HashMap;
@@ -121,20 +121,20 @@ pub(super) fn roster(messages: &[Message], statuses: &[MentionStatus]) -> Vec<Se
 
 /// What a personal agent is doing, from what its machine answered: `None` if
 /// it gave no word of this session. Only a machine not on the relay is offline.
-fn state_of(answer: Option<&MachineSession>, offline: bool) -> ChatThreadAgentState {
+fn state_of(answer: Option<&MachineAgent>, offline: bool) -> ChatThreadAgentState {
     if offline {
         return ChatThreadAgentState::Offline;
     }
     match answer.and_then(|a| a.state) {
-        Some(MachineSessionState::Working) => ChatThreadAgentState::Working,
-        Some(MachineSessionState::Idle) => ChatThreadAgentState::Idle,
-        Some(MachineSessionState::NeedsInput) => ChatThreadAgentState::NeedsYou,
+        Some(MachineAgentState::Working) => ChatThreadAgentState::Working,
+        Some(MachineAgentState::Idle) => ChatThreadAgentState::Idle,
+        Some(MachineAgentState::NeedsInput) => ChatThreadAgentState::NeedsYou,
         None => ChatThreadAgentState::Unknown,
     }
 }
 
 /// A hosted session's state, as the strip says it.
-fn hosted_state(s: &Session) -> ChatThreadAgentState {
+fn hosted_state(s: &AgentSession) -> ChatThreadAgentState {
     match s.state {
         SessionState::Unresponsive => ChatThreadAgentState::Offline,
         _ => match s.seen_as() {
@@ -201,7 +201,7 @@ pub(super) async fn of_thread(
     }
     let mut asks = tokio::task::JoinSet::new();
     for (machine, names) in &wanted {
-        let ask = AgentSessionsAsk {
+        let ask = MachineAgentsAsk {
             room: room.id.clone(),
             from_session: None,
             only: names.iter().filter(|n| !n.is_empty()).cloned().collect(),
@@ -209,11 +209,11 @@ pub(super) async fn of_thread(
         let (app, machine) = (app.clone(), machine.to_string());
         asks.spawn(async move { (machine.clone(), ask_sessions(&app, &machine, ask).await) });
     }
-    let live: HashMap<String, SessionsAnswer> = asks.join_all().await.into_iter().collect();
+    let live: HashMap<String, AgentsAnswer> = asks.join_all().await.into_iter().collect();
 
     let machines: Vec<String> = wanted.keys().map(|m| m.to_string()).collect();
     let daemons = crate::grants::agent_names(app, &machines).await?;
-    let hosted: Vec<(Session, i64)> = hosted_ids(&messages)
+    let hosted: Vec<(AgentSession, i64)> = hosted_ids(&messages)
         .into_iter()
         .filter_map(|(id, seq)| app.db.session(&id).ok().flatten().map(|s| (s, seq)))
         .collect();
@@ -251,7 +251,7 @@ pub(super) async fn of_thread(
         let answer = live.get(&a.machine);
         let key = session_slug(&a.session);
         let one = match answer {
-            Some(SessionsAnswer::Said { sessions, .. }) if !key.is_empty() => sessions.iter().find(|m| m.name == key),
+            Some(AgentsAnswer::Said { sessions, .. }) if !key.is_empty() => sessions.iter().find(|m| m.name == key),
             _ => None,
         };
         let d = daemons.get(&a.machine);
@@ -270,7 +270,7 @@ pub(super) async fn of_thread(
                 owner_name: name_of(&owner),
                 owner,
                 hosted: false,
-                state: state_of(one, answer == Some(&SessionsAnswer::Offline)),
+                state: state_of(one, answer == Some(&AgentsAnswer::Offline)),
                 working_on: one.and_then(|m| m.working_on.clone()),
                 tool: one.and_then(|m| m.tool.clone()),
                 read_seq: a.read_seq,
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn what_a_machine_answers_is_the_state() {
-        let with = |state| MachineSession {
+        let with = |state| MachineAgent {
             name: "ux".into(),
             tab: None,
             active_ms_ago: None,
@@ -420,8 +420,8 @@ mod tests {
         assert_eq!(state_of(None, true), S::Offline);
         assert_eq!(state_of(None, false), S::Unknown);
         assert_eq!(state_of(Some(&with(None)), false), S::Unknown, "an older daemon");
-        assert_eq!(state_of(Some(&with(Some(MachineSessionState::Working))), false), S::Working);
-        assert_eq!(state_of(Some(&with(Some(MachineSessionState::NeedsInput))), false), S::NeedsYou);
+        assert_eq!(state_of(Some(&with(Some(MachineAgentState::Working))), false), S::Working);
+        assert_eq!(state_of(Some(&with(Some(MachineAgentState::NeedsInput))), false), S::NeedsYou);
     }
 
     #[test]

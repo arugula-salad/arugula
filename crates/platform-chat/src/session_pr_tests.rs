@@ -48,7 +48,7 @@ async fn session_on(
 
 /// [`session_on`] with no turn yet.
 async fn session_with(app: &crate::Platform, gh: &crate::forge::links_tests::Shared, team: &str, ws: &str) -> String {
-    use crate::db::sessions::{NewPrompt, NewSession, Source};
+    use crate::db::sessions::{NewAgentSession, NewPrompt, Source};
     {
         // As `arugula-io` is installed (S42 q2): it writes contents and
         // workflows too.
@@ -65,7 +65,7 @@ async fn session_with(app: &crate::Platform, gh: &crate::forge::links_tests::Sha
         panic!("no workspace");
     };
     let room = format!("rm_{}", ws.id);
-    let new = NewSession {
+    let new = NewAgentSession {
         project: team,
         room: &room,
         parent_seq: 1,
