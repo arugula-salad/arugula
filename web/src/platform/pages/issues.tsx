@@ -205,7 +205,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
       />
       {home?.both && home.home === "github" && <IssuesBoth home={home} />}
       <div class="issues-tools">
-        <div class="issues-states" role="group" aria-label="Open or closed">
+        <div class="seg issues-states" role="group" aria-label="Open or closed">
           <button aria-pressed={filter.state !== "closed"} data-issues-open onClick={() => to({ ...filter, state: undefined })}>
             Open
           </button>

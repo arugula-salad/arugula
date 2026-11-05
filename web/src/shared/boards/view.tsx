@@ -26,6 +26,7 @@ import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachme
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
+import { PlusIcon } from "../ui/rail-icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
@@ -376,7 +377,7 @@ export function BoardPanel({
                 </span>
               )}
               {s.group && write && (
-                <button type="button" class="board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                <button type="button" class="bar-btn sq board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
                   ⋯
                 </button>
               )}
@@ -394,20 +395,24 @@ export function BoardPanel({
         <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />
       ) : (
         <p class="board-foot">
-          <button type="button" class="board-add" data-board-add-row onClick={() => setEditing("new")}>
-            + Add row
+          <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+            <PlusIcon size={13} />
+            Add row
           </button>
           {write && (
-            <button type="button" class="board-add" data-board-add-group onClick={() => void addGroup()}>
-              + Add a group
+            <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
+              <PlusIcon size={13} />
+              Add a group
             </button>
           )}
-          <button type="button" class="board-add" data-board-new-issue onClick={() => void newIssue()}>
-            + New issue
+          <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
+            <PlusIcon size={13} />
+            New issue
           </button>
           {plane.map((c) => (
-            <button key={c.id} type="button" class="board-add" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
-              + New issue in Plane ({c.identifier})
+            <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
+              <PlusIcon size={13} />
+              New issue in Plane ({c.identifier})
             </button>
           ))}
         </p>
@@ -479,10 +484,10 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
         <div class="board-form" data-board-goal-form>
           <textarea value={goal} rows={4} maxLength={GOAL_MAX} aria-label="Goal" data-board-goal-input autoFocus onInput={(ev) => setGoal(ev.currentTarget.value)} />
           <span class="board-form-buttons">
-            <button type="button" class="primary" data-board-goal-save onClick={() => void saveGoal()}>
+            <button type="button" class="primary small" data-board-goal-save onClick={() => void saveGoal()}>
               Save
             </button>
-            <button type="button" onClick={() => setGoalOpen(false)}>
+            <button type="button" class="secondary small" onClick={() => setGoalOpen(false)}>
               Cancel
             </button>
           </span>
@@ -564,10 +569,10 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
             <textarea value={note} rows={3} aria-label="What can a person now do?" data-board-close-note autoFocus onInput={(ev) => setNote(ev.currentTarget.value)} />
           </label>
           <span class="board-form-buttons">
-            <button type="button" class="primary" data-board-close-save disabled={!note.trim()} onClick={() => void close()}>
+            <button type="button" class="primary small" data-board-close-save disabled={!note.trim()} onClick={() => void close()}>
               Close epic
             </button>
-            <button type="button" onClick={() => setClosing(false)}>
+            <button type="button" class="secondary small" onClick={() => setClosing(false)}>
               Cancel
             </button>
           </span>
@@ -599,8 +604,9 @@ function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: A
         <DocLink key={d.id} d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
       ))}
       {write && !picking && (
-        <button type="button" class="board-add" data-board-doc-add onClick={() => setPicking(true)}>
-          + Doc
+        <button type="button" class="secondary small" data-board-doc-add onClick={() => setPicking(true)}>
+          <PlusIcon size={13} />
+          Doc
         </button>
       )}
       {picking && <DocPicker project={view.board.project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
@@ -1000,7 +1006,7 @@ function Row({
                 </span>
               )}
             </div>
-            <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
+            <button type="button" class="bar-btn sq board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
               ⋯
             </button>
           </div>
@@ -1160,7 +1166,7 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
         <h2 class="board-drawer-title" data-board-drawer-title>
           {title}
         </h2>
-        <button type="button" class="board-more" aria-label="Close" data-board-drawer-close onClick={close}>
+        <button type="button" class="bar-btn sq board-more" aria-label="Close" data-board-drawer-close onClick={close}>
           ×
         </button>
       </header>
@@ -1311,8 +1317,9 @@ function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; projec
           <DocLink key={d.id} d={d} project={project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
         ))}
         {write && !picking && (
-          <button type="button" class="board-add" data-board-drawer-doc-add onClick={() => setPicking(true)}>
-            + Doc
+          <button type="button" class="secondary small" data-board-drawer-doc-add onClick={() => setPicking(true)}>
+            <PlusIcon size={13} />
+            Doc
           </button>
         )}
       </div>
@@ -1351,7 +1358,7 @@ function Relations({ r, project, others, write, act, id }: { r: BoardRow; projec
           <span>{relationLine(x)}</span>
           {x.source !== "person" && x.source !== "agent" && <span class="dim"> · from {x.source === "plane" ? "Plane" : "GitHub"}</span>}
           {x.removable && (
-            <button type="button" class="board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
+            <button type="button" class="bar-btn sq board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
               ×
             </button>
           )}
@@ -1490,10 +1497,10 @@ function RowForm({ project, row, save, done }: { project: string; row: BoardRow 
       </div>
       {bad && <span class="board-bad">Expected an id that starts iss_ or fi_, or an https:// link. A run or an agent block is attached to a row.</span>}
       <span class="board-form-buttons">
-        <button type="submit" class="primary" data-board-save>
+        <button type="submit" class="primary small" data-board-save>
           Save
         </button>
-        <button type="button" onClick={done}>
+        <button type="button" class="secondary small" onClick={done}>
           Cancel
         </button>
       </span>

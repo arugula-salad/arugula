@@ -39,11 +39,6 @@
   color: var(--accent);
 }
 
-.grid.pane-chrome .pane-header-button {
-  width: 25px;
-  height: 25px;
-}
-
 .grid.pane-chrome .pane-header-button .icon {
   width: 14px;
   height: 14px;

@@ -122,7 +122,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         </div>
         {first?.thread && (
           <button
-            class={following ? "chat-info on thread-follow" : "chat-info thread-follow"}
+            class={following ? "chat-info bar-btn on thread-follow" : "chat-info bar-btn thread-follow"}
             aria-pressed={following}
             title={following ? "You follow this thread: you hear its replies. Stop following" : "Follow this thread: hear its replies"}
             data-thread-follow

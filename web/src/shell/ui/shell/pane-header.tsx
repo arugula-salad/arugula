@@ -174,7 +174,7 @@ export function PaneHeader({
         </span>
       )}
       <button
-        class={`pane-header-button${focused ? " on" : ""}`}
+        class={`pane-header-button bar-btn sq${focused ? " on" : ""}`}
         data-pane-expand={id}
         aria-pressed={focused}
         aria-label={focused ? "Restore layout" : "Focus this pane"}
@@ -184,7 +184,7 @@ export function PaneHeader({
       >
         <ExpandIcon on={focused} />
       </button>
-      <button class="pane-header-button" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
+      <button class="pane-header-button bar-btn sq" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
         <MoreIcon size={13} />
       </button>
     </div>

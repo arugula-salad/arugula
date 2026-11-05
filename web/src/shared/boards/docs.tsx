@@ -80,7 +80,7 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
       {name}
       {tail && <span class="dim board-doc-words"> {tail}</span>}
       {remove && (
-        <button type="button" class="board-more board-doc-remove" aria-label={`Take ${d.title} off`} data-board-doc-remove onClick={remove}>
+        <button type="button" class="bar-btn sq board-more board-doc-remove" aria-label={`Take ${d.title} off`} data-board-doc-remove onClick={remove}>
           ×
         </button>
       )}

@@ -107,10 +107,6 @@
   font-size: 12px;
 }
 
-.chat-info.thread-follow.on {
-  border-color: var(--accent);
-}
-
 .thread-also {
   display: flex;
   align-items: center;

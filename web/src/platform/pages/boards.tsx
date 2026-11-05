@@ -252,7 +252,7 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
         <form class="board-form" onSubmit={(e) => void make(e)}>
           <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
           <span class="board-form-buttons">
-            <button type="submit" class="primary" data-board-new disabled={!title.trim()}>
+            <button type="submit" class="primary small" data-board-new disabled={!title.trim()}>
               Make a board
             </button>
           </span>

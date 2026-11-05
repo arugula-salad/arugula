@@ -37,7 +37,7 @@ export function AgentsChip({ room }: { room: string }) {
   const owners = agentOwners(agents);
   return (
     <div class="agents-chip" ref={box} data-room-agents>
-      <button class={open ? "chat-info agents-chip-btn on" : "chat-info agents-chip-btn"} aria-expanded={open} aria-haspopup="dialog" title="Agents that can read this room" data-agents-chip onClick={() => setOpen(!open)}>
+      <button class={open ? "chat-info bar-btn agents-chip-btn on" : "chat-info bar-btn agents-chip-btn"} aria-expanded={open} aria-haspopup="dialog" title="Agents that can read this room" data-agents-chip onClick={() => setOpen(!open)}>
         <MachineIcon />
         <span class="agents-chip-text">{chipLabel(agents)}</span>
       </button>

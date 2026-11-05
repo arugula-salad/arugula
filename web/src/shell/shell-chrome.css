@@ -120,33 +120,6 @@
   gap: 8px;
 }
 
-.pt-presets {
-  gap: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  overflow: hidden;
-}
-
-.pt-presets > button {
-  border-radius: 0;
-  padding-inline: 8px;
-}
-
-.pt-presets > button + button {
-  border-left: 1px solid var(--line-strong);
-}
-
-.pane-toolbar > .pt-focus,
-.pane-toolbar > .pt-add {
-  border: 1px solid var(--chrome-selected-line);
-  border-radius: var(--btn-radius);
-  color: var(--accent);
-}
-
-.pane-toolbar > .pt-add {
-  background: var(--chrome-selected);
-}
-
 .pt-add kbd {
   display: none;
 }
@@ -252,7 +225,7 @@
 .ws-foot kbd { border-color: var(--line-strong); }
 @media (max-width: 1100px) {
   .ws-foot-hints { gap: 6px !important; }
-  .pane-toolbar .pt-presets > button { padding-inline: var(--space-1); }
+  .pane-toolbar .pt-presets > .bar-btn { padding-inline: var(--space-1); }
 }
 
 /* AppKit's overlay buttons occupy a ~78px-wide, 28px-high strip: they

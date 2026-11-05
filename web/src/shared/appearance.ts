@@ -502,8 +502,8 @@ const mix = (a: string, b: string, t: number) => {
 
 /** `color`, moved toward `toward` only as far as it takes to read at 4.5:1
  * on every one of `on`. */
-function legibleOn(color: string, on: string[], toward: string): string {
-  const ok = (c: string) => on.every((b) => contrast(c, b) >= 4.5);
+function legibleOn(color: string, on: string[], toward: string, also?: (c: string) => boolean): string {
+  const ok = (c: string) => on.every((b) => contrast(c, b) >= 4.5) && (also?.(c) ?? true);
   if (ok(color)) return color;
   let lo = 0;
   let hi = 1;
@@ -519,6 +519,10 @@ function legibleOn(color: string, on: string[], toward: string): string {
  * the status colors. */
 const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "peach", "teal", "pink", "merged"] as const;
 
+/** The "on" fill (buttons.css's --on-fill, 18% of the accent): `accent` over
+ * `base`. */
+export const onFill = (accent: string, base: string) => mix(base, accent, 0.18);
+
 /** The palette's UI colors as the page uses them (M113): a word in any of
  * them reads at WCAG AA (4.5:1) on the backgrounds it sits on (bg, surface
  * and raised, the hovered and picked rows'). Each palette keeps its
@@ -530,7 +534,12 @@ export function legible(p: Palette): Ui {
   const end = p.light ? "#000000" : "#ffffff";
   // Toward black or white, so a color keeps its hue (amber stays amber,
   // only darker or lighter).
-  for (const k of TEXT) u[k] = legibleOn(u[k], on, end);
+  for (const k of TEXT) {
+    // The accent is also the "on" text (--on-fill's), so it reads on its own
+    // tint over the page. Over a card (surface) it's checked, not forced:
+    // the tint stays off surface where it doesn't (Latte), not darkened.
+    u[k] = legibleOn(u[k], on, end, k === "accent" ? (c) => contrast(c, onFill(c, u.bg)) >= 4.5 : undefined);
+  }
   const label = [u["on-color"], "#000000", "#ffffff"].sort((a, b) => contrast(b, u.accent) - contrast(a, u.accent));
   if (contrast(u["on-color"], u.accent) < 4.5) u["on-color"] = label[0];
   return u;

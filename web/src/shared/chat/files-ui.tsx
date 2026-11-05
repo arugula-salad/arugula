@@ -109,7 +109,7 @@ export function AttachButton({ add }: { add: (files: File[]) => void }) {
           e.currentTarget.value = "";
         }}
       />
-      <button type="button" class="compose-tool" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
+      <button type="button" class="compose-tool bar-btn sq" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M13.2 7.6l-5 5a3.2 3.2 0 0 1-4.5-4.5l5.3-5.3a2.1 2.1 0 0 1 3 3L6.6 11a1 1 0 0 1-1.5-1.5l4.7-4.7" stroke-linecap="round" stroke-linejoin="round" />
         </svg>

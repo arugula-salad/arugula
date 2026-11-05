@@ -873,12 +873,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .sheet-act {
   flex: none;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: var(--card-radius);
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
 }
 
 .att.acts {
@@ -1070,9 +1064,12 @@ button.att {
   touch-action: manipulation;
 }
 
+/* Latched: the surface with the "on" tint and an accent edge (the tint
+   never sits on raised, where Latte's accent text is under 4.5:1). */
 .key.on {
-  background: var(--accent);
-  color: var(--on-color);
+  background: linear-gradient(var(--on-fill), var(--on-fill)), var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
 }
 
 /* ---- restored panes waiting to start */
@@ -1448,7 +1445,6 @@ button.att {
   border-bottom: 1px solid var(--line);
 }
 
-.browser-bar button,
 .browser-open {
   min-width: 28px;
   height: 26px;
@@ -1615,12 +1611,6 @@ button.att {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
-}
-
-.agent-bar button {
-  padding: 3px 10px;
-  border-radius: var(--btn-radius);
-  background: var(--raised);
 }
 
 .agent-name {
@@ -4215,26 +4205,16 @@ a.work-chip:hover {
 .swarm-spacer {
   flex: 1;
 }
+/* A segmented control (buttons.css's .seg), in words, like every other
+   (UI audit #172). */
 .swarm-seg {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  background: var(--panel);
-  padding: 3px;
-}
-/* Words, in sentence case like every other segmented control (UI audit
-   #172). */
-.swarm-seg button {
-  border: 0;
-  background: none;
-  padding: 6px 12px;
-  border-radius: var(--chip-radius);
-  font: 500 12px/1 var(--f-ui);
-  color: var(--mute);
-}
-.swarm-seg button[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--void);
+  /* On the swarm's own dark set, whatever the palette (above), so the
+     control's colors are its. */
+  --fg: var(--ink);
+  --subtle: var(--mute);
+  --raised: color-mix(in srgb, var(--ink) 10%, transparent);
+  --accent: var(--s-ask);
 }
 .swarm-seg-l {
   font: 500 11px/1 var(--f-mono);
@@ -4615,10 +4595,6 @@ a.work-chip:hover {
   .swarm-spacer {
     display: none;
   }
-  .swarm-seg button {
-    padding: var(--space-1) var(--space-2);
-    font-size: 11px;
-  }
   .swarm-tools button {
     padding: var(--space-1) var(--space-2);
   }
@@ -4677,7 +4653,6 @@ a.work-chip:hover {
 /* A finger on the swarm's chips (UI audit #186): the narrow bar's are
    21px tall, under any tap target. */
 @media (max-width: 760px) and (pointer: coarse) {
-  .swarm-seg button,
   .swarm-tools button {
     min-height: 32px;
   }
@@ -4851,15 +4826,6 @@ a.work-chip:hover {
    a full bar's last items ran under it and the grip took their clicks). */
 .app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) {
   padding-right: 28px;
-}
-
-.review-bar button {
-  min-width: 28px;
-  height: 26px;
-  border: 0;
-  border-radius: var(--tag-radius);
-  background: var(--raised);
-  color: var(--fg);
 }
 
 .review-what,
@@ -5457,15 +5423,6 @@ button.diff-why-run {
   margin-left: auto;
 }
 
-.review-bar button.doc-bar-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .review-bar button.doc-bar-icon[data-copied] {
   min-width: 84px;
 }
@@ -5483,13 +5440,6 @@ button.diff-why-run {
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
-}
-
-@media (pointer: coarse) {
-  .review-bar button.doc-bar-icon {
-    min-width: 34px;
-    height: 34px;
-  }
 }
 
 button.doc-bar-older {
@@ -7929,11 +7879,6 @@ html[data-scheme="light"] .doc {
   font-size: 14px;
 }
 
-.msg-tools button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--fg);
-}
-
 /* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
 .msg-menu {
   position: absolute;
@@ -8084,15 +8029,7 @@ html[data-scheme="light"] .doc {
 }
 
 .msg-tools button {
-  width: 28px;
-  height: 26px;
-  color: var(--dim);
   font-size: 13px;
-}
-
-.msg-tools button:hover {
-  background: var(--raised);
-  color: var(--fg);
 }
 
 /* Where an @machine mention got to (#502): one dim line a machine. */
@@ -8342,20 +8279,10 @@ button.thread-quote:hover {
 }
 
 .compose-send {
-  display: grid;
-  place-items: center;
   width: 32px;
-  height: 28px;
+  min-height: 28px;
   margin: 0 6px 6px 0;
-  border-radius: var(--btn-radius);
-  background: var(--accent);
-  color: var(--surface);
-}
-
-.compose-send:disabled {
-  background: none;
-  color: var(--dim);
-  cursor: default;
+  padding: 0;
 }
 
 /* M123: control's chat. The composer's "Quote a pane" beside Send. */
@@ -8364,19 +8291,7 @@ button.thread-quote:hover {
 }
 
 .compose-tool {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
   margin: 0 2px 6px 0;
-  border-radius: var(--btn-radius);
-  color: var(--dim);
-}
-
-.compose-tool:hover,
-.compose-tool[aria-pressed="true"] {
-  background: var(--raised);
-  color: var(--fg);
 }
 
 /* Picking a pane to quote, and the lines to keep from it. */
@@ -9247,30 +9162,13 @@ input.chat-search {
   margin-left: 10px;
 }
 
-.chat-members:hover,
-.chat-info:hover,
-.chat-info.on {
+.chat-members:hover {
   background: var(--raised);
   color: var(--fg);
 }
 
 .chat-info {
-  width: 30px;
-  height: 28px;
-  border-radius: var(--btn-radius);
-  color: var(--dim);
   font-size: 15px;
-}
-
-/* The header's bell, in the room: yellow while it notifies you. */
-.chat-info.chat-bell {
-  display: grid;
-  place-items: center;
-  color: var(--warn);
-}
-
-.chat-info.chat-bell.quiet {
-  color: var(--dim);
 }
 
 .chat-details {
@@ -9998,15 +9896,6 @@ input.chat-search {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.ws-graph-bar button {
-  border: 0;
-  border-radius: var(--tag-radius);
-  background: var(--raised);
-  color: var(--fg);
-  min-width: 24px;
-  height: 22px;
 }
 
 /* ---- appearance: the picker, the finishes and the corners (appearance.ts) */
@@ -12156,31 +12045,6 @@ html[data-workspace="new"] .thread-panel {
   flex: 1;
 }
 
-.pane-header-button {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: calc(100% - 2px);
-  border-radius: var(--tag-radius);
-  color: var(--dim);
-  cursor: pointer;
-}
-
-.pane-header-button:hover {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.pane-header-button.on {
-  color: var(--accent);
-}
-
-.pane-header-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 /* A narrow pane's header keeps its number, title, status and buttons:
    the kind goes first, then the directory, then the branch and host. */
 @container (max-width: 400px) {
@@ -12224,28 +12088,6 @@ html[data-workspace="new"] .thread-panel {
   white-space: nowrap;
 }
 
-.pane-toolbar > button,
-.pt-presets > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--btn-radius);
-  color: var(--subtle);
-}
-
-.pane-toolbar > button:hover:not(:disabled),
-.pt-presets > button:hover:not(:disabled) {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.pane-toolbar button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .pt-count strong {
   color: var(--fg);
   font-weight: 600;
@@ -12274,11 +12116,6 @@ html[data-workspace="new"] .thread-panel {
   stroke-width: 1;
 }
 
-.pane-toolbar > button.on {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-}
-
 .pt-note {
   margin-left: 6px;
   color: var(--warn);
@@ -12288,11 +12125,6 @@ html[data-workspace="new"] .thread-panel {
 
 .pt-fill {
   flex: 1;
-}
-
-.pane-toolbar > .pt-add {
-  border: 1px solid var(--line);
-  color: var(--fg);
 }
 
 .pt-add kbd {
@@ -13592,19 +13424,6 @@ html[data-workspace="new"] .thread-panel {
 .chat-pop-wrap {
   position: relative;
   flex: none;
-}
-
-.chat-pop-wrap .chat-info {
-  width: auto;
-  min-width: 30px;
-  padding: 0 var(--space-2);
-}
-
-/* A finger's, as the header's other icons (UI audit #199). */
-@media (pointer: coarse) {
-  .chat-pop-wrap .chat-info {
-    min-width: 40px;
-  }
 }
 
 .chat-pop {

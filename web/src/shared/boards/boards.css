@@ -192,21 +192,6 @@
   overflow-wrap: anywhere;
 }
 
-.board-more {
-  flex: none;
-  min-width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg);
-}
-
-.board-more:hover {
-  background: var(--raised);
-}
-
 .board-main {
   flex: 1;
   min-width: 0;
@@ -409,23 +394,6 @@
   margin: 0;
 }
 
-.board-add,
-.board-foot button,
-.board-form button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--fg);
-}
-
-.board-add {
-  align-self: flex-start;
-  border-style: dashed;
-  color: var(--dim);
-}
-
 .board-foot {
   display: flex;
   flex-wrap: wrap;
@@ -518,13 +486,6 @@
   overflow: auto;
   box-sizing: border-box;
   padding: 12px;
-}
-
-@media (max-width: 700px) {
-  .board-more {
-    min-width: 40px;
-    height: 40px;
-  }
 }
 
 /* An epic: the goal, progress and closing under a board's title, and the
@@ -867,8 +828,6 @@
 }
 
 .board-card-head .board-more {
-  min-width: 28px;
-  height: 24px;
   margin: -2px -6px 0 0;
 }
 
@@ -882,8 +841,6 @@
 
 /* The group's menu button sits at the end of its header. */
 .board-group-head .board-more {
-  min-width: 32px;
-  height: 28px;
   margin-left: auto;
 }
 
