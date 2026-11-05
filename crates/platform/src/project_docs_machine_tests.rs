@@ -433,3 +433,32 @@ async fn a_teams_machine_copies_nothing_and_still_takes_an_old_copy_down() {
     let (st, d) = signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await;
     assert_eq!((st, &d["deleted"]), (200, &json!(id)), "{d}");
 }
+
+/// Native #673: an account's explicit no to copies is a no even with chat
+/// on (an older daemon puts on chat), and a machine taken out of its team
+/// copies again, on its account's word.
+#[tokio::test]
+async fn an_explicit_no_wins_over_chat_and_a_machine_out_of_its_team_copies_again() {
+    let (hub, app, base, _t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    // a has chat on through team t, and said no.
+    hub.flag_named("account:a", "doc-copies", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, e) = put_doc(&base, "a apad", "d1", "Plan", &[]).await;
+    assert_eq!(st, 403, "{e}");
+    assert!(e["error"].as_str().unwrap().contains("turned copying"), "{e}");
+    hub.flag_named("account:a", "doc-copies", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(put_doc(&base, "a apad", "d1", "Plan", &[]).await.0, 200);
+
+    // geek, a team's machine, is refused; taken out of the team, it copies.
+    assert_eq!(put_doc(&base, "a geek", "d2", "Notes", &[]).await.0, 403);
+    hub.daemon("geek", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, p) = put_doc(&base, "a geek", "d2", "Notes", &[]).await;
+    assert_eq!(
+        (st, &p["project"]),
+        (200, &json!(crate::projects::personal_project(&app, "a").await.unwrap().unwrap())),
+        "{p}"
+    );
+}

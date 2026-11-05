@@ -1,9 +1,9 @@
 //! A machine's Docs copied up to the platform (#418): while this machine is
 //! in control, each Doc in the library has a copy there
 //! (`PUT /api/daemon/docs/{id}`, [`wire::MACHINE_DOC`]), which the platform
-//! makes in the owner's personal project, private to them until they move
-//! it into a team's. It keys the copy by the machine and the Doc's id, so
-//! the same Doc always lands on the same copy, wherever it was moved.
+//! makes in the owner's personal project, private to them. It keys the copy
+//! by the machine and the Doc's id, so the same Doc always lands on the same
+//! copy, wherever it sits.
 //!
 //! - **When:** a change ([`changed`]: a new Doc, its outline, a fill, a
 //!   picture) marks the Doc dirty, and it's put [`QUIET`] after its last
@@ -25,14 +25,14 @@
 //!   the machine is out of control, for the next control it joins.
 //!   Copies already on the platform stay.
 //! - **Not now:** out of control or out of reach, a Doc stays dirty and
-//!   waits for the next refresh with control. Refused (403: chat off after
+//!   waits for the next refresh with control. Refused (403: the word off after
 //!   all, or the owner may no longer write where the Doc now is) or told to
 //!   slow down (429), nothing more is put until then: one refusal a refresh,
 //!   however many Docs wait. Why is said once, at info. The dirty Docs are
 //!   kept in `docs/.copies.json`, so a restart has them, and they wait for
 //!   its first refresh.
-//! - **Once:** after the first refresh of a machine in control with chat
-//!   on, every Doc in the library is marked dirty; `docs/.copied-1` names
+//! - **Once:** after the first refresh of a machine in control with the
+//!   word on, every Doc in the library is marked dirty; `docs/.copied-1` names
 //!   the account it was done for, and joining another does it again.
 //! - **Not on a hosted box:** its owner is whoever made the workspace, so a
 //!   session's Docs would land in their personal project; nothing is copied.

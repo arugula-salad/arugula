@@ -493,13 +493,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // said yes. Once, marked in `settings`, so an account that sets its own
     // chat later isn't taken to have; insert-or-ignore, so an answer an
     // account gave stays.
-    let first = conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
-    if first == 1 {
+    // The grant before the mark: a stop between them only repeats the
+    // grant, which is insert-or-ignore.
+    let done: bool =
+        conn.query_row("SELECT EXISTS (SELECT 1 FROM settings WHERE k = ?1)", params![DOC_COPIES_CARRIED], |r| {
+            r.get(0)
+        })?;
+    if !done {
         conn.execute(
             "INSERT OR IGNORE INTO labs_flags (owner, name, turned_on)
              SELECT owner, ?1, 1 FROM labs_flags WHERE name = 'chat' AND turned_on = 1 AND owner LIKE 'account:%'",
             params![arugula_control_wire::DOC_COPIES],
         )?;
+        conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
     }
     Ok(())
 }

@@ -103,8 +103,9 @@ pub(crate) fn bad(msg: &str) -> ApiError {
 pub(crate) enum Gate {
     /// Chat on for them: native Docs come with chat.
     Chat,
-    /// Chat on, or the account's own word for its machines' copies
-    /// (native #673): a machine's puts.
+    /// The account's own word for its machines' copies (native #673), and
+    /// without one, chat (an older daemon's copies): a machine's puts. An
+    /// explicit no is refused whatever chat says.
     Copies,
     /// Nothing more: a machine taking its own copy down, and a person
     /// opening or deleting a copy of theirs, whatever chat or the word say.
@@ -129,7 +130,19 @@ pub(crate) async fn place_gated(
     let open = match gate {
         Gate::None => true,
         Gate::Chat => chat_on(app, account).await?,
-        Gate::Copies => chat_on(app, account).await? || crate::chat::copies_on(app, account).await?,
+        // The account's own word; without one, chat (an older daemon's
+        // copies). An explicit no wins over chat.
+        Gate::Copies => match crate::chat::copies_word(app, account).await? {
+            Some(true) => true,
+            Some(false) => {
+                return Err(err(
+                    StatusCode::FORBIDDEN,
+                    "this account turned copying its machines' Docs to the platform off (Your Docs on the platform, \
+                     under Teams)",
+                ));
+            }
+            None => chat_on(app, account).await?,
+        },
     };
     if !open {
         return Err(refusal(

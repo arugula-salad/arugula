@@ -356,7 +356,7 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     d.wait_for("nothing left to copy", || dirty(&d).is_empty());
 
     // The one-time copy ran once: the old Doc was put once then, and once
-    // for its change as a team's machine.
+    // for its change made while the word was off.
     let refreshed = f.refreshes.load(Ordering::SeqCst);
     d.wait_for("another refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
     std::thread::sleep(Duration::from_secs(3));
