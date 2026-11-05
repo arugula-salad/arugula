@@ -541,3 +541,98 @@ async fn a_snapshot_builder_is_nobodys_to_reach() {
     odd.purpose = Some("anything".into());
     assert!(c.app.hub_port.hosted_enrollment(&odd).await.is_err());
 }
+
+/// What Ox's project says of its delegation, wherever the platform asks:
+/// the hub's lookup, an enrollment as the platform asks for one (owner
+/// from the project's row), the runs grant's view and the Access view.
+async fn ox_delegation(c: &Control, project: &str, workspace: &str) -> (Option<String>, bool, Option<String>, Value) {
+    use arugula_platform_api::auth::Person;
+    use axum::{
+        Json,
+        extract::{Path, State},
+    };
+    let p = c.app.platform.inner_arc();
+    let owner = match p.db.project_holder(project).unwrap() {
+        Some((Some(a), None)) => format!("account:{a}"),
+        other => panic!("Ox's project's holder: {other:?}"),
+    };
+    let live = p.hub.live_delegation(project, &owner).await.unwrap();
+    let ask = EnrollAsk {
+        project: project.into(),
+        owner,
+        workspace: workspace.into(),
+        name: "box".into(),
+        sandbox: None,
+        purpose: None,
+    };
+    let enrolls = matches!(c.app.hub_port.hosted_enrollment(&ask).await.unwrap(), EnrollGiven::Ready { .. });
+    let person = || Person { account: "x1".into() };
+    let Ok(Json(grant)) = arugula_platform::run_grant::show(State(p.clone()), person(), Path(project.to_owned())).await
+    else {
+        panic!("the runs grant's view")
+    };
+    let Ok(Json(access)) =
+        arugula_platform::project_grants::list(State(p.clone()), person(), Path(project.to_owned())).await
+    else {
+        panic!("the Access view")
+    };
+    (live, enrolls, grant.delegation, access["allow"]["delegation"].clone())
+}
+
+/// The hub doesn't hold projects, so it takes a delegation naming any
+/// project from an owner of the owner it names. The platform looks a
+/// project's delegation up by the project's own owner, so one that names
+/// someone else's project is never found for it: Fran's, for Ox's
+/// project, is listed as Acme's alone, and Ox's enrollment, runs grant and
+/// Access view see only Ox's own.
+#[tokio::test]
+async fn a_delegation_is_found_by_the_projects_own_owner() {
+    let (c, fran, _cy, ox) = acme().await;
+    let (fran_s, ox_s) = (session(&c.app, "f1"), session(&c.app, "x1"));
+    let project = c.app.platform.inner().db.personal_project("x1", now_ms()).unwrap();
+    let sign = |owner: &str, keys: &DeviceKeys| {
+        let mut d = Delegation {
+            project: project.clone(),
+            owner: owner.into(),
+            key: c.app.hosted_key.public(),
+            at: now_ms(),
+            by: String::new(),
+            sig: String::new(),
+        };
+        d.sign_with(keys);
+        d
+    };
+
+    // Fran owns Acme, so the hub keeps Acme's delegation of Ox's project.
+    let acme = format!("team:{TEAM}");
+    let stray = sign(&acme, &fran);
+    let (st, v) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": stray }))).await;
+    assert_eq!(st, 200, "{v}");
+    // It's listed as Acme's, by Fran, to Acme; Ox isn't shown it.
+    let (_, list) = c.as_person(&fran_s, "GET", "/api/hosted/delegations", None).await;
+    assert_eq!(list["delegations"].as_array().unwrap().len(), 1, "{list}");
+    let row = &list["delegations"][0];
+    assert_eq!((&row["id"], &row["by_account"]), (&json!(stray.id()), &json!("f1")));
+    assert_eq!((&row["delegation"]["owner"], &row["delegation"]["project"]), (&json!(acme), &json!(project)));
+    let (_, list) = c.as_person(&ox_s, "GET", "/api/hosted/delegations", None).await;
+    assert_eq!(list["delegations"], json!([]));
+
+    // Ox's project has none, wherever the platform asks.
+    let none = ox_delegation(&c, &project, "hw_1").await;
+    assert_eq!(none, (None, false, None, json!({ "live": false, "id": null })));
+
+    // Ox delegates it: Ox's is found, never Fran's.
+    let own = sign("account:x1", &ox);
+    let (st, v) = c.as_person(&ox_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": own }))).await;
+    assert_eq!(st, 200, "{v}");
+    let (live, enrolls, grant, access) = ox_delegation(&c, &project, "hw_2").await;
+    assert_eq!((live.as_deref(), enrolls, grant.as_deref()), (Some(own.id().as_str()), true, Some(own.id().as_str())));
+    assert_eq!(access, json!({ "live": true, "id": own.id() }));
+
+    // Ox revokes it: none again, though Fran's is still live as Acme's.
+    let r = DelegationRevoke::new(&own, now_ms(), &ox);
+    let (st, v) = c.as_person(&ox_s, "POST", "/api/hosted/delegations/revoke", Some(json!({ "revoke": r }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(ox_delegation(&c, &project, "hw_3").await, none);
+    assert_eq!(c.app.hub_port.live_delegation(&project, &acme).await.unwrap(), Some(stray.id()));
+}
