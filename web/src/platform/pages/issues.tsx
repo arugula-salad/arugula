@@ -3,20 +3,19 @@
 // assignee or words, and a new one. Owners and editors open issues;
 // viewers read them and comment. Where the project's new issues go (its
 // issue home, M195) is set in the project's settings (UI audit #163), and
-// a project with issues both here and on a linked repo says so. Issues
-// come with chat's Labs flag, as their threads do: while it's off there
-// are none.
+// a project with issues both here and on a linked repo says so. The
+// project's members read its issues whatever their chat setting (Arugula
+// #746); only the comments, chat's thread, need chat.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { IssueHome, NativeIssue } from "../../shared/proto";
-import { chat } from "../../shared/chat-store";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../../shared/ui/settings-section";
-import { IssueError, issues, type IssueFilter } from "../../shared/issues/store";
+import { issues, type IssueFilter } from "../../shared/issues/store";
 import { githubNewIssue, rowLine, stateLabel } from "../../shared/issues/text";
 import { when } from "../../shared/time";
 import { LabelChip, pickLabels } from "../../shared/issues/view";
@@ -47,15 +46,11 @@ export function mayWrite(p: PlatformProject): boolean {
   return !p.team || p.team.role !== "viewer";
 }
 
-/** The project, unless chat says issues are off; else what to show.
- * Before chat has said, the page goes on (UI audit #163: a cold load
- * waited seconds on chat's rooms): the issue routes say `chat_off` too. */
+/** The project, if it's one of the reader's; else what to show. */
 export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact.JSX.Element } {
   useSubscribe((fn) => session.subscribe(fn));
-  useSubscribe((fn) => chat.subscribe(fn));
   const p = session.project(id);
   if (!p) return { show: <Missing what="That project isn't one of yours (or it's gone)." /> };
-  if (chat.on === false) return { show: <IssuesOff /> };
   return { p };
 }
 
@@ -73,15 +68,6 @@ export function ListLoading({ rows = 3 }: { rows?: number }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-export function IssuesOff() {
-  return (
-    <section class="platform-section sw-page" data-issues-off>
-      <PageHeader title="Issues" />
-      <p class="dim">Issues come with chat, which is off for you. A team owner turns it on for the team under Teams, on your machines page.</p>
-    </section>
   );
 }
 
@@ -123,7 +109,6 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   const [list, setList] = useState<NativeIssue[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [off, setOff] = useState(false);
   const [home] = useHome(p.id);
   const [typed, setTyped] = useState(filter.q ?? "");
   const nameOf = nameIn(p);
@@ -133,7 +118,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     setError(null);
     issues.list(p.id, filter).then(
       (r) => live && (setList(r.issues), setMore(r.more)),
-      (e: Error) => live && (e instanceof IssueError && e.reason === "chat_off" ? setOff(true) : setError(e.message)),
+      (e: Error) => live && setError(e.message),
     );
     return () => void (live = false);
   }, [key]);
@@ -187,7 +172,6 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
     ]);
   const narrowed = !!(filter.q || filter.label || filter.assignee);
   const onGithub = home?.home === "github" && home.repos.length > 0;
-  if (off) return <IssuesOff />;
 
   return (
     <section class="platform-section sw-page issues-page" data-issues={p.id}>

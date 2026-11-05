@@ -1445,8 +1445,9 @@ pushes an object change on the Doc's thread). Its members read; a team's
 owners and editors make, write (a section's body replaced, or a section
 added at the end) and delete, and a viewer's page has no form. A section
 is at most 64 KB, a Doc 40 sections and 1 MiB, a project 1,000 Docs.
-Nothing shares one outside its project. They come with chat, as native
-issues do. The routes are `GET`/`POST /api/projects/{project}/docs` and
+Nothing shares one outside its project. Membership and roles decide who
+reads them, as for native issues, whatever a person's chat setting says
+(Arugula #746). The routes are `GET`/`POST /api/projects/{project}/docs` and
 `GET`/`PUT`/`DELETE /api/projects/{project}/docs/{id}`
 (`crates/platform/src/project_docs.rs`). A session's agent makes them
 too (above); a machine's agents don't yet, and a machine's own Docs stay

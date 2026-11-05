@@ -132,6 +132,16 @@ creates a second one. Membership comes from the team's roster.
 | **Group** | A named section of a board | Platform `board_entries` | `zon_` |
 | **Lane** | Next, Doing, Review or Done, worked out from the work, with a person's override | Derived on read | The word |
 
+Membership and roles alone decide who reads and writes a project's native
+issues and Docs: a personal project's account, and a team's roster, where
+owners and editors write and viewers read. Anyone else gets 404. A person's
+chat setting doesn't enter into it, and nor does it for an agent acting for
+them, which also needs its own power over the project. The `chat` setting
+stays in the hub, because machines need it, and it still decides chat
+itself: an issue's comments are its object thread, so they come with chat.
+The account's `doc-copies` word for its machines' copies is apart from this
+(below).
+
 ### Forge items: two read paths
 
 GitHub or Plane is the record, and the platform's mirror is a copy of it. A
@@ -254,3 +264,4 @@ purpose, and the records say why:
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
 | `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |
+| An issue's comments and the live updates of issues and Docs travel in chat, so a member with chat off reads an issue without its comments and sees a change when the page loads again | Not tracked yet |

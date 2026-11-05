@@ -133,4 +133,11 @@ test("a viewer: Ask an owner for chat, and why they can't start a run", async ({
   await vic.locator("[data-platform-runs]").click();
   await expect(vic.locator("[data-runs-none]")).toContainText("owners and editors start its runs");
   await expect(vic.locator("[data-runs-none-start]")).toHaveCount(0);
+
+  // Chat is off for vic, and the project's Docs and issues are theirs to
+  // read all the same (Arugula #746).
+  await platform(vic, `/p/${project}`);
+  await expect(vic.locator("[data-project-docs-link]")).toBeVisible({ timeout: 15_000 });
+  await platform(vic, `/p/${project}/issues`);
+  await expect(vic.locator("[data-issues-none]")).toBeVisible({ timeout: 15_000 });
 });

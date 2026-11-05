@@ -3167,7 +3167,12 @@ export type IssueExport = { project: string, project_name: string, exported_at: 
 /**
  * Everyone it names (authors, actors, assignees, commenters).
  */
-people: Array<ExportedPerson>, };
+people: Array<ExportedPerson>, 
+/**
+ * The comments were left out: they're in chat, which is off for the
+ * reader (Arugula #746). Absent when they're there.
+ */
+comments_in_chat?: boolean, };
 
 /**
  * `GET /api/projects/{project}/issues/export?format=`: `json` (when not

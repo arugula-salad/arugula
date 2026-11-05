@@ -340,13 +340,13 @@ async fn a_copy_goes_with_its_doc_and_is_its_projects_to_delete() {
 }
 
 /// Native #673: a machine's copies take chat or its account's own word for
-/// them, and the word turns nothing else on. An account with chat off (in
-/// no team that has it) can't copy until it says so; then its machine puts,
-/// and it lists, opens, sees the pictures of and deletes its copies while
-/// its chat stays off; a Doc of its own project that isn't a copy isn't
-/// listed. A copy sitting in a team's project with chat off takes no put on
-/// the word. With the word off again, nothing new is put, and the machine
-/// still takes a copy down.
+/// them. An account with chat off (in no team that has it) can't copy until
+/// it says so; then its machine puts, and it lists, opens, sees the pictures
+/// of and deletes its copies. Its own project's Docs are its own whatever
+/// chat says (Arugula #746): it makes one and lists it beside its copies. A
+/// copy sitting in a team's project with chat off takes no put on the word.
+/// With the word off again, nothing new is put, and the machine still takes
+/// a copy down.
 #[tokio::test]
 async fn copies_take_the_accounts_own_word_and_turn_nothing_else_on() {
     let (hub, app, base, _t, u) = seeded().await;
@@ -367,23 +367,14 @@ async fn copies_take_the_accounts_own_word_and_turn_nothing_else_on() {
     assert_eq!(st, 200, "{a}");
     let (st, _, bytes) = raw_get(&base, "c", &format!("{path}/assets/pic.png")).await;
     assert_eq!((st, bytes.len()), (200, 11), "its pictures too");
-    // A Doc of c's own project made there, not a copy: chat's, so not listed.
-    let personal = crate::projects::personal_project(&app, "c").await.unwrap().unwrap();
-    let made = crate::db::project_docs::NewDoc {
-        project: &personal,
-        title: "Made here",
-        made_by: "c",
-        made_by_session: None,
-        sections: &[],
-    };
-    app.db.create_project_doc(&made, 1, 1_000).unwrap().unwrap();
+    // c makes a Doc of its own project with chat off, and lists both.
+    let (st, m) = call(&base, "c", "POST", "/api/projects/personal/docs", Some(json!({ "title": "Made here" }))).await;
+    assert_eq!(st, 200, "{m}");
     let (st, l) = call(&base, "c", "GET", "/api/projects/personal/docs", None).await;
     assert_eq!(st, 200, "{l}");
-    let titles: Vec<&str> = l["docs"].as_array().unwrap().iter().map(|d| d["title"].as_str().unwrap()).collect();
-    assert_eq!((titles, &l["writer"]), (vec!["Plan"], &json!(false)), "its copies alone, nothing to make: {l}");
-    // Chat stays off for c everywhere else.
-    let (st, _) = call(&base, "c", "POST", "/api/projects/personal/docs", Some(json!({ "title": "x" }))).await;
-    assert_eq!(st, 403, "chat stays off for c");
+    let mut titles: Vec<&str> = l["docs"].as_array().unwrap().iter().map(|d| d["title"].as_str().unwrap()).collect();
+    titles.sort_unstable();
+    assert_eq!((titles, &l["writer"]), (vec!["Made here", "Plan"], &json!(true)), "{l}");
     let (st, _) = call(&base, "c", "PUT", &path, Some(json!({ "section": "s1", "markdown": "x" }))).await;
     assert_eq!(st, 403, "a copy stays read-only");
 

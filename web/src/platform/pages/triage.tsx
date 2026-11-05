@@ -55,7 +55,7 @@ function useSettled<T>(value: T, ms: number): T {
 }
 
 /** The section's state, lifted to the page so the board cards can take a drop and the tabs can count. `added` is told when rows went onto a board, so the boards read again. */
-export function useTriage(project: string, on: boolean, added: () => void) {
+export function useTriage(project: string, added: () => void) {
   const [q, setQ] = useState("");
   const [label, setLabel] = useState("");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
@@ -75,7 +75,6 @@ export function useTriage(project: string, on: boolean, added: () => void) {
   same.current = JSON.stringify(query);
 
   useEffect(() => {
-    if (!on) return;
     const n = ++seq.current;
     // A new query is a new selection.
     setAll(false);
@@ -89,7 +88,7 @@ export function useTriage(project: string, on: boolean, added: () => void) {
       },
       (e: Error) => n === seq.current && setError(e.message),
     );
-  }, [project, on, words, label, order]);
+  }, [project, words, label, order]);
 
   const items = page?.items ?? [];
   const total = page?.total ?? 0;

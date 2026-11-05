@@ -12,9 +12,9 @@
 //! still go. Copies it made before stay where they are.
 //!
 //! No grant is checked: a machine copying into its own owner's personal
-//! project needs none. Chat isn't needed either: a put takes chat or the
-//! account's own word for copies (native #673), and taking a copy down
-//! takes neither. A machine reaches only copies it made, for the
+//! project needs none. A put takes chat or the account's own word for
+//! copies (native #673, `Gate::Copies`), and taking a copy down takes
+//! neither. A machine reaches only copies it made, for the
 //! machine is in the key: another machine's `machine_doc` is a Doc of its own
 //! here, never the first one's.
 //!

@@ -11,8 +11,9 @@
 //! - no one deletes a single issue (deleting the project takes them);
 //! - anyone else gets 404, as if the project or issue weren't there.
 //!
-//! Native issues come with chat, so they're behind control's chat setting
-//! (`chat_on`), as their threads are.
+//! Membership and roles alone say who may do what (Arugula #746): a
+//! person's chat setting doesn't, nor an agent's owner's. An issue's
+//! comments are chat's object thread, so they still come with chat.
 //!
 //! **Who acts** is an [`Actor`]: a person (the routes here, from a browser
 //! or a CLI device), or a person's agent on a machine (M197; [`agent`]'s
@@ -36,7 +37,7 @@ pub mod agent;
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use arugula_control_common::{ApiError, err, refusal};
+use arugula_control_common::{ApiError, err};
 use arugula_control_wire::{chat::ChatAgent, issues as wire};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -49,7 +50,6 @@ use axum::{
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat::{CHAT_OFF, chat_on},
     db::{
         chat::{Page, Word},
         issues::{self as db, Actor, CloseReason, Filter, ListEdit, State as IssueState},
@@ -115,13 +115,6 @@ fn no_issue() -> ApiError {
 /// write), so it never reaches more than its owner. [`agent`]'s routes
 /// (M200) call these functions with one.
 pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<Place, ApiError> {
-    if !chat_on(app, by.account).await? {
-        return Err(refusal(
-            StatusCode::FORBIDDEN,
-            CHAT_OFF,
-            "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)",
-        ));
-    }
     let id = if asked == PERSONAL {
         crate::projects::personal_project(app, by.account).await?.ok_or_else(no_project)?
     } else {
@@ -521,17 +514,23 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
 }
 
 /// Every issue in a project with its timeline and comments, as `by` may
-/// read them (M195: custody's one-way door).
+/// read them (M195: custody's one-way door). The comments are chat's, so
+/// they come only while chat is on for `by` (its owner, for an agent).
 pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire::IssueExport, ApiError> {
     let place = place(app, by, project, false).await?;
     app.limits.check_account(ISSUE_EXPORTS, by.account)?;
+    let with_comments = crate::chat::chat_on(app, by.account).await?;
     let all = app.db.export_issues(&place.project.id)?;
     let mut people = BTreeSet::new();
     let mut agents = BTreeSet::new();
     let mut threads = Vec::with_capacity(all.len());
     for e in &all {
         let mut comments = vec![];
-        if let Some(room) = app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)? {
+        let room = match with_comments {
+            true => app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)?,
+            false => None,
+        };
+        if let Some(room) = room {
             let mut after = i64::MIN;
             loop {
                 let (page, more) = app.db.chat_messages(&room.id, Page::After(after), 500)?;
@@ -609,6 +608,7 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
         exported_at: now_ms(),
         issues,
         people,
+        comments_in_chat: !with_comments,
     })
 }
 
@@ -781,6 +781,9 @@ pub fn markdown(x: &wire::IssueExport) -> String {
         when(x.exported_at),
         x.project
     );
+    if x.comments_in_chat {
+        out.push_str("\nThe comments are left out: they're in chat, which is off for you.\n");
+    }
     for e in &x.issues {
         let i = &e.issue;
         let _ = write!(out, "\n## #{} {}\n\n", i.number, line(&i.title));

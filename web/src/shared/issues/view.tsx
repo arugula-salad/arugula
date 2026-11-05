@@ -371,7 +371,9 @@ export function IssueView({
                 {between.map((b) => (
                   <div key={b.key}>{b.el}</div>
                 ))}
-                <p class="thread-note">{threadError ? `The comments didn't load: ${threadError}` : "Loading the comments…"}</p>
+                <p class="thread-note" data-issue-thread-note>
+                  {chat.on === false ? "Its comments are in chat, which is off for you." : threadError ? `The comments didn't load: ${threadError}` : "Loading the comments…"}
+                </p>
               </>
             )}
           </div>
