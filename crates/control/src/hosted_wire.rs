@@ -270,6 +270,15 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     let (st, _) = c.as_person(&fran_s, "DELETE", &format!("/api/hosted/machines/{}", boxk.id()), None).await;
     assert_eq!(st, 200);
     assert!(!c.app.relay.online(&boxk.id()));
+    // The platform is told, beside the request, so it fails the workspace
+    // now (Arugula #744).
+    for _ in 0..100 {
+        if c.app.db.untold_hosted_removals().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(c.app.db.untold_hosted_removals().unwrap().is_empty(), "told, and forgotten");
     assert_eq!(c.signed_get(&boxk, "/api/hosted/trust").await, 410);
     assert_eq!(c.reach(&cy_s, &boxk.id()).await, 404);
     let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&ticket), None)).await;
@@ -382,6 +391,41 @@ async fn deleting_the_owner_takes_its_hosted_machines_and_delegations() {
     assert!(c.app.db.hosted(&k.id()).unwrap().is_none());
     assert!(c.app.db.delegations_of(&["account:m1".into()]).unwrap().is_empty());
     assert!(c.app.db.mentions("m1").iter().all(|m| !m.starts_with("hosted") && !m.starts_with("project_delegations")));
+    // The platform is told it's removed (Arugula #744).
+    let told = c.app.db.untold_hosted_removals().unwrap();
+    assert_eq!(
+        told.iter().map(|r| (r.machine.as_str(), r.workspace.as_str())).collect::<Vec<_>>(),
+        [(k.id().as_str(), "hw_5")]
+    );
+}
+
+/// A team that stays loses the machines a deleted account delegated for
+/// it, and the platform is told of each (Arugula #744): it fails a
+/// workspace only on the hub's word, so the team's workspace would
+/// otherwise stay ready with a machine that's gone.
+#[tokio::test]
+async fn deleting_a_delegations_signer_tells_the_platform_its_machines_went() {
+    let (c, fran, _cy, _ox) = acme().await;
+    let fran_s = session(&c.app, "f1");
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_7", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await.0, 200);
+    let gone = c.app.db.delete_account(&crate::db::Erase { account: "f1", disband: &[], retain_for: &[] }).unwrap();
+    assert!(gone.contains(&boxk.id()));
+    assert!(c.app.db.hosted(&boxk.id()).unwrap().is_none());
+    let told = c.app.db.untold_hosted_removals().unwrap();
+    assert_eq!(
+        told.iter().map(|r| (r.machine.as_str(), r.workspace.as_str())).collect::<Vec<_>>(),
+        [(boxk.id().as_str(), "hw_7")]
+    );
 }
 
 /// M185: a box asks before an agent turn, signed as its hosted machine,

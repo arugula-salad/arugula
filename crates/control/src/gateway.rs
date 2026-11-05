@@ -137,6 +137,10 @@ impl PlatformPort for PlatformAt {
         self.port().daemon_came(daemon)
     }
 
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        self.port().hosted_removed(workspace, machine)
+    }
+
     fn github_token<'a>(
         &'a self,
         account: &'a str,

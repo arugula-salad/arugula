@@ -8,6 +8,13 @@
 //!   gone once the platform says it's done: out of process the two can't
 //!   share a transaction, and the change feed names nobody (#173), so this
 //!   is how a deletion survives the platform being away.
+//! - `untold_hosted_removals`: hosted machines an owner removed at the hub,
+//!   or that went with a deleted account (`hosted::erase`),
+//!   that the platform hasn't been told of (`PlatformPort::hosted_removed`,
+//!   Arugula #744), the same way: written in the removal's transaction,
+//!   gone once the platform answers. It's the only way the platform learns
+//!   of a removal: it never takes a machine missing from the hub's list
+//!   as removed.
 
 use arugula_platform_api::Deleted;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -26,7 +33,19 @@ CREATE TABLE IF NOT EXISTS untold_deletions (
     deleted TEXT NOT NULL,
     at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS untold_hosted_removals (
+    machine TEXT PRIMARY KEY,
+    workspace TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
 ";
+
+/// A hosted machine the hub removed, and the workspace whose box it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostedRemoval {
+    pub machine: String,
+    pub workspace: String,
+}
 
 /// The maintenance switch, while it's on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +90,16 @@ pub(super) fn untold(c: &Connection, d: &Deleted, now: u64) -> anyhow::Result<()
     Ok(())
 }
 
+/// Note a hosted machine's removal the platform hasn't been told of,
+/// inside the removal's transaction.
+pub(super) fn untold_removal(c: &Connection, r: &HostedRemoval, now: u64) -> rusqlite::Result<()> {
+    c.execute(
+        "INSERT OR REPLACE INTO untold_hosted_removals (machine, workspace, at) VALUES (?1, ?2, ?3)",
+        params![r.machine, r.workspace, now],
+    )?;
+    Ok(())
+}
+
 impl Db {
     pub fn maintenance(&self) -> anyhow::Result<Option<Maintenance>> {
         Ok(maintenance(&self.c())?)
@@ -91,6 +120,21 @@ impl Db {
     /// The platform erased this account.
     pub fn told_deletion(&self, account: &str) -> anyhow::Result<()> {
         self.c().execute("DELETE FROM untold_deletions WHERE account = ?1", params![account])?;
+        Ok(())
+    }
+
+    /// Hosted machines' removals the platform hasn't been told of, oldest
+    /// first.
+    pub fn untold_hosted_removals(&self) -> anyhow::Result<Vec<HostedRemoval>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT machine, workspace FROM untold_hosted_removals ORDER BY at, machine")?;
+        let rows = q.query_map([], |r| Ok(HostedRemoval { machine: r.get(0)?, workspace: r.get(1)? }))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The platform was told this machine is removed.
+    pub fn told_hosted_removal(&self, machine: &str) -> anyhow::Result<()> {
+        self.c().execute("DELETE FROM untold_hosted_removals WHERE machine = ?1", params![machine])?;
         Ok(())
     }
 }
@@ -117,5 +161,12 @@ mod tests {
         assert_eq!(db.untold_deletions().unwrap(), vec![d]);
         db.told_deletion("acct-a").unwrap();
         assert!(db.untold_deletions().unwrap().is_empty());
+
+        let r = HostedRemoval { machine: "hm-1".into(), workspace: "hw_1".into() };
+        untold_removal(&db.c(), &r, 1).unwrap();
+        untold_removal(&db.c(), &r, 2).unwrap();
+        assert_eq!(db.untold_hosted_removals().unwrap(), vec![r], "once");
+        db.told_hosted_removal("hm-1").unwrap();
+        assert!(db.untold_hosted_removals().unwrap().is_empty());
     }
 }
