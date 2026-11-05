@@ -11,13 +11,42 @@ export * from "./paths";
 export const current = (): Route => parse(location.pathname, location.search);
 
 const LAST = "arugula.platform-last-page";
+const ACTIVE = "arugula.platform-active-project";
+
+/** The project the platform rail's Projects goes to (Arugula #586): the last
+ * one a page was opened under or picked, kept in this browser. */
+export function activeProject(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE);
+  } catch {
+    return null;
+  }
+}
+
+/** Forget it: it's gone or no longer the reader's, or this page's sign-out. */
+export function forgetActiveProject() {
+  try {
+    localStorage.removeItem(ACTIVE);
+  } catch {
+    // nothing kept, then
+  }
+}
 
 /** Where this browser last was on this page, for the shell's Projects to
  * come back to (Arugula #638). Its path, never a fragment: secrets stay in
  * those. */
 function remember() {
+  const route = current();
+  // Any page under a project makes it the active one; the picker goes through here too.
+  if ("project" in route && route.project) {
+    try {
+      localStorage.setItem(ACTIVE, route.project);
+    } catch {
+      // without storage, Projects lands on the list
+    }
+  }
   // Chat and account settings are the rail's own places, not the projects'.
-  const { page } = current();
+  const { page } = route;
   if (page === "chat" || page === "dm" || page === "settings") return;
   try {
     localStorage.setItem(LAST, location.pathname + location.search);
@@ -30,6 +59,7 @@ function remember() {
 export function forgetLastPage() {
   try {
     localStorage.removeItem(LAST);
+    localStorage.removeItem(ACTIVE);
   } catch {
     // nothing kept, then
   }

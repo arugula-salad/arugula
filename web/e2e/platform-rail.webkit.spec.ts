@@ -88,7 +88,7 @@ test("Chat is lit on chat, and Projects is not", async () => {
   await expect(alice.locator("[data-platform-bar] [data-platform-chat]")).toHaveCount(0);
 });
 
-test("Projects is lit inside a project, and takes you back to the list", async () => {
+test("Projects is lit inside a project, and the picker's All projects takes you back to the list", async () => {
   await alice.goto(`${app}/`);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
@@ -100,7 +100,8 @@ test("Projects is lit inside a project, and takes you back to the list", async (
   await expect(alice.locator("[data-platform-bar] [data-platform-settings]")).toBeVisible();
   // In the page: no reload.
   await alice.evaluate(() => Object.assign(window, { stayed: true }));
-  await projects.click();
+  await alice.locator("[data-project-switcher]").click();
+  await alice.getByRole("menuitemradio", { name: "All projects" }).click();
   await expect(alice).toHaveURL(`${app}/`);
   expect(await alice.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
 });
@@ -121,8 +122,10 @@ test("the shell's Projects comes back to the page you left, and the list stays a
   await expect(alice.locator(".ws-rail [data-open-chat]")).toHaveClass(/\bhere\b/);
   await alice.goto(`${app}/?back`);
   await expect(alice).toHaveURL(left);
-  // The rail's own Projects is still the list, and the list is remembered too.
-  await alice.locator(".ws-rail [data-open-projects]").click();
+  // The picker's All projects is the list, and the list is remembered too (the rail's
+  // Projects goes to the active project instead, Arugula #586).
+  await alice.locator("[data-project-switcher]").click();
+  await alice.getByRole("menuitemradio", { name: "All projects" }).click();
   await expect(alice).toHaveURL(`${app}/`);
   await alice.goto(`${app}/?back`);
   await expect(alice).toHaveURL(`${app}/`);
