@@ -309,14 +309,7 @@ async fn live_only_while_drawn() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_viewer_sees_them_and_cant_change_them() {
-    let d = Daemon::child_with(&[
-        "--wisp-token-file",
-        "/nonexistent",
-        "--owner",
-        OWNER,
-        "--tailscale-socket",
-        "/nonexistent/sock",
-    ]);
+    let d = Daemon::child_with(&["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]);
     let r = repo(&d);
     let panes = d.get("/api/panes");
     let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());

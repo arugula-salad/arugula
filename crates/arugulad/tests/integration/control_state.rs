@@ -134,7 +134,7 @@ fn a_machine_control_drops_says_so_until_it_leaves_or_joins_again() {
     let fake = Fake::default();
     let (_rt, url) = serve(fake.clone());
     let mut d = arugulad!("ctlstate")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--direct-url", "http://127.0.0.1:0", "--control", &url])
         .wait_secs(30)
@@ -195,7 +195,7 @@ fn a_removed_key_is_dropped_with_the_join_it_asks_for() {
     let fake = Fake::default();
     let (_rt, url) = serve(fake.clone());
     let d = arugulad!("ctlremoved")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--direct-url", "http://127.0.0.1:0", "--control", &url])
         .wait_secs(30)
@@ -228,7 +228,7 @@ fn a_removed_key_is_dropped_with_the_join_it_asks_for() {
 /// Only the owner hears how the machine stands with control.
 #[test]
 fn a_guest_doesnt_see_the_control_state() {
-    let d = arugulad!("ctlguest").no_wisp().no_tailscale().start();
+    let d = arugulad!("ctlguest").no_provider().no_tailscale().start();
     let v: Value = d.get("/api/host");
     assert_eq!(v["control_state"]["state"], "not_joined");
     let (status, _, body) = d.tcp("GET", "/api/host", &[], None);

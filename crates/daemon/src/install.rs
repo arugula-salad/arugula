@@ -26,8 +26,6 @@ fn unit_text(args: &[String], env: &[String]) -> String {
         "\
 [Unit]
 Description=arugula: terminals that outlive their windows
-# VM panes reattach to wispd's machines; start after it when it's here.
-After=wisp.service
 
 [Service]
 Type=notify

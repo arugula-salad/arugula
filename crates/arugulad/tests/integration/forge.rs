@@ -306,10 +306,7 @@ esac
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
         let mut env = vec![("PATH", path.as_str()), ("ARUGULA_FORGE_POLL_MS", "250,250")];
         env.extend_from_slice(extra);
-        Daemon::child_labs_env(
-            &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
-            &env,
-        )
+        Daemon::child_labs_env(&["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"], &env)
     }
 }
 
@@ -831,10 +828,7 @@ fn a_remotes_host_is_matched_to_a_login_or_you_pick_one() {
 fn no_tea_says_so() {
     let dir = scratch("notea");
     let forge = Forge::start(&dir, "someone", None);
-    let d = Daemon::child_labs_env(
-        &["--wisp-token-file", "/nonexistent"],
-        &[("PATH", "/usr/bin:/bin"), ("ARUGULA_FORGE_POLL_MS", "250,250")],
-    );
+    let d = Daemon::child_labs_env(&[], &[("PATH", "/usr/bin:/bin"), ("ARUGULA_FORGE_POLL_MS", "250,250")]);
     let block = open_pr(&d, &forge);
     let st = read(&d, block);
     assert!(st["error"].as_str().unwrap().starts_with("no tea here"), "{st}");

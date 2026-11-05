@@ -87,8 +87,6 @@ mod hosts;
 mod ide;
 mod invite;
 mod local_auth;
-#[cfg(feature = "labs")]
-mod machines;
 mod mcp;
 mod memory;
 mod mention_agent_block;
@@ -121,8 +119,6 @@ mod telemetry;
 mod upgrade;
 mod version;
 mod vm_layout;
-#[cfg(feature = "labs")]
-mod vm_reboot;
 mod waits;
 mod windows;
 #[cfg(feature = "labs")]

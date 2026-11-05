@@ -3,9 +3,9 @@
 //! HTTP with client tokens; and an agent block (`fake_acp.py`) using the
 //! server Arugula hands it, scoped to its tab: a dev server and a browser
 //! block beside itself, other tabs refused, and a second agent started,
-//! waited on and answered. With wisp on this host (skipped without its
-//! token), an agent block in a VM too, through the relay the daemon opens
-//! into it (#59).
+//! waited on and answered. (An agent block in a VM, through the relay the
+//! daemon opens into it, ran against a wispd on this host and went with
+//! the Sprites adapter.)
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -141,7 +141,7 @@ fn free_port() -> u16 {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tools_through_the_stdio_bridge() {
-    let d = Daemon::child_env(&["--wisp-token-file", "/nonexistent"], &[("ARUGULA_MCP_PROGRESS_MS", "200")]);
+    let d = Daemon::child_env(&[], &[("ARUGULA_MCP_PROGRESS_MS", "200")]);
     let client = Client::named("claude-code");
     let progress = client.progress.clone();
     let s = bridge(&d, client).await;
@@ -300,7 +300,7 @@ async fn tools_through_the_stdio_bridge() {
 /// runs a program that prints each read it gets.
 #[tokio::test(flavor = "multi_thread")]
 async fn send_input_enter_is_a_write_of_its_own() {
-    let d = Daemon::child_env(&["--wisp-token-file", "/nonexistent"], &[]);
+    let d = Daemon::child_env(&[], &[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let script = d.sessions.join("reads.py");
     std::fs::write(
@@ -680,7 +680,7 @@ fn tab_of(d: &Daemon, pane: u64) -> u64 {
 
 #[test]
 fn an_agent_block_works_in_its_own_tab() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    let d = Daemon::child_with(&["--block-listen", "127.0.0.1:0"]);
     // Another tab, with work the agent mustn't touch.
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     d.post(&format!("/api/panes/{other}/send"), json!({ "text": "echo other-tab-secret", "enter": true }));
@@ -885,69 +885,6 @@ async fn what_failed_here_yesterday() {
     assert_eq!(cmds, ["cargo-test-m16 || false"], "{h}");
     assert!(h["summary"].as_str().unwrap().starts_with("1 failed command"), "{h}");
     s.cancel().await.unwrap();
-}
-
-/// #59: an agent block in a wisp VM gets Arugula through the relay the
-/// daemon opens into its VM (a guest can't reach the host): scoped to its
-/// tab like a local one, its `run` on its own machine, across a daemon
-/// restart. Skips without a wisp token on this host.
-#[cfg(feature = "labs")]
-#[test]
-fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
-    let token = std::env::var_os("ARUGULA_WISP_TOKEN_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap()).join(".local/share/wisp/token"));
-    if !token.exists() {
-        eprintln!("SKIP: no wisp token on this host (ARUGULA_WISP_TOKEN_FILE or ~/.local/share/wisp/token)");
-        return;
-    }
-    let mut d = Daemon::child_labs_with(&["--wisp-token-file", token.to_str().unwrap()]);
-    let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    // fake_acp.py itself, run in the guest.
-    let src = std::fs::read_to_string(fake()).unwrap();
-    let config = json!({ "agent": "acp", "command": ["python3", "-c", src], "prompt": "hello" });
-    let a = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));
-    d.wait_secs(a, "idle", 300);
-
-    // Its tab, through the relay.
-    let l = agent_mcp(&d, a, "list", json!({})).unwrap();
-    let seen: Vec<u64> = l["panes"].as_array().unwrap().iter().map(|p| p["pane"].as_u64().unwrap()).collect();
-    assert!(seen.contains(&a) && !seen.contains(&other), "{l}");
-    // Its run lands on its own machine, beside it (which makes the machine
-    // its tab's).
-    // And where an agent from before the rename (#509) connects.
-    let (sock, was) = (format!("/tmp/arugula-mcp-{a}.sock"), format!("/tmp/illogical-mcp-{a}.sock"));
-    let check = format!("test -S {sock} && test -S {was} && echo IN-ITS-VM");
-    let r = agent_mcp(&d, a, "run", json!({ "command": check, "wait": true })).unwrap();
-    assert_eq!(r["exit"], 0, "{r}");
-    assert!(r.to_string().contains("IN-ITS-VM"), "{r}");
-    let pane = r["pane"].as_u64().unwrap();
-    assert_eq!(tab_of(&d, pane), tab_of(&d, a));
-    let m = d.get("/api/machines");
-    assert_eq!(m.as_array().unwrap().len(), 1, "{m}");
-    assert_eq!(m[0]["owner"], json!({ "tab": tab_of(&d, a) }), "{m}");
-    let h = d.get("/api/history?limit=20");
-    assert!(h.as_array().unwrap().iter().any(|c| c["by"] == "mcp:fake-agent"), "{h}");
-    // Other tabs are refused, as for a local agent.
-    let e = agent_mcp(&d, a, "send_input", json!({ "pane": other, "text": "rm -rf ~" })).unwrap_err();
-    assert!(e.contains("own tab") || e.contains("another tab"), "{e}");
-
-    // A restarted daemon opens a new relay; the agent's next client gets
-    // through it.
-    d.stop();
-    d.start();
-    d.wait_secs(a, "idle", 120);
-    let l = agent_mcp(&d, a, "list", json!({})).unwrap();
-    assert!(l["panes"].as_array().unwrap().iter().any(|p| p["pane"] == pane), "{l}");
-
-    // Closed with its tab, the machine (and the relay with it) goes.
-    d.post(&format!("/api/panes/{a}/close"), json!({}));
-    d.post(&format!("/api/panes/{pane}/close"), json!({}));
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    while !d.get("/api/machines").as_array().unwrap().is_empty() {
-        assert!(std::time::Instant::now() < deadline, "its machine should go");
-        std::thread::sleep(Duration::from_millis(200));
-    }
 }
 
 /// #147: prompt_agent, one call per turn, no sleeps here: Claude Code
@@ -1221,7 +1158,7 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
     use axum::http::{HeaderName, HeaderValue};
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    let d = Daemon::child_with(&["--block-listen", "127.0.0.1:0"]);
     arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     let a = d.open("hello");
@@ -1261,7 +1198,7 @@ const FRIEND: &str = "friend@example.com";
 /// A daemon on a tailnet (so tests can be someone else), its first pane
 /// and session, and FRIEND an editor there.
 fn shared_daemon(env: &[(&str, &str)]) -> (Daemon, u64, u64) {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_env(&args, env);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
@@ -1725,7 +1662,7 @@ async fn fake_cloud(f: FakeCloud) -> String {
 async fn an_agent_drives_cloud_workspaces_through_control() {
     let fake = FakeCloud::default();
     let url = fake_cloud(fake.clone()).await;
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
 
     let said = refused(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
@@ -1882,10 +1819,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     std::fs::set_permissions(bin.join("gh"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
     let api = format!("{url}/github");
-    let d = Daemon::child_env(
-        &["--wisp-token-file", "/nonexistent"],
-        &[("PATH", path.as_str()), ("ARUGULA_GITHUB_API", api.as_str())],
-    );
+    let d = Daemon::child_env(&[], &[("PATH", path.as_str()), ("ARUGULA_GITHUB_API", api.as_str())]);
     let s = bridge(&d, Client::named("claude-code")).await;
 
     // Reads and drafts, never a send.
@@ -2131,7 +2065,7 @@ async fn fake_threads(f: FakeThreads) -> String {
 /// told so; a refusal says how to grant.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_posts_in_conversations_through_control() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let said = refused(&s, "read_thread", json!({ "room": "ch_general" })).await;
     assert!(said.contains("hasn't joined Arugula control"), "{said}");
@@ -2358,7 +2292,7 @@ async fn fake_native(f: FakeNative) -> String {
 /// clone's GitHub repo is linked to.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_files_comments_on_and_closes_a_native_issue() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeNative::default();
     let url = fake_native(fake.clone()).await;
@@ -2610,7 +2544,7 @@ async fn fake_runs(f: FakeRuns) -> String {
 /// how, and capabilities says the run tools aren't live.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_starts_a_run_waits_for_it_and_reads_its_log() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeRuns::default();
     let url = fake_runs(fake.clone()).await;
@@ -2801,7 +2735,7 @@ async fn fake_deploys(f: FakeDeploys) -> String {
 async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
     let fake = FakeDeploys::default();
     let url = fake_deploys(fake.clone()).await;
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let tools = s.list_all_tools().await.unwrap();
     let plan = tools.iter().find(|t| t.name == "plan_deploy").expect("plan_deploy is listed");
@@ -3201,7 +3135,7 @@ async fn fake_plan(f: FakePlan) -> String {
 /// control refuses fails alone.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_plans_a_board_in_one_call() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakePlan::default();
     let url = fake_plan(fake.clone()).await;
@@ -3276,7 +3210,7 @@ async fn an_agent_plans_a_board_in_one_call() {
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_writes_a_board() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeBoards::default();
     let url = fake_boards(fake.clone()).await;
@@ -3506,7 +3440,7 @@ async fn an_agent_reads_and_writes_a_board() {
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_links_docs_to_a_board() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeBoards::default();
     let url = fake_boards(fake.clone()).await;
@@ -3705,7 +3639,7 @@ async fn a_start_on_an_issue_another_agent_holds_is_refused_without_a_pane() {
     control.granted.store(true, Relaxed);
     let url = fake_work(control.clone()).await;
     let machine = control.machine.clone();
-    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         *machine.lock().unwrap() = keys.id();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
@@ -3789,7 +3723,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     control.granted.store(true, Relaxed);
     let url = fake_work(control.clone()).await;
     let machine = control.machine.clone();
-    let mut d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let mut d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         *machine.lock().unwrap() = keys.id();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
@@ -4005,7 +3939,7 @@ async fn an_agent_is_attached_in_the_project_of_its_issue() {
     let control = FakeHomes::default();
     let url = fake_homes(control.clone()).await;
     let machine = control.machine.clone();
-    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         *machine.lock().unwrap() = keys.id();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");

@@ -2919,7 +2919,7 @@ blocks: boolean,
  */
 block_channels?: boolean, 
 /**
- * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
+ * VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
  */
 vms: boolean, 
 /**
@@ -3426,13 +3426,13 @@ pane?: boolean, };
 export type LivePresence = "off" | "watching";
 
 /**
- * A machine that blocks can run on instead of this host: today a
- * throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
- * deleted when that pane closes.
+ * A machine that blocks can run on instead of this host: a throwaway
+ * sandbox from the provider (a loam microVM) owned by one pane or tab,
+ * and deleted when that closes.
  */
 export type Machine = { id: number, 
 /**
- * Who runs it: `wisp`.
+ * Who runs it: `loam`.
  */
 provider: string, 
 /**

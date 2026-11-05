@@ -867,14 +867,29 @@ impl Daemon {
         self.next_machine = next_machine.max(1);
         // A machine is only kept with what owns it.
         let panes: Vec<PaneId> = self.mux.panes();
+        let here = self.config.provider.as_ref().map(|p| p.name().to_owned());
         for (id, m) in machines {
             let owned = match m.owner {
                 Owner::Pane(p) => panes.contains(&p),
                 Owner::Tab(t) => self.mux.tab(t).is_ok(),
             };
-            if owned {
-                self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
+            if !owned {
+                continue;
             }
+            // One from another provider (wisp's, from before the Sprites
+            // adapter was removed) stays with its panes as it was: they
+            // say the machine is gone, or that VM panes aren't set up, and
+            // a new one is made on this daemon's provider when they're used.
+            if !m.provider.is_empty() && here.as_deref() != Some(m.provider.as_str()) {
+                warn!(
+                    machine = id,
+                    provider = %m.provider,
+                    sprite = %m.sprite,
+                    here = here.as_deref().unwrap_or("none"),
+                    "a saved machine is from a provider this daemon doesn't have; its panes are kept, and can't reach it"
+                );
+            }
+            self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
         }
         // Nobody is connected yet; whoever views a tab next sizes it.
         let owners: Vec<ClientId> = self.mux.tabs.values().filter_map(|t| t.owner).collect();

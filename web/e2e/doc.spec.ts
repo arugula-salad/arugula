@@ -368,7 +368,7 @@ test.describe("a viewer", () => {
 
   test.beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "ilg-e2e-doc-view-"));
-    ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+    ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]));
   });
 
   test.afterAll(async ({ browser }) => {

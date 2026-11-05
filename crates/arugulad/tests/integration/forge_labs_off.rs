@@ -14,7 +14,7 @@ use crate::agentd::Daemon;
 
 /// A daemon with no `gh`, `tea` or `glab` to find, and no `labs` file.
 fn daemon() -> Daemon {
-    Daemon::child_env(&["--wisp-token-file", "/nonexistent"], &[("PATH", "/usr/bin:/bin")])
+    Daemon::child_env(&[], &[("PATH", "/usr/bin:/bin")])
 }
 
 fn open(d: &Daemon, config: Value) -> (u16, String) {

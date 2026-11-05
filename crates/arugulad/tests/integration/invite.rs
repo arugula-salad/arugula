@@ -36,7 +36,7 @@ const FRIEND: &str = "friend@example.com";
 const OTHER: &str = "other@example.com";
 
 fn tailnet_daemon(env: &[(&str, &str)]) -> Daemon {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     Daemon::child_env(&args, env)
 }
 
@@ -453,7 +453,7 @@ impl World {
             "revocations": [],
             "team": team.then(|| TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: self.alex_root.device.clone() }),
         });
-        Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        Daemon::child_in(&[], &[], |state| {
             std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
             self.daemon.save(&state.join("daemon.key")).unwrap();
         })

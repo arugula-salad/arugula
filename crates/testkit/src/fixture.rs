@@ -39,13 +39,13 @@ const STEP: Duration = Duration::from_secs(20);
 
 /// A daemon set up the way every fixture is recorded and replayed:
 /// `bash --norc --noprofile` with `PS1='$ '` (and no macOS bash banner), a
-/// `$HOME` of its own in its state dir (made when it starts), no wisp or
-/// tailscaled, not Claude Code's IDE, and no update check. Its `$HOME`, the
+/// `$HOME` of its own in its state dir (made when it starts), no sandbox
+/// provider or tailscaled, not Claude Code's IDE, and no update check. Its `$HOME`, the
 /// state dir, ports and token come out of a fixture as placeholders, so a
 /// replay finds the same fixture.
 pub fn daemon(bin: impl Into<PathBuf>, tag: &str) -> Builder {
     Builder::new(bin, tag)
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--no-claude-ide", "--no-update-check"])
         .env("PS1", "$ ")

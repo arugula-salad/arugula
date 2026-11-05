@@ -506,7 +506,7 @@ fn a_hosted_machine_runs_each_run_once() {
     .unwrap();
     std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let mut d = arugulad!("hostedwork")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -695,7 +695,7 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
     let sessions = marks.join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     let d = arugulad!("hostedagent")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -758,7 +758,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let mut d = arugulad!("hostedcrash")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -942,7 +942,7 @@ fn a_hosted_machine_runs_under_a_passkey_grant() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let _d = arugulad!("hostedpasskey")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -1078,7 +1078,7 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("hosteddeploy")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1164,7 +1164,7 @@ fn a_deploy_box_takes_its_one_deploy_and_stops() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("deploybox")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1213,7 +1213,7 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
     let f = Fake::new();
     let url = serve(&rt, f.clone());
     let d = arugulad!("hostedlogs")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -1389,7 +1389,7 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
         at
     });
     let d = arugulad!("appsplatform")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1524,7 +1524,7 @@ fn a_deploy_box_releases_arugula() {
         at
     });
     let d = arugulad!("arugularelease")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])

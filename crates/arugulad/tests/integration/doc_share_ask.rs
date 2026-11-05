@@ -130,7 +130,7 @@ impl World {
     pub(crate) fn new(env: &[(&str, &str)]) -> World {
         let fake = Fake::default();
         let (rt, url) = serve(fake.clone());
-        let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+        let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
         let d = Daemon::child_in(&args, env, |state| enroll(state, &url));
         let p = &d.get("/api/panes")[0];
         let session = p["session"].as_u64().unwrap();

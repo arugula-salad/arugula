@@ -779,14 +779,7 @@ async fn arugula_nvim_installs_into_a_running_nvim_and_joins() {
 #[tokio::test(flavor = "multi_thread")]
 async fn guests_of_a_session_dont_see_editors() {
     const FRIEND: &str = "friend@example.com";
-    let d = Daemon::child_with(&[
-        "--wisp-token-file",
-        "/nonexistent",
-        "--owner",
-        "me@example.com",
-        "--tailscale-socket",
-        "/nonexistent/sock",
-    ]);
+    let d = Daemon::child_with(&["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"]);
     let root = repo(&d);
     let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "editor" }));

@@ -300,7 +300,7 @@ through `crates/testkit`, then drive it over its Unix socket and HTTP API.
 ```rust
 use arugula_testkit::{Daemon, arugulad};
 
-let d = arugulad!("api").env("PS1", "$ ").no_wisp().start();
+let d = arugulad!("api").env("PS1", "$ ").no_provider().start();
 let pane = d.post("/api/run", json!({"command": "exit 4"}))["pane"].as_u64().unwrap();
 assert_eq!(d.get(&format!("/api/panes/{pane}/wait?until=exit&timeout=10"))["code"], 4);
 d.wait_for("its history", || d.get(&format!("/api/history?pane={pane}"))[0]["exit"] == 4);
@@ -316,8 +316,8 @@ output goes nowhere. The rest is the test's to say:
 - `.record(dir)` saves the client fixtures its sessions record, and
   `.home_in_state()` gives it a `$HOME` (and XDG dirs) in its state dir
   ([Client fixtures](#client-fixtures)).
-- `.arg()`, `.args()`; `.no_wisp()` and `.no_tailscale()` keep this host's
-  wispd and tailscaled out of it; `.block_listen()` adds
+- `.arg()`, `.args()`; `.no_provider()` and `.no_tailscale()` keep this host's
+  sandbox provider (`LOAM_API_URL`) and tailscaled out of it; `.block_listen()` adds
   `--block-listen 127.0.0.1:0`.
 - `.env()`, `.envs()`, `.env_remove()`, and `.path()` for its `PATH`, so a
   test can keep it from finding something installed on this machine (chant,
@@ -347,8 +347,7 @@ Dropping it kills it, kills what its panes left running and removes its
 state dir (#35, #68). With `ARUGULA_KEEP_TEST_STATE=1` the dir stays and
 its path is printed. A file that needs more (deleting machines it made,
 stopping the code-servers it started) wraps the `Daemon` in a struct of its
-own with a `Drop` that does that first, as `machines.rs` and `editors.rs`
-do.
+own with a `Drop` that does that first, as `editors.rs` does.
 
 Also in the crate: `fixture`, recording and replaying [client
 fixtures](#client-fixtures); `listen`, which reads the port a daemon took from
@@ -539,7 +538,7 @@ ids are kept: a fresh daemon hands out the same ones.
 `just record-fixtures [names]` runs `crates/testkit/src/bin/record-fixtures.rs`
 against throwaway daemons, one per fixture, set up by
 `arugula_testkit::fixture::daemon`: bash without rc files and `PS1='$ '`,
-a `$HOME` in the state dir, no wisp, tailscaled, Claude Code IDE or update
+a `$HOME` in the state dir, no sandbox provider, tailscaled, Claude Code IDE or update
 check. A test can record too: a builder with `.record(dir)` writes each
 session it finishes.
 
@@ -1524,21 +1523,24 @@ what's missing:
 |---|---|
 | `agents_real.rs`, `swarm-real.spec.ts` | `ARUGULA_REAL_AGENTS=claude,codex,screen,...` (real agents; costs a few cents); `screen` uses `ANTHROPIC_API_KEY` when it's set, and VM agents `~/.config/arugula/claude-oauth-token` or `anthropic-key` |
 | `mcp.spec.ts`, "the real Claude Code runs a build over MCP" | `ANTHROPIC_API_KEY` and `claude` on PATH (costs a few cents) |
-| `machines.rs`, `vm_reboot.rs`, `fs.rs`, `mcp.rs`'s VM test, `editors-vm.spec.ts` | a wispd token (`ARUGULA_WISP_TOKEN_FILE` or `~/.local/share/wisp/token`) |
 | `forges_github_real.rs` | the test organization's variables and secrets ([the nightly job](#the-nightly-job-against-githubcom)) |
 | `guest_ssh.rs`, `guest-ssh.spec.ts` | an `ssh` client on PATH |
 | `scripts/macos-sign` in the release | the `APPLE_*` secrets (a Developer ID, #177); without them it says which is missing and leaves the ad-hoc signature, except on an `app-v*` tag, which it fails (#1647) |
 | updater signatures and `latest.json` in the release | `TAURI_SIGNING_PRIVATE_KEY` (and its password), and the matching public key in `crates/desktop/tauri.conf.json` |
 
-`vm_reboot.rs` is #214's VM tabs across a real kernel reboot (#256): two
-VM tabs, one split, the daemon stopped as a host reboot would stop it, and
-each sprite suspended and cooled through wispd's operator endpoints (what
-`--warm-ttl` does), so the next wake boots the guest. After the daemon
-starts, every pane says its session was lost and gets a shell on its
-tab's machine under a new boot id, with its home directory kept; each tab
-still has exactly one machine, and wisp lists no other
-`arugula-eph-<daemon id>-*` sprite, nor any once the tabs close. With a token and no wispd answering
-at 127.0.0.1:7788 it fails rather than skips.
+No test drives a real sandbox provider: the tests that did (VM panes
+across a daemon restart and a real reboot, uploads and `fs` on a machine,
+an agent block's MCP relay into a VM, and the VM halves of the picker,
+Changes and editor specs) ran against a wispd on the machine and went with
+the Sprites adapter. What covers the provider now: the loam adapter's unit
+tests in `crates/arugulad-labs/src/loam.rs` against a fake loam (exec with
+detach and reattach from a byte count, pausing and waking, the machine
+going, `run`, files, services and port streams); the daemon's
+`provider_tests` in `crates/daemon/src/lib.rs`, the `sandbox-providers`
+gate over a fake adapter (opened on the running daemon when the flag turns
+on, dropped when it turns off, a terminal refused at once with it off);
+and `vm_layout.rs`, a saved VM pane restored by a daemon with no provider.
+A live run against loam is for when loam has parity.
 
 `workspace.spec.ts` and `changes-why.spec.ts` need the network on their
 first run, to install the pinned chant. `workspace.spec.ts`'s graph test

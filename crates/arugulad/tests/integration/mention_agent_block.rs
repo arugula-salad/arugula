@@ -133,7 +133,7 @@ fn boot(name: &str, prompt: &str) -> (tokio::runtime::Runtime, Fake, arugula_tes
     let _ = std::fs::remove_dir_all(&sessions);
     std::fs::create_dir_all(&sessions).unwrap();
     let mut d = arugulad!(name)
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("FAKE_ACP_DIR", &sessions)
         .env_remove("CLAUDE_CONFIG_DIR")

@@ -73,7 +73,7 @@ async fn send(ws: &mut Ws, v: Value) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_uses_a_phone() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = agent(&d).await;
 
     // Nothing lends tools yet.

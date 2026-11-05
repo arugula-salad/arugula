@@ -28,7 +28,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 const OWNER: &str = "me@example.com";
 
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
-    arugulad!(tag).no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
+    arugulad!(tag).no_provider().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
 }
 
 /// What a refusal for `flag` says, whatever else it says.

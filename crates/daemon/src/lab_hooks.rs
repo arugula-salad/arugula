@@ -57,18 +57,8 @@ pub trait FileWhy: Send + Sync {
 pub trait Hooks: Send + Sync + 'static {
     // ------------------------------------------------------------ start-up
 
-    /// The sandbox provider VM panes get their machines from: the Sprites
-    /// API at `url`, with the token in `token_file`. `given`: the flags
-    /// weren't left at their defaults.
-    fn open_provider(&self, url: &str, _token_file: &Path, given: bool) -> Option<Arc<dyn Provider>> {
-        if given {
-            tracing::warn!(url, "{}", not_built("VMs"));
-        }
-        None
-    }
-
-    /// The sandbox provider when it's loam: its API at `url`, with a
-    /// project key in `key_file`.
+    /// The sandbox provider VM panes get their machines from, loam: its
+    /// API at `url`, with a project key in `key_file`.
     fn open_loam(&self, url: &str, _key_file: &Path) -> Option<Arc<dyn Provider>> {
         tracing::warn!(url, "{}", not_built("VMs"));
         None

@@ -63,7 +63,7 @@ test.beforeAll(async () => {
   daemon = spawn(
     "../target/debug/arugulad",
     ["--listen", ANY, "--block-listen", ANY, "--shell", "bash --norc --noprofile"],
-    { stdio: "ignore", env: { ...process.env, ARUGULA_STATE_DIR: labs(state), ARUGULA_WISP_TOKEN_FILE: "/nonexistent" } },
+    { stdio: "ignore", env: { ...process.env, ARUGULA_STATE_DIR: labs(state) } },
   );
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
   BLOCKS = await blockPort(state, daemon);

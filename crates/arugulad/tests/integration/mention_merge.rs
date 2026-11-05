@@ -58,7 +58,6 @@ fn replies_waiting_on_a_terminal_pane_are_one_follow_up_per_thread() {
     let mut d = arugulad!("mentionmerge")
         .env("CLAUDE_CONFIG_DIR", &cfg)
         .args(["--owner", "owner@example.com", "--tailscale-socket", "/nonexistent/sock"])
-        .args(["--wisp-token-file", "/nonexistent"])
         .wait_secs(30)
         .start();
     d.stop();
