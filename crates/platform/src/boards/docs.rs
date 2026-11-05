@@ -114,23 +114,32 @@ impl Named {
     }
 }
 
-/// What `account` is told of the machines of `docs` (the Docs of a board,
-/// strip and rows): one hub call for the reach, kept a tick ("no" too),
-/// within [`super::LABEL_WAIT`]; an error or a wait past it names nothing, with a
-/// warning, rather than failing the read.
-pub(super) async fn named(app: &Platform, account: &str, project: &str, docs: &[db::Strip]) -> Named {
-    let (mut linked, mut by_agent) = (vec![], vec![]);
-    for d in docs {
-        if let wire::Pointer::MachineDoc { machine, .. } = &d.pointer {
-            if d.agent.is_some() { &mut by_agent } else { &mut linked }.push(machine.clone());
-        }
-    }
-    linked.sort();
-    linked.dedup();
+/// The machines of `docs` (the Docs of a board, strip and rows) that a read
+/// asks the hub about, for [`named`]: those of the Docs a person linked.
+pub(super) fn to_ask(docs: &[db::Strip]) -> impl Iterator<Item = &str> {
+    docs.iter().filter(|d| d.agent.is_none()).filter_map(|d| match &d.pointer {
+        wire::Pointer::MachineDoc { machine, .. } => Some(machine.as_str()),
+        _ => None,
+    })
+}
+
+/// What the reader is told of the machines of `docs`: `reach`, the
+/// machines they may reach, is the read's one label call for the board
+/// ([`super::reach_label`]: kept a tick, "no" too; an error or a wait past
+/// [`super::LABEL_WAIT`] reaches nothing), and agents' Docs ask whether
+/// their machine writes the project.
+pub(super) async fn named(app: &Platform, project: &str, docs: &[db::Strip], reach: HashSet<String>) -> Named {
+    let mut by_agent: Vec<String> = docs
+        .iter()
+        .filter(|d| d.agent.is_some())
+        .filter_map(|d| match &d.pointer {
+            wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
+            _ => None,
+        })
+        .collect();
     by_agent.sort();
     by_agent.dedup();
-    let mut named =
-        Named { reach: super::reach_label(app, account, &linked, "a Doc's machine").await, writing: HashSet::new() };
+    let mut named = Named { reach, writing: HashSet::new() };
     for m in by_agent {
         if matches!(super::machine_writes(app, &m, project).await, Ok(true)) {
             named.writing.insert(m);

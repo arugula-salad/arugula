@@ -99,6 +99,8 @@ struct State {
     online_down: bool,
     /// `may_reach` fails.
     reach_down: bool,
+    /// `may_reach` answers only after this long.
+    reach_slow: Option<std::time::Duration>,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -255,6 +257,11 @@ impl TestHub {
     /// Whether the hub can say whom it routes to a machine.
     pub fn reach_down(&self, down: bool) {
         self.state.lock().unwrap().reach_down = down;
+    }
+
+    /// The hub takes `by` to say whom it routes to a machine (none: at once).
+    pub fn reach_slow(&self, by: Option<std::time::Duration>) {
+        self.state.lock().unwrap().reach_slow = by;
     }
 
     /// The hub can't say which machines are working until one says again.
@@ -490,7 +497,14 @@ impl HubPort for TestHub {
         if s.reach_down {
             return Box::pin(async { anyhow::bail!("the hub is down") });
         }
-        done(machines.iter().filter(|m| Self::reaches(&s, account, m)).cloned().collect())
+        let yes: Vec<String> = machines.iter().filter(|m| Self::reaches(&s, account, m)).cloned().collect();
+        match s.reach_slow {
+            Some(by) => Box::pin(async move {
+                tokio::time::sleep(by).await;
+                Ok(yes)
+            }),
+            None => done(yes),
+        }
     }
     fn push<'a>(&'a self, account: &'a str, message: &'a Value) -> BoxFuture<'a, HubResult<Pushed>> {
         self.push_with(account, message, PushOptions::default())
