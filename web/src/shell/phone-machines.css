@@ -79,7 +79,7 @@
   font: 600 13px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
-/* Not .host-tag: that's the VM and remote tag elsewhere (style.css). The
+/* Not a chip: the VM tag is a Chip (shared/ui/state-chip.tsx). The
    state comes before the count, so the counts line up on the right. */
 .sheet-host .host-panes,
 .sheet-host .host-state {

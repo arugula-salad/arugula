@@ -9,6 +9,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { useModal } from "../../shared/ui/modal";
+import { HintChip as Hint_ } from "../../shared/ui/state-chip";
 import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type ModalButton, type Place } from "../hints";
 
 /** Watches the shown machine for facts; once, in the workspace. */
@@ -29,34 +30,22 @@ const label = (a: { label: string | ((f: Fact) => string) }, f: Fact) => (typeof
 
 function Body({ client, cls }: { client: Client; cls: string }) {
   const s = shownHint()!;
-  return (
-    <span class={cls} role="status" data-hint={s.hint.id}>
-      <span class="hint-copy">{s.hint.copy(s.fact)}</span>
-      {s.hint.action && (
-        <button class="hint-act" data-hint-act onClick={() => act(client)}>
-          {label(s.hint.action, s.fact)}
-        </button>
-      )}
-      <button class="hint-dismiss" data-hint-dismiss aria-label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" onClick={() => dismiss()}>
-        ×
-      </button>
-    </span>
-  );
+  return <Hint_ id={s.hint.id} class={cls} copy={s.hint.copy(s.fact)} action={s.hint.action && label(s.hint.action, s.fact)} onAct={() => act(client)} onDismiss={() => dismiss()} />;
 }
 
 /** In pane `pane`'s header. */
 export function HintChip({ client, pane }: { client: Client; pane: PaneId }) {
-  return useHint("chip", pane) ? <Body client={client} cls="hint hint-chip" /> : null;
+  return useHint("chip", pane) ? <Body client={client} cls="hint-header" /> : null;
 }
 
 /** Over the workspace, at the bottom. */
 export function HintToast({ client }: { client: Client }) {
-  return useHint("toast") ? <Body client={client} cls="hint hint-toast" /> : null;
+  return useHint("toast") ? <Body client={client} cls="hint-toast" /> : null;
 }
 
 /** In a view's empty state. */
 export function HintEmpty({ client }: { client: Client }) {
-  return useHint("empty") ? <Body client={client} cls="hint hint-empty" /> : null;
+  return useHint("empty") ? <Body client={client} cls="hint-empty" /> : null;
 }
 
 /** Over pane `pane`, between its header and its edges: a big tip. Drawn

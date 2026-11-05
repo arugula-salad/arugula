@@ -45,6 +45,7 @@ import { PlaneConnections } from "../settings/plane";
 import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { Access } from "../settings/access";
+import { Chip } from "../../shared/ui/state-chip";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -173,7 +174,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                       <tr key={r.repo_id} data-linked-repo={r.full_name}>
                         <th scope="row">
                           <span class="repo-name">{r.full_name}</span>
-                          {r.private && <span class="settings-tag">private</span>}
+                          {r.private && <Chip kind="tag" class="chip-lead">private</Chip>}
                         </th>
                         {r.purge_after !== null ? (
                           <>

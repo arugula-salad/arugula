@@ -16,6 +16,7 @@ import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
 import { toneClass } from "../swarm";
 import { Section } from "../../shared/ui/settings-section";
+import { Chip } from "../../shared/ui/state-chip";
 
 interface Grant {
   id: string;
@@ -82,7 +83,7 @@ export function RunGrant({ project }: { project: string }) {
           <li class={`sw-card ${toneClass(v.stale || v.renew || v.signer_gone ? "warn" : "ok")}`}>
             <div class="sw-head">
               <b class="sw-name">Standing grant</b>
-              <span class="settings-tag">
+              <Chip kind="tag">
                 {g.expires ? (
                   <>
                     expires <Time at={g.expires} />
@@ -90,7 +91,7 @@ export function RunGrant({ project }: { project: string }) {
                 ) : (
                   "until it's revoked"
                 )}
-              </span>
+              </Chip>
             </div>
             <span class="dim">
               {g.account ? "A project owner confirmed it with a passkey" : "A project owner's device signed it"} <Time at={g.made} on />.

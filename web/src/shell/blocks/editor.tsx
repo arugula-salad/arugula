@@ -12,6 +12,7 @@ import { BlockFrame, RoutePill, throughControl } from "./block-frame";
 import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
 
 type Server =
   | { is: "stopped" }
@@ -68,9 +69,9 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
         ↻
       </button>
       {s.machine && (
-        <span class="host-tag" title={`On ${s.machine}, a throwaway VM`}>
+        <Chip kind="tag" tone="info" class="chip-gap" title={`On ${s.machine}, a throwaway VM`}>
           VM
-        </span>
+        </Chip>
       )}
       <span class="editor-where" title={s.folder}>
         <b>{s.name || s.folder}</b>

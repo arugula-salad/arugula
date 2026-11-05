@@ -17,6 +17,7 @@ import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import type { Span } from "../swarm/code";
 import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
+import { Chip } from "../../shared/ui/state-chip";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
@@ -249,9 +250,9 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
       <div class="review-bar">
         <b class="review-name">{s.name ?? "…"}</b>
         {machine && (
-          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         <span class="review-what" title={s.repo ?? ""}>
           {s.against}

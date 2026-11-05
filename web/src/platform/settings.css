@@ -306,26 +306,6 @@
   white-space: nowrap;
 }
 
-/* A tag: one fact about what it's beside (a repo's private, an
-   environment's driver, a product), a quiet pill. */
-.platform .settings-tag {
-  flex: none;
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--chip-radius);
-  font: 500 11px/1.4 var(--f-mono);
-  color: var(--dim);
-  vertical-align: 1px;
-  white-space: nowrap;
-}
-
-.platform .sw-head .settings-tag,
-.platform .settings-rows .settings-tag {
-  margin-left: 0;
-}
-
 /* A table of a section's things (linked repos, a month's spend): mono
    names, a row each, quiet actions at the end. */
 .platform .settings-table {
@@ -521,45 +501,6 @@
 .platform .env-secret input {
   flex: 0 1 240px;
   height: 32px;
-}
-
-/* A chip: the secret's name in mono, then where its value comes from. */
-.platform .settings-chip {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--chip-radius);
-  overflow: hidden;
-  font: 500 11px/1.5 var(--f-mono);
-  white-space: nowrap;
-}
-
-.platform .settings-chip > * {
-  padding: 1px 8px;
-}
-
-.platform .settings-chip code {
-  font: 600 11px/1.5 var(--f-mono);
-  color: var(--fg);
-  background: var(--raised);
-}
-
-.platform .settings-chip > span {
-  color: var(--ok);
-}
-
-.platform .settings-chip.minted {
-  border-style: dashed;
-}
-
-.platform .settings-chip.minted > span {
-  color: var(--dim);
-}
-
-/* A driver's setting: its name, then its value, in the text's colour. */
-.platform .settings-chip.setting > span {
-  color: var(--fg);
-  white-space: pre;
 }
 
 /* Its deploys: state (in its tone, after a dot), what it deployed (a
@@ -812,14 +753,14 @@
   .platform .env-deploy {
     margin-left: 0;
   }
-  .platform .env-card .sw-head .settings-tag {
+  .platform .env-card .sw-head .chip-tag {
     margin-right: auto;
   }
   .platform .env-secret {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .platform .env-secret > .settings-chip,
+  .platform .env-secret > .chip-object,
   .platform .env-secret > [role="status"] {
     grid-column: 1 / -1;
     justify-self: start;

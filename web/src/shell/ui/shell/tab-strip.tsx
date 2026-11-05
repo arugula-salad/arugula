@@ -12,7 +12,7 @@ import { directory } from "../../hosts";
 import type { Session, TabView } from "../../../shared/proto";
 import { AttentionBadge, tabAttention } from "../attention";
 import { ChatTabBadge } from "../../blocks";
-import { machineState, newTabItems, tabItems } from "../commands";
+import { machineState, machineTone, newTabItems, tabItems } from "../commands";
 import { drag, startDrag } from "../drag";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
@@ -24,6 +24,7 @@ import { newTabRefusal } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import { HOSTED_LABEL } from "../../../shared/hosted";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
+import { Chip } from "../../../shared/ui/state-chip";
 
 /** The tab bar of a session. */
 export function TabStrip({
@@ -248,17 +249,19 @@ function TabItem({
       onContextMenu={(e) => openFresh(client, e, () => tabItems(client, tab, () => setRenaming({ kind: "tab", id: tab.id })))}
     >
       {machine ? (
-        <span
-          class={`host-tag ${machineState(client, machine)}`}
+        <Chip
+          kind="tag"
+          tone={machineTone(machineState(client, machine))}
+          class="chip-gap"
           title={`${machine.name ?? machine.sprite} (${machine.sprite}): ${machineState(client, machine)}; deleted with the tab`}
         >
           VM
-        </span>
+        </Chip>
       ) : (
         paneIds(tab).some((p) => client.machine(p)) && (
-          <span class="host-tag" title="A pane here runs on a throwaway VM">
+          <Chip kind="tag" tone="info" class="chip-gap" title="A pane here runs on a throwaway VM">
             VM
-          </span>
+          </Chip>
         )
       )}
       <span class="tab-label">{label}</span>

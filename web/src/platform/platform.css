@@ -242,10 +242,6 @@ html[data-corners="square"] .platform-section {
   padding: 4px 0;
 }
 
-.platform-list .chat-count {
-  margin-left: 6px;
-}
-
 .platform-columns {
   display: grid;
   grid-template-columns: 1fr 260px;
@@ -1129,10 +1125,6 @@ html[data-corners="square"] .platform-section {
   color: var(--dim);
 }
 
-.frame-place .chat-count {
-  margin-left: var(--space-1);
-}
-
 /* A project's agent sessions in numbers (M265). */
 .session-stats {
   margin-top: 12px;
@@ -1359,15 +1351,6 @@ span.untri-title {
   flex: 1;
 }
 
-.untri-tag {
-  padding: 0 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  color: var(--dim);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .untri-age {
   min-width: 26px;
   font-size: 12px;
@@ -1459,19 +1442,6 @@ span.untri-title {
   white-space: nowrap;
 }
 
-.untri-chip {
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  white-space: nowrap;
-}
-
-.untri-chip.drop-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-
 .boards-tabs {
   display: none;
 }
@@ -1507,7 +1477,7 @@ span.untri-title {
   }
 
   .boards-untriaged .sw-section-head h2,
-  .untri-tag {
+  .chip.untri-label {
     display: none;
   }
 

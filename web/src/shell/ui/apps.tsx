@@ -8,6 +8,7 @@ import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { OpenRequest, OpenResponse, PaneId } from "../../shared/proto";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface StudioApp {
   name: string;
@@ -174,7 +175,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: AppsWh
             >
               <span class="picker-label">{a.title ?? a.name}</span>
               {a.title && <span class="dim">{a.name}</span>}
-              {a.blocks.length > 0 && <span class="host-tag">%{a.blocks[0]}</span>}
+              {a.blocks.length > 0 && <Chip kind="tag" tone="info">%{a.blocks[0]}</Chip>}
               {a.status && a.status !== "running" && <span class="dim">{a.status}</span>}
             </li>
           ))}

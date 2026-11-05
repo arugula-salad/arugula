@@ -10,6 +10,7 @@ import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
 import { BlockFrame, RoutePill } from "./block-frame";
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -141,9 +142,9 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           ↻
         </button>
         {port && s.machine && (
-          <span class="host-tag" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         <form
           class="browser-url"

@@ -37,6 +37,7 @@ import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from 
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
+import { type Tone } from "../../shared/ui/state-chip";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -520,6 +521,11 @@ function renameItems(client: Client): MenuItem[] {
 /** "idle" when nothing in the tab runs on its machine any more. */
 export function machineState(client: Client, m: Machine): string {
   return m.state === "running" && client.panesOn(m.id).length === 0 ? "idle" : m.state;
+}
+
+/** A machine state's tone on a tag: starting warns, gone is danger, idle is quiet. */
+export function machineTone(state: string): Tone {
+  return state === "starting" ? "warn" : state === "gone" ? "danger" : state === "idle" ? "muted" : "info";
 }
 
 /** The tab's machine: how it is, a new pane on it, reset. */

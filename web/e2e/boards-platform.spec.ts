@@ -699,7 +699,7 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   // The bar is the lane's tone; a row that waits on Alice keeps its lane's tone with a ring, and the header counts it.
   const card = row(alice, SHIPPED);
   await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
-  await expect(card.locator(".chip")).toHaveCount(0);
+  await expect(card.locator(".chip:not(.chip-tag)")).toHaveCount(0);
   // Its title is the issue's page, and its `#N` is dim text, not a link.
   await expect(card.locator("[data-board-title]")).toHaveAttribute("href", /\/issues\/iss_[0-9a-f]+$/);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
@@ -712,7 +712,7 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
   await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/);
   await expect(row(alice, OPEN)).toHaveAttribute("data-needs-you", "");
-  await expect(card.locator(".sw-chip")).toContainText("example.com/branch");
+  await expect(card.locator("[data-board-attachment]")).toContainText("example.com/branch");
   await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you");
   await row(alice, OPEN).locator("[data-board-ask-option='Yes']").click();

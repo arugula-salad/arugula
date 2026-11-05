@@ -13,6 +13,7 @@ import { directory } from "../hosts";
 import { isDir, listDirs, recentDirs, type FsList } from "../fs";
 import { fuzzy } from "../../shared/fuzzy";
 import { isWorkspace, openWorkspace } from "../blocks/open-labs";
+import { Chip } from "../../shared/ui/state-chip";
 
 /** `choose`: the picker only picks (+ Pane's directory, M110). */
 let open: { client: Client; pane: PaneId; phone: boolean; choose?: (path: string) => void } | null = null;
@@ -237,7 +238,7 @@ function Picker({ client, pane, phone, close, choose }: { client: Client; pane: 
       <div class={phone ? "picker phone" : "picker"} onKeyDown={onKey}>
         <div class="picker-where">
           <span class="picker-host">{host}</span>
-          {machineLabel && <span class="host-tag">{machine?.borrowed ? `${machineLabel} · shell` : `VM ${machineLabel}`}</span>}
+          {machineLabel && <Chip kind="tag" tone="info">{machine?.borrowed ? `${machineLabel} · shell` : `VM ${machineLabel}`}</Chip>}
         </div>
         <div class="picker-path" data-path={list?.path ?? ""}>
           {crumbs.map((c, i) => (

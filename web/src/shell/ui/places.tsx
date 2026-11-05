@@ -13,6 +13,7 @@ import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
 import { openPlatform, platformOrigin } from "../platform-links";
+import { Count } from "../../shared/ui/state-chip";
 
 // ---- chat, on the platform page
 
@@ -173,7 +174,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           onClick={() => openChat()}
         >
           Chat
-          {n > 0 && <span class={mention ? "chat-count mention" : "chat-count"}>{mention ? `@${n}` : n}</span>}
+          {n > 0 && <Count for={mention ? "mention" : "you"} class="count-after">{mention ? `@${n}` : n}</Count>}
         </button>
       )}
       {hasBoards(client) && (

@@ -37,6 +37,7 @@ import { BookmarkIcon, SearchIcon } from "./icons";
 import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
+import { Count } from "../ui/state-chip";
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -279,7 +280,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             🌙
           </span>
         )}
-        {n > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.mentions ? `@${n}` : n}</span>}
+        {n > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.mentions ? `@${n}` : n}</Count>}
       </a>
     );
   };
@@ -290,7 +291,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         <button class={`chat-row chat-activity${route.view === "activity" ? " selected" : ""}${mentions ? " unread" : ""}`} data-chat-activity onClick={() => nav.openChatView("activity")}>
           <span class="chat-sigil">@</span>
           <span class="chat-label">Activity</span>
-          {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
+          {mentions > 0 && <Count for="mention" class="count-after">{mentions}</Count>}
         </button>
         <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
           {/* A bookmark: ★ is Starred's (UI audit #169). */}
@@ -298,7 +299,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             <BookmarkIcon size={12} />
           </span>
           <span class="chat-label">Saved</span>
-          {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
+          {savedTodo > 0 && <Count class="count-after">{savedTodo}</Count>}
         </button>
         <button
           class={`chat-row chat-activity${route.view === "threads" ? " selected" : ""}${store.threadsUnread.n ? " unread" : ""}`}
@@ -307,7 +308,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         >
           <span class="chat-sigil">↩</span>
           <span class="chat-label">Threads</span>
-          {store.threadsUnread.n > 0 && <span class={store.threadsUnread.mentions ? "chat-count mention" : "chat-count"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</span>}
+          {store.threadsUnread.n > 0 && <Count for={store.threadsUnread.mentions ? "mention" : "you"} class="count-after">{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</Count>}
         </button>
       </div>
       {groups.length === 0 && (
@@ -339,7 +340,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
                   {shut ? "▸" : "▾"}
                 </span>
                 {g.title}
-                {shut && unread > 0 && <span class="chat-count">{unread}</span>}
+                {shut && unread > 0 && <Count for="you" class="count-after">{unread}</Count>}
               </button>
               {g.browse && (
                 <button class="chat-new" title="Browse channels" aria-label="Browse channels" data-room-browse={g.key} onClick={g.browse}>
@@ -768,7 +769,7 @@ function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean
               <span class="chat-label">{roomLabel(r, api)}</span>
               {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
               {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
-              {r.unread ? <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span> : null}
+              {r.unread ? <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count> : null}
             </li>
           ))}
           {list.length === 0 && <li class="chat-none">No room matches.</li>}

@@ -11,6 +11,7 @@ import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
 import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
+import { Chip, ObjectChip } from "../ui/state-chip";
 
 /** How often an open thread asks again. */
 const EVERY_MS = 15_000;
@@ -76,7 +77,7 @@ function Now({ a }: { a: ChatThreadAgent }) {
   if (!a.working_on && !a.tool) return null;
   return (
     <span class="thread-agent-now">
-      {a.working_on && <span class="thread-agent-chip">{a.working_on}</span>} {a.tool}
+      {a.working_on && <Chip kind="tag">{a.working_on}</Chip>} {a.tool}
     </span>
   );
 }
@@ -239,11 +240,9 @@ export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: 
     <div class="thread-to" role="group" aria-label="Who this wakes" data-thread-to>
       <span class="thread-to-label">To</span>
       {agents.map((a) => (
-        <button
+        <ObjectChip
           key={keyOf(a)}
-          type="button"
-          class="thread-to-chip"
-          aria-pressed={on.includes(a)}
+          pressed={on.includes(a)}
           disabled={named}
           title={named ? "Named in your message" : undefined}
           data-thread-to-agent={keyOf(a)}
@@ -252,16 +251,16 @@ export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: 
           {agentName(a)}
           {a.lead && agents.length > 1 ? " · lead" : ""}
           {a.state === "offline" ? " · offline" : ""}
-        </button>
+        </ObjectChip>
       ))}
       {outside.map((who) => (
-        <button key={who} type="button" class="thread-to-chip" aria-pressed disabled title="Named in your message" data-thread-to-named>
+        <ObjectChip key={who} pressed disabled title="Named in your message" data-thread-to-named onClick={() => {}}>
           {who}
-        </button>
+        </ObjectChip>
       ))}
-      <button type="button" class="thread-to-chip" aria-pressed={on.length === 0 && !outside.length} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
+      <ObjectChip pressed={on.length === 0 && !outside.length} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
         Nobody
-      </button>
+      </ObjectChip>
     </div>
   );
 }

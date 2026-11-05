@@ -24,6 +24,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
 import { LinkIcon } from "./shell/icons";
+import { Count } from "../../shared/ui/state-chip";
 
 const ShareIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -257,15 +258,14 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
               </p>
             )}
             {s?.shared && s.shared_older && (
-              <button
-                class="ws-tag doc-bar-older"
-                type="button"
+              <Count
+                for="you"
                 data-doc-bar-older
                 title="A section changed after the link was updated. One tap makes the link show the Doc as it is; the link stays the same."
                 onClick={() => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is"))}
               >
                 Shared copy is older · Update
-              </button>
+              </Count>
             )}
             <div class="prompt-buttons">
               <button

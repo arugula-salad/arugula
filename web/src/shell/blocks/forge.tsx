@@ -29,6 +29,7 @@ import { registerBlock, type BlockView } from "./view";
 import { Time } from "../../shared/ui/time";
 import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
+import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -146,7 +147,10 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 const BLOCKED = "The forge won't merge it yet, though it has no conflicts: on GitHub, branch protection; on GitLab, approvals, unresolved discussions and the like.";
 
-const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
+/** A forge item's state, in its tone: merged is purple, not the accent. */
+const stateTone = (st: string): Tone | null => (st === "open" ? "ok" : st === "merged" ? "merged" : st === "closed" ? "danger" : st === "draft" ? "accent" : st === "revising" ? "warn" : null);
+
+const linkedState = (st: string) => <StateChip tone={stateTone(st)}>{st}</StateChip>;
 
 /** How each forge merges, as the daemon names them, with a word each. */
 const MERGE_STYLES: Record<string, [string, string][]> = {
@@ -399,9 +403,9 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
       {settled.map((d) => (
         <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
           <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
-          {d.status === "sent" && <span class="ws-tag">sent by {d.settled_by}</span>}
-          {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
-          {d.error && <span class="ws-tag bad">{d.error}</span>}
+          {d.status === "sent" && <Chip kind="tag">sent by {d.settled_by}</Chip>}
+          {d.status === "dropped" && <Chip kind="tag">dropped by {d.settled_by}</Chip>}
+          {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
       ))}
@@ -526,7 +530,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
         <span class="review-path">
           <b>{s.repo}</b> <span class="dim">new issue</span>
         </span>
-        <span class={`ws-tag forge-state ${tag}`}>{tag}</span>
+        <StateChip tone={stateTone(tag)}>{tag}</StateChip>
       </div>
       <div class="review-body ws-body">
         <div class="forge-new">
@@ -615,7 +619,7 @@ function Drafts({ s }: { s: ForgeState }) {
           <div>
             <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
             {d.status === "sent" && (
-              <span class="ws-tag">
+              <Chip kind="tag">
                 sent by {d.settled_by}
                 {d.url && (
                   <>
@@ -625,10 +629,10 @@ function Drafts({ s }: { s: ForgeState }) {
                     </a>
                   </>
                 )}
-              </span>
+              </Chip>
             )}
-            {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
-            {d.error && <span class="ws-tag bad">{d.error}</span>}
+            {d.status === "dropped" && <Chip kind="tag">dropped by {d.settled_by}</Chip>}
+            {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           </div>
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
@@ -1005,7 +1009,7 @@ function prTabs(s: ForgeState, pr: Pr, open: boolean, waiting: Draft[]): ItemTab
         <section data-forge-reviews>
           {pr.reviews.map((r) => (
             <div key={r.id} class="forge-row" data-review={r.state} title={r.stale ? "older commit" : undefined} style={r.stale ? { opacity: 0.6 } : undefined}>
-              <b>{r.author ?? "a team"}</b> <span class={`ws-tag forge-review ${r.state}`}>{words(r.state)}</span>
+              <b>{r.author ?? "a team"}</b> <StateChip tone={r.state === "changes_requested" ? "danger" : r.state === "approved" ? "ok" : null}>{words(r.state)}</StateChip>
               {r.body && <Body text={r.body} s={s} />}
             </div>
           ))}

@@ -46,6 +46,7 @@ import {
 import { Time } from "../../shared/ui/time";
 import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
+import { Count } from "../../shared/ui/state-chip";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -257,9 +258,9 @@ export function AgentGrants() {
       <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
         <div class="sw-head">
           <b class="sw-name">{title}</b>
-          <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
+          <Count class="count-end" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
             {n}/{machines.length}
-          </span>
+          </Count>
         </div>
         <span class="dim agent-card-sub">{sub}</span>
         <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>

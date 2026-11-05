@@ -28,7 +28,7 @@ import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { PlusIcon } from "../ui/rail-icons";
 import { ConfirmRemove } from "../ui/confirm";
-import { StateChip } from "../ui/state-chip";
+import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { CopyLinkButton } from "../ui/copy-link";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
@@ -41,7 +41,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -548,7 +548,7 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
       {b.closed_at != null ? (
         <div class="board-done" data-board-done>
           <p>
-            <span class="ws-tag board-done-tag">Done</span> <span class="dim">{day(b.closed_at)}</span>
+            <Chip kind="tag" tone="ok">Done</Chip> <span class="dim">{day(b.closed_at)}</span>
             {b.closed_by_agent && <span class="dim" data-board-done-by> by {whoLabel(b.closed_by, b.closed_by_agent, nameOf)}</span>}
           </p>
           <p class="board-goal" data-board-done-note>
@@ -625,7 +625,7 @@ function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | 
   return (
     <div class={`board-ask${a.raised ? " raised" : ""}${a.mine ? " mine" : ""}`} data-board-ask={a.raised ? "raised" : a.id}>
       <div class="board-line board-ask-question">
-        <span class="ws-tag waits">{a.raised ? "Board" : "Asks"}</span>
+        <StateChip tone="accent">{a.raised ? "Board" : "Asks"}</StateChip>
         <span data-board-ask-question>{a.question}</span>
       </div>
       {a.why && (
@@ -792,8 +792,8 @@ function Lane({
   );
 }
 
-/** An attachment as a chip (`sw-chip`): what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
-function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all" }) {
+/** An attachment as an object chip: what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
+function AttachmentChip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all" }) {
   const api = usePlatformApi();
   const c = chipOf(a);
   const p = a.pointer;
@@ -818,11 +818,17 @@ function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform
   const more = a.block ? (facts === "all" ? blockFacts(a.block) : settledFacts(a.block)) : [];
   return (
     <>
-      <span class={`sw-chip board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role} data-board-block={a.block?.state}>
+      <ObjectChip
+        proof={a.role === "proof"}
+        class={a.role}
+        fact={c.state ? { tone: a.live ? (a.live.state === "merged" ? "merged" : liveTone(a.live.state)) : a.block?.state === "needs_input" ? "accent" : "muted", text: c.state } : null}
+        data-board-attachment={a.id}
+        data-attach-role={a.role}
+        data-board-block={a.block?.state}
+      >
         {a.role === "proof" && <span class="dim">proof </span>}
         {name}
-        {c.state && <span class={`ws-tag board-live ${a.live ? liveClass(a.live.state) : a.block ? blockClass(a.block.state) : ""}`}>{c.state}</span>}
-      </span>
+      </ObjectChip>
       {more.length > 0 && (
         <span class="board-fact dim" data-board-block-facts>
           {more.join(" · ")}
@@ -861,20 +867,20 @@ function Labels({ labels, all }: { labels: string[]; all?: boolean }) {
     <div class={all ? "board-labels" : "board-line board-labels"} data-board-labels>
       <span class="board-labels-top">
         {top.map((l) => (
-          <span key={l} class="ws-tag board-label" data-board-label={l}>
+          <Chip key={l} kind="tag" class="board-label" data-board-label={l}>
             {l}
-          </span>
+          </Chip>
         ))}
         {more > 0 && (
-          <span class="ws-tag board-label more" title={labels.slice(top.length).join(", ")} data-board-label-more>
+          <Chip kind="tag" class="board-label" title={labels.slice(top.length).join(", ")} data-board-label-more>
             +{more}
-          </span>
+          </Chip>
         )}
       </span>
       {!all && (
-        <span class="ws-tag board-label more board-labels-all" title={labels.join(", ")} data-board-labels-all>
+        <Chip kind="tag" class="board-label board-labels-all" title={labels.join(", ")} data-board-labels-all>
           +{labels.length}
-        </span>
+        </Chip>
       )}
     </div>
   );
@@ -944,9 +950,9 @@ function Row({
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
   const tone = cardTone(r);
   const proofTag = mark && (
-    <span class={`ws-tag board-proof ${mark.proven ? "proven" : "unproven"}`} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
+    <Chip kind="tag" tone={mark.proven ? "ok" : "muted"} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
       {mark.words}
-    </span>
+    </Chip>
   );
   const more = (e: MouseEvent) =>
     menuAt(e, [
@@ -1020,45 +1026,45 @@ function Row({
             )}
             {proofTag}
             {setBy && (
-              <span class="ws-tag board-lane-set" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
+              <Chip kind="tag" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
                 {setBy}
-              </span>
+              </Chip>
             )}
           </div>
           {card && <Labels labels={r.live!.labels ?? []} />}
           {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.merged && (
-                <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
+                <StateChip tone="merged" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
                   merged, not closed
-                </span>
+                </StateChip>
               )}
               {marks.cancelled && (
-                <span class="ws-tag board-mark" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
+                <Chip kind="tag" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
                   cancelled
-                </span>
+                </Chip>
               )}
               {marks.after && (
-                <span class="ws-tag waits board-mark" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
+                <StateChip tone="accent" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
                   {marks.after.words}
-                </span>
+                </StateChip>
               )}
               {marks.stalled && (
-                <span class="ws-tag warn board-mark" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+                <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
                   {marks.stalled.words}
-                </span>
+                </StateChip>
               )}
               {marks.blocked.map((m, i) => (
-                <span key={i} class="ws-tag waits board-mark" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
+                <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
                   {m.words}
-                </span>
+                </StateChip>
               ))}
             </div>
           )}
           {current.length > 0 && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
-                <Chip key={a.id} a={a} platform={platform} />
+                <AttachmentChip key={a.id} a={a} platform={platform} />
               ))}
             </div>
           )}
@@ -1074,7 +1080,7 @@ function Row({
               <summary class="dim">{earlierLine(earlier.length)}</summary>
               <div class="board-line board-chips">
                 {earlier.map((a) => (
-                  <Chip key={a.id} a={a} platform={platform} />
+                  <AttachmentChip key={a.id} a={a} platform={platform} />
                 ))}
               </div>
             </details>
@@ -1197,9 +1203,9 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
           </span>
         )}
         {laneSetLine(r, nameOf) && (
-          <span class="ws-tag board-lane-set" data-board-lane-set>
+          <Chip kind="tag" data-board-lane-set>
             {laneSetLine(r, nameOf)}
-          </span>
+          </Chip>
         )}
       </div>
       <div class="board-line">
@@ -1276,7 +1282,7 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
           <h3>Attached</h3>
           {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
-              <Chip a={a} platform={platform} facts="all" />
+              <AttachmentChip a={a} platform={platform} facts="all" />
               {write && holdsRow(a) && (
                 <button type="button" class="secondary small" data-board-release={a.id} title="Take this agent off the row; it keeps running, and another may take the row" onClick={() => void act(() => boards.detach(id, a.id))}>
                   Release
@@ -1295,7 +1301,7 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
             </p>
           )}
           {evidence.map((a) => (
-            <Chip key={a.id} a={a} platform={platform} />
+            <AttachmentChip key={a.id} a={a} platform={platform} />
           ))}
         </section>
       )}
