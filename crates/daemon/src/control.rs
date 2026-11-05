@@ -1200,12 +1200,12 @@ impl Enrolled {
         a
     }
 
-    /// Whether a read-only link's key gets in. A deploy's box admits no
-    /// one, as [`Enrolled::build`] admits no roster there, and that
-    /// includes a link: one made before the box was told it's a deploy's
-    /// stops working then (purposes only close). The link stays in
-    /// `acl.json`.
-    fn admits_links(&self) -> bool {
+    /// Whether a read-only link's key or a guest's ssh invite gets in. A
+    /// deploy's box admits no one, as [`Enrolled::build`] admits no roster
+    /// there, and that includes links and guests: one made before the box
+    /// was told it's a deploy's stops working then (purposes only close).
+    /// The link or invite stays where it is.
+    fn admits_links_and_guests(&self) -> bool {
         !self.saved.purpose().is_some_and(Purpose::deploys)
     }
 }
@@ -2213,6 +2213,13 @@ impl Control {
         self.enrolled().is_some_and(|e| e.drivers.iter().any(|(c, _)| c.noise == key))
     }
 
+    /// Whether this machine lets in read-only links and ssh guests: not on
+    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine not
+    /// joined to control does.
+    pub fn admits_links_and_guests(&self) -> bool {
+        self.enrolled().is_none_or(|e| e.admits_links_and_guests())
+    }
+
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
         let e = self.enrolled()?;
         if let Some(c) = e.trusted.by_noise(noise).filter(|c| c.kind.connects()) {
@@ -2233,7 +2240,7 @@ impl Control {
         }
         // A read-only link's key (M19): a viewer of one session, while it
         // lasts, except on a deploy's box.
-        if !e.admits_links() {
+        if !e.admits_links_and_guests() {
             return None;
         }
         let g = self.acl.link_by_key(&key)?;
@@ -2896,7 +2903,7 @@ impl Control {
 
     /// Tell control which accounts get in (it routes them; we decide).
     async fn publish(&self, e: &Enrolled) {
-        let links = if e.admits_links() { self.acl.links_until() } else { None };
+        let links = self.acl.links_until();
         let body = wire::AccessList { accounts: e.accounts(), links_until: links, agents: e.agent_accounts() };
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
@@ -6745,10 +6752,13 @@ pub(crate) mod tests {
             .collect()
     }
 
-    /// A read-only link's key on each kind of hosted box: a workspace and a
-    /// snapshot's box let it in; a deploy's box, and one that is both,
-    /// don't. A link made while the box was a workspace stops working when
-    /// it's told it's a deploy's, and stays in `acl.json`.
+    /// A read-only link's key on each kind of machine: a personal and a
+    /// team machine (just joined), a workspace and a snapshot's box let it
+    /// in; a deploy's box, of an account's project or a team's, and one
+    /// that is both, don't, and say they admit no guests either. A link
+    /// made while the box was a workspace stops working when it's told it's
+    /// a deploy's: the relay's channel, which waits on `changed` and then
+    /// asks `device` again, closes, and the link stays in `acl.json`.
     #[test]
     fn a_deploys_box_admits_no_links() {
         let load = |name: &str| -> Saved {
@@ -6765,16 +6775,23 @@ pub(crate) mod tests {
             acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
             let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
             c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
-            let got = c.device(&noise).map(|(_, p)| p.id().to_owned());
+            let got = c.device(&noise).map(|(_, p)| p);
             (c, acl, dir, got)
         };
-        for (name, want) in
-            [("hosted-team", true), ("hosted-snapshot", true), ("hosted-deploy-team", false), ("hosted-both", false)]
-        {
-            let (_, _, dir, got) = admitted(&load(name), name);
+        for (name, want) in [
+            ("personal-joined", true),
+            ("team-joined", true),
+            ("hosted-team", true),
+            ("hosted-snapshot", true),
+            ("hosted-deploy", false),
+            ("hosted-deploy-team", false),
+            ("hosted-both", false),
+        ] {
+            let (c, _, dir, got) = admitted(&load(name), name);
             assert_eq!(got.is_some(), want, "{name}: {got:?}");
-            if let Some(id) = got {
-                assert!(id.starts_with("link:"), "{name}: {id}");
+            assert_eq!(c.admits_links_and_guests(), want, "{name}: links and guests");
+            if let Some(p) = got {
+                assert!(p.id().starts_with("link:"), "{name}: {}", p.id());
             }
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -6782,10 +6799,16 @@ pub(crate) mod tests {
         // Made on a workspace, then the box is told it's a deploy's.
         let mut saved = load("hosted-team");
         let (c, acl, dir, before) = admitted(&saved, "switch");
-        assert!(before.is_some(), "a workspace lets the link in");
+        let was = before.expect("a workspace lets the link in");
+        let mut changed = c.changed.subscribe();
+        changed.mark_unchanged();
         saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
         c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
-        assert!(c.device(&noise).is_none(), "the same key, once it's a deploy's box");
+        assert!(changed.has_changed().unwrap(), "the channel's loop is woken");
+        let now = c.device(&noise).map(|(_, p)| p);
+        assert!(now.is_none(), "the same key, once it's a deploy's box");
+        assert_eq!(crate::e2e::no_longer(now, &was), Some(crate::e2e::UNTRUSTED), "its open channel closes");
+        assert!(!c.admits_links_and_guests(), "nor a guest's invite");
         assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
         let _ = std::fs::remove_dir_all(&dir);
     }

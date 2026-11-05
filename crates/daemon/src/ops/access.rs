@@ -141,14 +141,15 @@ pub fn compose(p: Pieces) -> AccessView {
     );
 
     // A deploy's box: the project's people aren't admitted, as
-    // `Enrolled::build` decides, and control routes nobody to it. What the
-    // box holds of its own (shares, links, guests, trust) is checked by
-    // other paths than `build`, so it's listed as held.
+    // `Enrolled::build` decides, nor a session's link or an ssh guest
+    // (`Control::admits_links_and_guests`), and control routes nobody to
+    // it. What the box holds (tailnet shares, links, guests, trust) is
+    // listed as held, each saying what it admits there.
     let nobody = roster.as_ref().is_some_and(|r| r.nobody);
     if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
         let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
         notes.push(format!(
-            "A box made for {what}: the project's people aren't admitted here, not even its owners, nor is anyone a session was shared with by account or team, nor anyone holding a session's link, and Arugula cloud routes nobody to it."
+            "A box made for {what}: the project's people aren't admitted here, not even its owners, nor is anyone a session was shared with by account or team, nor anyone holding a session's link or an ssh invite, and Arugula cloud routes nobody to it."
         ));
     }
     if roster.as_ref().is_some_and(|r| r.purpose.as_deref() == Some("snapshot")) {
@@ -323,6 +324,9 @@ pub fn compose(p: Pieces) -> AccessView {
             x.session = session_of(g.pane);
             x.until_ms = Some(g.expires_ms);
             let mut parts = vec![if g.rw { "over ssh, may type" } else { "over ssh, watches" }.to_owned()];
+            if nobody {
+                parts.push("held: a deploy's box admits no guest".into());
+            }
             parts.push(if g.reusable {
                 "any number of logins".into()
             } else if g.used {

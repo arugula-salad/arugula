@@ -675,6 +675,13 @@ impl Handler for Conn {
     type Error = russh::Error;
 
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
+        // A deploy's box admits no guest, an invite made before it was told
+        // so included (`Control::admits_links_and_guests`). Asked before the
+        // claim, so a single-use invite isn't spent on a refusal.
+        if !self.app.control.admits_links_and_guests() {
+            info!(peer = %self.peer, "guest ssh: refused a login: a deploy's box admits no guests");
+            return Ok(Auth::reject());
+        }
         let Some(g) = self.guests.claim(user) else {
             info!(peer = %self.peer, "guest ssh: refused a login");
             return Ok(Auth::reject());
@@ -695,7 +702,9 @@ impl Handler for Conn {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let ok = self.channel.is_none() && self.granted.as_ref().is_some_and(|g| self.guests.live(g.id));
+        let ok = self.channel.is_none()
+            && self.granted.as_ref().is_some_and(|g| self.guests.live(g.id))
+            && self.app.control.admits_links_and_guests();
         if ok {
             self.channel = Some(channel.id());
             reply.accept().await;
@@ -828,6 +837,8 @@ async fn attach(
     let want = Want { history: Some(HISTORY), ..Default::default() };
     handle.attach_with(sub.clone(), want);
     guests.count(g.id, 1);
+    // Told it's a deploy's box while a guest is on: they're cut off.
+    let mut enrollment = app.control.changed.subscribe();
     let mode = if g.rw { "read-write" } else { "read-only" };
     let heading = format!("Arugula %{} ({mode}) · Ctrl-] leaves", g.pane);
     let mut ended = guests.ended.subscribe();
@@ -868,6 +879,9 @@ async fn attach(
             }
             _ = ended.changed() => {
                 if !guests.live(g.id) { break (Some("the invite was revoked"), 1) }
+            }
+            Ok(()) = enrollment.changed() => {
+                if !app.control.admits_links_and_guests() { break (Some("this machine admits no guests now"), 1) }
             }
             _ = tokio::time::sleep_until(deadline) => break (Some("the invite expired"), 1),
             m = rx.recv() => match m {
@@ -962,6 +976,9 @@ fn hostname() -> String {
 }
 
 pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<GuestInvite, ApiError> {
+    if !app.control.admits_links_and_guests() {
+        return Err(ApiError(StatusCode::CONFLICT, "a deploy's box admits no guests".into()));
+    }
     let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
     match summaries.iter().find(|p| p.info.id == req.pane) {
         None => return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane))),
