@@ -665,9 +665,9 @@ fn sharing_cli(
         (Some(args::SharingSetting::AgentSessions), None) => println!("{}", sharing::agent_sessions(dir).word()),
         (Some(args::SharingSetting::AgentSessions), Some(s)) => {
             let what = match s {
-                args::OnOff::Work => sharing::AgentSessions::Work,
-                args::OnOff::Names => sharing::AgentSessions::Names,
-                _ => sharing::AgentSessions::None,
+                args::OnOff::Work => sharing::AgentListing::Work,
+                args::OnOff::Names => sharing::AgentListing::Names,
+                _ => sharing::AgentListing::None,
             };
             sharing::set_agent_sessions(dir, what).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("agent-sessions is {}", what.word());

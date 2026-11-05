@@ -10,7 +10,7 @@ use anyhow::Result;
 use super::{
     Db,
     jobs::{self, JobKind},
-    sessions::{Move, Session, State, move_session_in},
+    sessions::{AgentSession, Move, State, move_session_in},
     sql::{Optional as _, Sql, params},
 };
 
@@ -63,7 +63,7 @@ impl Db {
     }
 
     /// The newest session made on a thread, ended or not.
-    pub fn latest_thread_session(&self, room: &str, parent_seq: u64) -> Result<Option<Session>> {
+    pub fn latest_thread_session(&self, room: &str, parent_seq: u64) -> Result<Option<AgentSession>> {
         let id: Option<String> = self
             .c()
             .query_row(

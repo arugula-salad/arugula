@@ -422,7 +422,7 @@ async fn a_quiet_ready_box_is_woken_and_a_pulling_one_isnt() {
 /// text and an account the hub doesn't know are left as they are.
 #[test]
 fn a_pulled_prompt_names_its_author() {
-    use arugula_control_wire::work::{SessionAction, SessionPrompt, SessionWork};
+    use arugula_control_wire::work::{AgentSessionWork, SessionAction, SessionPrompt};
     let p = |author: &str, source: &str| SessionPrompt {
         id: format!("spr_{author}"),
         author: author.into(),
@@ -432,7 +432,7 @@ fn a_pulled_prompt_names_its_author() {
         text: "hi".into(),
         at: 1,
     };
-    let mut sessions = vec![SessionWork {
+    let mut sessions = vec![AgentSessionWork {
         session: "ses_1".into(),
         project: "prj_1".into(),
         workspace: "hw_1".into(),

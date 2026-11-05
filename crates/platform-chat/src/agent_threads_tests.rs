@@ -866,7 +866,7 @@ async fn a_mention_in_a_thread_says_who_else_is_there() {
 async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
     use arugula_control_wire::{
         chat::{ChatThreadAgentState as S, ChatThreadAgents, chat_thread_agents},
-        forge::{DaemonOp, MachineSession, MachineSessionState},
+        forge::{DaemonOp, MachineAgent, MachineAgentState},
     };
     let (hub, _app, base, t, _u) = seeded().await;
     geek_in_t(&base, &t).await;
@@ -880,12 +880,12 @@ async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
         "geek",
         OpAnswer::Sessions {
             shared: true,
-            sessions: vec![MachineSession {
+            sessions: vec![MachineAgent {
                 name: "ux-work".into(),
                 tab: None,
                 active_ms_ago: Some(5),
                 working_on: Some("#900".into()),
-                state: Some(MachineSessionState::Working),
+                state: Some(MachineAgentState::Working),
                 tool: Some("Bash".into()),
             }],
         },
@@ -928,7 +928,7 @@ async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
         .ops_asked()
         .into_iter()
         .filter_map(|(m, op)| match op {
-            DaemonOp::AgentSessions(a) if m == "geek" => Some(a.only),
+            DaemonOp::MachineAgents(a) if m == "geek" => Some(a.only),
             _ => None,
         })
         .collect();
@@ -948,7 +948,7 @@ async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
 async fn an_agent_lists_the_sessions_of_a_machine_that_hears_the_room() {
     use arugula_control_wire::{
         chat::agent_machine_sessions,
-        forge::{DaemonOp, MachineSession},
+        forge::{DaemonOp, MachineAgent},
     };
     let (hub, _app, base, t, _u) = seeded().await;
     hub.daemon("mini", "a", Some("t"));
@@ -958,7 +958,7 @@ async fn an_agent_lists_the_sessions_of_a_machine_that_hears_the_room() {
         hub.ops_asked()
             .into_iter()
             .filter_map(|(m, op)| match op {
-                DaemonOp::AgentSessions(a) => Some((m, a.from_session)),
+                DaemonOp::MachineAgents(a) => Some((m, a.from_session)),
                 _ => None,
             })
             .collect()
@@ -988,7 +988,7 @@ async fn an_agent_lists_the_sessions_of_a_machine_that_hears_the_room() {
 
     // Online: the daemon's list, as it said it. Another machine's asker
     // gives its session no mention.
-    let slow = MachineSession {
+    let slow = MachineAgent {
         name: "slowness".into(),
         tab: Some("Views".into()),
         active_ms_ago: Some(180_000),

@@ -15,7 +15,7 @@ use crate::{
         chat::Room,
         issues::{Actor, NewIssue},
         jobs::{JobEnd, JobKind},
-        sessions::{DaemonReport, Kind, Move, PromptState, Session, State},
+        sessions::{AgentSession, DaemonReport, Kind, Move, PromptState, State},
         sql::{Sql as _, params},
     },
     jobs::{Clock, Handler as _, Step},
@@ -125,7 +125,7 @@ pub(crate) async fn lines(base: &str, room: &str, thread: Option<i64>) -> Vec<St
         .collect()
 }
 
-pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<Session> {
+pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<AgentSession> {
     app.db.project_sessions(project, 50).unwrap()
 }
 
@@ -520,7 +520,7 @@ async fn a_rebuilt_boxs_sessions_start_again_from_the_thread() {
 /// and finished. Arugula #209.
 async fn rebuild_rig(
     archive_wait: Option<std::time::Duration>,
-) -> (Arc<TestHub>, Arc<Platform>, String, String, DeviceKeys, Session) {
+) -> (Arc<TestHub>, Arc<Platform>, String, String, DeviceKeys, AgentSession) {
     let fake = Arc::new(crate::hosted::tests::Fake::default());
     let (hub, app, base, t, _u, old) = platform_with(&["https://github.com/o/app"], |p| {
         p.compute = Some(fake);
@@ -540,7 +540,7 @@ async fn rebuild_rig(
 
 /// Rebuild `hw_dev` through the worker, its new box enrolling as `new`:
 /// the session's prompt on the new box.
-async fn rebuild(hub: &TestHub, app: &Platform, s: &Session, new: &DeviceKeys) -> String {
+async fn rebuild(hub: &TestHub, app: &Platform, s: &AgentSession, new: &DeviceKeys) -> String {
     assert!(crate::hosted::ask(app, "hw_dev", crate::hosted::Ask::Rebuild).unwrap());
     let now = arugula_e2e::now_ms();
     crate::hosted::tests::drive(app, now).await;

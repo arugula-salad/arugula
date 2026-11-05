@@ -62,7 +62,7 @@ use crate::{
     db::{
         forge::{LinkedRepo, MintKind, NewMint},
         pr_drafts::{NewPrDraft, NotSaved, PrDraft, PrEnd},
-        sessions::{Kind, Session, SessionDetail},
+        sessions::{AgentSession, Kind, SessionDetail},
     },
     forge::{
         Caller, Purpose, Repo,
@@ -100,7 +100,7 @@ fn no_draft() -> ApiError {
 /// Session `ses` for its asker, `account`: the session and its linked repo,
 /// while they may read it. Anyone else who may read it is told only its
 /// asker drafts its PR; anyone who may not, that there's no such session.
-async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(Session, LinkedRepo, Viewer), ApiError> {
+async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(AgentSession, LinkedRepo, Viewer), ApiError> {
     let s = app.db.session(ses)?.ok_or_else(no_session)?;
     let repo = s.repo.as_deref().ok_or_else(|| err(StatusCode::CONFLICT, "the session works in no repo"))?;
     let link = app
@@ -121,7 +121,7 @@ async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(Session, 
 
 /// A session whose PR merged (M265) is done: there's no PR left to draft
 /// or send, and its card links the one that merged.
-fn not_merged(s: &Session) -> Result<(), ApiError> {
+fn not_merged(s: &AgentSession) -> Result<(), ApiError> {
     match (s.merged_at, &s.pr) {
         (Some(_), Some(pr)) => Err(err(StatusCode::CONFLICT, &format!("its pull request merged already: {pr}"))),
         (Some(_), None) => Err(err(StatusCode::CONFLICT, "its pull request merged already")),
@@ -130,7 +130,7 @@ fn not_merged(s: &Session) -> Result<(), ApiError> {
 }
 
 /// Every turn's detail, oldest first.
-fn turns(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionDetail>> {
+fn turns(app: &Platform, s: &AgentSession) -> anyhow::Result<Vec<SessionDetail>> {
     Ok(app
         .db
         .session_events(&s.id)?
@@ -141,7 +141,7 @@ fn turns(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionDetail>> {
 }
 
 /// Whether a turn pushed the session's branch.
-fn pushed(app: &Platform, s: &Session) -> anyhow::Result<bool> {
+fn pushed(app: &Platform, s: &AgentSession) -> anyhow::Result<bool> {
     Ok(turns(app, s)?.iter().any(|d| d.pushed == Some(true)))
 }
 
@@ -241,7 +241,7 @@ fn titled(t: &str) -> String {
 /// the issue its thread is on, the newest pushed commit's subject, the
 /// first line of the ask (without its mentions), the session's slug in
 /// words.
-fn title_for(s: &Session, issue: Option<&str>, commits: &[String], ask: Option<&str>) -> String {
+fn title_for(s: &AgentSession, issue: Option<&str>, commits: &[String], ask: Option<&str>) -> String {
     if let Some(t) = issue.map(titled).filter(|t| !t.is_empty()) {
         return t;
     }
@@ -336,13 +336,13 @@ fn summary(commits: &[String], turns: &[SessionDetail], ci: bool) -> String {
 }
 
 /// Session `s`'s page on the platform's page.
-pub fn session_link(app: &Platform, s: &Session) -> String {
+pub fn session_link(app: &Platform, s: &AgentSession) -> String {
     format!("{}/p/{}/sessions/{}", app.cfg.page(), s.project, s.id)
 }
 
 /// The body's footer: where it came from, linking the session and its
 /// thread.
-fn footer(app: &Platform, s: &Session, asker: &str, thread: Option<&str>) -> String {
+fn footer(app: &Platform, s: &AgentSession, asker: &str, thread: Option<&str>) -> String {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
     let mut out = format!("Opened from Arugula agent session [`{short}`]({})", session_link(app, s));
     if !asker.is_empty() {
@@ -398,7 +398,7 @@ fn body_for(template: Option<&str>, summary: &str, footer: &str) -> String {
 }
 
 /// The asker's message that started session `s`, in its thread.
-fn ask_of(app: &Platform, s: &Session, room: &crate::db::chat::Room) -> anyhow::Result<Option<String>> {
+fn ask_of(app: &Platform, s: &AgentSession, room: &crate::db::chat::Room) -> anyhow::Result<Option<String>> {
     let ms = crate::sessions::hydrate::messages(app, room, s.parent_seq)?;
     Ok(ms
         .into_iter()
@@ -419,7 +419,7 @@ fn ask_of(app: &Platform, s: &Session, room: &crate::db::chat::Room) -> anyhow::
 async fn thread_of(
     app: &Platform,
     v: &Viewer,
-    s: &Session,
+    s: &AgentSession,
     room: &crate::db::chat::Room,
 ) -> anyhow::Result<(Option<String>, Option<String>)> {
     let public = app.cfg.page();
@@ -444,7 +444,7 @@ async fn thread_of(
 }
 
 /// The draft as the asker sees it: kept, or prefilled now.
-async fn draft_view(app: &Platform, s: &Session, link: &LinkedRepo, v: &Viewer) -> anyhow::Result<SessionPr> {
+async fn draft_view(app: &Platform, s: &AgentSession, link: &LinkedRepo, v: &Viewer) -> anyhow::Result<SessionPr> {
     if let Some(d) = app.db.pr_draft_of(&s.id)? {
         return Ok(wire(&d, now_ms()));
     }
@@ -519,7 +519,7 @@ pub async fn show(
 }
 
 /// Keep what the asker wrote, checked.
-async fn keep(app: &Platform, s: &Session, link: &LinkedRepo, e: &SessionPrEdit) -> Result<PrDraft, ApiError> {
+async fn keep(app: &Platform, s: &AgentSession, link: &LinkedRepo, e: &SessionPrEdit) -> Result<PrDraft, ApiError> {
     not_merged(s)?;
     let title = e.title.trim();
     if title.is_empty() || title.chars().count() > TITLE_MAX {
@@ -850,8 +850,8 @@ mod tests {
         assert_eq!(back_path("//evil"), "/");
     }
 
-    fn session(branch: &str) -> Session {
-        Session {
+    fn session(branch: &str) -> AgentSession {
+        AgentSession {
             id: format!("ses_abcd1234{}", "0".repeat(24)),
             project: "prj_1".into(),
             room: "rm_1".into(),

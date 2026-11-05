@@ -486,7 +486,7 @@ conversation before the rebuild if the old box kept it (below).";
 /// prompt), then the session's archived transcript from the old box, if
 /// the box sent it ([`crate::hosted::transcripts`]), fenced as a record,
 /// its newest part kept to fit [`MAX_PROMPT`].
-pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::Session) -> Result<Rebuilt> {
+pub async fn after_rebuild(app: &Platform, s: &crate::db::sessions::AgentSession) -> Result<Rebuilt> {
     after(app, s, REBUILT, "rebuild").await
 }
 
@@ -498,13 +498,13 @@ and your conversation before the move if the old box kept it (below).";
 /// [`after_rebuild`] for a session Move to… sent to another workspace
 /// (Arugula #214), whose old box archived its conversation first when it
 /// could.
-pub async fn after_move(app: &Platform, s: &crate::db::sessions::Session) -> Result<Rebuilt> {
+pub async fn after_move(app: &Platform, s: &crate::db::sessions::AgentSession) -> Result<Rebuilt> {
     after(app, s, MOVED, "move").await
 }
 
 /// The thread hydrated again under `note`, then the transcript of its
 /// conversation before the `what` (rebuild, move).
-async fn after(app: &Platform, s: &crate::db::sessions::Session, note: &str, what: &str) -> Result<Rebuilt> {
+async fn after(app: &Platform, s: &crate::db::sessions::AgentSession, note: &str, what: &str) -> Result<Rebuilt> {
     let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("the session's thread is gone"))?;
     let slug = s.branch.strip_prefix("arugula/").and_then(|b| b.split_once('-')).map_or("", |(_, slug)| slug);
     let thread =

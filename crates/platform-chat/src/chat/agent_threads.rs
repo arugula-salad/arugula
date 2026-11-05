@@ -21,9 +21,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::{
-    self as wire, AgentMachineSessions, AgentMessages, AgentMessagesQuery, AgentReach, AgentReplies, AgentReplyThread,
-    AgentRoom, AgentRooms, AgentSessionsQuery, ChatFound, ChatMessage, ChatPost, ChatPosted, ChatReact, ChatReactQuery,
-    ChatSearchQuery, REPLIES_MAX,
+    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentReplies, AgentReplyThread, AgentRoom, AgentRooms,
+    ChatFound, ChatMessage, ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery, MachineAgents,
+    MachineAgentsQuery, REPLIES_MAX,
 };
 use axum::{
     Json,
@@ -31,7 +31,7 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, SessionsAnswer, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files,
+    AgentsAnswer, Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files,
     gate, hears, in_team, listed_as, objects, pins, post_as, reactions, room_agents, rooms_seen, search_in, threads,
 };
 use crate::{
@@ -303,8 +303,8 @@ pub async fn machine_sessions(
     State(app): State<Arc<Platform>>,
     d: Machine,
     Path((id, machine)): Path<(String, String)>,
-    Query(q): Query<AgentSessionsQuery>,
-) -> J<AgentMachineSessions> {
+    Query(q): Query<MachineAgentsQuery>,
+) -> J<MachineAgents> {
     gate(&app, &d.account).await?;
     app.limits.check_daemon(AGENT_READS, &d.daemon)?;
     let (room, _, _) = room_of(&app, &d, THREADS_READ, &id).await?;
@@ -316,12 +316,12 @@ pub async fn machine_sessions(
         arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
     })?;
     let from_session = q.from_session.filter(|_| target.machine == d.daemon);
-    let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session, only: vec![] };
+    let ask = arugula_control_wire::forge::MachineAgentsAsk { room: room.id.clone(), from_session, only: vec![] };
     let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {
-        SessionsAnswer::Said { shared, sessions } => (false, shared, sessions),
-        SessionsAnswer::Offline | SessionsAnswer::NoWord => (true, true, vec![]),
+        AgentsAnswer::Said { shared, sessions } => (false, shared, sessions),
+        AgentsAnswer::Offline | AgentsAnswer::NoWord => (true, true, vec![]),
     };
-    Ok(Json(AgentMachineSessions { machine_name: target.machine_name, offline, shared, sessions }))
+    Ok(Json(MachineAgents { machine_name: target.machine_name, offline, shared, sessions }))
 }
 
 /// `GET /api/daemon/chat/rooms/{id}/threads/{seq}/agents`: the agents in a

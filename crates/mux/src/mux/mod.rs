@@ -18,7 +18,7 @@ mod who_may;
 
 pub use config::{AtExit, Config};
 pub use outside::{
-    AgentSessions, CardsCall, CardsCx, DropWhy, Followups, Notify, PaneCards, PaneGone, People, Tag, Turn, Usage,
+    CardsCall, CardsCx, Conversations, DropWhy, Followups, Notify, PaneCards, PaneGone, People, Tag, Turn, Usage,
 };
 
 /// Who answers an invite card: the owner, by any route.

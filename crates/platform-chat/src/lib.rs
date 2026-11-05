@@ -321,7 +321,7 @@ impl features::Chat for Hooks {
     fn after_rebuild<'a>(
         &'a self,
         app: &'a Platform,
-        s: &'a db::sessions::Session,
+        s: &'a db::sessions::AgentSession,
     ) -> BoxFuture<'a, anyhow::Result<features::Rebuilt>> {
         Box::pin(sessions::hydrate::after_rebuild(app, s))
     }

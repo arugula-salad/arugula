@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 
 use serde_json::Value;
 
-use crate::{hosted::archive::Closed, mux::AgentSessions};
+use crate::{hosted::archive::Closed, mux::Conversations};
 
 /// A recipe an agent block wears (M76): what it adds to the block, and the
 /// secrets to keep out of every log. Labs wears one (`lab_hooks`).
@@ -85,7 +85,7 @@ pub trait Agents: Send + Sync + 'static {
     fn open_transcripts(&self) -> Vec<Closed>;
     /// The Claude Code conversations on this machine, as the mux asks
     /// (#146).
-    fn sessions(&self) -> Arc<dyn AgentSessions>;
+    fn sessions(&self) -> Arc<dyn Conversations>;
     /// The titles of Claude Code conversations, by id (#429): the name a
     /// session goes by. Reads the index, so call it off the runtime.
     fn conversation_titles(&self, _ids: &[String]) -> std::collections::HashMap<String, String> {
@@ -108,10 +108,10 @@ pub fn open_transcripts() -> Vec<Closed> {
 }
 
 /// [`Agents::sessions`]; none without the agent block.
-pub(crate) fn sessions() -> Arc<dyn AgentSessions> {
+pub(crate) fn sessions() -> Arc<dyn Conversations> {
     match AGENTS.get() {
         Some(a) => a.sessions(),
-        None => Arc::new(NoSessions),
+        None => Arc::new(NoConversations),
     }
 }
 
@@ -122,9 +122,9 @@ pub(crate) fn conversation_titles(ids: &[String]) -> std::collections::HashMap<S
 
 /// No conversations: a build without the agent block.
 #[derive(Debug)]
-struct NoSessions;
+struct NoConversations;
 
-impl AgentSessions for NoSessions {
+impl Conversations for NoConversations {
     fn transcript(&self, _: &str) -> Option<std::path::PathBuf> {
         None
     }

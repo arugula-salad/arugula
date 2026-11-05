@@ -13,7 +13,7 @@ use crate::{
     Platform,
     chat_tests::{TestHub, call},
     db::{
-        sessions::{Kind, Move, PromptState, Session, State},
+        sessions::{AgentSession, Kind, Move, PromptState, State},
         sql::{Sql as _, params},
     },
     sessions_hydrate_tests::{add_box, box_says, lines, platform, post_in, sessions, take},
@@ -52,7 +52,7 @@ async fn pushed(hub: &TestHub) -> Vec<(String, String)> {
 
 /// `who` asks `@arugula …` in the channel: the message's number and the
 /// session it started, if it did.
-async fn ask(app: &Platform, base: &str, project: &str, who: &str, text: &str) -> (i64, Option<Session>) {
+async fn ask(app: &Platform, base: &str, project: &str, who: &str, text: &str) -> (i64, Option<AgentSession>) {
     let p = post_in(base, ROOM, who, text, None).await["seq"].as_i64().unwrap();
     let s = sessions(app, project).into_iter().find(|s| s.parent_seq == p as u64);
     (p, s)
@@ -122,7 +122,7 @@ async fn the_pool_prefers_idle_boxes_then_least_busy() {
 
 /// `s` is in `state` (`done`, as its box's turn's end would leave it,
 /// its prompts sent; `stopped`, as a person would).
-fn set_state(app: &Platform, s: &Session, state: &str) {
+fn set_state(app: &Platform, s: &AgentSession, state: &str) {
     app.db.c().execute("UPDATE agent_sessions SET state = ?2 WHERE id = ?1", params![s.id, state]).unwrap();
     if state == "done" {
         app.db.c().execute("UPDATE session_prompts SET state = 'sent' WHERE session_id = ?1", params![s.id]).unwrap();

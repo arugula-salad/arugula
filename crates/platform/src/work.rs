@@ -206,7 +206,7 @@ impl Handler for Dispatch {
 /// Each member's prompt's `author_name`, and each action's `by_name`: its
 /// account's login, else the name they chose.
 fn name_authors(
-    sessions: &mut [arugula_control_wire::work::SessionWork],
+    sessions: &mut [arugula_control_wire::work::AgentSessionWork],
     accounts: &std::collections::HashMap<String, crate::hub::Account>,
 ) {
     let name = |id: &str| accounts.get(id).map(|a| if a.login.is_empty() { a.name.clone() } else { a.login.clone() });

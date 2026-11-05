@@ -42,7 +42,7 @@ use crate::{
     chat::{at_words, without_code},
     db::{
         chat::{NewMessage, Room},
-        sessions::{Event, Kind, MAX_PROMPT, Move, Role, Session, SessionDetail, State, create_review_in},
+        sessions::{AgentSession, Event, Kind, MAX_PROMPT, Move, Role, SessionDetail, State, create_review_in},
     },
     sessions::hydrate,
     triggers::may_start,
@@ -155,7 +155,7 @@ fn first(text: &str, max: usize) -> (&str, bool) {
 
 /// A review's prompt: what it's for, then the thread and the diff, each
 /// fenced as data, at most [`MAX_PROMPT`] bytes (the diff cut first).
-pub fn prompt(asker: &str, s: &Session, spec: &str, thread: &str, diff: &str) -> String {
+pub fn prompt(asker: &str, s: &AgentSession, spec: &str, thread: &str, diff: &str) -> String {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
     let repo = s.repo.as_deref().unwrap_or("its repo");
     let head = format!(
@@ -207,7 +207,7 @@ async fn thread_text(app: &Platform, room: &Room, thread: u64) -> Result<String>
 
 /// What the review is of: the diff from the repo's default branch to the
 /// session's branch on GitHub, and how it says that (`main...arugula/…`).
-async fn diff_of(app: &Platform, s: &Session) -> Result<(String, String), String> {
+async fn diff_of(app: &Platform, s: &AgentSession) -> Result<(String, String), String> {
     let repo = s.repo.as_deref().ok_or("the session works in no repo")?;
     let link = app
         .db
@@ -286,7 +286,7 @@ pub async fn asked(app: &Platform, room: &Room, thread: u64, author: &str, text:
 /// After session `s`'s box reported `events` (`session_live::report`): a
 /// review's turn with a reply posts it in the thread, and a review that's
 /// done ends.
-pub async fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<()> {
+pub async fn reported(app: &Platform, s: &AgentSession, events: &[Event]) -> Result<()> {
     if s.role != Role::Review {
         return Ok(());
     }
@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn a_reviews_prompt_fences_the_thread_and_the_diff_and_fits() {
-        let s = Session {
+        let s = AgentSession {
             id: "ses_abcdef0123".into(),
             project: "p".into(),
             room: "r".into(),

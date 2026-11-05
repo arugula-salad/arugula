@@ -1400,10 +1400,10 @@ async fn ask_daemon(app: &Platform, machine: &str, op: &arugula_control_wire::fo
 
 /// What a machine says of its sessions when it's asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum SessionsAnswer {
+enum AgentsAnswer {
     Said {
         shared: bool,
-        sessions: Vec<arugula_control_wire::forge::MachineSession>,
+        sessions: Vec<arugula_control_wire::forge::MachineAgent>,
     },
     /// It isn't on control's relay.
     Offline,
@@ -1416,17 +1416,17 @@ enum SessionsAnswer {
 async fn ask_sessions(
     app: &Platform,
     machine: &str,
-    ask: arugula_control_wire::forge::AgentSessionsAsk,
-) -> SessionsAnswer {
+    ask: arugula_control_wire::forge::MachineAgentsAsk,
+) -> AgentsAnswer {
     use arugula_control_wire::forge::{DaemonOp, OpAnswer};
-    let op = DaemonOp::AgentSessions(ask);
+    let op = DaemonOp::MachineAgents(ask);
     match tokio::time::timeout(DAEMON_ANSWERS_WITHIN, app.hub.daemon_op(machine, &op)).await {
-        Ok(Ok(OpAnswer::Sessions { shared, sessions })) => SessionsAnswer::Said { shared, sessions },
-        Ok(Ok(OpAnswer::Offline)) => SessionsAnswer::Offline,
-        Ok(Ok(OpAnswer::Unknown)) => SessionsAnswer::NoWord,
+        Ok(Ok(OpAnswer::Sessions { shared, sessions })) => AgentsAnswer::Said { shared, sessions },
+        Ok(Ok(OpAnswer::Offline)) => AgentsAnswer::Offline,
+        Ok(Ok(OpAnswer::Unknown)) => AgentsAnswer::NoWord,
         other => {
             tracing::warn!(machine, answer = ?other.map(|a| a.map_err(|e| e.to_string())).ok(), "chat: no list of a machine's sessions");
-            SessionsAnswer::NoWord
+            AgentsAnswer::NoWord
         }
     }
 }

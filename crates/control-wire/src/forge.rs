@@ -289,7 +289,7 @@ pub enum DaemonOp {
     /// (`@<machine>/<session>`, #577). The owner decides what is said
     /// (`sharing.json`'s `agent_sessions`).
     #[serde(rename = "agents.sessions")]
-    AgentSessions(AgentSessionsAsk),
+    MachineAgents(MachineAgentsAsk),
     /// A teammate mentioned this machine in a room its agents can't read
     /// (#578): the daemon raises a card asking its owner to let them. The
     /// grant itself is the owner's own act, made over their control session.
@@ -306,7 +306,7 @@ impl DaemonOp {
             DaemonOp::HostedArchive(_) => "hosted.archive",
             DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
             DaemonOp::AgentMention(_) => "agents.mention",
-            DaemonOp::AgentSessions(_) => "agents.sessions",
+            DaemonOp::MachineAgents(_) => "agents.sessions",
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
         }
     }
@@ -363,7 +363,7 @@ pub struct AgentMention {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum MachineSessionState {
+pub enum MachineAgentState {
     Working,
     Idle,
     NeedsInput,
@@ -398,7 +398,7 @@ pub struct AgentGrantAsk {
 /// An agent asks which sessions of a machine it may mention (#577).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentSessionsAsk {
+pub struct MachineAgentsAsk {
     /// The room the mention would be in.
     pub room: String,
     /// When the asker's session is on this machine (#575): its name, so the
@@ -433,7 +433,7 @@ pub const SESSIONS_LISTED: usize = 20;
 /// A session of a machine a teammate's agent may mention (#577).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct MachineSession {
+pub struct MachineAgent {
     /// What `@machine/name` matches: the session's name, as a slug.
     pub name: String,
     /// The tab it is in, when the tab has a name.
@@ -448,7 +448,7 @@ pub struct MachineSession {
     pub working_on: Option<String>,
     /// What it's doing now (#645); absent from an older daemon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<MachineSessionState>,
+    pub state: Option<MachineAgentState>,
     /// With the owner's `work`: the name of the tool it last ran (#645),
     /// never its arguments or output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -553,7 +553,7 @@ pub enum OpAnswer {
     Sessions {
         shared: bool,
         #[serde(default)]
-        sessions: Vec<MachineSession>,
+        sessions: Vec<MachineAgent>,
     },
     /// It doesn't know the op (a daemon from before it).
     Unknown,

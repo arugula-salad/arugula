@@ -15,7 +15,7 @@ use crate::{
         Db,
         chat::{NewMessage, Room},
         session_feedback::{FeedbackState, MAX_CI_ROUNDS},
-        sessions::{NewPrompt, NewSession, Prompt, PromptState, Session, Source},
+        sessions::{AgentSession, NewAgentSession, NewPrompt, Prompt, PromptState, Source},
         sql::{Sql as _, params},
         triggers::{
             RuleEvent,
@@ -77,13 +77,13 @@ async fn serve_hub_on(api: Option<&str>) -> (Arc<Platform>, String, String, Arc<
 /// alice's ask, and alice's session there on `hw_a`, working in
 /// `acme/app`, in `state`; a rule on any failed check, so a check that
 /// isn't the session's starts a run.
-async fn session_in(state: &str) -> (Arc<Platform>, Arc<TestHub>, Session, crate::db::triggers::RunSpec) {
+async fn session_in(state: &str) -> (Arc<Platform>, Arc<TestHub>, AgentSession, crate::db::triggers::RunSpec) {
     session_on(state, None).await
 }
 
 /// [`session_in`], with the App on a fake GitHub where it's installed
 /// on `acme/app` (Arugula #210): its state, and the session.
-async fn session_on_github(state: &str) -> (Arc<Platform>, Shared, Session) {
+async fn session_on_github(state: &str) -> (Arc<Platform>, Shared, AgentSession) {
     let gh: Shared = Arc::default();
     {
         let mut g = gh.lock().unwrap();
@@ -98,7 +98,7 @@ async fn session_on_github(state: &str) -> (Arc<Platform>, Shared, Session) {
 async fn session_on(
     state: &str,
     api: Option<&str>,
-) -> (Arc<Platform>, Arc<TestHub>, Session, crate::db::triggers::RunSpec) {
+) -> (Arc<Platform>, Arc<TestHub>, AgentSession, crate::db::triggers::RunSpec) {
     let (app, _base, p, hub) = serve_hub_on(api).await;
     link(&app.db, 77, "acme/app", &p);
     let room = Room {
@@ -134,7 +134,7 @@ async fn session_on(
             },
         )
         .unwrap();
-    let new = NewSession {
+    let new = NewAgentSession {
         project: &p,
         room: &room.id,
         parent_seq: ask as u64,
@@ -177,13 +177,13 @@ fn review(id: u64, branch: &str, login: &str, gh: u64, association: &str, state:
 }
 
 /// The platform's lines in the session's thread.
-fn lines(app: &Platform, s: &Session) -> Vec<String> {
+fn lines(app: &Platform, s: &AgentSession) -> Vec<String> {
     let (ms, _) =
         app.db.chat_thread_messages(&s.room, s.parent_seq as i64, crate::db::chat::Page::Newest, 100).unwrap();
     ms.into_iter().filter(|m| m.author.is_empty()).map(|m| m.text).collect()
 }
 
-fn github_prompts(app: &Platform, s: &Session) -> Vec<Prompt> {
+fn github_prompts(app: &Platform, s: &AgentSession) -> Vec<Prompt> {
     app.db.session_prompts(&s.id).unwrap().into_iter().filter(|p| p.source == Source::Github).collect()
 }
 
@@ -436,7 +436,7 @@ fn status(id: u64, context: &str, sha: &str, branch: &str) -> Value {
 }
 
 /// The prompt of round `n` (from 1).
-fn round(app: &Platform, s: &Session, n: usize) -> String {
+fn round(app: &Platform, s: &AgentSession, n: usize) -> String {
     github_prompts(app, s).get(n - 1).map(|p| p.text.clone()).unwrap_or_default()
 }
 

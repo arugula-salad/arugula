@@ -33,7 +33,7 @@ use crate::{
     db::{
         Db,
         chat::NewChatEvent,
-        sessions::{Role, Session},
+        sessions::{AgentSession, Role},
     },
     hub::{Account, Flags},
 };
@@ -654,7 +654,7 @@ impl Hub {
     /// Session `s` changed (M257): pages showing its card read it again, on
     /// every machine (through `chat_events`). A Try 3's sibling's parent
     /// card shows it in its compare view (M264), so it's told too.
-    pub fn session(&self, db: &Db, s: &Session) {
+    pub fn session(&self, db: &Db, s: &AgentSession) {
         self.publish(db, ChatLive::Session { room: s.room.clone(), ses: s.id.clone() }, None);
         if let (Role::Try, Some(parent)) = (s.role, &s.parent_session) {
             self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);

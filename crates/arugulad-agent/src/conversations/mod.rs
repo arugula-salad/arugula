@@ -364,11 +364,11 @@ pub fn transcript_of(dirs: &Dirs, session: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// The mux's `AgentSessions`: the conversations in Claude Code's folders.
+/// The mux's `Conversations`: the conversations in Claude Code's folders.
 #[derive(Debug)]
-pub struct Sessions;
+pub struct ClaudeConversations;
 
-impl crate::mux::AgentSessions for Sessions {
+impl crate::mux::Conversations for ClaudeConversations {
     fn transcript(&self, id: &str) -> Option<PathBuf> {
         let mut ix = Index::new(Dirs::from_env());
         ix.find(id).ok().map(|c| c.path)

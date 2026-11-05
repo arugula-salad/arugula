@@ -12671,7 +12671,7 @@
           "work": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/sessions.SessionWork"
+                "$ref": "#/components/schemas/SessionIssueLink"
               },
               {
                 "type": "null"
@@ -12761,6 +12761,47 @@
           "title",
           "labels",
           "state"
+        ],
+        "type": "object"
+      },
+      "SessionIssueLink": {
+        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board_title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "The issue (`iss_…`) and its number.",
+            "type": "string"
+          },
+          "number": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "row": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "issue",
+          "number"
         ],
         "type": "object"
       },
@@ -13863,47 +13904,6 @@
         },
         "required": [
           "title"
-        ],
-        "type": "object"
-      },
-      "sessions.SessionWork": {
-        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
-        "properties": {
-          "board": {
-            "default": null,
-            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "board_title": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "issue": {
-            "description": "The issue (`iss_…`) and its number.",
-            "type": "string"
-          },
-          "number": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "row": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "issue",
-          "number"
         ],
         "type": "object"
       }

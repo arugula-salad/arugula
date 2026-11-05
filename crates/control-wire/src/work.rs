@@ -28,7 +28,7 @@
 //!   hasn't ended, on every pull: the queued ones to take (no more than
 //!   the box's [`MAX_SESSIONS_PER_BOX`] running and
 //!   [`MAX_HELD_SESSIONS_PER_BOX`] held), the rest so it sees their new
-//!   prompts and which to park ([`SessionWork::park`]), and its own last
+//!   prompts and which to park ([`AgentSessionWork::park`]), and its own last
 //!   report number (`n`). One the
 //!   machine runs that's no longer listed has ended (stopped, failed): it
 //!   stops the agent.
@@ -68,7 +68,7 @@
 //!   the platform mints only for the session's own branch on the session's
 //!   repo, with `contents: write` alone, and the box revokes it after. The
 //!   turn's `pushed` says whether it got there.
-//! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
+//! - **Actions** come as [`SessionAction`]s in [`AgentSessionWork::actions`]:
 //!   what people asked of the session that only the box can do (`answer`
 //!   its open question, `approve` or `deny` its open permission, `cancel`
 //!   the turn), oldest first, on every pull until a report names them in
@@ -205,7 +205,7 @@ pub struct Work {
     /// The sessions on this machine's workspace that haven't ended, for a
     /// machine that takes them ([`TAKES_SESSION`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sessions: Vec<SessionWork>,
+    pub sessions: Vec<AgentSessionWork>,
 }
 
 /// A run that's ready for this machine and hasn't started.
@@ -348,7 +348,7 @@ impl std::fmt::Debug for Secret {
 /// An agent session on this machine's workspace that hasn't ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct SessionWork {
+pub struct AgentSessionWork {
     /// `ses_` and 32 hex characters.
     pub session: String,
     pub project: String,

@@ -1,0 +1,70 @@
+{
+  "session": "ses_0123456789abcdef0123456789abcdef",
+  "project": "prj_0123456789abcdef0123456789abcdef",
+  "workspace": "hw_0123456789abcdef",
+  "asker": "a1b2c3d4e5f60718",
+  "repo": "someone/app",
+  "branch": "arugula/01234567-fix-the-thing",
+  "user": {
+    "user": "ses1",
+    "home": "/home/ses1"
+  },
+  "checkout": "/home/ses1/work/app",
+  "block": 7,
+  "taken_at": 1793800000000,
+  "n": 3,
+  "state": "working",
+  "ended": "stopped: someone stopped it",
+  "handed": [
+    "spr_0001",
+    "spr_0002"
+  ],
+  "turn": {
+    "prompts": [
+      "spr_0002"
+    ],
+    "base": 1,
+    "sent": true,
+    "at": 1793800005000,
+    "fix": "The finish step said: tests failed.",
+    "cancelled": true
+  },
+  "notes": "Run the tests before pushing.",
+  "acted": [
+    "act_0001"
+  ],
+  "unnamed": [
+    "act_0002"
+  ],
+  "error": "the agent exited",
+  "last_at": 1793800006000,
+  "events": [
+    {
+      "report": {
+        "session": "ses_0123456789abcdef0123456789abcdef",
+        "n": 3,
+        "kind": "state",
+        "from": "queued",
+        "to": "working",
+        "at": 1793800004000,
+        "detail": "{\"prompts\":[\"spr_0002\"]}",
+        "sig": "00ff"
+      },
+      "answered": true,
+      "refused": "stale: a newer report came first"
+    }
+  ],
+  "pushed_head": "0123456789abcdef0123456789abcdef01234567",
+  "turns_seen": 2,
+  "harness": "codex",
+  "review": true,
+  "model": "claude-fable-5-1",
+  "model_now": "claude-fable-5-1",
+  "model_said": "claude-opus-5-5",
+  "parked": {
+    "at": 1793800007000,
+    "block": 7,
+    "agent_session": "acp-0001"
+  },
+  "reopened": true
+}

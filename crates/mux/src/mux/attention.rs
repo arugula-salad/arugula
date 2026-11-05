@@ -738,7 +738,7 @@ impl Daemon {
         info!(pane, agent, session = id, "agent conversation");
         // Its hooks speak while it runs.
         m.session =
-            Some(crate::store::AgentSession { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
+            Some(crate::store::PaneConversation { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
         // A pane running Claude Code resumes it, unless someone said
         // otherwise.
         if !m.policy_set && m.policy == Policy::Shell {

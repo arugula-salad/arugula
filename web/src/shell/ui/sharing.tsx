@@ -10,7 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
-import type { AgentSessions, Sharing, SharingSetRequest } from "../../shared/proto.gen";
+import type { AgentListing, Sharing, SharingSetRequest } from "../../shared/proto.gen";
 
 let shown: Client | null = null;
 const listeners = new Set<() => void>();
@@ -119,7 +119,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
             data-sharing-agent-sessions
             value={sharing.agent_sessions ?? "names"}
             disabled={sharing.agent_mentions === false}
-            onChange={(e) => void set({ agent_sessions: e.currentTarget.value as AgentSessions })}
+            onChange={(e) => void set({ agent_sessions: e.currentTarget.value as AgentListing })}
           >
             <option value="work">Name, state, work item and tool name</option>
             <option value="names">Name and state</option>
