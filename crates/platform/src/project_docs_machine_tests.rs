@@ -276,3 +276,53 @@ async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
 fn bodies_of(v: &Value) -> Vec<Value> {
     v["sections"].as_array().unwrap().iter().map(|s| s["body"].clone()).collect()
 }
+
+/// A copy goes with its Doc (native #673): the machine takes it down when
+/// the Doc is deleted there, wherever the copy sits, and a copy gone
+/// already is 404. And a copy is its project's to delete, as any Doc
+/// there: the owner in their personal project, an editor where a move
+/// left it; the machine's next change makes a new copy, under a new id.
+#[tokio::test]
+async fn a_copy_goes_with_its_doc_and_is_its_projects_to_delete() {
+    let (_hub, app, base, t, _u) = seeded().await;
+    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
+    let path = format!("/api/projects/{personal}/docs/{id}");
+    let (st, v) = call(&base, "a", "GET", &path, None).await;
+    assert_eq!((st, &v["deleter"], &v["writer"]), (200, &json!(true), &json!(false)), "{v}");
+    assert_eq!(call(&base, "a", "DELETE", &path, None).await.0, 200);
+    assert_eq!(call(&base, "a", "GET", &path, None).await.0, 404);
+    // The machine's next change: a new copy, its own Doc again.
+    let (st, q) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v2"))]).await;
+    assert_eq!(st, 200, "{q}");
+    let again = id_of(&q);
+    assert_ne!(again, id, "a new copy: {q}");
+    assert_eq!(call(&base, "a", "GET", &format!("/api/projects/{personal}/docs/{again}"), None).await.0, 200);
+
+    // Where a move left it, the team's project: an editor may delete it,
+    // and the machine takes it down when its Doc goes.
+    {
+        use crate::db::sql::{Sql as _, params};
+        let n = app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![t, again]).unwrap();
+        assert_eq!(n, 1);
+    }
+    let team_path = format!("/api/projects/{t}/docs/{again}");
+    let (_, v) = call(&base, "b", "GET", &team_path, None).await;
+    assert_eq!((&v["deleter"], &v["writer"]), (&json!(true), &json!(false)), "{v}");
+    let (_, v) = call(&base, "x", "GET", &team_path, None).await;
+    assert_eq!(v["deleter"], json!(false), "a viewer: {v}");
+    assert_eq!(call(&base, "x", "DELETE", &team_path, None).await.0, 403);
+    let (st, d) = signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await;
+    assert_eq!((st, &d["deleted"]), (200, &json!(again)), "{d}");
+    assert_eq!(call(&base, "b", "GET", &team_path, None).await.0, 404);
+    // Gone already: 404, which the machine takes as done.
+    assert_eq!(signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await.0, 404);
+    // And a copy there is the editor's to delete, as the owner's.
+    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v3"))]).await;
+    let third = id_of(&p);
+    {
+        use crate::db::sql::{Sql as _, params};
+        app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![t, third]).unwrap();
+    }
+    assert_eq!(call(&base, "b", "DELETE", &format!("/api/projects/{t}/docs/{third}"), None).await.0, 200);
+}

@@ -28,7 +28,11 @@
 //! machine can't reach another machine's copies.
 //! The machine's Doc is the truth and the copy is read-only (Arugula #678):
 //! a write to it over [`PROJECT_DOC`] is refused, by a person or an agent
-//! session, naming the machine; only the machine's own puts change it.
+//! session, naming the machine; only the machine's own puts change it, and
+//! the copy goes with the Doc (native #673): the machine's `DELETE`
+//! [`MACHINE_DOC`] takes it down. A person who writes in the project may
+//! delete a copy too (`DELETE` [`PROJECT_DOC`]); the machine's next change
+//! makes a new one.
 
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +43,7 @@ use crate::chat::ChatAgent;
 pub const PROJECT_DOCS: &str = "/api/projects/{project}/docs";
 /// `GET`: a Doc with its sections in order, [`DocView`]; `PUT` [`DocWrite`]:
 /// rename it, or write or add a section, answered [`DocView`]; `DELETE`:
-/// it goes (owners and editors).
+/// it goes (owners and editors; a copy too).
 pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
 
 /// `GET`: one of a Doc's pictures, the bytes (any member).
@@ -143,6 +147,11 @@ pub struct DocView {
     pub assets: Vec<Asset>,
     /// Whether the reader may write it.
     pub writer: bool,
+    /// Whether the reader may delete it: a person who writes in the
+    /// project, a copy included (native #673). An older platform sends
+    /// none; the page then takes `writer`.
+    #[serde(default)]
+    pub deleter: bool,
 }
 
 /// `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.

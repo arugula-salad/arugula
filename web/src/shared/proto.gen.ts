@@ -4371,7 +4371,13 @@ assets: Array<ProjectDocAsset>,
 /**
  * Whether the reader may write it.
  */
-writer: boolean, };
+writer: boolean, 
+/**
+ * Whether the reader may delete it: a person who writes in the
+ * project, a copy included (native #673). An older platform sends
+ * none; the page then takes `writer`.
+ */
+deleter: boolean, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,

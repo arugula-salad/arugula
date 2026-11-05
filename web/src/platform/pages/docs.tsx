@@ -428,6 +428,9 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const copy = view ? copyFrom(view.doc) : null;
   // A copy has no writer, whatever an older platform says (#678).
   const writer = !!view?.writer && !copy;
+  // A copy is the project's to delete (native #673); an older platform
+  // sends no `deleter`, and then its `writer` says.
+  const deleter = !!view && (view.deleter ?? view.writer);
   return (
     <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
       <p class="dim project-doc-head">
@@ -485,7 +488,41 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
         </p>
       )}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
+      {view && copy && deleter && <CopyDeleter project={project} view={view} machine={copy} mine={view.doc.author === session.me?.account} />}
     </section>
+  );
+}
+
+/** For owners and editors: delete a copy from the project (native #673).
+ * The machine's next change to the Doc brings a new copy: the warning
+ * says so, and that the machine is theirs when it is. */
+function CopyDeleter({ project, view, machine, mine }: { project: string; view: ProjectDocView; machine: string; mine: boolean }) {
+  const [gone, setGone] = useState(false);
+  const remove = async () => {
+    try {
+      await projectDocs.remove(project, view.doc.id);
+      go(pathOf({ page: "docs", project }, names));
+    } catch (err) {
+      toast(`Couldn't delete it: ${(err as Error).message}`);
+    }
+  };
+  return (
+    <div class="project-doc-form project-doc-copy-delete" data-doc-copy-delete>
+      <button type="button" class="secondary danger" onClick={() => setGone(true)} data-doc-delete>
+        Delete the copy
+      </button>
+      {gone && (
+        <p class="project-doc-confirm" data-doc-confirm>
+          Delete “{view.doc.title}” from the project? {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.{" "}
+          <button type="button" class="danger" data-doc-confirm-delete onClick={() => void remove()}>
+            Delete
+          </button>{" "}
+          <button type="button" onClick={() => setGone(false)}>
+            Keep
+          </button>
+        </p>
+      )}
+    </div>
   );
 }
 

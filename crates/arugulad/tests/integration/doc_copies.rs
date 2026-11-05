@@ -7,7 +7,8 @@
 //! keeps the Doc dirty, and neither it nor another Doc is tried again
 //! before a refresh; and what
 //! changed while control was out of reach is put after a restart, once
-//! control is back.
+//! control is back; and a Doc deleted here takes its copy down (native
+//! #673).
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -42,6 +43,10 @@ struct Fake {
     /// Each Doc put: the machine's Doc id and the body.
     puts: Arc<Mutex<Vec<(String, Value)>>>,
     assets: Arc<Mutex<Vec<AssetPut>>>,
+    /// Each copy the daemon took down: the machine's Doc id.
+    deletes: Arc<Mutex<Vec<String>>>,
+    /// Answer a take-down with this status (0: take it).
+    refuse_delete: Arc<AtomicU16>,
     refreshes: Arc<AtomicUsize>,
     /// Answer a Doc's put with this status (0: take it).
     refuse: Arc<AtomicU16>,
@@ -50,6 +55,11 @@ struct Fake {
     /// Control's chat setting for the machine's account, sent with the
     /// flags: off, a put is refused, as the platform refuses it.
     chat: Arc<AtomicBool>,
+    /// The account the machine is joined to now ("" for the first), and
+    /// the account each Doc's copy was made for: as the platform does, a
+    /// put for another account's copy is refused (403).
+    account: Arc<Mutex<String>>,
+    copied_for: Arc<Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl Fake {
@@ -77,7 +87,19 @@ async fn put_doc(State(f): State<Fake>, Path(doc): Path<String>, Json(b): Json<V
         return unreachable();
     }
     f.puts.lock().unwrap().push((doc.clone(), b));
+    let account = f.account.lock().unwrap().clone();
+    let owner = f.copied_for.lock().unwrap().get(&doc).cloned();
+    if owner.is_some_and(|o| o != account) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "this Doc now sits in a project where its owner may no longer write" })),
+        )
+            .into_response();
+    }
     let refuse = if f.chat.load(Ordering::SeqCst) { f.refuse.load(Ordering::SeqCst) } else { 403 };
+    if refuse == 0 {
+        f.copied_for.lock().unwrap().entry(doc.clone()).or_insert(account);
+    }
     match refuse {
         0 => {
             let rev = f.puts_of(&doc).len();
@@ -102,6 +124,18 @@ async fn put_asset(State(f): State<Fake>, Path((doc, name)): Path<(String, Strin
     Json(json!({ "name": name, "mime": "image/png", "size": size, "rev": 1 })).into_response()
 }
 
+async fn delete_doc(State(f): State<Fake>, Path(doc): Path<String>) -> Response {
+    if f.down.load(Ordering::SeqCst) {
+        return unreachable();
+    }
+    f.deletes.lock().unwrap().push(doc.clone());
+    match f.refuse_delete.load(Ordering::SeqCst) {
+        0 => Json(json!({ "deleted": format!("pdc_{doc}") })).into_response(),
+        s => (StatusCode::from_u16(s).unwrap(), Json(json!({ "error": "the owner may no longer write there" })))
+            .into_response(),
+    }
+}
+
 async fn dial(up: WebSocketUpgrade) -> Response {
     up.on_upgrade(|ws| async move {
         std::future::pending::<()>().await;
@@ -122,7 +156,7 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
             .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
             .route("/api/relay/dial", get(dial))
-            .route("/api/daemon/docs/{doc}", put(put_doc))
+            .route("/api/daemon/docs/{doc}", put(put_doc).delete(delete_doc))
             .route("/api/daemon/docs/{doc}/assets/{name}", put(put_asset))
             .with_state(f);
         tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
@@ -283,6 +317,14 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(f.puts_of(&old).len(), 1, "the old Doc was copied once");
 
+    // Deleted here, its copy goes too (native #673), from the tombstone
+    // the library wrote, which goes once the copy is down.
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{other}"), None);
+    assert_eq!(st, 200, "{v}");
+    d.wait_for("the deleted Doc's copy taken down", || f.deletes.lock().unwrap().contains(&other));
+    d.wait_for("nothing left to copy", || dirty(&d).is_empty() && !gone(&d).contains(&other));
+    assert_eq!(f.deletes.lock().unwrap().len(), 1, "once: {:?}", f.deletes.lock().unwrap());
+
     // Left control: where each copy was is forgotten (native #673).
     assert!(meta(&d, &plan)["platform"].is_object());
     d.stop();
@@ -290,4 +332,182 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     d.start();
     d.wait_for("the copies' places forgotten", || meta(&d, &plan).get("platform").is_none());
     assert!(meta(&d, &old).get("platform").is_none());
+}
+
+/// The tombstones' ids, as the library keeps them.
+fn gone(d: &Daemon) -> Vec<String> {
+    std::fs::read_dir(d.state.join("docs/.gone"))
+        .map(|r| r.flatten().filter_map(|e| e.file_name().into_string().ok()).collect())
+        .unwrap_or_default()
+}
+
+/// Only a tombstone takes a copy down (native #673): a Doc whose meta.json
+/// can't be read is tried again, never deleted; a stray tombstone for a Doc
+/// that still reads is dropped at a start, nothing taken down; a Doc
+/// deleted while control is out of reach is taken down after a restart,
+/// once control is back; told to slow down, the take-down waits and isn't
+/// counted; a take-down the platform refuses is tried after the next
+/// refreshes, three times, while other Docs keep going, then given up, the
+/// copy left; and a machine that re-joined under another account is refused
+/// on the old account's copies, as the platform refuses it, gives up the
+/// same way, and copies its library again for the new account.
+#[test]
+fn a_copy_comes_down_from_a_tombstone_alone_and_a_refused_take_down_is_given_up() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let args = [
+        "--owner",
+        "me@example.com",
+        "--tailscale-socket",
+        "/nonexistent/sock",
+        "--wisp-token-file",
+        "/nonexistent",
+        "--no-relay",
+    ];
+    let mut d = Daemon::child_in(&args, &[], |_| {});
+    d.stop();
+    enroll(&d.state, &url);
+    f.chat.store(true, Ordering::SeqCst);
+    d.start();
+    let (plan_block, plan) = new_doc(&d, "Plan", 1);
+    let (_, other) = new_doc(&d, "Other", 1);
+    d.wait_for("both copied", || !f.puts_of(&plan).is_empty() && !f.puts_of(&other).is_empty());
+    d.wait_for("nothing left to copy", || dirty(&d).is_empty());
+
+    // A meta.json that doesn't parse: the Doc stays dirty, nothing is
+    // taken down, and once it reads again the put goes.
+    f.down.store(true, Ordering::SeqCst);
+    call(&d, plan_block, "doc_fill", json!({ "section": "s1", "markdown": "Offline words." }));
+    d.wait_for("the Doc dirty on disk", || dirty(&d).contains(&plan));
+    let meta_file = d.state.join("docs").join(&plan).join("meta.json");
+    let good = std::fs::read(&meta_file).unwrap();
+    std::fs::write(&meta_file, b"{ not json").unwrap();
+    let puts = f.puts_of(&plan).len();
+    f.down.store(false, Ordering::SeqCst);
+    let refreshed = f.refreshes.load(Ordering::SeqCst);
+    d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(f.deletes.lock().unwrap().is_empty(), "an unreadable Doc is never taken for deleted");
+    assert_eq!(f.puts_of(&plan).len(), puts, "nor put");
+    assert!(dirty(&d).contains(&plan), "it stays dirty: {:?}", dirty(&d));
+    std::fs::write(&meta_file, &good).unwrap();
+    d.wait_for("the put once it reads again", || {
+        f.puts_of(&plan).last().is_some_and(|p| bodies(p)[0].as_deref() == Some("Offline words."))
+    });
+    d.wait_for("nothing left to copy", || dirty(&d).is_empty());
+
+    // A stray tombstone for a Doc that still reads (a removal that failed
+    // before its files went): dropped at the start, nothing taken down.
+    d.stop();
+    std::fs::create_dir_all(d.state.join("docs/.gone")).unwrap();
+    std::fs::write(d.state.join("docs/.gone").join(&plan), b"0").unwrap();
+    d.start();
+    d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > 0);
+    d.wait_for("the stray tombstone dropped", || !gone(&d).contains(&plan));
+    std::thread::sleep(Duration::from_secs(3));
+    assert!(f.deletes.lock().unwrap().is_empty(), "a living Doc keeps its copy");
+
+    // Deleted out of reach, and a restart: the tombstone is on disk, and
+    // the copy goes once control is back.
+    f.down.store(true, Ordering::SeqCst);
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{plan}"), None);
+    assert_eq!(st, 200, "{v}");
+    assert!(gone(&d).contains(&plan), "the tombstone: {:?}", gone(&d));
+    d.stop();
+    d.start();
+    f.down.store(false, Ordering::SeqCst);
+    d.wait_for("the copy taken down once control is back", || f.deletes.lock().unwrap().contains(&plan));
+    d.wait_for("the tombstone gone", || !gone(&d).contains(&plan));
+
+    // Told to slow down: the take-down waits for the next refresh, as
+    // often as it takes, uncounted, and the tombstone stays until the
+    // copy is down.
+    let (_, slow) = new_doc(&d, "Slow", 1);
+    d.wait_for("the slow Doc copied", || !f.puts_of(&slow).is_empty());
+    d.wait_for("nothing left to copy", || dirty(&d).is_empty());
+    f.refuse_delete.store(429, Ordering::SeqCst);
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{slow}"), None);
+    assert_eq!(st, 200, "{v}");
+    d.wait_for("a second take-down after being told to slow down", || {
+        f.deletes.lock().unwrap().iter().filter(|x| **x == slow).count() >= 2
+    });
+    assert!(gone(&d).contains(&slow), "slow down doesn't count: the tombstone stays");
+    f.refuse_delete.store(0, Ordering::SeqCst);
+    d.wait_for("the slow Doc's tombstone gone", || !gone(&d).contains(&slow));
+
+    // Copies off: a deleted Doc's copy still goes.
+    let (_, off) = new_doc(&d, "Off", 1);
+    d.wait_for("the Off Doc copied", || !f.puts_of(&off).is_empty());
+    f.chat.store(false, Ordering::SeqCst);
+    let refreshed = f.refreshes.load(Ordering::SeqCst);
+    d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{off}"), None);
+    assert_eq!(st, 200, "{v}");
+    d.wait_for("the copy taken down with copies off", || f.deletes.lock().unwrap().contains(&off));
+    d.wait_for("its tombstone gone", || !gone(&d).contains(&off));
+    f.chat.store(true, Ordering::SeqCst);
+    let refreshed = f.refreshes.load(Ordering::SeqCst);
+    d.wait_for("a refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
+
+    // Refused (the owner may no longer write where the copy sits): tried
+    // after the next refreshes, three times, other Docs still going, then
+    // given up and the copy left.
+    f.refuse_delete.store(403, Ordering::SeqCst);
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{other}"), None);
+    assert_eq!(st, 200, "{v}");
+    d.wait_for("the first refused take-down", || {
+        f.deletes.lock().unwrap().iter().filter(|x| **x == other).count() >= 1
+    });
+    let (third_block, third) = new_doc(&d, "Third", 1);
+    call(&d, third_block, "doc_fill", json!({ "section": "s1", "markdown": "Meanwhile." }));
+    d.wait_for("another Doc still copied meanwhile", || {
+        f.puts_of(&third).last().is_some_and(|p| bodies(p)[0].as_deref() == Some("Meanwhile."))
+    });
+    d.wait_for("the take-down given up after three tries", || {
+        f.deletes.lock().unwrap().iter().filter(|x| **x == other).count() >= 3 && !gone(&d).contains(&other)
+    });
+    std::thread::sleep(Duration::from_secs(12));
+    assert_eq!(f.deletes.lock().unwrap().iter().filter(|x| **x == other).count(), 3, "no more tries");
+    assert!(dirty(&d).is_empty(), "{:?}", dirty(&d));
+    f.refuse_delete.store(0, Ordering::SeqCst);
+
+    // Re-joined under another account: the platform refuses the new
+    // account on the old one's copies (403), its puts as its take-downs. A
+    // Doc deleted meanwhile is given up after three refusals; a Doc copied
+    // for the old account is refused for the new one and stays dirty; the
+    // library is queued again for the new account.
+    let (_, kept) = new_doc(&d, "Kept", 1);
+    d.wait_for("the kept Doc copied", || !f.puts_of(&kept).is_empty());
+    f.down.store(true, Ordering::SeqCst);
+    let (st, v) = d.raw("DELETE", &format!("/api/docs/{third}"), None);
+    assert_eq!(st, 200, "{v}");
+    d.stop();
+    enroll_as(&d.state, &url, "b2");
+    *f.account.lock().unwrap() = "b2".into();
+    let before = f.puts_of(&kept).len();
+    f.refuse_delete.store(403, Ordering::SeqCst);
+    d.start();
+    f.down.store(false, Ordering::SeqCst);
+    d.wait_for("the library queued again", || {
+        std::fs::read_to_string(d.state.join("docs/.copied-1")).is_ok_and(|a| a.trim() == "b2")
+    });
+    d.wait_for("the kept Doc tried for the new account", || f.puts_of(&kept).len() > before);
+    // Three refusals are three refreshes, slower after a start that found
+    // control down, and a refused put pauses the rest until the next one.
+    arugula_testkit::wait_for("the old account's copy given up after three refusals", Duration::from_secs(300), || {
+        f.deletes.lock().unwrap().iter().filter(|x| **x == third).count() >= 3 && !gone(&d).contains(&third)
+    });
+    assert!(gone(&d).is_empty(), "{:?}", gone(&d));
+    assert!(dirty(&d).contains(&kept), "the old account's copy isn't the new one's to write: {:?}", dirty(&d));
+}
+
+/// [`enroll`], as account `account`.
+fn enroll_as(state: &std::path::Path, control: &str, account: &str) {
+    use arugula_e2e::{Cert, DeviceKeys, Kind};
+    let keys = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+    let mut cert = Cert::new(&keys, account, Kind::Daemon, "test");
+    cert.sign_with(&keys);
+    let saved =
+        json!({ "url": control, "trust": { "account": account, "root": keys.id() }, "cert": cert, "login": "lex00" });
+    std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
 }

@@ -32,7 +32,24 @@
 //!
 //! A Doc the platform can't take as it is (a 400 or 413: the platform's
 //! checks are the block's, so it shouldn't happen) is left until it changes
-//! again. Deleting a Doc here leaves its copy: it may be a team's by then.
+//! again.
+//!
+//! **Deleted here, its copy goes too** (native #673: the Doc is the truth
+//! and the copy has none without it). The library writes a tombstone
+//! (`docs/.gone/<id>`) before it removes the folder, and marks the Doc
+//! like a change ([`removed`]); the put that finds the tombstone takes the
+//! copy down instead (`DELETE`, [`wire::MACHINE_DOC`]) and drops the
+//! tombstone, a copy that isn't there being done. Only a tombstone takes a
+//! copy down: a Doc whose files can't be read, or are gone with no
+//! tombstone (deleted by an older daemon, or by hand), is never taken for
+//! deleted, and a tombstone whose Doc still reads (a removal that failed)
+//! is dropped. Take-downs go whether or not copies are on: turning them off
+//! stops new and changed copies, never a deleted Doc's copy coming down. A take-down the platform refuses (the owner may no longer
+//! write there) is tried after the next refreshes, [`GONE_TRIES`] times,
+//! without pausing the other Docs, then given up with a line in the log:
+//! the copy stays, and its project's people can delete it on the
+//! platform, as they can any copy. Being told to slow down is tried
+//! again and never counted.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -42,6 +59,7 @@ use std::{
 };
 
 use arugula_control_wire::project_docs::{self as wire, MachineDoc, MachineDocPlaced, MachineSection};
+use serde_json::Value;
 use tokio::sync::Notify;
 use tracing::{info, warn};
 
@@ -58,6 +76,8 @@ pub const MOST: Duration = Duration::from_secs(10);
 /// Puts at a time, of different Docs: the first copy of a big library
 /// goes a few at a time, not all at once.
 const FLYING: usize = 4;
+/// Refusals a deleted Doc's take-down gets before it's given up.
+const GONE_TRIES: u32 = 3;
 
 /// In the library: the Docs not copied since they changed.
 const DIRTY: &str = ".copies.json";
@@ -114,7 +134,11 @@ pub fn start(control: Arc<Control>) {
     }
     let state_dir = control.state_dir().to_owned();
     let now = Instant::now();
-    let kept = read_dirty(&state_dir);
+    let mut kept = read_dirty(&state_dir);
+    // Deleted Docs whose copies aren't down yet.
+    kept.extend(read_gone(&state_dir));
+    kept.sort();
+    kept.dedup();
     let queue = Queue {
         waiting: kept.iter().cloned().collect(),
         dirty: kept.into_iter().map(|id| (id, Dirt { first: now, last: now, changes: 0 })).collect(),
@@ -133,6 +157,49 @@ pub fn changed(id: &str) {
     if let Some(c) = COPIES.get() {
         c.mark([id.to_owned()]);
     }
+}
+
+/// The Doc `id` is gone from the library (its tombstone is written): its
+/// copy goes soon.
+pub fn removed(id: &str) {
+    changed(id);
+}
+
+/// The tombstones' ids ([`library::GONE`]). One whose Doc still reads (a
+/// removal that failed before the folder went) is dropped: the Doc lives,
+/// and keeps its copy.
+fn read_gone(state_dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(library::gone_dir(state_dir)) else { return vec![] };
+    entries
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|id| library::is_id(id))
+        .filter(|id| {
+            let lives = library::dir(state_dir, id).is_ok_and(|d| library::read_meta(&d).is_some());
+            if lives {
+                forget_gone(state_dir, id);
+            }
+            !lives
+        })
+        .collect()
+}
+
+fn is_gone(state_dir: &Path, id: &str) -> bool {
+    library::gone_dir(state_dir).join(id).exists()
+}
+
+/// The tombstone goes: the copy is down, or given up on.
+fn forget_gone(state_dir: &Path, id: &str) {
+    let _ = std::fs::remove_file(library::gone_dir(state_dir).join(id));
+}
+
+/// One more refusal of the take-down of `id`, kept in its tombstone: how
+/// many so far.
+fn refused_gone(state_dir: &Path, id: &str) -> u32 {
+    let file = library::gone_dir(state_dir).join(id);
+    let n: u32 = std::fs::read_to_string(&file).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0) + 1;
+    let _ = write_atomic(&file, n.to_string().as_bytes());
+    n
 }
 
 fn read_dirty(state_dir: &Path) -> Vec<String> {
@@ -227,9 +294,11 @@ impl Copies {
     /// The Docs to put now, each with its count of changes, and how long
     /// until the next is due.
     fn due(&self) -> (Vec<(String, u64)>, Option<Duration>) {
-        if self.control.enrolled().is_none() || !self.chat_on() {
+        if self.control.enrolled().is_none() {
             return (Vec::new(), None);
         }
+        // Not allowed to copy: a deleted Doc's copy still comes down.
+        let allowed = self.chat_on();
         let now = Instant::now();
         let mut q = self.queue.lock().unwrap();
         if q.paused {
@@ -237,7 +306,12 @@ impl Copies {
         }
         let Queue { dirty, flying, waiting, .. } = &mut *q;
         let (mut due, mut next) = (Vec::new(), None::<Duration>);
-        for (id, d) in dirty.iter_mut().filter(|(id, _)| !flying.contains(*id) && !waiting.contains(*id)) {
+        let state_dir = &self.state_dir;
+        for (id, d) in dirty
+            .iter_mut()
+            .filter(|(id, _)| !flying.contains(*id) && !waiting.contains(*id))
+            .filter(|(id, _)| allowed || is_gone(state_dir, id))
+        {
             let at = (d.last + QUIET).min(d.first + MOST);
             if at <= now {
                 // The rest wait for a put to end, which wakes this.
@@ -299,12 +373,17 @@ impl Copies {
         self.wake.notify_one();
     }
 
-    /// The Doc as it is now, put, then its pictures the copy hasn't got.
+    /// The Doc as it is now, put, then its pictures the copy hasn't got;
+    /// or, for a deleted Doc, its copy taken down.
     async fn copy(&self, id: &str) -> Result<(), Fail> {
         let dir = library::dir(&self.state_dir, id).map_err(Fail::Never)?;
+        if is_gone(&self.state_dir, id) {
+            return self.take_down(id).await;
+        }
         let at = dir.clone();
         let read = crate::task::spawn_blocking(move || whole(&at)).await.map_err(|e| Fail::Later(e.to_string()))?;
-        // Gone: deleted since it changed.
+        // Gone with no tombstone (an older daemon's delete, or by hand): the
+        // copy is left, for its project's people.
         let Some((meta, doc, pictures)) = read? else { return Ok(()) };
         let placed: MachineDocPlaced = self.control.put_signed(&wire::machine_doc(id), &doc).await.map_err(fail)?;
         let mut sent = meta.platform.filter(|p| p.id == placed.id).map(|p| p.assets).unwrap_or_default();
@@ -337,12 +416,48 @@ impl Copies {
     }
 }
 
+impl Copies {
+    /// A deleted Doc's copy, taken down; none there is done. A refusal is
+    /// tried again after the next refresh, [`GONE_TRIES`] times, then the
+    /// copy is left for its project's people; being told to slow down
+    /// (429) is tried again too, and never counted.
+    async fn take_down(&self, id: &str) -> Result<(), Fail> {
+        let got = self.control.delete_signed::<Value>(&wire::machine_doc(id)).await;
+        let why = match got {
+            Ok(_) => {
+                forget_gone(&self.state_dir, id);
+                return Ok(());
+            }
+            Err(e) => match e.downcast_ref::<Answered>() {
+                Some(Answered(404, _)) => {
+                    forget_gone(&self.state_dir, id);
+                    return Ok(());
+                }
+                // Slow down isn't a refusal: after the next refresh, uncounted.
+                Some(Answered(429, why)) => return Err(Fail::Later(why.clone())),
+                Some(Answered(400 | 403 | 413, why)) => why.clone(),
+                _ => return Err(Fail::Later(e.to_string())),
+            },
+        };
+        if refused_gone(&self.state_dir, id) >= GONE_TRIES {
+            forget_gone(&self.state_dir, id);
+            warn!(
+                doc = id,
+                why,
+                "the platform won't take a deleted Doc's copy down; the copy stays, for its project's people to delete"
+            );
+            return Ok(());
+        }
+        Err(Fail::Later(why))
+    }
+}
+
 /// The Doc in `dir` as the platform takes it, and its pictures: `None` once
-/// it's gone.
+/// it's gone for sure.
 type Whole = (library::Meta, MachineDoc, Vec<assets::Asset>);
 
 fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
-    let Some(meta) = library::read_meta(dir) else { return Ok(None) };
+    let Some(meta) = library::read_meta_or_gone(dir).map_err(Fail::Later)? else { return Ok(None) };
     let (title, sections) = if dir.join(super::OUTLINE).exists() {
         let loaded = super::load(dir).map_err(Fail::Never)?;
         let sections = loaded
