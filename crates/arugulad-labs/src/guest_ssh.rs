@@ -463,6 +463,22 @@ impl Guests {
         Some(g)
     }
 
+    /// A login with `token`: refused where the machine admits no guests (a
+    /// deploy's box, `Control::admits_links_and_guests`), before the claim,
+    /// so a single-use invite isn't spent on a refusal.
+    fn login(&self, admits: bool, token: &str) -> Option<Granted> {
+        if !admits {
+            return None;
+        }
+        self.claim(token)
+    }
+
+    /// Whether a guest logged in with `g` may have a channel and a shell
+    /// now: its invite still works, and the machine still admits guests.
+    fn may_shell(&self, admits: bool, g: &Granted) -> bool {
+        admits && self.live(g.id)
+    }
+
     fn live(&self, id: u32) -> bool {
         let now = now_ms();
         self.inner.lock().unwrap().invites.iter().any(|x| x.id == id && x.expires_ms > now)
@@ -675,7 +691,9 @@ impl Handler for Conn {
     type Error = russh::Error;
 
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
-        let Some(g) = self.guests.claim(user) else {
+        // A deploy's box admits no guest, an invite made before it was told
+        // so included ([`Guests::login`]).
+        let Some(g) = self.guests.login(self.app.control.admits_links_and_guests(), user) else {
             info!(peer = %self.peer, "guest ssh: refused a login");
             return Ok(Auth::reject());
         };
@@ -695,7 +713,8 @@ impl Handler for Conn {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let ok = self.channel.is_none() && self.granted.as_ref().is_some_and(|g| self.guests.live(g.id));
+        let admits = self.app.control.admits_links_and_guests();
+        let ok = self.channel.is_none() && self.granted.as_ref().is_some_and(|g| self.guests.may_shell(admits, g));
         if ok {
             self.channel = Some(channel.id());
             reply.accept().await;
@@ -729,7 +748,8 @@ impl Handler for Conn {
         let (Some(g), Some(ch)) = (self.granted.clone(), self.channel) else {
             return session.channel_failure(channel);
         };
-        if ch != channel || self.tx.is_some() {
+        if ch != channel || self.tx.is_some() || !self.guests.may_shell(self.app.control.admits_links_and_guests(), &g)
+        {
             return session.channel_failure(channel);
         }
         let (tx, rx) = mpsc::unbounded_channel();
@@ -811,6 +831,15 @@ async fn attach(
         let out = out.clone();
         async move { out.data(chan, b).await.is_ok() }
     };
+    // Subscribed first, so a switch to a deploy's box from here on is seen
+    // below; one already made is refused now ([`Guests::may_shell`]).
+    let mut enrollment = app.control.changed.subscribe();
+    if !guests.may_shell(app.control.admits_links_and_guests(), &g) {
+        let _ = out.extended_data(chan, 1, b"[arugula: this machine admits no guests]\r\n".to_vec()).await;
+        let _ = out.exit_status_request(chan, 1).await;
+        let _ = out.close(chan).await;
+        return;
+    }
     let Some(handle) = app.mux.api(|r| Api::Pane(g.pane, r)).await.flatten() else {
         let _ = out.extended_data(chan, 1, b"[arugula: the pane has closed]\r\n".to_vec()).await;
         let _ = out.exit_status_request(chan, 1).await;
@@ -868,6 +897,12 @@ async fn attach(
             }
             _ = ended.changed() => {
                 if !guests.live(g.id) { break (Some("the invite was revoked"), 1) }
+            }
+            // Told it's a deploy's box while a guest is on: they're cut off.
+            Ok(()) = enrollment.changed() => {
+                if !guests.may_shell(app.control.admits_links_and_guests(), &g) {
+                    break (Some("this machine admits no guests now"), 1)
+                }
             }
             _ = tokio::time::sleep_until(deadline) => break (Some("the invite expired"), 1),
             m = rx.recv() => match m {
@@ -961,7 +996,13 @@ fn hostname() -> String {
     crate::hostname().unwrap_or_else(|| "localhost".into())
 }
 
+/// Whether an invite may be made here: not on a deploy's box (409).
+fn may_mint(admits: bool) -> Result<(), ApiError> {
+    if admits { Ok(()) } else { Err(ApiError(StatusCode::CONFLICT, "a deploy's box admits no guests".into())) }
+}
+
 pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<GuestInvite, ApiError> {
+    may_mint(app.control.admits_links_and_guests())?;
     let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
     match summaries.iter().find(|p| p.info.id == req.pane) {
         None => return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane))),
@@ -1115,6 +1156,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// Where the machine admits no guests (a deploy's box): a held invite's
+    /// login is refused and a single-use one isn't spent, a guest who
+    /// logged in before the switch gets no shell after it, and no invite is
+    /// made (409). Where it admits them (a workspace), all of that works.
+    #[test]
+    fn a_machine_that_admits_no_guests_refuses_their_logins_shells_and_invites() {
+        let d = dir("admits");
+        let g = Guests::open(&d, None, None);
+        let (once, token) = g.mint(&GuestInviteRequest { pane: 3, ..Default::default() }, None);
+        assert!(g.login(false, &token).is_none(), "refused on a deploy's box");
+        assert!(!g.list().iter().find(|x| x.id == once.id).unwrap().used, "and not spent");
+        let got = g.login(true, &token).expect("a workspace lets the same invite in");
+        assert!(g.may_shell(true, &got), "a workspace gives a shell");
+        assert!(!g.may_shell(false, &got), "no shell once it's a deploy's box");
+        assert_eq!(may_mint(false).unwrap_err().0, StatusCode::CONFLICT);
+        assert!(may_mint(true).is_ok());
+        std::fs::remove_dir_all(d).unwrap();
     }
 
     #[test]

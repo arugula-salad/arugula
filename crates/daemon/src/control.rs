@@ -1199,6 +1199,15 @@ impl Enrolled {
         a.dedup();
         a
     }
+
+    /// Whether a read-only link's key or a guest's ssh invite gets in. A
+    /// deploy's box admits no one, as [`Enrolled::build`] admits no roster
+    /// there, and that includes links and guests: one made before the box
+    /// was told it's a deploy's stops working then (purposes only close).
+    /// The link or invite stays where it is.
+    fn admits_links_and_guests(&self) -> bool {
+        !self.saved.purpose().is_some_and(Purpose::deploys)
+    }
 }
 
 impl std::fmt::Debug for Control {
@@ -2210,6 +2219,18 @@ impl Control {
         self.enrolled().is_some_and(|e| e.drivers.iter().any(|(c, _)| c.noise == key))
     }
 
+    /// Whether this machine lets in read-only links and ssh guests: not on
+    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine
+    /// with no `control.json` (joined to no control) does. One whose file is
+    /// there but didn't load doesn't: it could be a deploy's box's, and
+    /// [`Control::device`] refuses links then too.
+    pub fn admits_links_and_guests(&self) -> bool {
+        match self.enrolled() {
+            Some(e) => e.admits_links_and_guests(),
+            None => !self.state_dir.join(FILE).exists(),
+        }
+    }
+
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
         let e = self.enrolled()?;
         if let Some(c) = e.trusted.by_noise(noise).filter(|c| c.kind.connects()) {
@@ -2228,7 +2249,11 @@ impl Control {
         if let Some(found) = e.agent_callers.iter().find(|(c, _)| c.noise == key) {
             return Some(found.clone());
         }
-        // A read-only link's key (M19): a viewer of one session, while it lasts.
+        // A read-only link's key (M19): a viewer of one session, while it
+        // lasts, except on a deploy's box.
+        if !e.admits_links_and_guests() {
+            return None;
+        }
         let g = self.acl.link_by_key(&key)?;
         let cert = Cert {
             v: 1,
@@ -6736,6 +6761,81 @@ pub(crate) mod tests {
                 Err(_) => "err".to_owned(),
             })
             .collect()
+    }
+
+    /// A read-only link's key on each kind of machine: a personal and a
+    /// team machine (just joined), a workspace and a snapshot's box let it
+    /// in; a deploy's box, of an account's project or a team's, and one
+    /// that is both, don't, and say they admit no guests either. A link
+    /// made while the box was a workspace stops working when it's told it's
+    /// a deploy's: the relay's channel, which waits on `changed` and then
+    /// asks `device` again, closes, and the link stays in `acl.json`.
+    #[test]
+    fn a_deploys_box_admits_no_links() {
+        let load = |name: &str| -> Saved {
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        let noise = [7u8; 32];
+        let key = hex::encode(noise);
+        let admitted = |saved: &Saved, tag: &str| {
+            let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-{tag}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
+            let got = c.device(&noise).map(|(_, p)| p);
+            (c, acl, dir, got)
+        };
+        for (name, want) in [
+            ("personal-joined", true),
+            ("team-joined", true),
+            ("hosted-team", true),
+            ("hosted-snapshot", true),
+            ("hosted-deploy", false),
+            ("hosted-deploy-team", false),
+            ("hosted-both", false),
+        ] {
+            let (c, _, dir, got) = admitted(&load(name), name);
+            assert_eq!(got.is_some(), want, "{name}: {got:?}");
+            assert_eq!(c.admits_links_and_guests(), want, "{name}: links and guests");
+            if let Some(p) = got {
+                assert!(p.id().starts_with("link:"), "{name}: {}", p.id());
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        // Made on a workspace, then the box is told it's a deploy's.
+        let mut saved = load("hosted-team");
+        let (c, acl, dir, before) = admitted(&saved, "switch");
+        let was = before.expect("a workspace lets the link in");
+        let mut changed = c.changed.subscribe();
+        changed.mark_unchanged();
+        saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
+        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        assert!(changed.has_changed().unwrap(), "the channel's loop is woken");
+        let now = c.device(&noise).map(|(_, p)| p);
+        assert!(now.is_none(), "the same key, once it's a deploy's box");
+        assert_eq!(crate::e2e::no_longer(now, &was), Some(crate::e2e::UNTRUSTED), "its open channel closes");
+        assert!(!c.admits_links_and_guests(), "nor a guest's invite");
+        assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Not enrolled: with no control.json, a machine of its own admits
+        // guests as it always has; with one that won't load, it doesn't.
+        let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-unloaded", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        assert!(c.enrolled().is_none() && c.admits_links_and_guests(), "no control.json");
+        std::fs::write(dir.join(FILE), "not json").unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl, false);
+        assert!(c.enrolled().is_none(), "the file doesn't load");
+        assert!(!c.admits_links_and_guests(), "a control.json that won't load");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The access view (Arugula #681) says exactly whom [`Enrolled::build`]

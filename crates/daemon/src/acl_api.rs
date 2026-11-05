@@ -24,6 +24,9 @@ pub(crate) async fn link(app: &App, b: LinkRequest) -> Result<Value, ApiError> {
     if b.key.len() != 64 || !b.key.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(refuse(StatusCode::BAD_REQUEST, "key: 32 bytes of hex"));
     }
+    if !app.control.admits_links_and_guests() {
+        return Err(refuse(StatusCode::CONFLICT, "a deploy's box admits no links"));
+    }
     let from = if b.history {
         None
     } else {
