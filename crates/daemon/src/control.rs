@@ -2214,10 +2214,15 @@ impl Control {
     }
 
     /// Whether this machine lets in read-only links and ssh guests: not on
-    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine not
-    /// joined to control does.
+    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine
+    /// with no `control.json` (joined to no control) does. One whose file is
+    /// there but didn't load doesn't: it could be a deploy's box's, and
+    /// [`Control::device`] refuses links then too.
     pub fn admits_links_and_guests(&self) -> bool {
-        self.enrolled().is_none_or(|e| e.admits_links_and_guests())
+        match self.enrolled() {
+            Some(e) => e.admits_links_and_guests(),
+            None => !self.state_dir.join(FILE).exists(),
+        }
     }
 
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
@@ -6810,6 +6815,20 @@ pub(crate) mod tests {
         assert_eq!(crate::e2e::no_longer(now, &was), Some(crate::e2e::UNTRUSTED), "its open channel closes");
         assert!(!c.admits_links_and_guests(), "nor a guest's invite");
         assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Not enrolled: with no control.json, a machine of its own admits
+        // guests as it always has; with one that won't load, it doesn't.
+        let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-unloaded", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        assert!(c.enrolled().is_none() && c.admits_links_and_guests(), "no control.json");
+        std::fs::write(dir.join(FILE), "not json").unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl, false);
+        assert!(c.enrolled().is_none(), "the file doesn't load");
+        assert!(!c.admits_links_and_guests(), "a control.json that won't load");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

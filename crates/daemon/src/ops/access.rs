@@ -143,8 +143,10 @@ pub fn compose(p: Pieces) -> AccessView {
     // A deploy's box: the project's people aren't admitted, as
     // `Enrolled::build` decides, nor a session's link or an ssh guest
     // (`Control::admits_links_and_guests`), and control routes nobody to
-    // it. What the box holds (tailnet shares, links, guests, trust) is
-    // listed as held, each saying what it admits there.
+    // it. What the box holds is listed as held: a session link or a guest
+    // says it admits no one there; a tailnet share, a pane link and trust
+    // say they admit only the tailnet and local processes, which a hosted
+    // box reached through control's relay doesn't have.
     let nobody = roster.as_ref().is_some_and(|r| r.nobody);
     if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
         let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
@@ -297,6 +299,9 @@ pub fn compose(p: Pieces) -> AccessView {
             x.session = Some(g.session);
             x.from_ms = g.from.as_ref().map(|_| g.at);
             x.note = Some(match (g.principal.split_once(':').map(|(k, _)| k), g.role) {
+                (Some("tailnet"), _) if nobody => {
+                    "a tailnet login: on a deploy's box only the tailnet and local processes reach it".into()
+                }
                 (Some("tailnet"), _) => "a tailnet login: everyone signed in to Tailscale as it".into(),
                 (_, Role::Owner) => "an owner of the session, not of the machine".into(),
                 _ => "an Arugula account's devices".into(),
@@ -311,7 +316,11 @@ pub fn compose(p: Pieces) -> AccessView {
         x.pane = Some(s.pane);
         x.session = session_of(s.pane);
         x.until_ms = Some(s.expires_ms);
-        x.note = Some("a read-only link to this pane".into());
+        x.note = Some(if nobody {
+            "a read-only link to this pane: on a deploy's box only the tailnet and local processes reach it".into()
+        } else {
+            "a read-only link to this pane".into()
+        });
         rows.push(x);
     }
 
@@ -591,6 +600,10 @@ mod tests {
         // admits no one, and says so. The rest is checked elsewhere.
         let kinds: Vec<&str> = v.rows.iter().map(|r| r.kind.as_str()).collect();
         assert_eq!(kinds, ["share", "link", "link", "trust"]);
+        let tailnet_only = "only the tailnet and local processes reach it";
+        assert!(v.rows[0].note.as_deref().unwrap().contains(tailnet_only), "the tailnet share: {:?}", v.rows[0]);
+        let pane_link = v.rows.iter().find(|r| r.kind == "link" && r.pane.is_some()).unwrap();
+        assert!(pane_link.note.as_deref().unwrap().contains(tailnet_only), "the pane link: {pane_link:?}");
         let session_link = v.rows.iter().find(|r| r.principal.as_deref() == Some("link:abc")).unwrap();
         assert_eq!(
             session_link.note.as_deref(),
