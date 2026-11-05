@@ -47,9 +47,13 @@ const AGENT_BOARD_READS: (&str, usize) = ("board-agent-read", 3_600);
 /// Writes a machine's agents make, per hour: each lands at once and shows
 /// on everyone's board, so fewer than reads.
 pub(super) const AGENT_BOARD_WRITES: (&str, usize) = ("board-agent-write", 600);
-/// Block reports a machine makes, per hour: its daemon sends a block's
-/// changes a few seconds apart at most.
+/// Block reports a machine makes, per hour, that change something: its
+/// daemon sends a block's changes a few seconds apart at most.
 const AGENT_BLOCK_REPORTS: (&str, usize) = ("board-block-state", 2_400);
+/// Block reports a machine makes, per hour, all told: most say again what
+/// was said, as its daemon sends each live block every five minutes
+/// (Arugula #745), 12 an hour, so this is a thousand blocks' worth.
+const AGENT_BLOCK_REPEATS: (&str, usize) = ("board-block-state-again", 12_000);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
@@ -274,7 +278,7 @@ pub async fn put_block_state(
     d: Machine,
     Json(mut p): Json<wire::PutBlockState>,
 ) -> J<serde_json::Value> {
-    app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
+    app.limits.check_daemon(AGENT_BLOCK_REPEATS, &d.daemon)?;
     may_report(&app, &d).await?;
     p.pane = super::plain_pane(&p.pane).to_owned();
     super::name_ok(&p.pane, "pane")?;
@@ -282,13 +286,39 @@ pub async fn put_block_state(
     state_ok(&block)?;
     // As of when the machine saw it: a report that waited out an outage is
     // as old as it says. A daemon from before Arugula #745 says no age: now.
-    let seen = arugula_e2e::now_ms().saturating_sub(p.age_ms.unwrap_or(0));
-    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, seen, p.age_ms.is_some())?;
+    let now = arugula_e2e::now_ms();
+    let seen = now.saturating_sub(p.age_ms.unwrap_or(0));
+    // A report that says again what a fresh one said changes no board: it
+    // counts against the repeats alone, and tells no reader.
+    let before = app.db.block_states(&d.daemon, &[&p.pane])?.pop();
+    let again = before.is_some_and(|b| !b.stale(now) && says_again(&b.state, &block));
+    if !again {
+        app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
+    }
+    let kept = app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, seen, p.age_ms.is_some())?;
+    if again || !kept {
+        return Ok(Json(serde_json::json!({})));
+    }
     match app.db.boards_on_block(&d.daemon, &p.pane) {
         Ok(boards) => boards.iter().for_each(|(b, project)| super::changed(&app, project, b)),
         Err(e) => tracing::warn!(error = %e, "boards: finding those on a block"),
     }
     Ok(Json(serde_json::json!({})))
+}
+
+/// Whether `now` says nothing `was` didn't: the same state, and each other
+/// field the same or left out (a left-out field keeps what was said).
+fn says_again(was: &wire::BlockState, now: &wire::BlockState) -> bool {
+    fn same<T: PartialEq>(was: &Option<T>, now: &Option<T>) -> bool {
+        now.is_none() || now == was
+    }
+    was.state == now.state
+        && same(&was.title, &now.title)
+        && same(&was.branch, &now.branch)
+        && same(&was.head, &now.head)
+        && same(&was.pushed, &now.pushed)
+        && same(&was.uncommitted, &now.uncommitted)
+        && same(&was.diffstat, &now.diffstat)
 }
 
 /// `POST /api/daemon/projects/{project}/attach-block`: attach one of the

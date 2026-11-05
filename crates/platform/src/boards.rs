@@ -739,33 +739,36 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
     Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed, cancelled }
 }
 
+/// How far a row's derived lane can be trusted, from its blocks' reports
+/// (Arugula #745).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Doubt {
+    Sure,
+    /// A block of it is stale: the lane follows the rest of the work for
+    /// now, and a fresh report may bring the block back.
+    Stale,
+    /// A block of it is on a machine whose grant couldn't be looked up: the
+    /// lane may be wrong.
+    Unsure,
+}
+
 /// The lane a row shows, and the override behind it (#494). A person's lane
 /// holds only while the work still derives the lane it did when they set it:
 /// once that changes, the row goes back to following the work. While a
-/// block's report couldn't be looked up, it holds as it is.
-fn shown<'a>(
-    derived: wire::Lane,
-    set: Option<&'a db::LaneSet>,
-    blocks: &Blocks,
-) -> (wire::Lane, Option<&'a db::LaneSet>) {
-    match set.filter(|s| blocks.unsure() || s.holds(derived)) {
+/// block of the row couldn't be looked up, it holds as it is.
+fn shown(derived: wire::Lane, set: Option<&db::LaneSet>, doubt: Doubt) -> (wire::Lane, Option<&db::LaneSet>) {
+    match set.filter(|s| doubt == Doubt::Unsure || s.holds(derived)) {
         Some(s) => (s.lane, Some(s)),
         None => (derived, None),
     }
 }
 
 /// Drop the override of `row` that `derived` has outgrown, so it can't come
-/// back if the work returns to the lane it was set in. Not when a block's
-/// report couldn't be looked up (`blocks.unsure`): `derived` may be wrong.
-fn forget_stale(
-    app: &Platform,
-    board: &str,
-    row: &str,
-    derived: wire::Lane,
-    set: Option<&db::LaneSet>,
-    blocks: &Blocks,
-) {
-    if blocks.unsure() {
+/// back if the work returns to the lane it was set in. Not while a block of
+/// the row is stale or couldn't be looked up: `derived` may change back
+/// without the work changing.
+fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set: Option<&db::LaneSet>, doubt: Doubt) {
+    if doubt != Doubt::Sure {
         return;
     }
     let Some(set) = set.filter(|s| !s.holds(derived)) else { return };
@@ -861,8 +864,23 @@ struct Blocks {
 }
 
 impl Blocks {
-    fn unsure(&self) -> bool {
-        !self.unsure.is_empty()
+    /// How far the lane of a row with `attached` can be trusted: only the
+    /// blocks that are work on it and weren't taken over count.
+    fn doubt(&self, attached: &[Attach<'_>]) -> Doubt {
+        let mut doubt = Doubt::Sure;
+        for (role, p, released) in attached {
+            let wire::Pointer::Block { machine, pane } = p else { continue };
+            if *role != wire::AttachRole::Work || *released {
+                continue;
+            }
+            if self.unsure.contains(machine) {
+                return Doubt::Unsure;
+            }
+            if self.stale.contains(&(machine.clone(), pane.clone())) {
+                doubt = Doubt::Stale;
+            }
+        }
+        doubt
     }
 
     fn idle_since(&self, machine: &str, pane: &str) -> Option<u64> {
@@ -960,11 +978,9 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
             }
         }
         for r in app.db.block_states(machine, &panes)? {
+            let stale = r.stale(now);
             let key = (machine.to_owned(), r.pane);
-            if r.sends_again
-                && r.state.state != wire::BlockWord::Closed
-                && now.saturating_sub(r.seen) > wire::BLOCK_STATE_STALE_MS
-            {
+            if stale {
                 found.stale.insert(key.clone());
             }
             found.owner.insert(key.clone(), r.owner);
@@ -999,8 +1015,9 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
                 .filter_map(|a| a.role.map(|r| (r, &a.pointer, false)))
                 .collect();
             let a = assess(&t.pointer, &attached, &facts);
-            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref(), &blocks);
-            let (lane, _) = shown(a.lane, t.lane_set.as_ref(), &blocks);
+            let doubt = blocks.doubt(&attached);
+            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref(), doubt);
+            let (lane, _) = shown(a.lane, t.lane_set.as_ref(), doubt);
             b.progress.total += 1;
             b.progress.done += u32::from(lane == wire::Lane::Done);
             b.progress.review += u32::from(lane == wire::Lane::Review);
@@ -1105,8 +1122,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let mut a = assess(&e.pointer, &attached, &facts);
         let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
-        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), &blocks);
-        let (lane, set) = shown(a.lane, e.lane_set.as_ref(), &blocks);
+        let doubt = blocks.doubt(&attached);
+        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), doubt);
+        let (lane, set) = shown(a.lane, e.lane_set.as_ref(), doubt);
         a.lane = lane;
         let (row_live, row_block) = chip(&e.pointer, e.agent.as_deref());
         // The attachments of a replaced agent come last.
@@ -1936,7 +1954,7 @@ async fn derived_lane(
     let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
     let ids = Ids::of(std::iter::once(&row.pointer).chain(mine.iter().map(|a| &a.pointer)));
     let blocks = block_states(app, project, &ids.blocks).await?;
-    if blocks.unsure() {
+    if blocks.doubt(&attached) == Doubt::Unsure {
         // A lane set against a wrong basis would hold, or lapse, wrongly.
         return Err(err(StatusCode::SERVICE_UNAVAILABLE, "couldn't read the row's work just now: try again"));
     }

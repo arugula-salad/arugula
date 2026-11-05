@@ -17,11 +17,14 @@ use serde_json::{Value, json};
 
 /// A fake control: the routes a joined daemon asks, and the block states it
 /// is told (the bodies of `PUT /api/daemon/block-state`, in order). While
-/// `down`, it answers those with a 500, and counts them in `failed`.
+/// `down`, it answers those with a 500, and counts them in `failed`. While
+/// `old`, it refuses a body with an age with a 422, as a control from before
+/// Arugula #745 does, counted in `failed` too.
 #[derive(Clone, Default)]
 struct FakeControl {
     told: Arc<Mutex<Vec<Value>>>,
     down: Arc<AtomicBool>,
+    old: Arc<AtomicBool>,
     failed: Arc<AtomicUsize>,
 }
 
@@ -36,6 +39,10 @@ async fn fake_control(f: FakeControl) -> String {
         if f.down.load(Ordering::SeqCst) {
             f.failed.fetch_add(1, Ordering::SeqCst);
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        if f.old.load(Ordering::SeqCst) && b.get("age_ms").is_some() {
+            f.failed.fetch_add(1, Ordering::SeqCst);
+            return axum::http::StatusCode::UNPROCESSABLE_ENTITY.into_response();
         }
         f.told.lock().unwrap().push(b);
         Json(json!({})).into_response()
@@ -129,4 +136,20 @@ async fn a_close_during_an_outage_reaches_control_after_it() {
 
     let closed = told_within(&fake, id, "closed", Duration::from_secs(60)).await;
     assert!(closed["age_ms"].as_u64().is_some_and(|ms| ms >= 5_000), "as old as it is: {closed}");
+}
+
+/// A control from before Arugula #745 refuses the age: the daemon sends the
+/// same report without it, and goes on that way.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_control_that_refuses_the_age_is_told_without_it() {
+    let fake = FakeControl::default();
+    fake.old.store(true, Ordering::SeqCst);
+    let d = joined(fake_control(fake.clone()).await);
+    let id = d.open("hello");
+    let idle = told(&fake, id, "idle").await;
+    assert_eq!(idle.get("age_ms"), None, "{idle}");
+    assert!(fake.failed.load(Ordering::SeqCst) >= 1, "it was tried with the age first");
+    d.post(&format!("/api/panes/{id}/close"), json!({}));
+    let closed = told(&fake, id, "closed").await;
+    assert_eq!(closed.get("age_ms"), None, "{closed}");
 }
