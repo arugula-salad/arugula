@@ -101,15 +101,18 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the least it needs: read-only for reads and the mirror's ingest (kept
     until five minutes before they expire, or until the repo is unlinked,
     when the kept one is dropped and revoked), `contents: read` for a
-    cloud workspace's setup clone (`hosted:clone`, minted for that box,
-    never kept, and revoked by the box once its clones are done), and
+    cloud workspace's setup clone (`hosted:clone`, logged under the
+    machine, minted for that box, one per machine and repo every five
+    minutes, none once it's past its clones, and revoked by the box once
+    its clones are done and by an unlink), and
     `issues: write` or
     `pull_requests: write` for one send (minted for that send, never
     kept, and revoked at GitHub, `DELETE /installation/token`, right after
     its one call). A token whose answer from GitHub doesn't cover exactly
     the repository asked for is revoked and refused. Every mint is a row
     in `github_token_mints`: installation, repository id, the permissions
-    asked for, the account (or `platform`), what for, and when, never the
+    asked for, the account (or `platform`, or a hosted machine), what
+    for, and when, never the
     token. A read token used again from the cache inside the platform adds
     no row; one handed to a daemon again from the cache adds a row for
     that account, with the purpose `read (cached)`. Rows are kept a year,

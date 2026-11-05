@@ -165,17 +165,7 @@ async fn run(app: Arc<App>, state_dir: PathBuf) {
             let Some(plan) = plan(&app).await else { return };
             saved = match begin(&app, &state_dir, &plan).await {
                 Ok(s) => s,
-                Err(e) => {
-                    revoke_clones(&plan).await;
-                    Saved {
-                        status: Some(SetupStatus::Failed),
-                        step: "start".into(),
-                        reason: "start".into(),
-                        tail: format!("{e:#}"),
-                        spec_hash: plan.spec_hash.clone(),
-                        ..Saved::default()
-                    }
-                }
+                Err(e) => failed_start(&plan, e).await,
             };
             saved.save(&state_dir);
             if saved.status == Some(SetupStatus::Failed) {
@@ -205,6 +195,33 @@ async fn plan(app: &App) -> Option<SetupPlan> {
         tokio::time::sleep(wait).await;
         wait = (wait * 2).min(Duration::from_secs(60));
     }
+}
+
+/// The setup couldn't start: its clone tokens go now, and it failed at
+/// `start`.
+async fn failed_start(plan: &SetupPlan, e: anyhow::Error) -> Saved {
+    revoke_clones(plan).await;
+    Saved {
+        status: Some(SetupStatus::Failed),
+        step: "start".into(),
+        reason: "start".into(),
+        tail: format!("{e:#}"),
+        spec_hash: plan.spec_hash.clone(),
+        ..Saved::default()
+    }
+}
+
+/// Where the setup's script is: its step, and its exit code once it ended.
+fn progress(dir: &Path) -> (String, Option<i32>) {
+    let step = std::fs::read_to_string(dir.join("step")).unwrap_or_default();
+    let done = std::fs::read_to_string(dir.join("done")).ok().and_then(|c| c.trim().parse::<i32>().ok());
+    (step, done)
+}
+
+/// Whether the setup's clones are over, so their tokens go: its script
+/// ended (a failed clone too), its pane is gone, or it's past them.
+fn clones_over(step: &str, done: Option<i32>, pane_open: bool) -> bool {
+    done.is_some() || !pane_open || past_clones(step)
 }
 
 /// Write the setup's scripts and its credentials, and open its pane.
@@ -258,14 +275,13 @@ async fn watch(app: &App, state_dir: &Path, mut saved: Saved, plan: Option<&Setu
     let mut to_revoke = plan;
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let step = std::fs::read_to_string(dir.join("step")).unwrap_or_default();
-        let done = std::fs::read_to_string(dir.join("done")).ok().and_then(|c| c.trim().parse::<i32>().ok());
+        let (step, done) = progress(&dir);
         let handle = match saved.pane {
             Some(p) => app.mux.api(|r| Api::Pane(p, r)).await.flatten(),
             None => None,
         };
         if let Some(p) = to_revoke
-            && (done.is_some() || handle.is_none() || past_clones(&step))
+            && clones_over(&step, done, handle.is_some())
         {
             revoke_clones(p).await;
             to_revoke = None;
@@ -715,17 +731,17 @@ mod tests {
         ] {
             assert_eq!(past_clones(step), past, "{step:?}");
         }
+        // Still cloning, or not: a failed clone and a closed pane are over.
+        assert!(!clones_over("clone app", None, true));
+        assert!(clones_over("clone app", Some(128), true), "a failed clone");
+        assert!(clones_over("clone app", None, false), "its pane closed");
+        assert!(clones_over("packages", None, true));
     }
 
-    /// Each installation token is revoked, as its own bearer, where it
-    /// came with; a workspace's GIT_TOKEN isn't, nor a token whose address
-    /// is neither https nor a local test's.
-    #[tokio::test]
-    async fn clone_tokens_are_revoked() {
-        use std::sync::Mutex;
-
-        use arugula_control_wire::hosted::SetupRepo;
-        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+    /// A stand-in for GitHub's `DELETE /installation/token`: where to send
+    /// it, and each bearer it heard.
+    async fn revoke_server() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        let seen: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
         let s = seen.clone();
         let router = axum::Router::new().route(
             "/installation/token",
@@ -738,6 +754,83 @@ mod tests {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/installation/token", l.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+        (url, seen)
+    }
+
+    /// A setup that can't start revokes its clone tokens, and fails at
+    /// `start`.
+    #[tokio::test]
+    async fn a_failed_start_revokes_its_tokens() {
+        use arugula_control_wire::hosted::SetupRepo;
+        let (url, seen) = revoke_server().await;
+        let plan = SetupPlan {
+            spec_hash: "h1".into(),
+            repos: vec![SetupRepo {
+                url: "https://github.com/acme/app".into(),
+                via: "github_app".into(),
+                username: Some("x-access-token".into()),
+                password: Some("ghs_start".into()),
+                revoke: Some(url),
+            }],
+            ..Default::default()
+        };
+        let saved = failed_start(&plan, anyhow::anyhow!("can't open the setup's pane")).await;
+        assert_eq!(*seen.lock().unwrap(), ["Bearer ghs_start"]);
+        assert_eq!(
+            (saved.status, saved.step.as_str(), saved.reason.as_str()),
+            (Some(SetupStatus::Failed), "start", "start")
+        );
+    }
+
+    /// The real script with a clone that fails: it stops at that clone's
+    /// step with a failing exit code, which the watch takes as the clones
+    /// being over, so their tokens go.
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failed_clone_revokes_its_tokens() {
+        use arugula_control_wire::hosted::SetupRepo;
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            eprintln!("no git here: skipped");
+            return;
+        }
+        let (url, seen) = revoke_server().await;
+        let root = super::super::scratch("setup-failed-clone");
+        let (home, st) = (root.join("home"), root.join("st"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&st).unwrap();
+        let plan = SetupPlan {
+            repos: vec![SetupRepo {
+                url: root.join("nowhere").to_string_lossy().into(),
+                via: "github_app".into(),
+                username: Some("x-access-token".into()),
+                password: Some("ghs_clone".into()),
+                revoke: Some(url),
+            }],
+            setup: "echo never > never\n".into(),
+            ..Default::default()
+        };
+        let repos = places(&home, &plan.repos.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
+        std::fs::write(st.join("script.sh"), &plan.setup).unwrap();
+        std::fs::write(st.join("setup.sh"), script(&st, &home, &plan, &repos)).unwrap();
+        let env = root.join("env");
+        std::fs::write(&env, env_file(&plan)).unwrap();
+        let out = std::process::Command::new("bash").arg(st.join("setup.sh")).arg(&env).output().unwrap();
+        let (step, done) = progress(&st);
+        assert_eq!(step, "clone nowhere", "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(done.is_some_and(|c| c != 0), "{done:?}");
+        assert!(clones_over(&step, done, true));
+        assert_eq!(revoke_clones(&plan).await, 1);
+        assert_eq!(*seen.lock().unwrap(), ["Bearer ghs_clone"]);
+    }
+
+    /// Each installation token is revoked, as its own bearer, where it
+    /// came with; a workspace's GIT_TOKEN isn't, nor a token whose address
+    /// is neither https nor a local test's.
+    #[tokio::test]
+    async fn clone_tokens_are_revoked() {
+        use arugula_control_wire::hosted::SetupRepo;
+        let (url, seen) = revoke_server().await;
         let repo = |via: &str, password: &str, revoke: Option<&str>| SetupRepo {
             url: format!("https://github.com/acme/{password}"),
             via: via.into(),

@@ -428,6 +428,9 @@ pub struct GithubApp {
     /// Read tokens by (installation, repository), until five minutes
     /// before they expire. Only read tokens: a write token is never kept.
     reads: Mutex<HashMap<(u64, String), ReadToken>>,
+    /// Each hosted machine's setup clone token by repository, and when it
+    /// was minted: asked again within [`BOX_CLONE_EVERY`], the same one.
+    box_clones: Mutex<HashMap<(String, u64), BoxClone>>,
     /// The forge mirror on this machine (M164): the poller's settings,
     /// the numbers, and each installation's ETags.
     pub ingest: super::ingest::Ingest,
@@ -479,6 +482,14 @@ pub fn epoch_of(t: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + h * 3600 + mi * 60 + s).ok()
 }
 
+/// A hosted machine's clone token: when it was minted (seconds), the token
+/// and GitHub's `expires_at`.
+type BoxClone = (u64, String, String);
+
+/// How often a hosted machine gets a new clone token for a repository
+/// ([`GithubApp::box_clone_token`]): within this, it's the one it got.
+pub const BOX_CLONE_EVERY: Duration = Duration::from_secs(300);
+
 fn now_s() -> u64 {
     arugula_e2e::now_ms() / 1000
 }
@@ -493,6 +504,7 @@ impl GithubApp {
             key,
             installs: Mutex::default(),
             reads: Mutex::default(),
+            box_clones: Mutex::default(),
             ingest: Default::default(),
             bodies: Default::default(),
             styles: Default::default(),
@@ -689,25 +701,41 @@ impl GithubApp {
         Ok((secret, expires_at))
     }
 
-    /// A token a hosted workspace's box clones one linked repo with at its
-    /// setup: that repo's contents, read, minted now (and logged), never
-    /// from or into the cache, so it's the box's alone. The box revokes it
-    /// once its clones are done ([`GithubApp::revoke_url`]); it lasts an
-    /// hour at most anyway. `(token, expires_at)`.
+    /// A token hosted machine `machine` clones linked repo `repo_id` with
+    /// at its setup: that repo's contents, read, minted (and logged, for
+    /// the machine) never from or into the read cache, so it's the box's
+    /// alone. At most one per machine and repo each [`BOX_CLONE_EVERY`]:
+    /// asked again sooner, it's the same token. The box revokes it once
+    /// its clones are done
+    /// ([`GithubApp::revoke_url`]); it lasts an hour at most anyway.
+    /// `(token, expires_at)`.
     pub async fn box_clone_token(
         &self,
         c: &Caller<'_>,
+        machine: &str,
         install: u64,
-        repo: Repo<'_>,
+        repo_id: u64,
     ) -> anyhow::Result<(String, String)> {
-        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::BoxClone).await?;
+        let key = (machine.to_owned(), repo_id);
+        let every = BOX_CLONE_EVERY.as_secs();
+        if let Some((at, t, e)) = self.box_clones.lock().unwrap().get(&key)
+            && now_s() < at + every
+        {
+            return Ok((t.clone(), e.clone()));
+        }
+        let (secret, expires_at, _) = self.mint(c, install, Repo::Id(repo_id), Scope::BoxClone).await?;
+        let mut kept = self.box_clones.lock().unwrap();
+        let now = now_s();
+        kept.retain(|_, (at, _, _)| now < *at + every);
+        kept.insert(key, (now, secret.clone(), expires_at.clone()));
         Ok((secret, expires_at))
     }
 
     /// A repo is unlinked (or the App lost it): the cache's read tokens
     /// for it by GitHub's id under `install`, which links, the mirror and
     /// boxes use, dropped now. With no `repos`, every repo's under
-    /// `install`. Their secrets, to revoke ([`GithubApp::revoke_all`]). A
+    /// `install`; and a hosted machine's clone token for one of `repos`.
+    /// Their secrets, to revoke ([`GithubApp::revoke_all`]). A
     /// token cached by the repo's name went to a person's own daemon,
     /// after GitHub said they may read it, and stays.
     pub fn drop_reads(&self, install: u64, repos: &[u64]) -> Vec<String> {
@@ -716,6 +744,15 @@ impl GithubApp {
             let by_id = repos.iter().any(|r| *key == Repo::Id(*r).key()) || (repos.is_empty() && key.starts_with('#'));
             if *i == install && by_id {
                 gone.push(std::mem::take(&mut t.secret));
+                return false;
+            }
+            true
+        });
+        // A box's clone token for one of them goes too. (An uninstall's
+        // are GitHub's to end.)
+        self.box_clones.lock().unwrap().retain(|(_, repo), (_, t, _)| {
+            if repos.contains(repo) {
+                gone.push(std::mem::take(t));
                 return false;
             }
             true

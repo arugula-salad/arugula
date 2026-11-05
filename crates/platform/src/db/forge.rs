@@ -335,21 +335,6 @@ impl Db {
             .optional()
     }
 
-    /// Whether `full_name` was linked to `project` and is unlinked now:
-    /// until the purge takes its row, or it's linked again.
-    pub fn unlinked_from(&self, project: &str, full_name: &str) -> anyhow::Result<bool> {
-        Ok(self
-            .c()
-            .query_row(
-                "SELECT repo_id FROM linked_repos WHERE project_id = ?1 AND lower(full_name) = lower(?2)
-                 AND unlinked_at IS NOT NULL LIMIT 1",
-                params![project, full_name],
-                |r| r.get::<i64>(0),
-            )
-            .optional()?
-            .is_some())
-    }
-
     /// Link a repo to a project, from `installation`, as `by`. A repo
     /// unlinked from this project and waiting for the purge is linked
     /// again, and keeps its rows. One unlinked from another project loses

@@ -151,13 +151,17 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     // For one repository, no more than its installation grants. GitHub's
     // answer names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
+    // Exactly one repository, by id or by name.
+    if let Some(ids) = b.get("repository_ids") {
+        assert_eq!(ids.as_array().map(Vec::len), Some(1), "one repository: {b}");
+        assert!(b.get("repositories").is_none(), "{b}");
+    }
     let mut h = h.lock().unwrap();
     h.minted.push(b["permissions"].clone());
     let token = if h.numbered { format!("ghs_fake_{}", h.minted.len()) } else { "ghs_fake".to_owned() };
     // By GitHub's id (a deploy's own repository), or by its short name.
     let by_id = b["repository_ids"][0].as_u64().and_then(|id| h.repos.iter().find(|(_, (i, _))| *i == id));
     if let Some((name, (id, _))) = by_id {
-        assert_eq!(b["repository_ids"].as_array().map(Vec::len), Some(1));
         if exceeds(&b["permissions"], &h.grants.get(name).cloned().unwrap_or_else(granted)) {
             return not_granted();
         }

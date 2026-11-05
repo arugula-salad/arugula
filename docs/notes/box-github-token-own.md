@@ -6,6 +6,5 @@ headline: no
 ---
 A cloud workspace's setup clones each GitHub repo linked to its project with a
 token minted for that box alone, which reads the repo's contents and nothing
-else. The box revokes it once its clones are done. Unlinking a repo also
-revokes the token Arugula keeps for reading it, and a repo unlinked from the
-project isn't cloned with the workspace's `GIT_TOKEN` in its place.
+else. The box revokes it once its clones are done, and unlinking a repo
+revokes it too, with the token Arugula keeps for reading the repo.
