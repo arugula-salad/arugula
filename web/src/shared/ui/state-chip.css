@@ -16,7 +16,8 @@
   padding: 0 8px;
   border: 1px solid var(--c);
   border-radius: var(--chip-radius);
-  background: color-mix(in srgb, var(--c) 12%, transparent);
+  /* Over the surface, not what's behind: a chip on a selected row keeps its contrast. */
+  background: color-mix(in srgb, var(--c) 12%, var(--surface));
   color: var(--ct);
   font: 600 11px/18px var(--mono);
   letter-spacing: 0;
