@@ -332,6 +332,17 @@ a.secondary.danger:hover {
   min-height: 40px;
 }
 
+/* A segment's "on" is the tint laid over the page, opaque, not over the
+   track's own 6%: legible() checks the accent on the tint over bg, and the
+   track's fill under it took Latte to 4.43:1. */
+.seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
+.seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 26%, var(--bg));
+}
+
 /* -- Aqua: gel. The primary a lit drop of its fill, the secondary a clear
       one; both pills whatever the corners, as Aqua's were. */
 

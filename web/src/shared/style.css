@@ -4215,6 +4215,7 @@ a.work-chip:hover {
   --subtle: var(--mute);
   --raised: color-mix(in srgb, var(--ink) 10%, transparent);
   --accent: var(--s-ask);
+  --bg: var(--void);
 }
 .swarm-seg-l {
   font: 500 11px/1 var(--f-mono);
