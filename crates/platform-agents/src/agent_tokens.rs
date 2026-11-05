@@ -16,8 +16,11 @@
 //!   with the browser it was minted from, and the account's devices are
 //!   pushed a notice of every mint.
 //! - **Listed and revoked** here and with `arugula agent-tokens`, with the
-//!   calls its agent made. A revoke refuses the very next call. A project's
-//!   owners see every token over it, anyone's, and revoke its reach there
+//!   calls its agent made. A revoke refuses the very next call. Every
+//!   member of a project sees that a token holds powers over it, its name,
+//!   who minted it and what it may do, in the project's Access view
+//!   (Arugula #682, Jake, 2026-11-04); its id, and the rest that only a
+//!   revoke needs, are the project's owners', who revoke its reach there
 //!   ([`over`], [`revoke_over`]). A token's grants over a team's project go
 //!   when its owner leaves the team (`db::agent_tokens::revoke_departed`).
 //!
@@ -291,14 +294,20 @@ pub async fn calls(
 async fn owner_of(app: &Platform, account: &str, project: &str) -> Result<(), ApiError> {
     let (_, role) = crate::project_roles::project_as(app, account, project, false).await?;
     if role != arugula_e2e::team::TeamRole::Owner {
-        return Err(err(StatusCode::FORBIDDEN, "only the project's owners see and revoke the agent tokens over it"));
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "only the project's owners list the agent tokens over it by id, and revoke them; every member sees them \
+             in the project's Access view",
+        ));
     }
     Ok(())
 }
 
 /// `GET /api/projects/{project}/agent-tokens`: every live token with a
-/// grant over the project, whoever minted it, with its powers there: for
-/// the project's owners.
+/// grant over the project, whoever minted it, with its powers there and
+/// its id, to revoke: for the project's owners. Every member sees the
+/// same tokens, without ids, in the project's Access view
+/// (`project_grants`, Arugula #682).
 pub async fn over(State(app): State<Arc<Platform>>, s: Person, Path(project): Path<String>) -> R {
     owner_of(&app, &s.account, &project).await?;
     let mut tokens = vec![];

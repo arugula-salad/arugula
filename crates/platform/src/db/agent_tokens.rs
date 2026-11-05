@@ -149,6 +149,21 @@ impl Db {
         self.c().query_row(&format!("SELECT {COLUMNS} FROM agent_tokens WHERE id = ?1"), params![id], row).optional()
     }
 
+    /// These tokens, live or revoked, by id (those that exist), in one
+    /// query: a project's Access view names each token with a grant over
+    /// the project (Arugula #682).
+    pub fn agent_tokens_by_id(&self, ids: &[String]) -> anyhow::Result<Vec<AgentToken>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let marks = vec!["?"; ids.len()].join(", ");
+        self.c().query_map(
+            &format!("SELECT {COLUMNS} FROM agent_tokens WHERE id IN ({marks}) ORDER BY id"),
+            &super::sql::list(ids),
+            row,
+        )
+    }
+
     /// The token whose hash this is, live or revoked.
     pub fn agent_token_by_hash(&self, token_hash: &str) -> anyhow::Result<Option<AgentToken>> {
         self.c()

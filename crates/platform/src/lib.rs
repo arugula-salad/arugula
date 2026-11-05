@@ -66,6 +66,9 @@ pub mod planter;
 mod port;
 pub mod project_docs;
 pub mod project_docs_machine;
+pub mod project_grants;
+#[cfg(test)]
+mod project_grants_tests;
 pub mod project_roles;
 pub mod projects;
 pub use arugula_platform_api::remote;

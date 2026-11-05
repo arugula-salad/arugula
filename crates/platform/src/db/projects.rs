@@ -630,6 +630,46 @@ impl Db {
         )
     }
 
+    /// Of these accounts' machines, those whose `cloud.drive` over their
+    /// account is revoked (every grant they had there is), as (account,
+    /// machine): the rest hold it, a machine with no row yet included (it
+    /// gets its grant the first time it asks,
+    /// [`crate::grants::can_drive_cloud`]). One query for a project's Access
+    /// view (Arugula #682), which says whose machines hold it.
+    pub fn revoked_cloud_drive(&self, accounts: &[String]) -> anyhow::Result<Vec<(String, String)>> {
+        if accounts.is_empty() {
+            return Ok(vec![]);
+        }
+        let marks = vec!["?"; accounts.len()].join(", ");
+        self.c().query_map(
+            &format!(
+                "SELECT scope_id, subject_id FROM grants WHERE subject_kind = 'daemon' AND power = '{CLOUD_DRIVE}'
+                 AND scope_kind = 'account' AND scope_id IN ({marks})
+                 GROUP BY scope_id, subject_id HAVING max(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) = 0
+                 ORDER BY scope_id, subject_id"
+            ),
+            &super::sql::list(accounts),
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// Every live grant over one project, whoever gave it and whatever its
+    /// subject (a machine or an agent grant token) and power: the
+    /// project's Access view (Arugula #682). Only grants whose scope is the
+    /// project: never one over an account (a power over the owner's DMs,
+    /// which is its owner's alone to see; `cloud.drive`, which the view
+    /// counts per member through [`Db::revoked_cloud_drive`] instead).
+    pub fn grants_over_project(&self, project: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'project' AND scope_id = ?1
+                 AND revoked_at IS NULL ORDER BY granted_by, subject_id, power, created_at, id"
+            ),
+            params![project],
+            grant_row,
+        )
+    }
+
     /// A machine's live agent grants (M197) that `by`, its owner, gave:
     /// what its agents reach (M198).
     pub fn agent_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {

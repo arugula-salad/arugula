@@ -1231,6 +1231,7 @@ cache delay), grant or not.
 arugula grants add geek threads.read threads.post --project acme
 arugula grants add geek threads.read --dms
 arugula grants revoke geek threads.post --project acme
+arugula grants ls --project acme    # who can do what in acme: its Access view
 ```
 
 or a switch per machine and project (and one for your DMs) under Settings,
@@ -1252,6 +1253,46 @@ with a message naming the machine and how to grant it. What an agent posts
 is its owner's, labelled "Jake's agent on geek" wherever it shows, and stays
 labelled after a revoke. Every room an agent grant reaches says so to
 everyone in it: "Jake's agents on geek can read and post here".
+
+**A project's Access view (Arugula #682).** Any member of a project reads
+who can do what there in one place: `arugula grants ls --project acme`, or
+Access under the project's settings on the platform page, both from `GET
+/api/projects/{id}/grants`. It lists the project roles (the team's roster
+as control's copy stands; each machine checks the roster itself); whose
+machines hold `cloud.drive`, one row per member, since every machine
+joined to an account holds it over the account from its join and acts as
+its owner, within the owner's role, on everything a `CloudDriver` route
+serves: the project's cloud workspaces (opening, deleting;
+their specs, secrets, ports, previews and transcripts; making or rebuilding one needs
+the hosted allowlist too) and its linked repos and their pull requests,
+issues and drafts, and it reads the project's Plane connections, its
+inference keys and its Claude spend (setting those is a person's); a
+viewer's machine reads what a viewer reads, can wake a paused cloud
+workspace, makes no drafts, and discards only its owner's own; no one
+revokes it per project
+(its owner does, per machine, with `arugula grants revoke`); the other
+powers over the project (every live grant, machines' and agent tokens',
+whose each is and what it does now if less than the power: a write power
+on a viewer's, by the grants list's own definition, a giver who left the
+project or is locked out of it, a machine that isn't its giver's now; a
+giver who left is "a former member", unnamed, and neither is their
+machine or token named, nor is a machine that isn't its giver's any more;
+a locked-out member is named and said to be locked out; a machine's id,
+like a grant's, is the owners'); what an owner allowed (the delegation
+for cloud workspaces on control, the standing run grant with its expiry,
+confirmed with a passkey, stale when it names an earlier delegation and
+not working when the owner who confirmed it isn't one of the project's
+owners now) and the project's cloud workspaces, where an owner or editor
+has full use and a viewer watches, or only owners get in while the team
+is locked. An owner's revoke of a grant whose giver left the project
+(`POST /api/grants/{id}/revoke`) answers the same way: the giver and
+their machine unnamed. Each part says whose word it
+is. It's read-only and changes nothing of what's enforced; it never
+lists another account's grant over their DMs, a token, a signature or a
+secret, and a token's or a grant's id (what a revoke needs) only to the
+project's owners. Someone who isn't in the project gets "no such
+project", as every project route answers them. 600 reads an hour per
+account.
 
 Grants bound what a machine's own signature can do (its MCP calls), not
 what a shell on it can do with your CLI login. The CLI's device key lives
@@ -1540,8 +1581,11 @@ aru-038): machines' agents still use their daemon's.
   The API is `GET`/`POST /api/agent-tokens` (`POST` from the page only),
   `POST /api/agent-tokens/{id}/revoke` and `GET
   /api/agent-tokens/{id}/calls`.
-- **A project's owners see every token over it,** whoever minted it, and
-  revoke its reach there (`GET /api/projects/{project}/agent-tokens`, `POST
+- **Every member of a project sees the tokens over it,** whoever minted
+  them: that one holds powers there, its name, who minted it and what it
+  may do, in the project's Access view (Arugula #682). Its id, which only
+  a revoke needs, is the project's owners', who revoke its reach there
+  (`GET /api/projects/{project}/agent-tokens`, `POST
   …/agent-tokens/{id}/revoke`; the project's settings page), or one of
   its grants by the grant's id (`POST /api/grants/{id}/revoke`, Arugula
   #683). The minter's devices are told, and the token's grants say who
