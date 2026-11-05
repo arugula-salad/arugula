@@ -48,8 +48,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::{
-    Platform,
-    chat,
+    Platform, chat,
     db::{
         chat::Room,
         inbox::{InboxFilter, NativeRow},
