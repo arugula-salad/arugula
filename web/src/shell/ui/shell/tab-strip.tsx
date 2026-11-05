@@ -8,6 +8,7 @@
 import { Fragment } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
+import { confirmCloseTab } from "../close-tab";
 import { directory } from "../../hosts";
 import type { Session, TabView } from "../../../shared/proto";
 import { AttentionBadge, tabAttention } from "../attention";
@@ -178,7 +179,7 @@ function TabItem({
 }) {
   const label = tabLabel(client, tab);
   const machine = client.tabMachine(tab.id);
-  const close = () => client.intent({ op: "close_tab", tab: tab.id });
+  const close = () => confirmCloseTab(client, tab.id);
   // Closing and renaming are an editor's (a viewer's would be refused).
   const edits = client.role(client.sessionOfTab(tab.id) ?? null) !== "viewer";
   const ref = useRef<HTMLDivElement>(null);
@@ -265,7 +266,7 @@ function TabItem({
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
       <ChatTabBadge client={client} panes={paneIds(tab)} />
-      {edits && (
+      {selected && edits && (
         <button
           class="tab-close"
           title="Close tab"

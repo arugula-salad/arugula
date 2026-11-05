@@ -28,6 +28,7 @@ import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { keyHint } from "./keys";
+import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
@@ -231,7 +232,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
       : []),
     ...machineItems(client, tab),
     "separator",
-    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => client.intent({ op: "close_tab", tab: tab.id }) },
+    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => confirmCloseTab(client, tab.id) },
   ];
 }
 

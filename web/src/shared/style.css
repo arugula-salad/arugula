@@ -224,7 +224,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   line-height: 1;
 }
 
-.tab:hover .tab-close,
 .tab.selected .tab-close {
   opacity: 0.7;
 }
