@@ -1476,7 +1476,8 @@ impl Db {
                     pushed: r.get(4)?,
                     uncommitted: r.get(5)?,
                     diffstat: match (files, r.get(7)?, r.get(8)?) {
-                        (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
+                        // No files: the last turn left no diff.
+                        (Some(files @ 1..), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
                         _ => None,
                     },
                     since: Some(r.get(10)?),

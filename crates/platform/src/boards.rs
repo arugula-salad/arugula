@@ -675,9 +675,11 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
             f.by_id.insert(id.clone(), Fact::Run { running: run.state == RunState::Running });
         }
     }
-    // A stale report is unknown: the block moves no lane.
+    // A stale report is unknown: the block moves no lane. One whose machine
+    // left is released: closed.
     for (k, b) in blocks.state.iter().filter(|(k, _)| !blocks.stale.contains(*k)) {
-        f.blocks.insert(k.clone(), Fact::Block { closed: b.state == wire::BlockWord::Closed });
+        let closed = b.state == wire::BlockWord::Closed || blocks.gone.contains(k);
+        f.blocks.insert(k.clone(), Fact::Block { closed });
     }
     Ok(f)
 }
@@ -861,6 +863,9 @@ struct Blocks {
     /// Machines whose grant couldn't be looked up: what they reported isn't
     /// here, and isn't known to be gone.
     unsure: HashSet<String>,
+    /// Stale blocks whose machine left control: released, so a lane reads
+    /// them as closed and no doubt holds the row.
+    gone: HashSet<(String, String)>,
 }
 
 impl Blocks {
@@ -987,7 +992,33 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
             found.state.insert(key, r.state);
         }
     }
+    release_gone(app, &mut found).await;
     Ok(found)
+}
+
+/// Move the stale blocks of machines that left control to `gone`: nothing
+/// will be heard from them again, so a row isn't left in doubt. A machine's
+/// grants go when it leaves, which hides its reports anyway; this covers
+/// the time before control has read that. On an error they stay stale.
+async fn release_gone(app: &Platform, found: &mut Blocks) {
+    let mut machines: Vec<String> = found.stale.iter().map(|(m, _)| m.clone()).collect();
+    if machines.is_empty() {
+        return;
+    }
+    machines.sort();
+    machines.dedup();
+    let joined = match agent_names(app, &machines).await {
+        Ok(joined) => joined,
+        Err(e) => {
+            tracing::warn!(error = %e, "boards: asking which machines are still in control");
+            return;
+        }
+    };
+    let gone: Vec<_> = found.stale.iter().filter(|(m, _)| !joined.contains_key(m)).cloned().collect();
+    for k in gone {
+        found.stale.remove(&k);
+        found.gone.insert(k);
+    }
 }
 
 /// Fill each board's progress: its rows with an issue or a PR as their item,

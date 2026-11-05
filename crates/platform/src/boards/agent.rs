@@ -318,7 +318,9 @@ fn says_again(was: &wire::BlockState, now: &wire::BlockState) -> bool {
         && same(&was.head, &now.head)
         && same(&was.pushed, &now.pushed)
         && same(&was.uncommitted, &now.uncommitted)
-        && same(&was.diffstat, &now.diffstat)
+        // A diffstat of no files is none: the last turn left no diff.
+        && (now.diffstat.is_none()
+            || was.diffstat.filter(|d| d.files > 0) == now.diffstat.filter(|d| d.files > 0))
 }
 
 /// `POST /api/daemon/projects/{project}/attach-block`: attach one of the
