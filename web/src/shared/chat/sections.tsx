@@ -91,7 +91,7 @@ export function RoomStar({ store, room, toast, more = [] }: { store: ChatStore; 
   return (
     <>
       <button
-        class={on ? "chat-info on" : "chat-info"}
+        class={on ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"}
         title={on ? "Starred: it's at the top of your sidebar. Unstar" : "Star: keep it at the top of your sidebar"}
         aria-label={on ? "Unstar this room" : "Star this room"}
         aria-pressed={on}
@@ -103,7 +103,7 @@ export function RoomStar({ store, room, toast, more = [] }: { store: ChatStore; 
       {/* The room's menu: its place in the sidebar, and leaving it (UI
           audit #169), so a misclick near the bell can't leave. */}
       <button
-        class="chat-info"
+        class="chat-info bar-btn sq"
         title={more.length ? "Move to a section of your sidebar, or leave" : "Move to a section of your sidebar"}
         aria-label="Room options"
         aria-haspopup="menu"

@@ -615,7 +615,7 @@ function RoomView({
           <AgentsChip room={room.id} />
           <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
           <button
-            class={`chat-info chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
+            class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
             title={bellFor(room).title}
             aria-label={bellFor(room).title}
             aria-haspopup="menu"
@@ -626,7 +626,7 @@ function RoomView({
             {bellFor(room).glyph}
           </button>
           {!phone && (
-            <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
+            <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
               ⓘ
             </button>
           )}

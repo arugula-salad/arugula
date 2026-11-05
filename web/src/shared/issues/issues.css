@@ -28,8 +28,7 @@
 /* One control height on the list pages, the button set's (UI audit #163,
    #164): filters, the open/closed toggle and the search box beside
    Export and New issue. */
-.issues-filter,
-.issues-states button {
+.issues-filter {
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -39,23 +38,8 @@
   white-space: nowrap;
 }
 
-.issues-filter.on,
-.issues-states button[aria-pressed="true"] {
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
 .issues-states {
   display: flex;
-}
-
-.issues-states button:first-child {
-  border-radius: var(--btn-radius) 0 0 var(--btn-radius);
-}
-
-.issues-states button:last-child {
-  margin-left: -1px;
-  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
 .issues-search {

@@ -129,7 +129,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     {n.kind === "grant_ask" ? (
                       <GrantActs n={n} sheet done={() => client.dismissNotice(n.key)} />
                     ) : (
-                      <button class="sheet-act" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
+                      <button class="sheet-act primary" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
                         Dismiss
                       </button>
                     )}
@@ -151,25 +151,25 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         </span>
                       </button>
                       {rerun && (
-                        <button class="sheet-act" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
+                        <button class="sheet-act primary" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
                           Rerun
                         </button>
                       )}
                       {gate && point && may && (
                         <PointChoices
                           point={point}
-                          cls="sheet-act"
+                          cls="sheet-act primary"
                           answer={(answer) => act(() => void client.act({ action: "answer", pane: p.id, id: gateKey(gate), content: { answer } }))()}
                         />
                       )}
                       {gate && !point && may && (
-                        <button class="sheet-act" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
+                        <button class="sheet-act primary" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
                           Approve
                         </button>
                       )}
                       {gate && may && p.reason?.actions.includes("expire") && (
                         <button
-                          class="sheet-act"
+                          class="sheet-act primary"
                           data-expire-gate={p.id}
                           title={EXPIRE_TITLE}
                           onClick={act(() => void client.act({ action: "expire", pane: p.id, id: gateKey(gate) }))}
@@ -384,7 +384,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             </>
           )}
         </div>
-        <div class="sheet-tabs" role="tablist" aria-label="Sheet">
+        <div class="seg touch sheet-tabs" role="tablist" aria-label="Sheet">
           {TABS.map(([id, label]) => (
             <button
               key={id}

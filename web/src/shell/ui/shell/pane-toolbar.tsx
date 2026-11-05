@@ -55,7 +55,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
 
   return (
     <div class="pane-toolbar" data-pane-toolbar role="toolbar" aria-label="Panes">
-      <button class="pt-count" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
+      <button class="pt-count bar-btn" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
         <strong>{count}</strong> {count === 1 ? "pane" : "panes"}
         <span class="pt-caret" aria-hidden="true">
           ▾
@@ -66,7 +66,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         {PRESETS.map(({ preset, label }) => (
           <button
             key={preset}
-            class="pt-preset"
+            class="pt-preset bar-btn"
             data-preset={preset}
             disabled={!!why}
             // Its name at any width (the label hides when narrow); why
@@ -84,7 +84,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         ))}
       </div>
       <button
-        class={`pt-focus${focused ? " on" : ""}`}
+        class={`pt-focus bar-btn${focused ? " on" : ""}`}
         data-pane-focus
         aria-pressed={focused}
         disabled={!!focusWhy}
@@ -102,7 +102,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
       <span class="pt-fill" />
       {!watching && (
         <button
-          class={`pt-add${open ? " on" : ""}`}
+          class={`pt-add bar-btn${open ? " on" : ""}`}
           data-add-pane
           aria-expanded={open}
           disabled={!!layoutRefusal(client, tab)}

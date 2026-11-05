@@ -140,6 +140,25 @@ a.secondary.danger:hover {
     min-height: 34px;
   }
 
+  /* A bar of a fixed height (the panes' toolbar and header, a block's)
+     keeps its 24: it has no room for more. */
+  .bar-btn:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .bar-btn.sq:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+    width: 40px;
+  }
+
+  .seg > button {
+    min-height: 40px;
+  }
+
+  .seg.small > button {
+    min-height: 34px;
+  }
+
   /* A box to tick (UI audit #199) was the browser's 13px: 20px, and the
      label it's in (the target, as a tap on it ticks the box) a row as tall
      as a button. :root outranks a prompt's `input { width: auto }`; a
@@ -186,6 +205,142 @@ a.secondary.danger:hover {
 .link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* -- The bar button (Arugula #731): the 24px ghost button of every bar,
+      the pane toolbar's and header's, a block's, chat's and a card's.
+      `.bar-btn.sq` is its icon, 24x24. A block bar's plain buttons are
+      one without the class (:where, so a class outranks them). A touch
+      screen gets 40 where the bar has room. */
+
+.bar-btn,
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:where(:not(.primary, .secondary, .link)),
+.block-open {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 6px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--btn-radius);
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bar-btn.sq {
+  width: 24px;
+  padding: 0;
+}
+
+/* One "on": a tint of the accent with accent text, 26% under the pointer.
+   On bg and surface only, never raised (appearance.ts's legible() checks
+   the accent on it). A finish redraws it through the token. */
+:root {
+  --on-fill: color-mix(in srgb, var(--accent) 18%, transparent);
+  --on-fill-hover: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.bar-btn:hover:not(:disabled),
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:where(:not(.primary, .secondary, .link)):hover:not(:disabled),
+.block-open:hover,
+.seg > button:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+:is(.bar-btn, .seg > button, .issues-filter, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: var(--on-fill);
+  color: var(--accent);
+}
+
+:is(.bar-btn, .seg > button, .issues-filter, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: var(--on-fill-hover);
+  color: var(--accent);
+}
+
+.bar-btn:disabled,
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:disabled,
+.seg > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bar-btn:focus-visible,
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:focus-visible,
+.seg > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* -- The segmented control: a choice of one among a few, as a `role=group`
+      of `aria-pressed` buttons (a filter) or a `role=tablist` of
+      `aria-selected` ones (tabs). The `.secondary` edge around rounded
+      segments, a 2px inset and gap, and the "on" tint as the thumb. Its
+      segments are the Corners setting's radius less the inset, none
+      below 0. Page size is 32px in all; `.small` is the bar's 24, `.touch`
+      the phone's 40px segments. */
+
+.seg {
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  border-radius: var(--btn-radius);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.seg > button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: max(0px, calc(var(--btn-radius) - 2px));
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.seg.small > button {
+  min-height: 18px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.seg.touch > button {
+  min-height: 40px;
+}
+
+/* A segment's "on" is the tint laid over the page, opaque, not over the
+   track's own 6%: legible() checks the accent on the tint over bg, and the
+   track's fill under it took Latte to 4.43:1. */
+.seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
+.seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 26%, var(--bg));
 }
 
 /* -- Aqua: gel. The primary a lit drop of its fill, the secondary a clear

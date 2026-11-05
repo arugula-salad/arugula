@@ -5,7 +5,7 @@
 
 import { Svg } from "../../../shared/ui/rail-icons";
 
-export { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/rail-icons";
+export { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SessionsIcon, PlusIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/rail-icons";
 
 export const LinkIcon = () => (
   <Svg size={14}>
@@ -18,12 +18,6 @@ export const SearchIcon = ({ size = 15 }: { size?: number }) => (
   <Svg size={size}>
     <circle cx="11" cy="11" r="6" />
     <path d="M20 20l-4.5-4.5" />
-  </Svg>
-);
-
-export const PlusIcon = ({ size = 15 }: { size?: number }) => (
-  <Svg size={size}>
-    <path d="M12 5v14M5 12h14" />
   </Svg>
 );
 

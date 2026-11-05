@@ -23,18 +23,15 @@
   white-space: nowrap;
 }
 
-/* Its plain buttons and selects, alike (the ↻, ←, Resume, an env); a
-   primary or secondary in a bar keeps its own look. */
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link),
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field),
-.block-open {
+/* Its plain buttons are the bar button's (buttons.css); its selects are
+   the same 24px. A primary or secondary in a bar keeps its own look. */
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
   box-sizing: border-box;
-  display: inline-grid;
-  place-items: center;
+  display: inline-block;
   flex: none;
-  height: 26px;
-  min-width: 26px;
-  padding: 0 8px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   background: var(--bg);
@@ -42,23 +39,14 @@
   font: inherit;
   font-size: 12px;
   line-height: 1;
-  text-decoration: none;
   cursor: pointer;
 }
 
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
-  display: inline-block;
-  padding: 0 4px;
-}
-
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link):hover:not(:disabled),
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled),
-.block-open:hover {
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled) {
   background: var(--raised);
   color: var(--fg);
 }
 
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:disabled,
 :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):disabled {
   opacity: 0.45;
   cursor: default;

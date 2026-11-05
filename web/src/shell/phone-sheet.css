@@ -103,30 +103,12 @@
 .sheet-tabs {
   flex: none;
   display: flex;
-  gap: 2px;
   margin: 0 10px 10px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  background: var(--bg);
 }
 
 .sheet-tabs button {
   position: relative;
   flex: 1;
-  min-height: 44px;
-  padding: 0 12px;
-  border-radius: var(--chip-radius);
-  color: var(--dim);
-  font: 500 12px/1 var(--f-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  touch-action: manipulation;
-}
-
-.sheet-tabs button[aria-selected="true"] {
-  background: var(--fg);
-  color: var(--bg);
 }
 
 .sheet-tab-dot {
@@ -139,6 +121,3 @@
   vertical-align: 2px;
 }
 
-.sheet-tabs button[aria-selected="true"] .sheet-tab-dot {
-  background: var(--danger);
-}

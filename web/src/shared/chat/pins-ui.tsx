@@ -65,7 +65,7 @@ function Popover({
   return (
     <span class="chat-pop-wrap" ref={root}>
       <button
-        class={open ? "chat-info on" : "chat-info"}
+        class={open ? "chat-info bar-btn on" : "chat-info bar-btn"}
         title={title}
         aria-label={label}
         aria-expanded={open}

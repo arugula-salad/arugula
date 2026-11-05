@@ -320,7 +320,7 @@ function StartRun({ p, specs, workspaces, done }: { p: PlatformProject; specs: R
   return (
     <form class="run-start" data-run-start onSubmit={(e) => void start(e)}>
       {specs.length > 0 && (
-        <div class="issues-states" role="group" aria-label="What to run">
+        <div class="seg issues-states" role="group" aria-label="What to run">
           <button type="button" aria-pressed={what === "spec"} data-run-start-spec-mode onClick={() => setWhat("spec")}>
             A run spec
           </button>

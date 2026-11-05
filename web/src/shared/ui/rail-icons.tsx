@@ -102,3 +102,9 @@ export const ProjectsIcon = () => (
     <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
   </Svg>
 );
+
+export const PlusIcon = ({ size = 15 }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);

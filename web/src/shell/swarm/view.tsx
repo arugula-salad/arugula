@@ -502,7 +502,7 @@ export function SwarmView({
         {!board && (
           <div>
             <div class="swarm-seg-l">Cluster by</div>
-            <div class="swarm-seg" role="group" aria-label="Cluster by">
+            <div class="seg small swarm-seg" role="group" aria-label="Cluster by">
               {GROUPINGS.map((g) => (
                 <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
                   {GROUPING_LABEL[g]}
@@ -513,7 +513,7 @@ export function SwarmView({
         )}
         <div>
           <div class="swarm-seg-l">Theme</div>
-          <div class="swarm-seg" role="group" aria-label="Theme">
+          <div class="seg small swarm-seg" role="group" aria-label="Theme">
             {THEMES.map((t) => (
               <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
