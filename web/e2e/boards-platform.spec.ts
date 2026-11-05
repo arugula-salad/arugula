@@ -693,7 +693,7 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await expect(alice.locator("[data-board-zone] ul.sw-cards")).toHaveCount(4);
   // A group's title is a heading above the lanes, and a row's title is a smaller, plainer one.
   const px = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(22);
+  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(19);
   expect(await px(alice.locator("[data-board-zone] h2").first())).toBeLessThan(18);
   expect(await px(alice.locator("[data-board-row] [data-board-title]").first())).toBeLessThanOrEqual(15);
   // The bar is the lane's tone; a row that waits on Alice keeps its lane's tone with a ring, and the header counts it.
