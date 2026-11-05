@@ -16,7 +16,9 @@
 //!   setup reads and removes first thing. Git gets a credential in its
 //!   environment for its clone alone (`http.extraHeader`), so nothing is
 //!   written to a repo's config or the disk, and the remote stays a plain
-//!   URL.
+//!   URL. An installation token is revoked as soon as the setup is past
+//!   its clones (`revoke_clones`), or when it can't start; a daemon that
+//!   restarted mid-setup has lost it, and it lasts an hour at most.
 //! - **Once per box.** What it did is in `<state>/hosted-setup.json`, one of
 //!   [`super::PER_BOX`]: a daemon that restarts mid-setup watches its pane
 //!   again, and one that finished says so again until control has heard
@@ -163,14 +165,17 @@ async fn run(app: Arc<App>, state_dir: PathBuf) {
             let Some(plan) = plan(&app).await else { return };
             saved = match begin(&app, &state_dir, &plan).await {
                 Ok(s) => s,
-                Err(e) => Saved {
-                    status: Some(SetupStatus::Failed),
-                    step: "start".into(),
-                    reason: "start".into(),
-                    tail: format!("{e:#}"),
-                    spec_hash: plan.spec_hash.clone(),
-                    ..Saved::default()
-                },
+                Err(e) => {
+                    revoke_clones(&plan).await;
+                    Saved {
+                        status: Some(SetupStatus::Failed),
+                        step: "start".into(),
+                        reason: "start".into(),
+                        tail: format!("{e:#}"),
+                        spec_hash: plan.spec_hash.clone(),
+                        ..Saved::default()
+                    }
+                }
             };
             saved.save(&state_dir);
             if saved.status == Some(SetupStatus::Failed) {
@@ -250,6 +255,7 @@ async fn begin(app: &App, state_dir: &Path, plan: &SetupPlan) -> anyhow::Result<
 /// looks for its secrets).
 async fn watch(app: &App, state_dir: &Path, mut saved: Saved, plan: Option<&SetupPlan>) {
     let dir = state_dir.join(DIR);
+    let mut to_revoke = plan;
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let step = std::fs::read_to_string(dir.join("step")).unwrap_or_default();
@@ -258,6 +264,12 @@ async fn watch(app: &App, state_dir: &Path, mut saved: Saved, plan: Option<&Setu
             Some(p) => app.mux.api(|r| Api::Pane(p, r)).await.flatten(),
             None => None,
         };
+        if let Some(p) = to_revoke
+            && (done.is_some() || handle.is_none() || past_clones(&step))
+        {
+            revoke_clones(p).await;
+            to_revoke = None;
+        }
         if let Some(code) = done {
             if !step.is_empty() {
                 saved.step = step;
@@ -393,6 +405,41 @@ fn places(home: &Path, urls: &[String]) -> Vec<Cloned> {
             Cloned { url: url.clone(), dir: home.join(name) }
         })
         .collect()
+}
+
+/// Whether the setup's step is past its clones: the packages or the setup
+/// script.
+fn past_clones(step: &str) -> bool {
+    !step.is_empty() && step != "start" && !step.starts_with("clone ")
+}
+
+/// Revoke each installation token the plan gave this box to clone with,
+/// the token as its own bearer: best effort (it lasts an hour at most).
+/// How many were.
+async fn revoke_clones(plan: &SetupPlan) -> usize {
+    let mut n = 0;
+    for r in &plan.repos {
+        let (Some(url), Some(token)) = (&r.revoke, &r.password) else { continue };
+        if !(url.starts_with("https://") || url.starts_with("http://127.0.0.1:")) {
+            continue;
+        }
+        let Ok(http) = crate::roots::http().timeout(Duration::from_secs(20)).build() else { continue };
+        let answer = http
+            .delete(url)
+            .bearer_auth(token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("User-Agent", "arugulad")
+            .send()
+            .await;
+        // Unauthorized: it's gone already.
+        if answer.is_ok_and(|a| a.status().is_success() || a.status().as_u16() == 401) {
+            n += 1;
+        } else {
+            warn!(url = r.url, "hosted: a clone's token wasn't revoked; it expires within the hour");
+        }
+    }
+    n
 }
 
 /// A word for the shell, as it is.
@@ -645,6 +692,7 @@ mod tests {
                     via: "secret".into(),
                     username: Some("x-access-token".into()),
                     password: Some("it's-secret".into()),
+                    revoke: None,
                 },
                 SetupRepo { url: "https://git.example/other/app".into(), via: "none".into(), ..Default::default() },
             ],
@@ -653,6 +701,60 @@ mod tests {
             env: [("NPM_TOKEN".to_owned(), "n'pm".to_owned()), ("bad name".to_owned(), "x".to_owned())].into(),
             unset: vec!["OTHER".into()],
         }
+    }
+
+    #[test]
+    fn the_clones_are_done_past_their_steps() {
+        for (step, past) in [
+            ("", false),
+            ("start", false),
+            ("clone app", false),
+            ("clone app-2", false),
+            ("packages", true),
+            ("setup script", true),
+        ] {
+            assert_eq!(past_clones(step), past, "{step:?}");
+        }
+    }
+
+    /// Each installation token is revoked, as its own bearer, where it
+    /// came with; a workspace's GIT_TOKEN isn't, nor a token whose address
+    /// is neither https nor a local test's.
+    #[tokio::test]
+    async fn clone_tokens_are_revoked() {
+        use std::sync::Mutex;
+
+        use arugula_control_wire::hosted::SetupRepo;
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let s = seen.clone();
+        let router = axum::Router::new().route(
+            "/installation/token",
+            axum::routing::delete(move |h: axum::http::HeaderMap| async move {
+                let bearer = h.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+                s.lock().unwrap().push(bearer);
+                axum::http::StatusCode::NO_CONTENT
+            }),
+        );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/installation/token", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+        let repo = |via: &str, password: &str, revoke: Option<&str>| SetupRepo {
+            url: format!("https://github.com/acme/{password}"),
+            via: via.into(),
+            username: Some("x-access-token".into()),
+            password: Some(password.into()),
+            revoke: revoke.map(Into::into),
+        };
+        let plan = SetupPlan {
+            repos: vec![
+                repo("github_app", "ghs_one", Some(&url)),
+                repo("secret", "tok-1", None),
+                repo("github_app", "ghs_two", Some("http://example.com/installation/token")),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(revoke_clones(&plan).await, 1);
+        assert_eq!(*seen.lock().unwrap(), ["Bearer ghs_one"]);
     }
 
     // Hosted boxes are Linux: its paths and shell.

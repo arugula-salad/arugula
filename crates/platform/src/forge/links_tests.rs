@@ -19,7 +19,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde_json::{Value, json};
 
@@ -84,6 +84,11 @@ pub struct Gh {
     /// The comments on an issue, by (repo id, number), as
     /// `repositories/{id}/issues/{n}/comments` lists them.
     pub comments: BTreeMap<(u64, u64), Vec<Value>>,
+    /// Each installation token minted is its own (`ghs_fake_N`), not
+    /// `ghs_fake`.
+    pub numbered: bool,
+    /// The installation tokens revoked, as each was its own bearer.
+    pub revokes: Vec<String>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -148,6 +153,7 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     assert_eq!(b["permissions"]["metadata"], "read");
     let mut h = h.lock().unwrap();
     h.minted.push(b["permissions"].clone());
+    let token = if h.numbered { format!("ghs_fake_{}", h.minted.len()) } else { "ghs_fake".to_owned() };
     // By GitHub's id (a deploy's own repository), or by its short name.
     let by_id = b["repository_ids"][0].as_u64().and_then(|id| h.repos.iter().find(|(_, (i, _))| *i == id));
     if let Some((name, (id, _))) = by_id {
@@ -156,13 +162,13 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
             return not_granted();
         }
         let covers = json!([{ "id": id, "full_name": name }]);
-        return Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
+        return Json(json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
             .into_response();
     }
     // A repository by id the test didn't make (a read of its settings, #427).
     if let Some(id) = b["repository_ids"][0].as_u64() {
         let covers = json!([{ "id": id }]);
-        return Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
+        return Json(json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
             .into_response();
     }
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
@@ -187,7 +193,14 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
             .map(|name| json!({ "id": 0, "full_name": name }))
             .collect();
     }
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers })).into_response()
+    Json(json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers })).into_response()
+}
+
+/// `DELETE /installation/token`: the token, its own bearer, revoked.
+async fn revoke(State(h): State<Shared>, headers: axum::http::HeaderMap) -> StatusCode {
+    let token = bearer(&headers).trim_start_matches("Bearer ").to_owned();
+    h.lock().unwrap().revokes.push(token);
+    StatusCode::NO_CONTENT
 }
 
 /// `ci/green/<sha>` or `ci/revoked/<sha>`, as GitHub answers a ref: 200
@@ -394,6 +407,7 @@ pub async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}/commits/{sha}", get(commit))
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
+        .route("/installation/token", delete(revoke))
         .route("/repos/{o}/{r}", get(repo))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .route("/repos/{o}/{r}/git/ref/tags/ci/{kind}/{sha}", get(ci_ref))
@@ -693,6 +707,67 @@ async fn an_uninstall_unlinks_and_the_purge_leaves_nothing() {
     }
     assert_eq!(left(&app, 88), [1; 7], "a linked repo keeps its rows");
     assert_eq!(links::purge(&app, now + 2 * PURGE_GRACE_MS).unwrap(), 0);
+}
+
+/// The read token the platform keeps for a linked repo goes when it's
+/// unlinked: dropped and revoked, so the next read mints another. One kept
+/// for another repo stays. The App losing a repo, or its installation,
+/// does the same.
+#[tokio::test]
+async fn unlinking_drops_and_revokes_the_kept_read_token() {
+    use super::{Caller, Purpose, Repo};
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    {
+        let mut g = gh.lock().unwrap();
+        g.numbered = true;
+        g.installed.insert("acme/web".into(), (9, 500, "acme".into()));
+        g.repos.insert("acme/web".into(), (99, false));
+        g.roles.insert(("acme/web".into(), "alice-gh".into()), ("admin".into(), 1001));
+    }
+    for r in ["acme/app", "acme/web"] {
+        assert_eq!(link(&base, "alice", "personal", r).await.0, 200);
+    }
+    let github = app.github.as_ref().unwrap();
+    let c = Caller::of(&app, "platform");
+    let read = |repo: u64| async move {
+        github.read_token(&c, 9, Repo::Id(repo), Purpose::Ingest).await.unwrap().secret().to_owned()
+    };
+    let (app_token, web_token) = (read(77).await, read(99).await);
+    assert_eq!(read(77).await, app_token, "kept");
+    assert!(gh.lock().unwrap().revokes.is_empty());
+
+    let (s, v) = call(&base, "alice", "DELETE", "/api/projects/personal/repos/acme/app", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(gh.lock().unwrap().revokes, std::slice::from_ref(&app_token), "revoked as it's unlinked");
+    assert_ne!(read(77).await, app_token, "a new one next time");
+    assert_eq!(read(99).await, web_token, "another repo's stays");
+
+    // The App loses acme/web: its token goes too, in the background.
+    let removed = json!({ "action": "removed", "installation": { "id": 9, "account": { "id": 500, "login": "acme", "type": "Organization" } },
+        "repositories_removed": [{ "id": 99, "full_name": "acme/web" }] });
+    assert_eq!(hook(&base, "installation_repositories", "d1", &removed).await, 202);
+    for _ in 0..100 {
+        if gh.lock().unwrap().revokes.contains(&web_token) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(gh.lock().unwrap().revokes.contains(&web_token));
+    assert_ne!(read(99).await, web_token);
+
+    // An uninstall drops every repo's under the installation.
+    let again = read(77).await;
+    let deleted = json!({ "action": "deleted", "installation": { "id": 9, "account": { "id": 500, "login": "acme", "type": "Organization" } } });
+    assert_eq!(hook(&base, "installation", "d2", &deleted).await, 202);
+    for _ in 0..100 {
+        if gh.lock().unwrap().revokes.contains(&again) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(gh.lock().unwrap().revokes.contains(&again));
 }
 
 /// Unlinking stops ingest at once and waits for the purge; linking it

@@ -325,6 +325,10 @@ pub struct SetupRepo {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    /// Where the box revokes `password` once its clones are done
+    /// (`DELETE`, the token as its bearer): a `github_app` token's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoke: Option<String>,
 }
 
 /// Where a hosted machine's setup is.
@@ -416,6 +420,7 @@ impl std::fmt::Debug for SetupRepo {
             .field("via", &self.via)
             .field("username", &self.username)
             .field("password", &self.password.as_ref().map(|_| "…"))
+            .field("revoke", &self.revoke)
             .finish()
     }
 }
@@ -486,6 +491,7 @@ mod tests {
                 via: "secret".into(),
                 username: Some("x-access-token".into()),
                 password: Some("hunter2".into()),
+                revoke: None,
             }],
             env: [("NPM_TOKEN".to_owned(), "s3cret".to_owned())].into(),
             ..Default::default()

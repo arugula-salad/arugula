@@ -176,3 +176,95 @@ async fn setup_over_the_internal_api() {
     assert!(remote.hosted_setup(&project, &id, "m1", &report(SetupStatus::Ready, "setup script", "")).await.unwrap());
     assert_eq!(show(&base, &project, &id).await["setup"]["status"], "ready");
 }
+
+/// A GitHub repo linked to the project: each plan gives the box a token of
+/// its own for it, its contents read-only, minted for that box and kept
+/// nowhere here, with where the box revokes it. Unlinked, the box gets no
+/// token for it, nor the workspace's GIT_TOKEN in its place; a repo that
+/// was never linked still clones with GIT_TOKEN.
+#[tokio::test]
+async fn a_box_clones_a_linked_repo_with_a_token_of_its_own() {
+    use crate::{
+        db::forge::{Installation, LinkedRepo},
+        forge::{
+            Caller, GithubApp, Purpose, Repo,
+            links_tests::{Shared, fake_github, throwaway_key},
+        },
+    };
+    let gh: Shared = Arc::default();
+    {
+        let mut g = gh.lock().unwrap();
+        g.numbered = true;
+        g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+        g.repos.insert("acme/app".into(), (77, true));
+    }
+    let api = fake_github(gh.clone()).await;
+    let fake = Arc::new(super::tests::Fake::default());
+    let (hub, app, base, project) = super::tests::serve_platform(EnrollBy::Sandbox, fake, "tpl", |p| {
+        p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), "s".into(), &api, throwaway_key()));
+    })
+    .await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "alice", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let path = format!("/api/projects/{project}/workspaces/{id}");
+    let spec = json!({ "repos": ["https://github.com/acme/app", "https://github.com/acme/other"] });
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 200);
+    let put = Some(json!({ "value": "tok-1" }));
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/secrets/GIT_TOKEN"), put).await.0, 204);
+    let now = now_ms();
+    let repo = LinkedRepo {
+        repo_id: 77,
+        full_name: "acme/app".into(),
+        private: true,
+        project_id: project.clone(),
+        installation_id: 9,
+        linked_by: Some("alice".into()),
+        linked_at: now,
+        unlinked_at: None,
+        purge_after: None,
+        mirror_content: false,
+    };
+    let install = Installation {
+        id: 9,
+        account_id: 500,
+        login: "acme".into(),
+        account_type: "Organization".into(),
+        permissions: "{}".into(),
+    };
+    app.db.link_repo(&repo, &install, "alice", now).unwrap();
+    // The platform's own read token for it, kept.
+    let github = app.github.as_ref().unwrap();
+    let kept = github.read_token(&Caller::of(&app, "platform"), 9, Repo::Id(77), Purpose::Ingest).await.unwrap();
+    let kept = kept.secret().to_owned();
+    drive(&app, now).await;
+
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
+    let first = &plan.repos[0];
+    assert_eq!((first.via.as_str(), first.username.as_deref()), ("github_app", Some("x-access-token")));
+    let token = first.password.clone().unwrap();
+    assert_ne!(token, kept, "not the platform's kept token");
+    assert_eq!(first.revoke.as_deref(), Some(format!("{api}/installation/token").as_str()));
+    assert_eq!(
+        gh.lock().unwrap().minted.last().unwrap(),
+        &json!({ "metadata": "read", "contents": "read" }),
+        "its contents, read, and nothing else"
+    );
+    let other = &plan.repos[1];
+    assert_eq!(
+        (other.via.as_str(), other.password.as_deref(), other.revoke.as_deref()),
+        ("secret", Some("tok-1"), None)
+    );
+    // Asked again, another of its own: nothing kept for it.
+    let again = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    assert_ne!(again.repos[0].password.as_deref(), Some(token.as_str()));
+    let kept_now = github.read_token(&Caller::of(&app, "platform"), 9, Repo::Id(77), Purpose::Ingest).await.unwrap();
+    assert_eq!(kept_now.secret(), kept, "the platform's own stays its own");
+
+    // Unlinked: no token for it, and not GIT_TOKEN in its place.
+    app.db.unlink_repo(&project, "acme/app", now_ms()).unwrap().expect("it was linked");
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    let first = &plan.repos[0];
+    assert_eq!((first.via.as_str(), first.password.as_deref(), first.revoke.as_deref()), ("none", None, None));
+    assert_eq!((plan.repos[1].via.as_str(), plan.repos[1].password.as_deref()), ("secret", Some("tok-1")));
+}

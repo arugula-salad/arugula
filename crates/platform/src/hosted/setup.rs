@@ -6,11 +6,14 @@
 //!
 //! - **The plan** ([`plan`]) is the spec, with what to clone each repo with
 //!   and the values of the env its spec takes from its secrets. A GitHub
-//!   repo linked to the project is cloned with a read-only installation
-//!   token for that repo alone, minted now (an hour; M167's helper logs
-//!   it). Any other repo is cloned with the workspace's `GIT_TOKEN` secret
-//!   (and `GIT_USERNAME`, else `x-access-token`), when it has one. The
-//!   daemon hands them to git in its environment for the clone alone:
+//!   repo linked to the project is cloned with an installation token for
+//!   that repo's contents alone, read-only, minted now for this box and
+//!   kept nowhere on the platform (an hour; M167's helper logs it), with
+//!   where the box revokes it once its clones are done. Any other repo is
+//!   cloned with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`,
+//!   else `x-access-token`), when it has one; not one unlinked from the
+//!   project, which gets nothing until the purge forgets it was linked.
+//!   The daemon hands them to git in its environment for the clone alone:
 //!   nothing is written to the box's disk.
 //! - **What it's built from.** Reading the plan marks the box built from
 //!   that spec, so "rebuild needed" follows the spec the box really ran.
@@ -74,14 +77,16 @@ pub fn github_repo(url: &str) -> Option<String> {
     Some(format!("{owner}/{name}"))
 }
 
-/// A read-only installation token for `url`, when it's a GitHub repo
-/// linked to `project` and the platform has the App.
-async fn app_token(app: &Platform, project: &str, url: &str) -> Option<String> {
+/// A token for this box to clone `url` with, and where it revokes it,
+/// when it's a GitHub repo linked to `project` and the platform has the
+/// App: its contents, read-only, minted now, never the platform's cached
+/// one.
+async fn app_token(app: &Platform, project: &str, url: &str) -> Option<(String, String)> {
     let gh = app.github.as_ref()?;
     let name = github_repo(url)?;
     let link = app.db.linked_repo_named(&name).ok().flatten().filter(|l| l.project_id == project)?;
-    match gh.hand_out(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id)).await {
-        Ok(t) => Some(t.secret().to_owned()),
+    match gh.box_clone_token(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id)).await {
+        Ok((t, _)) => Some((t, gh.revoke_url())),
         Err(e) => {
             warn!(project, repo = name, error = %format!("{e:#}"), "no installation token for a hosted workspace's clone");
             None
@@ -111,22 +116,30 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
     let user = secret(app, project, &secrets_of, GIT_USERNAME)?.filter(|u| !u.is_empty());
     let mut repos = Vec::new();
     for url in &w.spec.repos {
-        let r = if let Some(t) = app_token(app, project, url).await {
+        // A GitHub repo unlinked from the project isn't cloned with the
+        // workspace's own token in its place.
+        let unlinked = match github_repo(url) {
+            Some(name) => app.db.unlinked_from(project, &name)?,
+            None => false,
+        };
+        let r = if let Some((t, revoke)) = app_token(app, project, url).await {
             SetupRepo {
                 url: url.clone(),
                 via: "github_app".into(),
                 username: Some(TOKEN_USER.into()),
                 password: Some(t),
+                revoke: Some(revoke),
             }
-        } else if let Some(t) = &token {
+        } else if let Some(t) = token.as_ref().filter(|_| !unlinked) {
             SetupRepo {
                 url: url.clone(),
                 via: "secret".into(),
                 username: Some(user.clone().unwrap_or_else(|| TOKEN_USER.into())),
                 password: Some(t.clone()),
+                revoke: None,
             }
         } else {
-            SetupRepo { url: url.clone(), via: "none".into(), username: None, password: None }
+            SetupRepo { url: url.clone(), via: "none".into(), ..SetupRepo::default() }
         };
         repos.push(r);
     }

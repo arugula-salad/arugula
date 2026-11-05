@@ -99,7 +99,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     (`crates/platform/src/forge/app.rs`) mints every installation token,
     and nothing else asks GitHub for one. Each names one repository and
     the least it needs: read-only for reads and the mirror's ingest (kept
-    until five minutes before they expire), and `issues: write` or
+    until five minutes before they expire, or until the repo is unlinked,
+    when the kept one is dropped and revoked), `contents: read` for a
+    cloud workspace's setup clone (`hosted:clone`, minted for that box,
+    never kept, and revoked by the box once its clones are done), and
+    `issues: write` or
     `pull_requests: write` for one send (minted for that send, never
     kept, and revoked at GitHub, `DELETE /installation/token`, right after
     its one call). A token whose answer from GitHub doesn't cover exactly
@@ -107,7 +111,7 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     in `github_token_mints`: installation, repository id, the permissions
     asked for, the account (or `platform`), what for, and when, never the
     token. A read token used again from the cache inside the platform adds
-    no row; one handed to a hosted box again from the cache adds a row for
+    no row; one handed to a daemon again from the cache adds a row for
     that account, with the purpose `read (cached)`. Rows are kept a year,
     pruned hourly.
 - **Blocks through control** (M50, optional): `--block-domain`
