@@ -221,11 +221,7 @@ function Page({ client }: { client: Client }) {
         header={
           <PageHeader
             title="Docs"
-            state={
-              <span class="list-where" data-docs-machine>
-                on {directory.current || "this machine"}
-              </span>
-            }
+            sub={<span data-docs-machine>on {directory.current || "this machine"}</span>}
             stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
           />
         }

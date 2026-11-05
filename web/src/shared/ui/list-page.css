@@ -34,12 +34,6 @@
   margin: 0;
 }
 
-.list-head .page-title h1 {
-  font: 800 30px/1 var(--f-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
 .list-where {
   align-self: flex-end;
   font: 500 11px/1.5 var(--f-mono);

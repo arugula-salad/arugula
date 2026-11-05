@@ -24,7 +24,7 @@ import { DocBlock, type DocState } from "../../shared/docs/doc-render";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
-import { SectionHead } from "../section-head";
+import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
@@ -614,7 +614,7 @@ export function ProjectDocs({ p }: { p: PlatformProject }) {
   const all = pathOf({ page: "docs", project: p.id }, names);
   return (
     <>
-      <SectionHead title="Docs" all={all} data="project-docs-link" />
+      <SectionHead title="Docs" all={all} onAll={(e) => follow(e, all)} data="project-docs-link" />
       {list.length === 0 && <p class="dim">No Docs yet.</p>}
       <div data-project-docs>
         <DocRows p={p} list={list.slice(0, 5)} />

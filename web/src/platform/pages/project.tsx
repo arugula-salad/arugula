@@ -19,7 +19,7 @@ import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { runs, type RunView } from "../runs";
 import { STATES, runTitle } from "../runs-text";
-import { SectionHead } from "../section-head";
+import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { roomTone, runTone, toneClass } from "../swarm";
 import { HostedWorkspaceList, NewWorkspaceButton, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
@@ -67,7 +67,7 @@ export function ProjectHome({ id }: { id: string }) {
       <div class={p.team ? "platform-columns" : "platform-columns solo"}>
         <div>
           <ProjectDrafts project={p.id} nameOf={nameOf} />
-          <SectionHead title="Chat" all={chatPath} />
+          <SectionHead title="Chat" all={chatPath} onAll={(e) => follow(e, chatPath)} />
           {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
@@ -95,7 +95,7 @@ export function ProjectHome({ id }: { id: string }) {
           {!boardsOn && <ProjectBoards p={p} list={boards} />}
           {(session.hosted || !!workspaces?.length) && (
             <>
-              <SectionHead title="Cloud workspaces" all={workspacesPath} />
+              <SectionHead title="Cloud workspaces" all={workspacesPath} onAll={(e) => follow(e, workspacesPath)} />
               {workspaces === null ? null : workspaces.length ? <HostedWorkspaceList project={p.id} list={workspaces} /> : <NoWorkspaces project={p.id} />}
               {!!workspaces?.length && <SessionNumbers project={p.id} />}
             </>
@@ -191,7 +191,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     <>
       {repos !== null && (
         <>
-          <SectionHead title="Repos" all={`${settings}#repos`} />
+          <SectionHead title="Repos" all={`${settings}#repos`} onAll={(e) => follow(e, `${settings}#repos`)} />
           {repos.length ? (
             rows(repos, "project-repos")
           ) : (
@@ -204,7 +204,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
       )}
       {envs !== null && (
         <>
-          <SectionHead title="Environments" all={`${settings}#environments`} />
+          <SectionHead title="Environments" all={`${settings}#environments`} onAll={(e) => follow(e, `${settings}#environments`)} />
           {envs.length ? (
             rows(envs, "project-envs")
           ) : (
@@ -243,7 +243,7 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
   const all = pathOf({ page: "runs", project: p.id }, names);
   return (
     <>
-      <SectionHead title="Runs" all={all} />
+      <SectionHead title="Runs" all={all} onAll={(e) => follow(e, all)} />
       {list.length === 0 &&
         (whyNoStart(p) ? (
           <p class="dim" data-project-runs-why>

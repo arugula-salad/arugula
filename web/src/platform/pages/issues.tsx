@@ -25,7 +25,7 @@ import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { issueTone, toneClass } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
-import { SectionHead } from "../section-head";
+import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
 
 /** Who's in a project: its team's roster, or its one person. */
@@ -564,7 +564,7 @@ export function ProjectIssues({ p }: { p: PlatformProject }) {
   const all = pathOf({ page: "issues", project: p.id }, names);
   return (
     <>
-      <SectionHead title="Issues" all={all} data="project-issues-link" action={mayWrite(p) && <NewIssueButton p={p} home={home} small />} />
+      <SectionHead title="Issues" all={all} onAll={(e) => follow(e, all)} data="project-issues-link" action={mayWrite(p) && <NewIssueButton p={p} home={home} small />} />
       {list?.length === 0 && <p class="dim">No open issues.</p>}
       {/* Rows, as the home's rooms are (UI audit #162): a title and its
           number, no underline until hovered. */}

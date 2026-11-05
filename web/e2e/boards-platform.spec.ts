@@ -283,11 +283,11 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch 1.0");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-heading]")).toHaveText("Launch 1.0", { timeout: 15_000 });
+  await expect(page.locator("h1 [data-board-heading]")).toHaveText("Launch 1.0", { timeout: 15_000 });
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(page.locator("h1 [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
 });
 
 test("closing one of the board's issues moves its row to Done, not yet proven, until evidence is attached", async () => {
