@@ -266,6 +266,7 @@ button.chip-object:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 0 2px 0 8px;
   border-radius: var(--chip-radius);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
