@@ -1,7 +1,7 @@
 ---
 section: Added
 title: Who can do what in a project
-line: A project's settings open with Access, where every member sees the team's roles, whose machines and agent tokens hold powers there and what each does now, what an owner allowed, and the cloud workspaces.
+line: A project's settings open with Access: every member sees the team's roles, whose machines and agent tokens hold powers there and what each does now, what an owner allowed, and the cloud workspaces.
 try: {"route": "/"}
 needs: control
 ---
