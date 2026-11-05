@@ -18,8 +18,13 @@
   gap: 8px 12px;
 }
 
-.board-head .board-title {
+.board-head .board-heading {
   flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.4em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .board-title {

@@ -117,7 +117,7 @@ test("epic boards: the header, the Boards page group, the Settings switch and a 
 
   // A person's board has no such line.
   await alice.goto(`${app}/p/${project}/boards/${ids.Notes}`);
-  await expect(alice.locator("[data-board-title]")).toBeVisible({ timeout: 15_000 });
+  await expect(alice.locator("[data-board-heading]")).toBeVisible({ timeout: 15_000 });
   await expect(alice.locator("[data-board-source]")).toHaveCount(0);
 
   // Removing a synced row shows the platform's refusal.

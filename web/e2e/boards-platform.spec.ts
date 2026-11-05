@@ -133,7 +133,7 @@ test("a board Launch has the four lanes and takes the first issue from Not on a 
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
   await alice.locator("[data-board-new-title]").fill("Launch");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
 
   // Always the four lanes, in order, and no way to make, rename or move a zone.
@@ -283,11 +283,11 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch 1.0");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch 1.0", { timeout: 15_000 });
+  await expect(page.locator("h1[data-board-heading]")).toHaveText("Launch 1.0", { timeout: 15_000 });
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(page.locator("h1[data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
 });
 
 test("closing one of the board's issues moves its row to Done, not yet proven, until evidence is attached", async () => {
@@ -1058,7 +1058,7 @@ test("Not on a board: ＋, a multi-select, a drag and select-all each move the l
   await platform(alice, `/p/${project}/boards`);
   await alice.locator("[data-board-new-title]").fill("Bulk");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Bulk", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Bulk", { timeout: 15_000 });
   await alice.locator("[data-platform-boards]").click();
 
   const count = alice.locator("[data-triage-count]");

@@ -73,7 +73,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     const made = await api("POST", `/api/projects/${project}/boards`, { title: "Launch" });
     expect(made.status).toBe(200);
     const board = made.body!.board.id as string;
-    await open(`/p/${project}/boards/${board}`, "[data-board-page] [data-board-title]");
+    await open(`/p/${project}/boards/${board}`, "[data-board-page] [data-board-heading]");
     await copyLink(`${app}/p/${project}/boards/${board}`, "board");
   });
 

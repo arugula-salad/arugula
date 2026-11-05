@@ -289,7 +289,7 @@ export function BoardPanel({
     <div class="board" data-board={id}>
       {back}
       <div class="board-head">
-      <h1 class="board-title" data-board-title>
+      <h1 class="board-heading" data-board-heading>
         {write ? (
           <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
             {view.board.title}
