@@ -488,8 +488,31 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute("UPDATE OR IGNORE labs_flags SET name = ?2 WHERE name = ?1", params![old, new])?;
         conn.execute("DELETE FROM labs_flags WHERE name = ?1", params![old])?;
     }
+    // Doc copies took the account's own `chat` before they had a word of
+    // their own (native #673): an account with its own chat on then has
+    // said yes. Once, marked in `settings`, so an account that sets its own
+    // chat later isn't taken to have; insert-or-ignore, so an answer an
+    // account gave stays.
+    // The grant before the mark: a stop between them only repeats the
+    // grant, which is insert-or-ignore.
+    let done: bool =
+        conn.query_row("SELECT EXISTS (SELECT 1 FROM settings WHERE k = ?1)", params![DOC_COPIES_CARRIED], |r| {
+            r.get(0)
+        })?;
+    if !done {
+        conn.execute(
+            "INSERT OR IGNORE INTO labs_flags (owner, name, turned_on)
+             SELECT owner, ?1, 1 FROM labs_flags WHERE name = 'chat' AND turned_on = 1 AND owner LIKE 'account:%'",
+            params![arugula_control_wire::DOC_COPIES],
+        )?;
+        conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
+    }
     Ok(())
 }
+
+/// In `settings`: the accounts with their own chat on were given the word
+/// for Doc copies (native #673).
+const DOC_COPIES_CARRIED: &str = "doc-copies-carried-over";
 
 /// Before share answers were kept, every account a daemon listed was
 /// routed to: those already listed count as accepted, so nothing shared
@@ -3321,10 +3344,50 @@ mod tests {
                 )
                 .unwrap();
         }
+        // As at the first start after the word came in.
+        db.conn().execute("DELETE FROM settings WHERE k = ?1", params![DOC_COPIES_CARRIED]).unwrap();
         migrate(&db.conn()).unwrap();
         let flags = |o: &str| db.labs_flags(o).unwrap().into_iter().collect::<Vec<_>>();
-        assert_eq!(flags("account:a"), [("chat".into(), true), ("sandbox-providers".into(), true)]);
+        assert_eq!(
+            flags("account:a"),
+            [("chat".into(), true), ("doc-copies".into(), true), ("sandbox-providers".into(), true)]
+        );
         assert_eq!(flags("team:t"), [("additional-forges".into(), false)]);
+    }
+
+    /// Native #673: an account with its own chat on when Doc copies got a
+    /// word of their own has said yes to them, so its copies don't stop;
+    /// an account's own answer stays, a team's chat counts for nothing, and
+    /// it happens once: an account that sets its own chat later, and a
+    /// start after, give no word.
+    #[test]
+    fn an_accounts_own_chat_carries_over_to_doc_copies() {
+        let db = Db::memory();
+        for (owner, name, on) in [
+            ("account:a", "chat", true),
+            ("account:b", "chat", true),
+            ("account:b", "doc-copies", false),
+            ("account:c", "chat", false),
+            ("team:t", "chat", true),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)",
+                    params![owner, name, on],
+                )
+                .unwrap();
+        }
+        db.conn().execute("DELETE FROM settings WHERE k = ?1", params![DOC_COPIES_CARRIED]).unwrap();
+        let copies = |o: &str| db.labs_flags(o).unwrap().get("doc-copies").copied();
+        migrate(&db.conn()).unwrap();
+        assert_eq!(copies("account:a"), Some(true), "its own chat was on");
+        assert_eq!(copies("account:b"), Some(false), "its own answer stays");
+        assert_eq!(copies("account:c"), None);
+        assert_eq!(copies("team:t"), None, "a team has no say");
+        // Later: d sets its own chat, and control starts again.
+        db.set_labs_flag("account:d", "chat", Some(true)).unwrap();
+        migrate(&db.conn()).unwrap();
+        assert_eq!(copies("account:d"), None, "once, not at every start");
     }
 
     /// #102: a GitHub account goes by its login, a passkey one by the name

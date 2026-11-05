@@ -62,21 +62,22 @@ async fn raw_get(base: &str, who: &str, path: &str) -> (u16, String, Vec<u8>) {
 /// 404 on the Doc and on its pictures; the owner reads both.
 #[tokio::test]
 async fn a_copy_lands_in_the_owners_personal_project_and_stays_private() {
-    let (hub, _app, base, t, u) = seeded().await;
+    let (hub, app, base, t, u) = seeded().await;
+    pad(&hub, &app).await;
     hub.flag("team:u", true);
-    let (st, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("Ship it.")), ("s2", None)]).await;
+    let (st, p) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("Ship it.")), ("s2", None)]).await;
     assert_eq!(st, 200, "{p}");
     let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
     assert!(id.starts_with("pdc_") && personal != t, "{p}");
     assert!(p["link"].as_str().unwrap().ends_with(&format!("/p/{personal}/docs/{id}")), "{p}");
 
     // The same content again is the same Doc, untouched.
-    let (_, again) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("Ship it.")), ("s2", None)]).await;
+    let (_, again) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("Ship it.")), ("s2", None)]).await;
     assert_eq!((id_of(&again), &again["rev"]), (id.clone(), &p["rev"]), "{again}");
-    let (_, newer) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("Shipped.")), ("s2", None)]).await;
+    let (_, newer) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("Shipped.")), ("s2", None)]).await;
     assert_eq!(newer["rev"], json!(p["rev"].as_u64().unwrap() + 1), "{newer}");
 
-    let (st, a) = put_png(&base, "a geek", "d1", "pic.png", b"one").await;
+    let (st, a) = put_png(&base, "a apad", "d1", "pic.png", b"one").await;
     assert_eq!((st, &a["mime"], &a["size"]), (200, &json!("image/png"), &json!(11)), "{a}");
 
     // The owner reads it, with its section and its picture.
@@ -85,7 +86,7 @@ async fn a_copy_lands_in_the_owners_personal_project_and_stays_private() {
     assert_eq!(st, 200, "{v}");
     assert_eq!(
         (&v["sections"][0]["body"], &v["doc"]["machine"], &v["assets"][0]["name"]),
-        (&json!("Shipped."), &json!("geek"), &json!("pic.png"))
+        (&json!("Shipped."), &json!("apad"), &json!("pic.png"))
     );
     let (st, mime, bytes) = raw_get(&base, "a", &project_doc_asset(&personal, &id, "pic.png")).await;
     assert_eq!((st, mime.as_str(), bytes.len()), (200, "image/png", 11));
@@ -111,11 +112,12 @@ async fn a_copy_lands_in_the_owners_personal_project_and_stays_private() {
 /// never touches the first's, and can't delete it.
 #[tokio::test]
 async fn another_machine_with_the_same_doc_id_gets_its_own_doc() {
-    let (hub, _app, base, _t, _u) = seeded().await;
+    let (hub, app, base, _t, _u) = seeded().await;
+    pad(&hub, &app).await;
     hub.daemon("lap", "a", None);
-    hub.daemon("bgeek", "b", Some("t"));
-    let (_, x) = put_doc(&base, "a geek", "d1", "X's", &[("s1", Some("from geek"))]).await;
-    put_png(&base, "a geek", "d1", "pic.png", b"x").await;
+    hub.daemon("bgeek", "b", None);
+    let (_, x) = put_doc(&base, "a apad", "d1", "X's", &[("s1", Some("from geek"))]).await;
+    put_png(&base, "a apad", "d1", "pic.png", b"x").await;
 
     let (st, y) = put_doc(&base, "a lap", "d1", "Y's", &[("s1", Some("from lap"))]).await;
     assert_eq!(st, 200, "{y}");
@@ -151,7 +153,8 @@ async fn another_machine_with_the_same_doc_id_gets_its_own_doc() {
 #[tokio::test]
 async fn a_copy_in_a_team_project_takes_puts_while_its_owner_may_write_there() {
     let (hub, app, base, t, _u) = seeded().await;
-    hub.daemon("bgeek", "b", Some("t"));
+    pad(&hub, &app).await;
+    hub.daemon("bgeek", "b", None);
     let (_, p) = put_doc(&base, "b bgeek", "d1", "Plan", &[("s1", Some("v1"))]).await;
     let id = id_of(&p);
     put_png(&base, "b bgeek", "d1", "pic.png", b"one").await;
@@ -190,27 +193,28 @@ fn moved_before(app: &crate::Platform, id: &str, to: &str) {
 /// is; the same bytes again change nothing; a Doc keeps 20.
 #[tokio::test]
 async fn pictures_are_checked_by_their_bytes() {
-    let (_hub, _app, base, _t, _u) = seeded().await;
-    put_doc(&base, "a geek", "d1", "Plan", &[]).await;
+    let (hub, app, base, _t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    put_doc(&base, "a apad", "d1", "Plan", &[]).await;
     let svg = b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec();
-    let (st, _) = signed(&base, "a geek", "PUT", &machine_doc_asset("d1", "a.png"), Some(svg), false).await;
+    let (st, _) = signed(&base, "a apad", "PUT", &machine_doc_asset("d1", "a.png"), Some(svg), false).await;
     assert_eq!(st, 400, "an SVG isn't a picture");
-    let (st, _) = put_png(&base, "a geek", "d1", "a.jpg", b"x").await;
+    let (st, _) = put_png(&base, "a apad", "d1", "a.jpg", b"x").await;
     assert_eq!(st, 400, "named for another type");
-    let (st, _) = put_png(&base, "a geek", "d1", "../a.png", b"x").await;
+    let (st, _) = put_png(&base, "a apad", "d1", "../a.png", b"x").await;
     assert!(st == 400 || st == 404, "{st}");
 
-    let (_, first) = put_png(&base, "a geek", "d1", "a.png", b"x").await;
-    let (_, same) = put_png(&base, "a geek", "d1", "a.png", b"x").await;
+    let (_, first) = put_png(&base, "a apad", "d1", "a.png", b"x").await;
+    let (_, same) = put_png(&base, "a apad", "d1", "a.png", b"x").await;
     assert_eq!(same["rev"], first["rev"]);
-    let (_, other) = put_png(&base, "a geek", "d1", "a.png", b"y").await;
+    let (_, other) = put_png(&base, "a apad", "d1", "a.png", b"y").await;
     assert!(other["rev"].as_u64() > first["rev"].as_u64(), "{other}");
 
     for i in 1..ASSETS_MAX {
-        let (st, v) = put_png(&base, "a geek", "d1", &format!("p{i}.png"), b"x").await;
+        let (st, v) = put_png(&base, "a apad", "d1", &format!("p{i}.png"), b"x").await;
         assert_eq!(st, 200, "{v}");
     }
-    let (st, v) = put_png(&base, "a geek", "d1", "one-more.png", b"x").await;
+    let (st, v) = put_png(&base, "a apad", "d1", "one-more.png", b"x").await;
     assert!(st == 400 && v["error"].as_str().unwrap().contains("at most 20"), "{v}");
 }
 
@@ -221,8 +225,9 @@ async fn pictures_are_checked_by_their_bytes() {
 /// silently put the edit back and dropped the added section.)
 #[tokio::test]
 async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
-    let (_hub, app, base, t, _u) = seeded().await;
-    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1")), ("s2", None)]).await;
+    let (hub, app, base, t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    let (_, p) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("v1")), ("s2", None)]).await;
     let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
     let path = format!("/api/projects/{personal}/docs/{id}");
 
@@ -230,11 +235,11 @@ async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
     assert_eq!(st, 200, "{v}");
     assert_eq!(
         (&v["writer"], &v["doc"]["machine"], &v["doc"]["machine_name"]),
-        (&json!(false), &json!("geek"), &json!("geek-box")),
+        (&json!(false), &json!("apad"), &json!("apad-box")),
         "{v}"
     );
     let (_, l) = call(&base, "a", "GET", &format!("/api/projects/{personal}/docs"), None).await;
-    assert_eq!((&l["docs"][0]["machine_name"], &l["writer"]), (&json!("geek-box"), &json!(true)), "{l}");
+    assert_eq!((&l["docs"][0]["machine_name"], &l["writer"]), (&json!("apad-box"), &json!(true)), "{l}");
 
     for edit in [
         json!({ "section": "s1", "markdown": "edited on the web" }),
@@ -244,13 +249,13 @@ async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
         let (st, e) = call(&base, "a", "PUT", &path, Some(edit.clone())).await;
         assert_eq!(st, 403, "{edit}: {e}");
         let why = e["error"].as_str().unwrap();
-        assert!(why.contains("copy") && why.contains("geek-box"), "{why}");
+        assert!(why.contains("copy") && why.contains("apad-box"), "{why}");
     }
     let (_, v) = call(&base, "a", "GET", &path, None).await;
     assert_eq!((&v["doc"]["title"], bodies_of(&v)), (&json!("Plan"), vec![json!("v1"), Value::Null]), "{v}");
 
     // The machine's next put lands, as it did.
-    let (st, q) = put_doc(&base, "a geek", "d1", "Plan, v2", &[("s1", Some("v2"))]).await;
+    let (st, q) = put_doc(&base, "a apad", "d1", "Plan, v2", &[("s1", Some("v2"))]).await;
     assert_eq!((st, &q["id"]), (200, &json!(id)), "{q}");
     let (_, v) = call(&base, "a", "GET", &path, None).await;
     assert_eq!(
@@ -264,13 +269,19 @@ async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
     moved_before(&app, &id, &t);
     let team_path = format!("/api/projects/{t}/docs/{id}");
     let (st, m) = call(&base, "b", "GET", &team_path, None).await;
-    assert_eq!((st, &m["writer"], &m["doc"]["machine_name"]), (200, &json!(false), &json!("geek-box")), "{m}");
+    assert_eq!((st, &m["writer"], &m["doc"]["machine_name"]), (200, &json!(false), &json!("apad-box")), "{m}");
     let (st, e) = call(&base, "b", "PUT", &team_path, Some(json!({ "section": "s1", "markdown": "b's" }))).await;
-    assert!(st == 403 && e["error"].as_str().unwrap().contains("geek-box"), "{st} {e}");
-    let (st, q) = put_doc(&base, "a geek", "d1", "Plan, v3", &[("s1", Some("v3"))]).await;
+    assert!(st == 403 && e["error"].as_str().unwrap().contains("apad-box"), "{st} {e}");
+    let (st, q) = put_doc(&base, "a apad", "d1", "Plan, v3", &[("s1", Some("v3"))]).await;
     assert_eq!((st, &q["project"]), (200, &json!(t)), "{q}");
     let (_, v) = call(&base, "b", "GET", &team_path, None).await;
     assert_eq!((bodies_of(&v), &v["writer"]), (vec![json!("v3")], &json!(false)), "{v}");
+}
+
+/// a's personal machine, apad: a team's machine copies nothing (native #673).
+async fn pad(hub: &crate::testing::hub::TestHub, app: &crate::Platform) {
+    hub.daemon("apad", "a", None);
+    crate::cache::catch_up(app).await.unwrap();
 }
 
 fn bodies_of(v: &Value) -> Vec<Value> {
@@ -284,8 +295,9 @@ fn bodies_of(v: &Value) -> Vec<Value> {
 /// left it; the machine's next change makes a new copy, under a new id.
 #[tokio::test]
 async fn a_copy_goes_with_its_doc_and_is_its_projects_to_delete() {
-    let (_hub, app, base, t, _u) = seeded().await;
-    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    let (hub, app, base, t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    let (_, p) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("v1"))]).await;
     let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
     let path = format!("/api/projects/{personal}/docs/{id}");
     let (st, v) = call(&base, "a", "GET", &path, None).await;
@@ -293,7 +305,7 @@ async fn a_copy_goes_with_its_doc_and_is_its_projects_to_delete() {
     assert_eq!(call(&base, "a", "DELETE", &path, None).await.0, 200);
     assert_eq!(call(&base, "a", "GET", &path, None).await.0, 404);
     // The machine's next change: a new copy, its own Doc again.
-    let (st, q) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v2"))]).await;
+    let (st, q) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("v2"))]).await;
     assert_eq!(st, 200, "{q}");
     let again = id_of(&q);
     assert_ne!(again, id, "a new copy: {q}");
@@ -312,17 +324,141 @@ async fn a_copy_goes_with_its_doc_and_is_its_projects_to_delete() {
     let (_, v) = call(&base, "x", "GET", &team_path, None).await;
     assert_eq!(v["deleter"], json!(false), "a viewer: {v}");
     assert_eq!(call(&base, "x", "DELETE", &team_path, None).await.0, 403);
-    let (st, d) = signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await;
+    let (st, d) = signed(&base, "a apad", "DELETE", &machine_doc("d1"), None, true).await;
     assert_eq!((st, &d["deleted"]), (200, &json!(again)), "{d}");
     assert_eq!(call(&base, "b", "GET", &team_path, None).await.0, 404);
     // Gone already: 404, which the machine takes as done.
-    assert_eq!(signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await.0, 404);
+    assert_eq!(signed(&base, "a apad", "DELETE", &machine_doc("d1"), None, true).await.0, 404);
     // And a copy there is the editor's to delete, as the owner's.
-    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v3"))]).await;
+    let (_, p) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("v3"))]).await;
     let third = id_of(&p);
     {
         use crate::db::sql::{Sql as _, params};
         app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![t, third]).unwrap();
     }
     assert_eq!(call(&base, "b", "DELETE", &format!("/api/projects/{t}/docs/{third}"), None).await.0, 200);
+}
+
+/// Native #673: a machine's copies take chat or its account's own word for
+/// them, and the word turns nothing else on. An account with chat off (in
+/// no team that has it) can't copy until it says so; then its machine puts,
+/// and it lists, opens, sees the pictures of and deletes its copies while
+/// its chat stays off; a Doc of its own project that isn't a copy isn't
+/// listed. A copy sitting in a team's project with chat off takes no put on
+/// the word. With the word off again, nothing new is put, and the machine
+/// still takes a copy down.
+#[tokio::test]
+async fn copies_take_the_accounts_own_word_and_turn_nothing_else_on() {
+    let (hub, app, base, _t, u) = seeded().await;
+    pad(&hub, &app).await;
+    hub.daemon("cbox", "c", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, e) = put_doc(&base, "c cbox", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    assert_eq!(st, 403, "no chat, no word: {e}");
+
+    hub.flag_named("account:c", "doc-copies", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, p) = put_doc(&base, "c cbox", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    assert_eq!(st, 200, "{p}");
+    let path = format!("/api/projects/personal/docs/{}", id_of(&p));
+    let (st, v) = call(&base, "c", "GET", &path, None).await;
+    assert_eq!((st, &v["doc"]["machine"]), (200, &json!("cbox")), "c opens its own copy: {v}");
+    let (st, a) = put_png(&base, "c cbox", "d1", "pic.png", b"one").await;
+    assert_eq!(st, 200, "{a}");
+    let (st, _, bytes) = raw_get(&base, "c", &format!("{path}/assets/pic.png")).await;
+    assert_eq!((st, bytes.len()), (200, 11), "its pictures too");
+    // A Doc of c's own project made there, not a copy: chat's, so not listed.
+    let personal = crate::projects::personal_project(&app, "c").await.unwrap().unwrap();
+    let made = crate::db::project_docs::NewDoc {
+        project: &personal,
+        title: "Made here",
+        made_by: "c",
+        made_by_session: None,
+        sections: &[],
+    };
+    app.db.create_project_doc(&made, 1, 1_000).unwrap().unwrap();
+    let (st, l) = call(&base, "c", "GET", "/api/projects/personal/docs", None).await;
+    assert_eq!(st, 200, "{l}");
+    let titles: Vec<&str> = l["docs"].as_array().unwrap().iter().map(|d| d["title"].as_str().unwrap()).collect();
+    assert_eq!((titles, &l["writer"]), (vec!["Plan"], &json!(false)), "its copies alone, nothing to make: {l}");
+    // Chat stays off for c everywhere else.
+    let (st, _) = call(&base, "c", "POST", "/api/projects/personal/docs", Some(json!({ "title": "x" }))).await;
+    assert_eq!(st, 403, "chat stays off for c");
+    let (st, _) = call(&base, "c", "PUT", &path, Some(json!({ "section": "s1", "markdown": "x" }))).await;
+    assert_eq!(st, 403, "a copy stays read-only");
+
+    // A copy sitting in c's team u (chat off there) takes no put on the word.
+    let (_, q) = put_doc(&base, "c cbox", "d4", "Team's", &[]).await;
+    let n = app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![u, id_of(&q)]).unwrap();
+    assert_eq!(n, 1);
+    let (st, e) = put_doc(&base, "c cbox", "d4", "Team's, v2", &[]).await;
+    assert_eq!(st, 403, "the team's chat decides there: {e}");
+
+    // Off: nothing new goes up, and the machine still takes a copy down.
+    hub.flag_named("account:c", "doc-copies", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, _) = put_doc(&base, "c cbox", "d2", "Notes", &[]).await;
+    assert_eq!(st, 403, "off: no new copies");
+    let (st, d) = signed(&base, "c cbox", "DELETE", &machine_doc("d1"), None, true).await;
+    assert_eq!(st, 200, "a take-down needs no word: {d}");
+    assert_eq!(call(&base, "c", "GET", &path, None).await.0, 404);
+
+    // And c deletes a copy of theirs with the word off and chat off.
+    hub.flag_named("account:c", "doc-copies", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (_, p) = put_doc(&base, "c cbox", "d3", "Kept", &[]).await;
+    let path = format!("/api/projects/personal/docs/{}", id_of(&p));
+    hub.flag_named("account:c", "doc-copies", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(call(&base, "c", "DELETE", &path, None).await.0, 200);
+    assert_eq!(call(&base, "c", "GET", &path, None).await.0, 404);
+}
+
+/// Native #673: a team's machine copies no Docs up, whatever daemon it runs:
+/// its puts and its pictures are refused saying why, and its take-down of an
+/// old copy still goes. Nothing is lost: the Docs stay on the machine.
+#[tokio::test]
+async fn a_teams_machine_copies_nothing_and_still_takes_an_old_copy_down() {
+    let (hub, app, base, _t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    let (st, e) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    assert_eq!(st, 403, "{e}");
+    assert!(e["error"].as_str().unwrap().contains("team's machine"), "{e}");
+    assert_eq!(put_png(&base, "a geek", "d1", "pic.png", b"one").await.0, 403);
+    // A copy geek made before (as a personal machine's put left it).
+    let (_, p) = put_doc(&base, "a apad", "d1", "Plan", &[("s1", Some("v1"))]).await;
+    let id = id_of(&p);
+    let n = app.db.c().execute("UPDATE project_docs SET machine = 'geek' WHERE id = ?1", params![id]).unwrap();
+    assert_eq!(n, 1);
+    let (st, d) = signed(&base, "a geek", "DELETE", &machine_doc("d1"), None, true).await;
+    assert_eq!((st, &d["deleted"]), (200, &json!(id)), "{d}");
+}
+
+/// Native #673: an account's explicit no to copies is a no even with chat
+/// on (an older daemon puts on chat), and a machine taken out of its team
+/// copies again, on its account's word.
+#[tokio::test]
+async fn an_explicit_no_wins_over_chat_and_a_machine_out_of_its_team_copies_again() {
+    let (hub, app, base, _t, _u) = seeded().await;
+    pad(&hub, &app).await;
+    // a has chat on through team t, and said no.
+    hub.flag_named("account:a", "doc-copies", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, e) = put_doc(&base, "a apad", "d1", "Plan", &[]).await;
+    assert_eq!(st, 403, "{e}");
+    assert!(e["error"].as_str().unwrap().contains("turned copying"), "{e}");
+    hub.flag_named("account:a", "doc-copies", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(put_doc(&base, "a apad", "d1", "Plan", &[]).await.0, 200);
+
+    // geek, a team's machine, is refused; taken out of the team, it copies.
+    assert_eq!(put_doc(&base, "a geek", "d2", "Notes", &[]).await.0, 403);
+    hub.daemon("geek", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, p) = put_doc(&base, "a geek", "d2", "Notes", &[]).await;
+    assert_eq!(
+        (st, &p["project"]),
+        (200, &json!(crate::projects::personal_project(&app, "a").await.unwrap().unwrap())),
+        "{p}"
+    );
 }

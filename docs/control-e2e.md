@@ -2033,7 +2033,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. The desktop app's is at control's own live endpoint, with the hash of the token it listens with and when it last did. | yes |  |
 | `push_prefs` | metadata | Which kinds of push an account turned off: chat, its machines, or its projects. | yes |  |
 | `account_prefs` | metadata | An account's small preferences for its pages, as the page names them: which hints it has seen, whether tips are on, the last version What's new showed. | yes |  |
-| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
+| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, its hosted key (M178), which signs the hosted machines enrolled under a project's delegation, and which one-time data steps it has taken. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
 | `teams` | metadata | A team: its id, name, founder and founder's root, whether it's locked, and the latest lock an owner signed. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |

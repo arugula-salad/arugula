@@ -40,6 +40,13 @@ struct Fake {
     features: Arc<Mutex<Vec<String>>>,
     /// Control's chat setting for the machine's team, sent with the flags.
     chat: Arc<Mutex<bool>>,
+    /// Instead: chat heard from the owner's teams, a personal machine's word
+    /// (native #673).
+    heard: Arc<Mutex<bool>>,
+    /// The account's own word for Doc copies, sent with its flags (native
+    /// #673), and each Doc a machine put.
+    copies: Arc<Mutex<bool>>,
+    doc_puts: Arc<Mutex<Vec<String>>>,
     /// The account's own certificates, as the trust route answers.
     certs: Arc<Mutex<Vec<Cert>>>,
     /// A team machine's team: its rosters and its members' certificates.
@@ -121,9 +128,19 @@ fn query(q: Option<String>, key: &str) -> Option<String> {
 
 async fn trust(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
     f.features.lock().unwrap().push(query(q, "features").unwrap_or_default());
-    let chat = *f.chat.lock().unwrap();
+    let team = if *f.heard.lock().unwrap() {
+        json!({ "chat-heard": true })
+    } else {
+        json!({ "chat": *f.chat.lock().unwrap() })
+    };
     let certs = f.certs.lock().unwrap().clone();
-    Json(json!({ "certs": certs, "revocations": [], "flags": { "account": {}, "team": { "chat": chat } } }))
+    let account = if *f.copies.lock().unwrap() { json!({ "doc-copies": true }) } else { json!({}) };
+    Json(json!({ "certs": certs, "revocations": [], "flags": { "account": account, "team": team } }))
+}
+
+async fn doc_put(State(f): State<Fake>, axum::extract::Path(doc): axum::extract::Path<String>) -> Json<Value> {
+    f.doc_puts.lock().unwrap().push(doc.clone());
+    Json(json!({ "project": "prj_1", "id": format!("pdc_{doc}"), "link": "https://app.test/p/prj_1", "rev": 1 }))
 }
 
 async fn team(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
@@ -162,6 +179,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
             .route("/api/daemon/chat/import", post(import))
             .route("/api/daemon/chat/readers", post(readers))
+            .route("/api/daemon/docs/{doc}", axum::routing::put(doc_put))
             .route("/api/hosted/enroll", post(hosted_enroll))
             .route("/api/hosted/trust", get(hosted_trust))
             .route("/api/relay/dial", get(dial))
@@ -289,6 +307,14 @@ fn reader_lists_follow_controls_chat_setting_and_old_threads_stay_put() {
     std::thread::sleep(Duration::from_secs(2));
     assert_eq!(f.readers.lock().unwrap().len(), sent, "chat is off for it in control");
 
+    // Heard from the owner's teams (a personal machine, native #673): the
+    // platform takes reader lists for it, so they go again.
+    *f.heard.lock().unwrap() = true;
+    d.stop();
+    let sent = f.readers.lock().unwrap().len();
+    d.start();
+    d.wait_for("the lists sent on heard chat", || f.readers.lock().unwrap().len() > sent);
+
     // The old threads were never sent anywhere, and stay where they were.
     assert!(f.imports.lock().unwrap().is_empty());
     assert!(d.state.join("threads/pane-4.jsonl").exists() && !d.state.join("threads.imported").exists());
@@ -333,6 +359,9 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::default();
     *f.chat.lock().unwrap() = true;
+    // The enrolling member's own word for copies, which a team's machine
+    // never takes (native #673).
+    *f.copies.lock().unwrap() = true;
     let url = serve(&rt, f.clone());
     let (alex, alex_root) = device("a1");
     let (_, bea_root) = device("a2");
@@ -404,6 +433,19 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     });
     assert_eq!(newest(&f, "pane", &pane_t).unwrap(), Vec::<String>::new(), "an editor doesn't read a private pane");
     assert!(since_last(&f) < Duration::from_secs(60));
+
+    // A team's machine copies no Doc up, whoever's word comes with the
+    // flags (native #673).
+    let block =
+        d.post("/api/blocks", json!({ "type": "doc", "config": { "title": "Team notes" }, "local": true }))["block"]
+            .as_u64()
+            .unwrap();
+    d.post(
+        &format!("/api/blocks/{block}/call/doc_outline"),
+        json!({ "title": "Team notes", "sections": [{ "heading": "One", "intent": "" }] }),
+    );
+    std::thread::sleep(Duration::from_secs(6));
+    assert!(f.doc_puts.lock().unwrap().is_empty(), "a team's machine copied: {:?}", f.doc_puts.lock().unwrap());
 }
 
 /// A Cloud workspace of team `t1`'s project, whose founder Alex (`a1`)

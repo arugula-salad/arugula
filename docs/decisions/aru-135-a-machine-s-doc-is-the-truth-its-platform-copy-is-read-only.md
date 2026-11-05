@@ -39,6 +39,7 @@ constrains:
   - "aru-118"
   - "aru-134"
   - "path:crates/arugulad-docs/src/docs/copies.rs"
+  - "path:crates/control/src/labs_flags.rs"
   - "path:crates/control-wire/src/project_docs.rs"
   - "path:crates/platform/src/project_docs.rs"
   - "path:crates/platform/src/project_docs_machine.rs"
@@ -87,6 +88,21 @@ it:
   re-joined under another account, a Doc deleted before this, an owner
   who lost the right to write where the copy sits); the page says that
   the machine's next change to the Doc brings a new copy.
+- **Copies take the account's own word** (amended 2026-11-04 for native
+  #673): a machine joined to an account alone copies its Docs up only when
+  that account turned "Your Docs on the platform" on, a word of its own
+  (`doc-copies`), apart from chat, which it neither needs nor turns on. A
+  team's word can't start it, and a team's machine copies nothing, so no
+  member's Docs land in another member's project. The platform refuses a
+  team's machine's copies whatever daemon it runs
+  (`crates/platform/src/project_docs_machine.rs`), so the rule holds from
+  the platform's deploy on; the Docs stay on the machine, and an older
+  daemon logs the refusal and tries again after its next refresh. Its
+  take-downs still go. Copies a team's machine made before stay where they
+  are, and nothing removes them (Jake, 2026-11-05). An account that had its own chat on when the word came
+  in was taken to have said yes. Off stops new and changed copies; those
+  already there stay until they're deleted, and a deleted Doc's copy still
+  comes down.
 - **Edits made to copies before this** can't be recovered: the machine's
   put replaced them.
 

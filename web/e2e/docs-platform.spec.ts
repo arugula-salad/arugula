@@ -220,15 +220,19 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
 });
 
 // Arugula #678: the machine's library Doc is the truth, and its copy on the
-// platform is read-only. Alice's machine geek joins Acme (Docs are copied
-// up while chat is on, which the team's flag says) and makes a Doc; its
+// platform is read-only. Alice's machine geek joins her account alone (a
+// team's machine doesn't copy its Docs) and she turns Your Docs on the
+// platform on, her own word for copies (native #673); geek makes a Doc, its
 // copy lands in her private Docs, where the row, the preview
 // and the page say it's a copy from geek, the page has no form, a write
 // over the route is refused naming geek, and geek's next change arrives
 // on the open page.
 test("a machine's copy is read-only, and the page says whose it is", async () => {
   test.setTimeout(180_000);
-  const state = await t.addMachine(alice, "geek", team);
+  await alice.goto(t.base);
+  await expect.poll(() => alice.evaluate(() => !!window.__arugula?.control), { timeout: 15_000 }).toBe(true);
+  await alice.evaluate(() => window.__arugula.control!.setLabsFlag("doc-copies", true));
+  const state = await t.addMachine(alice, "geek");
   const base = `http://127.0.0.1:${await daemonPort(state)}`;
   const post = async (path: string, body: unknown) => {
     const r = await fetch(base + path, {
@@ -340,4 +344,47 @@ test("a page newer than the platform still writes a Doc made here", async () => 
     // context closes next, which would dispose the response it's reading.
     await alice.unrouteAll({ behavior: "wait" });
   }
+});
+
+// Native #673: someone in no team has chat off, and still has their Docs on
+// the platform once they turn the word on: Carol's machine copies a Doc up,
+// /docs lists it, and its page opens it (its pictures: the platform's test).
+test("someone in no team sees their machine's copies on /docs", async ({ browser }) => {
+  test.setTimeout(180_000);
+  const carol = await t.person(browser, "carol");
+  await expect.poll(() => carol.evaluate(() => !!window.__arugula?.control), { timeout: 15_000 }).toBe(true);
+  await carol.evaluate(() => window.__arugula.control!.setLabsFlag("doc-copies", true));
+  const state = await t.addMachine(carol, "carolbox");
+  const base = `http://127.0.0.1:${await daemonPort(state)}`;
+  const post = async (path: string, body: unknown) => {
+    const r = await fetch(base + path, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${localToken}` },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    expect(r.ok, `${path}: ${text}`).toBe(true);
+    return JSON.parse(text) as { block?: number };
+  };
+  const made = await post("/api/blocks", { type: "doc", config: { title: "Carol's notes" }, local: true });
+  await post(`/api/blocks/${made.block}/call/doc_outline`, { title: "Carol's notes", sections: [{ id: "s1", heading: "One", intent: "" }] });
+  await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "From **carolbox**." });
+
+  await platform(carol, "/docs");
+  const row = carol.locator("[data-list-rows] [data-doc]", { hasText: "Carol's notes" });
+  await expect
+    .poll(
+      async () => {
+        await carol.reload();
+        await expect(carol.locator("[data-docs-loading]")).toHaveCount(0, { timeout: 15_000 });
+        return row.count();
+      },
+      { timeout: 60_000, intervals: [2000] },
+    )
+    .toBe(1);
+  await row.click();
+  await carol.locator("[data-list-preview] [data-open-doc]").click();
+  const page = carol.locator("[data-doc-page]");
+  await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("carolbox", { timeout: 15_000 });
+  await expect(page.locator("[data-doc-copy]")).toContainText("carolbox");
 });
