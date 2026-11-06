@@ -707,7 +707,19 @@ pub enum Mark {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts", ts(optional))]
         repo: Option<String>,
+        /// The other board the blocker is a row of, when the reader may read
+        /// the blocker and it is on a board other than this one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        board: Option<String>,
+        /// The session that leads that board, when one does.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        lead: Option<String>,
     },
+    /// The row's item is in a loop of open ordering edges (Plane can make
+    /// one): it shares its `step` with the others in the loop.
+    Cycle,
 }
 
 /// [`BOARD_ATTACHMENTS`]' body: attach `pointer` to `row` as `role`.
@@ -1655,6 +1667,13 @@ pub struct Row {
     /// The edges of the row's item, both ways, for the drawer.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RowRelation>,
+    /// Where the row falls in the board's order (Arugula #762): 1 plus the
+    /// highest step of the open rows that come before it, worked out on
+    /// every read and never stored. Absent for a row with no issue or PR,
+    /// and for a Done row. Doing and Review rows are step 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub step: Option<u32>,
     /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1721,6 +1740,14 @@ pub struct BoardView {
     /// PR as their item that are in Next and have no open blocker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ready: Vec<String>,
+    /// The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+    /// step by what unblocks the most open rows, then by position (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequence: Vec<String>,
+    /// The longest chain of open rows (`row_…`), first to last; empty when
+    /// no row waits on another (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<String>,
     /// What a write did that the board alone doesn't say: a PR attached to
     /// the row of the issue it closes, an item that was there already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1977,8 +2004,13 @@ impl Mark {
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
             Mark::Stalled { since } => format!("stalled {}", ago(*since, now_ms())),
+            Mark::BlockedBy { number: Some(n), board: Some(b), lead: Some(l), .. } => {
+                format!("blocked by #{n} on {b}, led by {l}")
+            }
+            Mark::BlockedBy { number: Some(n), board: Some(b), .. } => format!("blocked by #{n} on {b}"),
             Mark::BlockedBy { number: Some(n), .. } => format!("blocked by #{n}"),
             Mark::BlockedBy { number: None, .. } => "blocked by something you can't see".to_owned(),
+            Mark::Cycle => "in a cycle".to_owned(),
         }
     }
 }
@@ -2156,7 +2188,50 @@ pub fn render(view: &BoardView) -> String {
             }
         }
     }
+    steps_text(&mut out, view);
     out.trim_end().to_owned()
+}
+
+/// `Steps` after the lanes (#762): for each step, `1  #521 #522 +3` (the
+/// labels that fit, then how many more), in the order of
+/// [`BoardView::sequence`], and `Chain:` with the longest open chain. Left
+/// out when no open row waits on another: one step is only a list.
+fn steps_text(out: &mut String, view: &BoardView) {
+    let rows: Vec<&Row> = view.zones.iter().flat_map(|z| &z.rows).collect();
+    let by_id = |id: &String| rows.iter().find(|r| &r.id == id).copied();
+    let last = rows.iter().filter_map(|r| r.step).max().unwrap_or(0);
+    if last < 2 && !rows.iter().any(|r| r.marks.contains(&Mark::Cycle)) {
+        return;
+    }
+    *out += "\nSteps\n";
+    for step in 1..=last {
+        let labels: Vec<String> =
+            view.sequence.iter().filter_map(by_id).filter(|r| r.step == Some(step)).map(Row::item_label).collect();
+        if labels.is_empty() {
+            continue;
+        }
+        let head = format!("  {step:<3}");
+        let mut line = head.clone();
+        let mut shown = 0;
+        for (i, l) in labels.iter().enumerate() {
+            // Room for ` +N` after this one, unless it is the last.
+            let more = if i + 1 < labels.len() { format!(" +{}", labels.len() - i - 1).len() } else { 0 };
+            let sep = usize::from(shown > 0);
+            if line.chars().count() + sep + l.chars().count() + more > TEXT_WIDTH && shown > 0 {
+                break;
+            }
+            line += &format!("{}{l}", if sep == 1 { " " } else { "" });
+            shown += 1;
+        }
+        if shown < labels.len() {
+            line += &format!(" +{}", labels.len() - shown);
+        }
+        *out += &format!("{}\n", fit(&line, TEXT_WIDTH));
+    }
+    let chain: Vec<String> = view.chain.iter().filter_map(by_id).map(Row::item_label).collect();
+    if chain.len() > 1 {
+        *out += &format!("{}\n", fit(&format!("Chain: {}", chain.join(" → ")), TEXT_WIDTH));
+    }
 }
 
 // ---------------------------------------------------------------- work
@@ -2374,6 +2449,7 @@ mod tests {
             ask: None,
             asked: vec![],
             relations: vec![],
+            step: None,
             live: None,
             block: None,
             agent: None,
@@ -2410,7 +2486,16 @@ mod tests {
     }
 
     fn view(zones: Vec<Zone>) -> BoardView {
-        BoardView { board: board(), zones, groups: vec![], docs: vec![], ready: vec![], said: None }
+        BoardView {
+            board: board(),
+            zones,
+            groups: vec![],
+            docs: vec![],
+            ready: vec![],
+            sequence: vec![],
+            chain: vec![],
+            said: None,
+        }
     }
 
     /// Adds `"added_later"` to every object in `v`.
@@ -2888,8 +2973,8 @@ Done: People can sign up.
         let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
         blocked.id = "row_b".into();
         blocked.marks = vec![
-            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None },
-            Mark::BlockedBy { number: None, title: None, repo: None },
+            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None, board: None, lead: None },
+            Mark::BlockedBy { number: None, title: None, repo: None, board: None, lead: None },
         ];
         let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
         free.id = "row_f".into();
@@ -2907,5 +2992,45 @@ Done: People can sign up.
         );
         v.ready.clear();
         assert!(!render(&v).contains("Ready"), "no ready set, no line");
+    }
+
+    /// After the lanes, `Steps` lists each step's rows in the view's order
+    /// (what doesn't fit is counted), and `Chain` the longest open chain;
+    /// a board with one step has neither (#762).
+    #[test]
+    fn the_text_lists_the_steps_and_the_longest_chain() {
+        let mk = |n: u64, step: u32| {
+            let mut r = row(Pointer::Issue { id: format!("iss_{n}") }, Lane::Next, "T");
+            r.id = format!("row_{n}");
+            r.step = Some(step);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number: n,
+                title: "T".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+            });
+            r
+        };
+        let rows: Vec<Row> = (1..=40).map(|n| mk(500 + n, 1)).chain([mk(600, 2), mk(601, 3)]).collect();
+        let flat = view(lanes(vec![(Lane::Next, rows[..40].to_vec())]));
+        assert!(!render(&flat).contains("Steps"), "{}", render(&flat));
+        let mut v = view(lanes(vec![(Lane::Next, rows.clone())]));
+        v.sequence = rows.iter().rev().map(|r| r.id.clone()).collect();
+        v.chain = vec!["row_501".into(), "row_600".into(), "row_601".into()];
+        let text = render(&v);
+        let steps = text.split("\nSteps\n").nth(1).unwrap_or_else(|| panic!("{text}"));
+        let lines: Vec<&str> = steps.lines().collect();
+        assert!(lines[0].starts_with("1  #540 #539"), "{lines:?}");
+        assert!(lines[0].contains(" +"), "{lines:?}");
+        assert_eq!(&lines[1..], ["2  #600", "3  #601", "Chain: #501 → #600 → #601"]);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 }

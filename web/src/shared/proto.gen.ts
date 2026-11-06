@@ -582,7 +582,16 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, 
+/**
+ * The other board the blocker is a row of, when the reader may read
+ * the blocker and it is on a board other than this one.
+ */
+board?: string, 
+/**
+ * The session that leads that board, when one does.
+ */
+lead?: string, } | { "kind": "cycle" };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
@@ -727,6 +736,13 @@ asked?: Array<BoardAnsweredAsk>,
  */
 relations?: Array<BoardRowRelation>, 
 /**
+ * Where the row falls in the board's order (Arugula #762): 1 plus the
+ * highest step of the open rows that come before it, worked out on
+ * every read and never stored. Absent for a row with no issue or PR,
+ * and for a Done row. Doing and Review rows are step 1.
+ */
+step?: number, 
+/**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
@@ -844,6 +860,16 @@ docs: Array<BoardDoc>,
  * PR as their item that are in Next and have no open blocker.
  */
 ready?: Array<string>, 
+/**
+ * The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+ * step by what unblocks the most open rows, then by position (#762).
+ */
+sequence?: Array<string>, 
+/**
+ * The longest chain of open rows (`row_…`), first to last; empty when
+ * no row waits on another (#762).
+ */
+chain?: Array<string>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.

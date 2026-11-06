@@ -6937,6 +6937,13 @@
           "board": {
             "$ref": "#/components/schemas/Board"
           },
+          "chain": {
+            "description": "The longest chain of open rows (`row_…`), first to last; empty when\nno row waits on another (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "docs": {
             "default": [],
             "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
@@ -6966,6 +6973,13 @@
               "string",
               "null"
             ]
+          },
+          "sequence": {
+            "description": "The rows (`row_…`) that have a [`Row::step`], by step, and inside a\nstep by what unblocks the most open rows, then by position (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "zones": {
             "items": {
@@ -11041,9 +11055,23 @@
           {
             "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
             "properties": {
+              "board": {
+                "description": "The other board the blocker is a row of, when the reader may read\nthe blocker and it is on a board other than this one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "const": "blocked_by",
                 "type": "string"
+              },
+              "lead": {
+                "description": "The session that leads that board, when one does.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "number": {
                 "format": "uint64",
@@ -11064,6 +11092,19 @@
                   "string",
                   "null"
                 ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The row's item is in a loop of open ordering edges (Plane can make\none): it shares its `step` with the others in the loop.",
+            "properties": {
+              "kind": {
+                "const": "cycle",
+                "type": "string"
               }
             },
             "required": [
@@ -11880,6 +11921,15 @@
           "status": {
             "$ref": "#/components/schemas/Status",
             "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
+          },
+          "step": {
+            "description": "Where the row falls in the board's order (Arugula #762): 1 plus the\nhighest step of the open rows that come before it, worked out on\nevery read and never stored. Absent for a row with no issue or PR,\nand for a Done row. Doing and Review rows are step 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "updated_at": {
             "format": "uint64",
