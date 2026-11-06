@@ -270,7 +270,10 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   .pane-tip h3 { margin-top: 8px; font-size: var(--text-sm); }
   .pane-tip p,
   .pane-tip ul { margin-bottom: 6px; }
-  .pane-tip > .prompt-buttons { gap: 4px; padding: 6px 10px; }
-  .pane-tip > .prompt-buttons button { padding: 3px 8px; font-size: var(--text-sm); }
-  .prompt .pane-tip-never { font-size: var(--text-xs); }
+  /* The buttons take the compact size and centre, and the opt-out gets a
+     row of its own under them, so a narrow pane's footer stays a few short
+     rows rather than one per button. */
+  .pane-tip > .prompt-buttons { gap: 4px; padding: 6px 8px; justify-content: center; }
+  .pane-tip > .prompt-buttons :is(.primary, .secondary) { min-height: 24px; padding: 3px 8px; font-size: var(--text-sm); }
+  .prompt .pane-tip-never { order: 1; flex-basis: 100%; justify-content: center; margin-right: 0; font-size: var(--text-xs); }
 }
