@@ -19,7 +19,9 @@
 //! - **Never twice** ([`before_send`], before any hold, from a send or a
 //!   block's card): not while another export of the issue was sent, even
 //!   one GitHub's answer named no link for; nor while a refused send's URL
-//!   stands (it may be on GitHub as that: link it or discard the draft);
+//!   stands (it may be on GitHub as that, and nothing links it later:
+//!   discarding the draft lets it be opened again, as a second issue if
+//!   that one is there);
 //!   nor when the draft's last hold ran out with no end and the mirror has
 //!   an issue in its repo with its title, opened since (that send may have
 //!   opened it; by anyone, as a machine's `gh` login may not be the
