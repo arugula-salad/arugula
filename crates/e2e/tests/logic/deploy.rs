@@ -163,7 +163,7 @@ fn approval() -> Example {
     let v2_signed = Approval { sig: hex::encode(alice.keys.signature(v2.body().as_bytes())), ..v2.clone() };
     let v3 = Approval { v: 3, ..v2.clone() };
     let gate = arugula_e2e::deploy::chant::Gate {
-        chant: "0.124.67".into(),
+        chant: "0.124.68".into(),
         op: "release".into(),
         gate: "ship".into(),
         environment: None,

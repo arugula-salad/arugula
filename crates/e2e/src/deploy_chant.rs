@@ -268,7 +268,7 @@ pub(crate) mod tests {
 
     pub fn gate() -> Gate {
         Gate {
-            chant: "0.124.67".into(),
+            chant: "0.124.68".into(),
             op: "release".into(),
             gate: "ship".into(),
             environment: None,
@@ -279,7 +279,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// chant's own `gateSealPayload`, line for line (chant 0.124.67).
+    /// chant's own `gateSealPayload`, line for line (chant 0.124.68).
     #[test]
     fn the_statement_is_chants() {
         let b = binding("dep_1", &"cd".repeat(32), 1_800_000_000_000);
@@ -292,7 +292,7 @@ pub(crate) mod tests {
                 "ab".repeat(32)
             )
         );
-        // chant 0.124.67's own `gateStatement` over these fields says this
+        // chant 0.124.68's own `gateStatement` over these fields says this
         // challenge (its `webAuthnChallenge`).
         {
             use base64::Engine as _;

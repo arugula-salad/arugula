@@ -26,7 +26,7 @@ fn image(n: char) -> String {
     format!("registry.fly.io/acme-web:deployment-{n}@sha256:{}", n.to_string().repeat(64))
 }
 
-/// A fake chant, after `@intentius/chant` 0.124.67 (and, with
+/// A fake chant, after `@intentius/chant` 0.124.68 (and, with
 /// $FAKE_CHANT_VERSION, an older one, which the driver refuses): `--version`
 /// says which. Each command first reads chant's ledger (`chant/lifecycle`)
 /// from its remote, and refuses when it isn't here and the remote can't be
@@ -56,7 +56,7 @@ set -e
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
 fd3=no; (: >&3) 2>/dev/null && fd3=yes
-version=${FAKE_CHANT_VERSION:-0.124.67}
+version=${FAKE_CHANT_VERSION:-0.124.68}
 remote=origin
 [ -n "$CHANT_LIFECYCLE_REMOTE" ] && remote=$CHANT_LIFECYCLE_REMOTE
 echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER remote:$remote" >> "$FAKE_LOG"
@@ -480,7 +480,7 @@ fn chant_fly_plans_without_fly_and_says_which_gate() {
     let pending = facts.lines().find(|l| l.contains("\"kind\":\"pending\"")).expect("its pending fact reached origin");
     assert_eq!(gate["op"], "release");
     assert_eq!(gate["gate"], "approve-release");
-    assert_eq!(gate["chant"], "0.124.67");
+    assert_eq!(gate["chant"], "0.124.68");
     let plan = gate["plan"].as_str().unwrap();
     assert!(plan.starts_with("jcs1-sha256:") && pending.contains(&format!("\"planDigest\":\"{plan}\"")), "{pending}");
     assert!(pending.contains(&format!("\"runId\":\"{}\"", gate["run"].as_str().unwrap())), "{pending}");
