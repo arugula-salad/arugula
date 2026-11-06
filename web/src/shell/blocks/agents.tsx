@@ -19,6 +19,7 @@ import { askText } from "../../shared/ui/menu";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
 
 interface Card {
   name: string;
@@ -194,7 +195,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 <li key={`${m.machine}/${c.name}`} class={`offer-card ${m.online ? "" : "dim"}`} data-agent={c.name} data-on={m.name}>
                   <div class="offer-card-head">
                     <b class="offer-name">{c.name}</b>
-                    {model(c) && <span class="ws-tag">{model(c)}</span>}
+                    {model(c) && <Chip kind="tag">{model(c)}</Chip>}
                   </div>
                   {c.description && <p class="offer-desc">{c.description}</p>}
                   <div class="ws-actions offer-actions">

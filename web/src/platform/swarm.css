@@ -14,7 +14,7 @@
                       stats              projects; teams (a team's project is
                                          its default one)
    Project: rooms     bar                unread with a mention warn, unread
-                                         accent, else none (.chat-count's)
+                                         accent, else none (shared/ui/state-chip.css's .count)
                       name               # channel, @ person (underlined only
                                          on hover or focus)
    Project: issues,   name               its title (underlined only on hover
@@ -364,37 +364,11 @@
   min-height: 20px;
 }
 
-/* A warning on a card (UI audit #165): "Wants a rebuild". */
-.platform .sw-chip {
-  align-self: flex-start;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--warn);
-  border-radius: var(--chip-radius);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  color: var(--warn);
-  font: 600 11px/1.4 var(--f-mono);
-}
-
 .platform .sw-name {
   min-width: 0;
   font: 700 19px/1.05 var(--f-display);
   color: var(--ct);
   overflow-wrap: anywhere;
-}
-
-.platform .sw-n {
-  margin-left: auto;
-  padding: 3px var(--space-2);
-  border-radius: var(--chip-radius);
-  background: var(--c);
-  color: var(--on-color);
-  font: 700 12px/1 var(--f-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.platform .sw-muted .sw-n {
-  background: var(--raised);
-  color: var(--fg);
 }
 
 .platform .sw-id {

@@ -13,6 +13,7 @@ import { authorLabel } from "./agents";
 import { AuthorAvatar, roomLabel, roomSigil } from "./room";
 import { footer, repliesOf } from "./threads";
 import { iso, when } from "../time";
+import { Count } from "../ui/state-chip";
 
 function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   const api = usePlatformApi();
@@ -46,9 +47,9 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
           </span>
         )}
         {unread > 0 && (
-          <span class={t.mentions ? "chat-count mention thread-row-count" : "chat-count thread-row-count"} data-thread-row-unread>
+          <Count for={t.mentions ? "mention" : "you"} class="thread-row-count" data-thread-row-unread>
             {t.mentions ? `@${unread}` : unread}
-          </span>
+          </Count>
         )}
       </button>
       <button

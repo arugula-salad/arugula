@@ -579,15 +579,3 @@ a.session-card-id:hover {
   font: 700 11px var(--f-mono, ui-monospace, Menlo, monospace);
   box-sizing: border-box;
 }
-
-.msg-badge.said-badge {
-  white-space: nowrap;
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}

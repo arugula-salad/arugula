@@ -53,7 +53,7 @@ const REASON: Record<string, Tone> = {
 export const reasonTone = (reason: string): Tone => REASON[reason] ?? "muted";
 
 /** A chat room: a mention, unread messages, or nothing to say (the same
- * colors as its count's, `.chat-count`). */
+ * colors as its count's, `.count`). */
 export function roomTone(unread: number, mentions: number): Tone | null {
   if (unread > 0 && mentions > 0) return "warn";
   return unread > 0 ? "accent" : null;

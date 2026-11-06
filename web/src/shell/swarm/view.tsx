@@ -34,6 +34,7 @@ import { boardFocus, rowChip } from "./board-focus";
 import { useBoardView } from "./board-live";
 import { closeSwarmBoard, openSwarmBoard } from "./route";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { ObjectChip } from "../../shared/ui/state-chip";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -659,9 +660,9 @@ export function SwarmView({
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
             {onIssueChip([byKey(peek.key)?.info.on_issue]) && (
-              <span class="work-chip" title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
+              <ObjectChip title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
                 {onIssueChip([byKey(peek.key)?.info.on_issue])!.label}
-              </span>
+              </ObjectChip>
             )}
           </div>
           <pre>{peek.text}</pre>

@@ -58,6 +58,7 @@ import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionMove, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
 import { DiffLink, MergedLine, mergedOf } from "./session-done";
 import { workChip } from "../boards/text";
+import { ObjectChip, Chip } from "../ui/state-chip";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -138,9 +139,9 @@ export function SaidHead({ ses, project }: { ses: string; project: string | null
       ) : (
         <span class="thread-name said-name">{name}</span>
       )}
-      <span class="msg-badge said-badge" title={c?.role === "review" ? "A read-only review by an agent session" : "What an agent session said at the end of a turn"}>
+      <Chip tone="accent" data-said-badge title={c?.role === "review" ? "A read-only review by an agent session" : "What an agent session said at the end of a turn"}>
         {c?.role === "review" ? "review" : "agent session"}
-      </span>
+      </Chip>
     </>
   );
 }
@@ -187,7 +188,7 @@ export type Tone = "accent" | "ok" | "warn" | "danger" | "muted";
 function SessionWorkChip({ card }: { card: SessionCard }) {
   const w = card.work!;
   const c = workChip(`#${w.number}`, w.board && w.row ? { project: card.project, board: w.board, title: w.board_title ?? "", row: w.row } : null);
-  return c.path ? <a class="work-chip" href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</a> : <span class="work-chip" title="The issue it was started on" data-session-work>{c.label}</span>;
+  return c.path ? <ObjectChip href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</ObjectChip> : <ObjectChip title="The issue it was started on" data-session-work>{c.label}</ObjectChip>;
 }
 
 export function stateOf(state: string, quiet: boolean): { label: string; tone: Tone } {

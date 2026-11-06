@@ -50,6 +50,7 @@ import { useStickToBottom } from "./stick";
 import { BookmarkIcon, MachineIcon, ReactIcon } from "./icons";
 import { presence } from "./presence";
 import { Time } from "../ui/time";
+import { Chip } from "../ui/state-chip";
 
 // ---- machines, by control's id for them
 
@@ -655,28 +656,24 @@ export function RoomMessage({
               </span>
             )}
             {m.agent && (
-              <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
+              <Chip tone="teal" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
                 agent
-              </span>
+              </Chip>
             )}
             {m.imported && (
-              <span class="msg-badge" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
+              <Chip kind="tag" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported
-              </span>
+              </Chip>
             )}
             {githubLogin(m) && (
-              <span class="msg-badge via-badge" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
+              <Chip kind="tag" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
                 on GitHub
-              </span>
+              </Chip>
             )}
             {m.via && !said && !githubLogin(m) && (
-              <span
-                class="msg-badge via-badge"
-                title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`}
-                data-via={m.via}
-              >
+              <Chip kind="tag" title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`} data-via={m.via}>
                 via {answerVia(m, name)?.label ?? m.via}
-              </span>
+              </Chip>
             )}
             {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
           </div>

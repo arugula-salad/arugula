@@ -58,16 +58,6 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
   other: "not run",
 };
 
-/** The classes a live tag takes: the forge blocks' state colours, and
- * `waits` and `bad` for checks and runs. */
-export function liveClass(s: BoardLiveState): string {
-  if (s === "checks_running" || s === "running") return "waits";
-  if (s === "checks_failed" || s === "run_failed") return "bad";
-  if (s === "succeeded") return "forge-state merged";
-  if (s === "other") return "";
-  return `forge-state ${s}`;
-}
-
 /** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
  * row that isn't Done, for a note, which has nothing to prove, and for a
  * cancelled one, whose `cancelled` mark says it instead. */
@@ -180,11 +170,6 @@ export const BLOCK_LABEL: Record<BoardBlockWord, string> = {
   idle: "idle",
   closed: "closed",
 };
-
-/** The class a block's state tag takes: `waits` when it wants someone. */
-export function blockClass(w: BoardBlockWord): string {
-  return w === "needs_input" ? "waits" : "";
-}
 
 /** The facts of a block worth saying beside its chip: its branch, pushed state and uncommitted files once it has stopped working (idle or closed), where they say what is left to do. While it works or waits, the state is all. */
 export function settledFacts(b: BoardBlockState): string[] {

@@ -102,13 +102,6 @@
   color: var(--subtle);
 }
 
-.thread-agent-chip {
-  padding: 0 5px;
-  border-radius: 3px;
-  background: var(--raised);
-  color: var(--fg);
-}
-
 .thread-agent-read {
   color: var(--dim);
   font-size: 12px;
@@ -256,28 +249,4 @@
 
 .thread-to-label {
   color: var(--dim);
-}
-
-.thread-to-chip {
-  padding: 1px 9px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: none;
-  color: var(--subtle);
-  font: inherit;
-  cursor: pointer;
-}
-
-.thread-to-chip:hover:not(:disabled) {
-  background: var(--raised);
-}
-
-.thread-to-chip[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
-  color: var(--fg);
-}
-
-.thread-to-chip:disabled {
-  cursor: default;
 }

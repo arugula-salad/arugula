@@ -24,6 +24,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
+import { Chip } from "../../shared/ui/state-chip";
 
 /** Someone named in the view; `former`: they left the project, and the
  * view doesn't name them; `locked_out`: on the roster, but out while the
@@ -147,7 +148,7 @@ export function Access({ p }: { p: PlatformProject }) {
             {v.roles.members.map((m) => (
               <li key={m.account} data-access-role={m.account}>
                 <span>{m.name || m.account}</span>
-                <span class="settings-tag">{ROLE[m.role] ?? m.role}</span>
+                <Chip kind="tag">{ROLE[m.role] ?? m.role}</Chip>
                 {m.locked_out && <span class="dim">locked out while the team is locked</span>}
               </li>
             ))}
@@ -160,7 +161,7 @@ export function Access({ p }: { p: PlatformProject }) {
             {v.cloud_drive.members.map((m) => (
               <li key={m.owner.account ?? m.role} data-access-driver={m.owner.account ?? ""}>
                 <span>{who(m.owner)}'s machines</span>
-                <span class="settings-tag">{m.power}</span>
+                <Chip kind="tag">{m.power}</Chip>
                 <span class="dim">{driversLine(m)}</span>
               </li>
             ))}
@@ -186,14 +187,14 @@ export function Access({ p }: { p: PlatformProject }) {
                         : g.subject.name === null
                           ? `${who(g.owner)}'s former ${g.subject.kind === "agent" ? "agent token" : "machine"}`
                           : agentLabel(who(g.owner), { machine: g.subject.id ?? (g.subject.kind === "agent" ? "agt_" : ""), machine_name: g.subject.name })}
-                      {g.owner_role && <span class="settings-tag">{ROLE[g.owner_role] ?? g.owner_role}</span>}
+                      {g.owner_role && <Chip kind="tag" class="chip-lead">{ROLE[g.owner_role] ?? g.owner_role}</Chip>}
                     </th>
                     <td data-col="Power">
                       <code>{g.power}</code>
                       {g.limited && (
-                        <span class="settings-tag" data-access-idle title={g.limited.why}>
+                        <Chip kind="tag" class="chip-lead" data-access-idle title={g.limited.why}>
                           {g.limited.label}: {g.limited.why}
-                        </span>
+                        </Chip>
                       )}
                     </td>
                     <td data-col="Since">
@@ -254,7 +255,7 @@ export function Access({ p }: { p: PlatformProject }) {
               {v.workspaces.list.map((w) => (
                 <li key={w.id} data-access-workspace={w.name}>
                   <span>{w.name}</span>
-                  <span class="settings-tag">{w.state}</span>
+                  <Chip kind="tag">{w.state}</Chip>
                   <span class="dim">
                     {w.full_use}
                     {w.created_by ? `; made by ${who(w.created_by)}` : ""}

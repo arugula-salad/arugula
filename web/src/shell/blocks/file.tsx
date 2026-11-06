@@ -13,6 +13,7 @@ import type { CodeView } from "../swarm/code";
 import { registerBlock, type BlockView } from "./view";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import { editFile } from "./diff";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface FileState {
   path: string;
@@ -78,9 +79,9 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
           {s?.line ? <span class="dim">:{s.line}</span> : null} <span class="dim">{path.slice(0, slash)}</span>
         </span>
         {machine && (
-          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         {s?.truncated && <span class="dim" title={`${KB(s.size)}: only the start is shown`}>first {KB(s.text.length)}</span>}
         {s && !s.error && !client.state?.roles && (

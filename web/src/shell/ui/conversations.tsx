@@ -26,6 +26,7 @@ import { getFleet } from "./hosts";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
 import { CLAUDE_COST_NOTE, COST_NOTE, ContextStrip, costLabel, usd, type AgentContext, type Estimate } from "../blocks/agent-context";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface Conversation {
   id: string;
@@ -388,7 +389,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
                 <span class={`conv-source ${c.source}`}>{SOURCE[c.source]}</span>
                 <span class="picker-label conv-title">{c.title}</span>
                 {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
-                {c.block !== null && <span class="host-tag">%{c.block}</span>}
+                {c.block !== null && <Chip kind="tag" tone="info">%{c.block}</Chip>}
                 {c.context && (
                   // Its popover, not the row: a click on the strip opens that.
                   <span class="conv-context" data-conv-context onClick={(e) => e.stopPropagation()}>

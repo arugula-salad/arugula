@@ -33,6 +33,7 @@ import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
 import { LinkIcon } from "./shell/icons";
+import { Chip, StateChip } from "../../shared/ui/state-chip";
 
 /** What the reader keeps of a Doc it has read, for the next time it is picked. */
 interface Read {
@@ -245,19 +246,19 @@ function Page({ client }: { client: Client }) {
           tags: (
             <>
               {isOpen(r) && (
-                <span class="list-tag live" data-doc-open-now title="Open in a pane now">
+                <StateChip tone="accent" data-doc-open-now title="Open in a pane now">
                   %{r.open}
-                </span>
+                </StateChip>
               )}
               {r.shared && (
-                <span class="list-tag info" data-doc-shared title="Shared with a link">
+                <Chip kind="tag" tone="info" data-doc-shared title="Shared with a link">
                   <LinkIcon /> shared
-                </span>
+                </Chip>
               )}
               {r.platform && (
-                <span class="list-tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
+                <Chip kind="tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
                   on the platform
-                </span>
+                </Chip>
               )}
             </>
           ),

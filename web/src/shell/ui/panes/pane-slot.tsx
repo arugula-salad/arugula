@@ -6,7 +6,7 @@ import type { Client } from "../../client";
 import type { PaneId, Rect } from "../../../shared/proto";
 import { useWorkspaceDir } from "../../blocks";
 import type { Cell } from "../cells";
-import { paneItems } from "../commands";
+import { machineTone, paneItems } from "../commands";
 import { startDrag } from "../drag";
 import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
@@ -17,6 +17,7 @@ import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
 import { px } from "./geometry";
+import { Chip } from "../../../shared/ui/state-chip";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
 const parking = document.createElement("div");
@@ -213,29 +214,33 @@ function HostBadge({ client, id }: { client: Client; id: PaneId }) {
   const tabMachine = tab ? client.tabMachine(tab.id) : undefined;
   if (tabMachine && !m) {
     return (
-      <div class="host-badge local" title="Runs on this host, not the tab's machine">
+      <Chip kind="tag" tone="muted" class="pane-host" title="Runs on this host, not the tab's machine">
         local
-      </div>
+      </Chip>
     );
   }
   if (!m || m.id === tabMachine?.id) return null;
   const state = m.state === "running" ? "" : ` · ${m.state === "gone" ? "gone" : "starting"}`;
   if (m.borrowed) {
     return (
-      <div
-        class={`host-badge borrowed ${m.state}`}
+      <Chip
+        kind="tag"
+        tone={m.state === "running" ? "warn" : machineTone(m.state)}
+        class="pane-host"
         title={`A shell on ${m.sprite} (${m.provider}) with no daemon there: disposable. Its output is kept here while it's attached; the sandbox stays when this pane closes. Make it resident (Sandboxes…) for history that survives.`}
       >
         {m.sprite} · shell{state}
-      </div>
+      </Chip>
     );
   }
   return (
-    <div
-      class={`host-badge ${m.state}`}
+    <Chip
+      kind="tag"
+      tone={machineTone(m.state)}
+      class="pane-host"
       title={`${m.name ? `${m.name}: ` : ""}${m.sprite} (${m.provider}${m.image ? `, ${m.image}` : ""}); deleted when this pane closes`}
     >
       VM{state}
-    </div>
+    </Chip>
   );
 }

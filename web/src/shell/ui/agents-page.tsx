@@ -28,6 +28,7 @@ import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./
 import { AppBar } from "./app-bar";
 import { CopyText } from "../../shared/ui/copy";
 import { Time } from "../../shared/ui/time";
+import { Chip } from "../../shared/ui/state-chip";
 
 interface Recipe {
   name: string;
@@ -344,9 +345,9 @@ function RecipesTab({ client }: { client: Client }) {
         row={({ r }) => ({
           title: r.name,
           tags: r.offered_from && (
-            <span class="list-tag info" data-recipe-offered title={`Your team's agents can send it tasks; it works in ${r.offered_from}`}>
+            <Chip kind="tag" tone="info" data-recipe-offered title={`Your team's agents can send it tasks; it works in ${r.offered_from}`}>
               offered
-            </span>
+            </Chip>
           ),
           age: r.model,
           detail: r.description,

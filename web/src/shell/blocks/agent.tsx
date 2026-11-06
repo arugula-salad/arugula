@@ -24,6 +24,7 @@ import { platformHref } from "../platform-links";
 import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./agent-context";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
+import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 
 export interface Tool {
   type: "tool";
@@ -71,9 +72,9 @@ function WorkChip({ work }: { work: NonNullable<AgentState["work"]> }) {
   const href = c.path ? platformHref(c.path) : undefined;
   const more = (work.boards?.length ?? 0) > 1 ? ` (and ${work.boards!.length - 1} more board${work.boards!.length > 2 ? "s" : ""})` : "";
   return href ? (
-    <a class="work-chip" href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</a>
+    <ObjectChip href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</ObjectChip>
   ) : (
-    <span class="work-chip" title={`Started on ${work.issue}`} data-work-chip>{c.label}</span>
+    <ObjectChip title={`Started on ${work.issue}`} data-work-chip>{c.label}</ObjectChip>
   );
 }
 
@@ -164,14 +165,14 @@ function WornBar({ s }: { s: AgentState }) {
       <span class="agent-worn-as" title={`${from}${w.model ? ` (${w.model})` : ""}`}>as {w.agent}</span>
       <span class="ws-tags">
         {w.skills.map((k) => (
-          <span key={`s-${k}`} class="ws-tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
+          <Chip key={`s-${k}`} kind="tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
             {k}
-          </span>
+          </Chip>
         ))}
         {w.servers.map((m) => (
-          <span key={`m-${m.name}`} class="ws-tag worn-mcp" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
+          <Chip key={`m-${m.name}`} kind="tag" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
             ⚙ {m.name}
-          </span>
+          </Chip>
         ))}
       </span>
       {missing.length > 0 && (
@@ -617,9 +618,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         </span>
         {s.work && <WorkChip work={s.work} />}
         {s.vm && (
-          <span class="host-tag" title="Runs on this tab's throwaway VM">
+          <Chip kind="tag" tone="info" class="chip-gap" title="Runs on this tab's throwaway VM">
             VM
-          </span>
+          </Chip>
         )}
         <span class="agent-spacer" />
         {ctx && <ContextStrip c={ctx} />}

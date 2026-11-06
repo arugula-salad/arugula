@@ -39,6 +39,7 @@ import { getControlSession } from "../ui/people";
 import { openGettingStarted } from "../ui/welcome";
 import { registerBlock, type BlockView } from "./view";
 import { BlockLoading } from "./block-states";
+import { Count } from "../../shared/ui/state-chip";
 
 /** The block's state: its layout entry, which the daemon says whole. */
 export interface TeamChatState {
@@ -289,9 +290,9 @@ export function ChatTabBadge({ client, panes }: { client: Client; panes: PaneId[
   const { n, mention } = teamChatUnread(client, panes);
   if (!n) return null;
   return (
-    <span class={mention ? "chat-count mention" : "chat-count"} data-chat-tab-badge title={mention ? `${n} unread in chat, you're mentioned` : `${n} unread in chat`}>
+    <Count for={mention ? "mention" : "you"} class="count-after" data-chat-tab-badge title={mention ? `${n} unread in chat, you're mentioned` : `${n} unread in chat`}>
       {mention ? `@${n}` : n}
-    </span>
+    </Count>
   );
 }
 

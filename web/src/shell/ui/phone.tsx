@@ -33,6 +33,7 @@ import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
+import { Chip } from "../../shared/ui/state-chip";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -48,7 +49,7 @@ export function PhoneHeader({ client }: { client: Client }) {
           {session && (
             <>
               <span class="crumb">{session.name}</span> ›{" "}
-              {tab && client.tabMachine(tab.id) && <span class="host-tag">VM</span>}
+              {tab && client.tabMachine(tab.id) && <Chip kind="tag" tone="info" class="chip-gap">VM</Chip>}
               <span class="crumb">{tab ? tabLabel(client, tab) : ""}</span>
             </>
           )}
@@ -226,7 +227,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     <button class="sheet-session-head" aria-expanded={open} data-session={s.id} onClick={() => fold(s.id)}>
                       <span class="fold">{open ? "▾" : "▸"}</span>
                       <span class="name">{s.name}</span>
-                      <span class="count">
+                      <span class="sheet-count">
                         {s.tabs.length} tab{s.tabs.length === 1 ? "" : "s"}
                       </span>
                     </button>
@@ -238,9 +239,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         return (
                           <div key={tid} class="sheet-tab">
                             <button class={tid === client.tab ? "sheet-item current" : "sheet-item"} onClick={act(() => client.selectTab(tid))}>
-                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <span class="host-tag">VM</span>}
+                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" tone="info" class="chip-gap">VM</Chip>}
                               <span class="label">{tabLabel(client, t)}</span>
-                              {panes.length > 1 && <span class="count">{panes.length}</span>}
+                              {panes.length > 1 && <span class="sheet-count">{panes.length}</span>}
                               <ChatTabBadge client={client} panes={panes} />
                             </button>
                             {panes.length > 1 &&

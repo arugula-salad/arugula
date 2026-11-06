@@ -276,7 +276,7 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await platform(bob, "/chat");
   const list = bob.locator("[data-chat-control]");
   await expect(list.locator(`[data-chat-room="${dmId}"]`)).toBeVisible({ timeout: 15_000 });
-  await expect(list.locator(`[data-chat-room="${dmId}"] .chat-count`)).toHaveText("1");
+  await expect(list.locator(`[data-chat-room="${dmId}"] .count`)).toHaveText("1");
   await list.locator(`[data-chat-room="${dmId}"]`).click();
   await expect(list.locator(".thread-msg").last()).toContainText("are you there?");
   const box = list.getByRole("textbox", { name: "Message alice" });
@@ -680,7 +680,7 @@ test("a mention pushes, and the push's tap opens the room at the message", async
   expect(posted.pushed).toContainEqual({ account: bobAccount, why: "mention" });
   expect(posted.unreached).toEqual([]);
   // His list counts it as a mention, live.
-  await expect(bob.locator(`[data-chat-control] [data-chat-room="${deploys}"] .chat-count.mention`)).toHaveText("@1", { timeout: 15_000 });
+  await expect(bob.locator(`[data-chat-control] [data-chat-room="${deploys}"] .count-mention`)).toHaveText("@1", { timeout: 15_000 });
   // What sw.ts opens for that push (`chat: {room, seq}`), on control's page.
   await bob.goto(`${t.base}/#chat=${deploys}&msg=${posted.seq}`);
   const msg = bob.locator(`[data-chat-control] [data-msg="${posted.seq}"]`);
@@ -917,7 +917,7 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   const plain = await alice.evaluate((r) => window.__arugula.chat.post(r, "no mention here"), quiet);
   expect(plain.pushed).toEqual([]);
   await expect(row).toHaveClass(/unread/, { timeout: 15_000 });
-  await expect(row.locator(".chat-count")).toHaveCount(0);
+  await expect(row.locator(".count")).toHaveCount(0);
   // The bell sets it to every message; the next one pushes him.
   await row.click();
   await list.locator("[data-room-bell]").click();
@@ -1067,7 +1067,7 @@ test("files: Alice pastes a screenshot and Bob's phone sees it inline; she drops
   });
   await expect(chip).toHaveCount(2);
   await expect(room.locator('[data-attach-chip="plan.pdf"] progress')).toHaveCount(0, { timeout: 15_000 });
-  await room.locator('[data-attach-chip="plan.pdf"] [data-attach-remove]').click();
+  await room.locator('[data-attach-chip="plan.pdf"] [data-chip-remove]').click();
   await expect(chip).toHaveCount(1);
   await room.locator("[data-attach-input]").setInputFiles({ name: "plan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% e2e\n") });
   await expect(room.locator('[data-attach-chip="plan.pdf"]')).toBeVisible();

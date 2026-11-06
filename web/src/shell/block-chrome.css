@@ -61,17 +61,6 @@
   margin: 0;
 }
 
-/* A tab's other host (#17) comes after its title, and gives way to it. */
-.tab .host-tag.remote {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* UI audit #178: one error card, one empty or loading line, for every
    block. */
 .block-error {

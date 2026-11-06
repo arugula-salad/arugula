@@ -78,7 +78,7 @@ test("an issue opens as a block in geek's workspace, read as Alice", async ({ br
   await expect(view.locator('[data-item-fact="labels"] .item-label')).toHaveText(["bug"]);
   await expect(view.locator("[data-item-tab]")).toHaveText(["Activity"]);
   await expect(view.locator("[data-issue-body]")).toContainText("dry-run finds nothing");
-  await expect(view.locator(".ws-tag")).toHaveCount(0);
+  await expect(view.locator(".chip-tag")).toHaveCount(0);
   await expect(view.locator("[data-issue-foot]")).toHaveCount(0);
   await expect(view.locator("[data-item-next]")).toHaveCount(0);
   await expect(view).not.toContainText("Read as you");

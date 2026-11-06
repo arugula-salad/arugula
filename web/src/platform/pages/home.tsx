@@ -8,6 +8,7 @@ import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { session } from "../session";
 import { roleTone, toneClass } from "../swarm";
+import { Count } from "../../shared/ui/state-chip";
 
 export function Home() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -38,9 +39,9 @@ export function Home() {
                 <span class="sw-head">
                   <b class="sw-name">{p.name}</b>
                   {p.team && (
-                    <span class="sw-n" title={`${people} ${people === 1 ? "person" : "people"} in ${p.team.name}`}>
+                    <Count class="count-end" title={`${people} ${people === 1 ? "person" : "people"} in ${p.team.name}`}>
                       {people}
-                    </span>
+                    </Count>
                   )}
                 </span>
                 <span class="sw-id" title={p.id}>

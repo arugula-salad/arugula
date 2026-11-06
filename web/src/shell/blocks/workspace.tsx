@@ -17,6 +17,7 @@ import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
 import { Time } from "../../shared/ui/time";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
+import { Chip, StateChip } from "../../shared/ui/state-chip";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
@@ -471,25 +472,25 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                       {m.dir}
                     </div>
                     <div class="ws-tags" title={problems}>
-                      {m.gates > 0 && <span class="ws-tag waits">{m.gates === 1 ? "gate waits" : `${m.gates} gates wait`}</span>}
-                      {m.errors > 0 && <span class="ws-tag bad">{m.errors} errors</span>}
-                      {m.warnings > 0 && <span class="ws-tag">{m.warnings} warnings</span>}
-                      {m.releases > 0 && <span class="ws-tag">{m.releases} releases</span>}
+                      {m.gates > 0 && <StateChip tone="accent">{m.gates === 1 ? "gate waits" : `${m.gates} gates wait`}</StateChip>}
+                      {m.errors > 0 && <StateChip tone="danger">{m.errors} errors</StateChip>}
+                      {m.warnings > 0 && <Chip kind="tag">{m.warnings} warnings</Chip>}
+                      {m.releases > 0 && <Chip kind="tag">{m.releases} releases</Chip>}
                       {m.leases.some((l) => l.state === "active") && (
-                        <span class="ws-tag" data-tag-leases>
+                        <Chip kind="tag" data-tag-leases>
                           {m.leases.filter((l) => l.state === "active").length} leased
-                        </span>
+                        </Chip>
                       )}
                       {(m.why?.undecided ?? 0) > 0 && (
-                        <span class="ws-tag" data-tag-undecided title="Commits that changed it while no decision covered it">
+                        <Chip kind="tag" data-tag-undecided title="Commits that changed it while no decision covered it">
                           {m.why!.undecided} undecided
-                        </span>
+                        </Chip>
                       )}
-                      {m.unreadable && <span class="ws-tag bad">{m.unreadable}</span>}
+                      {m.unreadable && <StateChip tone="danger">{m.unreadable}</StateChip>}
                       {m.roles.map((r) => (
-                        <span key={r} class="ws-tag">
+                        <Chip key={r} kind="tag">
                           {r}
-                        </span>
+                        </Chip>
                       ))}
                     </div>
                     {mayOpen && (

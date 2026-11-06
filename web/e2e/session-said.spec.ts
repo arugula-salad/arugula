@@ -126,10 +126,10 @@ test("a session's answer and its review are the session's, and a turn typed in i
   const answer = said(ses).first();
   await expect(answer.locator(".said-name")).toHaveText(`Claude Code · session ${short}`, { timeout: 15_000 });
   await expect(answer.locator("[data-said-page]")).toHaveAttribute("href", new RegExp(`/sessions/${ses}$`));
-  await expect(answer.locator(".said-badge")).toHaveText("agent session");
+  await expect(answer.locator("[data-said-badge]")).toHaveText("agent session");
   await expect(answer.locator("[data-said-avatar]")).toHaveText("CC");
   await expect(answer).toHaveClass(/by-session/);
-  await expect(answer.locator(".via-badge, .msg-avatar img")).toHaveCount(0);
+  await expect(answer.locator("[data-via], .msg-avatar img")).toHaveCount(0);
   await expect(answer).not.toContainText("alice via");
   // What the agent wrote is still its words: Markdown, an @ that's text.
   await expect(answer.locator("strong")).toHaveText("stale");
@@ -137,7 +137,7 @@ test("a session's answer and its review are the session's, and a turn typed in i
   // The review: Codex's, a review.
   const rev = said(review).first();
   await expect(rev.locator(".said-name")).toHaveText(`Codex review · session ${review.slice(4, 12)}`, { timeout: 15_000 });
-  await expect(rev.locator(".said-badge")).toHaveText("review");
+  await expect(rev.locator("[data-said-badge]")).toHaveText("review");
   await expect(rev.locator("[data-said-avatar]")).toHaveText("Cx");
 
   // The typed turn: the platform's plain line, its words as written.

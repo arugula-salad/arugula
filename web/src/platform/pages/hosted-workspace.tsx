@@ -167,9 +167,9 @@ export function HostedWorkspaceList({ project: id, list }: { project: string; li
               </span>
               <span class="dim">{said(w)}</span>
               {w.rebuild_needed && (
-                <span class="sw-chip" title="Its spec changed since its box was made" data-hosted-rebuild-chip>
+                <StateChip tone="warn" title="Its spec changed since its box was made" data-hosted-rebuild-chip>
                   Wants a rebuild
-                </span>
+                </StateChip>
               )}
             </a>
           </li>
@@ -440,7 +440,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
       {w.rebuild_needed && (
         <div class="hosted-rebuild" data-hosted-rebuild>
           <p>
-            <span class="sw-chip">Wants a rebuild</span> Its spec changed since its box was made.{" "}
+            <StateChip tone="warn">Wants a rebuild</StateChip> Its spec changed since its box was made.{" "}
             {mayWrite(p) && session.hosted ? "Rebuild it here, or from a terminal" : "An owner or editor rebuilds it, here or from a terminal"}: the
             command checks its repos for unpushed work first, and stops if there is some.
           </p>

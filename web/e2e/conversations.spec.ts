@@ -87,7 +87,7 @@ test.describe("desktop", () => {
 
     // Picking it again goes to the block.
     await menu(page, paneEl(page, term), "Claude Code conversations…");
-    await expect(picker(page).locator(`[data-conversation="${id}"] .host-tag`)).toHaveText(`%${block}`);
+    await expect(picker(page).locator(`[data-conversation="${id}"] .chip-tag`)).toHaveText(`%${block}`);
     await picker(page).locator(`[data-conversation="${id}"]`).click();
     await expect(picker(page)).toBeHidden();
     expect(await panes(page)).toEqual([term, block]);

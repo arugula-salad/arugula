@@ -154,45 +154,14 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   .grid.pane-chrome .pane-header-sized-what { display: none; }
 }
 
-/* A hint about the pane (shell/hints): one line, its action and ×. */
-.hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: var(--chip-radius);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--fg);
-  font-size: 11px;
-  cursor: default;
-}
-.hint button {
-  height: 18px;
-  padding: 0 8px;
-  border-radius: var(--chip-radius);
-  font-family: inherit;
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-}
-.hint .hint-act {
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
-}
-.hint .hint-dismiss {
-  padding: 0 4px;
-  background: none;
-  color: var(--dim);
-}
-.hint .hint-dismiss:hover { color: var(--fg); }
-.grid.pane-chrome .hint-chip {
+/* Where a hint (shared/ui/state-chip.css) sits: in a pane's header, over the workspace, in an empty view. */
+.grid.pane-chrome .hint-header {
   flex: none;
   height: 22px;
   padding: 0 2px 0 8px;
 }
 @container (max-width: 420px) {
-  .grid.pane-chrome .hint-chip .hint-copy { display: none; }
+  .grid.pane-chrome .hint-header .hint-copy { display: none; }
 }
 .hint-toast {
   position: fixed;

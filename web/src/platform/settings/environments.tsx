@@ -25,6 +25,7 @@ import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { deployTone, toneClass } from "../swarm";
 import { Section } from "../../shared/ui/settings-section";
+import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -135,9 +136,9 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
     <article class={`sw-card env-card ${toneClass(latest ? deployTone(latest.state) : "muted")}`} data-environment={env.name}>
       <div class="sw-head">
         <b class="sw-name">{env.name}</b>
-        <span class="settings-tag" title="Its driver: what applies its deploys">
+        <Chip kind="tag" title="Its driver: what applies its deploys">
           {env.driver}
-        </span>
+        </Chip>
         {plans && (
           <a class="secondary small env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
             Deploy…
@@ -152,10 +153,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
           <ul class="env-secrets env-settings">
             {settings.map(([k, v]) => (
               <li key={k}>
-                <span class="settings-chip setting" title={`${k}: ${v}`}>
-                  <code>{k}</code>
-                  <span>{v}</span>
-                </span>
+                <ObjectChip pair id={k} fact={{ tone: "muted", text: v }} title={`${k}: ${v}`} />
               </li>
             ))}
           </ul>
@@ -192,15 +190,9 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
  * whether the environment's own would win). */
 function SecretChip({ name, minted }: { name: string; minted?: string }) {
   return minted ? (
-    <span class="settings-chip minted" title={`${name}: ${minted}`} data-env-minted>
-      <code>{name}</code>
-      <span>minted per run</span>
-    </span>
+    <ObjectChip pair proof id={name} fact={{ tone: "info", text: "minted per run" }} title={`${name}: ${minted}`} data-env-minted />
   ) : (
-    <span class="settings-chip" title={`${name}: the environment holds its value`}>
-      <code>{name}</code>
-      <span>held</span>
-    </span>
+    <ObjectChip pair id={name} fact={{ tone: "ok", text: "held" }} title={`${name}: the environment holds its value`} />
   );
 }
 

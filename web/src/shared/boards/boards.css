@@ -119,24 +119,6 @@
   flex-wrap: wrap;
 }
 
-/* An attachment is a swarm chip (platform/swarm.css), which is the warning's orange there: here it is neutral. */
-.board .sw-chip.board-chip {
-  align-self: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  border: 1px solid var(--divider);
-  background: transparent;
-  color: var(--fg);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.board .sw-chip.board-chip.proof {
-  border-style: dashed;
-}
-
 .board-zone-head {
   display: flex;
   align-items: center;
@@ -245,14 +227,6 @@
 
 .board-drawer-tags {
   margin: 8px 0;
-}
-
-.board-proof.proven {
-  color: var(--ok, #2f9e44);
-}
-
-.board-proof.unproven {
-  opacity: 0.7;
 }
 
 .board-item {
@@ -484,10 +458,6 @@
   flex: none;
 }
 
-.board .sw-chip.board-doc {
-  gap: 6px;
-}
-
 .board-doc-remove {
   padding: 0 4px;
   line-height: 1;
@@ -559,10 +529,6 @@
 
 .board-done {
   margin: 8px 0;
-}
-
-.board-done-tag {
-  color: var(--ok, inherit);
 }
 
 .board-item-row {

@@ -23,6 +23,7 @@ import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import type { MenuItem } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
+import { ObjectChip } from "../../../shared/ui/state-chip";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -361,9 +362,9 @@ function SessionRow({
       )}
       <span class="ws-session-actions">
         {row.work && (row.work.path && platformHref(row.work.path) ? (
-          <a class="work-chip" href={platformHref(row.work.path)} target="_blank" rel="noopener noreferrer" title={row.work.title} data-session-work>{row.work.label}</a>
+          <ObjectChip href={platformHref(row.work.path)} target="_blank" rel="noopener noreferrer" title={row.work.title} data-session-work>{row.work.label}</ObjectChip>
         ) : (
-          <span class="work-chip" title={row.work.title} data-session-work>{row.work.label}</span>
+          <ObjectChip title={row.work.title} data-session-work>{row.work.label}</ObjectChip>
         ))}
         <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
         <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title={cap(sessionMenuHint(items()))} onClick={menu}>

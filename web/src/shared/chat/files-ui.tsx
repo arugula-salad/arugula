@@ -10,6 +10,7 @@ import type { ChatFile } from "../proto";
 import { kindText, MAX_FILES, pastedName, sizeText, tooBig, type Pending } from "./files";
 import { upload } from "./files-upload";
 import { closeOnEscape } from "./escape";
+import { ObjectChip } from "../ui/state-chip";
 
 // ---- the composer's side
 
@@ -124,14 +125,13 @@ export function AttachChips({ items, remove }: { items: Pending[]; remove: (key:
   return (
     <ul class="attach-chips" aria-label="Files to send">
       {items.map((x) => (
-        <li key={x.key} class={`attach-chip ${x.state}`} data-attach-chip={x.name} title={x.error ?? x.name}>
+        <li key={x.key}>
+          <ObjectChip class={x.state} data-attach-chip={x.name} title={x.error ?? x.name} onRemove={() => remove(x.key)} removeLabel={`Remove ${x.name}`}>
           {x.file?.kind === "image" ? <img src={x.file.url} alt="" width="28" height="28" /> : <span class="attach-kind">{kindText({ name: x.name, mime: x.file?.mime ?? "" })}</span>}
           <span class="attach-name">{x.name}</span>
           <span class="attach-size">{x.state === "failed" ? x.error : sizeText(x.size)}</span>
           {x.state === "uploading" && <progress max="1" value={x.progress} aria-label={`Uploading ${x.name}`} />}
-          <button type="button" title="Remove" aria-label={`Remove ${x.name}`} data-attach-remove onClick={() => remove(x.key)}>
-            ✕
-          </button>
+          </ObjectChip>
         </li>
       ))}
     </ul>

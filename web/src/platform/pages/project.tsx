@@ -31,6 +31,7 @@ import { ProjectBoards, useBoards } from "./boards";
 import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
+import { Count } from "../../shared/ui/state-chip";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
@@ -80,7 +81,7 @@ export function ProjectHome({ id }: { id: string }) {
                   <li key={r.id} class={`sw-row ${toneClass(roomTone(r.unread, r.mentions))}`}>
                     <a href={to} data-project-room={r.id} onClick={(e) => follow(e, to)}>
                       {r.kind === "channel" ? `# ${r.name}` : `@ ${r.with?.name ?? "someone who left"}`}
-                      {r.unread > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span>}
+                      {r.unread > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count>}
                     </a>
                   </li>
                 );

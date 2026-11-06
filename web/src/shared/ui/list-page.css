@@ -349,27 +349,6 @@ button.list-count:hover {
   max-width: 100%;
 }
 
-.list-tag {
-  flex: none;
-  font: 500 10.5px/1.3 var(--f-mono);
-  color: var(--dim);
-}
-
-.list-tag.live {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.list-tag.info {
-  color: var(--info);
-}
-
-.list-tag svg {
-  width: 10px;
-  height: 10px;
-  vertical-align: -1px;
-}
-
 /* The preview. */
 .list-preview {
   container: list-preview / inline-size;
