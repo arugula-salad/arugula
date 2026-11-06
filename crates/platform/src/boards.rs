@@ -72,8 +72,10 @@
 //! its machine. To anyone else the chip is a plain agent block, so an
 //! attachment made before the check says nothing to those it doesn't
 //! concern. That is a label: it waits on the hub [`LABEL_WAIT`] at most,
-//! and on an error shows less and goes on. A row's lane comes from its
-//! blocks whoever reads, as from an item the reader can't read.
+//! and on an error shows less and goes on; a read asks once for its Docs
+//! and blocks together. A row's lane comes from its blocks whoever reads,
+//! as from an item the reader can't read, but its stalled mark only from
+//! the blocks the reader is told: one they aren't told never stalls it.
 //!
 //! **Work** ([`work`]): a project's issues, PRs and runs, for a row to point
 //! at, and the open issues that no board of the project has a row for.
@@ -825,12 +827,14 @@ fn is_earlier(a: &db::Attached, facts: &Facts) -> bool {
 }
 
 /// When the row stalled (see [`lanes::stalled`]), from the blocks as they
-/// reported and `minutes`, the project's setting.
+/// reported and `minutes`, the project's setting. Only blocks the reader is
+/// told count as idle ([`Shown`]), so a block they aren't told holds no
+/// stall up to them, and its idle time says nothing.
 fn stall_of(
     attachments: &[&db::Attached],
     lane: wire::Lane,
     facts: &Facts,
-    blocks: &Blocks,
+    told: &Shown<'_>,
     now: u64,
     minutes: u32,
 ) -> Option<u64> {
@@ -840,7 +844,7 @@ fn stall_of(
         .filter(|a| a.released_at.is_none())
         .filter(|a| matches!(facts.of(&a.pointer), Some(Fact::Block { closed: false })))
         .map(|a| match &a.pointer {
-            wire::Pointer::Block { machine, pane } => blocks.idle_since(machine, pane),
+            wire::Pointer::Block { machine, pane } => told.idle_since(machine, pane, a.agent.as_deref()),
             _ => None,
         })
         .collect();
@@ -907,25 +911,19 @@ struct Shown<'a> {
 }
 
 impl<'a> Shown<'a> {
-    /// What `account` is told of the blocks `pointers` point at, each with the
-    /// machine whose agent attached it (none: a person): one hub call, kept a
-    /// tick, for the machines the attachment doesn't settle.
-    async fn of<'p>(
-        app: &Platform,
-        account: &str,
-        blocks: &'a Blocks,
+    /// The machines of the blocks `pointers` point at, each with the machine
+    /// whose agent attached it (none: a person), that a read asks the hub
+    /// about: those the attachment doesn't settle.
+    fn to_ask<'p>(
+        blocks: &Blocks,
         pointers: impl Iterator<Item = (&'p wire::Pointer, Option<&'p str>)>,
-    ) -> Shown<'a> {
-        let mut ask: Vec<String> = pointers
+    ) -> Vec<&'p str> {
+        pointers
             .filter_map(|(p, by)| match p {
-                wire::Pointer::Block { machine, .. } if !Self::own(blocks, machine, by) => Some(machine.clone()),
+                wire::Pointer::Block { machine, .. } if !Self::own(blocks, machine, by) => Some(machine.as_str()),
                 _ => None,
             })
-            .collect();
-        ask.sort();
-        ask.dedup();
-        let reach = reach_label(app, account, &ask, "a block's machine").await;
-        Shown { blocks, reach }
+            .collect()
     }
 
     /// Its own machine's agent attached it, and the machine writes the
@@ -946,6 +944,12 @@ impl<'a> Shown<'a> {
             }
             _ => None,
         }
+    }
+
+    /// Since when the block has been idle, as this reader is told it: none
+    /// (not idle, so no stall) when they aren't told the block.
+    fn idle_since(&self, machine: &str, pane: &str, by: Option<&str>) -> Option<u64> {
+        if self.shows(machine, by) { self.blocks.idle_since(machine, pane) } else { None }
     }
 
     /// The pointer as this reader is told it: a block's machine blanked when
@@ -1083,7 +1087,6 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         agent_names(app, &machines).await?.into_iter().map(|(id, d)| (id, d.name)).collect()
     };
     let project = stored.board.project.clone();
-    let named = docs::named(app, account, &project, &strip).await;
     let mut board = stored.board.clone();
     name_boards(app, std::slice::from_mut(&mut board)).await?;
     progress(app, &project, std::slice::from_mut(&mut board)).await?;
@@ -1097,17 +1100,20 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let blocks = block_states(app, &project, &ids.blocks).await?;
     let facts = facts(app, &project, &ids, &blocks)?;
     let (now, minutes) = (now_ms(), app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)?);
-    let told = Shown::of(
-        app,
-        account,
-        &blocks,
-        stored
-            .rows
-            .iter()
-            .map(|r| (&r.pointer, r.agent.as_deref()))
-            .chain(stored.attachments.iter().map(|a| (&a.pointer, a.agent.as_deref()))),
-    )
-    .await;
+    // One label call for the board: the machines of its Docs and blocks
+    // that the reader is told of only if they may reach them.
+    let pointers = stored
+        .rows
+        .iter()
+        .map(|r| (&r.pointer, r.agent.as_deref()))
+        .chain(stored.attachments.iter().map(|a| (&a.pointer, a.agent.as_deref())));
+    let mut ask: Vec<String> =
+        docs::to_ask(&strip).chain(Shown::to_ask(&blocks, pointers)).map(str::to_owned).collect();
+    ask.sort();
+    ask.dedup();
+    let reach = reach_label(app, account, &ask, "a machine on a board").await;
+    let named = docs::named(app, &project, &strip, reach.clone()).await;
+    let told = Shown { blocks: &blocks, reach };
     // `by`: the machine whose agent put the pointer there, none for a person.
     let chip = |p: &wire::Pointer, by: Option<&str>| -> (Option<wire::Live>, Option<wire::BlockState>) {
         match p {
@@ -1152,7 +1158,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let mut a = assess(&e.pointer, &attached, &facts);
-        let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
+        let stalled = stall_of(&mine, a.lane, &facts, &told, now, minutes);
         let doubt = blocks.doubt(&attached);
         forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), doubt);
         let (lane, set) = shown(a.lane, e.lane_set.as_ref(), doubt);
@@ -1614,8 +1620,9 @@ pub(crate) async fn claim_holder(
             continue;
         }
         // Its title and machine only for a block its own machine's agent
-        // attached, as a board shows it to everyone.
-        let own = a.agent.as_deref() == Some(m.as_str());
+        // attached while the machine writes the project, as a board shows it
+        // to everyone.
+        let own = Shown::own(&blocks, m, a.agent.as_deref());
         let title = state.filter(|_| own).and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
         let on = if own && !d.name.is_empty() { d.name.clone() } else { "another machine".to_owned() };
         let at = (a.created_at / 60_000) % 1440;
