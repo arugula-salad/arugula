@@ -221,7 +221,12 @@ pub(crate) fn asked_gate(events: &[crate::db::deploys::Event]) -> Option<arugula
 /// Whether `d` is approved over chant's statement (v3, #1985): a chant→Fly
 /// apply. A roll back goes through no gate.
 fn in_chant(app: &Platform, d: &Deploy, env: &Environment) -> Result<bool, ApiError> {
-    Ok(arugula_e2e::deploy::chant::approved_in_chant(&env.driver, app.db.deploy_roll_back(&d.id)?.is_some()))
+    Ok(in_chant_with(env, app.db.deploy_roll_back(&d.id)?.is_some()))
+}
+
+/// [`in_chant`], for a caller that read whether it's a roll back already.
+fn in_chant_with(env: &Environment, roll_back: bool) -> bool {
+    arugula_e2e::deploy::chant::approved_in_chant(&env.driver, roll_back)
 }
 
 /// When approval was last asked for (#333): its newest `requested` event.
@@ -267,7 +272,7 @@ pub(crate) async fn deploy_json(
     let history = app.db.deploy_history(&d.id)?;
     // A chant→Fly deploy's plan (#1985): where it is, and the gate its
     // approval is asked for, which the passkey signs chant's statement of.
-    let in_chant = arugula_e2e::deploy::chant::approved_in_chant(&env.driver, roll_back.is_some());
+    let in_chant = in_chant_with(env, roll_back.is_some());
     let gate = asked_gate(&history);
     let chant = if in_chant {
         let plan = app.db.deploy_plan(&d.id)?;
@@ -718,7 +723,20 @@ pub(crate) async fn request(app: &Platform, by: &Actor, id: &str) -> J {
                 info!(deploy = d.id, "a chant-fly deploy's approval was asked for: chant plans it first");
                 return Ok(Json(deploy_json(app, &d, &env, &p, owns).await?));
             }
-            None => {}
+            // Asked for before chant planned deploys first: there's no gate
+            // to ask with, and an owner's card would be one they can't
+            // approve.
+            None => {
+                return Err(refusal(
+                    StatusCode::CONFLICT,
+                    CHANT_PLAN,
+                    &format!(
+                        "this deploy is {} with no plan of chant's, so there's nothing for an owner to approve. Plan \
+                         another deploy.",
+                        d.state.as_str()
+                    ),
+                ));
+            }
         }
     }
     app.limits.check_account(PROJECT_ASKS, &key)?;
@@ -958,19 +976,15 @@ pub async fn waiting(State(app): State<Arc<Platform>>, s: Person) -> J {
 }
 
 /// The passkeys live in `log` at `at`, by credential id, oldest first: what
-/// the page may offer the browser (`allowCredentials`). Not a check of the
-/// log's chain: the approval's [`verify`] makes that.
+/// the page may offer the browser (`allowCredentials`). Read with the
+/// chain checked (`arugula_e2e::passkey::live`), as the approval's
+/// [`verify`] reads it.
 fn live_passkeys(log: &arugula_e2e::passkey::Log, at: u64) -> Vec<String> {
-    use arugula_e2e::passkey::Change;
-    let mut live: Vec<String> = vec![];
-    for e in log.events.iter().filter(|e| e.at <= at) {
-        match e.event {
-            Change::Added if !live.contains(&e.credential) => live.push(e.credential.clone()),
-            Change::Added => {}
-            Change::Removed => live.retain(|c| c != &e.credential),
-        }
-    }
-    live
+    // A log that doesn't hold together offers none: no approval over it
+    // would verify.
+    arugula_e2e::passkey::live(log, at)
+        .map(|l| l.into_iter().map(|e| e.credential.clone()).collect())
+        .unwrap_or_default()
 }
 
 /// `GET /api/deploys/{id}/can-decide`: whether the reader may approve or
@@ -1016,14 +1030,20 @@ pub async fn can_decide(State(app): State<Arc<Platform>>, s: BrowserPerson, Path
             })
         }
         S::Expired => Some(no(EXPIRED, "Its approval ran out before it was applied.".into(), "Plan it again and ask.")),
-        S::Planned if app.db.deploy_plan(&d.id)?.is_some_and(|p| p.planning()) => Some(no(
-            NOT_PENDING,
-            "chant is planning it on a box of its own; its approval is asked for once it has.".into(),
-            "Wait for chant's plan.",
-        )),
-        S::Planned => {
-            Some(no(NOT_PENDING, "Nobody has asked for its approval yet.".into(), "Ask for its approval first."))
-        }
+        S::Planned => match app.db.deploy_plan(&d.id)? {
+            Some(plan) if plan.planning() => Some(no(
+                NOT_PENDING,
+                "chant is planning it on a box of its own; its approval is asked for once it has.".into(),
+                "Wait for chant's plan.",
+            )),
+            // Its plan failed: asking again is refused too.
+            Some(plan) if plan.failed.is_some() => Some(no(
+                CHANT_PLAN,
+                format!("chant's plan of it didn't get to its gate: {}", plan.failed.unwrap_or_default()),
+                "Plan another deploy.",
+            )),
+            _ => Some(no(NOT_PENDING, "Nobody has asked for its approval yet.".into(), "Ask for its approval first.")),
+        },
         S::Approved | S::Denied => {
             Some(no(NOT_PENDING, format!("It was {} already.", d.state.as_str()), "Nothing: it's decided."))
         }
@@ -1104,7 +1124,7 @@ async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: 
     }
     // A chant→Fly deploy is approved over chant's statement for the gate
     // its plan stopped at (v3, #1985); a deny, and any other deploy, v2.
-    let chant = if decision == Decision::Once && in_chant(app, &d, &env)? {
+    let (v, chant, at) = if decision == Decision::Once && in_chant(app, &d, &env)? {
         let gate = asked_gate(&app.db.deploy_history(id)?).ok_or_else(|| {
             refusal(
                 StatusCode::CONFLICT,
@@ -1119,13 +1139,9 @@ async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: 
                 "a chant-fly deploy is approved over chant's own statement: reload the page and approve again",
             )
         })?;
-        Some((gate, at))
+        (arugula_e2e::deploy::V3, Some(gate), at)
     } else {
-        None
-    };
-    let (v, chant, at) = match chant {
-        Some((g, at)) => (arugula_e2e::deploy::V3, Some(g), at),
-        None => (arugula_e2e::deploy::V2, None, String::new()),
+        (arugula_e2e::deploy::V2, None, String::new())
     };
     let a = Approval {
         deploy: id.to_owned(),

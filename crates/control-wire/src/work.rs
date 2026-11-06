@@ -325,6 +325,33 @@ pub struct PasskeyAssertion {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SecretsAsk {
     pub run: String,
+    /// A deploy's plan run (#1985) asks twice, a token each time: to fetch
+    /// its source, before anything of the commit's runs, and to push
+    /// chant's ledger, after everything that ran is stopped. Any other
+    /// run asks once, with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_step: Option<PlanStep>,
+}
+
+impl SecretsAsk {
+    /// A run's one ask (not a plan run's).
+    pub fn run(run: &str) -> Self {
+        Self { run: run.into(), plan_step: None }
+    }
+}
+
+/// Which of a deploy plan run's two tokens a box asks for (#1985).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStep {
+    /// A GitHub token that reads the deploy's repository, to fetch the
+    /// commit: nothing of the commit's has run yet.
+    Fetch,
+    /// A GitHub token that writes the repository's contents, to push
+    /// chant's ledger: everything the plan ran is stopped by then, and the
+    /// token reaches only the driver's own git.
+    Push,
 }
 
 /// [`WORK_SECRETS`]'s answer.

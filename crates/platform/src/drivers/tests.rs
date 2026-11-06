@@ -316,8 +316,9 @@ fn chant_fly_checks_what_its_box_reported() {
     let p = d.plan(&e, &source());
     for says in [
         "setting fly_app acme-web\n",
-        "with GITHUB_TOKEN only (minted for that run) and no FLY_API_TOKEN: in ops, npm ci --ignore-scripts \
-         (without the tokens), then chant run release to its gate",
+        "fetch the commit with a GITHUB_TOKEN minted for it that only reads; then with no token at all, in ops, npm \
+         ci --ignore-scripts (without the tokens), then chant run release to its gate",
+        "once everything that ran is stopped, push chant's ledger",
         "chant plan stale of the approved plan",
         "the repo's chant op release runs with FLY_API_TOKEN",
         "does: check Fly app acme-web is healthy",

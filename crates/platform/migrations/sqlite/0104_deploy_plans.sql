@@ -5,9 +5,12 @@
 -- and `asked_at` are who asked and when (an actor as `db::deploys` writes
 -- one), recorded as its `requested` event once chant planned it.
 -- `run_id` is its plan run (`runs`, M210, `kind deploy` with `plan`) and
--- `workspace_id` that run's box, both once made. `secrets_at` is when the
--- run's machine was given its one token (a GitHub token minted to push
--- chant's ledger): once, while it ran. `gate` is the chant gate the plan
+-- `workspace_id` that run's box, both once made. The run gets two GitHub
+-- tokens, each minted for it and given once while it runs: `read_at` is
+-- when its machine was given the one that reads, to fetch the commit
+-- before anything of the commit's runs, and `secrets_at` the one that
+-- writes, to push chant's ledger once everything the plan ran is stopped
+-- (never before the first). `gate` is the chant gate the plan
 -- stopped at (JSON, `arugula_e2e::deploy::chant::Gate`) once it planned;
 -- `failed` why it didn't. `ended_at` is when either was set. Additive: the
 -- build before this one never reads it.
@@ -17,6 +20,7 @@ CREATE TABLE deploy_plans (
     asked_at INTEGER NOT NULL,
     run_id TEXT UNIQUE,
     workspace_id TEXT,
+    read_at INTEGER,
     secrets_at INTEGER,
     gate TEXT,
     failed TEXT,

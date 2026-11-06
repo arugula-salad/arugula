@@ -10,9 +10,11 @@
 //!   `<deploy>-plan`. Its run is the driver's plan of the deploy (`kind
 //!   deploy`, `plan`), approved by the platform: no person has anything to
 //!   approve yet, and the run gets none of the environment's secrets. Its
-//!   one credential is a GitHub token minted for it ([`secrets`]), which
-//!   pushes chant's ledger: an op that needs Fly before its gate fails
-//!   here.
+//!   credentials are two GitHub tokens minted for it ([`secrets`]): one
+//!   that reads, to fetch the commit before anything of it runs, and one
+//!   that writes, to push chant's ledger, which the box asks for only once
+//!   everything the plan ran is stopped. chant's op runs with no token at
+//!   all: an op that needs Fly, or GitHub, before its gate fails here.
 //! - **What it found.** The run ends with the gate chant's run stopped at
 //!   and its pending fact (`chant_gate` in its result). Checked here
 //!   ([`gate_of`]), it ends the plan, and the asker's `requested` event
@@ -26,7 +28,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
-use arugula_control_wire::work::{DeployPlanWork, Secret, SecretsGiven};
+use arugula_control_wire::work::{DeployPlanWork, PlanStep, Secret, SecretsGiven};
 use arugula_e2e::{
     deploy::chant::Gate,
     drivers::{CHANT_GATES, CHANT_OP},
@@ -288,13 +290,22 @@ async fn step(app: &Arc<Platform>, db: &Db, job: &mut LeasedJob, now: u64) -> Re
 }
 
 /// chant planned it: the plan ends with its gate, the asker's `requested`
-/// event carries it, and the owners are asked.
+/// event carries it, and the owners are asked. Only while the asker may
+/// still ask, as when they asked: else the plan ends saying why, and
+/// nobody is asked.
 async fn planned(app: &Platform, p: &DeployPlan, g: &Gate, now: u64) -> Result<()> {
     let db = &app.db;
+    let Some(by) = Actor::parse(&p.asked_by) else {
+        fail(db, &p.deploy, "whoever asked for it isn't one who asks", now)?;
+        return Ok(());
+    };
+    if let Err(why) = may_still_ask(app, &by, &p.deploy).await? {
+        fail(db, &p.deploy, &why, now)?;
+        return Ok(());
+    }
     if !db.end_deploy_plan(&p.deploy, Ok(g), now)? {
         return Ok(());
     }
-    let Some(by) = Actor::parse(&p.asked_by) else { return Ok(()) };
     match db.record_deploy(&p.deploy, EventKind::Requested, &by, now, json!({ "chant": g }))? {
         Ok(r) => {
             info!(deploy = p.deploy, gate = g.gate, plan = g.plan, "chant planned a deploy: its owners are asked");
@@ -307,18 +318,47 @@ async fn planned(app: &Platform, p: &DeployPlan, g: &Gate, now: u64) -> Result<(
     Ok(())
 }
 
+/// Whether `by` may still ask for `deploy`'s approval, as `request` checked
+/// when they asked (#1985 review): a person an owner or an editor of its
+/// project now, and an agent's owner too, with its machine's `deploys.plan`
+/// grant over the project, live. `Err` why not; a server's error (the
+/// hub's) is the job's, which tries again.
+async fn may_still_ask(app: &Platform, by: &Actor, deploy: &str) -> Result<std::result::Result<(), String>> {
+    let Some(account) = by.account() else { return Ok(Err("whoever asked for it isn't one who asks".into())) };
+    let project = match super::deploy_as(app, account, deploy, true).await {
+        Ok((_, env, _, _)) => env.project,
+        Err(e) if e.0.is_server_error() => anyhow::bail!("whether its asker may still ask: {}", e.1),
+        Err(e) => return Ok(Err(format!("whoever asked for it can't now: {}", e.1))),
+    };
+    if let Actor::Agent { account, machine } = by {
+        let m = crate::auth::Machine { account: account.clone(), daemon: machine.clone() };
+        match crate::grants::agent_may(
+            app,
+            &m,
+            crate::db::projects::DEPLOYS_PLAN,
+            &crate::grants::AgentScope::Project(project),
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(e) if e.0.is_server_error() => anyhow::bail!("whether its asker may still ask: {}", e.1),
+            Err(e) => return Ok(Err(format!("the agent that asked for it can't now: {}", e.1))),
+        }
+    }
+    Ok(Ok(()))
+}
+
 /// What a deploy's plan run carries to its box: the deploy's operation,
-/// its driver and settings, and the one secret it gets. `None` when `run`
-/// isn't a plan's, or its plan ended.
-pub fn plan_work(db: &Db, run: &str) -> Result<Option<DeployPlanWork>> {
-    let Some(p) = db.deploy_plan_of_run(run)? else { return Ok(None) };
+/// its driver and settings, and the secret it gets (by name: a token per
+/// step). `None` when its plan ended.
+pub fn plan_work(db: &Db, p: &DeployPlan) -> Result<Option<DeployPlanWork>> {
     if !p.planning() {
         return Ok(None);
     }
     let Some((_, operation)) = db.deploy_operation(&p.deploy)? else { return Ok(None) };
     let env = db.environment(&operation.environment)?.context("a deploy's environment is gone")?;
     Ok(Some(DeployPlanWork {
-        deploy: p.deploy,
+        deploy: p.deploy.clone(),
         operation,
         driver: env.driver,
         secrets: vec![GITHUB_TOKEN.into()],
@@ -326,19 +366,26 @@ pub fn plan_work(db: &Db, run: &str) -> Result<Option<DeployPlanWork>> {
     }))
 }
 
-/// A plan run's secrets (`/api/hosted/work/secrets` for a plan run): a
-/// GitHub token minted for it that writes the deploy's repository's
-/// contents, once, while it runs and its deploy waits to be asked for.
-/// Never the environment's secrets, its own GitHub token among them.
+/// A plan run's secrets (`/api/hosted/work/secrets` for a plan run), one
+/// GitHub token per step, each minted for it, once, while it runs and its
+/// deploy waits to be asked for (#1985): for `fetch`, one that reads the
+/// deploy's repository, before anything of the commit's runs; for `push`,
+/// after it, one that writes the repository's contents, which the box asks
+/// for only once everything the plan ran is stopped. Never the
+/// environment's secrets, its own GitHub token among them.
 pub async fn secrets(
     app: &Platform,
     m: &HostedMachine,
     run: &crate::db::runs::Run,
     p: &DeployPlan,
+    step: Option<PlanStep>,
 ) -> Result<SecretsGiven> {
     let refused = |why: &str| {
         info!(run = run.id, machine = m.machine, why, "refused a deploy plan run's secrets");
         Ok(SecretsGiven::Refused { why: why.into() })
+    };
+    let Some(step) = step else {
+        return refused("a deploy plan run asks for each of its tokens by its step (fetch, then push)");
     };
     let db = &app.db;
     let Some(d) = db.deploy(&p.deploy)? else { return refused("no such deploy") };
@@ -351,14 +398,20 @@ pub async fn secrets(
     {
         return refused(&why);
     }
-    if !db.release_plan_secrets(&run.id, arugula_e2e::now_ms())? {
-        return refused("its token was given already (once per run), or its plan ended");
+    if !db.release_plan_secrets(&run.id, step, arugula_e2e::now_ms())? {
+        return refused(match step {
+            PlanStep::Fetch => "its fetch token was given already (once per run), or its plan ended",
+            PlanStep::Push => "its push token comes once per run, after its fetch token, while its plan hasn't ended",
+        });
     }
-    let mint = Mint::GithubWriteSource { name: GITHUB_TOKEN };
+    let mint = match step {
+        PlanStep::Fetch => Mint::GithubRead { name: GITHUB_TOKEN },
+        PlanStep::Push => Mint::GithubWriteSource { name: GITHUB_TOKEN },
+    };
     let s: Secret = match drivers::mint(app, mint, &d, &env.project, &run.id).await {
         Ok(s) => s,
         Err(e) => return refused(&format!("minting {GITHUB_TOKEN}: {e:#}")),
     };
-    info!(run = run.id, deploy = d.id, "gave a deploy plan run its token, once");
+    info!(run = run.id, deploy = d.id, ?step, "gave a deploy plan run a token, once");
     Ok(SecretsGiven::Given { secrets: vec![s] })
 }

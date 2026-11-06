@@ -1195,17 +1195,29 @@ not to approve if it doesn't.
 
 **chant plans it first** (#1985, aru-126). Asking for a chant-fly deploy's
 approval doesn't ask anyone yet: the platform runs its plan on a box of its
-own (`<deploy>-plan`), which gets `GITHUB_TOKEN` only, minted for that run,
-and no `FLY_API_TOKEN`. There the driver:
-1. checks out the commit by its full id, exactly;
-2. runs `npm ci` and `chant run <op> --json` in the chant member, which
-   stops at the op's gate (only `chant_gates`' when it names some) and
-   records its pending fact with chant's plan digest
-   (`_gates/<op>.jsonl` on `chant/lifecycle`); an op that needs Fly
-   before its gate fails here, and so does one with no gate;
-3. pushes chant's ledger to origin, and says on fd 3 which gate it
-   stopped at: chant's version, the op, the gate, its environment, the
-   plan digest, its checkpoint, the chant run and when it recorded it.
+own (`<deploy>-plan`), which gets no `FLY_API_TOKEN`. The driver runs there
+in three steps, each a process of its own, and the box kills everything the
+run user runs after each, so nothing one step starts lives into the next:
+1. `plan-fetch`, with a `GITHUB_TOKEN` minted for the run that only reads:
+   checks out the commit by its full id, exactly. Nothing of the commit's
+   runs.
+2. `plan`, with no token at all: runs `npm ci` and `chant run <op> --json`
+   in the chant member, which stops at the op's gate (only `chant_gates`'
+   when it names some) and records its pending fact with chant's plan
+   digest (`_gates/<op>.jsonl` on `chant/lifecycle`) in a ledger on the box;
+   an op that needs Fly or GitHub before its gate fails here, and so does
+   one with no gate. It says on fd 3 which gate it stopped at: chant's
+   version, the op, the gate, its environment, the plan digest, its
+   checkpoint, the chant run and when it recorded it.
+3. `plan-push`, with a `GITHUB_TOKEN` minted for the run that writes its
+   contents, which the box asks for only now: takes chant's ledger as a
+   bundle into a repository it makes, with git reading no configuration
+   the op could have left, checks it holds the gate step 2 reported, and
+   pushes it to origin.
+
+So no token that writes is on the box while anything of the commit's runs
+(#1985's review). The platform gives each token once, the one that writes
+only after the one that reads, while the run runs.
 
 The platform records the ask then, as its `requested` event, with that gate
 in its detail (`{"chant": …}`), and the owners get their cards. A plan that

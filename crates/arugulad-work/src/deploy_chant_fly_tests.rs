@@ -104,6 +104,14 @@ plan="jcs1-sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/d
 case "$1 $2" in
   "run release")
     ledger || { echo '{"version":1,"op":"release","status":"fail"}'; exit 1; }
+    # An op that would take the push's token if it could: git configuration
+    # in its home whose pre-push hook keeps $GITHUB_TOKEN.
+    if [ -e "$FAKE_DIR/plant" ]; then
+      mkdir -p "$HOME/hooks"
+      printf '#!/bin/sh\necho "pre-push saw ${GITHUB_TOKEN:-nothing}" >> "%s/leak"\n' "$FAKE_DIR" > "$HOME/hooks/pre-push"
+      chmod +x "$HOME/hooks/pre-push"
+      printf '[core]\n\thooksPath = %s/hooks\n' "$HOME" > "$HOME/.gitconfig"
+    fi
     [ -e "$FAKE_DIR/needs-fly" ] && [ "$fly" = no ] && { echo "the op's plan step needs FLY_API_TOKEN" >&2; exit 1; }
     op=$(cat "$FAKE_DIR/gate-op" 2>/dev/null || echo release)
     gate=approve-release
@@ -325,11 +333,15 @@ impl Rig {
             .env("ARUGULA_CHANT_FLY_TEST", "1")
             .env("DEPLOY_GIT_BASE", format!("{}/origin/", self.dir.display()))
             .env("DEPLOY_FLY_CHECKS", "2x0")
-            .env("GITHUB_TOKEN", GH)
             .env("FAKE_TOKEN", TOKEN)
             .env("FAKE_LOG", self.dir.join("log"))
             .env("FAKE_DIR", &self.dir)
             .env("FAKE_ORIGIN", self.dir.join("origin/acme/app.git"));
+        // The plan's step that runs the commit's code gets no token; its
+        // fetch and push, and an apply, GitHub's.
+        if phase != "plan" {
+            c.env("GITHUB_TOKEN", GH);
+        }
         if phase == "apply" {
             c.env("FLY_API_TOKEN", TOKEN)
                 .env("DEPLOY_APPROVER", "acct1")
@@ -356,13 +368,29 @@ impl Rig {
         Ran { code: out.status.code().unwrap_or(-1), out: text, result: result_of(&said) }
     }
 
-    /// Its plan, in a home of its own (`plan-home`): a box of its own.
+    /// Its plan, in a home of its own (`plan-home`): a box of its own,
+    /// in its three steps as arugulad runs them (`deploy::plan_steps`):
+    /// its fetch, its plan with no token, then its push with the gate the
+    /// plan reported. Its exit is the first step's that isn't 0, its output
+    /// theirs, its result the plan's.
     fn plan(&self, settings: &str, extra: &[(&str, &str)]) -> Ran {
         let home = self.dir.join("plan-home");
         std::fs::create_dir_all(&home).unwrap();
         let mut extra = extra.to_vec();
         extra.push(("HOME", home.to_str().unwrap()));
-        self.drive("plan", settings, None, None, &extra)
+        let fetch = self.drive("plan-fetch", settings, None, None, &extra);
+        if fetch.code != 0 {
+            return fetch;
+        }
+        let plan = self.drive("plan", settings, None, None, &extra);
+        let out = format!("{}{}", fetch.out, plan.out);
+        if plan.code != 0 {
+            return Ran { out, ..plan };
+        }
+        let gate = plan.result.as_ref().map(|r| r["chant_gate"].to_string()).unwrap_or_default();
+        extra.push(("DEPLOY_CHANT_GATE", &gate));
+        let push = self.drive("plan-push", settings, None, None, &extra);
+        Ran { code: push.code, out: format!("{out}{}", push.out), result: plan.result }
     }
 
     /// Its plan, then its apply with the passkey's signature over chant's
@@ -488,6 +516,14 @@ fn chant_fly_plans_without_fly_and_says_which_gate() {
     let g: Gate = serde_json::from_value(gate.clone()).unwrap();
     assert!(g.well_formed(), "{g:?}");
     // Handed a Fly token, or with none of GitHub's: nothing runs.
+    // The step that runs the commit's code, handed a GitHub token anyway:
+    // nothing runs.
+    let r = rig("chant-fly-plan-gh");
+    assert_eq!(r.drive("plan-fetch", SETTINGS, None, None, &[]).code, 0);
+    let ran = r.drive("plan", SETTINGS, None, None, &[("GITHUB_TOKEN", GH)]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("with no GitHub token"), "{}", ran.out);
+    assert!(r.calls().is_empty(), "{:?}", r.calls());
     let r = rig("chant-fly-plan-fly");
     let ran = r.plan(SETTINGS, &[("FLY_API_TOKEN", TOKEN)]);
     assert_eq!(ran.code, 1, "{}", ran.out);
@@ -499,6 +535,70 @@ fn chant_fly_plans_without_fly_and_says_which_gate() {
     let ran = r.plan(SETTINGS, &[]);
     assert_eq!(ran.code, 1, "{}", ran.out);
     assert!(ran.out.contains("before its gate"), "{}", ran.out);
+}
+
+/// #1985 review: no token that writes is where the commit's code can reach
+/// it. The plan's op runs with no token; its push takes chant's ledger as
+/// data into a repository of its own, which reads none of the git
+/// configuration the op could leave (a hook that keeps the token), and
+/// pushes only the ledger holding the gate the plan reported.
+#[test]
+fn chant_fly_pushes_its_plan_where_the_op_cant_reach_the_token() {
+    needs_node!();
+    let r = rig("chant-fly-plan-plant");
+    std::fs::write(r.dir.join("plant"), "").unwrap();
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 0, "{}", ran.out);
+    let home = r.dir.join("plan-home");
+    assert!(home.join(".gitconfig").exists(), "the op planted its configuration");
+    // The op's own pushes ran its hook (with no token to see); the plan's
+    // push, the one with a token, never did.
+    let leak = std::fs::read_to_string(r.dir.join("leak")).unwrap_or_default();
+    assert!(leak.lines().all(|l| l == "pre-push saw nothing") && !leak.contains(GH), "{leak}");
+    assert!(r.log().iter().all(|l| l.contains("gh:no")), "{:?}", r.log());
+    let gate = &ran.result.unwrap()["chant_gate"];
+    let tip = r.origin("git rev-parse refs/heads/chant/lifecycle");
+    assert!(r.origin(&format!("git show {tip}:_gates/release.jsonl")).contains(gate["plan"].as_str().unwrap()));
+    assert!(!ran.out.contains(GH), "{}", ran.out);
+
+    // A push handed another gate than its bundle holds pushes nothing; nor
+    // one whose bundle is gone.
+    let r = rig("chant-fly-plan-other-gate");
+    let home = r.dir.join("plan-home");
+    std::fs::create_dir_all(&home).unwrap();
+    let h = [("HOME", home.to_str().unwrap())];
+    assert_eq!(r.drive("plan-fetch", SETTINGS, None, None, &h).code, 0);
+    let planned = r.drive("plan", SETTINGS, None, None, &h);
+    assert_eq!(planned.code, 0, "{}", planned.out);
+    let mut other = planned.result.unwrap()["chant_gate"].clone();
+    other["plan"] = format!("jcs1-sha256:{}", "0".repeat(64)).into();
+    let other = other.to_string();
+    let ran = r.drive("plan-push", SETTINGS, None, None, &[h[0], ("DEPLOY_CHANT_GATE", &other)]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("doesn't hold the plan it reported"), "{}", ran.out);
+    assert!(r.origin("git rev-parse -q --verify refs/heads/chant/lifecycle || true").is_empty(), "nothing pushed");
+    std::fs::remove_file(home.join("ledger.bundle")).unwrap();
+    let ran = r.drive("plan-push", SETTINGS, None, None, &[h[0], ("DEPLOY_CHANT_GATE", &other)]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("left no bundle"), "{}", ran.out);
+}
+
+/// #1985 review: the box checks the approval's gate against `chant_gates`
+/// itself, as the plan did: a gate the settings don't name is never
+/// approved, whatever the platform relayed.
+#[test]
+fn chant_fly_approves_only_a_gate_its_settings_name() {
+    needs_node!();
+    let r = rig("chant-fly-apply-gate");
+    let planned = r.plan(SETTINGS, &[]);
+    assert_eq!(planned.code, 0, "{}", planned.out);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    assert_eq!(gate.gate, "approve-release");
+    let calls = r.calls().len();
+    let ran = r.drive("apply", &with(r#""chant_gates":"ship""#), None, Some(relay(&gate, None)), &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("is for gate approve-release, which the plan doesn't name"), "{}", ran.out);
+    assert_eq!(r.calls().len(), calls, "nothing of the apply's ran: {:?}", r.calls());
 }
 
 /// The apply: chant says the plan is current, chant's statement for the
@@ -788,14 +888,23 @@ fn chant_fly_ties_its_evidence_to_this_release() {
     }
 
     // An origin that won't take a push (as GitHub refuses one without a
-    // token that can write): nothing runs, a plan as an apply.
+    // token that can write): an apply runs nothing. A plan's fetch token
+    // only reads, so its push step is where it finds out: not planned.
     let r = rig("chant-fly-readonly");
+    let planned = r.plan(SETTINGS, &[]);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    let calls = r.calls().len();
     let refuse =
         [("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "remote.origin.receivepack"), ("GIT_CONFIG_VALUE_0", "false")];
-    let ran = r.plan(SETTINGS, &refuse);
+    let ran = r.drive("apply", SETTINGS, None, Some(relay(&gate, None)), &refuse);
     assert_eq!(ran.code, 1, "{}", ran.out);
     assert!(ran.out.contains("origin won't take a push"), "{}", ran.out);
-    assert!(!r.calls().iter().any(|c| c.starts_with("chant")), "{:?}", r.calls());
+    assert_eq!(r.calls().len(), calls, "{:?}", r.calls());
+    let r = rig("chant-fly-readonly-plan");
+    exe(&r.dir.join("origin/acme/app.git/hooks/pre-receive"), "#!/bin/sh\nexit 1\n");
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 4, "{}", ran.out);
+    assert!(ran.out.contains("didn't reach origin") && ran.out.contains("must be able to push"), "{}", ran.out);
 }
 
 /// A short id, or one that isn't the commit checked out: refused.

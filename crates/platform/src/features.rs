@@ -89,7 +89,11 @@ pub trait Deploys: Send + Sync + 'static {
         Ok(None)
     }
     /// What a deploy's plan run carries to the box that plans it (#1985).
-    fn deploy_plan_work(&self, _db: &Db, _run: &str) -> anyhow::Result<Option<DeployPlanWork>> {
+    fn deploy_plan_work(
+        &self,
+        _db: &Db,
+        _plan: &crate::db::deploy_plans::DeployPlan,
+    ) -> anyhow::Result<Option<DeployPlanWork>> {
         Ok(None)
     }
     /// A deploy's run moved: its deploy moves too, and the box may be told

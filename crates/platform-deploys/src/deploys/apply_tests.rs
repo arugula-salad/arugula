@@ -11,7 +11,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{Report, Reported, SecretsAsk, SecretsGiven, TAKES_DEPLOY, TAKES_RUN, Work};
+use arugula_control_wire::work::{PlanStep, Report, Reported, SecretsAsk, SecretsGiven, TAKES_DEPLOY, TAKES_RUN, Work};
 use arugula_e2e::{
     DeviceKeys,
     deploy::{Decision, Pinned, check_apply},
@@ -241,7 +241,12 @@ pub(crate) async fn pull(app: &Platform, m: &Machine, takes: &[&str]) -> Work {
 }
 
 async fn ask(app: &Platform, m: &Machine, run: &str) -> SecretsGiven {
-    secrets(app, &m.m, &SecretsAsk { run: run.into() }).await.unwrap()
+    secrets(app, &m.m, &SecretsAsk::run(run)).await.unwrap()
+}
+
+/// A deploy plan run's ask for one of its tokens (#1985), by its step.
+async fn ask_step(app: &Platform, m: &Machine, run: &str, step: Option<PlanStep>) -> SecretsGiven {
+    secrets(app, &m.m, &SecretsAsk { run: run.into(), plan_step: step }).await.unwrap()
 }
 
 /// The whole of it, through a failed apply: the approval enqueues the run,
@@ -851,9 +856,9 @@ async fn chant_fly_planned(
     assert!(plan.plan && plan.op == op && plan.deploy == id, "{plan:?}");
     assert_eq!(run.state, RunState::Approved, "the platform approves a plan run: nobody has anything to approve");
     work::report(app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
-    // Its one secret: a GitHub token minted for it, never the
-    // environment's (this platform has no App, so it can't).
-    match ask(app, &m, &run.id).await {
+    // Its secrets: GitHub tokens minted for it, never the environment's
+    // (this platform has no App, so it can't).
+    match ask_step(app, &m, &run.id, Some(PlanStep::Fetch)).await {
         SecretsGiven::Refused { why } => assert!(why.starts_with("minting GITHUB_TOKEN"), "{why}"),
         g => panic!("{g:?}"),
     }
@@ -925,6 +930,12 @@ async fn chant_fly_applied(app: &Arc<Platform>, hub: &TestHub, id: &str, end: &s
         "the box finds the approved plan names what it was handed"
     );
     let run = app.db.run(&app.db.deploy_run(id).unwrap().unwrap().run).unwrap().unwrap();
+    // Its run names who approved it: the passkey, a v3's (a release's,
+    // #1985) as a v2's (a roll back's).
+    let approved = app.db.run_events(&run.id).unwrap().into_iter().find(|e| e.to == RunState::Approved).unwrap();
+    let by = serde_json::from_str::<Value>(&approved.detail).unwrap()["by"].as_str().unwrap_or_default().to_owned();
+    let pk = app.db.deploy_approvals(id).unwrap().pop().unwrap().passkey.unwrap().id;
+    assert_eq!(by, format!("passkey:{pk}"), "{}", approved.detail);
     work::report(app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
     let run = app.db.run(&run.id).unwrap().unwrap();
     let to = if end.contains(r#""exit":0"#) { RunState::Succeeded } else { RunState::Failed };
@@ -1064,7 +1075,32 @@ async fn a_chant_fly_deploy_is_asked_for_only_once_chant_planned_it() {
         let (st, v) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
         assert_eq!((st, v["reason"].as_str()), (409, Some(crate::deploys::CHANT_PLAN)), "{v}");
         assert!(app.db.deploy_history(&id).unwrap().iter().all(|e| e.kind != "requested"));
+        // Its page says the same as asking does: plan another, and why.
+        let (st, cd) = call(&base, "a", "GET", &format!("/api/deploys/{id}/can-decide"), None).await;
+        assert_eq!(
+            (st, cd["can"].as_bool(), cd["reason"].as_str(), cd["do"].as_str()),
+            (200, Some(false), Some(crate::deploys::CHANT_PLAN), Some("Plan another deploy.")),
+            "{cd}"
+        );
+        assert!(cd["why"].as_str().unwrap().contains(says), "{sha}: {cd}");
     }
+
+    // Asked for before chant planned deploys first (pending, with no plan
+    // of chant's): asking again is refused, and nobody gets a card they
+    // couldn't act on.
+    let body = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full("ccc4"), "where": "acme/app" },
+    });
+    let (_, d) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    let old = d["id"].as_str().unwrap().to_owned();
+    let asked = crate::db::deploys::Actor::person("b");
+    app.db.record_deploy(&old, crate::db::deploys::EventKind::Requested, &asked, now_ms(), json!({})).unwrap().unwrap();
+    assert_eq!(state(&app, &old), State::Pending);
+    let (st, v) = call(&base, "b", "POST", &format!("/api/deploys/{old}/request"), None).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(crate::deploys::CHANT_PLAN)), "{v}");
+    assert!(v["error"].as_str().unwrap_or_default().contains("Plan another deploy"), "{v}");
+    assert_eq!(app.db.deploy_history(&old).unwrap().iter().filter(|e| e.kind == "requested").count(), 1);
+    assert!(app.db.deploy_plan(&old).unwrap().is_none(), "nor is a plan started for it");
 
     // While chant plans it, nobody is offered to decide it.
     let body = json!({
@@ -1114,6 +1150,95 @@ async fn a_chant_fly_deploy_is_asked_for_only_once_chant_planned_it() {
     let plan_box = its_box(&app, &format!("{id}-plan"));
     assert_eq!(plan_box.state, "deleted");
     let _ = fake;
+}
+
+/// #1985 review: chant planned it, but whoever asked can't ask now (an
+/// editor made a viewer while it planned): the plan ends saying so, and
+/// nobody is asked.
+#[tokio::test]
+async fn a_plan_whose_asker_cant_ask_now_asks_nobody() {
+    let (hub, app, base, t, _fake) = world().await;
+    let body = json!({
+        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+        "settings": { "fly_app": "acme-web", "chant_env": "github" },
+    });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    let sha = "abc9";
+    let body = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full(sha), "where": "acme/app" },
+    });
+    let (st, d) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!((st, &d["chant"]["state"]), (200, &json!("planning")), "{d}");
+    let m = boot_box(&app, &hub, &format!("{id}-plan")).await;
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let run = app.db.run(&w.items[0].run).unwrap().unwrap();
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Viewer), ("x", TeamRole::Viewer)]);
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    let end = json!({ "exit": 0, "result": { "chant_gate": chant_gate(sha) } }).to_string();
+    work::report(&app, &m.m, &m.report(&run, RunState::Running, RunState::Succeeded, now_ms(), &end)).await.unwrap();
+    settle_at(&app, now_ms() + 2 * FOLLOW_MS).await;
+    let (_, d) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+    assert_eq!((&d["state"], &d["chant"]["state"]), (&json!("planned"), &json!("failed")), "{d}");
+    let plan = app.db.deploy_plan(&id).unwrap().unwrap();
+    assert!(plan.failed.as_deref().unwrap_or_default().contains("whoever asked for it can't now"), "{plan:?} {d}");
+    assert!(app.db.deploy_history(&id).unwrap().iter().all(|e| e.kind != "requested"), "nobody was asked");
+}
+
+/// #1985 review: a chant-fly plan run's two tokens, by step. One that
+/// reads, to fetch the commit before anything of it runs; then one that
+/// writes, to push chant's ledger, which the box asks for once everything
+/// the plan ran is stopped: never before the first, each once. An ask
+/// that names no step gets neither.
+#[tokio::test]
+async fn a_chant_fly_plan_gets_a_token_that_reads_then_one_that_writes() {
+    let (hub, app, base, t, gh) = world_with_github().await;
+    crate::forge::links_tests::linked(&app, &t, "arugula-salad/arugula", 1001);
+    let body = json!({
+        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+        "settings": { "fly_app": "acme-web", "chant_env": "github" },
+    });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    let sha = crate::deploys_tests::full("f1f1");
+    let body =
+        json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "arugula-salad/arugula" } });
+    let (st, d) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!((st, &d["chant"]["state"]), (200, &json!("planning")), "{d}");
+    let m = boot_box(&app, &hub, &format!("{id}-plan")).await;
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let run = app.db.run(&w.items[0].run).unwrap().unwrap();
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    let refused = |g: SecretsGiven, says: &str| match g {
+        SecretsGiven::Refused { why } => assert!(why.contains(says), "{says:?}: {why}"),
+        g => panic!("{says:?}: {g:?}"),
+    };
+    let given = |g: SecretsGiven| match g {
+        SecretsGiven::Given { secrets } => secrets.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+        g => panic!("{g:?}"),
+    };
+    let before = gh.lock().unwrap().minted.len();
+    refused(ask_step(&app, &m, &run.id, None).await, "by its step");
+    refused(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await, "after its fetch token");
+    assert_eq!(gh.lock().unwrap().minted.len(), before, "nothing minted for those");
+    assert_eq!(given(ask_step(&app, &m, &run.id, Some(PlanStep::Fetch)).await), ["GITHUB_TOKEN"]);
+    assert_eq!(gh.lock().unwrap().minted.last().unwrap()["contents"], "read", "the fetch's token only reads");
+    refused(ask_step(&app, &m, &run.id, Some(PlanStep::Fetch)).await, "given already");
+    assert_eq!(given(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await), ["GITHUB_TOKEN"]);
+    assert_eq!(gh.lock().unwrap().minted.last().unwrap()["contents"], "write", "the push's token writes");
+    refused(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await, "once per run");
+    assert_eq!(gh.lock().unwrap().minted.len(), before + 2);
+    let p = app.db.deploy_plan(&id).unwrap().unwrap();
+    assert!(p.read_at.is_some() && p.secrets_at.is_some() && p.read_at <= p.secrets_at, "{p:?}");
 }
 
 /// [`chant_gate`] as JSON, for a test to change a field of.
@@ -1462,7 +1587,7 @@ async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
     assert!(arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, None));
     let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
     // Not before it runs.
-    let early = artifact(&app, &m.m, &SecretsAsk { run: run.id.clone() }).await.unwrap();
+    let early = artifact(&app, &m.m, &SecretsAsk::run(&run.id)).await.unwrap();
     assert!(matches!(early, ArtifactGiven::Refused { .. }), "{early:?}");
     work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
     match ask(&app, &m, &run.id).await {
@@ -1478,7 +1603,7 @@ async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
         .query_row("SELECT count(*) FROM github_token_mints WHERE caller = 'planter-app'", params![], |r| r.get(0))
         .unwrap();
     assert_eq!(minted, 2, "both minted by planter's App, and logged as its");
-    match artifact(&app, &m.m, &SecretsAsk { run: run.id.clone() }).await.unwrap() {
+    match artifact(&app, &m.m, &SecretsAsk::run(&run.id)).await.unwrap() {
         ArtifactGiven::Given { digest: d, bytes } => {
             assert_eq!(d, digest);
             assert_eq!(base64::engine::general_purpose::STANDARD.decode(bytes).unwrap(), tar);

@@ -36,7 +36,7 @@
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use arugula_control_wire::work::{
-    DeployPlanWork, DeployWork, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS,
+    DeployPlanWork, DeployWork, PlanStep, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS,
 };
 use arugula_e2e::{
     deploy::{Pinned, check_apply},
@@ -733,7 +733,7 @@ fn wipe(secrets: Vec<Secret>) {
 /// one line of its name and its bytes escaped, unescaped by `printf -v` in
 /// the C locale, so a value keeps every byte, trailing newlines too, with
 /// no subshell and nothing on a command line. An empty line ends them.
-pub fn driver_script(work: &std::path::Path, argv: &[String]) -> String {
+pub fn driver_script(work: &std::path::Path, argv: &[String], fresh: bool) -> String {
     // Each secret is one line, `NAME \xHH\xHH…`: its bytes escaped, so no
     // byte of a value (a newline, a NUL) can end it early or start another
     // header. `printf -v` unescapes it with no subshell (trailing newlines
@@ -741,8 +741,11 @@ pub fn driver_script(work: &std::path::Path, argv: &[String]) -> String {
     // length and runs nothing. A name the deploy doesn't name
     // ($DEPLOY_SECRETS) runs nothing either.
     format!(
-        r#"set -e; w={}; rm -rf -- "$w"; mkdir -p -m 700 -- "$w"; cd -- "$w"; export LC_ALL=C; while IFS=' ' read -r n e && [ -n "$n" ]; do case " $DEPLOY_SECRETS " in *" $n "*) ;; *) echo 'arugula: a secret the deploy does not name' >&2; exit 97;; esac; case "$e" in *[!\\x0-9a-f]*) exit 97;; esac; printf -v v '%b' "$e"; [ "${{#v}}" = "$(( ${{#e}} / 4 ))" ] || {{ echo 'arugula: a secret came short' >&2; exit 97; }}; export "$n=$v"; done; unset n e v LC_ALL; set +e; exec {} < /dev/null"#,
+        r#"set -e; w={}; {}cd -- "$w"; export LC_ALL=C; while IFS=' ' read -r n e && [ -n "$n" ]; do case " $DEPLOY_SECRETS " in *" $n "*) ;; *) echo 'arugula: a secret the deploy does not name' >&2; exit 97;; esac; case "$e" in *[!\\x0-9a-f]*) exit 97;; esac; printf -v v '%b' "$e"; [ "${{#v}}" = "$(( ${{#e}} / 4 ))" ] || {{ echo 'arugula: a secret came short' >&2; exit 97; }}; export "$n=$v"; done; unset n e v LC_ALL; set +e; exec {} < /dev/null"#,
         quote(&work.to_string_lossy()),
+        // A run's first step starts in an empty home; a plan's later steps
+        // (#1985) in the one the first left.
+        if fresh { r#"rm -rf -- "$w"; mkdir -p -m 700 -- "$w"; "# } else { "" },
         super::command_line(argv)
     )
 }
@@ -795,10 +798,12 @@ async fn remove_home(as_: Option<&RunAs>, work: &std::path::Path) {
 /// The driver's process: as `as_` (or, in tests, this daemon's user),
 /// with an empty environment but its own and the deploy's (never a
 /// secret's: those come on its standard input).
+#[allow(clippy::too_many_arguments)]
 fn driver_command(
     run: &str,
     d: &DeployWork,
-    plan: bool,
+    phase: Phase,
+    extra: &[(&str, String)],
     argv: &[String],
     as_: Option<&RunAs>,
     dir: &std::path::Path,
@@ -824,8 +829,9 @@ fn driver_command(
         ("DEPLOY_PLAN", o.plan.clone()),
         ("DEPLOY_SECRETS", names.join(" ")),
         ("DEPLOY_RUN", run.to_owned()),
-        // #1985: its plan (before anyone approves it), or its apply.
-        ("DEPLOY_PHASE", if plan { "plan" } else { "apply" }.to_owned()),
+        // #1985: a step of its plan (before anyone approves it), or its
+        // apply.
+        ("DEPLOY_PHASE", phase.as_str().to_owned()),
         ("DEPLOY_SETTINGS", serde_json::to_string(&d.settings).unwrap_or_default()),
         ("DEPLOY_ROLL_BACK", d.roll_back.as_ref().and_then(|r| serde_json::to_string(r).ok()).unwrap_or_default()),
     ]
@@ -841,8 +847,9 @@ fn driver_command(
             ("DEPLOY_CHANT", chant_relay(d).unwrap_or_default()),
         ]
         .into_iter()
-        .filter(|_| !plan),
+        .filter(|_| phase == Phase::Apply),
     )
+    .chain(extra.iter().map(|(k, v)| (*k, v.clone())))
     .map(|(k, v)| (k.to_owned(), v))
     .chain(
         // A box that runs the fake driver (tests, testnet) says so: only
@@ -850,7 +857,7 @@ fn driver_command(
         fake_on().then(|| ("ARUGULA_HOSTED_FAKE_DRIVER".to_owned(), "1".to_owned())),
     )
     .collect();
-    let script = driver_script(&work, argv);
+    let script = driver_script(&work, argv, phase.fresh());
     let mut c = match as_ {
         Some(a) => {
             let mut c = tokio::process::Command::new("sudo");
@@ -867,8 +874,212 @@ fn driver_command(
         }
     };
     c.current_dir("/").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    // A group of its own, which [`stop_step`] kills when there's no run
+    // user to kill everything of (tests).
+    #[cfg(unix)]
+    c.process_group(0);
     result.give(&mut c);
     c
+}
+
+/// Which process of a deploy's driver (#1985): its apply, or a step of its
+/// plan, each a process of its own, its `DEPLOY_PHASE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Apply,
+    /// With a token that reads: the commit, fetched. Nothing of it runs.
+    PlanFetch,
+    /// With no token: the commit's code, to chant's gate.
+    Plan,
+    /// With a token that writes, asked for once everything `Plan` ran is
+    /// killed: chant's ledger, pushed.
+    PlanPush,
+}
+
+impl Phase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Apply => "apply",
+            Phase::PlanFetch => "plan-fetch",
+            Phase::Plan => "plan",
+            Phase::PlanPush => "plan-push",
+        }
+    }
+
+    /// A run's first step, which starts in an empty home.
+    fn fresh(self) -> bool {
+        matches!(self, Phase::Apply | Phase::PlanFetch)
+    }
+}
+
+/// The short-lived tokens among `given`, to revoke once its step ends.
+fn tokens_of(given: &[Secret]) -> Vec<(String, String)> {
+    given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect()
+}
+
+/// Everything a driver's step left, killed: every process of the run
+/// user's (`kill_all`), or, with no run user (tests), the step's process
+/// group.
+async fn stop_step(as_: Option<&RunAs>, group: Option<u32>) {
+    match as_ {
+        Some(a) => kill_all(a).await,
+        None => {
+            #[cfg(unix)]
+            if let Some(g) = group.and_then(|g| i32::try_from(g).ok()) {
+                let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(g), nix::sys::signal::SIGKILL);
+            }
+            #[cfg(not(unix))]
+            let _ = group;
+        }
+    }
+}
+
+/// One process of the driver's (an apply, or a step of a plan): `given`
+/// on its standard input, then closed; its output redacted into the pane
+/// (`out`); once it ends, everything it left is killed ([`stop_step`]),
+/// so nothing it started outlives it, before its output's end is waited
+/// for. Its exit and what it said on its result pipe.
+#[allow(clippy::too_many_arguments)]
+async fn step(
+    run: &str,
+    d: &DeployWork,
+    phase: Phase,
+    extra: &[(&str, String)],
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    given: Vec<Secret>,
+    out: &mut tokio::fs::File,
+) -> Result<(i32, Vec<u8>), String> {
+    let pipe = match ResultPipe::new() {
+        Ok(p) => p,
+        Err(e) => {
+            wipe(given);
+            return Err(e);
+        }
+    };
+    let spawned = driver_command(run, d, phase, extra, argv, as_, dir, &pipe).spawn();
+    let result_r = pipe.spawned();
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(e) => {
+            wipe(given);
+            return Err(format!("its driver didn't start: {e}"));
+        }
+    };
+    let group = child.id();
+    info!(
+        run,
+        deploy = d.deploy,
+        driver = d.driver,
+        phase = phase.as_str(),
+        secrets = given.len(),
+        "hosted: running a deploy's driver"
+    );
+    // Its secrets on its standard input, a pipe, then closed.
+    if let Some(mut stdin) = child.stdin.take() {
+        let mut input = secrets_input(&given);
+        let _ = stdin.write_all(&input).await;
+        input.iter_mut().for_each(|b| *b = 0);
+        drop(stdin);
+    }
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+    for stream in [
+        child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+        child.stderr.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let mut r = Redactor::new(&given);
+        let tx = tx.clone();
+        crate::task::spawn(async move {
+            let mut stream = stream;
+            let mut buf = vec![0u8; 8192];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let shown = r.feed(&buf[..n]);
+                        if !shown.is_empty() && tx.send(shown).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            buf.iter_mut().for_each(|b| *b = 0);
+            let rest = r.finish();
+            if !rest.is_empty() {
+                let _ = tx.send(rest).await;
+            }
+        });
+    }
+    drop(tx);
+    wipe(given);
+    // Its output to the pane while it runs; once it ends, everything it
+    // left goes first (M220), so nothing it started writes after the end
+    // or holds its output open.
+    let ran = async {
+        let status = child.wait().await;
+        stop_step(as_, group).await;
+        status
+    };
+    let shown = async {
+        while let Some(chunk) = rx.recv().await {
+            let _ = out.write_all(&chunk).await;
+        }
+    };
+    let (status, ()) = tokio::join!(ran, shown);
+    let said = read_result(result_r);
+    let status = status.map_err(|e| format!("its driver: {e}"))?;
+    let code = status.code().ok_or_else(|| "stopped".to_owned())?;
+    Ok((code, said))
+}
+
+/// A deploy's plan run (#1985), in three steps, each a process of the
+/// driver's, and everything each left killed before the next starts:
+/// `plan-fetch`, with a token that reads, fetches the commit; `plan`, with
+/// no token at all, is the only one that runs the commit's code, to
+/// chant's gate; then `plan-push`, with a token that writes, which is
+/// asked for only now, pushes chant's ledger. So no token that writes
+/// exists on the box while anything of the commit's runs. Each step's
+/// tokens are revoked as it ends. Its exit (the first step's that isn't
+/// 0) and what `plan` said on its result pipe (chant's gate).
+pub async fn plan_steps<A, F>(
+    run: &str,
+    d: &DeployWork,
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    out: &mut tokio::fs::File,
+    ask: A,
+) -> Result<(i32, Vec<u8>), String>
+where
+    A: Fn(PlanStep) -> F,
+    F: std::future::Future<Output = Result<Vec<Secret>, String>>,
+{
+    let given = ask(PlanStep::Fetch).await?;
+    let tokens = tokens_of(&given);
+    let fetched = step(run, d, Phase::PlanFetch, &[], argv, as_, dir, given, out).await;
+    revoke_tokens(tokens).await;
+    let (code, _) = fetched?;
+    if code != 0 {
+        return Ok((code, Vec::new()));
+    }
+    let (code, said) = step(run, d, Phase::Plan, &[], argv, as_, dir, Vec::new(), out).await?;
+    if code != 0 {
+        return Ok((code, said));
+    }
+    let Some(gate) = result_of(&said).and_then(|r| r.get("chant_gate").cloned()).filter(|g| g.is_object()) else {
+        return Err("its plan named no chant gate: nothing to push".into());
+    };
+    let given = ask(PlanStep::Push).await?;
+    let tokens = tokens_of(&given);
+    let extra = [("DEPLOY_CHANT_GATE", gate.to_string())];
+    let pushed = step(run, d, Phase::PlanPush, &extra, argv, as_, dir, given, out).await;
+    revoke_tokens(tokens).await;
+    let (code, _) = pushed?;
+    Ok((code, said))
 }
 
 /// The driver's result pipe (M220): its write end becomes the driver's fd
@@ -996,8 +1207,8 @@ const MAX_SECRETS_ANSWER: usize = 1024 * 1024;
 /// carries, each once, none reserved. Read by hand from the answer's bytes,
 /// so no parse error can quote a value, and the bytes are overwritten
 /// after.
-async fn secrets(app: &App, run: &str, names: &[String]) -> Result<Vec<Secret>, String> {
-    let ask = SecretsAsk { run: run.into() };
+async fn secrets(app: &App, run: &str, names: &[String], step: Option<PlanStep>) -> Result<Vec<Secret>, String> {
+    let ask = SecretsAsk { run: run.into(), plan_step: step };
     let bytes = match app.control.post_signed_bytes(WORK_SECRETS, &ask, MAX_SECRETS_ANSWER).await {
         Ok(b) => b,
         Err(e) => return Err(format!("its secrets: {e:#}")),
@@ -1203,7 +1414,15 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
         }
         started(&app, &l.run).await?;
         let argv = driver_argv_for(&d, &l.run).map_err(|r| r.1)?;
-        let given = secrets(&app, &l.run, &d.secrets).await?;
+        // A plan (#1985): three steps, its tokens asked for and revoked
+        // step by step.
+        if plan {
+            let ask = |step| secrets(&app, &l.run, &d.secrets, Some(step));
+            let (code, said) = plan_steps(&l.run, &d, &argv, as_.as_ref(), &dir, &mut out, ask).await?;
+            said_on_fd = said;
+            return Ok(code);
+        }
+        let given = secrets(&app, &l.run, &d.secrets, None).await?;
         // planter's Ship (M233): the source it ships, where its driver reads
         // it; not a secret (the driver checks its digest).
         if super::ships(&d.driver, &d.operation.source_where)
@@ -1212,90 +1431,10 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
             wipe(given);
             return Err(e);
         }
-        revocable = given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect();
-        let pipe = match ResultPipe::new() {
-            Ok(p) => p,
-            Err(e) => {
-                wipe(given);
-                return Err(e);
-            }
-        };
-        let spawned = driver_command(&l.run, &d, plan, &argv, as_.as_ref(), &dir, &pipe).spawn();
-        let result_r = pipe.spawned();
-        let mut child = match spawned {
-            Ok(c) => c,
-            Err(e) => {
-                wipe(given);
-                return Err(format!("its driver didn't start: {e}"));
-            }
-        };
-        info!(
-            run = l.run,
-            deploy = d.deploy,
-            driver = d.driver,
-            plan,
-            secrets = given.len(),
-            "hosted: running a deploy's driver"
-        );
-        // Its secrets on its standard input, a pipe, then closed.
-        if let Some(mut stdin) = child.stdin.take() {
-            let mut input = secrets_input(&given);
-            let _ = stdin.write_all(&input).await;
-            input.iter_mut().for_each(|b| *b = 0);
-            drop(stdin);
-        }
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
-        for stream in [
-            child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
-            child.stderr.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let mut r = Redactor::new(&given);
-            let tx = tx.clone();
-            crate::task::spawn(async move {
-                let mut stream = stream;
-                let mut buf = vec![0u8; 8192];
-                loop {
-                    match stream.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            let shown = r.feed(&buf[..n]);
-                            if !shown.is_empty() && tx.send(shown).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-                buf.iter_mut().for_each(|b| *b = 0);
-                let rest = r.finish();
-                if !rest.is_empty() {
-                    let _ = tx.send(rest).await;
-                }
-            });
-        }
-        drop(tx);
-        wipe(given);
-        // Its output to the pane while it runs; once it ends, everything the
-        // run user left goes first (M220), so nothing it started writes after
-        // the end or holds its output open.
-        let ran = async {
-            let status = child.wait().await;
-            if let Some(a) = &as_ {
-                kill_all(a).await;
-            }
-            status
-        };
-        let shown = async {
-            while let Some(chunk) = rx.recv().await {
-                let _ = out.write_all(&chunk).await;
-            }
-        };
-        let (status, ()) = tokio::join!(ran, shown);
-        said_on_fd = read_result(result_r);
-        let status = status.map_err(|e| format!("its driver: {e}"))?;
-        status.code().ok_or_else(|| "stopped".to_owned())
+        revocable = tokens_of(&given);
+        let (code, said) = step(&l.run, &d, Phase::Apply, &[], &argv, as_.as_ref(), &dir, given, &mut out).await?;
+        said_on_fd = said;
+        Ok(code)
     }
     .await;
     if let Some(a) = &as_ {
@@ -1338,7 +1477,7 @@ const MAX_ARTIFACT_ANSWER: usize = arugula_e2e::deploy::planter::MAX_TARBALL * 4
 /// by the driver against the approved operation.
 async fn fetch_artifact(app: &App, run: &str) -> Result<(), String> {
     use base64::Engine as _;
-    let ask = SecretsAsk { run: run.into() };
+    let ask = SecretsAsk::run(run);
     let bytes = app
         .control
         .post_signed_bytes(WORK_ARTIFACT, &ask, MAX_ARTIFACT_ANSWER)
@@ -1461,13 +1600,104 @@ mod tests {
         let work = dir.join("w");
         let argv =
             vec!["/bin/sh".to_owned(), "-c".to_owned(), "printf '%s|' \"$TOKEN\" \"$OTHER\" \"$(pwd)\"".to_owned()];
-        let script = driver_script(&work, &argv);
+        let script = driver_script(&work, &argv, true);
         let secret = "multi\nline 'quoted' $value \\n é\n\n";
         assert!(!script.contains("multi"), "{script}");
         let out = drive(&script, "TOKEN OTHER", &secrets_input(&[s("TOKEN", secret), s("OTHER", "two")])).await;
         assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{secret}|two|{}|", work.display()));
         let on_disk: Vec<String> = walk(&dir).iter().filter_map(|p| std::fs::read_to_string(p).ok()).collect();
         assert!(on_disk.iter().all(|f| !f.contains("multi")), "nothing of it on disk");
+    }
+
+    /// A plan run's steps (#1985), as the box runs them: the fetch gets the
+    /// token that reads; the plan, the one step that runs the commit's
+    /// code, no token at all, and what it leaves running is killed before
+    /// the token that writes is even asked for; the push gets that token
+    /// and the gate the plan reported. The pushed token never reaches the
+    /// plan's environment.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_plans_write_token_comes_only_once_its_code_is_stopped() {
+        let dir = crate::hosted::scratch("deploy-plan-steps");
+        let script = r#"case "$DEPLOY_PHASE" in
+plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; echo fetched;;
+plan) env > "$HOME/plan-env"; [ -z "$GITHUB_TOKEN" ] || exit 12
+  (trap '' HUP TERM; exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & echo $! > "$HOME/left"
+  printf '{"chant_gate":{"gate":"ship","run":"r1","plan":"p"}}' >&3; echo planned;;
+plan-push) [ "$GITHUB_TOKEN" = writes ] || exit 14
+  [ "$DEPLOY_CHANT_GATE" = '{"gate":"ship","plan":"p","run":"r1"}' ] || exit 15; echo pushed;;
+*) exit 10;;
+esac"#;
+        let argv = vec!["/bin/sh".to_owned(), "-c".to_owned(), script.to_owned()];
+        let op = arugula_e2e::deploy::Operation {
+            project: "prj_1".into(),
+            environment: "env_1".into(),
+            environment_name: "production".into(),
+            plan: "ab".repeat(32),
+            source_kind: "commit".into(),
+            source_ref: "c".repeat(40),
+            source_where: "acme/app".into(),
+            planned: "cd".repeat(32),
+        };
+        let d = DeployWork {
+            deploy: "dep_1".into(),
+            operation: op.clone(),
+            approval: arugula_e2e::deploy::Approval::v2("dep_1", &op, "", arugula_e2e::deploy::Decision::Deny, 0),
+            passkey: None,
+            passkey_log: None,
+            driver: "chant-fly".into(),
+            secrets: vec!["GITHUB_TOKEN".into()],
+            settings: Default::default(),
+            roll_back: None,
+            approval_id: None,
+        };
+        let home = work_dir("run_1", None, &dir);
+        // Whether what the plan left still runs: given a moment to be
+        // reaped once it's killed, never thirty seconds.
+        let left_runs = |home: &std::path::Path| {
+            let Some(pid) = std::fs::read_to_string(home.join("left")).ok().and_then(|p| p.trim().parse::<i32>().ok())
+            else {
+                return false;
+            };
+            (0..40).all(|_| {
+                let alive = std::process::Command::new("ps")
+                    .args(["-o", "stat=", "-p", &pid.to_string()])
+                    .output()
+                    .is_ok_and(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().starts_with('Z'));
+                if alive {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                alive
+            })
+        };
+        let asked = std::sync::Mutex::new(Vec::new());
+        let ask = |step: PlanStep| {
+            asked.lock().unwrap().push((step, left_runs(&home)));
+            let value = if step == PlanStep::Fetch { "reads" } else { "writes" };
+            std::future::ready(Ok(vec![s("GITHUB_TOKEN", value)]))
+        };
+        let mut out = tokio::fs::File::create(dir.join("pane")).await.unwrap();
+        let (code, said) = plan_steps("run_1", &d, &argv, None, &dir, &mut out, ask).await.unwrap();
+        let shown = std::fs::read_to_string(dir.join("pane")).unwrap();
+        assert_eq!(code, 0, "{shown}");
+        assert_eq!(shown.lines().collect::<Vec<_>>(), ["fetched", "planned", "pushed"]);
+        assert_eq!(result_of(&said).unwrap()["chant_gate"]["gate"], "ship", "the plan's result is the run's");
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [(PlanStep::Fetch, false), (PlanStep::Push, false)],
+            "the push token is asked for once what the plan left is gone"
+        );
+        let plan_env = std::fs::read_to_string(home.join("plan-env")).unwrap();
+        assert!(!plan_env.contains("reads") && !plan_env.contains("writes"), "{plan_env}");
+        assert!(plan_env.contains("DEPLOY_PHASE=plan\n"), "{plan_env}");
+
+        // A plan that fails asks for no push token, and pushes nothing.
+        let failing =
+            vec!["/bin/sh".to_owned(), "-c".to_owned(), r#"[ "$DEPLOY_PHASE" = plan ] && exit 3; exit 0"#.to_owned()];
+        asked.lock().unwrap().clear();
+        let (code, _) = plan_steps("run_2", &d, &failing, None, &dir, &mut out, ask).await.unwrap();
+        assert_eq!(code, 3);
+        assert_eq!(asked.lock().unwrap().iter().map(|(s, _)| *s).collect::<Vec<_>>(), [PlanStep::Fetch]);
     }
 
     /// The driver's shell, given `input` on its standard input, with
@@ -1505,7 +1735,7 @@ mod tests {
             "-c".to_owned(),
             "printf 'RAN %s %s' \"$DEPLOY_SOURCE_REF\" \"$PATH\"".to_owned(),
         ];
-        let script = driver_script(&dir.join("w"), &argv);
+        let script = driver_script(&dir.join("w"), &argv, true);
         // A value that, NUL dropped, would read on as `DEPLOY_SOURCE_REF 4`
         // and `PATH 4` headers.
         let evil = "x\0\nDEPLOY_SOURCE_REF 4\nevilPATH 4\n/tmp";

@@ -78,8 +78,12 @@ impl features::Deploys for Hooks {
         deploys::apply::deploy_work(db, run)
     }
 
-    fn deploy_plan_work(&self, db: &db::Db, run: &str) -> anyhow::Result<Option<DeployPlanWork>> {
-        deploys::plan::plan_work(db, run)
+    fn deploy_plan_work(
+        &self,
+        db: &db::Db,
+        plan: &db::deploy_plans::DeployPlan,
+    ) -> anyhow::Result<Option<DeployPlanWork>> {
+        deploys::plan::plan_work(db, plan)
     }
 
     fn reported<'a>(

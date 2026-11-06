@@ -467,10 +467,10 @@ fn approve_run(
     a: &StoredApproval,
     now: u64,
 ) -> Result<std::result::Result<(), crate::db::runs::Refused>> {
-    // Who approved it, for the run's `approved` event: v1's device, or
-    // v2's passkey (DK4).
+    // Who approved it, for the run's `approved` event: v1's device, or the
+    // passkey of a v2 (DK4) or a v3 (#1985, chant's statement).
     let by = match &a.passkey {
-        Some(pk) if a.v() == arugula_e2e::deploy::V2 => format!("passkey:{}", pk.id),
+        Some(pk) if a.v() != arugula_e2e::deploy::V1 => format!("passkey:{}", pk.id),
         _ => a.device.clone(),
     };
     let approval = deploy_approval(run, &a.id, &by);
@@ -737,9 +737,9 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
     if run.state != RunState::Running {
         return refused("the run isn't running");
     }
-    // A chant→Fly deploy's plan run (#1985): its one minted token.
+    // A chant→Fly deploy's plan run (#1985): a minted token per step.
     if let Some(p) = db.deploy_plan_of_run(&run.id)? {
-        return super::plan::secrets(app, m, &run, &p).await;
+        return super::plan::secrets(app, m, &run, &p, ask.plan_step).await;
     }
     let Some(dr) = db.deploy_run_of(&run.id)? else { return refused("the run isn't a deploy's") };
     let Some(d) = db.deploy(&dr.deploy)? else { return refused("no such deploy") };

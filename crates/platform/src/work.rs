@@ -369,13 +369,15 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             continue;
         }
         // A deploy's plan run (#1985), the same way: only to a machine that
-        // takes deploys, and never without what it plans.
-        let deploy_plan = crate::features::deploys().deploy_plan_work(&app.db, &id)?;
-        if (deploy_plan.is_some() && !takes_deploys)
-            || (app.db.deploy_plan_of_run(&id)?.is_some() && deploy_plan.is_none())
-        {
-            continue;
-        }
+        // takes deploys, and never without what it plans. One lookup, which
+        // a run that isn't a plan's ends at.
+        let deploy_plan = match app.db.deploy_plan_of_run(&id)? {
+            None => None,
+            Some(p) => match crate::features::deploys().deploy_plan_work(&app.db, &p)? {
+                Some(w) if takes_deploys => Some(w),
+                _ => continue,
+            },
+        };
         // Its machine is asking for it: it isn't `not_taken` while it does.
         app.db.note_pulled(&id, now)?;
         let Some(run) = app.db.run(&id)? else { continue };

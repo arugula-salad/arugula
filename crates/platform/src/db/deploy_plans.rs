@@ -10,12 +10,15 @@
 //!   in place of `apply`), approved by the platform ([`plan_approval`]):
 //!   there's nothing of a person's to approve yet, and the run holds no
 //!   secret of the environment's.
-//! - **One token, once** ([`Db::release_plan_secrets`]): a GitHub token
-//!   minted to push chant's ledger, given while the run runs.
+//! - **Two tokens, each once** ([`Db::release_plan_secrets`]): GitHub
+//!   tokens minted for the run while it runs, one that reads to fetch the
+//!   commit before anything of it runs, then one that writes to push
+//!   chant's ledger once everything the plan ran is stopped.
 //! - **Its end**: the chant gate the plan stopped at, which the asker's
 //!   `requested` event then carries, or why it didn't plan.
 
 use anyhow::Result;
+use arugula_control_wire::work::PlanStep;
 use serde_json::json;
 
 use super::{
@@ -33,6 +36,10 @@ pub struct DeployPlan {
     pub asked_at: u64,
     pub run: Option<String>,
     pub workspace: Option<String>,
+    /// When its machine was given the token that reads (to fetch).
+    pub read_at: Option<u64>,
+    /// When its machine was given the token that writes (to push chant's
+    /// ledger).
     pub secrets_at: Option<u64>,
     /// The chant gate the plan stopped at, once it planned.
     pub gate: Option<arugula_e2e::deploy::chant::Gate>,
@@ -48,20 +55,21 @@ impl DeployPlan {
     }
 }
 
-const COLS: &str = "deploy_id, asked_by, asked_at, run_id, workspace_id, secrets_at, gate, failed, ended_at";
+const COLS: &str = "deploy_id, asked_by, asked_at, run_id, workspace_id, read_at, secrets_at, gate, failed, ended_at";
 
 fn row(r: &Row) -> Result<DeployPlan> {
-    let gate: Option<String> = r.get(6)?;
+    let gate: Option<String> = r.get(7)?;
     Ok(DeployPlan {
         deploy: r.get(0)?,
         asked_by: r.get(1)?,
         asked_at: r.get(2)?,
         run: r.get(3)?,
         workspace: r.get(4)?,
-        secrets_at: r.get(5)?,
+        read_at: r.get(5)?,
+        secrets_at: r.get(6)?,
         gate: gate.and_then(|g| serde_json::from_str(&g).ok()),
-        failed: r.get(7)?,
-        ended_at: r.get(8)?,
+        failed: r.get(8)?,
+        ended_at: r.get(9)?,
     })
 }
 
@@ -172,16 +180,25 @@ impl Db {
         Ok(Some(run))
     }
 
-    /// The plan run's machine is given its token now: `true` once, for the
-    /// first ask, and only while the run is `running` and its plan hasn't
-    /// ended, checked in the one statement that marks it given.
-    pub fn release_plan_secrets(&self, run: &str, now: u64) -> Result<bool> {
-        Ok(self.c().execute(
-            "UPDATE deploy_plans SET secrets_at = ?2
-             WHERE run_id = ?1 AND secrets_at IS NULL AND ended_at IS NULL
-               AND EXISTS (SELECT 1 FROM runs r WHERE r.id = ?1 AND r.state = 'running')",
-            params![run, now],
-        )? == 1)
+    /// The plan run's machine is given one of its two tokens now (#1985):
+    /// `true` once per step, for the first ask, and only while the run is
+    /// `running` and its plan hasn't ended. The one that writes comes only
+    /// after the one that reads, checked in the one statement that marks
+    /// it given.
+    pub fn release_plan_secrets(&self, run: &str, step: PlanStep, now: u64) -> Result<bool> {
+        let sql = match step {
+            PlanStep::Fetch => {
+                "UPDATE deploy_plans SET read_at = ?2
+                 WHERE run_id = ?1 AND read_at IS NULL AND secrets_at IS NULL AND ended_at IS NULL
+                   AND EXISTS (SELECT 1 FROM runs r WHERE r.id = ?1 AND r.state = 'running')"
+            }
+            PlanStep::Push => {
+                "UPDATE deploy_plans SET secrets_at = ?2
+                 WHERE run_id = ?1 AND read_at IS NOT NULL AND secrets_at IS NULL AND ended_at IS NULL
+                   AND EXISTS (SELECT 1 FROM runs r WHERE r.id = ?1 AND r.state = 'running')"
+            }
+        };
+        Ok(self.c().execute(sql, params![run, now])? == 1)
     }
 
     /// The plan ended: chant's gate, or why not. Once; `true` for the call

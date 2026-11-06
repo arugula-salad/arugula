@@ -137,6 +137,10 @@ device-keys board, Arugula native #382 to #390).
   `chant/lifecycle`: `chant run <op>` stops at the op's gate and records
   its pending fact, with chant's plan digest, and the ask is recorded with
   that gate. An op that needs Fly before its gate fails at planning. The
+  push token comes last (#1985's review): the commit is fetched with a
+  token that only reads, the op runs with no token, and only once
+  everything it ran is killed does the box ask for the token that writes,
+  which reaches only the driver's own push of chant's ledger. The
   owner's passkey then signs chant's own gate statement for that plan (what
   `chant approve --statement` prints, INTENTIUS/chant#4646), as
   `arugula:<account>`, relayed by `arugula`, with a binding line
@@ -154,8 +158,8 @@ device-keys board, Arugula native #382 to #390).
   0.124.64 or newer (the binding line) is required: the driver refuses an
   older one. A deny, a roll back (no gate) and every other driver's
   approval stay v2. The cost, written down: the plan box runs the repo's
-  code with a token that writes the repository's contents before anyone
-  approves, as anyone who can push to it could.
+  code before anyone approves, with no token, and can write what it likes
+  to chant's ledger, which is pushed as it left it.
 
 Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.

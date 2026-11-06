@@ -1771,6 +1771,21 @@
       ],
       "type": "object"
     },
+    "PlanStep": {
+      "description": "Which of a deploy plan run's two tokens a box asks for (#1985).",
+      "oneOf": [
+        {
+          "const": "fetch",
+          "description": "A GitHub token that reads the deploy's repository, to fetch the\ncommit: nothing of the commit's has run yet.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, and the\ntoken reaches only the driver's own git.",
+          "type": "string"
+        }
+      ]
+    },
     "PreviewArgs": {
       "description": "Public previews (M187): a preview's id, or a workspace's.",
       "properties": {
@@ -2364,6 +2379,17 @@
     "SecretsAsk": {
       "description": "[`WORK_SECRETS`]'s body: which run.",
       "properties": {
+        "plan_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's plan run (#1985) asks twice, a token each time: to fetch\nits source, before anything of the commit's runs, and to push\nchant's ledger, after everything that ran is stopped. Any other\nrun asks once, with none."
+        },
         "run": {
           "type": "string"
         }

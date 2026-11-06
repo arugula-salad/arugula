@@ -162,19 +162,15 @@ fn spki(e: &crate::passkey::Event) -> Option<String> {
 /// and each RP it was made for, as `arugula:<account>`, its key as DER
 /// SubjectPublicKeyInfo, and the origins an assertion may come from (the
 /// RP's own site, `control` when it's that site's origin, and `related`:
-/// the related origins control lists, the platform page among them).
-pub fn trust_entries(log: &crate::passkey::Log, control: &str, related: &[String]) -> Vec<serde_json::Value> {
-    use crate::passkey::Change;
-    let mut live: Vec<&crate::passkey::Event> = vec![];
-    for e in &log.events {
-        match e.event {
-            Change::Added => {
-                live.retain(|l| l.credential != e.credential);
-                live.push(e);
-            }
-            Change::Removed => live.retain(|l| l.credential != e.credential),
-        }
-    }
+/// the related origins control lists, the platform page among them). A log
+/// that doesn't hold together ([`crate::passkey::check_chain`]) gives none:
+/// its refusal.
+pub fn trust_entries(
+    log: &crate::passkey::Log,
+    control: &str,
+    related: &[String],
+) -> Result<Vec<serde_json::Value>, crate::passkey::Refusal> {
+    let live = crate::passkey::live(log, u64::MAX)?;
     let host_of = |origin: &str| -> Option<String> {
         let rest = origin.split_once("://")?.1;
         let host = rest.split(['/', ':']).next()?;
@@ -204,7 +200,7 @@ pub fn trust_entries(log: &crate::passkey::Log, control: &str, related: &[String
             }));
         }
     }
-    out
+    Ok(out)
 }
 
 /// Days from 1970-01-01 to `y-m-d` (proleptic Gregorian).
@@ -365,7 +361,7 @@ pub(crate) mod tests {
         let removed = log.events[0].removal(3, "reset").placed_after(log.events.last());
         log.events.push(removed);
         let related = vec!["https://app.test".to_owned()];
-        let got = trust_entries(&log, "https://control.test", &related);
+        let got = trust_entries(&log, "https://control.test", &related).unwrap();
         assert_eq!(got.len(), 1, "{got:?}");
         assert_eq!(got[0]["principal"], "arugula:acct1");
         assert_eq!(got[0]["id"], b64.encode([2u8; 16]));
@@ -375,7 +371,15 @@ pub(crate) mod tests {
         assert_eq!(der.len(), 44);
         assert_eq!(&der[12..], key(2).as_slice());
         // A dev control on a port: its own origin, as the CLI knows it.
-        let dev = trust_entries(&log, "http://control.test:7690/", &[]);
+        let dev = trust_entries(&log, "http://control.test:7690/", &[]).unwrap();
         assert_eq!(dev[0]["origins"], serde_json::json!(["http://control.test:7690"]));
+        // A log that doesn't hold together prints nothing: a key swapped
+        // in, its hash left; or its removal dropped, the chain cut there.
+        let mut swapped = log.clone();
+        swapped.events[1].key = b64.encode(key(9));
+        assert_eq!(trust_entries(&swapped, "https://control.test", &related), Err(crate::passkey::Refusal::Chain(1)));
+        let mut cut = log.clone();
+        cut.events.remove(1);
+        assert!(trust_entries(&cut, "https://control.test", &related).is_err());
     }
 }

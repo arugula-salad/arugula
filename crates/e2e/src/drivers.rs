@@ -309,9 +309,11 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
                 None => "the op's gate".into(),
             };
             t.push_str(&format!(
-                "does: first, before anyone approves it, on a box of its own with GITHUB_TOKEN only (minted for that \
-                 run) and no FLY_API_TOKEN: in {dir}, {npm}, then chant run {op} to its gate ({gates}), and push \
-                 chant's ledger with the gate's pending fact and chant's plan digest\n"
+                "does: first, before anyone approves it, on a box of its own with no FLY_API_TOKEN: fetch the \
+                 commit with a GITHUB_TOKEN minted for it that only reads; then with no token at all, in {dir}, \
+                 {npm}, then chant run {op} to its gate ({gates}), chant's ledger kept on the box; then, once \
+                 everything that ran is stopped, push chant's ledger with the gate's pending fact and chant's plan \
+                 digest, with a GITHUB_TOKEN minted for that push\n"
             ));
             t.push_str(&format!(
                 "does: the owner's passkey signs chant's gate statement for that plan (chant approve --statement), as \
@@ -367,8 +369,8 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
     t.push_str(&format!(
         "with: the environment's FLY_API_TOKEN (fly tokens create deploy -a {app} -x 720h), and GITHUB_TOKEN: the \
          environment's own, or else one the platform's GitHub App mints for this run that writes {source_where}'s \
-         contents only, revoked when the run ends; each for this run only, and the plan's run only the minted \
-         GITHUB_TOKEN\n"
+         contents only, revoked when the run ends; each for this run only, and the plan's run only its two \
+         minted ones, each revoked once its step ends\n"
     ));
     t
 }

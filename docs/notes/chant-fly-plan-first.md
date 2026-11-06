@@ -5,8 +5,10 @@ line: A chant-fly deploy now runs chant's plan before anyone approves it, and yo
 needs: control
 ---
 Asking for a chant-fly deploy's approval now starts a plan run on a box of its
-own, with a GitHub token minted for that run and no Fly token. chant runs the
-op to its gate and records its plan. Owners are asked once the plan is there,
+own, with no Fly token. The commit is fetched with a GitHub token that only
+reads, chant runs the op to its gate with no token at all and records its
+plan, and only once everything the op ran is stopped does the box get a token
+that writes, to push chant's ledger. Owners are asked once the plan is there,
 and the approval page shows chant's gate and plan digest. Your passkey signs
 chant's own gate statement for that plan, and on the apply box chant checks the
 signature itself against `.chant/trust.json`, after checking the plan isn't

@@ -57,7 +57,14 @@ fn trust_entry(e: &Enrolled) -> anyhow::Result<i32> {
         .into_iter()
         .filter_map(|o| o.as_str().map(str::to_owned))
         .collect();
-    let entries = arugula_e2e::deploy::chant::trust_entries(&log, e.control_url(), &related);
+    // Only from a log whose chain holds: one control rewrote (a key swapped
+    // in, a removal dropped) prints nothing to trust.
+    let entries = arugula_e2e::deploy::chant::trust_entries(&log, e.control_url(), &related).map_err(|r| {
+        anyhow::anyhow!(
+            "your account's passkey log from control doesn't hold together ({r:?}): nothing printed, since chant would \
+             trust what it says"
+        )
+    })?;
     if entries.is_empty() {
         bail!(
             "your account has no passkey: add one on Control (the account menu, Sign-in and account), then run this again"
@@ -72,4 +79,67 @@ fn trust_entry(e: &Enrolled) -> anyhow::Result<i32> {
         if entries.len() == 1 { "it" } else { "them" },
     );
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A control that answers the account's passkey log with `log`, and
+    /// lists no related origins.
+    fn control(log: Value) -> Enrolled {
+        use std::io::{BufRead, BufReader, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for sock in l.incoming() {
+                let Ok(sock) = sock else { break };
+                let mut r = BufReader::new(sock.try_clone().unwrap());
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                let path = line.split_whitespace().nth(1).unwrap_or_default().to_owned();
+                loop {
+                    let mut h = String::new();
+                    if r.read_line(&mut h).unwrap() == 0 || h.trim().is_empty() {
+                        break;
+                    }
+                }
+                let answer = if path == "/api/accounts/a/passkeys/log" { log.to_string() } else { "{}".to_owned() };
+                let mut sock = sock;
+                write!(sock, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{answer}", answer.len()).unwrap();
+            }
+        });
+        Enrolled::for_tests(url)
+    }
+
+    /// `trust-entry` prints the live passkeys of a log whose chain holds,
+    /// and refuses one control rewrote: a key swapped in, its hash left as
+    /// it was.
+    #[test]
+    fn trust_entry_prints_only_from_a_log_that_holds_together() {
+        use arugula_e2e::passkey::{Change, Draft, EDDSA, Log, NO_AAGUID};
+        // Credential ids, base64url of 16 bytes each.
+        let ids = ["AQEBAQEBAQEBAQEBAQEBAQ", "AgICAgICAgICAgICAgICAg"];
+        let draft = |n: u8, at: u64| Draft {
+            account: "a".into(),
+            event: Change::Added,
+            credential: ids[usize::from(n) - 1].into(),
+            rp: "127.0.0.1".into(),
+            alg: EDDSA,
+            key: vec![n; 32],
+            aaguid: NO_AAGUID.into(),
+            at,
+            by: "signup".into(),
+        };
+        let mut log = Log { account: "a".into(), ..Default::default() };
+        log.events.push(draft(1, 1).after(None));
+        log.events.push(draft(2, 2).after(log.events.last()));
+        assert_eq!(trust_entry(&control(serde_json::to_value(&log).unwrap())).unwrap(), 0);
+
+        let mut swapped = log.clone();
+        // Another key (base64url of 32 bytes), its event's hash left.
+        swapped.events[1].key = "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk".into();
+        let err = trust_entry(&control(serde_json::to_value(&swapped).unwrap())).unwrap_err();
+        assert!(err.to_string().contains("doesn't hold together"), "{err:#}");
+    }
 }
