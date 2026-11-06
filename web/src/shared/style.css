@@ -2288,6 +2288,8 @@ button.att {
   resize: vertical;
   padding: 8px;
   font: inherit;
+  /* A field's size: 16 on touch, so iOS doesn't zoom into it (#772). */
+  font-size: var(--t-field);
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--line-strong);
