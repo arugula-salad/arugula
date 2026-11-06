@@ -53,7 +53,8 @@ const row = (page: Page, title: string) => page.locator("[data-doc]").filter({ h
 const preview = async (page: Page, title: string) => {
   await row(page, title).click();
   const p = page.locator("[data-list-preview]");
-  await expect(p.locator(".list-preview-head h2")).toHaveText(title);
+  // The Doc's own head is the preview's one title (Arugula #659).
+  await expect(p.locator(".doc-title")).toHaveText(title);
   return p;
 };
 const askDelete = async (page: Page, title: string) => {
@@ -125,7 +126,8 @@ test("a Doc whose pane was closed is on the page, and Open shows it again with i
   await expect(r.locator("[data-doc-shared]")).toHaveCount(0);
   const p = await preview(page, "Quarterly plan");
   await expect(p).toContainText(/updated (just now|\d+m ago)/);
-  await expect(p).toContainText("made by");
+  // Who made it is the facts line's hover now (Arugula #659), not a word on the bar.
+  await expect(p.locator(".list-preview-bar-facts")).toHaveAttribute("title", /made by/);
   await p.locator("[data-open-doc]").click();
 
   // It left the page for a new block: the Doc, whole, and the one in front.
@@ -282,6 +284,26 @@ test.describe("the list", () => {
     await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
   });
 
+  test("the preview has exactly one title, and a bar of the house's buttons over it (Arugula #659)", async ({ page }) => {
+    await seed(page);
+    await page.reload();
+    await goToDocs(page);
+    const p = await preview(page, "Short note");
+    // The Doc's own 38px head is the only title: no second one above it, none hidden.
+    await expect(p.locator(".doc-title")).toHaveCount(1);
+    await expect(p.locator(".doc-title")).toBeVisible();
+    await expect(p.locator(".list-preview-head")).toHaveCount(0);
+    // A 34px column bar: the facts at the left, then the primary, link and ⋯, last.
+    const bar = p.locator(".list-preview-bar");
+    expect((await bar.boundingBox())!.height).toBe(34);
+    await expect(bar.locator(".list-preview-bar-facts")).toContainText(/updated .*\d+ sections?\d+ min read/);
+    const buttons = bar.locator("button");
+    await expect(buttons.first()).toHaveAttribute("data-open-doc", /.*/);
+    await expect(buttons.last()).toHaveAttribute("data-doc-more", /.*/);
+    await expect(bar.locator("[data-doc-copy-link]")).toHaveClass(/bar-btn sq/);
+    for (const b of await buttons.all()) expect((await b.boundingBox())!.height).toBe(24);
+  });
+
   test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {
     // Control serves its newest page to every machine, and a daemon before
     // 0.66.12 sends a row with no summary or sections, and has no preview.
@@ -306,7 +328,7 @@ test.describe("the list", () => {
 
   test("sweeping the pointer down the list changes nothing and reads nothing; a click shows the Doc", async ({ page }) => {
     await seed(page);
-    const head = page.locator("[data-list-preview] .list-preview-head h2");
+    const head = page.locator("[data-list-preview] .doc-title");
     await expect(head).toHaveText("Long plan");
     await expect(page.locator("[data-list-preview] .list-preview-words")).toContainText("Opening of the plan.");
     const reads: string[] = [];
@@ -346,7 +368,7 @@ test.describe("the list", () => {
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("ArrowDown");
     await expect(selected).toContainText("Short note");
-    await expect(page.locator("[data-list-preview] .list-preview-head h2")).toHaveText("Short note");
+    await expect(page.locator("[data-list-preview] .doc-title")).toHaveText("Short note");
     await page.keyboard.press("k");
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("j");
@@ -471,8 +493,8 @@ test.describe("the reader", () => {
     await expect(r.locator('[data-section="s3"]')).toContainText(`Third ${MARK}`);
     await expect(r.locator('[data-section="s2"] img.doc-image')).toHaveJSProperty("naturalWidth", 40);
     await expect(r.locator("[data-prototype-frame]")).toHaveAttribute("title", "Tune it");
-    // The title is the header's: it isn't said twice.
-    await expect(r.locator(".doc-title")).toBeHidden();
+    // The Doc's own head is the title, said once (Arugula #659).
+    await expect(r.locator(".doc-title")).toBeVisible();
     await expect(p.locator("[data-open-doc]")).toHaveText("Open beside");
     // Nothing opened it: the list still has it closed, and no block shows it.
     await expect(row(page, "Read me")).toHaveAttribute("data-open", "");

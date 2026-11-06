@@ -17,7 +17,7 @@ import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
-import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
+import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
@@ -40,6 +40,19 @@ function nameOf(p: PlatformProject) {
 export function copyFrom(d: ProjectDoc): string | null {
   return d.machine ? d.machine_name || "a machine that left" : null;
 }
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** The preview's Copy link: copies `link`, and says whether it did. */
+const copyTo = (link: string) => async () => {
+  try {
+    await navigator.clipboard.writeText(link);
+    return true;
+  } catch {
+    toast("Couldn't copy the link");
+    return false;
+  }
+};
 
 /** The project's Docs, `null` while they load. */
 function useDocs(project: string): ProjectDoc[] | null {
@@ -318,25 +331,22 @@ function Preview({ row }: { row: Row }) {
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      title={doc.title}
       facts={
         <>
-          <span>{row.mine ? "Yours, private" : p.name}</span>
-          <span>
-            {doc.written} of {doc.sections} written
-          </span>
           <span>
             updated <Time at={doc.updated_at} on />
           </span>
-          {copy ? <span data-doc-copy-fact>a copy from {copy}</span> : <span>made by {whoLabel(doc.author, doc.agent, nameOf(p))}</span>}
+          <span>{plural(doc.sections, "section")}</span>
+          {copy && <span data-doc-copy-fact>a copy from {copy}</span>}
         </>
       }
+      factsTip={`${row.mine ? "Yours, private" : p.name} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
       actions={
         <>
-          <a class="button primary small" href={to} data-open-doc onClick={(e) => follow(e, to)}>
+          <button type="button" class="bar-btn on preview-bar-primary" data-open-doc onClick={() => go(to)}>
             Open
-          </a>
-          <CopyLinkButton link={new URL(to, location.href).href} />
+          </button>
+          <PreviewCopyLink data-doc-copy-link title="Copy link" copy={copyTo(new URL(to, location.href).href)} />
         </>
       }
     >
