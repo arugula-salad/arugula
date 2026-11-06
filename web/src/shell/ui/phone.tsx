@@ -20,6 +20,7 @@ import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
+import { confirmCloseTab } from "./close-tab";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -299,7 +300,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       </button>
                     )}
                     {closeTab && (
-                      <button class="danger" onClick={act(() => client.tab !== null && client.intent({ op: "close_tab", tab: client.tab }))}>
+                      <button class="danger" onClick={act(() => client.tab !== null && confirmCloseTab(client, client.tab))}>
                         {client.tabMachine(client.tab!) ? "Close tab and machine" : "Close tab"}
                       </button>
                     )}
