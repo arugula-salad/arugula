@@ -1915,8 +1915,26 @@
       "type": "object"
     },
     "ChatReaders": {
-      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had. Those it\ndoesn't name keep theirs (a pane that closed keeps its readers).",
+      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had.\n\n`held`, on the last post of a send: every pane and session the machine\nstill has a list for (open, or closed and still remembered, read by\nthose who read it when it closed and still may). Control empties the list\nof every other target it has for the machine, so only the machine's\nowner reads those threads. Without it (older daemons) the targets not\nnamed keep their lists.\n\n`seq`: the post's place in the machine's order, higher for each post it\nmakes. Control ignores what a post says of a target whose list came in\na post with a higher one, so a post that arrives late can't undo a newer\none. Without it (older daemons) every post counts as it comes. At most\n`i64::MAX`.",
       "properties": {
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatTargetsHeld"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "targets": {
           "default": [],
           "items": {
@@ -1928,8 +1946,16 @@
       "type": "object"
     },
     "ChatReadersStored": {
-      "description": "How many lists control kept.",
+      "description": "How many lists control was sent, and the highest post number it holds\nfor the machine ([`ChatReaders::seq`]). Higher than the post's own: some\nof what it said was ignored as older, so the machine numbers its posts\nabove this and sends every list again (its clock went back). Older\ncontrols leave it out.",
       "properties": {
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "stored": {
           "format": "uint",
           "minimum": 0,
@@ -2368,6 +2394,26 @@
           "type": "string"
         }
       ]
+    },
+    "ChatTargetsHeld": {
+      "description": "The panes and sessions a machine has reader lists for, by id: see\n[`ChatReaders`]. At most [`MAX_HELD`] of each.",
+      "properties": {
+        "panes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
     },
     "ChatTeamSettings": {
       "description": "`GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners\ndecide about its chat (#114). Anyone in the team reads it, for the\ncomposer; only an owner sets it.",

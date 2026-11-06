@@ -1521,13 +1521,40 @@ fn shown() -> bool {
 }
 
 /// What a daemon says of a thread's readers: for each pane or session it
-/// names, the whole list, which replaces the last one control had. Those it
-/// doesn't name keep theirs (a pane that closed keeps its readers).
+/// names, the whole list, which replaces the last one control had.
+///
+/// `held`, on the last post of a send: every pane and session the machine
+/// still has a list for (open, or closed and still remembered, read by
+/// those who read it when it closed and still may). Control empties the list
+/// of every other target it has for the machine, so only the machine's
+/// owner reads those threads. Without it (older daemons) the targets not
+/// named keep their lists.
+///
+/// `seq`: the post's place in the machine's order, higher for each post it
+/// makes. Control ignores what a post says of a target whose list came in
+/// a post with a higher one, so a post that arrives late can't undo a newer
+/// one. Without it (older daemons) every post counts as it comes. At most
+/// `i64::MAX`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReaders {
     #[serde(default)]
     pub targets: Vec<ChatReaderList>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<ChatTargetsHeld>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+/// The panes and sessions a machine has reader lists for, by id: see
+/// [`ChatReaders`]. At most [`MAX_HELD`] of each.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ChatTargetsHeld {
+    #[serde(default)]
+    pub panes: Vec<String>,
+    #[serde(default)]
+    pub sessions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1553,11 +1580,17 @@ pub struct ChatReader {
     pub watching: bool,
 }
 
-/// How many lists control kept.
+/// How many lists control was sent, and the highest post number it holds
+/// for the machine ([`ChatReaders::seq`]). Higher than the post's own: some
+/// of what it said was ignored as older, so the machine numbers its posts
+/// above this and sends every list again (its clock went back). Older
+/// controls leave it out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 /// A daemon says how far the session got with a mention it delivered
@@ -1609,6 +1642,8 @@ pub struct PutMentionState {
 /// The most lists in one [`ChatReaders`], and readers in one list.
 pub const MAX_READER_TARGETS: usize = 500;
 pub const MAX_READERS: usize = 500;
+/// The most panes, and sessions, in one [`ChatTargetsHeld`].
+pub const MAX_HELD: usize = 20_000;
 
 // ---------------------------------------------------------------- agents
 
