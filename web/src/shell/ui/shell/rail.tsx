@@ -17,7 +17,7 @@ import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
 import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -45,6 +45,8 @@ export function Rail({ client }: { client: Client }) {
   // Back to the page you left there (Arugula #638), or the list on a first visit.
   const PROJECTS_PATH = "/?back";
   const projects = platformHref(PROJECTS_PATH);
+  const DOCS_PATH = "/docs";
+  const teamDocs = platformHref(DOCS_PATH);
   const panes = () => {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
@@ -85,6 +87,18 @@ export function Rail({ client }: { client: Client }) {
       icon: <ChatIcon />,
       count: { n, mention },
       onClick: () => openChat(),
+    },
+    // The platform's /docs: the team's Docs and the reader's from every machine.
+    // This machine's own are its bar's.
+    !!teamDocs && {
+      label: "Docs",
+      tip: "Docs: your team's Docs, and yours from your machines",
+      here: false,
+      hook: "data-open-docs-all",
+      icon: <DocsIcon />,
+      href: teamDocs,
+      target: "arugula-platform",
+      onClick: () => openPlatform(DOCS_PATH),
     },
   ];
   const brand = (

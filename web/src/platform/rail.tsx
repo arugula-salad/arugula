@@ -1,5 +1,5 @@
 // The platform page's rail (#377): the same one as the panes page's
-// (shared/ui/rail), down the left of the page on a computer. Projects and Chat
+// (shared/ui/rail), down the left of the page on a computer. Projects, Chat and Docs
 // are places in this page; Panes and Swarm are links to control's page, in
 // this window (no `target`: the desktop app keeps the
 // platform page and control's in one window each, #288). The bar beside it
@@ -10,7 +10,7 @@ import { chat } from "../shared/chat-store";
 import { chatUnread } from "../shared/chat/unread";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
-import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
+import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
 import { chatPath, sectionOf } from "./bar";
 import { activeProject, forgetActiveProject, go, pathOf, useRoute } from "./router";
 import { names } from "./links";
@@ -45,8 +45,8 @@ export function PlatformRail() {
       label: "Projects",
       tip: "Projects: their issues, boards, runs, deploys and chat",
       // In any project and across All projects' places (the bar's), but Chat
-      // is lit on its own.
-      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox" || r.page === "docs") && here !== "chat",
+      // and Docs are lit on their own.
+      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox") && here !== "chat" && here !== "docs",
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
       href: projectsTo,
@@ -64,6 +64,16 @@ export function PlatformRail() {
       count: { n, mention },
       href: chatTo,
       onClick: place(chatTo),
+    },
+    // Team Docs and the reader's own, on every Docs page: a project's and a Doc's too.
+    {
+      label: "Docs",
+      tip: "Docs: your team's Docs, and yours from your machines",
+      here: !unknown && here === "docs",
+      hook: "data-open-docs-all",
+      icon: <DocsIcon />,
+      href: "/docs",
+      onClick: place("/docs"),
     },
   ];
   const brand = (
