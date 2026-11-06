@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Deploys a chant release of the ops/ member to production (#1983):
+# server-release.yml's platform and control jobs run it in ops/, with the
+# Fly deploy token of the app the components deploy to as FLY_API_TOKEN.
+#
+#   ci-server-deploy COMPONENTS LABEL [FLAG...]
+#                    `chant run --components COMPONENTS --env prod --release
+#                    LABEL`, with FLAGs (--deploy-unchanged) passed on.
+#
+# chant writes its pending fact, its release records and any skip to
+# chant/lifecycle, and pushes it with the checkout's credentials.
+set -euo pipefail
+components=${1:?usage: ci-server-deploy COMPONENTS LABEL [FLAG...]}
+label=${2:?usage: ci-server-deploy COMPONENTS LABEL [FLAG...]}
+shift 2
+[ -n "${FLY_API_TOKEN:-}" ] || { echo "::error::FLY_API_TOKEN isn't set: nothing was deployed"; exit 1; }
+
+summary() {
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '%s\n' "$@" >>"$GITHUB_STEP_SUMMARY"
+}
+
+rc=0
+npx chant run --components "$components" --env prod --release "$label" "$@" || rc=$?
+case $rc in
+  0)
+    summary "### $components: release $label runs in prod" "" \
+      "\`chant components status prod\` lists what each runs; a component whose inputs didn't change kept its release, and its record says since when (\`unchangedSince\`)."
+    ;;
+  *)
+    echo "::error::chant run --components $components exited $rc: see above"
+    exit "$rc"
+    ;;
+esac

@@ -113,8 +113,9 @@
 #   release blank PATH             the file PATH names (a Cargo.toml, Cargo.lock
 #                                  or THIRD_PARTY.md), read from stdin, with every
 #                                  arugula crate's version as @V@, so two copies
-#                                  that differ only by a version match
-#                                  (scripts/ci-hub-changed)
+#                                  that differ only by a version match (the
+#                                  hub's inputs in ops/src/control.component.ts
+#                                  compare Cargo.toml and Cargo.lock through it)
 #
 # GH_TOKEN (bump --rare) starts and watches a run of rare-nightly.yml;
 # GH_TOKEN (draft, check-latest, sidecars) reads and writes releases (in CI,

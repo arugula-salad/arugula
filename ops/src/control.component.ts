@@ -1,0 +1,97 @@
+// Control's hub (illogical-control), released to production with each
+// release, from the image the release names (CI builds and pushes
+// it: .github/workflows/server-release.yml).
+//
+// The hub holds every relayed terminal, and a deploy drops them all, so a
+// release deploys it only when something it's built from changed since the
+// release production runs it from (`inputs`, INTENTIUS/chant#4695; this
+// replaced scripts/ci-hub-changed). The plan, dist/control.fly.json, is
+// compared too, whether listed or not. `--deploy-unchanged` deploys it anyway.
+import { phase, type Component } from "@intentius/chant/components/component";
+
+// Every crate arugula-control compiles (it runs the platform in process, so
+// that's the platform's too), less their tests.
+const crates = [
+  "arugula-control",
+  "control",
+  "control-common",
+  "control-wire",
+  "core",
+  "e2e",
+  "forge-github",
+  "platform",
+  "platform-agents",
+  "platform-all",
+  "platform-api",
+  "platform-chat",
+  "platform-deploys",
+  "prices",
+  "proto",
+].map((c) => `:(top)crates/${c}`);
+
+export const control: Component = {
+  name: "control",
+  // After the platform, in a job of its own (each app has its own Fly token).
+  dependsOn: [],
+  inputs: {
+    paths: [
+      ...crates,
+      ":(top,exclude,glob)crates/**/*_tests.rs",
+      ":(top,exclude,glob)crates/*/tests/**",
+      // web/'s sources for the pages it embeds (web/dist, web/dist-platform),
+      // less the specs, their fixtures and the dev and test servers.
+      ":(top)web",
+      ":(top,exclude)web/e2e",
+      ":(top,exclude)web/fixtures",
+      ":(top,exclude)web/screenshots",
+      ":(top,exclude)web/safari",
+      ":(top,exclude,glob)web/**/*.test.*",
+      ":(top,exclude,glob)web/**/*.fixture.*",
+      ":(top,exclude,glob)web/playwright*.ts",
+      ":(top,exclude)web/safari.config.ts",
+      ":(top,exclude)web/screenshots.config.ts",
+      ":(top,exclude)web/control-smoke.ts",
+      ":(top,exclude,glob)web/dev-*.ts",
+      ":(top,exclude)web/e2e-interop.ts",
+      ":(top,exclude)web/fake-fleet.ts",
+      ":(top,exclude)web/reconnect-watch.ts",
+      ":(top,exclude,glob)web/scripts/e2e-*",
+      ":(top,exclude,glob)web/scripts/perf-*",
+      // control's build.rs serves editors/nvim as a git repository.
+      ":(top)editors/nvim",
+      // How the binary and its image are built. A release bump's version
+      // numbers count here too (INTENTIUS/chant#4718).
+      ":(top)Cargo.toml",
+      ":(top)Cargo.lock",
+      ":(top)server/Cargo.toml",
+      ":(top)server/Cargo.lock",
+      ":(top,glob)crates/*/Cargo.toml",
+      ":(top)rust-toolchain.toml",
+      ":(top).cargo/config.toml",
+      ":(top).mise.toml",
+      ":(top)scripts/zig-cc-musl",
+      ":(top)scripts/zig-ar",
+      ":(top)scripts/server-cargo",
+      ":(top).github/actions/setup",
+      ":(top).github/workflows/server-release.yml",
+      ":(top)justfile",
+      ":(top)packaging/control",
+      // Its own steps and Machine.
+      "src/control.component.ts",
+      "src/fly/control",
+    ],
+  },
+  deploy: [
+    phase("Image", [{ kind: "release-image" }]),
+    phase("Release", [
+      {
+        kind: "fly-release",
+        plan: "dist/control.fly.json",
+        machine: "control",
+        image: "@Image.uri",
+        digest: "@Image.digest",
+        verify: { url: "https://control.arugula.io", healthPath: "/control.json" },
+      },
+    ]),
+  ],
+};
