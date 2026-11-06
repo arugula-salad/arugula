@@ -41,7 +41,7 @@
   border-radius: var(--field-radius);
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
   color: var(--fg);
-  font-size: 13px;
+  font-size: var(--text-md);
   animation: session-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
@@ -76,7 +76,7 @@
 .session-card.large {
   max-width: none;
   padding: 14px 16px 14px 19px;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .session-card.tone-accent {
@@ -115,26 +115,26 @@
 
 .session-card-state {
   color: var(--ct);
-  font: 800 17px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
-  letter-spacing: 0.02em;
+  font: 800 var(--text-xl)/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
 .session-card.large .session-card-state {
-  font-size: 26px;
+  font-size: var(--text-xl);
 }
 
 .session-card-what {
   color: var(--dim);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
 .session-card-id,
 .session-card-time,
 .session-card-where {
-  font: 500 12px/1.3 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -167,11 +167,11 @@ a.session-card-id:hover {
 }
 
 .session-card-line code {
-  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+  font-family: var(--f-mono);
 }
 
 .session-card-turn {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .session-card-turn .ok {
@@ -184,7 +184,7 @@ a.session-card-id:hover {
   padding: 6px 8px;
   border-radius: var(--tag-radius);
   background: var(--letterbox);
-  font: 12px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: var(--text-sm)/1.35 var(--f-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -196,7 +196,7 @@ a.session-card-id:hover {
 }
 
 .session-card-finish code {
-  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+  font-family: var(--f-mono);
 }
 
 .session-card-finish .bad {
@@ -218,7 +218,7 @@ a.session-card-id:hover {
   border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-decoration: none;
 }
 
@@ -251,7 +251,7 @@ a.session-card-id:hover {
 
 .session-pr-where {
   color: var(--subtle);
-  font: 500 12px/1.6 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: 500 var(--text-sm)/1.6 var(--f-mono);
   overflow-wrap: anywhere;
 }
 
@@ -275,7 +275,7 @@ a.session-card-id:hover {
 .session-pr textarea.session-pr-body {
   min-height: 9em;
   resize: vertical;
-  font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: var(--text-sm)/1.4 var(--f-mono);
 }
 
 .session-pr :is(input, textarea):focus-visible {
@@ -286,11 +286,11 @@ a.session-card-id:hover {
 .session-pr-draft,
 .session-pr-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .session-card-foot {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* Its page's history. */
@@ -298,7 +298,7 @@ a.session-card-id:hover {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .session-history li {
@@ -312,7 +312,7 @@ a.session-card-id:hover {
 .session-history time,
 .session-history .signed {
   color: var(--dim);
-  font: 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: var(--text-sm)/1.4 var(--f-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -334,7 +334,7 @@ a.session-card-id:hover {
   border-radius: 0 5px 5px 0;
   background: var(--surface);
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* Its compare view: the three side by side, each a small card of its own
@@ -364,7 +364,7 @@ a.session-card-id:hover {
   border: 1px solid color-mix(in srgb, var(--c) 40%, var(--divider));
   border-radius: 5px;
   background: color-mix(in srgb, var(--c) 6%, var(--surface));
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .session-try::before {
@@ -412,15 +412,15 @@ a.session-card-id:hover {
 
 .session-try-n {
   color: var(--dim);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
 .session-try-state {
   color: var(--ct);
-  font: 800 13px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
-  letter-spacing: 0.02em;
+  font: 800 var(--text-md)/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
@@ -433,7 +433,7 @@ a.session-card-id:hover {
   padding: 4px 6px;
   border-radius: 4px;
   background: var(--letterbox);
-  font: 11px/1.35 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: var(--text-xs)/1.35 var(--f-mono);
   white-space: pre;
   overflow-x: auto;
 }
@@ -445,7 +445,7 @@ a.session-card-id:hover {
 
 .session-try-finish code,
 .session-try-links {
-  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
+  font-family: var(--f-mono);
 }
 
 .session-try-finish .ok {
@@ -470,7 +470,7 @@ a.session-card-id:hover {
   border-radius: 4px;
   background: var(--surface);
   color: var(--fg);
-  font: 12px/1.4 inherit;
+  font: var(--text-sm)/1.4 inherit;
 }
 
 .session-try-links button:not(:disabled):hover {
@@ -513,7 +513,7 @@ a.session-card-id:hover {
   border-radius: var(--btn-radius);
   background: var(--surface);
   color: var(--fg);
-  font: 500 12px/1.4 var(--f-mono, ui-monospace, Menlo, monospace);
+  font: 500 var(--text-sm)/1.4 var(--f-mono);
 }
 
 .session-ask-choices button:not(:disabled):hover,
@@ -531,12 +531,12 @@ a.session-card-id:hover {
   border-radius: var(--field-radius);
   background: var(--surface);
   color: var(--fg);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .session-ask-done {
   margin: 2px 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* Move to… (Arugula #214): a menu among the card's buttons. */
@@ -563,8 +563,8 @@ a.session-card-id:hover {
 
 .thread-msg.by-session .said-name {
   color: var(--accent);
-  font-family: var(--f-mono, ui-monospace, Menlo, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   text-decoration: none;
 }
 
@@ -576,6 +576,6 @@ a.session-card-id:hover {
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
-  font: 700 11px var(--f-mono, ui-monospace, Menlo, monospace);
+  font: 700 var(--text-xs) var(--f-mono);
   box-sizing: border-box;
 }

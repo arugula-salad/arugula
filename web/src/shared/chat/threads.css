@@ -11,7 +11,7 @@
   border: 1px solid transparent;
   border-radius: var(--field-radius);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: left;
 }
 
@@ -29,7 +29,7 @@
   --msg-gutter: 20px;
   margin-left: -4px;
   border-radius: 5px;
-  font-size: 9px;
+  font-size: 9px; /* off-scale: avatar initials */
   box-shadow: 0 0 0 2px var(--bg);
 }
 
@@ -63,7 +63,7 @@
   margin-bottom: 2px;
   padding: 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .reply-tag:hover {
@@ -104,7 +104,7 @@
   width: auto;
   padding: 0 10px;
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .thread-also {
@@ -113,7 +113,7 @@
   gap: 6px;
   padding: 4px 2px 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -163,7 +163,7 @@
   margin-top: 6px;
   overflow: hidden;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -181,7 +181,7 @@
   padding: 1px 6px;
   border-radius: var(--tag-radius);
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   opacity: 0;
 }
 

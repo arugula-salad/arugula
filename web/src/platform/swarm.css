@@ -110,7 +110,7 @@
    title is often a question, so it isn't in capitals. */
 #root .prompt h2 {
   margin: 0 0 8px;
-  font: 600 16px/1.3 var(--f-ui);
+  font: 600 var(--text-lg)/1.3 var(--f-ui);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -121,14 +121,14 @@
 
 .platform .sw-page h2 {
   margin: 24px 0 10px;
-  font: 700 19px/1.05 var(--f-display);
-  letter-spacing: 0.02em;
+  font: 700 var(--text-xl)/1.05 var(--f-display);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
 .platform .sw-page h2 > .dim {
   margin-left: 4px;
-  font: 700 12px/1 var(--f-mono);
+  font: 700 var(--text-sm)/1 var(--f-mono);
   text-transform: none;
   font-variant-numeric: tabular-nums;
   vertical-align: 2px;
@@ -152,7 +152,7 @@
 .platform .sw-page .sw-section-head .sw-all {
   margin-left: auto;
   color: var(--dim);
-  font: 500 12px/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
   text-decoration: none;
 }
 
@@ -164,7 +164,7 @@
 .platform .sw-page .sw-section-head .sw-untriaged {
   margin-left: auto;
   color: var(--dim);
-  font: 500 12px/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
   text-decoration: none;
 }
 
@@ -182,8 +182,8 @@
    someone chose, is the bar's title (#686). */
 .chat-view-head .chat-title strong,
 .chat.phone > .chat-head > strong {
-  font: 800 22px/1 var(--f-display);
-  letter-spacing: 0.01em;
+  font: 800 var(--text-xl)/1 var(--f-display);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
@@ -193,7 +193,7 @@
   flex-wrap: wrap;
   gap: 6px 18px;
   margin: 0 0 16px;
-  font: 500 12px/1.2 var(--f-mono);
+  font: 500 var(--text-sm)/1.2 var(--f-mono);
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
@@ -202,7 +202,7 @@
   display: block;
   /* Mono, not the display face: Big Shoulders' 1 is a bare stroke at this
      size ("| ready"), and tabular digits keep the counts in step. */
-  font: 700 20px/1 var(--f-mono);
+  font: 700 var(--text-xl)/1 var(--f-mono);
   color: var(--fg);
 }
 
@@ -315,7 +315,7 @@
 }
 
 .platform .sw-page .platform-inbox-ref {
-  font: 500 12px/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
 }
 
 .platform .sw-cards .sw-card::before {
@@ -362,7 +362,7 @@
 
 .platform .sw-name {
   min-width: 0;
-  font: 700 19px/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--f-display);
   color: var(--ct);
   overflow-wrap: anywhere;
 }
@@ -371,7 +371,7 @@
   display: block;
   min-width: 0;
   overflow: hidden;
-  font: 500 11px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   color: var(--dim);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -397,7 +397,7 @@
 
 .platform .sw-mono {
   font-family: var(--f-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -429,7 +429,7 @@
 
 @media (max-width: 700px) {
   .platform .sw-stats b {
-    font-size: 18px;
+    font-size: var(--text-xl);
   }
   /* A phone's width: what sat beside the title gets a line of its own,
      so the title isn't squeezed and the side isn't cut. */

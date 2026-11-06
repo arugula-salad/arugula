@@ -24,7 +24,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 /* A notice (no Doc to show) and Loading…, on the Doc's paper, in its
@@ -38,8 +38,8 @@
   margin: 0;
   padding-bottom: 14px;
   border-bottom: 2px solid var(--doc-rule);
-  font: 800 34px/1.05 var(--f-display);
-  letter-spacing: 0.005em;
+  font: 800 var(--text-doc)/1.05 var(--f-display);
+  letter-spacing: var(--track-display);
   text-wrap: balance;
 }
 
@@ -59,8 +59,8 @@
   margin-top: 64px;
   padding-top: 14px;
   border-top: 1px solid var(--doc-line-quiet);
-  font-size: 12px;
-  letter-spacing: 0.02em;
+  font-size: var(--text-sm);
+  letter-spacing: 0;
 }
 
 .doc-made a {

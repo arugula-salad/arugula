@@ -202,7 +202,7 @@ html[data-corners="square"] .platform-section {
 
 .platform-section h2 {
   margin: 20px 0 8px;
-  font-size: 14px;
+  font-size: var(--text-lg);
 }
 
 .platform-section a {
@@ -262,7 +262,7 @@ html[data-corners="square"] .platform-section {
 .platform-members .msg-avatar {
   --msg-gutter: 24px;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 10px; /* off-scale: avatar initials */
 }
 
 /* Commands and ids in the page's mono, not the browser's (UI audit #162). */
@@ -503,7 +503,7 @@ html[data-corners="square"] .platform-section {
 .agent-token-calls {
   margin: 4px 0 8px;
   padding-left: 16px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-token-calls .agent-call-refused,
@@ -517,7 +517,7 @@ html[data-corners="square"] .platform-section {
   margin: 0;
   padding: 6px 10px;
   border-left: 3px solid var(--warn);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-token-made code {
@@ -553,7 +553,7 @@ html[data-corners="square"] .platform-section {
    accent, underlined on hover. */
 .platform .sw-page .deploy-card h2 {
   margin: 0;
-  font: 700 19px/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--f-display);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -586,7 +586,7 @@ html[data-corners="square"] .platform-section {
 .deploy-digest {
   overflow-wrap: anywhere;
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .deploy-op summary {
@@ -600,7 +600,7 @@ html[data-corners="square"] .platform-section {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--text-sm);
   background: var(--bg);
   border-radius: var(--field-radius);
 }
@@ -627,7 +627,7 @@ html[data-corners="square"] .platform-section {
 .deploy-why {
   flex-basis: 100%;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* The phone width every column here folds at (UI audit #167, #186). */
@@ -682,7 +682,7 @@ html[data-corners="square"] .platform-section {
 
 .run-id {
   flex: none;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .run-start {
@@ -712,7 +712,7 @@ html[data-corners="square"] .platform-section {
 .run-start .run-command {
   flex: 1;
   min-width: 160px;
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .run-specs h2 {
@@ -746,7 +746,7 @@ html[data-corners="square"] .platform-section {
   align-items: baseline;
   gap: 8px;
   margin-top: 2px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-spec-md {
@@ -781,8 +781,8 @@ html[data-corners="square"] .platform-section {
 .run-spec-op,
 .run-command-line,
 .run-hash {
-  font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -796,12 +796,12 @@ html[data-corners="square"] .platform-section {
   list-style: none;
   margin: 4px 0 0;
   padding: 0 0 0 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-add-trigger {
   margin: 4px 0 0 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-facts {
@@ -823,7 +823,7 @@ html[data-corners="square"] .platform-section {
 .run-op summary {
   cursor: pointer;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .run-op pre,
@@ -834,8 +834,8 @@ html[data-corners="square"] .platform-section {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -894,7 +894,7 @@ html[data-corners="square"] .platform-section {
 .hosted-label {
   margin: 0;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 /* "Hosted · operator can read" as a chip, dim, before what it means (UI
@@ -906,7 +906,7 @@ html[data-corners="square"] .platform-section {
   border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--dim);
-  font: 600 11px/1.4 var(--f-mono);
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
   white-space: nowrap;
 }
 
@@ -1014,7 +1014,7 @@ html[data-corners="square"] .platform-section {
 /* A transcript's own headings are its text's, not the page's sections. */
 .platform .sw-page .hosted-transcript :is(h1, h2, h3, h4) {
   margin: 14px 0 6px;
-  font: 600 15px/1.3 var(--f-ui);
+  font: 600 var(--text-lg)/1.3 var(--f-ui);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1031,7 +1031,7 @@ html[data-corners="square"] .platform-section {
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an
@@ -1051,7 +1051,7 @@ html[data-corners="square"] .platform-section {
 
 .deploy-form h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .deploy-form label {
@@ -1079,11 +1079,11 @@ html[data-corners="square"] .platform-section {
 }
 
 .deploy-form .deploy-commit {
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .deploy-about {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .deploy-secret-names {
@@ -1104,7 +1104,7 @@ html[data-corners="square"] .platform-section {
   gap: 4px;
   margin-right: 6px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1132,7 +1132,7 @@ html[data-corners="square"] .platform-section {
 
 .session-stats h3 {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--subtle);
   font-weight: 600;
 }
@@ -1155,12 +1155,12 @@ html[data-corners="square"] .platform-section {
 }
 
 .session-stat b {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-variant-numeric: tabular-nums;
 }
 
 .session-stat span {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -1186,7 +1186,7 @@ html[data-corners="square"] .platform-section {
 
 .platform .sw-page .boards-untriaged .sw-section-head .sw-all {
   color: var(--accent);
-  font: 500 12px/1.3 var(--f-ui);
+  font: 500 var(--text-sm)/1.3 var(--f-ui);
   text-transform: none;
 }
 
@@ -1227,7 +1227,7 @@ html[data-corners="square"] .platform-section {
   padding: 1px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--fg);
 }
 
@@ -1262,7 +1262,7 @@ html[data-corners="square"] .platform-section {
   padding: 6px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -1353,7 +1353,7 @@ span.untri-title {
 
 .untri-age {
   min-width: 26px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: right;
   white-space: nowrap;
 }
@@ -1366,7 +1366,7 @@ span.untri-title {
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--dim);
-  font-size: 17px;
+  font-size: 17px; /* off-scale: glyph */
   line-height: 1;
 }
 
@@ -1438,7 +1438,7 @@ span.untri-title {
 
 .untri-dock-label {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 

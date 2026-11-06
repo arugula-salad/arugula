@@ -68,3 +68,17 @@ test("the runner writes the kit into the prototype's document, after the policy"
   const write = runner.slice(runner.indexOf("document.write("));
   assert.ok(write.indexOf("Content-Security-Policy") < write.indexOf("kit +"));
 });
+
+test("the kit's type scale is style.css's: the same sizes and line-heights", () => {
+  const style = read("../src/shared/style.css");
+  for (const step of ["xs", "sm", "md", "lg", "xl", "2xl", "doc"]) {
+    const app = style.match(new RegExp(`--text-${step}: ([\\d.]+px);`))?.[1];
+    assert.ok(app, `style.css declares --text-${step}`);
+    assert.equal(kit.match(new RegExp(`--ar-text-${step}: ([\\d.]+px);`))?.[1], app, `--ar-text-${step} is ${app}`);
+  }
+  for (const step of ["xs", "sm", "md", "lg", "prose"]) {
+    const app = style.match(new RegExp(`--lh-${step}: ([\\d.]+(?:px)?);`))?.[1];
+    assert.ok(app, `style.css declares --lh-${step}`);
+    assert.equal(kit.match(new RegExp(`--ar-lh-${step}: ([\\d.]+(?:px)?);`))?.[1], app, `--ar-lh-${step} is ${app}`);
+  }
+});

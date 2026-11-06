@@ -49,7 +49,7 @@ export function PhoneHeader({ client }: { client: Client }) {
           {session && (
             <>
               <span class="crumb">{session.name}</span> ›{" "}
-              {tab && client.tabMachine(tab.id) && <Chip kind="tag" tone="info" class="chip-gap">VM</Chip>}
+              {tab && client.tabMachine(tab.id) && <Chip kind="tag" class="chip-gap">VM</Chip>}
               <span class="crumb">{tab ? tabLabel(client, tab) : ""}</span>
             </>
           )}
@@ -239,7 +239,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         return (
                           <div key={tid} class="sheet-tab">
                             <button class={tid === client.tab ? "sheet-item current" : "sheet-item"} onClick={act(() => client.selectTab(tid))}>
-                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" tone="info" class="chip-gap">VM</Chip>}
+                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" class="chip-gap">VM</Chip>}
                               <span class="label">{tabLabel(client, t)}</span>
                               {panes.length > 1 && <span class="sheet-count">{panes.length}</span>}
                               <ChatTabBadge client={client} panes={panes} />

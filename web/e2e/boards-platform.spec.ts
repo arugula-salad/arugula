@@ -439,7 +439,7 @@ test("board cards are the compact ones: three or more to a row at 1280px, the ti
     };
   });
   expect(m.firstRow).toBeGreaterThanOrEqual(3);
-  expect(m.title).toBe("14px");
+  expect(m.title).toBe("13px");
   expect(m.goal).toBe("12px");
   expect(m.goalWraps).toBe("nowrap");
   expect(m.pad).toBe("10px 12px");

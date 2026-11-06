@@ -132,7 +132,7 @@ details.issues-note > summary {
 .issue-row-meta {
   display: block;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .issue-row-who {
@@ -144,7 +144,7 @@ details.issues-note > summary {
 .issue-side .msg-avatar {
   width: 20px;
   height: 20px;
-  font-size: 10px;
+  font-size: 10px; /* off-scale: avatar initials */
 }
 
 /* A label's chip (../ui/state-chip.css), beside the next. */
@@ -154,7 +154,7 @@ details.issues-note > summary {
 
 .issues-home-line {
   margin: 16px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* Where new issues go, in the project's settings (UI audit #163). */
@@ -218,7 +218,7 @@ details.issues-note > summary {
   flex: 1;
   min-width: 0;
   height: 32px;
-  font-size: 16px;
+  font-size: var(--t-field);
 }
 
 .issue-cols {
@@ -242,7 +242,7 @@ details.issues-note > summary {
   display: flex;
   align-items: center;
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -280,7 +280,7 @@ details.issues-note > summary {
   border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
 }
 
 /* The thread is part of the page: the page scrolls, and the box to write
@@ -335,7 +335,7 @@ details.issues-note > summary {
   align-items: baseline;
   margin: 10px 0;
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -435,10 +435,10 @@ details.issues-note > summary {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .issue-foot {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }

@@ -19,7 +19,7 @@
   /* Over the surface, not what's behind: a chip on a selected row keeps its contrast. */
   background: color-mix(in srgb, var(--c) 12%, var(--surface));
   color: var(--ct);
-  font: 600 11px/18px var(--mono);
+  font: 600 var(--text-xs)/18px var(--f-mono);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
@@ -90,7 +90,7 @@ button.chip:is(:hover, :focus-visible) {
   border-color: transparent;
   border-radius: var(--tag-radius);
   background: var(--raised);
-  font: 500 11px/18px var(--f-ui);
+  font: 500 var(--text-xs)/18px var(--f-ui);
 }
 
 .chip-tag.chip-muted {
@@ -118,7 +118,7 @@ button.chip:is(:hover, :focus-visible) {
   border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--fg);
-  font: 700 11px/1 var(--mono);
+  font: 700 var(--text-xs)/1 var(--f-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -172,7 +172,7 @@ button.count {
   border-radius: var(--chip-radius);
   background: transparent;
   color: var(--fg);
-  font: 500 12px/1.4 var(--f-ui);
+  font: 500 var(--text-sm)/1.4 var(--f-ui);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
@@ -210,13 +210,13 @@ button.chip-object:disabled {
 
 .chip-object-id {
   flex: none;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
   color: var(--fg);
 }
 
 .chip-object-fact {
   flex: none;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
   color: var(--ct);
 }
 
@@ -272,7 +272,7 @@ button.chip-object:disabled {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--fg);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: default;
 }
 
@@ -281,7 +281,7 @@ button.chip-object:disabled {
   padding: 0 8px;
   border-radius: var(--chip-radius);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1;
   cursor: pointer;
 }
@@ -307,19 +307,19 @@ button.chip-object:disabled {
   .chip,
   .chip-tag {
     min-height: 28px;
-    font-size: 13px;
+    font-size: var(--text-md);
     line-height: 1.2;
   }
 
   .count {
     min-width: 24px;
     height: 24px;
-    font-size: 13px;
+    font-size: var(--text-md);
   }
 
   .chip-object {
     min-height: 32px;
-    font-size: 13px;
+    font-size: var(--text-md);
   }
 
   .hint {
