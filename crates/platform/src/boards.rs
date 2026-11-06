@@ -1213,11 +1213,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rev: e.rev,
             pointer: told.pointer(&e.pointer, e.agent.as_deref()),
             note: e.note.clone(),
-            status: match (&ask, e.status) {
-                (Some(_), _) => wire::Status::NeedsInput,
-                (None, wire::Status::NeedsInput) => wire::Status::None,
-                (None, s) => s,
-            },
+            // What old rows kept from before lanes doesn't reach clients.
+            status: if ask.is_some() { wire::Status::NeedsInput } else { wire::Status::None },
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,

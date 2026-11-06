@@ -236,6 +236,32 @@ async fn a_person_opens_an_issue_on_github_as_themselves() {
     assert_eq!(messages(&base, &room).await.len(), 1);
 }
 
+/// A machine's send from its block checks an export as a send from the
+/// page does: it goes with the issue's title and body as they are now.
+#[tokio::test]
+async fn a_machines_send_of_an_export_takes_the_issue_as_it_is_now() {
+    let (hub, _gh, _app, base, team) = start().await;
+    hub.daemon("geek", "alice", None);
+    let id = new_issue(&base, "alice", &team, "Crash on start", "steps").await;
+    let (s, v) = export_draft(&base, "alice", &id, "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+    let draft = v["draft"]["id"].as_str().unwrap().to_owned();
+    let (s, _) =
+        call(&base, "alice", "PATCH", &format!("/api/issues/{id}"), Some(json!({ "title": "Crash on start-up" })))
+            .await;
+    assert_eq!(s, 200);
+    let r = reqwest::Client::new()
+        .post(format!("{base}/api/forge/drafts/{draft}/machine"))
+        .header("x-test-daemon", "alice geek")
+        .json(&json!({ "step": "start" }))
+        .send()
+        .await
+        .unwrap();
+    let s = r.status().as_u16();
+    let v: Value = r.json().await.unwrap();
+    assert_eq!((s, v["state"].as_str(), v["title"].as_str()), (200, Some("sending"), Some("Crash on start-up")), "{v}");
+}
+
 /// An agent drafts the export with its machine's grants, and waits for its
 /// person: no machine is asked, and its person sends it through one.
 #[tokio::test]
