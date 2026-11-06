@@ -6,7 +6,9 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import "./block-states.css";
+// Its styles come in through shared/style.css (an @import there), not from
+// here: the Doc renderer imports this too, and a CSS chunk of its own would be
+// shared by the app and the share page (doc-link.spec).
 
 /** How long a load must take before it says so: a fast one never flashes. */
 export const LOADING_DELAY_MS = 300;
