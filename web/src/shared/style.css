@@ -9225,7 +9225,7 @@ input.chat-search {
 .chat-back {
   flex: none;
   padding: 0 8px;
-  font-size: 22px; /* off-scale: glyph, the chat bar is #686 part 2's */
+  font-size: var(--text-xl);
   line-height: 1;
   color: var(--dim);
 }

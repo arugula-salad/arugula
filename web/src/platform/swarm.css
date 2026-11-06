@@ -182,8 +182,8 @@
    someone chose, is the bar's title (#686). */
 .chat-view-head .chat-title strong,
 .chat.phone > .chat-head > strong {
-  font: 800 22px/1 var(--f-display); /* off-scale: the chat head is #686 part 2's */
-  letter-spacing: var(--track-caps);
+  font: 800 var(--text-xl)/1 var(--f-display);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
