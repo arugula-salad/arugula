@@ -70,7 +70,7 @@ function Row({ item, group, did }: { item: MenuItem; group?: string; did: () => 
   }
   return (
     <li class="settings-row" data-setting={item.label}>
-      <button class="settings-open" onClick={run}>
+      <button class="settings-open" aria-label={item.label} onClick={run}>
         <span class="settings-open-name">{item.label}</span>
         {hint}
       </button>
