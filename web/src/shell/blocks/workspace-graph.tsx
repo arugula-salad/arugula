@@ -8,6 +8,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { BlockError, BlockLoading } from "./block-states";
 import type { WorkspaceState } from "./workspace";
+import { Bar } from "../../shared/ui/bar";
 
 export type GraphStatus =
   | { is: "off" }
@@ -82,7 +83,7 @@ export function Graph({ client, id, s, member, close, picked }: {
   }, [origin]);
   return (
     <section class="ws-graph" data-ws-graph>
-      <div class="ws-graph-bar">
+      <Bar sub class="ws-graph-bar">
         <b>Graph</b>
         <span class="dim">{member ?? "whole estate"}</span>
         <label class="dim" title={`Reads ${s.env} live through behold, with this host's credentials`}>
@@ -99,7 +100,7 @@ export function Graph({ client, id, s, member, close, picked }: {
         <button title="Close the graph" aria-label="Close the graph" onClick={close}>
           ✕
         </button>
-      </div>
+      </Bar>
       {g.is === "running" && loaded.current ? (
         // Its own origin, the block's site, never the app's.
         <iframe

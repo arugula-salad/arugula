@@ -87,7 +87,8 @@ test("a team's project lists its issues, and an owner opens one", async ({ brows
   await expect(view.locator(".thread-msg").last()).toContainText("I can reproduce it");
   // Open on GitHub (M205) goes to a repo linked to the project: with none,
   // it says so and nothing is sent; the issue doesn't say it lives there.
-  await view.locator("[data-issue-open-github]").click();
+  await view.locator("[data-page-more]").click();
+  await alice.getByRole("menuitem", { name: "Open on GitHub" }).click();
   await expect(alice.getByText("Link a GitHub repo to this project first")).toBeVisible();
   await expect(view.locator("[data-issue-github]")).toHaveCount(0);
 
@@ -108,7 +109,7 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   const view = bob.locator("[data-issue]");
   await expect(view.locator("[data-issue-title]")).toHaveText("Search misses hyphenated words", { timeout: 15_000 });
   await expect(view.locator(".thread-msg").last()).toContainText("I can reproduce it");
-  await expect(view.locator("[data-issue-close], [data-issue-edit-title], [data-issue-labels-edit], [data-issue-open-github]")).toHaveCount(0);
+  await expect(view.locator("[data-issue-close], [data-issue-labels-edit], [data-page-more]")).toHaveCount(0);
   // The phone layout: nothing wider than the screen.
   const wide = await bob.evaluate(() => {
     const main = document.querySelector(".platform-main")!;

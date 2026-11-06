@@ -142,7 +142,8 @@ test("the phone and the platform page show the same view, and all three update l
   await expect(there.locator(".thread-msg").last()).toContainText("I can reproduce it on geek");
 
   // The title, changed on the platform page: the block and the phone have it.
-  await there.locator("[data-issue-edit-title]").click();
+  await there.locator("[data-page-more]").click();
+  await platform.getByRole("menuitem", { name: "Edit title" }).click();
   await there.locator("[data-issue-title-edit]").fill("Search misses words with hyphens");
   await there.locator("[data-issue-title-edit]").press("Enter");
   await expect(there.locator("[data-issue-title]")).toHaveText("Search misses words with hyphens");

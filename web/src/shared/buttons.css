@@ -141,13 +141,14 @@ a.secondary.danger:hover {
   }
 
   /* A bar of a fixed height (the panes' toolbar and header, a block's)
-     keeps its 24: it has no room for more. */
-  .bar-btn:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+     keeps its 24: it has no room for more. The phone's bar is 44, so it
+     has room for 40. */
+  .bar-btn:not(:is(.pane-toolbar, .pane-header, .hbar:not(.phone *)) *) {
     height: 40px;
     min-width: 40px;
   }
 
-  .bar-btn.sq:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+  .bar-btn.sq:not(:is(.pane-toolbar, .pane-header, .hbar:not(.phone *)) *) {
     width: 40px;
   }
 
