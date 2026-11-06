@@ -40,7 +40,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, Work, WorkItem};
+use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, Work, ReadyRun};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -383,7 +383,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             Some(g) => crate::run_grant::granter_log(app, g).await,
             None => None,
         };
-        items.push(WorkItem {
+        items.push(ReadyRun {
             run: run.id,
             project: run.project,
             workspace: m.workspace.clone(),

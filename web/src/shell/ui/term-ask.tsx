@@ -51,7 +51,7 @@ function Watching({ client, id }: { client: Client; id: PaneId }) {
 }
 
 /** A question the block draws itself, so no card goes over it: a new
- * issue's draft, whose block has Send, Edit, Ask for changes and Drop. Its
+ * issue's draft, whose block has Send, Edit, Ask for changes and Discard. Its
  * card still shows where attention goes (the swarm, the phone). */
 export const drawsItsOwn = (ask: Ask) => ask.source === "forge" && ask.id === "new";
 

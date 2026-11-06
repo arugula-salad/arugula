@@ -490,7 +490,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         </aside>
         {view ?? (
           <div class="chat-thread chat-empty">
-            {scope && scope.team === null ? "No threads yet. A pane's or a session's thread shows here once someone writes on it." : "No rooms yet. Make a channel, or write to someone in your team."}
+            {scope && scope.team === null ? "No rooms yet. A pane's or a session's room shows here once someone writes in it." : "No rooms yet. Make a channel, or write to someone in your team."}
           </div>
         )}
       </div>

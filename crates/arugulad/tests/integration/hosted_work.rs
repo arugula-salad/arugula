@@ -34,7 +34,7 @@ use std::{
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, WorkItem},
+    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, ReadyRun},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -70,7 +70,7 @@ struct Fake {
     delegation: Delegation,
     /// What it answered the box's enrollment, and the box's signing key.
     enrolled: Arc<Mutex<Option<(Enrollment, String)>>>,
-    items: Arc<Mutex<Vec<WorkItem>>>,
+    items: Arc<Mutex<Vec<ReadyRun>>>,
     pulls: Arc<Mutex<u32>>,
     reports: Arc<Mutex<Vec<Report>>>,
     /// The project's revokes, with every pull.
@@ -166,15 +166,15 @@ impl Fake {
     }
 
     /// A run of `sh -c script` on the box, under `grant`.
-    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> WorkItem {
+    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> ReadyRun {
         let op = Op { argv: vec!["sh".into(), "-c".into(), script.into()], ..Op::default() };
         self.item_of(run, &op, grant)
     }
 
     /// A run of `op` on the box, under `grant`.
-    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> WorkItem {
+    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> ReadyRun {
         let op = op.encode(&self.device());
-        WorkItem {
+        ReadyRun {
             run: run.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),
@@ -825,7 +825,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
 /// A deploy of `source` to production, approved (v2, DK4) with an assertion
 /// over the approval by the key `by` as the passkey `pk` (the account's
 /// passkey when it's the root's, or someone else's key).
-fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
+fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> ReadyRun {
     deploy_item_by(f, run, dep, source, by, ("fake", "acme/app", &["APP_TOKEN"]))
 }
 
@@ -837,7 +837,7 @@ fn deploy_item_by(
     source: &str,
     by: &DeviceKeys,
     driver: (&str, &str, &[&str]),
-) -> WorkItem {
+) -> ReadyRun {
     deploy_item_with(f, run, dep, source, by, driver, Default::default())
 }
 
@@ -851,7 +851,7 @@ fn deploy_item_with(
     by: &DeviceKeys,
     (driver, place, secrets): (&str, &str, &[&str]),
     settings: arugula_e2e::drivers::Settings,
-) -> WorkItem {
+) -> ReadyRun {
     use base64::Engine as _;
     let mut op = Operation {
         project: PROJECT.into(),
@@ -876,7 +876,7 @@ fn deploy_item_with(
     let run_op =
         Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
             .encode(&f.device());
-    WorkItem {
+    ReadyRun {
         run: run.into(),
         project: PROJECT.into(),
         workspace: WORKSPACE.into(),

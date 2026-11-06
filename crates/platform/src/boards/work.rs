@@ -59,8 +59,8 @@ pub async fn route(
 
 /// A run as a picker lists it: labelled as a board labels it, and as
 /// recent as its newest moment.
-fn run_item(r: &Run) -> wire::WorkItem {
-    wire::WorkItem {
+fn run_item(r: &Run) -> wire::RowCandidate {
+    wire::RowCandidate {
         pointer: wire::Pointer::Run { id: r.id.clone() },
         source: "run".to_owned(),
         kind: "run".to_owned(),
@@ -100,7 +100,7 @@ fn place_of(order: Order, updated_at: u64, id: &str) -> (u64, String) {
 }
 
 /// What `next` says: where the page ended.
-fn cursor_of(i: &wire::WorkItem) -> String {
+fn cursor_of(i: &wire::RowCandidate) -> String {
     format!("{}:{}", i.updated_at, key(&i.pointer))
 }
 
@@ -171,7 +171,7 @@ pub async fn untriaged(
     project: &str,
     text: Option<&str>,
     label: Option<&str>,
-) -> Result<(String, Vec<wire::WorkItem>), ApiError> {
+) -> Result<(String, Vec<wire::RowCandidate>), ApiError> {
     let q = wire::WorkQuery { q: text.map(Into::into), untriaged: true, ..Default::default() };
     let (project, mut out) = gather(app, account, project, &q, MOST).await?;
     if let Some(l) = label.map(str::trim).filter(|l| !l.is_empty()) {
@@ -190,7 +190,7 @@ async fn gather(
     asked: &str,
     q: &wire::WorkQuery,
     limit: u32,
-) -> Result<(String, Vec<wire::WorkItem>), ApiError> {
+) -> Result<(String, Vec<wire::RowCandidate>), ApiError> {
     let project = place(app, Actor::person(account), asked, false).await?;
     let kind = q.kind.as_deref().map(str::trim).filter(|k| !k.is_empty());
     if let Some(k) = kind
@@ -215,7 +215,7 @@ async fn gather(
     } else {
         limit.saturating_add(u32::try_from(on_boards.len() + worked.len()).unwrap_or(u32::MAX))
     };
-    let mut out: Vec<wire::WorkItem> = Vec::new();
+    let mut out: Vec<wire::RowCandidate> = Vec::new();
     // The work of each native issue read: its mirrored copy is the same work,
     // and the picker lists the native one.
     let mut native: HashSet<String> = HashSet::new();
@@ -236,7 +236,7 @@ async fn gather(
             if on_boards.contains(&i.id) || worked.contains(&same) {
                 continue;
             }
-            out.push(wire::WorkItem {
+            out.push(wire::RowCandidate {
                 pointer: wire::Pointer::Issue { id: i.id },
                 source: "native".to_owned(),
                 kind: "issue".to_owned(),
@@ -276,7 +276,7 @@ async fn gather(
                 continue;
             }
             let repo = repos.iter().find(|r| r.repo_id == i.repo_id).map(|r| r.full_name.clone());
-            out.push(wire::WorkItem {
+            out.push(wire::RowCandidate {
                 pointer: wire::Pointer::ForgeItem { id: i.id },
                 source: "github".to_owned(),
                 kind: i.kind,
@@ -306,7 +306,7 @@ async fn gather(
                 continue;
             }
             let Some(c) = conns.get(i.mirror_id) else { continue };
-            out.push(wire::WorkItem {
+            out.push(wire::RowCandidate {
                 pointer: wire::Pointer::ForgeItem { id: i.id },
                 source: "plane".to_owned(),
                 kind: "issue".to_owned(),
@@ -343,8 +343,8 @@ async fn gather(
 /// their login, else their name, else `someone who left`. One read of the
 /// hub's accounts for the whole list, and none when nobody is assigned.
 /// Mirrored items keep the GitHub logins they came with.
-async fn name_assignees(app: &Platform, items: &mut [wire::WorkItem]) -> Result<(), ApiError> {
-    let native = |i: &wire::WorkItem| matches!(i.pointer, wire::Pointer::Issue { .. });
+async fn name_assignees(app: &Platform, items: &mut [wire::RowCandidate]) -> Result<(), ApiError> {
+    let native = |i: &wire::RowCandidate| matches!(i.pointer, wire::Pointer::Issue { .. });
     let mut ids: Vec<String> = items.iter().filter(|i| native(i)).flat_map(|i| i.assignees.iter().cloned()).collect();
     ids.sort();
     ids.dedup();

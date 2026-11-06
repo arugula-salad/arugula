@@ -6969,7 +6969,7 @@
           },
           "zones": {
             "items": {
-              "$ref": "#/components/schemas/Zone"
+              "$ref": "#/components/schemas/LaneView"
             },
             "type": "array"
           }
@@ -9664,11 +9664,19 @@
       },
       "EntryKind": {
         "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-        "enum": [
-          "zone",
-          "row"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "row"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "zone",
+            "description": "A group; `group` is read as this too.",
+            "type": "string"
+          }
+        ]
       },
       "ForgeDraft": {
         "properties": {
@@ -10812,6 +10820,45 @@
         ],
         "type": "object"
       },
+      "LaneView": {
+        "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZoneKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rev",
+          "title",
+          "rows"
+        ],
+        "type": "object"
+      },
       "Live": {
         "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
         "properties": {
@@ -11129,7 +11176,7 @@
             ]
           },
           "zone": {
-            "description": "The group the row goes to; `null`: none. Absent: its own.",
+            "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
             "type": [
               "string",
               "null"
@@ -11655,7 +11702,7 @@
           },
           "zone": {
             "default": null,
-            "description": "A new row's group (`zon_…`).",
+            "description": "A new row's group (`zon_…`); `group` is read as this too.",
             "type": [
               "string",
               "null"
@@ -11894,6 +11941,90 @@
           "note",
           "status",
           "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RowCandidate": {
+        "description": "One thing a row may point at.",
+        "properties": {
+          "assignees": {
+            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "identifier": {
+            "description": "A tracker item's project key (`ARUGU`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "`issue`, `pr` or `run`.",
+            "type": "string"
+          },
+          "labels": {
+            "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "number": {
+            "description": "A run has none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pointer": {
+            "$ref": "#/components/schemas/Pointer",
+            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+          },
+          "repo": {
+            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "`native`, `github`, `plane` or `run`.",
+            "type": "string"
+          },
+          "state": {
+            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+            "type": "string"
+          },
+          "title": {
+            "description": "A run's: how it started (`manual run`).",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "Where a tracker item is, in the tracker.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pointer",
+          "source",
+          "kind",
+          "title",
+          "state",
+          "assignees",
           "updated_at"
         ],
         "type": "object"
@@ -13631,7 +13762,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/boards.WorkItem"
+              "$ref": "#/components/schemas/RowCandidate"
             },
             "type": "array"
           },
@@ -13748,134 +13879,12 @@
         },
         "type": "object"
       },
-      "Zone": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ZoneKind"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rev": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/Row"
-            },
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "rev",
-          "title",
-          "rows"
-        ],
-        "type": "object"
-      },
       "ZoneKind": {
         "description": "A zone's kind: every zone a read answers is a `lane`, one of the four\n([`Lane`]). No one makes a zone.",
         "enum": [
           "lane"
         ],
         "type": "string"
-      },
-      "boards.WorkItem": {
-        "description": "One thing a row may point at.",
-        "properties": {
-          "assignees": {
-            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "identifier": {
-            "description": "A tracker item's project key (`ARUGU`).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "description": "`issue`, `pr` or `run`.",
-            "type": "string"
-          },
-          "labels": {
-            "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "number": {
-            "description": "A run has none.",
-            "format": "uint64",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "pointer": {
-            "$ref": "#/components/schemas/Pointer",
-            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-          },
-          "repo": {
-            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "description": "`native`, `github`, `plane` or `run`.",
-            "type": "string"
-          },
-          "state": {
-            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-            "type": "string"
-          },
-          "title": {
-            "description": "A run's: how it started (`manual run`).",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "url": {
-            "description": "Where a tracker item is, in the tracker.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "pointer",
-          "source",
-          "kind",
-          "title",
-          "state",
-          "assignees",
-          "updated_at"
-        ],
-        "type": "object"
       },
       "issues.NewIssue": {
         "properties": {

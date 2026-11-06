@@ -21,6 +21,8 @@ const STATE: Record<ChatThreadAgentState, string> = {
   idle: "Idle",
   needs_you: "Needs you",
   offline: "Offline",
+  failed: "Failed",
+  stopped: "Stopped",
   unknown: "Unknown",
 };
 
@@ -32,7 +34,7 @@ export function agentName(a: ChatThreadAgent): string {
 /** Its last line: what's waiting for it, or how far it has read. */
 export function readLine(a: ChatThreadAgent, newest: number | undefined): string {
   if (a.waiting > 0) return `${a.waiting} waiting`;
-  if (a.state === "offline" || a.state === "unknown") return "";
+  if (a.state === "offline" || a.state === "unknown" || a.state === "failed" || a.state === "stopped") return "";
   if (a.read_seq === undefined || newest === undefined) return "";
   return a.read_seq >= newest ? "Read everything" : "Not woken since";
 }

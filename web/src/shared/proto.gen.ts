@@ -594,7 +594,8 @@ export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" 
  */
 export type BoardMoveEntry = { rev: number | null, 
 /**
- * The group the row goes to; `null`: none. Absent: its own.
+ * The group the row goes to; `null`: none. Absent: its own. `group`
+ * is read as this too.
  */
 zone?: string | null, before: string | null, };
 
@@ -657,7 +658,7 @@ export type BoardProofBy = "ci" | "evidence";
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
 /**
- * A new row's group (`zon_…`).
+ * A new row's group (`zon_…`); `group` is read as this too.
  */
 zone: string | null, 
 /**
@@ -961,6 +962,10 @@ order: string | null,
  */
 label: string | null, };
 
+/**
+ * One of a board's four lanes as a read answers it, with its rows. The wire
+ * and TypeScript still call it a zone (`zones`, `BoardZone`).
+ */
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 
 /**
@@ -1844,7 +1849,7 @@ lead: boolean, };
 /**
  * What an agent in a thread is doing (#645).
  */
-export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "unknown";
+export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "failed" | "stopped" | "unknown";
 
 /**
  * [`chat_thread_agents`]' answer: oldest in the thread first.
