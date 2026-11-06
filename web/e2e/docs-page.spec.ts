@@ -259,6 +259,26 @@ test.describe("the list", () => {
     await expect((await preview(page, "Long plan")).locator("[data-doc-platform-link]")).toHaveCount(0);
   });
 
+  test("Copy link in the preview copies at once: the copy on the platform, and is off with none (Arugula #708)", async ({ page }) => {
+    await seed(page);
+    const link = onPlatform(await docId("Short note"));
+    await page.reload();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
+    await goToDocs(page);
+    const made: string[] = [];
+    page.on("request", (req) => /doc_share|doc_link/.test(req.url()) && made.push(req.url()));
+    const on = (await preview(page, "Short note")).locator("[data-doc-copy-link]");
+    await expect(on).toBeEnabled();
+    await on.click();
+    await expect(on).toHaveText("Copied ✓");
+    await expect(on).toHaveAttribute("title", /only you can open it until it's shared/);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    expect(made, "nothing is asked of control and no link is made").toEqual([]);
+    const none = (await preview(page, "Long plan")).locator("[data-doc-copy-link]");
+    await expect(none).toBeDisabled();
+    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+  });
+
   test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {
     // Control serves its newest page to every machine, and a daemon before
     // 0.66.12 sends a row with no summary or sections, and has no preview.

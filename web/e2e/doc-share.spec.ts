@@ -13,7 +13,7 @@
 // with no DNS or certificate.
 
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { hex } from "../src/shared/docs/colours";
@@ -382,19 +382,67 @@ test.describe("the owner's menus", () => {
     await r?.dispose();
   });
 
+  test("Copy link copies a Doc's copy on the platform at once, with no dialog and no public link (Arugula #708)", async ({ page }) => {
+    const d = await doc(r);
+    const made: string[] = [];
+    page.on("request", (req) => req.url().endsWith("/call/doc_share") && made.push(req.url()));
+    await page.goto(r.mini);
+    await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
+    const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
+    // The machine notes where the copy is after a put (#418); a block opened
+    // now has it.
+    const link = "http://127.0.0.1:1/p/prj_0123/docs/pdc_00000000000000000000000000000000";
+    const file = join(r.state, "docs", lib, "meta.json");
+    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    meta.platform = { project: "prj_0123", id: "pdc_0", link, rev: 1, assets: {} };
+    writeFileSync(file, JSON.stringify(meta));
+    const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+    const again = (await r.post("/api/blocks", { type: "doc", config: { doc: lib }, split: term, local: true })).block!;
+    const bar = page.locator(`[data-doc-bar="${again}"]`);
+    const button = bar.locator("[data-doc-bar-link]");
+    await expect(button).toBeEnabled({ timeout: 20_000 });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+
+    await button.click();
+    await expect(button).toContainText("Copied ✓");
+    await expect(button).toHaveAttribute("title", /only you can open it until it's shared/);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    await expect(page.locator("[data-doc-share-dialog]")).toHaveCount(0);
+    await expect(button).not.toContainText("Copied", { timeout: 5_000 });
+
+    // The block menu's Copy link does the same, and Share link… is gone.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    await menuHas(page, page.locator(`[data-doc-block="${again}"]`), "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "Copy link", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+
+    expect(made, "no doc_share call: a public link needs the dialog's confirm").toEqual([]);
+    expect(((await (await fetch(`${r.mini}/api/docs`)).json()) as { shared?: object | null }[]).some((x) => x.shared)).toBe(false);
+
+    // The panes go, so the next test has room.
+    for (const id of [again, d]) {
+      await menu(page, page.locator(`[data-doc-block="${id}"]`), "Close pane");
+      await expect(page.locator(`[data-doc-block="${id}"]`)).toHaveCount(0);
+    }
+  });
+
   test("a Doc block's menu shares, copies, updates and unshares", async ({ page }) => {
     const d = await doc(r);
     await page.goto(r.mini);
     const block = page.locator(`[data-doc-block="${d}"]`);
     await expect(block.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
 
-    // Not shared: Share link…, and none of the others.
-    await menuHas(page, block, "Share link…");
-    for (const gone of ["Copy link", "Update shared copy", "Unshare"]) await expect(page.getByRole("menuitem", { name: gone, exact: true })).toHaveCount(0);
-    await page.getByRole("menuitem", { name: "Share link…" }).click();
+    // Not shared, and no copy on the platform: Copy link, off, and none of
+    // the others. The bar's Share button opens the dialog (Arugula #708).
+    await menuHas(page, block, "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeDisabled();
+    for (const gone of ["Share link…", "Update shared copy", "Unshare"]) await expect(page.getByRole("menuitem", { name: gone, exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.locator(`[data-doc-bar="${d}"] [data-doc-bar-share]`).click();
     const dialog = page.locator("[data-doc-link-dialog]");
     await expect(dialog).toBeVisible();
-    // Arugula #650: the menu opens the dialog; the link is made on its confirm.
+    // Arugula #650: the dialog makes the link on its confirm.
     await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
     await dialog.locator("[data-doc-share-go]").click();
     await expect(dialog).toHaveAttribute("data-doc-share-dialog", "shared");
@@ -412,7 +460,7 @@ test.describe("the owner's menus", () => {
 
     // Shared: the other three.
     await menuHas(page, block, "Unshare");
-    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeEnabled();
     await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveCount(0);
     if (SHOTS) await page.screenshot({ path: join(SHOTS, "block-menu-shared.png") });
     await page.keyboard.press("Escape");
@@ -449,10 +497,12 @@ test.describe("the owner's menus", () => {
     await expect(page.locator("[data-confirm-remove]")).toBeEnabled();
     await page.locator("[data-confirm-remove]").click();
     await expect.poll(async () => (await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
-    await menuHas(page, block, "Share link…");
+    await menuHas(page, block, "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeDisabled();
+    await expect(page.getByRole("menuitem", { name: "Unshare", exact: true })).toHaveCount(0);
   });
 
-  test("a Doc's bar: link and share are icon buttons, and nothing makes a link until the dialog's confirm (Arugula #650)", async ({ page }) => {
+  test("a Doc's bar: link and share are icon buttons, and nothing makes a public link until the dialog's confirm (Arugula #650, #708)", async ({ page }) => {
     const d = await doc(r);
     const made: string[] = [];
     page.on("request", (req) => req.url().endsWith("/call/doc_share") && made.push(req.url()));
@@ -465,7 +515,7 @@ test.describe("the owner's menus", () => {
     const share = bar.locator("[data-doc-bar-share]");
 
     // Icon only: a title and an aria-label each, no text, no ▾.
-    await expect(link).toHaveAttribute("title", "Copy link");
+    await expect(link).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
     await expect(link).toHaveAttribute("aria-label", "Copy link");
     await expect(share).toHaveAttribute("title", "Share…");
     await expect(share).toHaveAttribute("aria-label", "Share…");
@@ -474,7 +524,10 @@ test.describe("the owner's menus", () => {
     await expect(bar.locator("[data-copy-link-more]")).toHaveCount(0);
     await expect(bar.locator("[data-doc-bar-shared]")).toHaveCount(0);
 
-    // Unshared, every way in opens the dialog and none makes a link.
+    // Unshared with no copy on the platform, Copy link is off and says why;
+    // the Share dialog opens from Share, and none makes a link.
+    await expect(link).toBeDisabled();
+    await expect(link).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
     const dialog = page.locator("[data-doc-share-dialog]");
     const cancel = async () => {
       await dialog.getByRole("button", { name: "Cancel" }).click();
@@ -486,7 +539,7 @@ test.describe("the owner's menus", () => {
       await page.screenshot({ path: join(SHOTS, `${name}.png`) });
     };
     await shot("bar-unshared");
-    await link.click();
+    await share.click();
     await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
     await expect(dialog).toContainText("Anyone with this link can open the Doc, with no account");
     await shot("bar-dialog-unshared");
@@ -496,19 +549,11 @@ test.describe("the owner's menus", () => {
     await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
-    await link.focus();
-    await page.keyboard.press("Enter");
-    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
-    await cancel();
-    await menuHas(page, block, "Share link…");
-    await page.getByRole("menuitem", { name: "Share link…" }).click();
-    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
-    await cancel();
     expect(made, "no doc_share call before the confirm").toEqual([]);
     expect(((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; shared?: object | null }[]).some((x) => x.shared)).toBe(false);
 
     // The confirm makes the link, once.
-    await link.click();
+    await share.click();
     await dialog.locator("[data-doc-share-go]").click();
     await expect(dialog.locator("[data-doc-link-url]")).toBeVisible();
     expect(made).toHaveLength(1);
@@ -566,7 +611,7 @@ test.describe("the owner's menus", () => {
     await mine.click();
     await page.locator("[data-list-preview] [data-open-doc]").click();
 
-    // Reopened: its content, and its share menu is back, not Share link….
+    // Reopened: its content, and its share menu is back.
     await expect(page.locator("[data-docs-page]")).toHaveCount(0);
     const now = await page.evaluate(() => window.__arugula.client.active()!);
     expect(now).not.toBe(d);
@@ -609,7 +654,7 @@ test.describe("the owner's menus", () => {
   });
 });
 
-test("on a machine that hasn't joined control, Share link… is disabled and says why", async ({ page }) => {
+test("on a machine that hasn't joined control, Copy link is disabled and says why", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   const post: Post = async (path, data) => {
@@ -624,13 +669,13 @@ test("on a machine that hasn't joined control, Share link… is disabled and say
     .poll(async () => {
       await block.click({ button: "right", position: { x: 60, y: 60 } });
       await page.getByRole("menu").waitFor();
-      const item = page.getByRole("menuitem", { name: "Share link…" });
+      const item = page.getByRole("menuitem", { name: "Copy link", exact: true });
       const off = (await item.count()) === 1 && (await item.isDisabled());
       if (!off) await page.keyboard.press("Escape");
       return off;
     })
     .toBe(true);
-  await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveAttribute("title", "this machine hasn't joined control: sharing needs control");
+  await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
   await page.keyboard.press("Escape");
   void menu;
   void paneEl;
