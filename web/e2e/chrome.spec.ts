@@ -121,6 +121,10 @@ test.describe("on a computer", () => {
     const t = (await tab(page)).id;
     const pane = await active(page);
     const rail = page.locator(".ws-rail");
+    // A machine on its own has no platform page: no Projects, and no team Docs
+    // (its Docs are its bar's, Arugula #418).
+    await expect(rail.locator("[data-open-projects]")).toHaveCount(0);
+    await expect(rail.locator("[data-open-docs-all]")).toHaveCount(0);
 
     await rail.locator("[data-open-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");

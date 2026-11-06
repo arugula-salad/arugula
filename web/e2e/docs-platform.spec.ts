@@ -197,15 +197,26 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   };
   await make("Team roadmap", "Acme");
   await make("Private notes", "Yours, private");
+  await make("Private ideas", "Yours, private");
 
+  // Team is what /docs opens on; the private Docs are under Mine (Arugula #418).
   const groups = alice.locator("[data-list-rows] [role=group] .list-group");
-  await expect(groups).toHaveText([/^Yours, private\s*1$/, /^Acme\s*1$/], { timeout: 15_000 });
-  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Private notes/, /Team roadmap/]);
+  await expect(alice.locator("[data-list-count=team]")).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+  await expect(groups).toHaveText([/^Acme\s*1$/]);
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
+  await expect(alice.locator("[data-list-count=team] b")).toHaveText("1");
+  await expect(alice.locator("[data-list-count=mine] b")).toHaveText("2");
+  await expect(alice.locator("[data-list-count=all]")).toHaveCount(0);
+  await alice.locator("[data-list-count=mine]").click();
+  await expect(groups).toHaveText([/^Mine\s*2$/]);
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Private ideas/, /Private notes/]);
+  // Picking the count that's on does nothing; there's no "all".
+  await alice.locator("[data-list-count=mine]").click();
+  await expect(alice.locator("[data-list-count=mine]")).toHaveAttribute("aria-pressed", "true");
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveCount(2);
   // A row is one line: no opening under the title (it was about 52px with one).
   await expect(alice.locator("[data-list-rows] [data-doc]", { hasText: "says hello" })).toHaveCount(0);
   expect((await alice.locator("[data-list-rows] [data-doc]").first().boundingBox())!.height).toBeLessThan(40);
-  await expect(alice.locator("[data-list-count=private] b")).toHaveText("1");
-  await expect(alice.locator("[data-list-count=shared] b")).toHaveText("1");
   // The first row is selected, and its whole Doc is on the right.
   const preview = alice.locator("[data-list-preview]");
   await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
@@ -214,23 +225,28 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   const head = preview.locator(".doc-title");
   // The Doc's own head is the preview's one title (Arugula #659).
   await expect(head).toHaveCount(1);
-  await expect(head).toHaveText("Private notes");
+  await expect(head).toHaveText("Private ideas");
   const reads: string[] = [];
   alice.on("request", (r) => {
     if (/\/docs\/pdc_/.test(r.url())) reads.push(r.url());
   });
-  for (const title of ["Team roadmap", "Private notes", "Team roadmap"]) {
+  for (const title of ["Private notes", "Private ideas", "Private notes"]) {
     const b = (await alice.locator("[data-list-rows] [data-doc]", { hasText: title }).boundingBox())!;
     await alice.mouse.move(b.x + 20, b.y + b.height / 2, { steps: 6 });
     await alice.waitForTimeout(400);
   }
-  await expect(head).toHaveText("Private notes");
+  await expect(head).toHaveText("Private ideas");
   expect(reads).toEqual([]);
+  await alice.locator("[data-list-rows] [data-doc]", { hasText: "Private notes" }).click();
+  await expect(head).toHaveText("Private notes");
+  await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
+  // The filter is this browser's: a reload stays in Mine.
+  await alice.reload();
+  await expect(alice.locator("[data-list-count=mine]")).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+  await alice.locator("[data-list-count=team]").click();
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
   await alice.locator("[data-list-rows] [data-doc]", { hasText: "Team roadmap" }).click();
   await expect(head).toHaveText("Team roadmap");
-  await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
-  await alice.locator("[data-list-count=shared]").click();
-  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
   await preview.locator("[data-open-doc]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}-team-roadmap$/);
   roadmapPath = new URL(alice.url()).pathname;
@@ -240,6 +256,7 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   await expect(bob.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/], { timeout: 15_000 });
   await expect(bob.getByText("Private notes")).toHaveCount(0);
   await expect(bob.locator("[data-list-rows] .list-group")).toHaveText([/^Acme\s*1$/]);
+  await expect(bob.locator("[data-list-count=mine] b")).toHaveText("0");
   const wide = await bob.evaluate(() => {
     const main = document.querySelector(".platform-main")!;
     return main.scrollWidth - main.clientWidth;
@@ -279,6 +296,8 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   // The copy is put a moment after the fill; the list is read on load.
   const row = () => alice.locator("[data-list-rows] [data-doc]", { hasText: "Geek's plan" });
   await platform(alice, "/docs");
+  // Mine, where copies are; the reloads below keep it.
+  await alice.locator("[data-list-count=mine]").click();
   await expect
     .poll(
       async () => {
@@ -290,7 +309,9 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
       { timeout: 60_000, intervals: [2000] },
     )
     .toBe(1);
+  // A copy is Mine, and its row says which machine it came from.
   await expect(row()).toHaveAttribute("data-private", "true");
+  await expect(row().locator("[data-doc-machine]")).toHaveText("On geek");
   await row().click();
   const preview = alice.locator("[data-list-preview]");
   await expect(preview.locator("[data-doc-copy-fact]")).toHaveText("a copy from geek");
@@ -444,6 +465,9 @@ test("someone in no team sees their machine's copies on /docs", async ({ browser
   await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "From **carolbox**." });
 
   await platform(carol, "/docs");
+  // Her copies are Mine, and the counts aren't drawn until a Doc is: the
+  // browser's remembered filter is what the reloads below open on.
+  await carol.evaluate(() => localStorage.setItem("platform-docs-filter", "mine"));
   const row = carol.locator("[data-list-rows] [data-doc]", { hasText: "Carol's notes" });
   await expect
     .poll(

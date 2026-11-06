@@ -184,7 +184,7 @@ export function DocsPage({ project }: { project?: string }) {
 function groupsOf(shown: Row[], narrowed: boolean): ListGroup<Row>[] {
   const by = new Map<string, ListGroup<Row> & { mine: boolean }>();
   for (const r of shown) {
-    const g = by.get(r.p.id) ?? { title: r.mine ? "Yours, private" : narrowed ? undefined : r.p.name, items: [], mine: r.mine };
+    const g = by.get(r.p.id) ?? { title: r.mine ? (narrowed ? "Yours, private" : "Mine") : narrowed ? undefined : r.p.name, items: [], mine: r.mine };
     g.items.push(r);
     by.set(r.p.id, g);
   }
@@ -194,23 +194,46 @@ function groupsOf(shown: Row[], narrowed: boolean): ListGroup<Row>[] {
   return out.sort((a, b) => Number(b.mine) - Number(a.mine));
 }
 
+type DocFilter = "team" | "mine";
+const FILTER_KEY = "platform-docs-filter";
+
+/** The filter this browser left on: Team until someone lives in Mine. */
+function savedFilter(): DocFilter {
+  try {
+    return localStorage.getItem(FILTER_KEY) === "mine" ? "mine" : "team";
+  } catch {
+    return "team";
+  }
+}
+
+function saveFilter(f: DocFilter) {
+  try {
+    localStorage.setItem(FILTER_KEY, f);
+  } catch {}
+}
+
 function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean }) {
   const { rows, sections } = useRows(ps);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<DocFilter>(savedFilter);
   const [query, setQuery] = useState("");
   const [making, setMaking] = useState(false);
   const all = rows ?? [];
   const q = query.trim().toLowerCase();
   const shown = all.filter(
     (r) =>
-      (filter === "all" || (filter === "private" && r.mine) || (filter === "shared" && !r.mine)) &&
+      (narrowed || (filter === "mine") === r.mine) &&
       (!q || r.doc.title.toLowerCase().includes(q) || (sections.get(readKey(r.doc)) ?? []).some((s) => s.heading.toLowerCase().includes(q))),
   );
   const writable = ps.filter(mayWrite);
   const counts: ListCount[] = [
-    { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
-    ...(narrowed ? [] : [{ key: "private", n: all.filter((r) => r.mine).length, label: "private" }, { key: "shared", n: all.filter((r) => !r.mine).length, label: "shared" }]),
+    ...(narrowed ? [{ key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" }] : []),
+    ...(narrowed ? [] : [{ key: "team", n: all.filter((r) => !r.mine).length, label: "Team" }, { key: "mine", n: all.filter((r) => r.mine).length, label: "Mine" }]),
   ];
+  const pick = (k: string) => {
+    if (k === filter || (k !== "team" && k !== "mine")) return;
+    setFilter(k);
+    saveFilter(k);
+  };
   const status =
     rows === null ? (
       <BlockLoading inline data-docs-loading what="the Docs" />
@@ -218,10 +241,16 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
       <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />
     ) : shown.length === 0 ? (
       <EmptyLine data-docs-none>
-        {q ? "No Doc's title or headings match." : filter === "private" ? "None of your Docs is private." : "No Doc is shared."}
+        {q
+          ? "No Doc's title or headings match."
+          : narrowed
+            ? "No Doc is here."
+            : filter === "mine"
+              ? "None of your agents' Docs is here yet."
+              : `No team Docs yet. Share one of yours from Mine${writable.length > 0 ? ", or make one with New Doc" : ""}.`}
       </EmptyLine>
     ) : undefined;
-  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Every Doc you can read, in your projects";
+  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Your team's Docs, and yours from your machines";
   return (
     <div class="docs-list" data-docs-page>
       <ListPage<Row>
@@ -239,7 +268,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
                   </button>
                 )
               }
-              stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
+              stats={all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
             />
             {making && <NewDoc ps={writable} done={() => setMaking(false)} />}
           </>
@@ -256,6 +285,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
           const s = sections.get(readKey(r.doc));
           return {
             title: <span data-doc-title>{r.doc.title}</span>,
+            detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
             age: <Time at={r.doc.updated_at} title="Updated" />,
             mark: s ? <Shape sections={s} /> : undefined,
             attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },

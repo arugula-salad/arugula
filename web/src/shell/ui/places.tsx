@@ -190,7 +190,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {docs && (
         <button
           class={at === "docs" ? "place here" : "place"}
-          title="Docs: the Docs your agents wrote, to open again"
+          title="Docs: the Docs your agents wrote on this machine, to open again"
           data-open-docs
           aria-pressed={at === "docs"}
           onClick={() => at !== "docs" && openDocsPage()}
