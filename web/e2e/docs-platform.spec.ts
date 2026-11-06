@@ -196,6 +196,9 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   const groups = alice.locator("[data-list-rows] [role=group] .list-group");
   await expect(groups).toHaveText([/^Yours, private\s*1$/, /^Acme\s*1$/], { timeout: 15_000 });
   await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Private notes/, /Team roadmap/]);
+  // A row is one line: no opening under the title (it was about 52px with one).
+  await expect(alice.locator("[data-list-rows] [data-doc]", { hasText: "says hello" })).toHaveCount(0);
+  expect((await alice.locator("[data-list-rows] [data-doc]").first().boundingBox())!.height).toBeLessThan(40);
   await expect(alice.locator("[data-list-count=private] b")).toHaveText("1");
   await expect(alice.locator("[data-list-count=shared] b")).toHaveText("1");
   // The first row is selected, and its whole Doc is on the right.

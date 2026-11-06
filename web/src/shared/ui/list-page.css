@@ -535,6 +535,26 @@ button.list-count:hover {
   }
 }
 
+/* A Doc's row has no second line: its title, facts and mark share one. */
+.list-row[data-doc] {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.list-row[data-doc] .list-row-detail {
+  display: none;
+}
+
+.list-row[data-doc] .list-row-mark {
+  grid-area: 1 / 3;
+}
+
+@container list-page (max-width: 480px) {
+  .list-row[data-doc] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
 /* A Doc's mark and outline (shell/ui/docs-page.tsx): grey, brighter where a
    section has a figure. Accent stays for what's live. */
 .doc-shape {
