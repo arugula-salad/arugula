@@ -397,3 +397,255 @@ fn folded_notes_stay_a_note() {
     assert!(joined.ends_with('…') && !joined.contains('\n'), "{joined}");
     assert_eq!(super::joined_note("a", "b"), "a; b");
 }
+
+/// An export draft of `issue` to acme/site (88), held by a send since 100.
+fn export_draft(db: &Db, id: &str, issue: &str) {
+    db.c()
+        .execute(
+            "INSERT INTO drafts (id, project_id, author, repo_id, kind, title, body, native_issue, sent_at, created_at, updated_at)
+             VALUES (?1, 'prj_a', 'a', 88, 'issue', 'An issue', '', ?2, 100, 1, 1)",
+            params![id, issue],
+        )
+        .unwrap();
+}
+
+/// GitHub issue `number` of acme/site as the mirror first writes it.
+fn mirrored(db: &Db, number: u64) {
+    let row = crate::db::mirror::ItemRow {
+        repo_id: 88,
+        number,
+        kind: "issue".into(),
+        state: "open".into(),
+        state_reason: None,
+        title: "An issue".into(),
+        labels: "[]".into(),
+        author_login: None,
+        author_id: None,
+        assignees: "[]".into(),
+        reviewers: "[]".into(),
+        draft: false,
+        merge_state: None,
+        head_ref: None,
+        head_sha: None,
+        base_ref: None,
+        created_at: 300,
+        updated_at: 300,
+    };
+    db.mirror(88, None, |tx| crate::db::mirror::upsert_item(tx, &row, crate::db::mirror::Source::Pushed, 300))
+        .unwrap()
+        .unwrap();
+}
+
+/// The send that opens a native issue on GitHub ends with the issue's
+/// origin and `exported` in its own transaction. A native issue a board
+/// placed before then is one work item with its GitHub copy, whether the
+/// mirror had the copy before the send ended or writes it after.
+#[test]
+fn an_export_links_its_issue_as_its_send_ends() {
+    use crate::db::forge::{SendEnd, SentBy};
+    let db = Db::test();
+    project(&db, "prj_a");
+    repo(&db, "prj_a", 88);
+    board(&db, "brd_1", "prj_a");
+    let (late, early) = (native(&db, "prj_a"), native(&db, "prj_a"));
+    for n in [&late, &early] {
+        add(&db, "brd_1", &item(n)).unwrap();
+    }
+    assert_eq!(count(&db, "SELECT count(*) FROM work_item_refs"), 2);
+
+    // The mirror writes #7 after the send ends.
+    export_draft(&db, "dft_late", &late);
+    let url = "https://github.com/acme/site/issues/7";
+    let d = db.end_send("dft_late", 100, SendEnd::Sent(Some(url)), &read_at(200), 200).unwrap().unwrap();
+    assert_eq!(d.state, "sent");
+    let g = db.issue(&late).unwrap().unwrap().github.unwrap();
+    assert_eq!((g.repo_id, g.number), (88, 7));
+    assert_eq!(count(&db, "SELECT count(*) FROM issue_events WHERE kind = 'exported'"), 1);
+    mirrored(&db, 7);
+
+    // #8 is mirrored before its send ends (its webhook came first).
+    mirrored(&db, 8);
+    export_draft(&db, "dft_early", &early);
+    db.end_send(
+        "dft_early",
+        100,
+        SendEnd::Sent(Some("https://github.com/acme/site/issues/8")),
+        &SentBy::default(),
+        200,
+    )
+    .unwrap()
+    .unwrap();
+
+    for (n, number) in [(&late, 7u64), (&early, 8)] {
+        let same: u64 = db
+            .c()
+            .query_row(
+                "SELECT count(*) FROM work_item_refs g JOIN forge_items f ON f.id = g.target
+                 JOIN work_item_refs w ON w.work_item = g.work_item
+                 WHERE f.repo_id = 88 AND f.number = ?1 AND w.target = ?2",
+                params![number, n],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(same, 1, "#{number} and its native issue are one work item");
+    }
+    assert_eq!(count(&db, "SELECT count(*) FROM work_items"), 2);
+}
+
+/// An export's draft and its native issue's origin, after its send ended.
+fn after(db: &Db, draft: &str, issue: &str) -> (String, Option<String>, Option<u64>) {
+    let (state, error): (String, Option<String>) = db
+        .c()
+        .query_row("SELECT state, error FROM drafts WHERE id = ?1", params![draft], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    (state, error, db.issue(issue).unwrap().unwrap().github.map(|g| g.number))
+}
+
+/// GitHub issue `number` of acme/site in the mirror, opened at `at` by
+/// GitHub's user `author`.
+fn mirrored_by(db: &Db, number: u64, at: u64, author: u64) {
+    mirrored(db, number);
+    db.c()
+        .execute(
+            "UPDATE forge_items SET created_at = ?2, author_id = ?3 WHERE repo_id = 88 AND number = ?1",
+            params![number, at, author],
+        )
+        .unwrap();
+}
+
+/// What a send says of an issue the mirror doesn't have: GitHub has it as
+/// opened at `at`.
+fn read_at(at: u64) -> crate::db::forge::SentBy {
+    crate::db::forge::SentBy { github: None, issue: Some(Ok((at, None))) }
+}
+
+/// The sent issue must be in the draft's repo, and opened since the hold by
+/// the draft's person, as the mirror has it or else as the send read it
+/// from GitHub: otherwise the draft ends failed, saying so, with the URL
+/// kept, and the issue gets no origin. While that refusal stands, no export
+/// of the issue is sent again (it may be on GitHub as that).
+#[test]
+fn an_export_links_only_the_issue_its_send_opened() {
+    use crate::db::forge::{NOT_CHECKED, NOT_ITS_REPO, NOT_ITS_SEND, SendEnd, SentBy};
+    let db = Db::test();
+    project(&db, "prj_a");
+    repo(&db, "prj_a", 88);
+    let hour = 3_600_000;
+    mirrored_by(&db, 9, 1, 6);
+    mirrored_by(&db, 10, hour, 7);
+    mirrored_by(&db, 11, hour, 6);
+    let by = |issue| SentBy { github: Some(6), issue };
+    let cases = [
+        ("https://github.com/evil/other/issues/12", by(None), Some(NOT_ITS_REPO)),
+        ("https://github.com/acme/site/pull/12", by(None), Some(NOT_ITS_REPO)),
+        ("https://github.com/acme/site/issues/9", by(None), Some(NOT_ITS_SEND)),
+        ("https://github.com/acme/site/issues/10", by(None), Some(NOT_ITS_SEND)),
+        ("https://github.com/ACME/Site/issues/11", by(None), None),
+        ("https://github.com/acme/site/issues/12", by(Some(Ok((hour, Some(6))))), None),
+        ("https://github.com/acme/site/issues/13", by(Some(Ok((1, Some(6))))), Some(NOT_ITS_SEND)),
+        ("https://github.com/acme/site/issues/14", by(Some(Ok((hour, Some(7))))), Some(NOT_ITS_SEND)),
+        ("https://github.com/acme/site/issues/15", by(Some(Err("502".into()))), Some(NOT_CHECKED)),
+        ("https://github.com/acme/site/issues/16", by(None), Some(NOT_CHECKED)),
+    ];
+    for (i, (url, sent_by, refused)) in cases.into_iter().enumerate() {
+        let n = native(&db, "prj_a");
+        let id = format!("dft_{i}");
+        db.c()
+            .execute(
+                "INSERT INTO drafts (id, project_id, author, repo_id, kind, title, body, native_issue, sent_at, created_at, updated_at)
+                 VALUES (?1, 'prj_a', 'a', 88, 'issue', 'An issue', '', ?2, ?3, 1, 1)",
+                params![id, n, hour],
+            )
+            .unwrap();
+        db.end_send(&id, hour, SendEnd::Sent(Some(url)), &sent_by, hour + 1).unwrap().unwrap();
+        let (state, error, origin) = after(&db, &id, &n);
+        let d = draft(&db, &id);
+        match refused {
+            Some(why) => {
+                assert_eq!((state.as_str(), error.as_deref(), origin), ("failed", Some(why), None), "{url}");
+                assert_eq!(d.sent_url.as_deref(), Some(url), "{url}: the URL stays");
+                // A resend of it, or of another draft of the issue, is refused.
+                let blocked = db.export_blocked(&d, hour * 2).unwrap().unwrap();
+                assert!(blocked.contains(&format!("it may be on GitHub as {url}")), "{blocked}");
+            }
+            None => assert_eq!((state.as_str(), origin.is_some()), ("sent", true), "{url}"),
+        }
+    }
+}
+
+/// Draft `id` as the platform reads it.
+fn draft(db: &Db, id: &str) -> crate::db::forge::DraftRow {
+    db.c()
+        .query_row(
+            &format!(
+                "SELECT {} FROM {} WHERE d.id = ?1",
+                crate::db::forge::DRAFT_COLUMNS,
+                crate::db::forge::DRAFT_FROM
+            ),
+            params![id],
+            crate::db::forge::draft_row,
+        )
+        .unwrap()
+}
+
+/// A send's end that fails to write leaves neither the issue's link nor
+/// the sent state; a work item join that fails undoes only itself.
+#[test]
+fn an_export_records_its_send_and_link_together() {
+    use crate::db::forge::SendEnd;
+    let db = Db::test();
+    project(&db, "prj_a");
+    repo(&db, "prj_a", 88);
+    board(&db, "brd_1", "prj_a");
+    let n = native(&db, "prj_a");
+    add(&db, "brd_1", &item(&n)).unwrap();
+    export_draft(&db, "dft_x", &n);
+    let url = "https://github.com/acme/site/issues/7";
+    db.c().execute("ALTER TABLE issue_events RENAME TO issue_events_away", params![]).unwrap();
+    assert!(db.end_send("dft_x", 100, SendEnd::Sent(Some(url)), &read_at(200), 200).is_err());
+    db.c().execute("ALTER TABLE issue_events_away RENAME TO issue_events", params![]).unwrap();
+    let (state, _, origin) = after(&db, "dft_x", &n);
+    assert_eq!((state.as_str(), origin), ("waiting", None), "neither the sent state nor the link");
+    let held: Option<u64> =
+        db.c().query_row("SELECT sent_at FROM drafts WHERE id = 'dft_x'", params![], |r| r.get(0)).unwrap();
+    assert_eq!(held, Some(100), "its hold as it was");
+
+    db.c().execute("ALTER TABLE work_item_refs RENAME TO work_item_refs_away", params![]).unwrap();
+    db.end_send("dft_x", 100, SendEnd::Sent(Some(url)), &read_at(200), 300).unwrap().unwrap();
+    db.c().execute("ALTER TABLE work_item_refs_away RENAME TO work_item_refs", params![]).unwrap();
+    let (state, _, origin) = after(&db, "dft_x", &n);
+    assert_eq!((state.as_str(), origin), ("sent", Some(7)), "the join failed alone");
+}
+
+/// No export goes while another of its issue was sent (whatever became of
+/// its link), or while the mirror has an issue with its title in its repo,
+/// opened since the draft's own last hold ran out with no end: by anyone,
+/// since the `gh` login a machine sends with may not be the person's.
+#[test]
+fn an_export_that_may_have_gone_isnt_sent_again() {
+    use crate::db::forge::{SENDING_MS, SendEnd, SentBy};
+    let db = Db::test();
+    project(&db, "prj_a");
+    repo(&db, "prj_a", 88);
+    // Its hold, at 100, ran out with no end.
+    let n = native(&db, "prj_a");
+    export_draft(&db, "dft_lapsed", &n);
+    let later = 100 + SENDING_MS;
+    assert_eq!(db.export_blocked(&draft(&db, "dft_lapsed"), later).unwrap(), None, "nothing on GitHub");
+    mirrored_by(&db, 7, 150, 5);
+    assert_eq!(db.export_blocked(&draft(&db, "dft_lapsed"), 120).unwrap(), None, "its hold stands still");
+    let why = db.export_blocked(&draft(&db, "dft_lapsed"), later).unwrap().unwrap();
+    assert!(why.contains("acme/site#7"), "whoever GitHub says opened it: {why}");
+    db.c().execute("UPDATE forge_items SET title = 'Other' WHERE number = 7", params![]).unwrap();
+    assert_eq!(db.export_blocked(&draft(&db, "dft_lapsed"), later).unwrap(), None, "another title");
+
+    // One sent with no link GitHub named: no other goes.
+    let m = native(&db, "prj_a");
+    export_draft(&db, "dft_sent", &m);
+    db.end_send("dft_sent", 100, SendEnd::Sent(None), &SentBy::default(), 200).unwrap().unwrap();
+    assert!(db.export_drafts_sent(&m).unwrap());
+    export_draft(&db, "dft_again", &m);
+    db.c().execute("UPDATE drafts SET sent_at = NULL WHERE id = 'dft_again'", params![]).unwrap();
+    let why = db.export_blocked(&draft(&db, "dft_again"), later).unwrap().unwrap();
+    assert!(why.contains("sent to GitHub already"), "{why}");
+}

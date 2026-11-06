@@ -342,6 +342,33 @@ fn add_event(
     )
 }
 
+/// Set issue `id`'s GitHub origin as `by`, once, in the caller's
+/// transaction (the one that ends an export's send, [`Db::end_send`]):
+/// its `exported` event, and, when a board has made it a work item, the
+/// mirrored GitHub issue joins that work item (`work_item_refs`). The
+/// issue and the event; `None` when it has an origin already, or there's
+/// no such issue.
+pub(super) fn set_github(
+    c: &impl Sql,
+    id: &str,
+    to: &GithubOrigin,
+    by: Actor,
+    at: u64,
+) -> Result<Option<(Issue, Event)>> {
+    let n = c.execute(
+        "UPDATE issues SET github_repo = ?2, github_repo_id = ?3, github_number = ?4, updated_at = ?5
+         WHERE id = ?1 AND github_number IS NULL",
+        params![id, to.repo, to.repo_id, to.number, at],
+    )?;
+    if n != 1 {
+        return Ok(None);
+    }
+    let issue = c.query_row(&format!("SELECT {COLS} FROM issues WHERE id = ?1"), params![id], issue_row)?;
+    let event = add_event(c, id, EventKind::Exported, by, at, json!({ "repo": to.repo, "number": to.number }))?;
+    super::work_items::joined(c, id, at)?;
+    Ok(Some((issue, event)))
+}
+
 impl Db {
     /// Open an issue in `project` as `by`: the project gives it the next
     /// number, and its timeline starts with `opened`. `None`: there's no
@@ -723,26 +750,6 @@ pub struct Held {
 
 /// Open on GitHub (M205): an issue's origin, and the comments that cross.
 impl Db {
-    /// Set `id`'s GitHub origin as `by`, once, and write its `exported`
-    /// event in the same transaction: the issue and the event. `None` when
-    /// it has an origin already, or there's no such issue.
-    pub fn set_issue_github(&self, id: &str, to: &GithubOrigin, by: Actor, at: u64) -> Result<Option<(Issue, Event)>> {
-        let mut c = self.c();
-        let tx = c.immediate()?;
-        let n = tx.execute(
-            "UPDATE issues SET github_repo = ?2, github_repo_id = ?3, github_number = ?4, updated_at = ?5
-             WHERE id = ?1 AND github_number IS NULL",
-            params![id, to.repo, to.repo_id, to.number, at],
-        )?;
-        if n != 1 {
-            return Ok(None);
-        }
-        let issue = tx.query_row(&format!("SELECT {COLS} FROM issues WHERE id = ?1"), params![id], issue_row)?;
-        let event = add_event(&tx, id, EventKind::Exported, by, at, json!({ "repo": to.repo, "number": to.number }))?;
-        tx.commit()?;
-        Ok(Some((issue, event)))
-    }
-
     /// The native issue exported to issue `number` of repo `repo_id`, if
     /// one was.
     pub fn exported_issue(&self, repo_id: u64, number: u64) -> Result<Option<Issue>> {

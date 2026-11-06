@@ -18,7 +18,10 @@
 //! **Kept answers.** GitHub's answers are kept [`KEEP_MS`] (10 minutes) in
 //! `forge_access`, so every machine of the platform gives the same one
 //! ([`access`]: daemons' live updates and hosted boxes' tokens ask the
-//! same way). Answers and drops are timed by the database's clock, never
+//! same way). Only a clear one is kept: a no that only says GitHub
+//! couldn't be asked (an error, a 5xx, its rate limit) is withheld as
+//! [`Withheld::Unsure`] and asked again next time, and the inbox keeps
+//! that reader's entries as they were ([`readers_said`]). Answers and drops are timed by the database's clock, never
 //! a machine's.
 //! The App's `member`, `membership`, `organization`, `repository`, `team`,
 //! `team_add` and installation events ([`event`]) drop the answers they
@@ -152,6 +155,8 @@ pub enum Withheld {
     Busy,
     /// A private repo, and this control has no GitHub App to ask with.
     NoApp,
+    /// A private repo, and GitHub couldn't be asked about it just now.
+    Unsure,
 }
 
 impl Withheld {
@@ -164,6 +169,7 @@ impl Withheld {
             Withheld::NoAccess => "no_access",
             Withheld::Busy => "busy",
             Withheld::NoApp => "no_app",
+            Withheld::Unsure => "unsure",
         }
     }
 }
@@ -239,9 +245,10 @@ pub async fn check(app: &Platform, v: &mut Viewer, repos: &[LinkedRepo]) -> Resu
     }
     for (repo_id, says) in futures_util::future::join_all(asks).await {
         match says? {
-            Access::Yes => readable.push(repo_id),
-            Access::No(_) => withheld.push((repo_id, Withheld::NoAccess)),
-            Access::Busy => withheld.push((repo_id, Withheld::Busy)),
+            (Access::Yes, _) => readable.push(repo_id),
+            (Access::No(_), true) => withheld.push((repo_id, Withheld::NoAccess)),
+            (Access::No(_), false) => withheld.push((repo_id, Withheld::Unsure)),
+            (Access::Busy, _) => withheld.push((repo_id, Withheld::Busy)),
         }
     }
     readable.sort_unstable();
@@ -318,7 +325,8 @@ pub async fn check_connections(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Access {
     Yes,
-    /// Why not, for the person.
+    /// Why not, for the person: GitHub's no, or that it couldn't be asked
+    /// (which isn't kept).
     No(String),
     /// Not asked about lately, and the account asked about too many
     /// ([`FORGE_LOOKUPS`]).
@@ -342,12 +350,13 @@ pub async fn access(
     if let Some(why) = app.db.kept_access(user.id, KEEP_MS)?.remove(&repo.to_lowercase()) {
         return Ok(why.map_or(Access::Yes, Access::No));
     }
-    ask(app, gh, account, user, repo, limit).await
+    Ok(ask(app, gh, account, user, repo, limit).await?.0)
 }
 
-/// Ask GitHub now ([`GithubApp::may`], with a read token) and keep the
-/// answer, timed by the database's clock before asking: a drop that comes
-/// while it asks wins.
+/// Ask GitHub now ([`GithubApp::may_said`], with a read token), and keep a
+/// clear answer, timed by the database's clock before asking: a drop that
+/// comes while it asks wins. The answer, and whether it was clear (a no
+/// that only says GitHub couldn't be asked isn't kept).
 async fn ask(
     app: &Platform,
     gh: &GithubApp,
@@ -355,17 +364,21 @@ async fn ask(
     user: &GithubUser,
     repo: &str,
     limit: bool,
-) -> anyhow::Result<Access> {
+) -> anyhow::Result<(Access, bool)> {
     if limit && app.limits.check_account(FORGE_LOOKUPS, account).is_err() {
-        return Ok(Access::Busy);
+        return Ok((Access::Busy, false));
     }
     let asked = app.db.clock_ms()?;
-    let why = gh.may(&Caller::of(app, account), user, repo).await.err();
-    if let Some(why) = &why {
-        info!(repo, why, "no access to a repository");
+    let said = gh.may_said(&Caller::of(app, account), user, repo).await.err();
+    let clear = said.as_ref().is_none_or(|r| r.clear);
+    if let Some(r) = &said {
+        info!(repo, why = r.why, clear = r.clear, "no access to a repository");
     }
-    app.db.keep_access(user.id, repo, why.as_deref(), asked)?;
-    Ok(why.map_or(Access::Yes, Access::No))
+    let why = said.map(|r| r.why);
+    if clear {
+        app.db.keep_access(user.id, repo, why.as_deref(), asked)?;
+    }
+    Ok((why.map_or(Access::Yes, Access::No), clear))
 }
 
 /// The readable repos of one item, and its repo: what a read of an item
@@ -389,16 +402,33 @@ pub async fn title_readers(app: &Platform, item: &str, accounts: &[String]) -> R
 
 /// Which of `accounts` [`check`] lets read a repo's items, as viewers
 /// (with their GitHub identities): [`title_readers`] for every item of one
-/// repo at once (the inbox, M171).
+/// repo at once.
 pub async fn readers(app: &Platform, repo: &LinkedRepo, accounts: &[String]) -> Result<Vec<Viewer>, ApiError> {
+    Ok(readers_said(app, repo, accounts).await?.0)
+}
+
+/// [`readers`], and the accounts it couldn't tell about just now: GitHub
+/// couldn't be asked ([`Withheld::Unsure`]), or the account asked about
+/// too many repos lately ([`Withheld::Busy`]). The inbox (M171) leaves
+/// those accounts' entries as they are, so a hiccup never takes what they
+/// saw and did.
+pub async fn readers_said(
+    app: &Platform,
+    repo: &LinkedRepo,
+    accounts: &[String],
+) -> Result<(Vec<Viewer>, Vec<String>), ApiError> {
     let mut out = Vec::new();
+    let mut unsure = Vec::new();
     for a in accounts {
         let mut v = Viewer::of(app, a).await?;
-        if check(app, &mut v, std::slice::from_ref(repo)).await?.readable.has(repo.repo_id) {
+        let c = check(app, &mut v, std::slice::from_ref(repo)).await?;
+        if c.readable.has(repo.repo_id) {
             out.push(v);
+        } else if c.withheld.iter().any(|(_, w)| matches!(w, Withheld::Unsure | Withheld::Busy)) {
+            unsure.push(v.account);
         }
     }
-    Ok(out)
+    Ok((out, unsure))
 }
 
 /// What an event of the App's could change about who may read a repo, as

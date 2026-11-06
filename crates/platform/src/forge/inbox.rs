@@ -394,7 +394,8 @@ pub async fn recompute(p: &Platform, repo_id: u64, numbers: &[u64], quiet: bool)
     }
     let Some(repo) = p.db.linked_repo(repo_id)?.filter(|r| r.unlinked_at.is_none()) else { return Ok(0) };
     let members = members(p, &repo.project_id).await?;
-    let readers = viewer::readers(p, &repo, &members).await.map_err(api)?;
+    // Those GitHub couldn't be asked about keep their entries as they are.
+    let (readers, unsure) = viewer::readers_said(p, &repo, &members).await.map_err(api)?;
     let mut made = 0;
     for n in numbers {
         let Some(s) = p.db.inbox_sources(repo_id, *n)? else { continue };
@@ -407,7 +408,7 @@ pub async fn recompute(p: &Platform, repo_id: u64, numbers: &[u64], quiet: bool)
             }
         }
         let now = now_ms();
-        let new = p.db.set_inbox(&s.item.id, &want, now)?;
+        let new = p.db.set_inbox(&s.item.id, &want, &unsure, now)?;
         made += new.len();
         if quiet || new.is_empty() {
             continue;
