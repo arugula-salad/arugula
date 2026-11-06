@@ -583,6 +583,16 @@ with_account = "kept"
 note = "Only until the platform confirms it erased its part, usually at once; then the row goes."
 seen_by = ["litestream"]
 
+[[table]]
+name = "untold_hosted_removals"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Hosted machines an owner removed, or that went with a deleted account, that the platform hasn't been told of yet (Arugula #744): the machine's id, its workspace's id, and when. Written in the removal's transaction, told at once and again every 30 seconds until the platform takes it, which fails the workspace and ends its runs and sessions."
+with_account = "kept"
+note = "Only until the platform takes it, usually at once; then the row goes. It names a machine and a workspace, not the account."
+seen_by = ["litestream"]
+
 # ---- the platform plane: what has to exist while every machine is asleep
 
 [[table]]

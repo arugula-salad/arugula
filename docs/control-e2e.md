@@ -855,7 +855,10 @@ that project only.
   (`DELETE /api/hosted/machines/{id}`) or when the platform deletes or
   rebuilds the workspace (`HubPort::hosted_gone`, which also drops an
   enrollment nobody used). A removed machine is
-  hung up on, and its key signs nothing here again.
+  hung up on, and its key signs nothing here again. When an owner
+  removes one, the hub tells the platform (`PlatformPort::hosted_removed`,
+  kept in `untold_hosted_removals` until it's taken), which fails the
+  workspace and ends its runs and agent sessions.
 
 **What control can do with a delegation:** within that project, add
 machines the project's people will reach and type into, and read what runs
@@ -1984,9 +1987,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 169 tables in two planes ("Two planes, two trust rules"):
+Control's database has 170 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (53 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (54 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (116 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -2048,6 +2051,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hub_changes` | metadata | The hub's outbox for the platform (#1153): a change to an account's name, a revoked device, a roster or a lock, a machine joining, moving, leaving or being shared, or a Labs flag, by kind, the id it's about and when. Kept a week, and at most the newest 100,000. | yes: every change naming the account, its devices, its machines and the teams it disbands goes, and its deletion is one change that names nobody. |  |
 | `maintenance` | metadata | The maintenance switch (M141): one row while it's on, with the seconds Retry-After says, whether the in-process platform's background work is held, and since when. Set by the operator with `arugula-control maintenance`. | nothing of one |  |
 | `untold_deletions` | metadata | Accounts the hub deleted that the platform hasn't confirmed erasing yet (M140): the account id, its machines' ids, the teams it disbanded, and when. Written in the deletion's transaction, told again every 30 seconds until the platform takes it. | kept: only until the platform confirms it erased its part, usually at once; then the row goes. |  |
+| `untold_hosted_removals` | metadata | Hosted machines an owner removed, or that went with a deleted account, that the platform hasn't been told of yet (Arugula #744): the machine's id, its workspace's id, and when. Written in the removal's transaction, told at once and again every 30 seconds until the platform takes it, which fails the workspace and ends its runs and sessions. | kept: only until the platform takes it, usually at once; then the row goes. It names a machine and a workspace, not the account. |  |
 
 ### The platform plane
 
