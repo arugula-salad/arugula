@@ -793,6 +793,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* ---- phone */
 
+/* The phone's bar is a finger's height (#686); the sheet hangs from it. */
+.app.phone {
+  --bar-h: 44px;
+}
+
 .phone-bar {
   padding: 0 4px;
   align-items: center;
@@ -800,7 +805,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .sheet-button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 8px;
   text-align: left;
   overflow: hidden;
@@ -1354,15 +1359,6 @@ button.att {
   min-height: 0;
 }
 
-.browser-bar {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  padding: 4px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-
 .browser-open {
   min-width: 28px;
   height: 26px;
@@ -1519,16 +1515,6 @@ button.att {
   flex: 1;
   min-height: 0;
   font-size: 13px;
-}
-
-.agent-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: var(--space-1) 8px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
 }
 
 .agent-name {
@@ -4695,22 +4681,10 @@ button.att {
   min-height: 0;
 }
 
-.review-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 8px;
-  min-height: 34px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 /* Room for the pane's grip, at the top right of the pane: every block's
    bar ends short of it (UI audit #177 made them one fixed-height row, so
    a full bar's last items ran under it and the grip took their clicks). */
-.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) {
+.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar, .chat.pinned .chat-head) {
   padding-right: 28px;
 }
 
@@ -5286,7 +5260,8 @@ button.diff-why-run {
   margin-left: auto;
 }
 
-.review-bar button.doc-bar-icon[data-copied] {
+.doc-bar-icon.bar-btn[data-copied] {
+  width: auto;
   min-width: 84px;
 }
 
@@ -5297,8 +5272,8 @@ button.diff-why-run {
 .doc-bar-icon[data-older]::after {
   content: "";
   position: absolute;
-  top: 3px;
-  right: 3px;
+  top: 2px;
+  right: 2px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -8491,13 +8466,6 @@ button.thread-quote:hover {
   padding: 0;
 }
 
-.chat-block-bar {
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--line);
-}
-
 .chat-block-bar .chat-search {
   flex: 1;
   min-width: 0;
@@ -8719,40 +8687,10 @@ input.chat-search {
   border-right: 1px solid var(--line);
 }
 
+/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169): a
+   bar (shared/ui/bar.css, #686). */
 .chat-side-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 49px;
-  padding: 0 8px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--line);
-}
-
-/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169). */
-.chat-side-name {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  font-size: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-side-head .chat-workspace {
-  flex: none;
-  padding: 2px 8px;
-  border-radius: var(--field-radius);
-  color: var(--dim);
-  font-size: 16px;
-  line-height: 1.2;
-}
-
-.chat-side-head .chat-workspace:hover {
-  color: var(--fg);
-  background: var(--raised);
+  border-bottom-color: var(--line);
 }
 
 /* Drawn icons (./chat/icons.tsx) sit on the text's line. */
@@ -9149,7 +9087,9 @@ input.chat-search {
   color: var(--dim);
 }
 
-.chat-head {
+/* The room's head and Details' are bars (shared/ui/bar.css, #686); the
+   views' (Activity, Threads, Saved, Search) and a thread's are still this. */
+.chat-head:not(.hbar) {
   flex: none;
   display: flex;
   align-items: center;
@@ -9162,7 +9102,7 @@ input.chat-search {
   flex: 1;
 }
 
-.chat-title {
+.chat-title:not(.hbar-title) {
   flex: 1;
   /* The name truncates last: the buttons wrap under it first (below). */
   min-width: min(8em, 100%);
@@ -9178,26 +9118,26 @@ input.chat-search {
   container: chat-room / inline-size;
 }
 
-.chat-thread > .chat-head > :not(.chat-title) {
+.chat-thread > .chat-head:not(.hbar) > :not(.chat-title) {
   flex: none;
 }
 
 @container chat-room (max-width: 600px) {
-  .chat-head {
+  .chat-head:not(.hbar) {
     flex-wrap: wrap;
     row-gap: 6px;
   }
 
-  .chat-head .chat-title {
+  .chat-head:not(.hbar) .chat-title {
     flex: 1 1 100%;
   }
 
   /* Less the back button and the gap: a finger's 40px (UI audit #199). */
-  .chat-head .chat-back + .chat-title {
+  .chat-head:not(.hbar) .chat-back + .chat-title {
     flex-basis: calc(100% - 56px);
   }
 
-  .chat-head .chat-title + * {
+  .chat-head:not(.hbar) .chat-title + * {
     margin-left: auto;
   }
 }
@@ -9205,17 +9145,17 @@ input.chat-search {
 /* A phone's room header has more buttons than width (pins, about, star,
    move, bell, leave): the back button and the room's name keep the first
    row, and the buttons wrap onto a row of their own under it. */
-.chat.phone .chat-head {
+.chat.phone .chat-head:not(.hbar) {
   flex-wrap: wrap;
   row-gap: 6px;
 }
 
-.chat.phone .chat-head .chat-title {
+.chat.phone .chat-head:not(.hbar) .chat-title {
   flex: 1 1 calc(100% - 56px);
 }
 
-.chat.phone .chat-head > :not(.chat-back):not(.chat-title):first-of-type,
-.chat.phone .chat-head .chat-title + * {
+.chat.phone .chat-head:not(.hbar) > :not(.chat-back):not(.chat-title):first-of-type,
+.chat.phone .chat-head:not(.hbar) .chat-title + * {
   margin-left: auto;
 }
 
@@ -9226,7 +9166,7 @@ input.chat-search {
   white-space: nowrap;
 }
 
-.chat-title span {
+.chat-title:not(.hbar-title) span {
   color: var(--dim);
   font-size: 12px;
 }
@@ -9261,6 +9201,15 @@ input.chat-search {
   .compose-send {
     min-width: 40px;
     min-height: 40px;
+  }
+}
+
+/* A computer's bar is 34px: a touch screen's wide window keeps the bar's
+   24 there (#686). */
+@media (pointer: coarse) and (min-width: 701px) {
+  .hbar :is(.chat-back, .chat-info, .thread-close) {
+    min-width: 24px;
+    min-height: 0;
   }
 }
 
@@ -9662,16 +9611,6 @@ input.chat-search {
 
 .ws-graph + .review-body {
   flex: 2 1 0;
-}
-
-.ws-graph-bar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 3px 8px;
-  font-size: 12px;
-  background: var(--surface);
-  white-space: nowrap;
 }
 
 .ws-graph-bar > span {
@@ -13134,23 +13073,21 @@ html[data-workspace="new"] .thread-panel {
 /* A channel's topic and its pins (#119): the header's topic and the cards
  * under its buttons, and the dim centered line a topic change or a pin
  * leaves in the room. */
-.chat-title .chat-topic {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
+.chat-topic-line .chat-topic {
+  display: inline;
   padding: 0;
-  color: var(--dim);
-  font-size: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.chat-title .chat-topic:hover {
+.chat-topic-line .chat-topic:hover {
   color: var(--fg);
 }
 
-.chat-title .chat-topic.add {
+.chat-topic-line .chat-topic.add {
   display: inline;
   color: var(--accent);
 }
@@ -13160,17 +13097,17 @@ html[data-workspace="new"] .thread-panel {
    ellipsis), so the line takes the room as padding, given back as
    margin. */
 @media (pointer: coarse) {
-  .chat-title > [data-chat-topic]:has(> .chat-topic.add) {
+  .chat-topic-line > [data-chat-topic]:has(> .chat-topic.add) {
     padding-block: 12px;
     margin-block: -12px;
   }
 
-  .chat-title .chat-topic.add {
+  .chat-topic-line .chat-topic.add {
     position: relative;
     overflow: visible;
   }
 
-  .chat-title .chat-topic.add::before {
+  .chat-topic-line .chat-topic.add::before {
     content: "";
     position: absolute;
     inset: -12px -8px;

@@ -17,6 +17,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { DocBlock, markdown, type DocState } from "../../shared/docs/doc-render";
 import { registerBlock, type BlockView } from "./view";
+import { Bar } from "../../shared/ui/bar";
 
 // The renderer is shared/docs/doc-render.tsx's; the share page and the
 // platform page's project Docs import it from there.
@@ -87,12 +88,12 @@ export const docHooks: {
 function DocBar({ client, id, s }: { client: Client; id: PaneId; s: DocState | null }) {
   const title = s?.title || "Doc";
   return (
-    <div class="review-bar doc-bar" data-doc-bar={id}>
+    <Bar sub class="review-bar doc-bar" data-doc-bar={id}>
       <span class="review-path" title={title}>
         <b>{title}</b>
       </span>
       {s && !s.error && docHooks.bar?.(client, id, s)}
-    </div>
+    </Bar>
   );
 }
 

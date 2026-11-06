@@ -14,6 +14,7 @@ import { AgentMessage } from "../../shared/agent-message";
 import { Composer, EarlierNote, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
 import { BlockLoading } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Bar } from "../../shared/ui/bar";
 
 /** Plain text of the conversation, roughly as `capture --text` gives it. */
 export function chatText(s: AgentState): string {
@@ -105,7 +106,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         setAttached([...attached, ...files]);
       }}
     >
-      <div class="agent-bar">
+      <Bar sub class="agent-bar">
         {/* One rule with the agent block's (UI audit #178): always says how it is. */}
         <span class={`agent-status ${s.status}`}>{STATUS[s.status]}</span>
         <span class="agent-name">{chatTitle(s)}</span>
@@ -117,7 +118,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         )}
         <ModelPicker client={client} id={id} s={s} />
         {stopped && <button onClick={() => void client.api(`/api/blocks/${id}/call/start`, {}, "couldn't start it")}>Resume</button>}
-      </div>
+      </Bar>
       <div
         class="agent-log"
         ref={scroller}

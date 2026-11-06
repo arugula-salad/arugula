@@ -21,6 +21,7 @@ import { gateKey, type Gate, type PaneId } from "../../shared/proto";
 import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
 import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { Bar } from "../../shared/ui/bar";
 
 export interface AppState {
   app: string;
@@ -143,7 +144,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
   const name = s.title ?? s.app;
   return (
     <div class="browser app-block" data-app={s.app}>
-      <div class="browser-bar">
+      <Bar sub class="browser-bar">
         <button title="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
           ↻
         </button>
@@ -168,7 +169,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
           Records ▾
         </button>
         <OpenOutside href={s.box_url} />
-      </div>
+      </Bar>
       {s.gates.length > 0 && (
         <div class="app-gates" data-app-gates>
           {s.gates.map((g) => (

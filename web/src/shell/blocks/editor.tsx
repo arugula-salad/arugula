@@ -13,6 +13,7 @@ import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-state
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 type Server =
   | { is: "stopped" }
@@ -64,7 +65,7 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   // own (through control, it opens only in its frame).
   const own = !throughControl(client, s.site_key) && /^https?:\/\//.test(s.src) ? s.src : null;
   const bar = (
-    <div class="browser-bar editor-bar">
+    <Bar sub class="browser-bar editor-bar">
       <button title="Reload" aria-label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
         ↻
       </button>
@@ -79,7 +80,7 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
       </span>
       <RoutePill id={id} />
       {own && <OpenOutside href={own} />}
-    </div>
+    </Bar>
   );
   let body;
   if (s.error || server.is === "failed") {

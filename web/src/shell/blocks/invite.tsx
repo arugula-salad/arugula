@@ -10,6 +10,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { BlockEmpty } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Bar } from "../../shared/ui/bar";
 
 interface Draft {
   id: string;
@@ -57,11 +58,11 @@ function InviteBlock({ client, id, s }: { client: Client; id: PaneId; s: InviteS
   const owner = client.role(client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null) === "owner";
   return (
     <div class="review ws" data-invite-block={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path">
           <b>Invites</b> <span class="dim">{s?.waiting ? `${s.waiting} waiting` : "none waiting"}</span>
         </span>
-      </div>
+      </Bar>
       <div class="review-body ws-body">
         {drafts.length === 0 && <BlockEmpty>No invites yet.</BlockEmpty>}
         {drafts.map((d) => (

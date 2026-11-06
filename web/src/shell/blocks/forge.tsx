@@ -30,6 +30,7 @@ import { Time } from "../../shared/ui/time";
 import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
 import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -247,13 +248,13 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-kind="issue">
       {!it && (
-        <div class="review-bar">
+        <Bar sub class="review-bar">
           <span class="review-path" title={s.repo}>
             <span class="dim forge-ref">
               #{s.number} {s.repo}
             </span>
           </span>
-        </div>
+        </Bar>
       )}
       <div class="review-body ws-body">
         {s.error && (
@@ -526,12 +527,12 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
 
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-new={n.status} data-new-mode={mode} data-new-revising={revising || undefined}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path">
           <b>{s.repo}</b> <span class="dim">new issue</span>
         </span>
         <StateChip tone={stateTone(tag)}>{tag}</StateChip>
-      </div>
+      </Bar>
       <div class="review-body ws-body">
         <div class="forge-new">
           {mode === "edit" ? (
