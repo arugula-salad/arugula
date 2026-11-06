@@ -22,9 +22,11 @@
 //! - `hub_feed` is how far the platform has applied the hub's change feed
 //!   to these tables.
 //!
-//! Nothing reads `project_id` yet (M129). The tables are made by the
-//! platform's migrations (`migrations/sqlite`), which also ran M129's
-//! backfill one last time (`0003_personal_projects.sql`).
+//! For a platform row that has a `project_id`, the reader's role in that
+//! project decides who reads and writes it (aru-134). M129 added the
+//! column and backfilled it. The tables are made by the platform's migrations
+//! (`migrations/sqlite`), which also ran M129's backfill one last time
+//! (`0003_personal_projects.sql`).
 
 use serde::Serialize;
 

@@ -98,7 +98,7 @@ pub enum GrantsCmd {
     /// runs.read, runs.start (its run specs) or runs.command (its own
     /// commands) over a project, boards.read (a project's boards) or
     /// boards.write (add rows, set notes and statuses, move rows; never
-    /// make or delete a zone) over a project, trackers.write (create,
+    /// make or delete a group) over a project, trackers.write (create,
     /// comment on, close, reopen and edit a connected Plane project's work
     /// items; each may wait for a person to approve it) over a project, sessions.start (start agent
     /// sessions as you: you're the asker, and you pay) or sessions.reply

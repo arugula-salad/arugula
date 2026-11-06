@@ -26,6 +26,7 @@ lists the differences.
 | **Roster** | A team's signed, versioned list of members and roles | Hub `rosters`, checked again by each machine. `team_members` is a copy that's never read for machine access | Team + version |
 | **Role** | Owner, editor or viewer | The roster, or a session's share in `acl.json` | The word |
 | **Guest** | Someone with access who isn't a member | The machine | Depends on the kind |
+| **Sign-in session** | A browser or app signed in to control, or to the platform's page | Hub `sessions`; `app_sessions` for the platform's page, each made from one in `sessions` and ending with it | A hash of its token |
 
 **Grant** is five things: a person's role on a session, what a machine's agents
 may do in a project, the minutes a guest may type into one pane, the standing
@@ -50,6 +51,12 @@ machine's people are the project's people. An owner's "owner" is one of four
 too: of the machine, of a session (a share that renames, closes and shares it,
 and nothing else), of a team, or of a project, which is the team's owner seen
 from the platform.
+
+A product a person links, such as studio's lobby, holds a **consent**, which
+isn't one of the five: the person's yes on the sign-in consent screen is in
+the hub's `issuer_grants`, and what their account lets the product see, call
+or send is in the platform's `client_consents`, `inference_consents` and
+`client_secret_grants`.
 
 Org isn't built. Billing keys on an owner, with no org above it.
 
@@ -77,10 +84,30 @@ A **Cloud workspace** (`hw_`) is a project's durable object: its spec, state and
 snapshot. A **hosted machine** is what currently runs inside it, with its own keys
 and ID. A rebuild replaces the machine and keeps the workspace. Say "Cloud
 workspace" to people and "hosted machine" for the daemon inside. Don't say "box"
-for either, because it also means hud and studio app boxes.
+for either, because it also means hud and studio app boxes and a host reached
+over ssh ([Don't say](#dont-say)).
 
 Hosted machines stay out of the `daemons` table on purpose, so that what acts on
 ordinary machines (moves, shares, powers) can't reach them.
+
+The platform's `hosted_workspaces` also holds the workspaces deploys run on
+and the ones that build snapshots, told apart by `purpose`: `workspace` for
+people, `deploy` or `snapshot`. No person reaches a deploy's or a
+snapshot's machine.
+
+The hub decides who reaches a hosted machine by its project's owner, the
+account or team its certificate names, not by the project
+([crates/control/src/hosted.rs](../crates/control/src/hosted.rs), `role` and
+`may_reach`): each member of a team reaches the hosted machines of every
+project the team owns, and only its owners while the team is locked. That's right while a project's people are its team's.
+A project with fewer people than its team needs this changed first.
+
+An owner who removes a hosted machine at the hub fails its Cloud workspace.
+The hub keeps the removal in `untold_hosted_removals` until the platform
+takes it into `hosted_removed_machines`. The platform then fails the
+workspace and pauses it, fails its runs, and stops waking its agent
+sessions, which wait for a rebuild. Only the hub's word does this: a
+machine missing from the hub's list changes nothing.
 
 Other things called a workspace aren't this: a **chant workspace** is a Labs block
 over a repo directory, and the **shell's workspace** is its layout.
@@ -99,13 +126,27 @@ over a repo directory, and the **shell's workspace** is its layout.
 | **Run** | A project's run on a hosted machine. Not the same as running a command in a pane | Platform `runs`; the machine keeps a ledger | `run_` |
 | **Deploy** | A plan, its approval and its apply | Platform `deploys` | `dep_` |
 
-So "session" alone means the group of tabs. `ses_` is always "agent session", and
-Claude Code's own session is a conversation.
+So "session" alone means the group of tabs. `ses_` is always "agent session",
+Claude Code's own session is a conversation, and a sign-in session is the
+hub's (above).
+
+A **card** is something waiting on a person, shown in its pane, on the swarm
+and on the phone: a question, a permission, a diff, a deploy approval, an
+invite or a Doc share (`PaneCards` in
+[crates/mux/src/mux/outside.rs](../crates/mux/src/mux/outside.rs)). A
+**session card** is the chat message that shows an agent session's state
+(`SessionCard` in
+[crates/control-wire/src/sessions.rs](../crates/control-wire/src/sessions.rs)).
+Chat's link previews, A2A agent cards and boxes on a page aren't cards in
+this sense. Don't give the word another meaning.
 
 ## Chat
 
-Chat's truth is on the platform. The daemon keeps only routing state, such as who
-may read each pane's thread.
+Chat's truth is on the platform. The daemon keeps only routing state. Who may
+read a pane's or a session's thread is the machine's to say: it sends its
+lists, and the platform keeps the latest in `chat_readers`. A closed pane's or
+session's list only narrows: someone who loses access to it is off it for
+good, and a share given after it closed adds nobody.
 
 | Word | What it is | ID |
 |---|---|---|
@@ -113,8 +154,13 @@ may read each pane's thread.
 | **Channel** | A team's room | `ch_` |
 | **DM** | A room for up to 8 people | `dm_` |
 | **Object thread** | A room on an issue, PR, workspace, run, agent session, board or Doc | `ob_` |
-| **Pane thread** | A room about a session or pane on a machine | `th_` |
+| **Pane thread**, **session thread** | A room about one pane, or about a session (a group of tabs), on a machine | `th_` |
+| **Reply thread** | A message and its replies, in any room. Who follows one is in `chat_thread_reads`, and `read_thread`'s `thread` names one by its first message | Room + seq |
 | **Mention** | Naming a person, machine or agent in a message | Room + seq + machine |
+
+"Thread" alone is a room: a pane thread, session thread or object thread, as
+the `read_thread` and `post_thread` tools and the `threads.read` power mean
+it. Say "reply thread" for a message and its replies.
 
 ## What a project holds
 
@@ -122,11 +168,16 @@ A **project** (`prj_`) is what platform objects belong to, owned by one team or 
 account. Each has one default project, and that's all that exists for now: nothing
 creates a second one. Membership comes from the team's roster.
 
+When a team gets a second project, the work it already has and its channels
+stay in the default project, and only new work goes in the new one. Nothing
+moves objects between projects.
+
 | Noun | What it is | Truth | ID |
 |---|---|---|---|
 | **Linked repo** | A GitHub repo tied to one project | Platform `linked_repos` | GitHub's |
 | **Native issue** | A project's own numbered issue | Platform `issues` | `iss_` + number |
 | **Forge item** | A mirrored PR, GitHub issue or Plane item | GitHub or Plane; `forge_items` is a mirror | `fi_` |
+| **Work item** | One piece of work behind a native issue, the GitHub issue it was exported to, or a Plane item. A board holds one row for it, whichever of them was added | Platform `work_items` and `work_item_refs` | `wi_` |
 | **Board** | Rows of work with a goal | Platform `boards` | `brd_` |
 | **Row** | One piece of work on a board | Platform `board_entries` | `row_` |
 | **Group** | A named section of a board | Platform `board_entries` | `zon_` |
@@ -184,6 +235,27 @@ A native issue block (`iss_`) is a third thing: a pin onto the platform's
 `issues` row, read with the machine's `threads.read` power, never from a
 forge.
 
+About once a day for each linked repo, the mirror reads again the rows
+GitHub no longer lists as open, and deletes one only when GitHub plainly
+says it's gone or moved. Its `forge_content` goes with it.
+
+### Drafts
+
+A **draft** is a write an agent made that waits for a person to send it. There
+are five kinds:
+
+| Kind | What it is | Truth | ID |
+|---|---|---|---|
+| **Block draft** | A comment or review on an unpinned PR or issue block | The block's config in `layout.json` | The block's |
+| **Platform draft** | A comment, review or new issue for a linked repo | Platform `drafts` | `dft_` |
+| **The session's PR** | An agent session's pull request, as its asker drafts it | Platform `pr_drafts` | `pdr_` |
+| **Invite draft** | An agent's invite into a session, waiting for the machine's owner | The machine | Its own |
+| **Plane write** | An agent's write to a connected Plane project | Platform `tracker_writes` | `tw_` |
+
+Say "the session's PR" for one in `pr_drafts`, so that "draft" next to "PR"
+stays GitHub's draft PR, which the session's PR may be sent as. A person
+discards a draft; `dropped` stays where it's stored or on the wire.
+
 ### Docs
 
 | Kind | What it is | Truth | ID |
@@ -239,6 +311,19 @@ from that, settled in native #673:
   on and its owner may write there; a team's machine's puts are refused
   everywhere. None is expected in production.
 
+## Don't say
+
+Each of these words means something else in Arugula, or meant two things
+before. [scripts/data-model-check.mjs](../scripts/data-model-check.mjs) looks
+for them in the MCP tools' text
+([the blessed tool list](../crates/arugulad-mcp/tests/fixtures/mcp-tool-list.json))
+and in the CLI's help, and fails on any outside the phrases this table allows.
+
+| Don't say | For | Say | Allowed in |
+|---|---|---|---|
+| box, boxes | A Cloud workspace or a hosted machine | Cloud workspace, hosted machine, machine | Hud and studio apps: `hud box`, `studio app box`, `studio app's box`, `an app's box`, `a box with its own agent`, `its box's chat tabs`, `follow the box with the app's follower link`, `the link the box's owner made`. A host reached over ssh: `a box you can ssh into`, `user@box`, `[user@]box`, `https://box.`, `that box, set up over ssh`, `on a box a client reaches over ssh`, `a box over ssh`, `--ssh box` |
+| zone, zones | A board's lane or group | lane, group | `time zone`, `--tz ZONE`, `Zone:Read` |
+
 ## Don't merge these
 
 Some things look like duplicates but are the security design. Each one is on
@@ -264,4 +349,5 @@ purpose, and the records say why:
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
 | `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |
+| A board's wire says zone: a read's `zones` are the four lanes, and a write's `zone` names a group. Writes take `group` too | Not tracked: wire names stay for older daemons (#750) |
 | An issue's comments and the live updates of issues and Docs travel in chat, so a member with chat off reads an issue without its comments and sees a change when the page loads again | Not tracked yet |
