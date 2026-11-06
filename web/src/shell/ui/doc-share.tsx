@@ -330,14 +330,15 @@ async function run(client: Client, id: PaneId, method: string, then: (b: Shares)
 export const NO_LINK = "Not on the platform yet: sign in to Arugula control to get a link";
 export const ONLY_YOU = "only you can open it until it's shared";
 
-/** Copy the Doc's link, with no dialog and no public link made: its copy on
- * the platform, else the public link it already has. `done` hears whether
+/** Copy the Doc's link, with no dialog and no public link made: the public
+ * link it already has (anyone can open it), else its copy on the platform
+ * (only its owner can, until #418 E). `done` hears whether
  * only its owner can open what was copied ("Copied ✓" in place). */
 async function copyLink(client: Client, id: PaneId, done: (private_: boolean) => void) {
   await run(client, id, "doc_shares", async (b) => {
-    const url = b.platform ?? b.url;
+    const url = b.url ?? b.platform;
     if (!url) return client.toast(NO_LINK);
-    if (await copy(url)) done(!!b.platform && !b.url);
+    if (await copy(url)) done(url === b.platform && !b.url);
     else client.toast(`Couldn't copy the link: ${url}`);
   });
 }

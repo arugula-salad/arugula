@@ -346,10 +346,11 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
 
   const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
-  // At once (Arugula #708): its copy on the platform, else the public link it has.
+  // At once (Arugula #708): the public link it has (anyone can open it), else
+  // its copy on the platform (only its owner can).
   const copyLink = async () => {
     try {
-      let url = doc.platform?.link;
+      let url = doc.shared?.link ? undefined : doc.platform?.link;
       if (!url) {
         const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
         const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);

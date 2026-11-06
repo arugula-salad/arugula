@@ -427,6 +427,38 @@ test.describe("the owner's menus", () => {
     }
   });
 
+  test("a Doc that is shared and also has a copy on the platform copies its public link (Arugula #708)", async ({ page }) => {
+    const d = await doc(r);
+    const url = await share(r, d);
+    await page.goto(r.mini);
+    await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
+    const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
+    // Until a copy can be shared (#418 E) it opens only for its owner, so a
+    // Doc with a public link hands that out.
+    const platform = "http://127.0.0.1:1/p/prj_0123/docs/pdc_00000000000000000000000000000000";
+    const file = join(r.state, "docs", lib, "meta.json");
+    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    meta.platform = { project: "prj_0123", id: "pdc_0", link: platform, rev: 1, assets: {} };
+    writeFileSync(file, JSON.stringify(meta));
+    const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+    const again = (await r.post("/api/blocks", { type: "doc", config: { doc: lib }, split: term, local: true })).block!;
+    await expect.poll(() => page.evaluate((id) => JSON.stringify(window.__arugula.client.blocks.get(id)?.state), again)).toMatch(/"platform":true.*"shared":\{|"shared":\{.*"platform":true/);
+    const button = page.locator(`[data-doc-bar="${again}"] [data-doc-bar-link]`);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+    await button.click();
+    await expect(button).toContainText("Copied ✓");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    expect(url).not.toContain("/p/");
+    await expect(button).toHaveAttribute("title", "Copy link");
+
+    // Later tests expect nothing shared and room for their panes.
+    await r.post(`/api/blocks/${d}/call/doc_unshare`, {});
+    for (const id of [again, d]) {
+      await menu(page, page.locator(`[data-doc-block="${id}"]`), "Close pane");
+      await expect(page.locator(`[data-doc-block="${id}"]`)).toHaveCount(0);
+    }
+  });
+
   test("a Doc block's menu shares, copies, updates and unshares", async ({ page }) => {
     const d = await doc(r);
     await page.goto(r.mini);
