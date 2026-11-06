@@ -22,9 +22,11 @@ import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, typ
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
+import { Modal } from "../../shared/ui/modal";
 import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
@@ -379,6 +381,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const last = useRef<ProjectDocView | null>(null);
   /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
+  /** Share with… is open (a copy's owner's). */
+  const [sharing, setSharing] = useState(false);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -432,6 +436,19 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       {view && copy && (
         <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
           A copy of a Doc in {copy}'s library, updated <Time at={view.doc.updated_at} on />. It's read-only here: change it on {copy}, and its next copy brings the change.
+          {!p.team && (
+            <>
+              {" "}
+              <button type="button" class="link" data-doc-share-with onClick={() => setSharing(true)}>
+                Share with…
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {view && !copy && view.doc.made_from && (
+        <p class="dim project-doc-copy" data-doc-made-from>
+          Made from {madeFrom(view.doc, p)}.
         </p>
       )}
       {missing && !view && (
@@ -478,9 +495,52 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           })}
         </p>
       )}
+      {sharing && view && <ShareWithModal project={project} id={view.doc.id} done={() => setSharing(false)} />}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
       {view && copy && deleter && <CopyDeleter project={project} view={view} machine={copy} mine={view.doc.author === session.me?.account} />}
     </section>
+  );
+}
+
+/** Where a team Doc was made from, in words: whose Doc, and on which machine. */
+function madeFrom(d: ProjectDoc, p: PlatformProject): string {
+  const owner = nameOf(p)(d.author);
+  const whose = owner === "you" ? "your" : `${owner ?? "a teammate"}'s`;
+  const machine = d.made_from?.machine_name;
+  return `${whose} Doc${machine ? ` on ${machine}` : ""}`;
+}
+
+/** Share with…: the projects the reader writes Docs in, and what each has of
+ * this copy. Update copy that would replace the team's edits asks first, in
+ * this same dialog. */
+function ShareWithModal({ project, id, done }: { project: string; id: string; done: () => void }) {
+  const [asking, setAsking] = useState<Edited | null>(null);
+  if (asking) return <EditedDialog edited={asking} cancel={() => setAsking(null)} />;
+  return (
+    <Modal
+      title="Share with…"
+      close={done}
+      root={{ "data-share-with-dialog": true }}
+      buttons={
+        <button class="secondary" type="button" onClick={done}>
+          Done
+        </button>
+      }
+    >
+      <p class="dim">Makes a Doc in the project from this copy as it is now. The team owns and edits it; this one stays the machine's.</p>
+      <ShareWith
+        project={project}
+        id={id}
+        ask={setAsking}
+        say={toast}
+        done={toast}
+        open={(c) => {
+          done();
+          go(pathOf({ page: "doc", project: c.project, doc: c.id }, names));
+        }}
+        unreachable={<p class="dim">Couldn't reach the platform.</p>}
+      />
+    </Modal>
   );
 }
 

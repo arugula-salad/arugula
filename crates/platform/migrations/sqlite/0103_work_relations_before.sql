@@ -1,4 +1,4 @@
--- 0102: a relation kind `before` (Arugula #761): the first item comes
+-- 0103: a relation kind `before` (Arugula #761): the first item comes
 -- before the second, in the order the work is done in. Like `blocks` it
 -- can't close a cycle; unlike it, it doesn't gate a row's being ready, and
 -- that is a property of the kind, in code. SQLite changes a `CHECK` by making

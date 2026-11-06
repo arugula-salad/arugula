@@ -9,8 +9,9 @@ that marks the send done, and only for an issue in the draft's repo. Before, a
 failure between the two left the issue with no link, and a second export could
 open a duplicate GitHub issue. A new export is also refused while another of
 the same issue was sent, while a send whose issue couldn't be taken for its own
-stands (it may be on GitHub as that), or when a send that never finished may
-have opened an issue with its title already. A duplicate is still possible if GitHub
+stands (it may be on GitHub as that, and can't be linked, so the message says
+discarding the draft may open a second GitHub issue), or when a send that never
+finished may have opened an issue with its title already. A duplicate is still possible if GitHub
 opens the issue and the platform stops before it hears back, until the mirror
 sees that issue.
 

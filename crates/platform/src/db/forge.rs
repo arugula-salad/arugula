@@ -1254,7 +1254,12 @@ impl Db {
             )
             .optional()?;
         if let Some(url) = refused {
-            return Ok(Some(format!("it may be on GitHub as {url}: link it or discard this draft")));
+            // Nothing links a refused send later: discarding is the way on,
+            // and it says what that costs.
+            return Ok(Some(format!(
+                "it may be on GitHub as {url}, which can't be linked to this issue: \
+                 discarding this draft lets it be opened again, as a second GitHub issue if that one is there"
+            )));
         }
         let lapsed = d.sent_at.filter(|at| d.state != "sent" && at + SENDING_MS <= now);
         let (Some(held), Some(title)) = (lapsed, d.title.as_deref()) else { return Ok(None) };
