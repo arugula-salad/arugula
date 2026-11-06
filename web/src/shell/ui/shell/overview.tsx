@@ -5,6 +5,7 @@
 // eye). It lies over the tabs and panes, which stay laid out under it, so
 // no terminal changes size; clicking a pane goes to it.
 
+import { EmptyLine } from "../../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
@@ -117,11 +118,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
           Back to panes
         </button>
       </header>
-      {rows.length === 0 && (
-        <div class="ws-empty" role="status">
-          <p>No sessions on {host}.</p>
-        </div>
-      )}
+      {rows.length === 0 && <EmptyLine role="status">No sessions on {host}.</EmptyLine>}
       <div class="ws-ov-grid">
         {rows.map((row) => {
           const s = row.session;

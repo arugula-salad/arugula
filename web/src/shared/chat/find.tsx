@@ -2,6 +2,7 @@
 // and what needs you) over control's rooms (M123). The switcher
 // (Ctrl/Cmd+K) is ./rooms'.
 
+import { EmptyLine, EmptyState } from "../ui/block-states";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
@@ -115,8 +116,8 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
       <ViewHead title="Search" sub={q ? (hits === null ? `Looking for “${q}”…` : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"} for “${q}”`) : undefined} phone={phone} />
       {phone && <SearchField route={{ view: "search", q }} phone />}
       <div class="thread-list">
-        {!q && <p class="thread-empty">Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</p>}
-        {q && hits?.length === 0 && !err && <p class="thread-empty">No messages match.</p>}
+        {!q && <EmptyLine>Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</EmptyLine>}
+        {q && hits?.length === 0 && !err && <EmptyLine>No messages match.</EmptyLine>}
         {err && <p class="thread-error">{err}</p>}
         <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} mark={hitMark(q)} />
       </div>
@@ -154,7 +155,9 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
       <ViewHead title="Activity" sub="What needs you on every machine, and mentions of you" phone={phone} />
       <div class="thread-list">
         {NeedsYou && <NeedsYou />}
-        {hits.length === 0 && needs === 0 && <p class="thread-empty">Nothing for you yet. When an agent asks you something or finishes, or someone @mentions you, it's here.</p>}
+        {hits.length === 0 && needs === 0 && (
+          <EmptyState title="Nothing for you yet." why="When an agent asks you something or finishes, or someone @mentions you, it's here." />
+        )}
         {hits.length > 0 && needs > 0 && <h3 class="activity-head">Messages</h3>}
         <RoomHits store={store} hits={hits.slice(0, 100)} />
       </div>

@@ -3,6 +3,7 @@
 // breadcrumb, whose menu switches sessions and holds the session's
 // commands.
 
+import { EmptyLine } from "../../../shared/ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
@@ -255,24 +256,22 @@ export function SessionSidebar({
           );
         })}
         {shown.length === 0 && (
-          <div class="ws-empty" data-session-empty role="status">
-            {q ? (
-              <>
-                <p>No session on {host} matches “{query.trim()}”.</p>
-                <button
-                  onClick={() => {
+          <EmptyLine
+            role="status"
+            data-session-empty
+            clearLabel="Clear the search"
+            clear={
+              q
+                ? () => {
                     setQuery("");
                     // Back to the search, not to the page (UI audit #171).
                     search.current?.focus();
-                  }}
-                >
-                  Clear the search
-                </button>
-              </>
-            ) : (
-              <p>{owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}</p>
-            )}
-          </div>
+                  }
+                : undefined
+            }
+          >
+            {q ? `No session on ${host} matches “${query.trim()}”.` : owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}
+          </EmptyLine>
         )}
       </div>
       </>}

@@ -12,7 +12,7 @@ import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter } from "../ui/adapter";
 import { AgentMessage } from "../../shared/agent-message";
 import { Composer, EarlierNote, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
-import { BlockLoading } from "./block-states";
+import { BlockLoading, EmptyState } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Bar } from "../../shared/ui/bar";
 
@@ -130,10 +130,10 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         <div class="chat-block-column">
           {s.entries_from > 0 && <EarlierNote n={s.entries_from} id={id} />}
           {!said && !s.queued.length && (
-            <div class="chat-block-empty">
-              <h3>What's on your mind?</h3>
-              <p>A conversation with {s.label}: no tools, files or shell. Attach images or files to talk about them.</p>
-            </div>
+            <EmptyState
+              title={`A conversation with ${s.label}.`}
+              why="No tools, files or shell. Attach images or files to talk about them."
+            />
           )}
           {s.entries.map((e, i) => (
             <Message key={i} client={client} id={id} e={e} />

@@ -4,6 +4,7 @@
 // `/p/:project/triage` is that page, scrolled here. The reads and the adds are
 // untriaged.ts's; the issues list stays at All issues.
 
+import { BlockLoading, EmptyLine } from "../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { boards } from "../../shared/boards/store";
@@ -320,12 +321,8 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
         </a>
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}
-      {!error && page === null && <p class="dim">Loading…</p>}
-      {page && total === 0 && !filtered && (
-        <p class="dim" data-triage-none>
-          {TRIAGE_NONE}
-        </p>
-      )}
+      {!error && page === null && <BlockLoading inline what="the issues" />}
+      {page && total === 0 && !filtered && <EmptyLine data-triage-none>{TRIAGE_NONE}</EmptyLine>}
       {page && (total > 0 || filtered) && (
         <>
           {tools && (
@@ -401,12 +398,12 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
                   );
                 })}
                 {items.length === 0 && (
-                  <li class="untri-empty dim" data-triage-nomatch>
+                  <li class="empty-line" data-triage-nomatch>
                     Nothing matches.
                   </li>
                 )}
                 {page.next && (
-                  <li class="untri-empty dim" ref={sentinel} data-triage-more>
+                  <li class="empty-line" ref={sentinel} data-triage-more>
                     Loading more…
                   </li>
                 )}

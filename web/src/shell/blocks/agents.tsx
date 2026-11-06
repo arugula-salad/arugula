@@ -16,7 +16,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { getFleet } from "../ui/hosts";
 import { askText } from "../../shared/ui/menu";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
@@ -171,7 +171,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
       )}
       {s.catalog.note && <p class="dim offer-said">{s.catalog.note}</p>}
       <div class="review-body">
-        {total === 0 && !s.error && <BlockEmpty data-agents-empty>No machine you reach offers an agent yet.</BlockEmpty>}
+        {total === 0 && !s.error && <EmptyState data-agents-empty title="No agents yet." why="No machine you reach offers an agent." />}
         {shelves.map((m) => (
           <section key={m.machine} class="agents-shelf" data-shelf={m.name} data-online={String(m.online)}>
             <h4 class="agents-shelf-head">
