@@ -188,8 +188,8 @@ pub(super) async fn may_read_private(
     repo_id: u64,
 ) -> anyhow::Result<bool> {
     let api = |e: ApiError| anyhow::anyhow!("{} {}", e.0, e.1);
-    let v = Viewer::of(app, account).await.map_err(api)?;
-    Ok(viewer::item(app, &v, target).await.map_err(api)?.is_some_and(|(_, r)| r.repo_id == repo_id))
+    let mut v = Viewer::of(app, account).await.map_err(api)?;
+    Ok(viewer::item(app, &mut v, target).await.map_err(api)?.is_some_and(|(_, r)| r.repo_id == repo_id))
 }
 
 /// Whether `account` sees the thread on `room`'s object, and from when (0:

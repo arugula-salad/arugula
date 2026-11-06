@@ -376,12 +376,17 @@ pub enum Started {
     Refused(&'static str),
 }
 
+/// Why no run: the spec's workspace was deleted. A schedule its delete
+/// turned off says this too, and comes back on when its spec moves to
+/// another workspace ([`Db::update_run_spec`]).
+pub const NO_WORKSPACE: &str = "its cloud workspace is gone";
+
 impl Started {
     /// Why no run, when there's none.
     pub fn why_not(&self) -> Option<&'static str> {
         match self {
             Started::Made(_) | Started::Already(_) => None,
-            Started::NoWorkspace => Some("its cloud workspace is gone"),
+            Started::NoWorkspace => Some(NO_WORKSPACE),
             Started::NoMachine => Some("its cloud workspace has no machine yet"),
             Started::NoProject => Some("its project is gone"),
             Started::Outsider => Some("the event came from a fork or from outside the repo"),
@@ -584,7 +589,10 @@ impl Db {
 
     /// Change a spec: its name, workspace or operation, each when given.
     /// `None`: there's no such spec. [`Taken`](super::Taken): the project has another by
-    /// that name.
+    /// that name. Given a workspace, the schedules its old workspace's
+    /// delete turned off ([`NO_WORKSPACE`]) come back on, due at their
+    /// next tick after `now`. Its rules turned off then stay off: nothing
+    /// says which of them were, so a person turns them on again.
     pub fn update_run_spec(
         &self,
         id: &str,
@@ -594,7 +602,9 @@ impl Db {
         by: &str,
         now: u64,
     ) -> Result<Option<RunSpec>> {
-        self.c()
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let changed = tx
             .query_row(
                 &format!(
                     "UPDATE run_specs SET name = COALESCE(?2, name), workspace_id = COALESCE(?3, workspace_id),
@@ -623,7 +633,24 @@ impl Db {
                 |r| spec_row(r, 0),
             )
             .optional()
-            .map_err(taken)
+            .map_err(taken)?;
+        if let (Some(spec), Some(_)) = (&changed, workspace) {
+            let off: Vec<(String, String, String)> = tx.query_map(
+                "SELECT id, cron, timezone FROM run_schedules WHERE spec_id = ?1 AND NOT enabled AND last_error = ?2",
+                params![spec.id, NO_WORKSPACE],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
+            for (id, cron, timezone) in off {
+                let Ok(next_at) = crate::triggers::schedule::next_tick(&cron, &timezone, now) else { continue };
+                tx.execute(
+                    "UPDATE run_schedules SET enabled = ?2, next_at = ?3, last_error = NULL, updated_at = ?4 WHERE id = ?1",
+                    params![id, true, next_at, now],
+                )?;
+                jobs::requeue(&tx, &id, JobKind::Schedule, &schedule_job(&id), next_at, now)?;
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// Delete a spec, with its schedules (and their jobs) and its rules.

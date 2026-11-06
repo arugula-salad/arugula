@@ -416,6 +416,8 @@ pub enum Status {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardEntryKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
+    /// A group; `group` is read as this too.
+    #[serde(alias = "group")]
     Zone,
     Row,
 }
@@ -1750,10 +1752,12 @@ pub struct Row {
     pub updated_at: u64,
 }
 
+/// One of a board's four lanes as a read answers it, with its rows. The wire
+/// and TypeScript still call it a zone (`zones`, `BoardZone`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZone"))]
-pub struct Zone {
+pub struct LaneView {
     pub id: String,
     pub rev: u64,
     pub title: String,
@@ -1788,7 +1792,7 @@ pub struct Group {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardView {
     pub board: Board,
-    pub zones: Vec<Zone>,
+    pub zones: Vec<LaneView>,
     /// Empty for a board with none; an old client ignores it.
     #[serde(default)]
     pub groups: Vec<Group>,
@@ -1825,8 +1829,8 @@ pub struct PutEntry {
     pub rev: Option<u64>,
     #[serde(default)]
     pub entry: Option<EntryKind>,
-    /// A new row's group (`zon_…`).
-    #[serde(default)]
+    /// A new row's group (`zon_…`); `group` is read as this too.
+    #[serde(default, alias = "group")]
     pub zone: Option<String>,
     /// A group's title.
     #[serde(default)]
@@ -1856,8 +1860,9 @@ pub struct PutEntry {
 pub struct MoveEntry {
     #[serde(default)]
     pub rev: Option<u64>,
-    /// The group the row goes to; `null`: none. Absent: its own.
-    #[serde(default, deserialize_with = "some")]
+    /// The group the row goes to; `null`: none. Absent: its own. `group`
+    /// is read as this too.
+    #[serde(default, alias = "group", deserialize_with = "some")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "string | null"))]
     pub zone: Option<Option<String>>,
@@ -2201,7 +2206,7 @@ pub fn render(view: &BoardView) -> String {
         .ready
         .iter()
         .filter_map(|id| view.zones.iter().flat_map(|z| &z.rows).find(|r| &r.id == id))
-        .map(|r| r.pointer.label())
+        .map(Row::item_label)
         .collect();
     if !ready.is_empty() {
         out += &format!("{}\n", fit(&format!("Ready ({}): {}", ready.len(), ready.join(", ")), TEXT_WIDTH));
@@ -2277,7 +2282,7 @@ pub struct WorkQuery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItem"))]
-pub struct WorkItem {
+pub struct RowCandidate {
     /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
     pub pointer: Pointer,
     /// `native`, `github`, `plane` or `run`.
@@ -2324,7 +2329,7 @@ pub struct WorkLabel {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItems"))]
 pub struct WorkItems {
     pub project: String,
-    pub items: Vec<WorkItem>,
+    pub items: Vec<RowCandidate>,
     /// With `untriaged`: the cursor of the next page, null at the end.
     #[serde(default)]
     pub next: Option<String>,
@@ -2461,11 +2466,11 @@ mod tests {
         }
     }
 
-    fn lane(l: Lane, rows: Vec<Row>) -> Zone {
-        Zone { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
+    fn lane(l: Lane, rows: Vec<Row>) -> LaneView {
+        LaneView { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
     }
 
-    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<Zone> {
+    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<LaneView> {
         Lane::ALL
             .map(|l| lane(l, by.iter_mut().find(|(k, _)| *k == l).map(|(_, r)| std::mem::take(r)).unwrap_or_default()))
             .into()
@@ -2488,7 +2493,7 @@ mod tests {
         format!("{title}{count:>w$}", w = TEXT_WIDTH - title.chars().count())
     }
 
-    fn view(zones: Vec<Zone>) -> BoardView {
+    fn view(zones: Vec<LaneView>) -> BoardView {
         BoardView { board: board(), zones, groups: vec![], docs: vec![], ready: vec![], said: None }
     }
 
@@ -2901,6 +2906,23 @@ Done: People can sign up.
         assert!(serde_json::to_value(parse(serde_json::json!({}))).unwrap().get("zone").is_none());
     }
 
+    /// A write takes `group` where it takes `zone`, and still sends `zone`
+    /// for an older platform.
+    #[test]
+    fn a_write_takes_group_for_zone() {
+        let moved = |v: serde_json::Value| serde_json::from_value::<MoveEntry>(v).unwrap();
+        assert_eq!(moved(serde_json::json!({ "group": null })).zone, Some(None));
+        assert_eq!(moved(serde_json::json!({ "group": "zon_1" })).zone, Some(Some("zon_1".into())));
+        assert_eq!(moved(serde_json::json!({ "zone": "zon_1" })).zone, Some(Some("zon_1".into())));
+
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "group", "group": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "zone", "zone": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let back = serde_json::to_value(&put).unwrap();
+        assert_eq!((&back["entry"], &back["zone"]), (&serde_json::json!("zone"), &serde_json::json!("zon_1")));
+    }
+
     /// The marks' wire shapes.
     #[test]
     fn marks_are_tagged_by_kind() {
@@ -2961,7 +2983,7 @@ Done: People can sign up.
     }
 
     /// A blocked row says what blocks it (or that it can't say), and the
-    /// ready set is a line of the rows that can start; only `blocks` gates.
+    /// ready set is a line of the rows that can start, by `#N`; only `blocks` gates.
     #[test]
     fn the_text_says_what_blocks_a_row_and_what_is_ready() {
         let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
@@ -2972,11 +2994,25 @@ Done: People can sign up.
         ];
         let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
         free.id = "row_f".into();
+        free.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 8,
+            title: "Design".into(),
+            assignees: vec![],
+            labels: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
         let text = render(&v);
         assert!(text.contains("blocked by #7 · blocked by something you can't see"), "{text}");
-        assert!(text.contains("Ready (1): iss_free"), "{text}");
+        assert!(text.contains("Ready (1): #8"), "{text}");
         assert!(!text.contains("Ready (2)"), "{text}");
         assert!(RelationKind::Blocks.blocks_ready());
         assert!(

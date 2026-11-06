@@ -232,7 +232,7 @@ fn the_move_folds_two_rows_of_one_work_item_and_runs_once() {
     assert_eq!(kept[2], ("row_pr".into(), None), "a PR row has no work item");
     assert_eq!(rows(&db, "brd_2"), [("row_solo".into(), Some(w.clone()))]);
     let stored = db.board_stored("brd_1").unwrap().unwrap();
-    assert_eq!(stored.rows[0].note, "github one\nnative one");
+    assert_eq!(stored.rows[0].note, "github one; native one", "one line");
     assert_eq!(stored.rows.iter().map(|r| r.rev).collect::<Vec<_>>(), [2, 1, 1], "the note changed once");
     let mut on_gh: Vec<&str> = stored
         .attachments
@@ -385,4 +385,15 @@ fn a_deleted_projects_work_items_go_with_it() {
     assert_eq!(count(&db, "SELECT count(*) FROM work_items"), 1);
     assert_eq!(count(&db, "SELECT count(*) FROM work_item_refs"), 1);
     assert_eq!(count(&db, "SELECT count(*) FROM work_items WHERE project_id = 'prj_b'"), 1);
+}
+
+/// Two notes folded together stay one line and no longer than a note may be.
+#[test]
+fn folded_notes_stay_a_note() {
+    let max = arugula_control_wire::boards::NOTE_MAX;
+    let long = "word ".repeat(max / 5);
+    let joined = super::joined_note(long.trim(), "the other row's note");
+    assert!(joined.chars().count() <= max, "{joined}");
+    assert!(joined.ends_with('…') && !joined.contains('\n'), "{joined}");
+    assert_eq!(super::joined_note("a", "b"), "a; b");
 }

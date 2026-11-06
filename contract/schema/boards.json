@@ -890,7 +890,7 @@
         },
         "zones": {
           "items": {
-            "$ref": "#/$defs/Zone"
+            "$ref": "#/$defs/LaneView"
           },
           "type": "array"
         }
@@ -1095,11 +1095,19 @@
     },
     "EntryKind": {
       "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-      "enum": [
-        "zone",
-        "row"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "row"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "zone",
+          "description": "A group; `group` is read as this too.",
+          "type": "string"
+        }
+      ]
     },
     "Group": {
       "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
@@ -1182,6 +1190,45 @@
         "lane",
         "by",
         "at"
+      ],
+      "type": "object"
+    },
+    "LaneView": {
+      "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title",
+        "rows"
       ],
       "type": "object"
     },
@@ -1596,7 +1643,7 @@
           ]
         },
         "zone": {
-          "description": "The group the row goes to; `null`: none. Absent: its own.",
+          "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
           "type": [
             "string",
             "null"
@@ -1998,7 +2045,7 @@
         },
         "zone": {
           "default": null,
-          "description": "A new row's group (`zon_…`).",
+          "description": "A new row's group (`zon_…`); `group` is read as this too.",
           "type": [
             "string",
             "null"
@@ -2314,6 +2361,90 @@
       ],
       "type": "object"
     },
+    "RowCandidate": {
+      "description": "One thing a row may point at.",
+      "properties": {
+        "assignees": {
+          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`issue`, `pr` or `run`.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "A run has none.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "`native`, `github`, `plane` or `run`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+          "type": "string"
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pointer",
+        "source",
+        "kind",
+        "title",
+        "state",
+        "assignees",
+        "updated_at"
+      ],
+      "type": "object"
+    },
     "RowRelation": {
       "description": "An edge of a row's item, as the reader sees it.",
       "properties": {
@@ -2418,96 +2549,12 @@
       ],
       "type": "object"
     },
-    "WorkItem": {
-      "description": "One thing a row may point at.",
-      "properties": {
-        "assignees": {
-          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "identifier": {
-          "description": "A tracker item's project key (`ARUGU`).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "description": "`issue`, `pr` or `run`.",
-          "type": "string"
-        },
-        "labels": {
-          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "number": {
-          "description": "A run has none.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "pointer": {
-          "$ref": "#/$defs/Pointer",
-          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-        },
-        "repo": {
-          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "source": {
-          "description": "`native`, `github`, `plane` or `run`.",
-          "type": "string"
-        },
-        "state": {
-          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-          "type": "string"
-        },
-        "title": {
-          "description": "A run's: how it started (`manual run`).",
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "url": {
-          "description": "Where a tracker item is, in the tracker.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "pointer",
-        "source",
-        "kind",
-        "title",
-        "state",
-        "assignees",
-        "updated_at"
-      ],
-      "type": "object"
-    },
     "WorkItems": {
       "description": "[`PROJECT_WORK`]'s answer: the newest first, across sources.",
       "properties": {
         "items": {
           "items": {
-            "$ref": "#/$defs/WorkItem"
+            "$ref": "#/$defs/RowCandidate"
           },
           "type": "array"
         },
@@ -2622,44 +2669,6 @@
           "type": "boolean"
         }
       },
-      "type": "object"
-    },
-    "Zone": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "kind": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ZoneKind"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "rev": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "rows": {
-          "items": {
-            "$ref": "#/$defs/Row"
-          },
-          "type": "array"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "rev",
-        "title",
-        "rows"
-      ],
       "type": "object"
     },
     "ZoneKind": {

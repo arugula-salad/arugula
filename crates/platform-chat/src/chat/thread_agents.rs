@@ -135,12 +135,21 @@ fn state_of(answer: Option<&MachineAgent>, offline: bool) -> ChatThreadAgentStat
 
 /// A hosted session's state, as the strip says it.
 fn hosted_state(s: &AgentSession) -> ChatThreadAgentState {
-    match s.state {
+    hosted_word(s.state, s.seen_as())
+}
+
+/// A hosted session's state and what it was before it went quiet, as the
+/// strip says it. A session that failed or was stopped says so: only one
+/// whose turn ended (`done`) is idle, waiting for its next prompt.
+fn hosted_word(state: SessionState, seen: SessionState) -> ChatThreadAgentState {
+    match state {
         SessionState::Unresponsive => ChatThreadAgentState::Offline,
-        _ => match s.seen_as() {
+        _ => match seen {
             SessionState::Queued | SessionState::Working => ChatThreadAgentState::Working,
             SessionState::NeedsInput => ChatThreadAgentState::NeedsYou,
-            _ => ChatThreadAgentState::Idle,
+            SessionState::Failed => ChatThreadAgentState::Failed,
+            SessionState::Stopped => ChatThreadAgentState::Stopped,
+            SessionState::Done | SessionState::Unresponsive => ChatThreadAgentState::Idle,
         },
     }
 }
@@ -422,6 +431,18 @@ mod tests {
         assert_eq!(state_of(Some(&with(None)), false), S::Unknown, "an older daemon");
         assert_eq!(state_of(Some(&with(Some(MachineAgentState::Working))), false), S::Working);
         assert_eq!(state_of(Some(&with(Some(MachineAgentState::NeedsInput))), false), S::NeedsYou);
+    }
+
+    #[test]
+    fn a_hosted_session_that_ended_says_how() {
+        use ChatThreadAgentState as S;
+        use SessionState as H;
+        assert_eq!(hosted_word(H::Done, H::Done), S::Idle, "its turn ended: it takes the next prompt");
+        assert_eq!(hosted_word(H::Failed, H::Failed), S::Failed);
+        assert_eq!(hosted_word(H::Stopped, H::Stopped), S::Stopped);
+        assert_eq!(hosted_word(H::Queued, H::Queued), S::Working);
+        assert_eq!(hosted_word(H::NeedsInput, H::NeedsInput), S::NeedsYou);
+        assert_eq!(hosted_word(H::Unresponsive, H::Working), S::Offline);
     }
 
     #[test]

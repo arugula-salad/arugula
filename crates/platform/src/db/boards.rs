@@ -1107,6 +1107,24 @@ impl Db {
                     )));
                 }
             }
+            // A row the epic's sync added goes only with its epic, in a
+            // group as on its own.
+            let synced: Vec<String> = tx.query_map(
+                "SELECT id FROM board_entries
+                 WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 AND source IS NOT NULL
+                 ORDER BY position",
+                params![board, id],
+                |r| r.get(0),
+            )?;
+            if let Some(row) = synced.first().map(|r| entry(&tx, board, r)).transpose()?.flatten() {
+                let why = super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?;
+                return bad(match synced.len() {
+                    1 => format!("this group holds a row its epic adds: move it out of the group first ({why})"),
+                    n => format!(
+                        "this group holds {n} rows its epic adds: move them out of the group first (the first: {why})"
+                    ),
+                });
+            }
             super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
                 "DELETE FROM board_attachments WHERE row_id IN

@@ -546,8 +546,8 @@ async fn chips(
     let mut live: HashMap<String, wire::Live> = HashMap::new();
     if !ids.items.is_empty() {
         let repos = app.db.linked_repos(project)?;
-        let viewer = Viewer::of(app, account).await?;
-        let checked = viewer::check(app, &viewer, &repos).await?;
+        let mut viewer = Viewer::of(app, account).await?;
+        let checked = viewer::check(app, &mut viewer, &repos).await?;
         let found: Vec<&str> = ids.items.iter().map(String::as_str).collect();
         // A Plane item is read through the connections of the project it's on a board of.
         let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
@@ -1138,9 +1138,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             None => strip_only.push(d),
         }
     }
-    let mut zones: Vec<wire::Zone> = wire::Lane::ALL
+    let mut zones: Vec<wire::LaneView> = wire::Lane::ALL
         .iter()
-        .map(|l| wire::Zone {
+        .map(|l| wire::LaneView {
             id: l.id().to_owned(),
             rev: 0,
             title: l.title().to_owned(),
@@ -1213,11 +1213,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rev: e.rev,
             pointer: told.pointer(&e.pointer, e.agent.as_deref()),
             note: e.note.clone(),
-            status: match (&ask, e.status) {
-                (Some(_), _) => wire::Status::NeedsInput,
-                (None, wire::Status::NeedsInput) => wire::Status::None,
-                (None, s) => s,
-            },
+            // What old rows kept from before lanes doesn't reach clients.
+            status: if ask.is_some() { wire::Status::NeedsInput } else { wire::Status::None },
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
@@ -1506,8 +1503,8 @@ async fn known(
     if items.is_empty() {
         return Ok(out);
     }
-    let viewer = Viewer::of(app, account).await?;
-    let checked = viewer::check(app, &viewer, &app.db.linked_repos(project)?).await?;
+    let mut viewer = Viewer::of(app, account).await?;
+    let checked = viewer::check(app, &mut viewer, &app.db.linked_repos(project)?).await?;
     let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
     for i in app.db.tracker_items_among(&conns, items)? {
         if let Some(c) = conns.get(i.mirror_id) {

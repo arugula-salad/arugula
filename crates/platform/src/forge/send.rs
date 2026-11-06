@@ -137,9 +137,10 @@ fn back_path(back: &str) -> String {
 /// Send `account`'s draft `id` as them, `how`: the one way in, for the
 /// route, the hub's callback and the typed ops (M169's `draft.send`).
 pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<wire::DraftSent, ApiError> {
-    let v = Viewer::of(app, account).await?;
+    // As the hub says now: whether a user token is theirs is decided by it.
+    let mut v = Viewer::now(app, account).await?;
     let (repo_id, author) = app.db.draft_target(id)?.ok_or_else(no_draft)?;
-    let r = readable(app, &v, repo_id).await?.ok_or_else(no_draft)?;
+    let r = readable(app, &mut v, repo_id).await?.ok_or_else(no_draft)?;
     let row = app.db.draft(&r, id)?.ok_or_else(no_draft)?;
     if matches!(how, How::Token(_)) {
         // Written down as it arrives (GitHub minted it, whatever becomes
@@ -410,15 +411,17 @@ pub async fn machine(
     Path(id): Path<String>,
     Json(b): Json<wire::MachineSending>,
 ) -> Result<Json<wire::ForgeDraft>, ApiError> {
-    let v = Viewer::of(&app, &m.account).await?;
+    let mut v = Viewer::now(&app, &m.account).await?;
     let (repo_id, author) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
-    let r = readable(&app, &v, repo_id).await?.ok_or_else(no_draft)?;
+    let r = readable(&app, &mut v, repo_id).await?.ok_or_else(no_draft)?;
     if author != m.account {
         return Err(err(StatusCode::FORBIDDEN, "it's another person's draft: they send it as themselves"));
     }
     let now = now_ms();
     let draft = match b.step.as_str() {
         "start" => {
+            // Open on GitHub (M205), as a send from the page checks it.
+            super::export::before_send(&app, &app.db.draft(&r, &id)?.ok_or_else(no_draft)?)?;
             let held = app
                 .db
                 .hold_draft(&r, &id, &author, now)?

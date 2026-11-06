@@ -5,12 +5,12 @@
 // worktree and branch for it, an agent there, the two in a tab, and the
 // agent's PR joining them), the PRs that refer to it, and a new issue an
 // agent drafted, shown once on its block with Send, Edit, Ask for changes
-// and Drop (no card over it). What waits on
+// and Discard (no card over it). What waits on
 // you comes first (a
 // review asked of you, red checks, changes asked for, a mention), then an
 // agent's drafts, the checks, the reviews and the timeline. An agent's
 // draft is answered on the card over the block (the daemon's ask): edit
-// the text and Send, or Drop. Everything drawn comes from the daemon's
+// the text and Send, or Discard. Everything drawn comes from the daemon's
 // state, so a shared session's viewers see the same, without the buttons.
 // M172: on a repo linked in Arugula control the block is a pin (`s.pin`):
 // the daemon reads the platform's mirror, not GitHub, and the block looks
@@ -405,7 +405,7 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
         <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
           <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
           {d.status === "sent" && <Chip kind="tag">sent by {d.settled_by}</Chip>}
-          {d.status === "dropped" && <Chip kind="tag">dropped by {d.settled_by}</Chip>}
+          {d.status === "dropped" && <Chip kind="tag">discarded by {d.settled_by}</Chip>}
           {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
@@ -422,7 +422,7 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
 
 /** A new issue: an agent's draft, shown once, with every action in the
  * footer (the card the daemon raises is a line for the swarm and the phone).
- * Send it as it is or edited in place, ask the agent for changes, or drop it.
+ * Send it as it is or edited in place, ask the agent for changes, or discard it.
  * A person's own goes out at once. */
 function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState }) {
   const n = s.new!;
@@ -461,9 +461,9 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
       setMode("view");
     });
   };
-  const drop = () => void call("drop", {}, "couldn't drop the draft").then((ok) => ok && setMode("view"));
+  const drop = () => void call("drop", {}, "couldn't discard the draft").then((ok) => ok && setMode("view"));
   const as = s.me && s.login ? `as ${s.me} on ${s.login}` : "with your forge login";
-  const tag = !waiting ? (n.status === "waiting" ? "opening" : n.status) : revising ? "revising" : "draft";
+  const tag = !waiting ? (n.status === "waiting" ? "opening" : n.status === "dropped" ? "discarded" : n.status) : revising ? "revising" : "draft";
 
   let foot: ComponentChildren = null;
   if (waiting && mayWrite) {
@@ -518,7 +518,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
           )}
           <span class="forge-spacer" />
           <button class="secondary danger small forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
-            Drop
+            Discard
           </button>
         </div>
       );
@@ -585,7 +585,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               )}
               {n.status === "dropped" && (
                 <div class="forge-status" data-new-dropped>
-                  Dropped by {n.settled_by ?? "someone"}
+                  Discarded by {n.settled_by ?? "someone"}
                 </div>
               )}
               {n.error && <div class="forge-status bad">Sending failed: {n.error}. The draft is unchanged, so you can try again.</div>}
@@ -632,7 +632,7 @@ function Drafts({ s }: { s: ForgeState }) {
                 )}
               </Chip>
             )}
-            {d.status === "dropped" && <Chip kind="tag">dropped by {d.settled_by}</Chip>}
+            {d.status === "dropped" && <Chip kind="tag">discarded by {d.settled_by}</Chip>}
             {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           </div>
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
@@ -892,7 +892,7 @@ function nextStep(
       ),
     };
   }
-  // The draft's own card, over the block, holds Send and Drop: a second
+  // The draft's own card, over the block, holds Send and Discard: a second
   // Send here sits under it.
   const [draft] = on.waiting;
   if (draft) {
