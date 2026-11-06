@@ -114,10 +114,11 @@ test("a team with chat on, and a machine of Alice's", async ({ browser }) => {
   // The shell draws no chat page of its own: `#chat` isn't a place of its.
   await expect(alice.locator("[data-chat-control]")).toHaveCount(0);
 
-  // The rail is the whole app, whatever the flags (Arugula #640): a machine's
-  // Docs and Recipes are its bar's, and every project's boards are All projects'.
+  // The rail is the whole app, whatever the flags (Arugula #640): its Docs is
+  // the platform's (#418), a machine's own Docs and Recipes are its bar's, and
+  // every project's boards are All projects'.
   const places = () => alice.locator(".ws-rail > .ws-rail-button .ws-rail-label").allTextContents();
-  await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Settings"]);
+  await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Docs", "Settings"]);
   await expect(alice.locator("[data-machine-docs]")).toBeVisible();
   await expect(alice.locator("[data-machine-recipes]")).toBeVisible();
 });
