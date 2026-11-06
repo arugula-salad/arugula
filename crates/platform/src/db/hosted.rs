@@ -9,7 +9,7 @@
 //! checkpoint, so a delete asked mid-create is done next.
 
 use anyhow::{Result, bail};
-use arugula_control_wire::hosted::{SetupReport, SetupStatus};
+use arugula_control_wire::hosted::{SetupReport, SetupStatus, clones_done};
 
 use super::{
     Db, Taken,
@@ -605,13 +605,24 @@ impl Db {
     /// What a workspace's box says of its setup (M183), from `machine`: kept
     /// while that's the machine the box enrolled as, or before the worker has
     /// seen it enroll (a box may start its setup first). Whether it was kept.
+    /// A setup done cloning ([`clones_done`]) doesn't go back to cloning
+    /// until the box is rebuilt, which clears it.
     pub fn report_hosted_setup(&self, id: &str, machine: &str, r: &SetupReport, now: u64) -> Result<bool> {
         let reason = (r.status == SetupStatus::Failed).then_some(r.reason.as_str());
+        let forward = if clones_done(r.status, &r.step) {
+            ""
+        } else {
+            // As `clones_done` says it of what's kept.
+            " AND NOT (setup_status IS NOT NULL AND (setup_status <> 'setting_up'
+                 OR (COALESCE(setup_step, '') NOT IN ('', 'start') AND substr(COALESCE(setup_step, ''), 1, 6) <> 'clone ')))"
+        };
         Ok(self.c().execute(
-            "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
-                 setup_at = ?7
-             WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'waking', 'paused')
-                 AND (machine IS NULL OR machine = ?2)",
+            &format!(
+                "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
+                     setup_at = ?7
+                 WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'waking', 'paused')
+                     AND (machine IS NULL OR machine = ?2){forward}"
+            ),
             params![id, machine, r.status.as_str(), r.step, reason, r.pane, now],
         )? == 1)
     }

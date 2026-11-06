@@ -581,6 +581,7 @@ mod tests {
                 via: "secret".into(),
                 username: Some("x-access-token".into()),
                 password: Some(format!("{SECRET}-git")),
+                revoke: None,
             }],
             packages: vec![],
             setup: String::new(),

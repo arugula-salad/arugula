@@ -186,8 +186,10 @@ pub async fn link(
 }
 
 /// `DELETE /api/projects/{project}/repos/{owner}/{name}`: unlink it.
-/// Nothing is read from GitHub for it from now on, and its rows go at the
-/// purge unless it's linked again first.
+/// Nothing is read from GitHub for it from now on: the read and clone
+/// tokens this process kept for it are dropped and revoked (another
+/// process's end when they expire). Its rows go at the purge
+/// unless it's linked again first.
 pub async fn unlink(
     State(app): State<Arc<Platform>>,
     CloudDriver(Person { account }): CloudDriver,
@@ -200,6 +202,10 @@ pub async fn unlink(
         .unlink_repo(&project, &repo, now_ms())?
         .ok_or_else(|| err(StatusCode::NOT_FOUND, &format!("{repo} isn't linked to this project")))?;
     info!(%account, %project, repo = gone.repo_id, "unlinked a GitHub repo");
+    if let Some(gh) = &app.github {
+        let tokens = gh.drop_reads(gone.installation_id, &[gone.repo_id]);
+        gh.revoke_all(&app.http, &tokens).await;
+    }
     Ok(Json(wire(&gone)))
 }
 
@@ -215,8 +221,9 @@ fn installation_of(v: &Value) -> Option<Installation> {
 }
 
 /// What an `installation` or `installation_repositories` event changes:
-/// the installation kept, and the repos it unlinks. Anything else, or an
-/// action this doesn't know, changes nothing.
+/// the installation kept, and the repos it unlinks, whose tokens this
+/// process kept are dropped and revoked. Anything else, or an action this doesn't know,
+/// changes nothing.
 pub fn installation_event(app: &Platform, event: &str, v: &Value, now: u64) -> anyhow::Result<()> {
     let Some(i) = installation_of(&v["installation"]) else { return Ok(()) };
     let action = v["action"].as_str().unwrap_or_default();
@@ -226,18 +233,33 @@ pub fn installation_event(app: &Platform, event: &str, v: &Value, now: u64) -> a
             app.db.installation_seen(&i, now)?;
             0
         }
-        ("installation", "deleted") => app.db.installation_gone(&i, true, now)?,
-        ("installation", "suspend") => app.db.installation_gone(&i, false, now)?,
+        ("installation", "deleted" | "suspend") => {
+            let n = app.db.installation_gone(&i, action == "deleted", now)?;
+            drop_reads(app, i.id, &[]);
+            n
+        }
         ("installation_repositories", "removed") => {
             let ids: Vec<u64> =
                 v["repositories_removed"].as_array().into_iter().flatten().filter_map(|r| r["id"].as_u64()).collect();
             app.db.installation_seen(&i, now)?;
-            app.db.repos_removed(i.id, &ids, now)?
+            let n = app.db.repos_removed(i.id, &ids, now)?;
+            if !ids.is_empty() {
+                drop_reads(app, i.id, &ids);
+            }
+            n
         }
         _ => return Ok(()),
     };
     info!(event, action, installation = i.id, unlinked, "the GitHub App's installation changed");
     Ok(())
+}
+
+/// The read tokens kept for these repos of `install` (every repo's, with
+/// none named), dropped and revoked in the background.
+fn drop_reads(app: &Platform, install: u64, repos: &[u64]) {
+    if let Some(gh) = &app.github {
+        gh.revoke_later(&app.http, gh.drop_reads(install, repos));
+    }
 }
 
 /// Purge every unlinked repo that's due: how many went.

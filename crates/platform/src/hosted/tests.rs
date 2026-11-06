@@ -211,6 +211,17 @@ pub async fn serve_on_with(
     template: &str,
     set: impl FnOnce(&mut Config),
 ) -> (Arc<TestHub>, Arc<Platform>, String, String) {
+    serve_platform(enroll, compute, template, |p| set(&mut p.hosted)).await
+}
+
+/// [`serve_on`], the platform changed by `set` before it's shared (the
+/// GitHub App, say).
+pub async fn serve_platform(
+    enroll: EnrollBy,
+    compute: Arc<dyn Substrate>,
+    template: &str,
+    set: impl FnOnce(&mut Platform),
+) -> (Arc<TestHub>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
@@ -224,7 +235,7 @@ pub async fn serve_on_with(
         cipher: Some(Arc::new(crate::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
         ..Default::default()
     };
-    set(&mut p.hosted);
+    set(&mut p);
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

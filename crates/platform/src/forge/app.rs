@@ -38,7 +38,7 @@
 //! for, what for, the installation, the repository and the permissions,
 //! never the token. A read token used again from the cache inside the
 //! platform adds no row; one handed out again to leave the platform (a
-//! hosted box's, [`GithubApp::hand_out`]) does, for whoever it went to,
+//! person's daemon's, [`GithubApp::hand_out`]) does, for whoever it went to,
 //! with the purpose `read (cached)`.
 //!
 //! A token whose answer from GitHub doesn't cover exactly the one
@@ -79,7 +79,7 @@ fn read_only() -> Value {
 pub enum Purpose {
     /// The mirror's own reads: backfill, the poller, a webhook's item (M164).
     Ingest,
-    /// A read for a person: their access check, a hosted box's token, a
+    /// A read for a person: their access check, their own daemon's token, a
     /// body fetched to show them.
     Read,
 }
@@ -127,6 +127,9 @@ enum Scope {
     /// An agent session's clone of a linked repo no box's setup cloned
     /// (Fleet 6): one repository's contents, read.
     SessionClone,
+    /// A hosted workspace's box cloning a linked repo at its setup: one
+    /// repository's contents, read.
+    BoxClone,
 }
 
 /// What a deploy's run's token may do on its one repository (M219–M233).
@@ -184,7 +187,7 @@ impl Scope {
                 json!({ "metadata": "read", "contents": "write", "pull_requests": "write", "workflows": "write" })
             }
             Scope::SessionPush => json!({ "metadata": "read", "contents": "write", "workflows": "write" }),
-            Scope::SessionClone => json!({ "metadata": "read", "contents": "read" }),
+            Scope::SessionClone | Scope::BoxClone => json!({ "metadata": "read", "contents": "read" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -202,6 +205,7 @@ impl Scope {
             Scope::DeployScaffold => "deploy:contents+pull_requests+workflows",
             Scope::SessionPush => "session:push",
             Scope::SessionClone => "session:clone",
+            Scope::BoxClone => "hosted:clone",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -424,6 +428,9 @@ pub struct GithubApp {
     /// Read tokens by (installation, repository), until five minutes
     /// before they expire. Only read tokens: a write token is never kept.
     reads: Mutex<HashMap<(u64, String), ReadToken>>,
+    /// Each hosted machine's setup clone token by repository, and when it
+    /// was minted: asked again within [`BOX_CLONE_EVERY`], the same one.
+    box_clones: Mutex<HashMap<(String, u64), BoxClone>>,
     /// The forge mirror on this machine (M164): the poller's settings,
     /// the numbers, and each installation's ETags.
     pub ingest: super::ingest::Ingest,
@@ -475,6 +482,14 @@ pub fn epoch_of(t: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + h * 3600 + mi * 60 + s).ok()
 }
 
+/// A hosted machine's clone token: when it was minted (seconds), the token
+/// and GitHub's `expires_at`.
+type BoxClone = (u64, String, String);
+
+/// How often a hosted machine gets a new clone token for a repository
+/// ([`GithubApp::box_clone_token`]): within this, it's the one it got.
+pub const BOX_CLONE_EVERY: Duration = Duration::from_secs(300);
+
 fn now_s() -> u64 {
     arugula_e2e::now_ms() / 1000
 }
@@ -489,6 +504,7 @@ impl GithubApp {
             key,
             installs: Mutex::default(),
             reads: Mutex::default(),
+            box_clones: Mutex::default(),
             ingest: Default::default(),
             bodies: Default::default(),
             styles: Default::default(),
@@ -566,8 +582,8 @@ impl GithubApp {
         Ok(self.read_or_mint(c, install, repo, purpose).await?.0)
     }
 
-    /// A read-only token to hand to someone outside the platform (a hosted
-    /// box): as [`GithubApp::read_token`], and when it's the cache's, a row
+    /// A read-only token to hand to someone outside the platform (a
+    /// person's own daemon): as [`GithubApp::read_token`], and when it's the cache's, a row
     /// for who it went to now, `read (cached)`, since the mint's row names
     /// whoever it was first minted for.
     pub async fn hand_out(&self, c: &Caller<'_>, install: u64, repo: Repo<'_>) -> anyhow::Result<ReadToken> {
@@ -683,6 +699,90 @@ impl GithubApp {
     ) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, Scope::SessionClone).await?;
         Ok((secret, expires_at))
+    }
+
+    /// A token hosted machine `machine` clones linked repo `repo_id` with
+    /// at its setup: that repo's contents, read, minted (and logged, for
+    /// the machine) never from or into the read cache, so it's the box's
+    /// alone. At most one per machine and repo each [`BOX_CLONE_EVERY`]:
+    /// asked again sooner, it's the same token. The box revokes it once
+    /// its clones are done
+    /// ([`GithubApp::revoke_url`]); it lasts an hour at most anyway.
+    /// `(token, expires_at)`.
+    pub async fn box_clone_token(
+        &self,
+        c: &Caller<'_>,
+        machine: &str,
+        install: u64,
+        repo_id: u64,
+    ) -> anyhow::Result<(String, String)> {
+        let key = (machine.to_owned(), repo_id);
+        let every = BOX_CLONE_EVERY.as_secs();
+        if let Some((at, t, e)) = self.box_clones.lock().unwrap().get(&key)
+            && now_s() < at + every
+        {
+            return Ok((t.clone(), e.clone()));
+        }
+        let (secret, expires_at, _) = self.mint(c, install, Repo::Id(repo_id), Scope::BoxClone).await?;
+        let mut kept = self.box_clones.lock().unwrap();
+        let now = now_s();
+        kept.retain(|_, (at, _, _)| now < *at + every);
+        kept.insert(key, (now, secret.clone(), expires_at.clone()));
+        Ok((secret, expires_at))
+    }
+
+    /// A repo is unlinked (or the App lost it): this process's cached read
+    /// tokens for it by GitHub's id under `install`, which links and the
+    /// mirror use, dropped now. With no `repos`, every repo's under
+    /// `install`; and a hosted machine's clone token for one of `repos`.
+    /// Their secrets, to revoke ([`GithubApp::revoke_all`]). A
+    /// token cached by the repo's name went to a person's own daemon,
+    /// after GitHub said they may read it, and stays.
+    pub fn drop_reads(&self, install: u64, repos: &[u64]) -> Vec<String> {
+        let mut gone = Vec::new();
+        self.reads.lock().unwrap().retain(|(i, key), t| {
+            let by_id = repos.iter().any(|r| *key == Repo::Id(*r).key()) || (repos.is_empty() && key.starts_with('#'));
+            if *i == install && by_id {
+                gone.push(std::mem::take(&mut t.secret));
+                return false;
+            }
+            true
+        });
+        // A box's clone token for one of them goes too. (An uninstall's
+        // are GitHub's to end.)
+        self.box_clones.lock().unwrap().retain(|(_, repo), (_, t, _)| {
+            if repos.contains(repo) {
+                gone.push(std::mem::take(t));
+                return false;
+            }
+            true
+        });
+        gone
+    }
+
+    /// Revoke each of these installation tokens: best effort. How many
+    /// GitHub took.
+    pub async fn revoke_all(&self, http: &reqwest::Client, tokens: &[String]) -> usize {
+        let mut n = 0;
+        for t in tokens {
+            n += usize::from(revoke(http, &self.api, t).await);
+        }
+        n
+    }
+
+    /// [`GithubApp::revoke_all`] in the background, for a caller that
+    /// can't wait (a webhook's installation change).
+    pub fn revoke_later(&self, http: &reqwest::Client, tokens: Vec<String>) {
+        if tokens.is_empty() {
+            return;
+        }
+        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        let (http, api) = (http.clone(), self.api.clone());
+        rt.spawn(async move {
+            for t in &tokens {
+                revoke(&http, &api, t).await;
+            }
+        });
     }
 
     /// Revoke an installation token at GitHub, as the token itself: best

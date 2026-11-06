@@ -176,3 +176,190 @@ async fn setup_over_the_internal_api() {
     assert!(remote.hosted_setup(&project, &id, "m1", &report(SetupStatus::Ready, "setup script", "")).await.unwrap());
     assert_eq!(show(&base, &project, &id).await["setup"]["status"], "ready");
 }
+
+/// A GitHub repo linked to the project: the plan gives each box a token of
+/// its own for it, its contents read-only, never the platform's kept one,
+/// with where the box revokes it, logged under the machine. Asked again,
+/// it's the same token, minted once; once the box says it's past its
+/// clones, there's none. Unlinking revokes it; the box then clones with
+/// the workspace's GIT_TOKEN, as a repo never linked does, and gets the
+/// App's again once it's linked again.
+#[tokio::test]
+async fn a_box_clones_a_linked_repo_with_a_token_of_its_own() {
+    use crate::{
+        db::forge::{Installation, LinkedRepo},
+        forge::{
+            Caller, GithubApp, Purpose, Repo,
+            links_tests::{Shared, fake_github, throwaway_key},
+        },
+    };
+    let gh: Shared = Arc::default();
+    {
+        let mut g = gh.lock().unwrap();
+        g.numbered = true;
+        g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+        g.repos.insert("acme/app".into(), (77, true));
+    }
+    let api = fake_github(gh.clone()).await;
+    let fake = Arc::new(super::tests::Fake::default());
+    let (hub, app, base, project) = super::tests::serve_platform(EnrollBy::Sandbox, fake, "tpl", |p| {
+        p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), "s".into(), &api, throwaway_key()));
+    })
+    .await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "alice", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let path = format!("/api/projects/{project}/workspaces/{id}");
+    let spec = json!({ "repos": ["https://github.com/acme/app", "https://github.com/acme/other"] });
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 200);
+    let put = Some(json!({ "value": "tok-1" }));
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/secrets/GIT_TOKEN"), put).await.0, 204);
+    let now = now_ms();
+    let repo = LinkedRepo {
+        repo_id: 77,
+        full_name: "acme/app".into(),
+        private: true,
+        project_id: project.clone(),
+        installation_id: 9,
+        linked_by: Some("alice".into()),
+        linked_at: now,
+        unlinked_at: None,
+        purge_after: None,
+        mirror_content: false,
+    };
+    let install = Installation {
+        id: 9,
+        account_id: 500,
+        login: "acme".into(),
+        account_type: "Organization".into(),
+        permissions: "{}".into(),
+    };
+    app.db.link_repo(&repo, &install, "alice", now).unwrap();
+    // The platform's own read token for it, kept.
+    let github = app.github.as_ref().unwrap();
+    let kept = github.read_token(&Caller::of(&app, "platform"), 9, Repo::Id(77), Purpose::Ingest).await.unwrap();
+    let kept = kept.secret().to_owned();
+    drive(&app, now).await;
+
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
+    let first = &plan.repos[0];
+    assert_eq!((first.via.as_str(), first.username.as_deref()), ("github_app", Some("x-access-token")));
+    let token = first.password.clone().unwrap();
+    assert_ne!(token, kept, "not the platform's kept token");
+    assert_eq!(first.revoke.as_deref(), Some(format!("{api}/installation/token").as_str()));
+    assert_eq!(
+        gh.lock().unwrap().minted.last().unwrap(),
+        &json!({ "metadata": "read", "contents": "read" }),
+        "its contents, read, and nothing else"
+    );
+    let other = &plan.repos[1];
+    assert_eq!(
+        (other.via.as_str(), other.password.as_deref(), other.revoke.as_deref()),
+        ("secret", Some("tok-1"), None)
+    );
+
+    // Asked again and again: the same token, minted once.
+    let minted = gh.lock().unwrap().minted.len();
+    for _ in 0..20 {
+        let again = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+        assert_eq!(again.repos[0].password.as_deref(), Some(token.as_str()));
+    }
+    assert_eq!(gh.lock().unwrap().minted.len(), minted, "no mint for a repeat");
+    // Another machine (a rebuild's) gets its own.
+    let theirs = app.hosted_plan(&project, &id, "hosted-machine-2").await.unwrap().unwrap();
+    let theirs = theirs.repos[0].password.clone().unwrap();
+    assert_ne!(theirs, token);
+    let kept_now = github.read_token(&Caller::of(&app, "platform"), 9, Repo::Id(77), Purpose::Ingest).await.unwrap();
+    assert_eq!(kept_now.secret(), kept, "the platform's own stays its own");
+    // Logged under the machine that asked.
+    let callers: Vec<String> =
+        app.db.token_mints(0).unwrap().into_iter().filter(|m| m.purpose == "hosted:clone").map(|m| m.caller).collect();
+    assert_eq!(callers, ["hosted-machine-1", "hosted-machine-2"]);
+
+    // Unlinked: the boxes' tokens are revoked, and the box clones with the
+    // workspace's GIT_TOKEN, as before the App.
+    let (s, v) = call(&base, "alice", "DELETE", &format!("/api/projects/{project}/repos/acme/app"), None).await;
+    assert_eq!(s, 200, "{v}");
+    let revoked = gh.lock().unwrap().revokes.clone();
+    assert!(revoked.contains(&token) && revoked.contains(&theirs) && revoked.contains(&kept), "{revoked:?}");
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    let first = &plan.repos[0];
+    assert_eq!(
+        (first.via.as_str(), first.password.as_deref(), first.revoke.as_deref()),
+        ("secret", Some("tok-1"), None)
+    );
+
+    // Linked again: the App's token again, a new one.
+    app.db.link_repo(&repo, &install, "alice", now_ms()).unwrap();
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    assert_eq!(plan.repos[0].via, "github_app");
+    let relinked = plan.repos[0].password.clone().unwrap();
+    assert!(relinked != token && relinked != theirs, "a new one");
+
+    // The box says it's past its clones: no App token any more.
+    let r = report(SetupStatus::SettingUp, "packages", "");
+    assert!(app.hosted_setup(&project, &id, "hosted-machine-1", &r).await.unwrap());
+    let minted = gh.lock().unwrap().minted.len();
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    assert_eq!((plan.repos[0].via.as_str(), plan.repos[0].revoke.as_deref()), ("secret", None));
+    assert_eq!(gh.lock().unwrap().minted.len(), minted);
+    // It doesn't go back to cloning: a report that says so isn't kept, and
+    // there's still no App token.
+    for step in ["clone app", "start", ""] {
+        let back = report(SetupStatus::SettingUp, step, "");
+        assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap(), "{step:?}");
+        let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+        assert_eq!(plan.repos[0].via, "secret", "{step:?}");
+    }
+    assert_eq!(show(&base, &project, &id).await["setup"]["step"], "packages");
+    // Forward is kept: it ended, even at a clone, and stays done.
+    let r = report(SetupStatus::Failed, "clone app", "exit");
+    assert!(app.hosted_setup(&project, &id, "hosted-machine-1", &r).await.unwrap());
+    let back = report(SetupStatus::SettingUp, "clone app", "");
+    assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap());
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().unwrap();
+    assert_eq!(plan.repos[0].via, "secret");
+    assert_eq!(gh.lock().unwrap().minted.len(), minted);
+
+    // A rebuild: a new box, which gets the App's token for its clones.
+    let t = now_ms();
+    hub.enroll(&id, "hosted-machine-1");
+    drive(&app, t + 3_000).await;
+    assert_eq!(show(&base, &project, &id).await["state"], "ready");
+    assert_eq!(call(&base, "bob", "POST", &format!("{path}/rebuild"), None).await.0, 200);
+    drive(&app, t + 6_000).await;
+    hub.enroll(&id, "hosted-machine-3");
+    drive(&app, t + 9_000).await;
+    let w = show(&base, &project, &id).await;
+    assert!(w["setup"].is_null(), "a new box hasn't said anything: {w}");
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-3").await.unwrap().expect("the new box");
+    assert_eq!(plan.repos[0].via, "github_app");
+    assert!(app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().is_none(), "the old box");
+}
+
+/// Whether a kept step is done cloning follows `clones_done` exactly, case
+/// and all: a step `CLONE app` isn't one of the box's clone steps, so it's
+/// done cloning, and a report back to `clone app` isn't kept.
+#[tokio::test]
+async fn a_kept_step_is_done_cloning_as_the_box_says_it() {
+    use arugula_control_wire::hosted::clones_done;
+    let (hub, _fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "alice", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    drive(&app, now_ms()).await;
+    assert!(clones_done(SetupStatus::SettingUp, "CLONE app"));
+    let upper = report(SetupStatus::SettingUp, "CLONE app", "");
+    assert!(app.hosted_setup(&project, &id, "hosted-machine-1", &upper).await.unwrap());
+    let back = report(SetupStatus::SettingUp, "clone app", "");
+    assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap());
+    assert_eq!(show(&base, &project, &id).await["setup"]["step"], "CLONE app");
+    // A step that is one of its clones is still cloning: the next is kept.
+    let w2 = make(&base, "alice", &project, "dev2").await.1;
+    let id2 = w2["id"].as_str().unwrap().to_owned();
+    drive(&app, now_ms()).await;
+    for step in ["start", "clone app", "clone lib"] {
+        let r = report(SetupStatus::SettingUp, step, "");
+        assert!(app.hosted_setup(&project, &id2, "hosted-machine-2", &r).await.unwrap(), "{step}");
+    }
+}
