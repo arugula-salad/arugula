@@ -53,6 +53,10 @@ contrast against that, not the palette as written.
 - **Accent means live:** the thing you're in, on or choosing now. The "on"
   tint, the selected row, a count that's for you, the primary button, a
   fresh fill. Links are `--info`, not accent.
+- **Accent can also be a tone**, for a row that is live without being picked:
+  the Docs list's "open in a block" and Boards' Review lane keep their accent
+  bar. A selected row tells itself apart by more than the bar: the tint and
+  the edge (Rows).
 - **Status colours mean a state:** ok, warn, danger, merged, info. They go
   on a status chip, a tone bar or a dot, and a state is always said in
   words as well, never by colour alone.
@@ -133,20 +137,26 @@ second row.
 
 ## Rows and the selected state
 
-*(being built: #756.)* Two shapes, with one selected state.
+Two shapes, with one selected state.
 
 - **Flat row** (`.list-row`, `shared/ui/list-page.css`): a Docs or Agents row,
   a session, a chat room, an attention item. 13px title at 600, 11px tags.
-  Modifiers: `.inset` (rounded, in a sidebar), `.dense` (26px, chat rooms),
-  `.touch` (44px, at ≤600px or on a coarse pointer).
+  In a sidebar it is inset and rounded (sessions, chat rooms, the attention
+  drawer), dense (26px) for chat rooms, and 44px at ≤600px or on a coarse
+  pointer. Those sizes are in each area's own CSS, on the one selected state;
+  they aren't classes yet.
 - **Card row** (`.sw-card`): a platform or Boards card, 13px. It opens a page
   or a sheet.
 - A settings row is a list of things to open: the whole row is the button,
   with hover, and it is never selected.
 
 **Selected** is the same on every shape: the `--selected` tint (accent at
-14%, mixed over `transparent` so it works on any surface), a 3px accent bar,
-and the title stays in the text colour. A card also gets a 1px accent edge.
+14%, mixed over `transparent` so it works on any surface), a 3px accent bar
+and a 1px accent edge, both drawn inset (`--selected-mark`, or `--selected-edge`
+for a flat row, whose bar is its `::before`) so a row never moves. The title
+stays in the text colour. The edge is what tells a selected row from an
+accent-toned one, which has the bar and no tint. `legible()` checks every text
+colour on the tint, so a palette can't make a selected row unreadable.
 A selected row keeps its tint under hover. **Hover** is raised at 45%.
 **Focus** is a 2px accent outline, drawn for the keyboard only. **Unread** is
 a 700 title and an accent count. Selection owns the bar: a selected row
@@ -245,22 +255,3 @@ Use the scale: `--space-1` … `--space-6` (4, 8, 12, 16, 20, 24). Corners come
 from the Corners setting (`--btn-radius`, `--tag-radius`, `--card-radius`,
 `--panel-radius`), never a raw `6px`. A page header ends in a 1px `--line`
 rule; a page's sections are separated by a section head, not a box.
-
-## Open
-
-**Is accent also a tone?** The rule above says accent means live, which is
-"the thing you're in or on". Two places use it as a *tone* for a row that is
-neither selected nor chosen: the Docs list's "open in a block"
-(`shell/ui/docs-page.tsx`) and Boards' Review lane (`shared/boards/text.ts`).
-An unselected accent-toned row draws the same bar as a selected one, and only
-the tint tells them apart. Cards get past it with an accent edge; flat rows
-don't.
-
-- **A. Accent is only live/selected.** "Open" becomes a mark (the `%956` the
-  row already shows) and not a bar, and Review gets a status colour. One
-  meaning for accent.
-- **B. Accent is also a tone.** Rows keep their accent bar, and the selected
-  state has to differ from it by something other than the bar (a stronger
-  tint, or an edge).
-
-Until this is decided, don't add a new accent-toned row.

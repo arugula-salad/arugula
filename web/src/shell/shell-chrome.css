@@ -47,11 +47,6 @@
   margin-bottom: 3px;
 }
 
-.ws-session.current {
-  background: var(--chrome-selected);
-  border-color: var(--chrome-selected-line);
-}
-
 .ws-session-main {
   gap: var(--space-2);
   padding: 10px 6px 10px var(--space-2);
@@ -197,9 +192,6 @@
 }
 .ws-session-counts { grid-column: 4; justify-self: end; }
 .ws-session-sub { padding-right: 0; }
-.ws-session.current {
-  box-shadow: inset 2px 0 var(--accent);
-}
 
 .ws-group:not(:first-child) { border-top-color: var(--line-strong); }
 .ws-tabs .tab {

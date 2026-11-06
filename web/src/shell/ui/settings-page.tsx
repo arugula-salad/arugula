@@ -70,10 +70,10 @@ function Row({ item, group, did }: { item: MenuItem; group?: string; did: () => 
   }
   return (
     <li class="settings-row" data-setting={item.label}>
-      <button class="link" onClick={run}>
-        {item.label}
+      <button class="settings-open" onClick={run}>
+        <span class="settings-open-name">{item.label}</span>
+        {hint}
       </button>
-      {hint}
     </li>
   );
 }

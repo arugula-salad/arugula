@@ -358,7 +358,7 @@ export function BoardPanel({
               if (narrows && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} group={s.group?.id ?? null} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} group={s.group?.id ?? null} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} opened={drawer} />
               );
             })}
           </div>
@@ -736,6 +736,7 @@ function Lane({
   moveRow,
   moveLane,
   open,
+  opened,
 }: {
   z: BoardZone;
   /** The lane heading as a button; inside a group its key carries the group. */
@@ -754,6 +755,8 @@ function Lane({
   /** Move a row to a lane by hand (#494); none for a reader who can't write. */
   moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
+  /** The row whose drawer is open: its card is the selected one. */
+  opened: string | null;
 }) {
   const n = laneCount(z);
   // A card dragged over the lane (#494): the lane takes it, unless it comes from another group, which takes it whole (#664).
@@ -796,7 +799,7 @@ function Lane({
       {!fold.folded && (
         <ul class="board-rows sw-cards">
           {z.rows.map((r) => (
-            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} />
+            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} opened={opened} />
           ))}
         </ul>
       )}
@@ -937,6 +940,7 @@ function Row({
   moveRow,
   moveLane,
   open,
+  opened,
 }: {
   r: BoardRow;
   editing: boolean;
@@ -949,6 +953,7 @@ function Row({
   moveRow: (r: BoardRow, zone: string | null) => void;
   moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
+  opened: string | null;
 }) {
   const phone = usePhone();
   const { teams } = usePlatformApi();
@@ -999,7 +1004,7 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
+    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
       e.dataTransfer?.setData(ROW_DRAG, r.id);
       e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
     }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>

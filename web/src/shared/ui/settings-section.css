@@ -91,6 +91,52 @@
   font-weight: 600;
 }
 
+/* A row you open is one button, edge to edge, with hover and never a
+   selection (#756). Its section already insets it: the row reaches 8px past
+   the text to the hover, and the text stays where it was. */
+:is(.platform, .settings-place) .settings-rows > li:has(> .settings-open) {
+  padding: 0;
+}
+
+:is(.platform, .settings-place) .settings-rows .settings-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  box-sizing: border-box;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--field-radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+:is(.platform, .settings-place) .settings-rows .settings-open:hover {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+:is(.platform, .settings-place) .settings-rows .settings-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+:is(.platform, .settings-place) .settings-rows .settings-open-name {
+  font-weight: 600;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  :is(.platform, .settings-place) .settings-rows .settings-open {
+    min-height: 44px;
+    align-items: center;
+  }
+}
+
 /* -- A switch: the swarm's compact switch, a knob in a pill. Off, its knob
       sits left on the raised grey; on, right on the accent; partly on (some
       of what it gives, its title says which), in the middle on warn, so it

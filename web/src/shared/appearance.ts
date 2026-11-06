@@ -523,9 +523,13 @@ const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "
  * `base`. */
 export const onFill = (accent: string, base: string) => mix(base, accent, 0.18);
 
+/** The selected row's tint (style.css's --selected, 14% of the accent over
+ * nothing): `accent` over `base`. */
+export const selectedFill = (accent: string, base: string) => mix(base, accent, 0.14);
+
 /** The palette's UI colors as the page uses them (M113): a word in any of
  * them reads at WCAG AA (4.5:1) on the backgrounds it sits on (bg, surface
- * and raised, the hovered and picked rows'). Each palette keeps its
+ * and raised, the hovered and picked rows', and the selected row's tint). Each palette keeps its
  * colors where they already do; one that doesn't is moved toward white
  * (on a dark palette) or black (on a light one) as little as it takes. A primary button's label likewise reads on the accent. */
 export function legible(p: Palette): Ui {
@@ -541,6 +545,10 @@ export function legible(p: Palette): Ui {
     const onTint = (c: string) => [u.bg, u.surface].every((b) => contrast(c, onFill(c, b)) >= 4.5);
     u[k] = legibleOn(u[k], on, end, k === "accent" ? onTint : undefined);
   }
+  // A word on the selected row's tint (--selected, #756) too, over the page and
+  // over a sidebar. The accent is final by now, so the tint is.
+  const picked = [u.bg, u.surface].map((b) => selectedFill(u.accent, b));
+  for (const k of TEXT) if (k !== "accent") u[k] = legibleOn(u[k], [...on, ...picked], end);
   const label = [u["on-color"], "#000000", "#ffffff"].sort((a, b) => contrast(b, u.accent) - contrast(a, u.accent));
   if (contrast(u["on-color"], u.accent) < 4.5) u["on-color"] = label[0];
   return u;

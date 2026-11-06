@@ -15,6 +15,14 @@
   --line: var(--raised);
   --line-strong: color-mix(in srgb, var(--muted) 55%, var(--surface));
   --divider: var(--line);
+  /* The selected row (#756), the same on every shape: this tint (mixed over
+     transparent, so it sits on a page, a sidebar or a sheet alike), a 3px
+     accent bar and a 1px accent edge, both drawn inset so a row never moves.
+     `--selected-edge` is the box-shadow for a row with its own radius; a
+     flat row's bar is its ::before. */
+  --selected: color-mix(in srgb, var(--accent) 14%, transparent);
+  --selected-edge: inset 0 0 0 1px var(--accent);
+  --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
   /* The rest of the palette (appearance.ts sets them all for the one
      picked): status colors, and text on a colored fill. */
   --ok: #a6e3a1;
@@ -970,7 +978,7 @@ button.att {
   padding-left: 28px;
   margin-left: 26px;
   width: calc(100% - 26px);
-  min-height: 38px;
+  min-height: 44px;
   font-size: var(--t-body);
   color: var(--dim);
   border-left: 2px solid var(--line);
@@ -985,14 +993,18 @@ button.att {
 }
 
 .sheet-item.current {
-  background: var(--raised);
+  background: var(--selected);
   color: var(--fg);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--selected-mark);
 }
 
 .sheet-item.sheet-pane.current {
-  box-shadow: none;
   border-left-color: var(--accent);
+}
+
+/* Pressed on the selected row keeps the selection: a deeper tint. */
+.sheet-item.current:active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .needs-you.sheet-card {
@@ -8811,6 +8823,7 @@ input.chat-search {
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
+  min-height: 26px;
   width: calc(100% - 12px);
   margin: 0 6px;
   padding: 4px 10px;
@@ -8823,8 +8836,9 @@ input.chat-search {
 
 .chat.phone .chat-row {
   width: 100%;
+  min-height: 44px;
   margin: 0;
-  padding: 10px 16px;
+  padding: 0 16px;
   border-radius: 0;
   font-size: var(--t-body);
 }
@@ -8851,13 +8865,8 @@ input.chat-search {
 }
 
 .chat-row.selected {
-  background: var(--accent);
-  color: var(--surface);
-}
-
-.chat-row.selected .chat-sigil,
-.chat-row.selected.unread .chat-label {
-  color: inherit;
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .chat-sigil {
@@ -10633,14 +10642,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border: 1px solid transparent;
 }
 
-.ws-session:hover,
-.ws-session.hi {
+.ws-session:hover {
   background: var(--raised);
 }
 
+/* The search's active row is the keyboard's: the focus outline, not hover's look. */
+.ws-session.hi {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .ws-session.current {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-session-main {
@@ -11248,8 +11262,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-att-item.selected {
-  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-att-item-text {

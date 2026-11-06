@@ -662,6 +662,21 @@
   --c: var(--danger);
 }
 
+/* The card whose drawer is open is selected: the tint over its surface, the accent bar (selection owns it) and a 1px accent edge, inset so nothing moves. */
+.board .board-rows > .board-card[aria-current="true"] {
+  background-image: linear-gradient(var(--selected), var(--selected));
+  box-shadow: var(--selected-edge);
+}
+
+/* Open and waiting on the reader: the ring stays outside the edge. */
+.board .board-rows > .board-card[aria-current="true"][data-needs-you] {
+  box-shadow: var(--selected-edge), 0 0 0 2px var(--accent);
+}
+
+.board .board-rows > .board-card[aria-current="true"]::before {
+  background: var(--accent);
+}
+
 /* A row that waits on the reader keeps its lane's tone; the ring is what sets it apart. */
 .board .board-rows > .board-card[data-needs-you] {
   box-shadow: 0 0 0 2px var(--accent);
