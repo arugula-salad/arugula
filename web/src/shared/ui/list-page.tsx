@@ -18,6 +18,8 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { Bar } from "./bar";
+import { Svg } from "./rail-icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -398,20 +400,71 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   );
 }
 
-/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them. */
-export function ListPreview({ title, facts, actions, children, aside, ...attrs }: { title: ComponentChildren; facts?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them.
+ *
+ * With a `title`, the head is the list's own: the name large, then the facts and
+ * the buttons under it. Without one, the preview's words carry the name
+ * themselves (a Doc's own head is the title), and the head is a column bar
+ * (Arugula #659): the facts at the left (`factsTip` says the rest on hover),
+ * then the hint, the one primary and the icon buttons at the right, ⋯ last. */
+export function ListPreview({ title, facts, factsTip, hint, actions, children, aside, ...attrs }: { title?: ComponentChildren; facts?: ComponentChildren; factsTip?: string; hint?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
     <>
-      <header class="list-preview-head" {...attrs}>
-        <h2>{title}</h2>
-        {facts && <div class="list-preview-facts">{facts}</div>}
-        {actions && <div class="list-preview-actions">{actions}</div>}
-      </header>
+      {title === undefined ? (
+        <Bar
+          class="list-preview-bar"
+          {...attrs}
+          actions={
+            <>
+              {hint}
+              {actions}
+            </>
+          }
+        >
+          {facts && (
+            <span class="list-preview-bar-facts" title={factsTip}>
+              {facts}
+            </span>
+          )}
+        </Bar>
+      ) : (
+        <header class="list-preview-head" {...attrs}>
+          <h2>{title}</h2>
+          {facts && <div class="list-preview-facts">{facts}</div>}
+          {actions && <div class="list-preview-actions">{actions}</div>}
+        </header>
+      )}
       <div class={aside ? "list-preview-body" : "list-preview-body solo"}>
         <div class="list-preview-words">{children}</div>
         {aside && <div class="list-preview-aside">{aside}</div>}
       </div>
     </>
+  );
+}
+
+/** The preview bar's Copy link: the same icon button as a Doc's own bar, and
+ * "Copied ✓" in place for a moment. `copy` says whether it copied; `done` is
+ * the title while it says so. */
+export function PreviewCopyLink({ copy, title, done, disabled, ...attrs }: { copy: () => Promise<boolean>; title: string; done?: string; disabled?: boolean; [hook: `data-${string}`]: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const click = async () => {
+    if (!(await copy())) return;
+    setCopied(true);
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button type="button" class="bar-btn sq preview-bar-link" data-copied={copied ? "" : undefined} disabled={disabled} title={copied && done ? done : title} aria-label="Copy link" onClick={() => void click()} {...attrs}>
+      {copied ? (
+        <span class="preview-bar-copied">Copied ✓</span>
+      ) : (
+        <Svg size={14}>
+          <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+          <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+        </Svg>
+      )}
+    </button>
   );
 }
 

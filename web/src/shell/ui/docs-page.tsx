@@ -24,8 +24,9 @@ import { DocBlock, type DocState } from "../../shared/docs/doc-render";
 import { NO_LINK, ONLY_YOU } from "./doc-share";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
+import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
+import { Svg } from "../../shared/ui/rail-icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
@@ -288,7 +289,6 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
     return r;
   }, [doc.id]);
   const [state, setState] = useState<DocState | null>(kept.state);
-  const [copied, setCopied] = useState(false);
   const reader = useRef<HTMLDivElement>(null);
 
   // Read it when picked and whenever it changed or the window is back. The
@@ -348,7 +348,7 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
 
   // At once (Arugula #708): the public link it has (anyone can open it), else
   // its copy on the platform (only its owner can).
-  const copyLink = async () => {
+  const copyLink = async (): Promise<boolean> => {
     try {
       let url = doc.shared?.link ? undefined : doc.platform?.link;
       if (!url) {
@@ -358,58 +358,56 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
         url = v.url;
       }
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      return true;
     } catch (e) {
       fail((e as Error).message);
+      return false;
     }
   };
 
   const words = wordsOf(doc);
   const figures = figuresOf(doc);
   const biggest = Math.max(1, ...doc.sections.map((s) => s.words));
+  const none = !doc.platform && !doc.shared?.link;
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      title={doc.title}
       facts={
         <>
-          {doc.sections.length > 0 && <span>{plural(doc.sections.length, "section")}</span>}
-          {words > 0 && (
-            <span>
-              {plural(words, "word")} · {Math.max(1, Math.round(words / READ_WPM))} min
-            </span>
-          )}
-          {figures > 0 && <span>{plural(figures, "figure")}</span>}
           <span>
             updated <Time at={doc.updated} on />
           </span>
-          <span>{madeBy(doc.by)}</span>
+          {doc.sections.length > 0 && <span>{plural(doc.sections.length, "section")}</span>}
+          {words > 0 && <span>{Math.max(1, Math.round(words / READ_WPM))} min read</span>}
         </>
+      }
+      factsTip={[plural(doc.sections.length, "section"), plural(words, "word"), figures > 0 && plural(figures, "figure"), madeBy(doc.by)].filter(Boolean).join(" · ")}
+      hint={
+        <span class="list-preview-hint" aria-hidden="true">
+          <kbd>↵</kbd> open <kbd>↑</kbd>
+          <kbd>↓</kbd> move
+        </span>
       }
       actions={
         <>
-          <button class="primary small" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
+          <button class="bar-btn on preview-bar-primary" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
             {isOpen(doc) ? `Bring forward %${doc.open}` : "Open beside"}
           </button>
-          <button
-            class="secondary small"
-            data-doc-copy-link
-            disabled={!doc.platform && !doc.shared?.link}
-            title={!doc.platform && !doc.shared?.link ? NO_LINK : copied && doc.platform && !doc.shared ? `Copied: ${ONLY_YOU}` : "Copy link"}
-            onClick={() => void copyLink()}
-          >
-            {copied ? "Copied ✓" : "Copy link"}
-          </button>
           {doc.platform && (
-            <button class="secondary small" data-doc-platform-link={doc.platform.link} title="Its read-only copy on the platform, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
-              On the platform
+            <button class="bar-btn sq" data-doc-platform-link={doc.platform.link} aria-label="On the platform" title="On the platform: its read-only copy, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
+              <Svg size={14}>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <path d="M15 3h6v6" />
+                <path d="M10 14L21 3" />
+              </Svg>
             </button>
           )}
+          <PreviewCopyLink data-doc-copy-link disabled={none} title={none ? NO_LINK : "Copy link"} done={doc.platform && !doc.shared ? `Copied: ${ONLY_YOU}` : "Copied"} copy={copyLink} />
           <button
-            class="secondary small"
+            class="bar-btn sq"
             aria-label={`More for ${doc.title}`}
             title="More"
+            aria-haspopup="menu"
             data-doc-more
             disabled={busy}
             onClick={(e) => {
@@ -419,10 +417,6 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           >
             ⋯
           </button>
-          <span class="list-preview-hint" aria-hidden="true">
-            <kbd>↵</kbd> open <kbd>↑</kbd>
-            <kbd>↓</kbd> move
-          </span>
         </>
       }
       aside={

@@ -392,6 +392,36 @@ button.list-count:hover {
   margin-top: var(--space-3);
 }
 
+/* The preview as a column bar (Arugula #659): the facts at 12px --subtle,
+   cut short before the buttons are; the hint and the buttons keep their size. */
+.list-preview-bar {
+  padding: 0 var(--space-6);
+}
+
+.list-preview-bar-facts {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--subtle);
+  font-size: var(--text-sm);
+}
+
+.list-preview-bar-facts > span + span::before {
+  content: "·";
+  margin: 0 var(--space-2);
+}
+
+.list-preview-bar .list-preview-hint {
+  flex: none;
+  margin-left: 0;
+}
+
+.preview-bar-link[data-copied] {
+  width: auto;
+  min-width: 84px;
+}
+
 .list-preview-hint {
   margin-left: auto;
   color: var(--dim);

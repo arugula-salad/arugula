@@ -206,7 +206,9 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
   // Sweeping the pointer over the rows leaves the first Doc, and reads none;
   // a click shows the one clicked (Arugula #657).
-  const head = preview.locator(".list-preview-head h2");
+  const head = preview.locator(".doc-title");
+  // The Doc's own head is the preview's one title (Arugula #659).
+  await expect(head).toHaveCount(1);
   await expect(head).toHaveText("Private notes");
   const reads: string[] = [];
   alice.on("request", (r) => {
