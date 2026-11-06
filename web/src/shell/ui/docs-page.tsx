@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { NO_LINK, ONLY_YOU } from "./doc-share";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
@@ -346,12 +347,18 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
 
   const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
+  // At once (Arugula #708): the public link it has (anyone can open it), else
+  // its copy on the platform (only its owner can).
   const copyLink = async () => {
     try {
-      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
-      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
-      if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
-      await navigator.clipboard.writeText(v.url);
+      let url = doc.shared?.link ? undefined : doc.platform?.link;
+      if (!url) {
+        const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
+        const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+        if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
+        url = v.url;
+      }
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
@@ -386,11 +393,15 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           <button class="primary small" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
             {isOpen(doc) ? `Bring forward %${doc.open}` : "Open beside"}
           </button>
-          {doc.shared?.link && (
-            <button class="secondary small" data-doc-copy-link onClick={() => void copyLink()}>
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          )}
+          <button
+            class="secondary small"
+            data-doc-copy-link
+            disabled={!doc.platform && !doc.shared?.link}
+            title={!doc.platform && !doc.shared?.link ? NO_LINK : copied && doc.platform && !doc.shared ? `Copied: ${ONLY_YOU}` : "Copy link"}
+            onClick={() => void copyLink()}
+          >
+            {copied ? "Copied ✓" : "Copy link"}
+          </button>
           {doc.platform && (
             <button class="secondary small" data-doc-platform-link={doc.platform.link} title="Its read-only copy on the platform, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
               On the platform

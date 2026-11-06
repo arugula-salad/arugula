@@ -167,6 +167,7 @@ pub fn set_platform(dir: &Path, on: OnPlatform) {
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't keep where a Doc's copy is");
     }
+    super::moved(&meta.id, true);
 }
 
 /// This machine left control: where each Doc's copy was no longer holds
@@ -181,6 +182,7 @@ pub fn forget_platform(state_dir: &Path) {
         {
             warn!(doc = meta.id, error = e, "can't forget where a Doc's copy was");
         }
+        super::moved(&meta.id, false);
     }
 }
 

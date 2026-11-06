@@ -48,6 +48,9 @@ export interface DocState {
   shared?: { made: number; updated: number } | null;
   /** A section was written after the link was last updated (#509). */
   shared_older?: boolean;
+  /** The machine has put a copy of it on the platform (Arugula #708); the
+   * page is the owner's to ask for (`doc_shares`). */
+  platform?: boolean;
   error?: string;
 }
 
