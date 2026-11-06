@@ -86,9 +86,13 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    /// The account as a viewer, with its GitHub identity from the hub.
+    /// The account as a viewer, with its GitHub identity from the hub, as
+    /// the platform's cache keeps it: at most a cache tick old, and dropped
+    /// when the hub's feed says the account linked or unlinked GitHub
+    /// (`crate::cache`). [`check`] asks again before a kept "no" withholds
+    /// a private repo.
     pub async fn of(app: &Platform, account: &str) -> Result<Self, ApiError> {
-        Ok(Self { account: account.to_owned(), github: app.hub.github_user(account).await? })
+        Ok(Self { account: account.to_owned(), github: app.cache.github_user(&*app.hub, account).await? })
     }
 }
 
@@ -176,7 +180,18 @@ async fn member(app: &Platform, account: &str, project: &str) -> Result<bool, Ap
 /// The one viewer check (module docs): which of `repos` the viewer may
 /// read now.
 pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
-    let kept = match &v.github {
+    // A viewer's "no GitHub" may be a cache tick old: before it withholds a
+    // private repo, the hub is asked again (they may have just linked it).
+    let confirmed;
+    let github = match &v.github {
+        Some(u) => Some(u),
+        None if repos.iter().any(|r| r.private && r.unlinked_at.is_none()) => {
+            confirmed = app.cache.github_user_now(&*app.hub, &v.account).await?;
+            confirmed.as_ref()
+        }
+        None => None,
+    };
+    let kept = match github {
         Some(u) => app.db.kept_access(u.id, KEEP_MS)?,
         None => HashMap::new(),
     };
@@ -201,7 +216,7 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
             readable.push(r.repo_id);
             continue;
         }
-        let Some(user) = &v.github else {
+        let Some(user) = github else {
             withheld.push((r.repo_id, Withheld::NoGithub));
             continue;
         };

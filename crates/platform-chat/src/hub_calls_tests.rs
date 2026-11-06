@@ -72,6 +72,69 @@ async fn a_second_request_asks_the_hub_nothing() {
     assert_eq!(hub.calls_of("resolve"), 0, "the hub vouched for the caller: nobody asks it again");
 }
 
+/// The forge's and boards' reads (#748): every one asks for the reader's
+/// GitHub identity (`forge::viewer::Viewer::of`), and a second identical
+/// request asks the hub nothing, as chat's don't. A reader without GitHub
+/// on a project with a private repo costs one hub call a read, to confirm
+/// the kept "no" before it withholds the repo; once they link GitHub, the
+/// feed says so and their reads ask nothing again.
+#[tokio::test]
+async fn a_second_forge_or_board_read_asks_the_hub_nothing() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = crate::testing::forge_serve(&hub).await;
+    let (team, _) = crate::forge::viewer_tests::world(&hub, &gh, &app).await;
+    hub.flag("team:t1", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    // bob's board, with the private repo's open PR and the public one's.
+    let (st, b) = call(
+        &base,
+        "bob",
+        "POST",
+        &format!("/api/projects/{team}/boards"),
+        Some(serde_json::json!({ "title": "Launch" })),
+    )
+    .await;
+    assert_eq!(st, 200, "{b}");
+    let board = b["board"]["id"].as_str().unwrap().to_owned();
+    for item in ["fi_a1", "fi_a3"] {
+        let row = serde_json::json!({ "entry": "row", "note": "n", "pointer": { "kind": "forge_item", "id": item } });
+        let (st, v) = call(&base, "bob", "PUT", &format!("/api/boards/{board}/entries"), Some(row)).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let routes = [
+        format!("/api/projects/{team}/items"),
+        "/api/forge/items/fi_a1".to_owned(),
+        "/api/forge/items/fi_a1/checks".to_owned(),
+        "/api/inbox".to_owned(),
+        format!("/api/projects/{team}/work"),
+        format!("/api/boards/{board}"),
+    ];
+    let mut asked = vec![];
+    for who in ["alice", "bob"] {
+        for path in &routes {
+            let (first, _) = counted(&hub, &base, who, path).await;
+            let (second, _) = counted(&hub, &base, who, path).await;
+            eprintln!("{who} {path}: first {first:?}, second {second:?}");
+            asked.extend((!second.is_empty()).then(|| format!("{who} {path}: {second:?}")));
+        }
+    }
+    assert_eq!(asked, Vec::<String>::new(), "a second request asked the hub");
+
+    // carol, a viewer without GitHub: the board shows her the public PR,
+    // and each read confirms her "no" once.
+    let path = format!("/api/boards/{board}");
+    counted(&hub, &base, "carol", &path).await;
+    let (made, _) = counted(&hub, &base, "carol", &path).await;
+    assert_eq!(made, BTreeMap::from([("github_user", 1)]), "the kept no, confirmed");
+    // She links GitHub (GitHub doesn't give her the repo): the feed says
+    // so, and her reads ask nothing again.
+    hub.github("carol", 1003, "carol-gh");
+    crate::cache::catch_up(&app).await.unwrap();
+    counted(&hub, &base, "carol", &path).await;
+    let (made, _) = counted(&hub, &base, "carol", &path).await;
+    assert_eq!(made, BTreeMap::new(), "linked: kept");
+}
+
 /// A machine that joined after the cache last heard of it is asked about
 /// again, not refused: the cache's "no such machine" is never the last word
 /// before a grant.
