@@ -1,3 +1,7 @@
+/* The block states (shared/ui/block-states.tsx) are drawn by the Doc
+   renderer too, so their styles ride in the app's stylesheet. */
+@import "./ui/block-states.css";
+
 :root {
   --bg: #1e1e2e;
   --fg: #cdd6f4;
@@ -15,6 +19,14 @@
   --line: var(--raised);
   --line-strong: color-mix(in srgb, var(--muted) 55%, var(--surface));
   --divider: var(--line);
+  /* The selected row (#756), the same on every shape: this tint (mixed over
+     transparent, so it sits on a page, a sidebar or a sheet alike), a 3px
+     accent bar and a 1px accent edge, both drawn inset so a row never moves.
+     `--selected-edge` is the box-shadow for a row with its own radius; a
+     flat row's bar is its ::before. */
+  --selected: color-mix(in srgb, var(--accent) 14%, transparent);
+  --selected-edge: inset 0 0 0 1px var(--accent);
+  --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
   /* The rest of the palette (appearance.ts sets them all for the one
      picked): status colors, and text on a colored fill. */
   --ok: #a6e3a1;
@@ -107,7 +119,7 @@ body {
   height: 100%;
   background: var(--letterbox);
   color: var(--fg);
-  font: var(--t-body)/1.3 system-ui, sans-serif;
+  font: var(--t-body)/1.3 var(--f-ui);
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -322,7 +334,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 1px var(--space-1);
   border-radius: var(--tag-radius);
   background: var(--raised);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
 }
 
 /* A narrow window keeps the bar's room for tabs (and, in the desktop
@@ -758,15 +770,76 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: var(--text-sm);
 }
 
-/* A checkable item's dot hangs in the item's left padding, so its label
-   lines up with the items around it. */
-.menu-check {
+/* The lead column, when any row has an icon or a mark: 16px, so the labels
+   line up. A mark is a ● for one of, a ✓ for several. */
+.menu-lead {
   display: inline-block;
-  width: 8px;
-  margin-left: -8px;
+  width: 16px;
+  margin-right: 8px;
+  color: var(--dim);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.menu-lead svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.menu-lead.menu-check {
   color: var(--accent);
-  font-size: 9px; /* off-scale: menu check glyph */
-  vertical-align: 1px;
+  font-size: var(--text-sm);
+}
+
+.menu-item.danger .menu-lead {
+  color: inherit;
+}
+
+/* A phone's menu: a sheet along the bottom over the one backdrop, its tap
+   closing it. Above the side sheet (85) a menu opened from it is over, and
+   below a dialog (95). */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: var(--backdrop);
+}
+
+.menu.sheet {
+  inset: auto 0 0;
+  width: auto;
+  max-width: none;
+  max-height: 85%;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+/* Under a finger: rows are 44px with 15px text and 20px icons. A coarse
+   pointer wider than a phone keeps the dropdown, at touch size. */
+@media (max-width: 600px), (pointer: coarse) {
+  .menu-item {
+    min-height: 44px;
+    font-size: var(--text-lg);
+  }
+
+  .menu-item:not(.menu-parent) {
+    display: flex;
+    align-items: center;
+  }
+
+  .menu-lead,
+  .menu-lead svg {
+    width: 20px;
+  }
+
+  .menu-lead svg {
+    height: 20px;
+  }
+
+  .menu-key {
+    display: none;
+  }
 }
 
 /* A submenu's rows, under their parent and indented. */
@@ -973,7 +1046,7 @@ button.att {
   padding-left: 28px;
   margin-left: 26px;
   width: calc(100% - 26px);
-  min-height: 38px;
+  min-height: 44px;
   font-size: var(--t-body);
   color: var(--dim);
   border-left: 2px solid var(--line);
@@ -988,14 +1061,20 @@ button.att {
 }
 
 .sheet-item.current {
-  background: var(--raised);
+  background: var(--selected);
   color: var(--fg);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--selected-mark);
 }
 
 .sheet-item.sheet-pane.current {
-  box-shadow: none;
   border-left-color: var(--accent);
+  /* The 2px guide line is the bar's first 2px: 1px more makes it 3. */
+  box-shadow: inset 1px 0 0 var(--accent), var(--selected-edge);
+}
+
+/* Pressed on the selected row keeps the selection: a deeper tint. */
+.sheet-item.current:active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .needs-you.sheet-card {
@@ -2372,25 +2451,6 @@ button.att {
   line-height: 1.55;
 }
 
-.chat-block-empty {
-  margin: 18vh auto 0;
-  max-width: 420px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.chat-block-empty h3 {
-  margin: 0 0 6px;
-  color: var(--fg);
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-
-.chat-block-empty p {
-  margin: 0;
-  font-size: var(--text-md);
-}
-
 .chat-block-model {
   max-width: 40%;
   padding: 2px 6px;
@@ -3330,7 +3390,7 @@ button.att {
 }
 
 .control-name input {
-  font: var(--t-field) system-ui, sans-serif;
+  font: var(--t-field) var(--f-ui);
   width: 14rem;
   max-width: 100%;
 }
@@ -3694,7 +3754,7 @@ button.att {
   height: 22px;
   border-radius: 50%;
   overflow: hidden;
-  font: 600 10px system-ui, sans-serif; /* off-scale: avatar initials */
+  font: 600 10px var(--f-ui); /* off-scale: avatar initials */
   color: var(--on-color);
   background: var(--who);
   box-shadow: 0 0 0 2px var(--who);
@@ -3755,7 +3815,7 @@ button.att {
 .pane-driver {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 var(--text-xs) system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--who, var(--accent));
 }
@@ -3768,7 +3828,7 @@ button.att {
 .pane-take {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 var(--text-xs) system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--accent);
   pointer-events: auto;
@@ -4306,8 +4366,7 @@ button.att {
 }
 .swarm-rail h2 {
   margin: 0;
-  font: 800 var(--text-xl)/1 var(--f-display);
-  text-transform: uppercase;
+  font: 600 var(--text-lg)/20px var(--f-ui);
 }
 .swarm-rail header span {
   font: 500 var(--text-xs)/1 var(--f-mono);
@@ -4320,10 +4379,6 @@ button.att {
   gap: 10px;
   padding: 4px 14px 14px;
   overflow-y: auto;
-}
-.swarm-empty {
-  margin: 20px 4px;
-  color: var(--mute);
 }
 .swarm-waiting {
   padding: 10px 18px 16px;
@@ -4531,9 +4586,6 @@ button.att {
   }
   .swarm-rail header {
     padding: 10px 16px 6px;
-  }
-  .swarm-rail h2 {
-    font-size: var(--text-xl);
   }
   .swarm-cards {
     flex-direction: row;
@@ -4883,7 +4935,7 @@ button.att {
   flex-wrap: wrap;
   gap: 2px 10px;
   padding: 3px 8px;
-  font: var(--text-sm)/1.4 system-ui, sans-serif;
+  font: var(--text-sm)/1.4 var(--f-ui);
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
@@ -6823,24 +6875,6 @@ html[data-scheme="light"] .doc {
   font-size: var(--text-sm);
 }
 
-.agents-empty {
-  margin: 0 8px 16px;
-  padding: 16px 18px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--card-radius);
-  line-height: 1.5;
-}
-
-.agents-empty p {
-  margin: 4px 0 0;
-  color: var(--dim);
-}
-
-.agents-empty button {
-  margin-top: 10px;
-}
-
-.agents-empty b,
 .agents-none b {
   color: var(--fg);
 }
@@ -7370,7 +7404,6 @@ html[data-scheme="light"] .doc {
   padding: 8px 12px 12px;
 }
 
-.thread-empty,
 .thread-note {
   color: var(--dim);
   line-height: 1.45;
@@ -7486,7 +7519,7 @@ html[data-scheme="light"] .doc {
   border-radius: 8px;
   overflow: hidden;
   flex: none;
-  font: 700 var(--text-md) system-ui, sans-serif;
+  font: 700 var(--text-md) var(--f-ui);
   color: var(--on-color);
 }
 
@@ -7669,73 +7702,6 @@ html[data-scheme="light"] .doc {
 
 .msg-tools .msg-quick {
   font-size: 14px; /* off-scale: emoji glyph */
-}
-
-/* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
-.msg-menu {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-}
-
-.msg-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: var(--field-radius);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.msg-item:hover,
-.msg-item:focus-visible {
-  background: var(--raised);
-}
-
-.msg-item[aria-pressed="true"] {
-  color: var(--accent);
-}
-
-.msg-item.danger {
-  color: var(--danger);
-}
-
-.msg-item-icon {
-  width: 16px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.msg-item.danger .msg-item-icon {
-  color: inherit;
-}
-
-/* The long-press sheet's items sit under the emoji row. */
-.react-menu.with-items {
-  flex-wrap: wrap;
-}
-
-.react-menu-items {
-  display: flex;
-  flex: 1 0 100%;
-  flex-direction: column;
-}
-
-.react-menu.with-items > button + .react-menu-items,
-.react-menu.with-items > .react-menu-items:not(:first-child) {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
 }
 
 /* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
@@ -7961,7 +7927,7 @@ html[data-scheme="light"] .doc {
   }
 }
 
-/* On a phone the menu is a sheet along the bottom, under a long-press. */
+/* On a phone the menu is a sheet along the bottom. */
 @media (max-width: 600px) {
   .react-menu {
     position: fixed;
@@ -7986,6 +7952,27 @@ html[data-scheme="light"] .doc {
     top: auto;
     right: 0;
     bottom: 0;
+  }
+}
+
+/* The same row at the top of the message menu a long-press opens (its
+   `head`): part of that menu's sheet, not a sheet of its own. */
+.react-menu.react-row {
+  position: relative;
+  inset: auto;
+  justify-content: space-around;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+@media (max-width: 600px) {
+  .react-menu.react-row .emoji-picker {
+    position: fixed;
+    inset: auto 0 0;
   }
 }
 
@@ -8774,6 +8761,7 @@ input.chat-search {
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
+  min-height: 26px;
   width: calc(100% - 12px);
   margin: 0 6px;
   padding: 4px 10px;
@@ -8786,8 +8774,9 @@ input.chat-search {
 
 .chat.phone .chat-row {
   width: 100%;
+  min-height: 44px;
   margin: 0;
-  padding: 10px 16px;
+  padding: 0 16px;
   border-radius: 0;
   font-size: var(--t-body);
 }
@@ -8814,13 +8803,8 @@ input.chat-search {
 }
 
 .chat-row.selected {
-  background: var(--accent);
-  color: var(--surface);
-}
-
-.chat-row.selected .chat-sigil,
-.chat-row.selected.unread .chat-label {
-  color: inherit;
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .chat-sigil {
@@ -9082,12 +9066,6 @@ input.chat-search {
 .chat-thread .thread-offer {
   margin-left: 8px;
   margin-right: 8px;
-}
-
-.chat-empty {
-  align-items: center;
-  justify-content: center;
-  color: var(--dim);
 }
 
 /* The room's head and Details' are bars (shared/ui/bar.css, #686); the
@@ -10599,14 +10577,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border: 1px solid transparent;
 }
 
-.ws-session:hover,
-.ws-session.hi {
+.ws-session:hover {
   background: var(--raised);
 }
 
+/* The search's active row is the keyboard's: the focus outline, not hover's look. */
+.ws-session.hi {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .ws-session.current {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-session-main {
@@ -10698,16 +10681,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-session .rename {
   flex: 1;
   margin: 6px;
-}
-
-.ws-empty {
-  padding: 20px 12px;
-  color: var(--dim);
-  text-align: center;
-}
-
-.ws-empty button {
-  color: var(--accent);
 }
 
 .ws-sidebar-resize {
@@ -11068,7 +11041,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 var(--space-1);
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
 
@@ -11214,8 +11187,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-att-item.selected {
-  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-att-item-text {
@@ -11310,24 +11283,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* The empty drawer's steps (Discovery 5): Set up, Notify this device. */
-.ws-att-empty p {
-  margin: 0 0 6px;
-}
-
-.ws-att-empty .ws-att-acts {
-  justify-content: center;
-  margin-top: 12px;
-}
-
-.ws-att-empty .ws-att-acts .primary {
-  color: var(--on-color);
-}
-
-.ws-att-empty .ws-att-acts .secondary {
-  color: var(--fg);
 }
 
 /* The activity drawer's first-open line: what it keeps. */
@@ -11859,7 +11814,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--muted);
 }
 
@@ -12135,21 +12090,10 @@ html[data-workspace="new"] .thread-panel {
   font-weight: 400;
 }
 
-/* An empty machine says what a session is, and how to make one. */
-.empty .empty-title {
-  margin: 0 0 4px;
-  color: var(--fg);
-  font-size: var(--text-lg);
-}
-
 .empty .dim {
   margin: 0 0 14px;
   max-width: 420px;
   text-align: center;
-}
-
-.empty [data-no-sessions-host] {
-  margin: 0 0 14px;
 }
 
 /* Disabled with a reason (the title says it): it looks it. */
@@ -12761,40 +12705,9 @@ html[data-workspace="new"] .thread-panel {
   border-radius: 50%;
 }
 
-/* The message menu and Saved for later (#116). */
-.msg-menu-wrap {
-  position: relative;
-  display: flex;
-}
-
+/* Saved for later (#116). */
 .msg-tools .msg-saved.on {
   color: var(--warn, var(--accent));
-}
-
-.msg-menu {
-  position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.msg-tools .msg-menu button {
-  width: auto;
-  height: auto;
-  padding: 6px 10px;
-  border-radius: var(--tag-radius);
-  color: var(--fg);
-  font-size: var(--text-md);
-  text-align: left;
-  white-space: nowrap;
 }
 
 .saved-item {

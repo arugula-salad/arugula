@@ -54,8 +54,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     repository: the platform drops the access answers it keeps (10
     minutes) when one comes, so a removed collaborator is cut off at
     once rather than within 10 minutes. Without them, that's how long it
-    takes. Any event that carries a repository also marks a linked repo
-    private when GitHub says it is.
+    takes. Only a clear answer is kept: when GitHub can't be asked (an
+    error, a 5xx, its rate limit), the repo is withheld as `unsure` and
+    asked again next time, and the inbox keeps that person's entries,
+    seen and done, as they were. Any event that carries a repository also
+    marks a linked repo private when GitHub says it is.
   - **Webhook URL** `https://control.example.com/github/webhook`, with a
     secret. **Callback URL** `https://control.example.com/auth/github/callback`
     if it also signs people in.
@@ -1709,12 +1712,19 @@ platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
 the relay, push, block and doc origins, the jump host, telemetry) and
 the platform (`arugula-platform`:
 chat, Cloud, billing, projects and grants, and the GitHub App's webhook
-and key, M161). The platform runs in one of two ways, from the same binaries:
+and key, M161). The platform runs in one of two ways, from the same binaries.
+**Production runs it out of process.** It went out of process at M141's
+window, with the hub calling `http://arugula-platform.internal:7700`, and
+has gone through Flycast since M145's window (2026-10-21): the hub's
+`ARUGULA_PLATFORM` is `http://arugula-platform.flycast:7700`, and
+`arugula-platform` runs two machines. In process is only the rollback
+("Rolling back to in process", below), and it starts by copying the
+platform's tables back.
 
-- **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
-  rollback): inside the hub, as one Fly app. Production runs this way
-  until M141's window.
-- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145):
+- **In process** (`ARUGULA_PLATFORM=in-process`, the default when it's
+  unset, and the rollback): inside the hub, as one Fly app. Production
+  ran this way until M141's window.
+- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145; production's):
   its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), on
   its own Fly Managed Postgres (`arugula-platform-db`, from M145), with no
   volume (Arugula #72; it had `platform_data` at `/data` for `platform.db` until

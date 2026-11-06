@@ -433,10 +433,10 @@ enum Command {
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
     /// lists them (and how each one's setup goes), `open` wakes one and
     /// says its machine, `edit` changes its spec, `secret` sets what it
-    /// clones with and takes as env, `rebuild` makes its box again from its
-    /// spec (asking the box for unpushed work first), `delete` takes it and
-    /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// clones with and takes as env, `rebuild` makes its machine again from
+    /// its spec (asking the machine for unpushed work first), `delete` takes
+    /// it and its machine away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never on the machine; Anthropic's may be a
     /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).

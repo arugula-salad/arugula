@@ -9,6 +9,7 @@
 // Routes: `#chat` (the newest unread room, or the newest), `#chat=<room>`
 // and `#chat=<room>&msg=<n>`, `#chat=activity`, `#chat=search/<words>`.
 
+import { EmptyState } from "../ui/block-states";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
 import { bold, counted, listedInChat } from "./unread";
@@ -489,8 +490,12 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
         {view ?? (
-          <div class="chat-thread chat-empty">
-            {scope && scope.team === null ? "No rooms yet. A pane's or a session's room shows here once someone writes in it." : "No rooms yet. Make a channel, or write to someone in your team."}
+          <div class="chat-thread">
+            {scope && scope.team === null ? (
+              <EmptyState title="No rooms yet." why="A pane's or a session's room shows here once someone writes in it." />
+            ) : (
+              <EmptyState title="No rooms yet." why="Make a channel, or write to someone in your team." />
+            )}
           </div>
         )}
       </div>
@@ -504,15 +509,18 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
 function RoomMissing({ pinned }: { pinned?: boolean }) {
   const { nav } = usePlatformApi();
   return (
-    <div class="chat-thread chat-empty" data-room-missing>
-      <p>That room isn't one you can read (or it's gone).</p>
-      {!pinned && (
-        <p>
-          <button class="link" data-room-missing-back onClick={() => nav.openChat()}>
-            Back to your rooms
-          </button>
-        </p>
-      )}
+    <div class="chat-thread" data-room-missing>
+      <EmptyState
+        title="That room isn't one you can read."
+        why="It may be gone."
+        action={
+          !pinned && (
+            <button class="secondary" data-room-missing-back onClick={() => nav.openChat()}>
+              Back to your rooms
+            </button>
+          )
+        }
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@
 // is, brighter where it has a figure, and the whole as long as the Doc is. So a
 // note and a long plan look different without opening either.
 
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
@@ -190,29 +191,32 @@ function Page({ client }: { client: Client }) {
 
   const status =
     rows === null && !error ? (
-      <p class="dim list-status" data-docs-loading>
-        Reading this machine's Docs…
-      </p>
+      <BlockLoading inline data-docs-loading what="this machine's Docs" />
     ) : rows?.length === 0 ? (
-      <div class="agents-empty list-status" data-docs-empty>
-        <b>Docs your agents write show up here.</b>
-        <p>Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps one here.</p>
+      <EmptyState
+        where="page"
+        data-docs-empty
+        title="No Docs yet."
+        why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
+        action={
+          <button
+            class="primary"
+            data-docs-start-agent
+            onClick={() => {
+              closeDocsPage();
+              startAgent(client, { session: client.session ?? undefined });
+            }}
+          >
+            Start an agent
+          </button>
+        }
+      >
         <AgentCanCard client={client} only="doc" />
-        <button
-          class="primary"
-          data-docs-start-agent
-          onClick={() => {
-            closeDocsPage();
-            startAgent(client, { session: client.session ?? undefined });
-          }}
-        >
-          Start an agent
-        </button>
-      </div>
+      </EmptyState>
     ) : rows && shown.length === 0 && narrowed ? (
-      <p class="dim list-status" data-docs-none>
+      <EmptyLine data-docs-none>
         {q ? "No Doc's title, opening or headings match." : filter === "open" ? "No Doc is open in a pane." : "No Doc is shared."}
-      </p>
+      </EmptyLine>
     ) : undefined;
 
   return (
@@ -242,7 +246,7 @@ function Page({ client }: { client: Client }) {
             </p>
           )
         }
-        status={status}
+        status={status && <div class="list-status">{status}</div>}
         row={(r) => ({
           tone: isOpen(r) ? "live" : undefined,
           title: <span data-doc-title>{r.title}</span>,

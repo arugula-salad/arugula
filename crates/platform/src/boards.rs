@@ -546,8 +546,8 @@ async fn chips(
     let mut live: HashMap<String, wire::Live> = HashMap::new();
     if !ids.items.is_empty() {
         let repos = app.db.linked_repos(project)?;
-        let viewer = Viewer::of(app, account).await?;
-        let checked = viewer::check(app, &viewer, &repos).await?;
+        let mut viewer = Viewer::of(app, account).await?;
+        let checked = viewer::check(app, &mut viewer, &repos).await?;
         let found: Vec<&str> = ids.items.iter().map(String::as_str).collect();
         // A Plane item is read through the connections of the project it's on a board of.
         let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
@@ -1503,8 +1503,8 @@ async fn known(
     if items.is_empty() {
         return Ok(out);
     }
-    let viewer = Viewer::of(app, account).await?;
-    let checked = viewer::check(app, &viewer, &app.db.linked_repos(project)?).await?;
+    let mut viewer = Viewer::of(app, account).await?;
+    let checked = viewer::check(app, &mut viewer, &app.db.linked_repos(project)?).await?;
     let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
     for i in app.db.tracker_items_among(&conns, items)? {
         if let Some(c) = conns.get(i.mirror_id) {

@@ -20,7 +20,7 @@ import type { Client } from "../client";
 import { gateKey, type Gate, type PaneId } from "../../shared/proto";
 import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
-import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { Bar } from "../../shared/ui/bar";
 
 export interface AppState {
@@ -190,10 +190,10 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         </div>
       )}
       {!owner ? (
-        <BlockEmpty>
-          <p>{name} is a studio app of this machine's owner.</p>
-          <p>Only they can open it here; its questions still come to you if you may answer them.</p>
-        </BlockEmpty>
+        <EmptyState
+          title={`${name} is the owner's app.`}
+          why="Only they can open it here; its questions still come to you if you may answer them."
+        />
       ) : error ? (
         <BlockError title={`Couldn't get into ${name}`} detail={error} retry={() => setWant((w) => ({ n: w.n + 1 }))} />
       ) : (

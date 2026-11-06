@@ -88,10 +88,12 @@ api-contract mode="write":
 # Write DECISIONS.md, the index of the decision records in docs/decisions/,
 # and docs/capabilities/README.md, the index of the feature records. Without
 # `write`, check they're current, and that no standing decision names a path
-# that isn't there.
+# that isn't there. Either way, check docs/data-model.md still matches the
+# code: its tables, paths, ID prefixes and "Don't say" words.
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
     node scripts/capabilities.mjs {{ if mode == "write" { "" } else { "--check" } }}
+    node scripts/data-model-check.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
 # What the code and CI say this week, for keeping up (docs/capabilities/):
 # feature records behind the code, where the week's commits went, and what
@@ -922,6 +924,7 @@ test-scripts:
     scripts/tests/ci-auto-revert.sh
     scripts/tests/quarantine.sh
     scripts/tests/capabilities.sh
+    scripts/tests/data-model-check.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh

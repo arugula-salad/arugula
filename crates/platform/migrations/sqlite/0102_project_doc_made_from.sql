@@ -1,4 +1,4 @@
--- 0101: a team Doc made from a machine Doc's copy (Arugula #418, Share
+-- 0102: a team Doc made from a machine Doc's copy (Arugula #418, Share
 -- with…). A snapshot: the team owns and edits it, and these say where it
 -- came from. `made_from_doc` is the copy's `pdc_` and `made_from_project`
 -- the project it was in; `made_from_rev` is the copy's rev at the snapshot

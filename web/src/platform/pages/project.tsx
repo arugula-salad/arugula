@@ -13,6 +13,7 @@ import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { Time } from "../../shared/ui/time";
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names, roomPath } from "../links";
@@ -71,7 +72,7 @@ export function ProjectHome({ id }: { id: string }) {
           <SectionHead title="Chat" all={chatPath} onAll={(e) => follow(e, chatPath)} />
           {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
-          {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
+          {chat.on && rooms.length === 0 && <EmptyLine>No channels yet.</EmptyLine>}
           <ul class="platform-list sw-rows" data-project-rooms>
             {rooms
               .sort((a, b) => Number(a.kind === "dm") - Number(b.kind === "dm") || a.name.localeCompare(b.name))
@@ -115,21 +116,31 @@ function ChatOff({ p }: { p: PlatformProject }) {
   const teams = `${controlOrigin()}/#teams`;
   if (!p.team)
     return (
-      <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat comes with a team: its channels and direct messages. Make a team, or turn chat on for one you own, under Teams on your machines page.</p>
-        <a class="secondary" href={teams} data-chat-teams>
-          Teams on your machines page
-        </a>
-      </div>
+      <EmptyState
+        where="page"
+        data-chat-off
+        title="Chat comes with a team."
+        why="A team has channels and direct messages. Make a team, or turn chat on for one you own, under Teams on your machines page."
+        action={
+          <a class="secondary" href={teams} data-chat-teams>
+            Teams on your machines page
+          </a>
+        }
+      />
     );
   if (p.team.role === "owner")
     return (
-      <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels and direct messages, here and on your machines page.</p>
-        <a class="primary" href={teams} data-chat-turn-on>
-          Turn on chat
-        </a>
-      </div>
+      <EmptyState
+        where="page"
+        data-chat-off
+        title={`Chat is off for ${p.team.name}.`}
+        why="Turned on, the team gets channels and direct messages, here and on your machines page."
+        action={
+          <a class="primary" href={teams} data-chat-turn-on>
+            Turn on chat
+          </a>
+        }
+      />
     );
   const owners = p.team.members.filter((m) => m.role === "owner").map((m) => m.name);
   const ask = async () => {
@@ -142,14 +153,17 @@ function ChatOff({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <div class="platform-empty" data-chat-off>
-      <p class="dim">
-        Chat is off for {p.team.name}. Its owners turn it on{owners.length ? ` (${owners.join(", ")})` : ""}.
-      </p>
-      <button class="secondary" data-chat-ask-owner onClick={() => void ask()}>
-        Ask an owner
-      </button>
-    </div>
+    <EmptyState
+      where="page"
+      data-chat-off
+      title={`Chat is off for ${p.team.name}.`}
+      why={`Its owners turn it on${owners.length ? ` (${owners.join(", ")})` : ""}.`}
+      action={
+        <button class="secondary" data-chat-ask-owner onClick={() => void ask()}>
+          Ask an owner
+        </button>
+      }
+    />
   );
 }
 
@@ -196,10 +210,13 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
           {repos.length ? (
             rows(repos, "project-repos")
           ) : (
-            <div class="platform-empty" data-project-repos-none>
-              <p class="dim">{REPOS_MEAN}</p>
-              {changes ? step(`${settings}#repos`, "Link a repo", "project-link-repo") : <p class="dim">A team's owners and editors link repos.</p>}
-            </div>
+            <EmptyState
+              where="page"
+              data-project-repos-none
+              title="No repos linked yet."
+              why={changes ? REPOS_MEAN : `${REPOS_MEAN} A team's owners and editors link repos.`}
+              action={changes && step(`${settings}#repos`, "Link a repo", "project-link-repo")}
+            />
           )}
         </>
       )}
@@ -209,10 +226,13 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
           {envs.length ? (
             rows(envs, "project-envs")
           ) : (
-            <div class="platform-empty" data-project-envs-none>
-              <p class="dim">{ENVIRONMENTS_MEAN}</p>
-              {owner ? step(`${settings}#environments`, "Make an environment", "project-make-env") : <p class="dim">A project's owners make its environments.</p>}
-            </div>
+            <EmptyState
+              where="page"
+              data-project-envs-none
+              title="No environments yet."
+              why={owner ? ENVIRONMENTS_MEAN : `${ENVIRONMENTS_MEAN} A project's owners make its environments.`}
+              action={owner && step(`${settings}#environments`, "Make an environment", "project-make-env")}
+            />
           )}
         </>
       )}
@@ -247,21 +267,27 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
       <SectionHead title="Runs" all={all} onAll={(e) => follow(e, all)} />
       {list.length === 0 &&
         (whyNoStart(p) ? (
-          <p class="dim" data-project-runs-why>
-            No runs yet. {whyNoStart(p)}
-          </p>
+          <EmptyState where="page" data-project-runs-why title="No runs yet." why={whyNoStart(p)} />
         ) : workspaces && !workspaces.length ? (
-          <div class="platform-empty" data-project-runs-none>
-            <p class="dim">No runs yet. A run is a command on one of the project's cloud workspaces: make one first.</p>
-            <NewWorkspaceButton project={p.id} />
-          </div>
+          <EmptyState
+            where="page"
+            data-project-runs-none
+            title="No runs yet."
+            why="A run is a command on one of the project's cloud workspaces. It has none yet: make one first."
+            action={<NewWorkspaceButton project={p.id} />}
+          />
         ) : (
-          <div class="platform-empty" data-project-runs-none>
-            <p class="dim">No runs yet. A run is a command on one of the project's cloud workspaces, by hand, on a schedule or on an event.</p>
-            <a class="primary" href={`${all}#new-run`} onClick={(e) => follow(e, `${all}#new-run`)} data-project-start-run>
-              Start a run
-            </a>
-          </div>
+          <EmptyState
+            where="page"
+            data-project-runs-none
+            title="No runs yet."
+            why="A run is a command on one of the project's cloud workspaces, by hand, on a schedule or on an event."
+            action={
+              <a class="primary" href={`${all}#new-run`} onClick={(e) => follow(e, `${all}#new-run`)} data-project-start-run>
+                Start a run
+              </a>
+            }
+          />
         ))}
       <ul class="platform-list sw-rows" data-project-runs>
         {list.map((r) => {

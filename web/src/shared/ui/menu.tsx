@@ -1,7 +1,7 @@
 // Right-click menus: one open at a time, closed by Escape, a click
 // elsewhere, or choosing an item.
 
-import { Fragment } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
 
@@ -33,6 +33,19 @@ export type MenuItem =
        * confirm"); the second runs it. A second click straight after the
        * first (a double-click) is ignored (#328). */
       confirm?: string;
+      /** A 16px mark for the row's lead column (an `Svg` of the rail's). A
+       * menu gets the column when any row has an icon or a mark, and then
+       * every row keeps it, so the labels line up. */
+      icon?: ComponentChildren;
+      /** With `checked`: one of several that can be ticked together. Its mark
+       * is a ✓, it is a `menuitemcheckbox`, and choosing it ticks it in place
+       * and leaves the menu open. (A plain `checked` is a ● and one of.) */
+      multi?: boolean;
+      /** Shown in the row's place for a beat after it runs ("Copied"), then
+       * the menu shuts. */
+      done?: string;
+      /** Attributes for the row, such as a `data-` hook for the specs. */
+      attrs?: Attrs;
     }
   /** `name`: the header holds a name (a channel's, a login), shown as
    * written rather than in capitals (UI audit #169). `note`: a line under
@@ -44,7 +57,30 @@ export type MenuItem =
   | { label: string; submenu: MenuItem[]; id?: string }
   | "separator";
 
-interface OpenMenu {
+type Attrs = Record<string, string | boolean>;
+
+/** What a menu takes besides its items. */
+export interface MenuOpts {
+  /** The button that opens it (a ▾, a …): it gets `aria-expanded`, the first
+   * item gets the keys, and the focus goes back to it when the menu shuts. */
+  from?: HTMLElement | null;
+  /** The menu's right edge is at x, not its left (a ⋯ at a row's end). */
+  end?: boolean;
+  /** Its accessible name. */
+  label?: string;
+  /** Attributes for the menu itself, such as a `data-` hook for the specs. */
+  attrs?: Attrs;
+  /** Drawn above the items (chat's emoji row). */
+  head?: ComponentChildren;
+  /** It shut, by whatever means. */
+  onClose?: () => void;
+}
+
+/** A phone's width: a menu is a sheet along the bottom there, over the same
+ * `--backdrop` a dialog has. */
+const SHEET = "(max-width: 600px)";
+
+interface OpenMenu extends MenuOpts {
   x: number;
   y: number;
   items: MenuItem[];
@@ -56,6 +92,8 @@ interface OpenMenu {
 /** How long a row asking to be confirmed ignores clicks: the second click
  * of a double-click lands here (the same as the confirm dialog's). */
 const CONFIRM_SETTLE_MS = 500;
+/** How long a row that says it ran ("Copied") is shown before the menu shuts. */
+const DONE_MS = 700;
 
 let current: OpenMenu | null = null;
 /** What had the focus when the menu opened: an item gives it back before it
@@ -71,16 +109,36 @@ const changed = () => listeners.forEach((fn) => fn());
  * over the tab view's), else each would close the other's on a click. */
 const layers: object[] = [];
 
+/** The menu a press on its own button just shut: the click that follows
+ * would open it again, so it stays shut (the button is a toggle). */
+let pressShut: { el: HTMLElement; at: number } | null = null;
+const PRESS_SHUT_MS = 600;
+
 /** `opts.from`: the button that opens it (a ▾, a …): it gets
  * `aria-expanded`, the first item gets the keys, and the focus goes back
- * to it when the menu shuts. */
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], opts: { from?: HTMLElement | null } | HTMLElement = {}) {
+ * to it when the menu shuts. False when it stayed shut: the press on the
+ * button had just shut it. */
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[], opts: MenuOpts | HTMLElement = {}): boolean {
   e.preventDefault();
   if (opts instanceof HTMLElement) opts = { from: opts };
-  if (!current) opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  if (opts.from && pressShut?.el === opts.from && Date.now() - pressShut.at < PRESS_SHUT_MS) {
+    pressShut = null;
+    return false;
+  }
+  pressShut = null;
+  if (current) current.onClose?.();
+  else opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   expanded(opts.from ?? null);
-  current = { x: e.clientX, y: e.clientY, items, focus: true };
+  current = { ...opts, x: e.clientX, y: e.clientY, items, focus: true };
   changed();
+  return true;
+}
+
+/** Where a menu hangs from a button: under it, its left edge at the
+ * button's (or its right edge at the button's, with `end`). */
+export function menuBelow(el: HTMLElement) {
+  const r = el.getBoundingClientRect();
+  return { clientX: r.left, clientY: r.bottom + 4, preventDefault() {} };
 }
 
 function expanded(el: HTMLElement | null) {
@@ -118,10 +176,24 @@ export const escapeTaken = (e: Event) => tookEscape.has(e);
 export function closeMenu() {
   expanded(null);
   if (current) {
+    const was = current;
     current = null;
     changed();
+    was.onClose?.();
   }
   opener = null;
+}
+
+/** A menu drawn where it is used, inside the element that has it, rather than
+ * at the page's one layer: mounted when `show` should open it (it calls
+ * `openMenu`, which says whether it did), unmounted by `close`, which the
+ * menu's `onClose` calls too. The menu belongs to the thing it is for, so a
+ * spec (or a style) can reach it from there. */
+export function MenuHost({ show, close }: { show: () => boolean; close: () => void }) {
+  useEffect(() => {
+    if (!show()) close();
+  }, []);
+  return <MenuLayer />;
 }
 
 export function MenuLayer() {
@@ -140,6 +212,11 @@ export function MenuLayer() {
   const subOpenedAt = useRef(0);
   /** The row asking to be confirmed: its label, and when it asked. */
   const [armed, setArmed] = useState<{ label: string; at: number } | null>(null);
+  /** Several-at-once rows ticked or cleared since it opened, by row: the
+   * menu stays open, so it draws their new state itself. */
+  const [ticks, setTicks] = useState<Record<string, boolean>>({});
+  /** The row that ran and says so ("Copied") for a beat before it shuts. */
+  const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -152,7 +229,12 @@ export function MenuLayer() {
       closeAndReturn();
     };
     const down = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) closeMenu();
+      const t = e.target as Element;
+      // The sheet's backdrop closes it on its click, so the tap that shuts it
+      // doesn't fall through to what is under it.
+      if (!ref.current || ref.current.contains(t) || t.closest?.("[data-menu-backdrop]")) return;
+      if (from?.contains(t)) pressShut = { el: from, at: Date.now() };
+      closeMenu();
     };
     window.addEventListener("keydown", key, true);
     window.addEventListener("pointerdown", down, true);
@@ -183,14 +265,18 @@ export function MenuLayer() {
     ref.current.style.left = was;
     ref.current.style.maxHeight = wasMax;
     focusIn.current = current.focus;
+    if (matchMedia(SHEET).matches) return setPos({ left: 0, top: 0 });
+    const x = current.end ? current.x - r.width : current.x;
     setPos({
-      left: Math.max(8, Math.min(current.x, window.innerWidth - r.width - 8)),
+      left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
     });
   }, [current, top]);
   useEffect(() => {
     setSub(null);
     setArmed(null);
+    setTicks({});
+    setDone(null);
   }, [current]);
   // An opened submenu is scrolled into view, by the least that shows it,
   // and never past its own row: that stays shown.
@@ -253,29 +339,60 @@ export function MenuLayer() {
     items[to].focus();
   };
 
-  const renderItem = (item: MenuItem, i: number, inSub = false) =>
-    item === "separator" ? (
-      <div key={i} class="menu-sep" />
-    ) : "header" in item ? (
-      <Fragment key={i}>
-        <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
-        {item.note && <div class="menu-note">{item.note}</div>}
-      </Fragment>
-    ) : "submenu" in item ? null : (
+  /** Whether any row has an icon or a mark: then every row has the column. */
+  const lead =
+    !!current &&
+    current.items.some((it) =>
+      typeof it !== "object" || "header" in it
+        ? false
+        : "submenu" in it
+          ? it.submenu.some((x) => typeof x === "object" && "label" in x && "run" in x && (x.icon || x.checked !== undefined || x.current !== undefined))
+          : !!it.icon || it.checked !== undefined || it.current !== undefined,
+    );
+
+  const renderItem = (item: MenuItem, i: number, inSub = false) => {
+    if (item === "separator") return <div key={i} class="menu-sep" />;
+    if ("header" in item)
+      return (
+        <Fragment key={i}>
+          <div class={item.name ? "menu-header named" : "menu-header"}>{item.header}</div>
+          {item.note && <div class="menu-note">{item.note}</div>}
+        </Fragment>
+      );
+    if ("submenu" in item) return null;
+    const key = `${inSub ? `${sub}.` : ""}${i}`;
+    const on = item.multi ? (ticks[key] ?? !!item.checked) : item.checked;
+    const mark = item.multi ? (on ? "✓" : "") : item.checked || item.current ? "●" : "";
+    const marked = item.checked !== undefined || item.current !== undefined;
+    const saying = done === key;
+    return (
       <button
         key={i}
-        role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-        aria-checked={item.checked}
+        role={item.multi ? "menuitemcheckbox" : item.checked === undefined ? "menuitem" : "menuitemradio"}
+        aria-checked={on}
         aria-current={item.current || undefined}
         aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
         class={`menu-item${item.danger || (item.confirm && armed?.label === item.label) ? " danger" : ""}${item.faded ? " faded" : ""}`}
-        disabled={item.disabled}
+        disabled={item.disabled || saying}
         title={item.hint}
+        {...item.attrs}
         onClick={(e) => {
           if (inSub && e.detail > 1 && Date.now() - subOpenedAt.current < CONFIRM_SETTLE_MS) return;
           if (item.confirm) {
             if (!armed || armed.label !== item.label) return setArmed({ label: item.label, at: Date.now() });
             if (Date.now() - armed.at < CONFIRM_SETTLE_MS) return;
+          }
+          if (item.multi) {
+            setTicks({ ...ticks, [key]: !on });
+            item.run();
+            return;
+          }
+          if (item.done) {
+            const shown = current;
+            setDone(key);
+            item.run();
+            setTimeout(() => current === shown && closeAndReturn(), DONE_MS);
+            return;
           }
           // Shut for good before the item runs: a dialog it opens finds
           // no menu left over, and the focus where the menu was opened.
@@ -283,13 +400,13 @@ export function MenuLayer() {
           item.run();
         }}
       >
-        {(item.checked ?? item.current) !== undefined && (
-          <span class="menu-check" aria-hidden="true">
-            {item.checked || item.current ? "●" : ""}
+        {lead && (
+          <span class={marked ? "menu-lead menu-check" : "menu-lead"} aria-hidden="true">
+            {marked ? mark : item.icon}
           </span>
         )}
-        {item.confirm && armed?.label === item.label ? item.confirm : item.label}
-        {item.detail && (
+        {saying ? item.done : item.confirm && armed?.label === item.label ? item.confirm : item.label}
+        {item.detail && !saying && (
           <>
             {" "}
             <span class="menu-detail">{item.detail}</span>
@@ -302,55 +419,68 @@ export function MenuLayer() {
         )}
       </button>
     );
+  };
 
   if (!current || !top) return null;
+  const sheet = matchMedia(SHEET).matches;
   return (
-    <div
-      ref={ref}
-      class="menu"
-      role="menu"
-      style={{
-        left: `${pos?.left ?? current.x}px`,
-        top: `${pos?.top ?? current.y}px`,
-        visibility: pos ? "visible" : "hidden",
-        // Where it was placed it stays: a submenu opening under the pointer
-        // makes it scroll, never move (and a gutter of 8px below it).
-        boxSizing: "border-box",
-        maxHeight: `${window.innerHeight - (pos?.top ?? 8) - 8}px`,
-      }}
-      onContextMenu={(e) => e.preventDefault()}
-      onKeyDown={onKey}
-    >
-      {current.items.map((item, i) =>
-        typeof item === "object" && "submenu" in item ? (
-          <Fragment key={i}>
-            <button
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={sub === i}
-              data-sub={i}
-              class="menu-item menu-parent"
-              onClick={(e) => {
-                subOpenedAt.current = sub !== i && e.detail > 0 ? Date.now() : 0;
-                setSub(sub === i ? null : i);
-              }}
-            >
-              {item.label}
-              <span class="menu-chevron" aria-hidden="true">
-                {sub === i ? "▾" : "▸"}
-              </span>
-            </button>
-            {sub === i && (
-              <div class="menu-sub" role="group" aria-label={item.label}>
-                {item.submenu.map((it, j) => renderItem(it, j, true))}
-              </div>
-            )}
-          </Fragment>
-        ) : (
-          renderItem(item, i)
-        ),
-      )}
-    </div>
+    <>
+      {sheet && <div class="menu-backdrop" data-menu-backdrop onClick={closeAndReturn} />}
+      <div
+        ref={ref}
+        class={sheet ? "menu sheet" : "menu"}
+        role="menu"
+        aria-label={current.label}
+        {...current.attrs}
+        style={
+          sheet
+            ? { visibility: pos ? "visible" : "hidden" }
+            : {
+                left: `${pos?.left ?? current.x}px`,
+                top: `${pos?.top ?? current.y}px`,
+                visibility: pos ? "visible" : "hidden",
+                // Where it was placed it stays: a submenu opening under the pointer
+                // makes it scroll, never move (and a gutter of 8px below it).
+                boxSizing: "border-box",
+                maxHeight: `${window.innerHeight - (pos?.top ?? 8) - 8}px`,
+              }
+        }
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={onKey}
+      >
+        {current.head}
+        {current.items.map((item, i) =>
+          typeof item === "object" && "submenu" in item ? (
+            <Fragment key={i}>
+              <button
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={sub === i}
+                data-sub={i}
+                class="menu-item menu-parent"
+                onClick={(e) => {
+                  subOpenedAt.current = sub !== i && e.detail > 0 ? Date.now() : 0;
+                  setSub(sub === i ? null : i);
+                }}
+              >
+                {lead && <span class="menu-lead" aria-hidden="true" />}
+                {item.label}
+                <span class="menu-chevron" aria-hidden="true">
+                  {sub === i ? "▾" : "▸"}
+                </span>
+              </button>
+              {sub === i && (
+                <div class="menu-sub" role="group" aria-label={item.label}>
+                  {item.submenu.map((it, j) => renderItem(it, j, true))}
+                </div>
+              )}
+            </Fragment>
+          ) : (
+            renderItem(item, i)
+          ),
+        )}
+      </div>
+    </>
   );
 }
 

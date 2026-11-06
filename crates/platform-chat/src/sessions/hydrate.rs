@@ -346,8 +346,9 @@ async fn item(app: &Platform, room: &Room, asker: &str) -> Result<Option<Item>> 
     if !target.starts_with("fi_") {
         return Ok(None);
     }
-    let v = Viewer::of(app, asker).await.map_err(|e| anyhow::anyhow!("{}", e.1))?;
-    let Some((readable, repo)) = viewer::item(app, &v, target).await.map_err(|e| anyhow::anyhow!("{}", e.1))? else {
+    let mut v = Viewer::of(app, asker).await.map_err(|e| anyhow::anyhow!("{}", e.1))?;
+    let Some((readable, repo)) = viewer::item(app, &mut v, target).await.map_err(|e| anyhow::anyhow!("{}", e.1))?
+    else {
         return Ok(None);
     };
     let Some(i) = app.db.forge_item(&readable, target)? else { return Ok(None) };

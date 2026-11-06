@@ -4,6 +4,7 @@
 // phone. It is the same message and the same composer the room has
 // (./room), so a reply has its reactions, edit, delete and mentions.
 
+import { BlockLoading } from "../ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
@@ -139,7 +140,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
       </header>
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <div class="thread-list thread-replies" ref={list} onScroll={onScroll}>
-        {t === undefined && !error && <p class="thread-empty">Loading…</p>}
+        {t === undefined && !error && <BlockLoading inline what="the thread" />}
         {error && <p class="thread-error">{error}</p>}
         {t?.older && (
           <button class="chat-older" data-thread-older onClick={() => void store.threads.older(room.id, parent)}>

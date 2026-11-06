@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -96,33 +97,35 @@ export function DeploysPage({ project }: { project: string }) {
           {err}
         </p>
       )}
-      {!err && (!page || !envs) && <p class="dim">Loading…</p>}
+      {!err && (!page || !envs) && <BlockLoading inline what="deploys" />}
       {page && envs && page.deploys.length === 0 && (
-        <div class="platform-empty" data-deploys-none>
-          <p>{DEPLOYS_MEAN}</p>
-          {envs.length === 0 ? (
-            role === "owner" ? (
-              <>
-                <p class="dim">It needs an environment to go to first: where it goes, and the driver that applies it.</p>
+        <EmptyState
+          where="page"
+          data-deploys-none
+          title="No deploys yet."
+          why={
+            envs.length === 0
+              ? `${DEPLOYS_MEAN} It needs an environment to go to first: where it goes, and the driver that applies it.${role === "owner" ? "" : " A project's owners make those."}`
+              : plans
+                ? DEPLOYS_MEAN
+                : `${DEPLOYS_MEAN} A team's owners and editors plan deploys; you can read them here.`
+          }
+          action={
+            envs.length === 0 ? (
+              role === "owner" && (
                 <a class="primary" href={envPath} data-deploys-make-env onClick={(e) => follow(e, envPath)}>
                   Make an environment
                 </a>
-              </>
+              )
             ) : (
-              <p class="dim" data-deploys-why>
-                It needs an environment first, and a project's owners make those.
-              </p>
+              plans && (
+                <a class="primary" href={deployPath} data-deploys-start onClick={(e) => follow(e, deployPath)}>
+                  Deploy…
+                </a>
+              )
             )
-          ) : plans ? (
-            <a class="primary" href={deployPath} data-deploys-start onClick={(e) => follow(e, deployPath)}>
-              Deploy…
-            </a>
-          ) : (
-            <p class="dim" data-deploys-why>
-              A team's owners and editors plan deploys; you can read them here.
-            </p>
-          )}
-        </div>
+          }
+        />
       )}
       {!!page?.deploys.length && (
         <table class="settings-table deploy-table deploys-table" data-deploys-list>

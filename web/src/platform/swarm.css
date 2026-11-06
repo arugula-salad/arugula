@@ -91,7 +91,7 @@
    page, not in it. */
 
 /* Every page is in the swarm's face (UI audit #157), its loading and
-   missing notes too, chat's sidebar and rooms, and the dialogs and menus
+   missing notes too, chat's sidebar and rooms, and the dialogs
    over them; and the bar over them, its places' counts too (UI audit
    #170), so the page doesn't change face under its own bar. */
 .platform-bar,
@@ -99,8 +99,7 @@
 .platform .sw-page,
 .chat-body,
 .chat.phone,
-#root .prompt-backdrop,
-#root .menu {
+#root .prompt-backdrop {
   font-family: var(--f-ui);
 }
 
@@ -331,6 +330,16 @@
 
 .platform .sw-cards .sw-card:is(:hover, :focus-visible, :focus-within) {
   box-shadow: 0 0 20px color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+/* The selected card (#756): the tint, the accent bar and a 1px accent edge, whatever the tone. */
+.platform .sw-cards .sw-card[aria-current="true"] {
+  background-image: linear-gradient(var(--selected), var(--selected));
+  box-shadow: var(--selected-edge);
+}
+
+.platform .sw-cards .sw-card[aria-current="true"]::before {
+  background: var(--accent);
 }
 
 /* An inbox entry once seen: still there, no longer calling. */
