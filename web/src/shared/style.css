@@ -5606,7 +5606,7 @@ html[data-scheme="light"] .doc {
 .doc-head {
   margin: 0 0 36px;
   padding-bottom: 14px;
-  border-bottom: 2px solid var(--doc-rule);
+  border-bottom: 1px solid var(--doc-line);
 }
 
 .doc-head-row {

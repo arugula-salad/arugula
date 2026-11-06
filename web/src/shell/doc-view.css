@@ -43,7 +43,7 @@
 .doc-notice-title {
   margin: 0;
   padding-bottom: 14px;
-  border-bottom: 2px solid var(--doc-rule);
+  border-bottom: 1px solid var(--doc-line);
   font: 800 var(--text-doc)/1.05 var(--f-display);
   letter-spacing: var(--track-display);
   text-wrap: balance;
