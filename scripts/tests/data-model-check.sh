@@ -3,7 +3,8 @@
 # It fails on a table that's gone from tables.toml, a path that's gone, an ID
 # prefix nothing mints outside tests, and a "Don't say" word in the MCP tool
 # list or the CLI's help, but not in an allowed phrase, and not in a doc
-# comment clap never shows. Against a small fake checkout.
+# comment clap never shows, and on reading fewer help texts than its floor.
+# Against a small fake checkout.
 #
 #   scripts/tests/data-model-check.sh
 set -euo pipefail
@@ -18,6 +19,9 @@ ok() { printf 'ok    %s\n' "$*"; }
 cd "$tmp"
 mkdir -p scripts docs crates/control crates/a/src crates/a/tests crates/cli/src crates/daemon/src crates/arugulad-mcp/tests/fixtures
 cp "$here"/data-model-check.mjs scripts/
+# The fake CLI's help is 5 texts, not the real one's hundreds.
+perl -pi -e 's/^const minHelp = \d+;/const minHelp = 5;/' scripts/data-model-check.mjs
+grep -q '^const minHelp = 5;' scripts/data-model-check.mjs || bad "the test couldn't set minHelp"
 cat >docs/data-model.md <<'EOF'
 # The data model
 
@@ -51,6 +55,18 @@ struct Cli {
 enum Cmd {
     /// List panes.
     Ls,
+    #[command(subcommand)]
+    Cloud(CloudCmd),
+}
+
+/// Cloud workspaces.
+#[derive(
+    Debug,
+    clap::Subcommand,
+)]
+enum CloudCmd {
+    /// Rebuild a workspace's machine.
+    Rebuild,
 }
 
 /// Run a command on the box: not help, clap never shows it.
@@ -79,6 +95,37 @@ mv crates/a/src/lib.rs crates/a/tests/lib.rs
 : >crates/a/src/lib.rs
 fails "a prefix minted only in tests" "\`abc_\` isn't minted"
 mv crates/a/tests/lib.rs crates/a/src/lib.rs
+
+mint() { printf '%s\n' "$1" >crates/a/src/lib.rs; }
+mint 'fn id() -> String { new_id("abc") }'
+if out=$(check); then ok "new_id(\"abc\") mints abc_"; else bad "new_id should mint abc_: $out"; fi
+mint 'pub const ID_PREFIX: &str = "abc_"; fn id() -> String { format!("{ID_PREFIX}{}", 1) }'
+if out=$(check); then ok "a const a format! starts with mints abc_"; else bad "a const prefix should mint abc_: $out"; fi
+mint 'fn grant() -> &'"'"'static str { "abc_grant" }'
+fails "a string that only starts with the prefix" "\`abc_\` isn't minted"
+mint 'fn real() {}
+#[cfg(test)]
+mod tests {
+    fn id() -> String { format!("abc_{}", "{") }
+}'
+fails "a prefix minted only in a #[cfg(test)] module" "\`abc_\` isn't minted"
+mint 'struct S {
+    #[cfg(test)]
+    seam: Option<u8>,
+}
+fn id() -> String { format!("abc_{}", 1) }'
+if out=$(check); then ok "a #[cfg(test)] field strips only itself"; else bad "a #[cfg(test)] field: $out"; fi
+mint 'fn id() -> String { format!("abc_{}", 1) }'
+
+perl -pi -e 's/a workspace.s machine/a box/' crates/cli/src/main.rs
+fails "a banned word in a multi-line derive's enum" '"box" in crates/cli/src/main.rs:25'
+perl -pi -e 's/a box\./a workspace'"'"'s machine./' crates/cli/src/main.rs
+if out=$(check); then ok "and with it gone, a pass"; else bad "after the multi-line derive case: $out"; fi
+
+perl -0pi -e 's/#\[derive\(\n    Debug,\n    clap::Subcommand,\n\)\]\n//' crates/cli/src/main.rs
+fails "help read under the floor" "read only 3 help texts"
+perl -0pi -e 's/(\/\/\/ Cloud workspaces\.\n)/$1#[derive(\n    Debug,\n    clap::Subcommand,\n)]\n/' crates/cli/src/main.rs
+if out=$(check); then ok "and back to 5, a pass"; else bad "after the floor case: $out"; fi
 
 perl -pi -e 's/List panes\./List panes on a box./' crates/cli/src/main.rs
 fails "a banned word in the CLI's help" '"box" in crates/cli/src/main.rs:13'

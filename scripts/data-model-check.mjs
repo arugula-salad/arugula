@@ -29,6 +29,9 @@ const docPath = "docs/data-model.md";
 const doc = readFileSync(join(root, docPath), "utf8");
 const fixture = "crates/arugulad-mcp/tests/fixtures/mcp-tool-list.json";
 const cliHelp = ["crates/cli/src", "crates/daemon/src/args.rs"];
+// The fewest help texts the CLI's source may give before the check says
+// help() lost some.
+const minHelp = 400;
 
 // Lowercase words the doc puts in backticks that aren't tables: commands,
 // functions, settings, columns, stored values and wire names. A new one
@@ -93,7 +96,11 @@ for (const t of ticks) {
 for (const p of paths) if (!existsSync(join(root, p))) problems.push(`${docPath} names ${p}, which isn't there`);
 said.push(`${paths.size} paths`);
 
-// ID prefixes, minted in crates/ outside tests.
+// ID prefixes, minted in crates/ outside tests: test files and
+// #[cfg(test)] items are left out. A mint is `format!("run_{...}`, a
+// `new_id("ob_")` (or `new_id("ses")`), or a const holding the prefix that
+// a format! starts with (`format!("{ID_PREFIX}...`). A string that only
+// starts with the prefix ("run_grant") isn't one.
 const sources = [];
 const walk = (dir) => {
   for (const e of readdirSync(join(root, dir), { withFileTypes: true })) {
@@ -104,10 +111,9 @@ const walk = (dir) => {
   }
 };
 walk("crates");
-const code = sources.map((p) => readFileSync(join(root, p), "utf8")).join("\n");
+const code = sources.map((p) => withoutTests(readFileSync(join(root, p), "utf8"))).join("\n");
 const prefixes = [...new Set(ticks.filter((t) => /^[a-z]{1,5}_$/.test(t)))];
-for (const p of prefixes)
-  if (!code.includes(`"${p}`)) problems.push(`\`${p}\` isn't minted anywhere in crates/: say what the ID looks like now`);
+for (const p of prefixes) if (!minted(p)) problems.push(`\`${p}\` isn't minted anywhere in crates/: say what the ID looks like now`);
 said.push(`${prefixes.length} ID prefixes`);
 
 // Don't say.
@@ -138,7 +144,16 @@ const rsFiles = (p) =>
     : readdirSync(join(root, p), { recursive: true })
         .filter((f) => f.endsWith(".rs"))
         .map((f) => `${p}/${f}`);
-for (const file of cliHelp.flatMap(rsFiles)) texts.push(...help(file));
+const helpTexts = cliHelp.flatMap(rsFiles).flatMap(help);
+// Reading help from source can drop a type without a sound (a derive it
+// doesn't recognise), and then the words it holds go unchecked: so there's
+// a floor, well under the 549 it read when this was written (the 1,334
+// texts it says it checked include the MCP tool list).
+if (helpTexts.length < minHelp)
+  problems.push(
+    `read only ${helpTexts.length} help texts from ${cliHelp.join(" and ")}, fewer than ${minHelp}: help() in scripts/data-model-check.mjs is missing some. Fix it, or lower minHelp if the help really shrank`,
+  );
+texts.push(...helpTexts);
 
 const seen = new Set();
 let read = 0;
@@ -176,6 +191,7 @@ function help(file) {
   const out = [];
   let docs = [];
   let derive = false;
+  let attr = null; // an attribute's lines so far, until its brackets close
   let depth = 0;
   let inside = null; // the depth a clap item's body opened at
   for (const [i, line] of lines.entries()) {
@@ -188,8 +204,14 @@ function help(file) {
       else docs.push(d);
       continue;
     }
-    if (t.startsWith("#[")) {
-      if (/^#\[derive\(.*\b(Parser|Subcommand|Args|ValueEnum)\b/.test(t)) derive = true;
+    // An attribute, which may run over several lines: a derive of clap's
+    // marks the next struct or enum.
+    if (attr !== null || t.startsWith("#[")) {
+      attr = attr === null ? t : `${attr} ${t}`;
+      const bare = attr.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+      if (bare.split("[").length > bare.split("]").length) continue;
+      if (/^#\[derive\([^\]]*\b(Parser|Subcommand|Args|ValueEnum)\b/.test(attr)) derive = true;
+      attr = null;
       continue;
     }
     if (t.startsWith("//") || t === "") continue;
@@ -223,4 +245,58 @@ function help(file) {
     } else joined.push({ ...d, end: n });
   }
   return joined.map(({ where, text }) => ({ where, text }));
+}
+
+// Whether `p` (`run_`) is minted in `code`.
+function minted(p) {
+  const stem = p.slice(0, -1);
+  if (code.includes(`format!("${p}{`)) return true;
+  if (new RegExp(`\\bnew_id\\(\\s*"${stem}_?"\\s*\\)`).test(code)) return true;
+  for (const m of code.matchAll(new RegExp(`\\bconst (\\w+): &str = "${p}";`, "g")))
+    if (code.includes(`format!("{${m[1]}}`)) return true;
+  return false;
+}
+
+// A Rust file without its #[cfg(test)] items: a `mod tests { ... }` (or
+// any item with a body) up to its closing brace, an item up to its `;`, or
+// a field up to its `,`.
+// Strings, chars and comments are skipped when counting braces.
+function withoutTests(src) {
+  let out = "";
+  let from = 0;
+  for (let at = src.indexOf("#[cfg(test)]"); at >= 0; at = src.indexOf("#[cfg(test)]", from)) {
+    out += src.slice(from, at);
+    from = itemEnd(src, at + "#[cfg(test)]".length);
+  }
+  return out + src.slice(from);
+}
+
+// Where the item starting at `i` ends: after its body's closing brace,
+// after its `;` or `,` if it has none, or before the brace that closes
+// what it's in.
+function itemEnd(src, i) {
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") i = (src.indexOf("\n", i) + 1 || src.length) - 1;
+    else if (c === "/" && src[i + 1] === "*") i = (src.indexOf("*/", i + 2) + 2 || src.length) - 1;
+    else if (c === '"' || (c === "r" && /^r#*"/.test(src.slice(i, i + 8)) && !/\w/.test(src[i - 1] ?? ""))) {
+      if (c === "r") {
+        const hashes = src.slice(i + 1).match(/^#*/)[0];
+        const close = src.indexOf(`"${hashes}`, i + hashes.length + 2);
+        i = close < 0 ? src.length : close + hashes.length;
+      } else {
+        for (i++; i < src.length && src[i] !== '"'; i++) if (src[i] === "\\") i++;
+      }
+    } else if (c === "'" && /^'(?:[^'\\]|\\.[^']*)'/.test(src.slice(i, i + 12))) {
+      i += src.slice(i, i + 12).match(/^'(?:[^'\\]|\\.[^']*)'/)[0].length - 1;
+    } else if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) {
+      depth--;
+      if (depth < 0) return i;
+      if (depth === 0 && c === "}") return i + 1;
+    } else if ((c === ";" || c === ",") && depth === 0) return i + 1;
+    i++;
+  }
+  return src.length;
 }

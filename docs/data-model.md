@@ -130,10 +130,14 @@ So "session" alone means the group of tabs. `ses_` is always "agent session",
 Claude Code's own session is a conversation, and a sign-in session is the
 hub's (above).
 
-A **card** is something waiting on a person, shown in its pane, on the swarm
-and on the phone: a question, a permission, a diff, a deploy approval, an
-invite or a Doc share (`PaneCards` in
-[crates/mux/src/mux/outside.rs](../crates/mux/src/mux/outside.rs)). A
+A **card** is something waiting on a person. On a machine it's a block's
+`Reason` ([crates/proto/src/lib.rs](../crates/proto/src/lib.rs)), shown in
+its pane, on the swarm and on the phone: an agent's question or permission
+(an `Ask`, in [crates/proto/src/ask.rs](../crates/proto/src/ask.rs)), a
+diff, or a gate. An agent's invite and its Doc share are an `Ask` too,
+raised on the invite block or the Doc block, never on the agent's pane. A
+deploy waiting for approval is the platform's card, in its inbox
+([web/src/platform/pages/inbox.tsx](../web/src/platform/pages/inbox.tsx)). A
 **session card** is the chat message that shows an agent session's state
 (`SessionCard` in
 [crates/control-wire/src/sessions.rs](../crates/control-wire/src/sessions.rs)).
@@ -146,7 +150,10 @@ Chat's truth is on the platform. The daemon keeps only routing state. Who may
 read a pane's or a session's thread is the machine's to say: it sends its
 lists, and the platform keeps the latest in `chat_readers`. A closed pane's or
 session's list only narrows: someone who loses access to it is off it for
-good, and a share given after it closed adds nobody.
+good, and a share given after it closed adds nobody. A team's lock isn't a
+loss: a member kept out only by it can't read the thread while the lock
+lasts, and reads it again when the lock lifts (
+[crates/mux/src/mux/readers.rs](../crates/mux/src/mux/readers.rs)).
 
 | Word | What it is | ID |
 |---|---|---|
@@ -168,9 +175,10 @@ A **project** (`prj_`) is what platform objects belong to, owned by one team or 
 account. Each has one default project, and that's all that exists for now: nothing
 creates a second one. Membership comes from the team's roster.
 
-When a team gets a second project, the work it already has and its channels
-stay in the default project, and only new work goes in the new one. Nothing
-moves objects between projects.
+Nothing makes a second project yet, so what happens then is a decision, not
+code (Jake, 2026-11-05, Doc c2508fcdab6cf131): when a team gets one, the
+work it already has and its channels stay in the default project, and only
+new work goes in the new one. Nothing moves objects between projects.
 
 | Noun | What it is | Truth | ID |
 |---|---|---|---|
@@ -299,7 +307,7 @@ from that, settled in native #673:
   copies already there stay until deleted, and a deleted Doc's copy still
   comes down. A personal machine hears its teams' chat as `chat-heard` for its
   threads' readers, which never copies anything.
-- **A hosted machine's library is the box's.** Its state directory goes with
+- **A hosted machine's library is the machine's.** Its state directory goes with
   a rebuild, and nothing is copied up: the workspace's owner is whoever made
   it, so a session's Docs would land in their personal project. A session's
   write-ups for the project go in project Docs, through the session's tools.
