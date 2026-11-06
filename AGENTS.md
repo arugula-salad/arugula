@@ -317,6 +317,13 @@ the way `labs` is. Both are crates the binary registers (#232): the surface asks
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
 
+## Building UI
+
+Read [docs/design/language.md](docs/design/language.md) before you build or
+restyle a page, pane, dialog, list or menu in `web/`: it names the shared
+component for each piece (type, colour, buttons, headers, rows, chips,
+dialogs, menus, empty states) and what not to invent.
+
 ## Commands
 
 - `just bootstrap`, then `just web`: toolchains, web dependencies, and the web
