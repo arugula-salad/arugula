@@ -1,15 +1,21 @@
 /* The page behind a share link (#1066, doc-view.tsx). style.css is the
-   app's, with its dark palette in :root; this is the light one for a reader
-   whose system is light (Latte, as the app's "system" palette), and the
-   column the Doc fills. The Doc itself wears its own look in either
-   (style.css's `.doc`, by the `data-scheme` doc-view.tsx sets), in its
-   own fonts (fonts.css: the CSP's `font-src 'self'`, #255). */
+   app's, with its fallback palette in :root; this is the house pair (#729):
+   Slate for a reader whose system is dark, Latte for one whose is light,
+   the colors the app draws with no palette picked, for the page and for the
+   Doc (its `--doc-*`). The Doc wears the same in the app whatever the
+   palette. The column the Doc fills, in its own fonts (fonts.css: the CSP's
+   `font-src 'self'`, #255). */
 @import "../shared/style.css";
 @import "../shared/fonts.css";
 
 /* `:root:root`, to win over style.css's `:root` whatever the order. The
-   build writes Latte's colors in for the marker, from appearance.ts's
-   PALETTES (vite.config.ts's docPalette, UI audit #180). */
+   build writes the palettes' colors in for the markers, from appearance.ts
+   (vite.config.ts's docPalette, UI audit #180). */
+:root:root {
+  /* PALETTES: slate */
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: light) {
   :root:root {
     /* PALETTES: latte */
@@ -28,7 +34,7 @@
 }
 
 /* A notice (no Doc to show) and Loading…, on the Doc's paper, in its
-   head's type: the display face over the leaf rule. */
+   head's type: the display face over its rule. */
 .doc-notice {
   max-width: 30rem;
   margin: 12vh 0 0;
@@ -54,7 +60,7 @@
 }
 
 /* "Made with Arugula", under the last section: small and dim, the leaf in
-   the Doc's rule colour, brighter on hover. */
+   the Doc's faint ink, brighter on hover. */
 .doc-made {
   margin-top: 64px;
   padding-top: 14px;
@@ -79,5 +85,5 @@
 .doc-made-leaf {
   width: 16px;
   height: 16px;
-  color: var(--doc-rule);
+  color: var(--doc-ink-faint);
 }

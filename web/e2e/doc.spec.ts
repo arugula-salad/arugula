@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { houseColours } from "../src/shared/appearance";
 import { hex, type Scheme } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
 import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, watchAssetCalls, widths } from "./doc-steps";
@@ -334,7 +335,7 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
     // The hex drawing: its own text, on the light backing.
     await expect(old).not.toHaveAttribute("data-named");
     expect(await old.evaluate((i: HTMLImageElement) => decodeURIComponent(i.src))).toContain('fill="#e8f0fe" stroke="#335"');
-    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(248, 246, 240)");
+    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(239, 241, 245)");
     const strokes = await block.locator('[data-section="s3"] svg.chart path[data-line]').evaluateAll((ps) => ps.map((p) => getComputedStyle(p).stroke));
     const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
     expect(strokes).toEqual([rgb(hex("leaf", scheme)!), rgb(hex("stone", scheme)!)]);
@@ -345,9 +346,14 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   await shoot(page, doc, "block-named-colours-mocha");
 
   // The scheme changes under it: the drawing is redrawn, no reload.
-  await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
+  const wear = (scheme: Scheme) =>
+    page.evaluate(([s, vars]) => {
+      document.documentElement.dataset.scheme = s as string;
+      for (const [k, v] of Object.entries(vars as Record<string, string>)) document.documentElement.style.setProperty(`--doc-${k}`, v);
+    }, [scheme, houseColours(scheme)] as const);
+  await wear("light");
   await look("light");
-  await page.evaluate(() => (document.documentElement.dataset.scheme = "dark"));
+  await wear("dark");
   await look("dark");
 
   await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
@@ -356,6 +362,15 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("light");
   await look("light");
   await shoot(page, doc, "block-named-colours-latte");
+
+  // The house pair is the scheme's, not the picked palette's: Gruvbox is a
+  // dark palette, and the Doc is still Slate's paper under the viewer's chrome.
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "gruvbox", finish: "flat", corners: "square" })));
+  await page.reload();
+  await expect(named).toBeVisible({ timeout: 15_000 });
+  await look("dark");
+  expect(await block.evaluate((d) => getComputedStyle(d).backgroundColor)).toBe("rgb(12, 17, 24)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe("rgb(12, 17, 24)");
 });
 
 test.describe("a viewer", () => {

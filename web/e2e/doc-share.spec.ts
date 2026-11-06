@@ -110,15 +110,15 @@ for (const mode of [DOMAIN, null] as const) {
           await branded(v.page, `Report ${MARK}`);
           // The page follows the system's colors.
           const bg = await v.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-          expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(17, 17, 27)");
-          // The Doc wears its own paper in each (#253).
+          expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(6, 9, 13)");
+          // The Doc wears the house pair's paper in each (#729): the page's own.
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
-          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(12, 17, 24)");
           // The named drawing in this scheme's colours, on that paper; the hex one on its light backing (#256).
           const [old, named] = await v.page.locator('[data-section="s3"] img.doc-drawing').evaluateAll((is) =>
             is.map((i) => ({ src: decodeURIComponent((i as HTMLImageElement).src), named: i.hasAttribute("data-named"), bg: getComputedStyle(i).backgroundColor })),
           );
-          expect(old, scheme).toMatchObject({ named: false, bg: "rgb(248, 246, 240)" });
+          expect(old, scheme).toMatchObject({ named: false, bg: "rgb(239, 241, 245)" });
           expect(old.src).toContain('fill="#e8f0fe"');
           expect(named, scheme).toMatchObject({ named: true, bg: "rgba(0, 0, 0, 0)" });
           expect(named.src).toContain(`fill="${hex("leaf-soft", scheme)}" stroke="${hex("leaf", scheme)}"`);
@@ -198,7 +198,7 @@ for (const mode of [DOMAIN, null] as const) {
           await expect(noticeOf(v.page, "gone")).toContainText("This Doc isn't shared any more");
           await branded(v.page, "This Doc isn't shared any more");
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
-          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(12, 17, 24)");
           expect(v.violations, "the page's CSP refused nothing").toEqual([]);
           expect(v.seen.some((u) => u.includes("og.jpg")), "the page never loads the card").toBe(false);
           if (SHOTS && mode) {
