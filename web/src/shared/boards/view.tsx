@@ -28,6 +28,7 @@ import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { PlusIcon } from "../ui/rail-icons";
 import { ConfirmRemove } from "../ui/confirm";
+import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { CopyLinkButton } from "../ui/copy-link";
@@ -1159,7 +1160,6 @@ async function readRow(r: BoardRow): Promise<Read> {
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
 function Drawer({ r, platform, close, project, others, write, act, id, moveLane, nameOf }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
   const [read, setRead] = useState<Read | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
   const href = pointerHref(r, platform);
   const key = `${r.id}:${r.updated_at}`;
   useEffect(() => {
@@ -1168,26 +1168,12 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
     void readRow(r).then((v) => live && setRead(v));
     return () => void (live = false);
   }, [key]);
-  useEffect(() => {
-    ref.current?.focus({ preventScroll: true });
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, []);
   const title = isCard(r.live) ? r.live.title : pointerLabel(r.pointer, r.live) || "Note";
   const evidence = r.attachments.filter((a) => a.role === "proof");
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <div ref={ref} class="board-drawer" role="dialog" aria-label={title} tabIndex={-1} data-board-drawer={r.id}>
-      <header class="board-drawer-head">
-        <h2 class="board-drawer-title" data-board-drawer-title>
-          {title}
-        </h2>
-        <button type="button" class="bar-btn sq board-more" aria-label="Close" data-board-drawer-close onClick={close}>
-          ×
-        </button>
-      </header>
+    <SideSheet title={title} close={close} class="board-drawer" root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
       <div class="board-line board-drawer-lane">
         {write ? (
           <label class="dim">
@@ -1317,7 +1303,7 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
           ))}
         </section>
       )}
-    </div>
+    </SideSheet>
   );
 }
 

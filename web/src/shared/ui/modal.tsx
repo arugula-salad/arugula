@@ -2,7 +2,7 @@
 // and the platform's settings (web/src/platform/settings/) alike, so both
 // sides draw it the same (M149).
 //
-// UI audit #150: every dialog behaves the same way. Focus moves into it and
+// UI audit #150, #690: every dialog behaves the same way. Focus moves into it and
 // stays there (Tab wraps), Escape closes it before the terminal under it can
 // hear the key, and focus goes back to what opened it. Dialogs drawn by hand
 // (Permission rules, Appearance, Getting started…) use `useModal` for this.
@@ -195,10 +195,40 @@ export function CloseX({ close }: { close: () => void }) {
   );
 }
 
-/** A control dialog: as tall as the window allows, scrolling inside, with
- * its close button pinned where it can always be seen. Its name is its
- * `label`, else its heading. */
-export function Modal({ children, close, label, class: cls }: { children: preact.ComponentChildren; close?: () => void; label?: string; class?: string }) {
+/** The one dialog: a title, a body and a footer of buttons, Cancel first and
+ * the action last (laid out by buttons.css). Its name is its `label`, else
+ * its title, else the first h2 in its body. `title` and `buttons` are for
+ * a dialog drawn through it; a dialog with its own head puts it in the
+ * children. */
+export function Modal({
+  children,
+  close,
+  label,
+  class: cls,
+  title,
+  buttons,
+  alert,
+  x = true,
+  backdropClose = true,
+  root,
+}: {
+  children: preact.ComponentChildren;
+  close?: () => void;
+  label?: string;
+  class?: string;
+  /** Drawn as the dialog's h2 (15/600). */
+  title?: string;
+  /** The footer: its buttons, Cancel first. */
+  buttons?: preact.ComponentChildren;
+  /** An alert dialog: it asks before something is lost. */
+  alert?: boolean;
+  /** The corner ×; off for a dialog that has its own Cancel to answer. */
+  x?: boolean;
+  /** Whether a click on the backdrop closes it (a confirm waits out a double-click). */
+  backdropClose?: boolean;
+  /** Attributes for the dialog itself, such as a `data-` hook for the specs. */
+  root?: Record<string, string | boolean>;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useModal(ref, close);
   useLayoutEffect(() => {
@@ -211,10 +241,19 @@ export function Modal({ children, close, label, class: cls }: { children: preact
     }
   });
   return (
-    <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && close?.()}>
-      <div ref={ref} class={cls ? `prompt control-prompt ${cls}` : "prompt control-prompt"} role="dialog" aria-modal="true" aria-label={label}>
-        {close ? <CloseX close={close} /> : null}
+    <div class="prompt-backdrop" onClick={(e) => backdropClose && e.target === e.currentTarget && close?.()}>
+      <div
+        ref={ref}
+        class={cls ? `prompt control-prompt ${cls}` : "prompt control-prompt"}
+        role={alert ? "alertdialog" : "dialog"}
+        aria-modal="true"
+        aria-label={label}
+        {...root}
+      >
+        {close && x ? <CloseX close={close} /> : null}
+        {title ? <h2>{title}</h2> : null}
         {children}
+        {buttons ? <div class="prompt-buttons">{buttons}</div> : null}
       </div>
     </div>
   );

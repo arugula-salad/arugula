@@ -46,6 +46,9 @@
   --shadow-sm: 0 2px 8px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
   --shadow-md: 0 6px 24px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
   --shadow-lg: 0 12px 40px rgb(0 0 0 / calc(0.6 * var(--shadow-k)));
+  /* What dims the page under a dialog, a picker, a menu sheet or a side
+     sheet (#690, #733): one value, in both schemes. Glass sets its own. */
+  --backdrop: rgb(0 0 0 / 0.4);
   /* The spacing scale (UI audit #180): padding, margin and gap in 4px
      steps. */
   --space-1: 4px;
@@ -861,7 +864,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: #0008;
+  background: var(--backdrop);
 }
 
 /* The sheet's shell, its tabs and the sections inside: phone-sheet.css. */
@@ -1136,7 +1139,7 @@ button.att {
   display: grid;
   place-items: start center;
   padding-top: 15vh;
-  background: #0006;
+  background: var(--backdrop);
 }
 
 .prompt {
@@ -2409,6 +2412,18 @@ button.att {
   gap: 10px;
   max-height: 75vh;
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.sandboxes {
+  position: relative;
+}
+
+/* The × is no row of the grid (Modal draws it first): it sits at the corner. */
+.sandboxes > .modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0;
 }
 
 .sandboxes h2 {
@@ -8598,7 +8613,7 @@ input.chat-search {
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgb(0 0 0 / 0.4);
+  background: var(--backdrop);
 }
 
 .chat-switcher {
@@ -10077,8 +10092,11 @@ html[data-finish="glass"] .prompt {
   box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, var(--shadow-lg);
 }
 
+html[data-finish="glass"] {
+  --backdrop: #0003;
+}
+
 html[data-finish="glass"] .prompt-backdrop {
-  background: #0003;
   backdrop-filter: blur(3px);
 }
 

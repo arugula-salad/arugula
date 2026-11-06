@@ -193,6 +193,5 @@ html[data-finish="glass"] .platform-toast {
 }
 
 html[data-finish="glass"] .chat-switcher-back {
-  background: #0003;
   backdrop-filter: blur(3px);
 }
