@@ -28,7 +28,7 @@
 }
 
 .project-doc-row {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* A copy of a machine's Doc (#678): read-only here, and said so above it. */
@@ -38,7 +38,7 @@
   margin: 0 auto 8px;
   padding: 0 16px;
   box-sizing: border-box;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .project-doc-form {
@@ -70,7 +70,7 @@
 .project-doc-writer textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .project-doc-writer select {

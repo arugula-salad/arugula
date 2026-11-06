@@ -16,7 +16,7 @@
   background: var(--surface);
   border-radius: 0 0 var(--panel-radius) var(--panel-radius);
   box-shadow: var(--shadow-lg);
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 /* A wide window in the phone layout: a column, not a banner. */
@@ -66,15 +66,15 @@
 
 .sheet h2 {
   margin: 2px 4px 6px;
-  font: 700 11px/1.2 var(--f-mono);
+  font: 700 var(--text-xs)/1.2 var(--f-mono);
   color: var(--dim);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--track-caps);
 }
 
 .sheet h3 {
   margin: 6px 4px 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--dim);
 }
@@ -84,7 +84,7 @@
 .sheet-you section h2 {
   margin-top: 8px;
   text-transform: none;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   font-weight: 500;
 }
 

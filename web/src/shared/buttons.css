@@ -119,11 +119,11 @@ a.secondary.danger:hover {
 .secondary.small {
   min-height: 24px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .link.small {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* A finger, not a pointer (UI audit #186): on a touch screen the set is
@@ -242,7 +242,7 @@ a.secondary.danger:hover {
   background: none;
   color: var(--subtle);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
@@ -326,7 +326,7 @@ a.secondary.danger:hover {
   background: none;
   color: var(--subtle);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -337,7 +337,7 @@ a.secondary.danger:hover {
 .seg.small > button {
   min-height: 18px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .seg.touch > button {
@@ -450,7 +450,7 @@ html[data-finish="glass"] .primary {
 .field.small {
   min-height: 24px;
   padding: 2px 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* A select draws its own caret, so it looks the same everywhere. */
