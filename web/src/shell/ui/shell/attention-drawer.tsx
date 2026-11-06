@@ -33,6 +33,7 @@ import { addPane } from "./add-pane";
 import { closePlace, currentPlace, openRoom } from "../places";
 import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../../../shared/notice";
 import { GrantActs } from "../grant-acts";
+import { SideSheet } from "../../../shared/ui/side-sheet";
 
 // ---- the items
 
@@ -274,12 +275,9 @@ export function AttentionDrawer({ client }: { client: Client }) {
   const notices = attentionNotices(client);
   const chosen = items.find((i) => i.p.key === sel) ?? items[0];
   const waiting = items.filter((i) => i.waiting).length + notices.length;
+  // Escape and the backdrop are the sheet's (side-sheet.tsx).
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      closeAttention();
-    } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).matches(".ws-att-list, .ws-att-item")) {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).matches(".ws-att-list, .ws-att-item")) {
       // On the rows only: the open one's answer, under its row, keeps its keys.
       e.preventDefault();
       if (!items.length) return;
@@ -299,18 +297,23 @@ export function AttentionDrawer({ client }: { client: Client }) {
     openMenu({ clientX: r.left, clientY: r.top - 4, preventDefault: () => e.preventDefault() }, items);
   };
   return (
-    <div class="ws-att" role="dialog" aria-label="Needs you" data-attention-drawer onKeyDown={onKey}>
-      <header class="ws-att-head">
-        <h2>Needs you</h2>
-        <span class="ws-att-count">
-          {waiting ? `${waiting} waiting` : "nothing waiting"}
-          {items.length > waiting ? `, ${items.length - waiting} failed` : ""}
-        </span>
-        <button class="ws-icon-button" aria-label="Close" title="Close (Escape); nothing is answered" onClick={() => closeAttention()} data-close-attention>
-          ✕
-        </button>
-      </header>
-      <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1}>
+    <SideSheet
+      class={waiting || items.length ? "ws-att" : "ws-att ws-att-quiet"}
+      title="Needs you"
+      subtitle={`${waiting ? `${waiting} waiting` : "nothing waiting"}${items.length > waiting ? `, ${items.length - waiting} failed` : ""}`}
+      close={() => closeAttention()}
+      root={{ "data-attention-drawer": true }}
+      closeAttrs={{ title: "Close (Escape); nothing is answered", "data-close-attention": true }}
+      foot={
+        <>
+          <span class="ws-att-note">Looking here answers nothing.</span>
+          <button class="link" data-attention-prefs onClick={prefs}>
+            Notifications…
+          </button>
+        </>
+      }
+    >
+      <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1} onKeyDown={onKey}>
         {items.length === 0 && notices.length === 0 && (
           <Empty client={client} />
         )}
@@ -361,13 +364,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
           </Fragment>
         ))}
       </div>
-      <footer class="ws-att-foot">
-        <span>Looking here answers nothing.</span>
-        <button class="link" data-attention-prefs onClick={prefs}>
-          Notifications…
-        </button>
-      </footer>
-    </div>
+    </SideSheet>
   );
 }
 

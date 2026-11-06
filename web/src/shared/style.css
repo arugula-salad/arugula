@@ -3197,8 +3197,7 @@ button.att {
 /* Every dialog's title, one size: they were 15, 16 and 20px (UI audit
  * #174). Each dialog's own rule keeps only its margin. */
 .prompt h2,
-.telemetry-card h2,
-.add-pane-head h2 {
+.telemetry-card h2 {
   font-size: var(--text-lg);
   font-weight: 600;
 }
@@ -11118,38 +11117,26 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   background: var(--raised);
 }
 
-/* The drawer: on the right, between the header and the footer, over the
-   panes (which keep running, and their size). */
-.ws-att {
-  position: absolute;
-  /* Over a machine's Docs and Recipes too (.chat), now their bars have the
-     bell (Arugula #637). */
-  z-index: 47;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(440px, 100vw);
+/* The drawer is a side sheet (side-sheet.tsx, #690): its count is the sheet's
+   subtitle, its note the foot's. */
+.ws-att .side-sheet-sub {
+  color: var(--warn);
+}
+
+.ws-att-quiet .side-sheet-sub {
+  color: var(--dim);
+}
+
+.ws-att .side-sheet-body {
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border-left: 1px solid var(--line);
-  box-shadow: var(--shadow-md);
+  padding: 0;
+  overflow: hidden;
 }
 
-.ws-att-head {
-  display: flex;
+.ws-att .side-sheet-foot {
   align-items: center;
-  gap: 8px;
-  padding: 12px 10px 8px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.ws-att-head h2 {
-  margin: 0;
-}
-
-.ws-att-count {
-  flex: 1;
+  justify-content: space-between;
   color: var(--dim);
   font-size: var(--text-sm);
 }
@@ -11291,17 +11278,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-activity-intro {
   padding: 8px;
   border-bottom: 1px solid var(--line);
-  font-size: var(--text-sm);
-}
-
-.ws-att-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 16px;
-  border-top: 1px solid var(--line);
-  color: var(--dim);
   font-size: var(--text-sm);
 }
 
@@ -11827,28 +11803,7 @@ html[data-workspace="new"] .thread-panel {
   }
 }
 
-/* + Pane's drawer, over the panes under its button. */
-.add-pane {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: 30;
-  width: 400px;
-  max-width: calc(100% - 20px);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  box-shadow: var(--shadow-lg);
-  color: var(--fg);
-  font-size: var(--text-sm);
-  white-space: normal;
-}
-
+/* + Pane's drawer is a side sheet (side-sheet.tsx, #690). */
 .add-pane-row {
   display: flex;
   align-items: center;
@@ -11949,13 +11904,6 @@ html[data-workspace="new"] .thread-panel {
   margin: 0;
   color: var(--danger);
 }
-
-.add-pane-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 
 /* ---- M113 (#1028): the workspace's states and accessibility. */
 
@@ -12951,26 +12899,36 @@ html[data-workspace="new"] .thread-panel {
   color: var(--fg);
 }
 
-.image-viewer {
-  position: fixed;
-  inset: 0;
+/* A picture full size is a Modal with the whole window for its backdrop
+   (shared/chat/files-ui.tsx): the picture and its bar alone are the dialog,
+   so a click anywhere round them is a click on the backdrop. */
+.prompt-backdrop.image-viewer-backdrop {
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  place-items: center;
   padding: 16px;
   background: color-mix(in srgb, var(--letterbox) 88%, transparent);
   cursor: zoom-out;
 }
 
+.prompt.image-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  cursor: default;
+}
+
 .image-viewer img {
   min-height: 0;
-  max-width: 100%;
-  max-height: calc(100% - 48px);
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px - 48px);
   object-fit: contain;
-  cursor: default;
 }
 
 .image-viewer-bar {

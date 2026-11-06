@@ -21,7 +21,7 @@ import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
-import { confirmCloseTab } from "./close-tab";
+import { confirmClosePane, confirmCloseTab } from "./close-tab";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -318,7 +318,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         ),
                       )}
                     {active !== undefined && (
-                      <button class="danger" onClick={act(() => client.intent({ op: "close_pane", pane: active }))}>
+                      <button class="danger" onClick={act(() => confirmClosePane(client, active))}>
                         Close pane
                       </button>
                     )}

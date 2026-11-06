@@ -171,7 +171,7 @@ test("an owner deletes it", async () => {
   test.setTimeout(60_000);
   const page = alice.locator("[data-doc-page]");
   await page.locator("[data-doc-delete]").click();
-  await page.locator("[data-doc-confirm-delete]").click();
+  await page.locator("[data-confirm-remove]").click();
   await expect(alice).toHaveURL(/\/docs$/, { timeout: 15_000 });
   await expect(alice.locator("[data-docs-none]")).toBeVisible({ timeout: 15_000 });
 });
@@ -374,7 +374,7 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   // geek's next change brings a new one, which it does, under a new id.
   await page.locator("[data-doc-delete]").click();
   await expect(page.locator("[data-doc-confirm]")).toContainText("geek is your machine");
-  await page.locator("[data-doc-confirm-delete]").click();
+  await page.locator("[data-confirm-remove]").click();
   await expect(alice).toHaveURL(/\/docs$/, { timeout: 15_000 });
   const copies = async () => (await alice.evaluate(async (p) => (await fetch(`/api/projects/${p}/docs`)).json(), m[1])).docs.filter((d: { title: string }) => d.title === "Geek's plan") as { id: string }[];
   expect(await copies()).toHaveLength(0);

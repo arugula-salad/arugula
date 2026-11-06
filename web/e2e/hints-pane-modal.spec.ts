@@ -161,7 +161,9 @@ test("over a terminal: only its pane, drawing underneath, deaf until Escape; Esc
   expect(await tip(page, term).evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
   const inner = (await tip(page, term).locator(".pane-tip-inner").boundingBox())!;
   expect(Math.abs(inner.x + inner.width / 2 - (panel.x + panel.width / 2))).toBeLessThan(2);
-  expect(Math.abs(inner.y + inner.height / 2 - (panel.y + panel.height / 2))).toBeLessThan(3);
+  // Centred above the footer, which is Modal's and stays pinned at the bottom (#690).
+  const body = (await tip(page, term).locator(".pane-tip-scroll").boundingBox())!;
+  expect(Math.abs(inner.y + inner.height / 2 - (body.y + body.height / 2))).toBeLessThan(3);
   await expect(page.locator(`[data-pane-header="${term}"]`)).toBeVisible();
   // Seen on answer, not on show.
   expect(await seenHere(page)).not.toHaveProperty("seen:test-tip-term");

@@ -17,6 +17,7 @@ import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
 import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -563,15 +564,11 @@ function CopyDeleter({ project, view, machine, mine }: { project: string; view: 
         Delete the copy
       </button>
       {gone && (
-        <p class="project-doc-confirm" data-doc-confirm>
-          Delete “{view.doc.title}” from the project? {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.{" "}
-          <button type="button" class="danger" data-doc-confirm-delete onClick={() => void remove()}>
-            Delete
-          </button>{" "}
-          <button type="button" onClick={() => setGone(false)}>
-            Keep
-          </button>
-        </p>
+        <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
+          <p data-doc-confirm>
+            It leaves the project. {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.
+          </p>
+        </ConfirmRemove>
       )}
     </div>
   );
@@ -620,6 +617,7 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
   };
   const ready = section === NEW ? !!heading.trim() : markdown !== (current?.body ?? "");
   return (
+    <>
     <form class="project-doc-form project-doc-writer" onSubmit={(e) => void save(e)} data-doc-writer>
       <label>
         Write{" "}
@@ -643,18 +641,13 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
           Delete the Doc
         </button>
       </span>
-      {gone && (
-        <p class="project-doc-confirm" data-doc-confirm>
-          Delete “{view.doc.title}” for everyone in the project?{" "}
-          <button type="button" class="danger" data-doc-confirm-delete onClick={() => void remove()}>
-            Delete
-          </button>{" "}
-          <button type="button" onClick={() => setGone(false)}>
-            Keep
-          </button>
-        </p>
-      )}
     </form>
+    {gone && (
+      <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
+        <p data-doc-confirm>It goes for everyone in the project.</p>
+      </ConfirmRemove>
+    )}
+    </>
   );
 }
 
