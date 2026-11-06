@@ -449,7 +449,7 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
     .unwrap();
     assert_eq!(
         run(&mut c).unwrap().ran,
-        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101]
+        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102]
     );
     c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
     let row = |id: &str| -> (String, String) {

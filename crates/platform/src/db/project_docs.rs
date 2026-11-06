@@ -49,6 +49,19 @@ pub struct Stored {
     /// The machine this Doc was copied up from, and its id for it there.
     pub machine: Option<String>,
     pub machine_doc: Option<String>,
+    /// For a team Doc made from a machine Doc's copy (Share with…, #418):
+    /// the copy and its project, the copy's rev at the snapshot and this
+    /// Doc's own rev right after it.
+    pub made_from: Option<MadeFrom>,
+}
+
+/// Where a team Doc was made from, and the revs it was made at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeFrom {
+    pub project: String,
+    pub doc: String,
+    pub rev: u64,
+    pub made_rev: u64,
 }
 
 /// One picture as stored, without its bytes.
@@ -124,14 +137,28 @@ pub enum Refused {
     Missing(&'static str),
     /// Past a cap, or not a change; why.
     Bad(String),
+    /// A snapshot of this copy is in the project already: its id.
+    Made(String),
+    /// The team edited the Doc since its last snapshot, and the refresh
+    /// wasn't told to replace their edits.
+    Edited,
 }
 
 const COLS: &str = "d.id, d.project_id, d.title, d.made_by, d.made_by_session, d.rev, d.created_at, d.updated_at, \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id), \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id AND s.body IS NOT NULL), \
-                    d.machine, d.machine_doc";
+                    d.machine, d.machine_doc, d.made_from_project, d.made_from_doc, d.made_from_rev, d.made_rev";
 
 fn doc_row(r: &Row) -> Result<Stored> {
+    let made_from = match (r.get::<Option<String>>(12)?, r.get::<Option<String>>(13)?) {
+        (Some(project), Some(doc)) => Some(MadeFrom {
+            project,
+            doc,
+            rev: r.get::<Option<u64>>(14)?.unwrap_or(0),
+            made_rev: r.get::<Option<u64>>(15)?.unwrap_or(0),
+        }),
+        _ => None,
+    };
     Ok(Stored {
         id: r.get(0)?,
         project: r.get(1)?,
@@ -145,6 +172,7 @@ fn doc_row(r: &Row) -> Result<Stored> {
         written: r.get(9)?,
         machine: r.get(10)?,
         machine_doc: r.get(11)?,
+        made_from,
     })
 }
 
@@ -191,6 +219,76 @@ fn sections_of(c: &impl Sql, doc: &str) -> Result<Vec<Section>> {
 /// The number after `s` in a section's id.
 fn number(id: &str) -> u64 {
     id.strip_prefix('s').and_then(|n| n.parse().ok()).unwrap_or(0)
+}
+
+/// A machine Doc's copy as read to make or refresh a snapshot.
+struct CopyRead {
+    project: String,
+    title: String,
+    rev: u64,
+    sections: Vec<Section>,
+    /// Name, type and bytes.
+    assets: Vec<(String, String, Vec<u8>)>,
+}
+
+/// The copy `src` with its sections and pictures, its row held; none for
+/// a Doc that isn't there or isn't a copy.
+fn read_copy(c: &impl Sql, src: &str) -> Result<Option<CopyRead>> {
+    let row: Option<(String, String, u64, Option<String>)> = c
+        .query_row(
+            &format!("SELECT project_id, title, rev, machine FROM project_docs WHERE id = ?1{}", c.for_update()),
+            params![src],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    let Some((project, title, rev, Some(_))) = row else {
+        return Ok(None);
+    };
+    let sections = sections_of(c, src)?;
+    let assets = c.query_map(
+        "SELECT name, mime, bytes FROM project_doc_assets WHERE doc_id = ?1 ORDER BY name",
+        params![src],
+        |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?, r.get::<Vec<u8>>(2)?)),
+    )?;
+    Ok(Some(CopyRead { project, title, rev, sections, assets }))
+}
+
+/// Put a copy's sections (numbered from `after` + 1) and pictures into the
+/// Doc `id`. A picture's rev only goes up from `old`'s, so a name's rev is
+/// never reused.
+fn put_copy(
+    c: &impl Sql,
+    id: &str,
+    after: u64,
+    from: &CopyRead,
+    old: &std::collections::HashMap<String, u64>,
+    at: u64,
+) -> Result<()> {
+    for (i, s) in from.sections.iter().enumerate() {
+        c.execute(
+            "INSERT INTO project_doc_sections (doc_id, id, position, heading, intent, body, rev, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                format!("s{}", after + 1 + i as u64),
+                i,
+                s.heading,
+                s.intent,
+                s.body,
+                u64::from(s.body.is_some()),
+                at
+            ],
+        )?;
+    }
+    for (name, mime, bytes) in &from.assets {
+        let rev = at.max(old.get(name).map_or(0, |r| r + 1));
+        c.execute(
+            "INSERT INTO project_doc_assets (doc_id, name, mime, size, rev, bytes, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, name, mime, bytes.len() as i64, rev, bytes.clone(), at],
+        )?;
+    }
+    Ok(())
 }
 
 impl Db {
@@ -365,6 +463,134 @@ impl Db {
                 doc_row,
             )
             .optional()
+    }
+
+    /// The team Docs made from the copy `id`, the earliest first, in every
+    /// project: the caller shows only those its reader may still read.
+    pub fn project_doc_snapshots(&self, id: &str) -> Result<Vec<Stored>> {
+        self.c().query_map(
+            &format!("SELECT {COLS} FROM project_docs d WHERE d.made_from_doc = ?1 ORDER BY d.created_at, d.id"),
+            params![id],
+            doc_row,
+        )
+    }
+
+    /// The team Doc made from the copy `id` in `project`, if there is one.
+    pub fn project_doc_snapshot(&self, id: &str, project: &str) -> Result<Option<Stored>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {COLS} FROM project_docs d WHERE d.made_from_doc = ?1 AND d.project_id = ?2"),
+                params![id, project],
+                doc_row,
+            )
+            .optional()
+    }
+
+    /// Share with…: make an ordinary Doc in `to` from the copy `src`'s
+    /// title, sections (under new ids) and pictures as they are now, and
+    /// record where it came from and at which revs. One per copy per
+    /// project ([`Refused::Made`]). Who may is the caller's to have
+    /// checked.
+    pub fn snapshot_project_doc(
+        &self,
+        src: &str,
+        to: &str,
+        made_by: &str,
+        at: u64,
+        max: u64,
+    ) -> Result<std::result::Result<Stored, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let held: Option<String> = tx
+            .query_row(&format!("SELECT id FROM projects WHERE id = ?1{}", tx.for_update()), params![to], |r| r.get(0))
+            .optional()?;
+        if held.is_none() {
+            return Ok(Err(Refused::Missing("no such project")));
+        }
+        // The copy's row is held, so a machine's put waits for the snapshot.
+        let Some(from) = read_copy(&tx, src)? else {
+            return Ok(Err(Refused::Missing("no such Doc")));
+        };
+        let made: Option<String> = tx
+            .query_row(
+                "SELECT id FROM project_docs WHERE made_from_doc = ?1 AND project_id = ?2",
+                params![src, to],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = made {
+            return Ok(Err(Refused::Made(id)));
+        }
+        let have: u64 =
+            tx.query_row("SELECT count(*) FROM project_docs WHERE project_id = ?1", params![to], |r| r.get(0))?;
+        if have >= max {
+            return Ok(Err(Refused::Bad(format!("a project has at most {max} Docs"))));
+        }
+        let id = new_id();
+        tx.execute(
+            "INSERT INTO project_docs (id, project_id, title, made_by, created_at, updated_at, made_from_project,
+                                       made_from_doc, made_from_rev, made_rev)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, 1)",
+            params![id, to, from.title, made_by, at, from.project, src, from.rev],
+        )?;
+        put_copy(&tx, &id, 0, &from, &std::collections::HashMap::new(), at)?;
+        let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
+        tx.commit()?;
+        Ok(Ok(doc))
+    }
+
+    /// Update copy: replace the team Doc `id`'s title, sections and pictures
+    /// with its copy's as they are now, and record both revs again. Unless
+    /// `replace`, a Doc the team edited since ([`Refused::Edited`]) is left
+    /// alone: that is read with the Doc's row held, so an edit can't land
+    /// between the check and the replace. New sections are numbered past
+    /// the highest the Doc has: sections are only ever taken out here, all
+    /// at once, and this numbers past them first, so the highest it has is
+    /// the highest it ever had. Who may is the caller's to have checked.
+    pub fn refresh_project_doc_snapshot(
+        &self,
+        id: &str,
+        at: u64,
+        replace: bool,
+    ) -> Result<std::result::Result<Stored, Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let made: Option<(Option<String>, u64, Option<u64>)> = tx
+            .query_row(
+                &format!("SELECT made_from_doc, rev, made_rev FROM project_docs WHERE id = ?1{}", tx.for_update()),
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((Some(src), rev, made_rev)) = made else {
+            return Ok(Err(Refused::Missing("no such Doc")));
+        };
+        if !replace && rev > made_rev.unwrap_or(0) {
+            return Ok(Err(Refused::Edited));
+        }
+        let Some(from) = read_copy(&tx, &src)? else {
+            return Ok(Err(Refused::Missing("the copy is gone")));
+        };
+        let after = sections_of(&tx, id)?.iter().map(|s| number(&s.id)).max().unwrap_or(0);
+        let revs: std::collections::HashMap<String, u64> = tx
+            .query_map("SELECT name, rev FROM project_doc_assets WHERE doc_id = ?1", params![id], |r| {
+                Ok((r.get::<String>(0)?, r.get::<u64>(1)?))
+            })?
+            .into_iter()
+            .collect();
+        tx.execute("DELETE FROM project_doc_sections WHERE doc_id = ?1", params![id])?;
+        tx.execute("DELETE FROM project_doc_assets WHERE doc_id = ?1", params![id])?;
+        put_copy(&tx, id, after, &from, &revs, at)?;
+        // Both revs read the old one: the Doc's rev goes up once, and that
+        // is what "edited since" is counted from.
+        tx.execute(
+            "UPDATE project_docs SET title = ?2, rev = rev + 1, made_rev = rev + 1, updated_at = ?3,
+                    made_from_project = ?4, made_from_rev = ?5 WHERE id = ?1",
+            params![id, from.title, at, from.project, from.rev],
+        )?;
+        let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
+        tx.commit()?;
+        Ok(Ok(doc))
     }
 
     /// A Doc's pictures, by name.

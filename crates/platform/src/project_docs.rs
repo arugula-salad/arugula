@@ -36,6 +36,16 @@
 //! project's to delete like any Doc (`deleter`, for the page): the
 //! machine's next change makes a new copy.
 //!
+//! **Share with…** makes a team Doc from a copy ([`share`]): a new,
+//! ordinary Doc in a project the copy's owner writes in, from the copy's
+//! title, sections and pictures as they are, which the team owns and edits.
+//! It records where it came from and at which revs, and **Update copy**
+//! ([`update`]) replaces it from the copy again when its owner asks,
+//! refusing first if the team edited it since. Only the copy's owner does
+//! either, as a person ([`own_copy`]: reading a copy is allowed to whoever
+//! reads its project, and that isn't the question); nothing is live, and a
+//! machine never writes to a team's project.
+//!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
 //!
@@ -226,6 +236,10 @@ pub(crate) fn refused(r: Refused) -> ApiError {
     match r {
         Refused::Missing(what) => err(StatusCode::NOT_FOUND, what),
         Refused::Bad(why) => bad(&why),
+        Refused::Edited => {
+            err(StatusCode::CONFLICT, "the team edited this Doc since; Update copy replaces their edits")
+        }
+        Refused::Made(_) => err(StatusCode::CONFLICT, "a Doc was made from this copy in that project already"),
     }
 }
 
@@ -295,6 +309,11 @@ pub(crate) fn doc_wire(d: &db::Stored, names: &Names) -> wire::Doc {
         updated_at: d.updated_at,
         machine: d.machine.clone(),
         machine_name: d.machine.as_ref().and_then(|m| names.get(m)).filter(|n| !n.is_empty()).cloned(),
+        made_from: d.made_from.as_ref().map(|m| wire::MadeFrom {
+            project: m.project.clone(),
+            id: m.doc.clone(),
+            machine_name: None,
+        }),
     }
 }
 
@@ -316,7 +335,16 @@ async fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Resu
     // its project to delete (native #673); a session never deletes.
     let writer = d.machine.is_none() && may_write(by, place, d).is_ok();
     let deleter = matches!(by, By::Person(_)) && place.role != TeamRole::Viewer;
-    Ok(wire::DocView { doc: doc_wire(d, &names), sections, assets, writer, deleter })
+    let mut doc = doc_wire(d, &names);
+    // A team Doc says which machine its copy was from: the one name the
+    // platform has, so the page looks nothing up.
+    if let (Some(from), Some(m)) = (&d.made_from, &mut doc.made_from)
+        && let Some(src) = app.db.project_doc(&from.doc)?
+    {
+        let names = machine_names(app, std::iter::once(&src)).await?;
+        m.machine_name = src.machine.as_ref().and_then(|m| names.get(m)).filter(|n| !n.is_empty()).cloned();
+    }
+    Ok(wire::DocView { doc, sections, assets, writer, deleter })
 }
 
 /// The Doc `id`, in `project`, changed: pages showing it read it again,
@@ -427,6 +455,118 @@ pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> R
     Ok(())
 }
 
+// ------------------------------------------------------- Share with…
+
+/// The copy `id` in `project`, for its owner to share: a copy (a Doc a
+/// machine put) in `account`'s own personal project. Anyone else, whatever
+/// they read or write elsewhere, is refused: 404 for what they can't see,
+/// 403 for a copy that sits in a team's project (one moved there before
+/// native #673) or isn't a copy's to share.
+async fn own_copy(app: &Platform, account: &str, project: &str, id: &str) -> Result<db::Stored, ApiError> {
+    id_ok(id)?;
+    let (place, doc) = doc_in(app, By::Person(account), project, id, false).await?;
+    if doc.machine.is_none() {
+        return Err(err(StatusCode::NOT_FOUND, "this Doc isn't a copy from a machine"));
+    }
+    let mine = app
+        .db
+        .issue_project(&place.project)?
+        .is_some_and(|p| p.team.is_none() && p.account.as_deref() == Some(account));
+    if !mine {
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "only the person whose machine made a copy shares it, from their own project",
+        ));
+    }
+    Ok(doc)
+}
+
+/// A team Doc made from `src`, as its owner sees it.
+fn copy_of(app: &Platform, src: &db::Stored, d: &db::Stored, made: &db::MadeFrom) -> Result<wire::DocCopy, ApiError> {
+    let name = app.db.issue_project(&d.project)?.map(|p| p.name).unwrap_or_default();
+    Ok(wire::DocCopy {
+        project: d.project.clone(),
+        project_name: name,
+        id: d.id.clone(),
+        link: link(app, &d.project, &d.id),
+        made: d.created_at,
+        updated: d.updated_at,
+        stale: src.rev > made.rev,
+        edited: d.rev > made.made_rev,
+    })
+}
+
+/// Share with…: `account` makes a team Doc in `to` from their copy. `Err`
+/// of the id when one was made there already.
+pub async fn share(
+    app: &Platform,
+    account: &str,
+    project: &str,
+    id: &str,
+    to: &str,
+) -> Result<Result<wire::DocView, String>, ApiError> {
+    let src = own_copy(app, account, project, id).await?;
+    let by = By::Person(account);
+    let place = place(app, account, to, true).await?;
+    if place.project == src.project {
+        return Err(bad("a copy is in your personal project already: share it with a team's"));
+    }
+    let made = app.db.snapshot_project_doc(&src.id, &place.project, account, now_ms(), wire::DOCS_MAX)?;
+    let doc = match made {
+        Ok(d) => d,
+        Err(db::Refused::Made(id)) => return Ok(Err(id)),
+        Err(r) => return Err(refused(r)),
+    };
+    changed(app, &place.project, &doc.id);
+    Ok(Ok(view(app, by, &place, &doc).await?))
+}
+
+/// The team Docs made from the copy `id`, in the projects `account` still
+/// reads.
+pub async fn copies(app: &Platform, account: &str, project: &str, id: &str) -> Result<wire::DocCopies, ApiError> {
+    let src = own_copy(app, account, project, id).await?;
+    let mut copies = Vec::new();
+    for d in app.db.project_doc_snapshots(&src.id)? {
+        let Some(made) = &d.made_from else { continue };
+        match place(app, account, &d.project, false).await {
+            Ok(_) => copies.push(copy_of(app, &src, &d, made)?),
+            // A project they left isn't theirs to hear of.
+            Err(e) if e.0 == StatusCode::NOT_FOUND => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(wire::DocCopies { copies })
+}
+
+/// Update copy: the team Doc in `to` made from the copy `id` takes the
+/// copy's title, sections and pictures as they are now. `Err` when the team
+/// edited it since and `replace` isn't set.
+pub async fn update(
+    app: &Platform,
+    account: &str,
+    project: &str,
+    id: &str,
+    to: &str,
+    replace: bool,
+) -> Result<Result<wire::DocCopy, ()>, ApiError> {
+    let src = own_copy(app, account, project, id).await?;
+    // Still writing there, from the hub's roster: someone removed from
+    // the project can't change its Docs by way of one they made.
+    let place = place(app, account, to, true).await?;
+    let team = app.db.project_doc_snapshot(&src.id, &place.project)?.ok_or_else(no_doc)?;
+    team.made_from.as_ref().ok_or_else(no_doc)?;
+    // Whether the team edited it is read again under the Doc's lock.
+    let team = match app.db.refresh_project_doc_snapshot(&team.id, now_ms(), replace)? {
+        Ok(t) => t,
+        Err(db::Refused::Edited) => return Ok(Err(())),
+        Err(r) => return Err(refused(r)),
+    };
+    changed(app, &place.project, &team.id);
+    let src = app.db.project_doc(&src.id)?.ok_or_else(no_doc)?;
+    let made = team.made_from.as_ref().ok_or_else(no_doc)?;
+    Ok(Ok(copy_of(app, &src, &team, made)?))
+}
+
 // ---------------------------------------------------------------- routes
 
 /// `GET /api/projects/{project}/docs`: a project's Docs, the latest changed
@@ -481,6 +621,51 @@ pub async fn asset_route(
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
     h.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
     Ok(r)
+}
+
+/// `POST /api/projects/{project}/docs/{id}/copies`: Share with… (the copy's
+/// owner); 409 with the team Doc's id when one is there already.
+pub async fn share_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((project, id)): Path<(String, String)>,
+    Json(body): Json<wire::ShareCopy>,
+) -> Result<Response, ApiError> {
+    Ok(match share(&app, &s.account, &project, &id, &body.to).await? {
+        Ok(v) => Json(v).into_response(),
+        Err(id) => {
+            let error = "a Doc was made from this copy in that project already; Update copy refreshes it".into();
+            (StatusCode::CONFLICT, Json(wire::Shared { error, id })).into_response()
+        }
+    })
+}
+
+/// `GET /api/projects/{project}/docs/{id}/copies`: the team Docs made from
+/// the copy (its owner).
+pub async fn copies_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((project, id)): Path<(String, String)>,
+) -> J<wire::DocCopies> {
+    Ok(Json(copies(&app, &s.account, &project, &id).await?))
+}
+
+/// `PUT /api/projects/{project}/docs/{id}/copies/{to}`: Update copy (the
+/// copy's owner, who still writes in `to`); 409 `edited` when the team
+/// edited it since and `replace` isn't set.
+pub async fn update_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((project, id, to)): Path<(String, String, String)>,
+    Json(body): Json<wire::UpdateCopy>,
+) -> Result<Response, ApiError> {
+    Ok(match update(&app, &s.account, &project, &id, &to, body.replace).await? {
+        Ok(c) => Json(c).into_response(),
+        Err(()) => {
+            let error = "the team edited its copy since; Update copy replaces their edits".into();
+            (StatusCode::CONFLICT, Json(wire::Edited { error, edited: true })).into_response()
+        }
+    })
 }
 
 /// `DELETE /api/projects/{project}/docs/{id}` (owners and editors).
