@@ -211,6 +211,9 @@ export function Modal({
   x = true,
   backdropClose = true,
   root,
+  covers,
+  backdropClass,
+  backdropProps,
 }: {
   children: preact.ComponentChildren;
   close?: () => void;
@@ -228,9 +231,15 @@ export function Modal({
   backdropClose?: boolean;
   /** Attributes for the dialog itself, such as a `data-` hook for the specs. */
   root?: Record<string, string | boolean>;
+  /** A pane modal (a big tip): the pane it covers, as `useModal`'s `covers`. */
+  covers?: () => HTMLElement | null;
+  /** Added to the backdrop's class, for a dialog that is not the window's (a pane's tip, a full-bleed picture). */
+  backdropClass?: string;
+  /** Attributes and handlers for the backdrop, such as a `data-` hook for the specs. */
+  backdropProps?: preact.JSX.IntrinsicElements["div"] & Record<`data-${string}`, string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useModal(ref, close);
+  useModal(ref, close, true, covers);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || label) return;
@@ -241,7 +250,7 @@ export function Modal({
     }
   });
   return (
-    <div class="prompt-backdrop" onClick={(e) => backdropClose && e.target === e.currentTarget && close?.()}>
+    <div class={backdropClass ? `prompt-backdrop ${backdropClass}` : "prompt-backdrop"} {...backdropProps} onClick={(e) => backdropClose && e.target === e.currentTarget && close?.()}>
       <div
         ref={ref}
         class={cls ? `prompt control-prompt ${cls}` : "prompt control-prompt"}

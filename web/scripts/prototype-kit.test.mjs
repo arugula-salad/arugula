@@ -82,3 +82,14 @@ test("the kit's type scale is style.css's: the same sizes and line-heights", () 
     assert.equal(kit.match(new RegExp(`--ar-lh-${step}: ([\\d.]+(?:px)?);`))?.[1], app, `--ar-lh-${step} is ${app}`);
   }
 });
+
+test("the kit's dialog sits under style.css's backdrop and has its title size", () => {
+  const style = read("../src/shared/style.css");
+  const app = style.match(/--backdrop: (rgb\([^)]*\));/)?.[1];
+  assert.ok(app, "style.css declares --backdrop");
+  assert.equal(kit.match(/--ar-backdrop: (rgb\([^)]*\));/)?.[1], app, `--ar-backdrop is ${app}`);
+  const title = kit.match(/\.ar-dialog > :is\(h1, h2, h3\) \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(title, /font-size: var\(--ar-text-lg\);/);
+  assert.match(title, /font-weight: 600;/);
+  assert.match(kit, /\.ar-dialog > \.ar-dialog-buttons \{[^}]*justify-content: flex-end;/);
+});

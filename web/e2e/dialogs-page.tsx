@@ -13,7 +13,7 @@ import { ConfirmRemove } from "../src/shared/ui/confirm";
 import { SideSheet } from "../src/shared/ui/side-sheet";
 
 function Page() {
-  const [open, setOpen] = useState<"modal" | "confirm" | "sheet" | null>(null);
+  const [open, setOpen] = useState<"modal" | "confirm" | "sheet" | "attention" | null>(null);
   const close = () => setOpen(null);
   return (
     <main style="padding:24px">
@@ -25,6 +25,9 @@ function Page() {
       </button>
       <button type="button" class="secondary" data-open="sheet" onClick={() => setOpen("sheet")}>
         Open sheet
+      </button>
+      <button type="button" class="secondary" data-open="attention" onClick={() => setOpen("attention")}>
+        Open attention
       </button>
       <p>
         <input data-pane-field aria-label="A pane's field" />
@@ -55,6 +58,25 @@ function Page() {
       {open === "sheet" && (
         <SideSheet title="A row with a long title that wraps over more than one line" close={close} root={{ "data-sheet": true }}>
           <a href="#one">One</a> <button type="button">Two</button> <input aria-label="Three" />
+        </SideSheet>
+      )}
+      {open === "attention" && (
+        <SideSheet
+          class="ws-att"
+          title="Needs you"
+          subtitle="nothing waiting"
+          close={close}
+          root={{ "data-attention-drawer": true }}
+          foot={
+            <>
+              <span>Looking here answers nothing.</span>
+              <button type="button" class="link">
+                Notifications…
+              </button>
+            </>
+          }
+        >
+          <div class="ws-att-list" role="listbox" aria-label="What needs you" tabIndex={-1} />
         </SideSheet>
       )}
     </main>
