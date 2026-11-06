@@ -6,6 +6,8 @@
 
 **Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped back to what aru-104 decided, Arugula's release through chant: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
 
+**Updated 6 Nov 2026** (Arugula 4889d27b, chant 0.124.67). Every contract ask from 28 Oct and 1 Nov has shipped (#4646 to #4649, #4676 to #4678, #4692 to #4699), and publishing moved to chant (#1995). The release of control and the platform settled on something narrower than the Rescope below: see "Since 1 Nov". This is the note's last update. Where Arugula stands now lives only in #1988. Marked inline as *(6 Nov)*.
+
 ## Where Arugula is today *(1 Nov)*
 
 This note gives the reasoning for the line. Where Arugula stands against it, place by place, is tracked in arugula-salad/arugula#1988 (epic: Arugula on chant). Each row there gives what Arugula does today, where the feature belongs, and the issues on each side. The chant side's issues carry `epic:arugula`, and AGENTS.md carries the placement rule (#1989). When Arugula builds around chant, the epic gets a row and this note doesn't need to change.
@@ -45,7 +47,7 @@ chant is the record of what was decided, planned, approved and released, kept in
 | Secret values | Never holds them; records provenance only | Sealed per project, passed per run | The forge's secrets plus OIDC |
 | Telling people | Notify events | Inbox and push | PR notes and issues |
 | CI verdicts and green commits *(28 Oct)* | `ci tick`: `ci/green` and `ci/revoked` tags, `build: newest` with bisect, per-commit `_ci/<sha>.json` records, `release candidates` | Its own workflows, merge queue (#1721), quarantine and red-main alerts; releases start from `ci/green` (`scripts/release`) | The forge's CI, with chant's verdicts |
-| CI verdicts *(1 Nov)* | Also: green lanes, a tag per deployable with its own required phases (`ci/green-server/`, `ci/green-app/`, `ci/green-daemon/`); `ci base`, the last commit built and judged, for path filters; notify events (`ci.red`, `ci.culprit`, `ci.green`); merge queue support (`merge_group`, a verdict job, group runs counted toward green) | Its own workflows, the advisory PR gate (#306), quarantine, and the 6-hour "main is red" timer. `scripts/release check-green` reads the lane for what it releases. The queue is set up but off (#1954). Moving red-main alerts to chant's events is #1956, waiting on the Slack secret | Same |
+| CI verdicts *(1 Nov)* | Also: green lanes, a tag per deployable with its own required phases (`ci/green-server/`, `ci/green-app/`, `ci/green-daemon/`); `ci base`, the last commit built and judged, for path filters; notify events (`ci.red`, `ci.culprit`, `ci.green`); merge queue support (`merge_group`, a verdict job, group runs counted toward green) | Its own workflows, the advisory PR gate (native #306, #1927), quarantine, and the 6-hour "main is red" timer. `scripts/release check-green` reads the lane for what it releases. The queue is set up but off (#1954). Moving red-main alerts to chant's events is #1956, waiting on the Slack secret | Same |
 
 terragucci shows the risk on the other side of the line: its CI features were built for Terraform only, so chant's own CI never got them. [INTENTIUS/chant#4287](https://github.com/INTENTIUS/chant/issues/4287) moves the general ones into chant. The same thing would happen if Arugula built approval rules or promotion itself, so those belong in chant.
 
@@ -94,9 +96,20 @@ aru-104 decided that Arugula's own release ships through chant: the chant-fly dr
 
 The hold is gone. `--actor github:<login>` puts a handle in the ledger, and path A's other objection (chant 0.108.1, from before releases and environments) went with the move to 0.124.61. What path B waited on has shipped too: `release cut --at` (0.124.34), and since 31 Oct a green lane per deployable, so a release of control and platform can start from the newest `ci/green-server` commit without waiting on the app's phases. So the rescope is to finish what aru-104 decided, and treat `arugula-release` as the stopgap.
 
-The work is in #1988's children: #1983 (control and the platform through chant, with #308 as its one command; production only for now, with staging later), #1986 (publishing through `chant release publish`, waiting partly on INTENTIUS/chant#4676 for targets), #1985 (the drivers hand chant approvals, stale checks and the ledger remote as INTENTIUS/chant#4646, #4648 and #4647 ship, and plan before the phone signs), and #1987 (whether quarantine and the main-is-red timer belong in chant).
+The work is in #1988's children: #1983 (control and the platform through chant, with #308 as its one command; production only for now, with staging later), #1986 (publishing through `chant release publish`, waiting partly on INTENTIUS/chant#4676 for targets), #1985 (the drivers hand chant approvals, stale checks and the ledger remote as INTENTIUS/chant#4646, #4648 and #4647 ship, and plan before the phone signs), and #1987 (whether quarantine and the main-is-red timer belong in chant). *(6 Nov)* How each one settled is in "Since 1 Nov".
 
 The images in this note show the 22 Oct plan and weren't redrawn.
+
+## Since 1 Nov *(6 Nov)*
+
+Settled by lex00, 1 to 6 Nov, in #1983, #1985, #1987 and #1988:
+
+- Arugula's own server release runs in GitHub Actions on each `v*` tag (#2067): `chant release cut --lane server` from the lane's green commit, then `chant run --components --release` for the platform and control, with no approval gate, as the tag's deploy jobs ran before. It isn't run by the chant-fly driver. The driver, plan first and the passkey's signature on chant's gate statement (#2071) are for the deploys Arugula's users run. #2067 waits on INTENTIUS/chant#4718 so a daemon release doesn't redeploy the hub, and on #4719 so the platform rolls on its Fly checks.
+- The binaries, Homebrew, the editor extension and the desktop app are cut by lane and published with `chant release publish` (#1986, #1995). The bump commit is gone.
+- Quarantine moved to chant's `ci.green.quarantine` (#1993). The main-is-red timer moves to the tick's `ci.stale` once chant's notify events reach Arugula. They'll arrive as native issues (a red main opens one, events comment, green closes it; native #774), not Slack.
+- Arugula built a re-run around chant's merge-queue verdict (#2202). It goes when INTENTIUS/chant#4729 ships. Failed scheduled workflows go to the tick too (INTENTIUS/chant#4730), replacing `scripts/ci-nightly-red`. `scripts/ci-branch-run` stays in Arugula until the merge queue is on.
+
+What path B below adds beyond that, a staging environment and promotion by digest, can still come later without changing the rest.
 
 ## Rough order
 
