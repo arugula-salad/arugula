@@ -16,7 +16,7 @@
    secret's box as tall as its field's. */
 @media (pointer: coarse) {
   .platform .settings-more > summary,
-  .platform .settings-rows :is(a, .link),
+  .platform .settings-rows :is(a:not(.settings-open), .link),
   .platform .settings-card-act :is(a, .link) {
     display: inline-flex;
     align-items: center;

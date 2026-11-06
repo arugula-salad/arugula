@@ -332,6 +332,16 @@
   box-shadow: 0 0 20px color-mix(in srgb, var(--c) 40%, transparent);
 }
 
+/* The selected card (#756): the tint, the accent bar and a 1px accent edge, whatever the tone. */
+.platform .sw-cards .sw-card[aria-current="true"] {
+  background-image: linear-gradient(var(--selected), var(--selected));
+  box-shadow: var(--selected-edge);
+}
+
+.platform .sw-cards .sw-card[aria-current="true"]::before {
+  background: var(--accent);
+}
+
 /* An inbox entry once seen: still there, no longer calling. */
 .platform .sw-cards .sw-card.seen {
   border-color: var(--line);

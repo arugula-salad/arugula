@@ -76,24 +76,24 @@ export function SettingsPage() {
           >
             <ul class="platform-list settings-rows">
               <li>
-                <button class="link" data-open-appearance onClick={openAppearance}>
-                  Appearance…
+                <button class="settings-open" data-open-appearance onClick={openAppearance}>
+                  <span class="settings-open-name">Appearance…</span>
+                  <span class="dim">This device's palette, finish, corners and chat density.</span>
                 </button>
-                <span class="dim">This device's palette, finish, corners and chat density.</span>
               </li>
               {billing?.billing && (
                 <li>
-                  <button class="link" data-open-plan onClick={() => setPlan(true)}>
-                    Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}
+                  <button class="settings-open" data-open-plan onClick={() => setPlan(true)}>
+                    <span class="settings-open-name">Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}</span>
+                    <span class="dim">Your plan, and what you used this month.</span>
                   </button>
-                  <span class="dim">Your plan, and what you used this month.</span>
                 </li>
               )}
               <li>
-                <a href={`${controlOrigin()}/#settings=account`} data-settings-control>
-                  Sign-in, passkeys, devices, teams and usage reports
+                <a class="settings-open" href={`${controlOrigin()}/#settings=account`} data-settings-control>
+                  <span class="settings-open-name">Sign-in, passkeys, devices, teams and usage reports</span>
+                  <span class="dim">On your machines page, where your devices sign them.</span>
                 </a>
-                <span class="dim">On your machines page, where your devices sign them.</span>
               </li>
             </ul>
           </Section>
