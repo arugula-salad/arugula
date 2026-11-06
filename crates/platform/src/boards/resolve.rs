@@ -75,8 +75,8 @@ pub(crate) async fn one(
         return Ok(Err("an item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id".to_owned()));
     };
     let repos = app.db.linked_repos(project)?.into_iter().filter(|l| l.unlinked_at.is_none()).collect::<Vec<_>>();
-    let viewer = Viewer::of(app, account).await?;
-    let checked = viewer::check(app, &viewer, &repos).await?;
+    let mut viewer = Viewer::of(app, account).await?;
+    let checked = viewer::check(app, &mut viewer, &repos).await?;
     let in_repo = |number: u64| -> Result<Vec<(String, Pointer)>, ApiError> {
         let f = ItemFilter { number: Some(number), limit: 50, ..Default::default() };
         let mut out = vec![];

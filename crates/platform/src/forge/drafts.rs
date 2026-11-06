@@ -216,9 +216,9 @@ pub async fn create(
         (Some(m), Some(k)) => Some(format!("{m}:{k}")),
     };
     let repo_name = b.repo.trim();
-    let v = Viewer::of(&app, &d.account).await?;
+    let mut v = Viewer::of(&app, &d.account).await?;
     let repo = app.db.linked_repo_named(repo_name)?.ok_or_else(|| not_linked(repo_name))?;
-    let checked = viewer::check(&app, &v, std::slice::from_ref(&repo)).await?;
+    let checked = viewer::check(&app, &mut v, std::slice::from_ref(&repo)).await?;
     if !checked.readable.has(repo.repo_id) {
         return Err(not_linked(repo_name));
     }
@@ -314,7 +314,7 @@ impl DraftsQuery {
 /// may read.
 pub async fn project(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(project): Path<String>,
     Query(q): Query<DraftsQuery>,
 ) -> Result<Json<wire::ForgeDrafts>, ApiError> {
@@ -326,7 +326,7 @@ pub async fn project(
             return Err(err(StatusCode::NOT_FOUND, &format!("{name} isn't linked to this project")));
         }
     }
-    let checked = viewer::check(&app, &v, &repos).await?;
+    let checked = viewer::check(&app, &mut v, &repos).await?;
     let mut f = q.filter(&v.account)?;
     f.project = Some(&project);
     let rows = app.db.drafts(&checked.readable, &f)?;
@@ -336,12 +336,12 @@ pub async fn project(
 /// `GET /api/forge/items/{id}/drafts`: an item's.
 pub async fn item(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
     Query(q): Query<DraftsQuery>,
 ) -> Result<Json<wire::ForgeDrafts>, ApiError> {
     let (readable, repo) =
-        viewer::item(&app, &v, &id).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
+        viewer::item(&app, &mut v, &id).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
     let i = app.db.forge_item(&readable, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
     let mut f = q.filter(&v.account)?;
     f.repo_id = Some(repo.repo_id);
@@ -354,14 +354,14 @@ pub async fn item(
 /// read.
 pub async fn mine(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Query(q): Query<DraftsQuery>,
 ) -> Result<Json<wire::ForgeDrafts>, ApiError> {
     let mut repos = Vec::new();
     for id in app.db.draft_repos(&v.account)? {
         repos.extend(app.db.linked_repo(id)?);
     }
-    let checked = viewer::check(&app, &v, &repos).await?;
+    let checked = viewer::check(&app, &mut v, &repos).await?;
     let mut f = q.filter(&v.account)?;
     f.author = Some(&v.account);
     let rows = app.db.drafts(&checked.readable, &f)?;
@@ -369,7 +369,7 @@ pub async fn mine(
 }
 
 /// The readable repos of a draft's repo, if the viewer may read it.
-pub async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
+pub async fn readable(app: &Platform, v: &mut Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(None) };
     let c = viewer::check(app, v, std::slice::from_ref(&repo)).await?;
     Ok(c.readable.has(repo_id).then_some(c.readable))
@@ -378,11 +378,11 @@ pub async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option
 /// `GET /api/forge/drafts/{id}`: one the reader may read.
 pub async fn get(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::ForgeDraft>, ApiError> {
     let (repo_id, _) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
-    let r = readable(&app, &v, repo_id).await?.ok_or_else(no_draft)?;
+    let r = readable(&app, &mut v, repo_id).await?.ok_or_else(no_draft)?;
     let row = app.db.draft(&r, &id)?.ok_or_else(no_draft)?;
     Ok(Json(wire_drafts(&app, vec![row]).await?.remove(0)))
 }
@@ -393,7 +393,7 @@ pub async fn get(
 /// sent one can't be (409).
 pub async fn discard(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::DraftDiscarded>, ApiError> {
     let (repo_id, author) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
@@ -401,7 +401,7 @@ pub async fn discard(
     let who = if author == v.account {
         Discarder::Author(&v.account)
     } else {
-        let (Some(link), Some(r)) = (app.db.linked_repo(repo_id)?, readable(&app, &v, repo_id).await?) else {
+        let (Some(link), Some(r)) = (app.db.linked_repo(repo_id)?, readable(&app, &mut v, repo_id).await?) else {
             return Err(no_draft());
         };
         if !drafter(&app, &v.account, &link.project_id).await? {
@@ -466,7 +466,7 @@ async fn merge_styles(app: &Arc<Platform>, v: &Viewer, link: &crate::db::forge::
 /// drafts for it here (module docs).
 pub async fn repo(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path((owner, name)): Path<(String, String)>,
 ) -> Result<Json<wire::ForgeRepo>, ApiError> {
     let full = format!("{owner}/{name}");
@@ -475,7 +475,7 @@ pub async fn repo(
     }
     let mut out = wire::ForgeRepo { repo: full.clone(), ..Default::default() };
     let Some(link) = app.db.linked_repo_named(&full)? else { return Ok(Json(out)) };
-    let c = viewer::check(&app, &v, std::slice::from_ref(&link)).await?;
+    let c = viewer::check(&app, &mut v, std::slice::from_ref(&link)).await?;
     if c.readable.has(link.repo_id) {
         out.linked = true;
         out.project = Some(link.project_id.clone());

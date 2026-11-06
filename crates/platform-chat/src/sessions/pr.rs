@@ -108,8 +108,9 @@ async fn asker_of(app: &Platform, account: &str, ses: &str) -> Result<(AgentSess
         .linked_repo_named(repo)?
         .filter(|l| l.project_id == s.project && l.unlinked_at.is_none())
         .ok_or_else(|| err(StatusCode::CONFLICT, &format!("{repo} isn't linked to the session's project now")))?;
-    let v = Viewer::of(app, account).await?;
-    readable(app, &v, link.repo_id).await?.ok_or_else(no_session)?;
+    // As the hub says now: its PR goes out to GitHub as them.
+    let mut v = Viewer::now(app, account).await?;
+    readable(app, &mut v, link.repo_id).await?.ok_or_else(no_session)?;
     if s.asker.is_empty() || s.asker != account {
         return Err(err(
             StatusCode::FORBIDDEN,
@@ -418,7 +419,7 @@ fn ask_of(app: &Platform, s: &AgentSession, room: &crate::db::chat::Room) -> any
 /// thread's link on the platform page.
 async fn thread_of(
     app: &Platform,
-    v: &Viewer,
+    v: &mut Viewer,
     s: &AgentSession,
     room: &crate::db::chat::Room,
 ) -> anyhow::Result<(Option<String>, Option<String>)> {
@@ -444,7 +445,7 @@ async fn thread_of(
 }
 
 /// The draft as the asker sees it: kept, or prefilled now.
-async fn draft_view(app: &Platform, s: &AgentSession, link: &LinkedRepo, v: &Viewer) -> anyhow::Result<SessionPr> {
+async fn draft_view(app: &Platform, s: &AgentSession, link: &LinkedRepo, v: &mut Viewer) -> anyhow::Result<SessionPr> {
     if let Some(d) = app.db.pr_draft_of(&s.id)? {
         return Ok(wire(&d, now_ms()));
     }
@@ -514,8 +515,8 @@ pub async fn show(
     Person { account }: Person,
     Path(ses): Path<String>,
 ) -> Result<Json<SessionPr>, ApiError> {
-    let (s, link, v) = asker_of(&app, &account, &ses).await?;
-    Ok(Json(draft_view(&app, &s, &link, &v).await?))
+    let (s, link, mut v) = asker_of(&app, &account, &ses).await?;
+    Ok(Json(draft_view(&app, &s, &link, &mut v).await?))
 }
 
 /// Keep what the asker wrote, checked.

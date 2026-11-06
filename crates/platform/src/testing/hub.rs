@@ -314,10 +314,21 @@ impl TestHub {
         s.product_links.insert((client.into(), user.into()), (account.into(), github_id));
     }
 
+    /// The account signs in with GitHub, or links it: as the hub does, its
+    /// `account.name` is news.
     pub fn github(&self, account: &str, id: u64, login: &str) {
-        let mut s = self.state.lock().unwrap();
-        s.accounts.insert(account.into());
-        s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
+        {
+            let mut s = self.state.lock().unwrap();
+            s.accounts.insert(account.into());
+            s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
+        }
+        self.change(ChangeKind::AccountName, account);
+    }
+
+    /// The account unlinks GitHub (its `account.name` is news too).
+    pub fn unlink_github(&self, account: &str) {
+        self.state.lock().unwrap().github.remove(account);
+        self.change(ChangeKind::AccountName, account);
     }
 
     /// How a machine answers ops from now on (M168).

@@ -86,9 +86,20 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    /// The account as a viewer, with its GitHub identity from the hub.
+    /// The account as a viewer, with its GitHub identity from the hub, as
+    /// the platform's cache keeps it: at most a cache tick old, and dropped
+    /// when the hub's feed says the account linked or unlinked GitHub
+    /// (`crate::cache`). [`check`] asks again before a kept "no" withholds
+    /// a private repo.
     pub async fn of(app: &Platform, account: &str) -> Result<Self, ApiError> {
-        Ok(Self { account: account.to_owned(), github: app.hub.github_user(account).await? })
+        Ok(Self { account: account.to_owned(), github: app.cache.github_user(&*app.hub, account).await? })
+    }
+
+    /// The account as a viewer, with its GitHub identity as the hub says
+    /// now: for what goes out to GitHub as them (a draft's send, a
+    /// session's PR), which a cache tick old identity mustn't decide.
+    pub async fn now(app: &Platform, account: &str) -> Result<Self, ApiError> {
+        Ok(Self { account: account.to_owned(), github: app.cache.github_user_now(&*app.hub, account).await? })
     }
 }
 
@@ -175,15 +186,17 @@ async fn member(app: &Platform, account: &str, project: &str) -> Result<bool, Ap
 
 /// The one viewer check (module docs): which of `repos` the viewer may
 /// read now.
-pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
-    let kept = match &v.github {
-        Some(u) => app.db.kept_access(u.id, KEEP_MS)?,
-        None => HashMap::new(),
-    };
+///
+/// A viewer's "no GitHub" may be a cache tick old (`crate::cache`): once a
+/// private repo in one of their projects is reached, the hub is asked again
+/// before it's withheld (they may have just linked it), and what it says
+/// goes into `v`, so the rest of the request sees it too.
+pub async fn check(app: &Platform, v: &mut Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
     let mut members: HashMap<&str, bool> = HashMap::new();
     let mut readable = Vec::new();
     let mut withheld = Vec::new();
-    let mut asks = Vec::new();
+    // Private repos in the viewer's projects: GitHub decides.
+    let mut private = Vec::new();
     for r in repos {
         if r.unlinked_at.is_some() {
             withheld.push((r.repo_id, Withheld::Unlinked));
@@ -195,12 +208,22 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
         };
         if !m {
             withheld.push((r.repo_id, Withheld::NotMember));
-            continue;
-        }
-        if !r.private {
+        } else if !r.private {
             readable.push(r.repo_id);
-            continue;
+        } else {
+            private.push(r);
         }
+    }
+    if !private.is_empty() && v.github.is_none() {
+        v.github = app.cache.github_user_now(&*app.hub, &v.account).await?;
+    }
+    let v = &*v;
+    let kept = match (&v.github, private.is_empty()) {
+        (Some(u), false) => app.db.kept_access(u.id, KEEP_MS)?,
+        _ => HashMap::new(),
+    };
+    let mut asks = Vec::new();
+    for r in private {
         let Some(user) = &v.github else {
             withheld.push((r.repo_id, Withheld::NoGithub));
             continue;
@@ -348,7 +371,7 @@ async fn ask(
 /// The readable repos of one item, and its repo: what a read of an item
 /// starts with. `None` for an item that isn't there or that the viewer
 /// may not read, which is the same to them.
-pub async fn item(app: &Platform, v: &Viewer, id: &str) -> Result<Option<(Readable, LinkedRepo)>, ApiError> {
+pub async fn item(app: &Platform, v: &mut Viewer, id: &str) -> Result<Option<(Readable, LinkedRepo)>, ApiError> {
     let Some(repo_id) = app.db.forge_item_repo(id)? else { return Ok(None) };
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(None) };
     let c = check(app, v, std::slice::from_ref(&repo)).await?;
@@ -370,8 +393,8 @@ pub async fn title_readers(app: &Platform, item: &str, accounts: &[String]) -> R
 pub async fn readers(app: &Platform, repo: &LinkedRepo, accounts: &[String]) -> Result<Vec<Viewer>, ApiError> {
     let mut out = Vec::new();
     for a in accounts {
-        let v = Viewer::of(app, a).await?;
-        if check(app, &v, std::slice::from_ref(repo)).await?.readable.has(repo.repo_id) {
+        let mut v = Viewer::of(app, a).await?;
+        if check(app, &mut v, std::slice::from_ref(repo)).await?.readable.has(repo.repo_id) {
             out.push(v);
         }
     }
