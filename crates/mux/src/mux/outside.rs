@@ -46,6 +46,12 @@ pub trait People: Send + Sync + Debug {
     fn roster_known(&self) -> bool {
         true
     }
+    /// People kept out for now only because their team is locked (by
+    /// principal id): a lock is lifted, so they haven't lost what they
+    /// read, though they're refused it while it lasts.
+    fn locked_out(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// The Claude Code conversations on this machine (#146).

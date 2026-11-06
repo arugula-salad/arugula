@@ -867,6 +867,8 @@ impl Daemon {
     /// Grants changed: hang up on whoever has nothing left, let go of panes
     /// they no longer see, and show everyone their state.
     pub(super) fn acl_changed(&mut self) {
+        // Whoever lost a closed pane's thread has lost it for good.
+        self.settle_closed();
         let acl = self.config.acl.clone();
         let gone: Vec<ClientId> =
             self.clients.iter().filter(|(_, c)| !acl.knows(&c.principal)).map(|(id, _)| *id).collect();

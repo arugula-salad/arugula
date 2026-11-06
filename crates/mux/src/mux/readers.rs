@@ -62,29 +62,48 @@ impl Daemon {
         (readers, !self.config.people.roster_known())
     }
 
-    /// Before the lists are said, make the closed panes' and sessions'
-    /// readers stick: whoever no longer reads one is taken off it for good,
-    /// so a share given them again later doesn't bring it back. Only once
+    /// Whenever who may read what changes (and before the lists are
+    /// said), make the closed panes' and sessions' readers stick: whoever
+    /// no longer reads one is taken off it for good, so a share given them
+    /// again later doesn't bring it back, whether chat is on or not. Not
+    /// those kept out only by their team's lock, which is lifted: they're
+    /// refused while it lasts (`readers`) and read again after. Only once
     /// the team's roster is known, which is also when one that closed
-    /// before it was gets the team's part of who read it.
+    /// before it was gets the team's part of who read it: its members and
+    /// owners (its shares were known when it closed).
     pub(super) fn settle_closed(&mut self) {
-        if !self.config.people.roster_known() {
+        let known = self.config.people.roster_known();
+        if !known || self.closed.is_empty() {
             return;
         }
         let people: std::collections::HashMap<String, Principal> = self.people().into_iter().collect();
+        let locked: HashSet<String> = self.config.people.locked_out().into_iter().collect();
+        let team: Vec<(&String, &Principal)> = {
+            let ids: HashSet<String> = self
+                .config
+                .people
+                .team_people()
+                .into_iter()
+                .chain(self.config.people.as_owner())
+                .map(|p| p.id().to_owned())
+                .collect();
+            people.iter().filter(|(id, _)| ids.contains(*id)).collect()
+        };
         let mut closed = std::mem::take(&mut self.closed);
         let mut changed = false;
         let mut settle = |readers: &mut ReadersAtClose, pending: &mut bool, session: SessionId, private: bool| {
             if std::mem::take(pending) {
                 changed = true;
-                for (id, who) in &people {
+                for (id, who) in &team {
                     if let Some((_, from)) = self.role_in(who, session, private) {
-                        readers.entry(id.clone()).or_insert(from);
+                        readers.entry((*id).clone()).or_insert(from);
                     }
                 }
             }
             let before = readers.len();
-            readers.retain(|id, _| people.get(id).is_some_and(|who| self.role_in(who, session, private).is_some()));
+            readers.retain(|id, _| {
+                locked.contains(id) || people.get(id).is_some_and(|who| self.role_in(who, session, private).is_some())
+            });
             changed |= readers.len() != before;
         };
         for c in closed.panes.values_mut() {

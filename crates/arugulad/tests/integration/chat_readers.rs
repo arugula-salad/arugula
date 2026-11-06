@@ -16,7 +16,7 @@ use arugula_control_wire::hosted::{EnrollRequest, Enrollment};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind,
     hosted::{Delegation, HostedCert, HostedKey},
-    team::{AccountCerts, Member, Roster, TeamPin, TeamRole},
+    team::{AccountCerts, Member, Roster, TeamLock, TeamPin, TeamRole},
 };
 use arugula_testkit::arugulad;
 use axum::{
@@ -51,6 +51,9 @@ struct Fake {
     certs: Arc<Mutex<Vec<Cert>>>,
     /// A team machine's team: its rosters and its members' certificates.
     team: Arc<Mutex<Option<Team>>>,
+    /// Whether control says that team is locked, and its owner's signed
+    /// word on it.
+    locked: Arc<Mutex<(bool, Option<TeamLock>)>>,
     /// Any call to the import route of M124, which is gone.
     imports: Arc<Mutex<Vec<Value>>>,
     /// Each reader list posted, and when.
@@ -151,7 +154,8 @@ async fn team(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
     let since: u64 = query(q, "since").and_then(|s| s.parse().ok()).unwrap_or(0);
     let (rosters, certs) = f.team.lock().unwrap().clone().unwrap_or_default();
     let rosters: Vec<Roster> = rosters.into_iter().filter(|r| r.version > since).collect();
-    Json(json!({ "locked": false, "rosters": rosters, "certs": certs }))
+    let (locked, lock) = f.locked.lock().unwrap().clone();
+    Json(json!({ "locked": locked, "lock": lock, "rosters": rosters, "certs": certs }))
 }
 
 async fn import(State(f): State<Fake>, Json(b): Json<Value>) -> Json<Value> {
@@ -644,6 +648,212 @@ fn a_closed_panes_readers_only_narrow() {
         newest(&f, "pane", &open_t).is_some_and(|l| l.contains(&"a3".to_owned()))
     });
     assert_eq!(newest(&f, "pane", &closing_t), Some(vec![]), "cy back on the closed pane");
+}
+
+/// Alex's (`a1`) machine in team `t1`, joined to the fake control at
+/// `url` and started: the roster is what `f` serves, fetched at the first
+/// refresh.
+fn team_machine(name: &str, f: &Fake, url: &str, alex: &DeviceKeys, alex_root: &Cert) -> arugula_testkit::Daemon {
+    let mut d = arugulad!(name).no_provider().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
+    d.stop();
+    let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let mut daemon_cert = Cert::new(&daemon, "a1", Kind::Daemon, "box");
+    daemon_cert.sign_with(alex);
+    *f.certs.lock().unwrap() = vec![alex_root.clone(), daemon_cert.clone()];
+    let saved = json!({
+        "url": url, "trust": { "account": "a1", "root": alex_root.device }, "cert": daemon_cert,
+        "certs": [alex_root], "revocations": [], "login": "alex",
+        "team": TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: alex_root.device.clone() },
+    });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    d.start();
+    d
+}
+
+/// Team `t1`: Alex (`a1`) its owner and, if `cy`, Cy (`a3`) an editor;
+/// the roster at `version` and the members' certificates.
+fn alex_and_cy(alex: &DeviceKeys, alex_root: &Cert, cy_root: &Cert, version: u64, cy: bool) -> Team {
+    let mut members = vec![member("a1", alex_root, TeamRole::Owner)];
+    if cy {
+        members.push(member("a3", cy_root, TeamRole::Editor));
+    }
+    let mut certs = AccountCerts::new();
+    for (a, c) in [("a1", alex_root), ("a3", cy_root)] {
+        certs.insert(a.into(), (vec![c.clone()], vec![]));
+    }
+    (vec![roster(alex, version, members)], certs)
+}
+
+/// Share the session `sid` with Eve (`a9`) as a viewer, or take it away:
+/// a change in who may read what, which also has the daemon look at
+/// control again.
+fn eve(d: &arugula_testkit::Daemon, sid: u64, on: bool) {
+    let share = if on {
+        json!({ "session": sid, "principal": "account:a9", "name": "eve", "role": "viewer", "history": true,
+                "root": DeviceKeys::generate().id() })
+    } else {
+        json!({ "session": sid, "principal": "account:a9", "role": null })
+    };
+    d.post("/api/acl", share);
+}
+
+/// A closed pane, and an open one in the same session, as `(closed, open,
+/// session)`: the first pane closes once `ready` holds for the lists.
+fn close_one(
+    d: &arugula_testkit::Daemon,
+    f: &Fake,
+    ready: impl Fn(&Fake, &str, &str) -> bool,
+) -> (String, String, u64) {
+    let first = &d.get("/api/panes")[0];
+    let (closing, sid) = (first["id"].as_u64().unwrap(), first["session"].as_u64().unwrap());
+    let open = d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }))["pane"].as_u64().unwrap();
+    let (closing_t, open_t) = (closing.to_string(), open.to_string());
+    d.wait_for("the lists before the pane closes", || ready(f, &closing_t, &open_t));
+    d.post(&format!("/api/panes/{closing}/close"), json!({}));
+    d.wait_for("the pane closed", || !d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == closing));
+    (closing_t, open_t, sid)
+}
+
+/// Taken off a closed pane's thread is for good even while chat is off:
+/// a share taken away and given again before the machine next says its
+/// lists doesn't bring the closed pane back.
+#[test]
+fn a_revoke_while_chat_is_off_sticks_to_a_closed_pane() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    let url = serve(&rt, f.clone());
+    let mut d =
+        arugulad!("offreaders").no_provider().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("a refresh", || !f.features.lock().unwrap().is_empty());
+    let share = |sid: u64, on: bool| {
+        let body = if on {
+            json!({ "session": sid, "principal": "account:a2", "name": "alex", "role": "editor", "history": true,
+                    "root": DeviceKeys::generate().id() })
+        } else {
+            json!({ "session": sid, "principal": "account:a2", "role": null })
+        };
+        d.post("/api/acl", body);
+    };
+    let sid = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    share(sid, true);
+    let (closed, open, sid) = close_one(&d, &f, |_, _, _| true);
+    share(sid, false);
+    share(sid, true);
+    assert!(f.readers.lock().unwrap().is_empty(), "chat is off: nothing was said");
+
+    // Chat on: the first lists said have alex on the open pane only.
+    *f.chat.lock().unwrap() = true;
+    d.stop();
+    d.start();
+    d.wait_for("the lists", || newest(&f, "pane", &open).is_some());
+    assert_eq!(newest(&f, "pane", &open), Some(vec!["a2".to_owned()]));
+    assert_eq!(newest(&f, "pane", &closed), Some(vec![]), "a share again brought the closed pane back");
+}
+
+/// A pane that closes before a team machine has its roster gets the
+/// team's part of who read it once the roster comes: its members, and
+/// not someone shared the session after it closed.
+#[test]
+fn a_pane_closed_before_the_roster_gets_only_the_team() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, cy_root) = device("a3");
+    let d = team_machine("pendingreaders", &f, &url, &alex, &alex_root);
+    d.wait_for("a refresh", || !f.features.lock().unwrap().is_empty());
+    let (closed, open, sid) = close_one(&d, &f, |_, _, _| true);
+
+    // Eve is shared the session after it closed; then the roster comes.
+    eve(&d, sid, true);
+    *f.team.lock().unwrap() = Some(alex_and_cy(&alex, &alex_root, &cy_root, 1, true));
+    eve(&d, sid, false);
+    eve(&d, sid, true);
+    d.wait_for("cy and eve on the open pane", || {
+        newest(&f, "pane", &open).is_some_and(|l| l.contains(&"a3".to_owned()) && l.contains(&"a9".to_owned()))
+    });
+    d.wait_for("cy on the closed pane", || newest(&f, "pane", &closed) == Some(vec!["a3".to_owned()]));
+}
+
+/// A team's lock keeps its members from a closed pane's thread while it
+/// lasts, and not after: a lock isn't leaving the team.
+#[test]
+fn a_teams_lock_doesnt_take_a_closed_pane_for_good() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, cy_root) = device("a3");
+    *f.team.lock().unwrap() = Some(alex_and_cy(&alex, &alex_root, &cy_root, 1, true));
+    let d = team_machine("lockreaders", &f, &url, &alex, &alex_root);
+    let cy = Some(vec!["a3".to_owned()]);
+    let (closed, open, sid) = close_one(&d, &f, |f, c, o| {
+        newest(f, "pane", c) == Some(vec!["a3".to_owned()]) && newest(f, "pane", o).is_some()
+    });
+    d.wait_for("the closed pane held", || held_panes(&f).contains(&closed));
+
+    // Locked: cy is in no list.
+    *f.locked.lock().unwrap() = (true, None);
+    eve(&d, sid, true);
+    d.wait_for("cy off both panes while locked", || {
+        newest(&f, "pane", &open).is_some_and(|l| !l.contains(&"a3".to_owned()))
+            && newest(&f, "pane", &closed) == Some(vec![])
+    });
+
+    // Its owner lifts the lock: cy reads both again.
+    let mut lock = TeamLock {
+        team: "t1".into(),
+        locked: false,
+        version: 1,
+        at: arugula_e2e::now_ms(),
+        by: String::new(),
+        sig: String::new(),
+    };
+    lock.sign_with(&alex);
+    *f.locked.lock().unwrap() = (false, Some(lock));
+    eve(&d, sid, false);
+    d.wait_for("cy back on the closed pane", || newest(&f, "pane", &closed) == cy);
+    assert!(newest(&f, "pane", &open).is_some_and(|l| l.contains(&"a3".to_owned())));
+}
+
+/// While the machine's enrollment can't be read, who's in its team isn't
+/// known: a pane that closes then gets the team's part of who read it once
+/// the enrollment reads again.
+#[test]
+fn a_pane_closed_while_the_enrollment_is_unreadable_keeps_the_team() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, cy_root) = device("a3");
+    *f.team.lock().unwrap() = Some(alex_and_cy(&alex, &alex_root, &cy_root, 1, true));
+    let mut d = team_machine("unreadablereaders", &f, &url, &alex, &alex_root);
+    let first = &d.get("/api/panes")[0];
+    let (closing, sid) = (first["id"].as_u64().unwrap(), first["session"].as_u64().unwrap());
+    // Another pane, so the session stays when this one closes.
+    d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }));
+    let closing_t = closing.to_string();
+    d.wait_for("cy reads the pane", || newest(&f, "pane", &closing_t) == Some(vec!["a3".to_owned()]));
+
+    // The enrollment unreadable over a restart; the pane closes meanwhile.
+    d.stop();
+    let path = d.state.join("control.json");
+    let good = std::fs::read(&path).unwrap();
+    std::fs::write(&path, b"{ not json").unwrap();
+    d.start();
+    d.post(&format!("/api/panes/{closing}/close"), json!({}));
+    d.wait_for("the pane closed", || !d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == closing));
+    let sent = f.readers.lock().unwrap().len();
+    std::fs::write(&path, &good).unwrap();
+    d.wait_for("the lists again", || f.readers.lock().unwrap().len() > sent);
+    eve(&d, sid, true);
+    d.wait_for("cy on the closed pane", || newest(&f, "pane", &closing_t) == Some(vec!["a3".to_owned()]));
 }
 
 /// A Cloud workspace of team `t1`'s project, whose founder Alex (`a1`)
