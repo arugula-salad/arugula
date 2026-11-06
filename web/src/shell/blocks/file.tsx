@@ -14,6 +14,7 @@ import { registerBlock, type BlockView } from "./view";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import { editFile } from "./diff";
 import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 export interface FileState {
   path: string;
@@ -73,7 +74,7 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
   const problem = s?.error ?? (s?.binary ? `A binary file (${KB(s.size)})` : null);
   return (
     <div class="review" data-file-block={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path" title={path}>
           <b>{path.slice(slash + 1)}</b>
           {s?.line ? <span class="dim">:{s.line}</span> : null} <span class="dim">{path.slice(0, slash)}</span>
@@ -94,7 +95,7 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
             {s?.watching ? "live" : "paused"}
           </span>
         )}
-      </div>
+      </Bar>
       {problem && (
         s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <BlockEmpty>{problem}.</BlockEmpty>
       )}

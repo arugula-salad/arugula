@@ -240,6 +240,13 @@ export function IssueView({
     return line === null ? [] : [{ key: `e${e.id}`, at: e.at, el: <IssueEventRow e={e} line={line} nameOf={nameOf} /> }];
   });
 
+  // Two labelled actions at most (#686): closing, and the agent. Editing
+  // the title and sending it to GitHub are in ⋯.
+  const more: MenuItem[] = [
+    ...(writer && editing !== "title" ? [{ label: "Edit title", run: () => setEditing("title") }] : []),
+    ...(writer && api.openOnGithub && api.repos && !issue.github ? [openOnGithub(issue, api.openOnGithub, api.repos, toast, again)] : []),
+  ];
+
   return (
     <section class={`${cls} issue-page`} data-issue={issue.id} data-issue-number={issue.number} data-stale={stale ? "" : undefined}>
       <PageHeader
@@ -253,17 +260,10 @@ export function IssueView({
         named
         back={back}
         class="issue-head"
+        more={more}
         actions={
           <span class="issue-actions">
             {writer && api.agent && issue.state === "open" && <AgentOnThis id={id} agent={api.agent} />}
-            {writer && api.openOnGithub && api.repos && !issue.github && (
-              <OpenOnGithub issue={issue} send={api.openOnGithub} repos={api.repos} sent={again} />
-            )}
-            {writer && editing !== "title" && (
-              <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
-                Edit title
-              </button>
-            )}
             {writer &&
               (issue.state === "closed" ? (
                 <button class="secondary small" data-issue-reopen onClick={() => void change({ state: "open" })}>
@@ -414,24 +414,17 @@ function AgentOnThis({ id, agent }: { id: string; agent: (id: string) => Promise
   );
 }
 
-/** Open on GitHub (M205): a menu of the project's linked repos, each
- * sending it there as the reader, which is the confirmation. GitHub's
- * authorization in this browser, or one of their machines. */
-function OpenOnGithub({
-  issue,
-  send,
-  repos,
-  sent,
-}: {
-  issue: NativeIssue;
-  send: (id: string, repo: string) => Promise<DraftSent>;
-  repos: (project: string) => Promise<string[]>;
-  sent: () => void;
-}) {
-  const { toast } = usePlatformApi();
-  const [busy, setBusy] = useState(false);
+/** Open on GitHub (M205), in the header's ⋯: a menu of the project's linked
+ * repos, each sending it there as the reader, which is the confirmation.
+ * GitHub's authorization in this browser, or one of their machines. */
+function openOnGithub(
+  issue: NativeIssue,
+  send: (id: string, repo: string) => Promise<DraftSent>,
+  repos: (project: string) => Promise<string[]>,
+  toast: (s: string) => void,
+  sent: () => void,
+): MenuItem {
   const go = async (repo: string) => {
-    setBusy(true);
     try {
       const v = await send(issue.id, repo);
       if (v.authorize) return location.assign(v.authorize);
@@ -439,12 +432,9 @@ function OpenOnGithub({
       sent();
     } catch (e) {
       toast((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
-  const pick = async (e: MouseEvent) => {
-    const at = e.currentTarget as HTMLElement;
+  const pick = async () => {
     let list: string[];
     try {
       list = await repos(issue.project);
@@ -452,23 +442,17 @@ function OpenOnGithub({
       return toast((err as Error).message);
     }
     if (!list.length) return toast("Link a GitHub repo to this project first: its issue goes there");
-    const r = at.getBoundingClientRect();
-    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => {} }, [
+    const r = document.querySelector("[data-page-more]")?.getBoundingClientRect();
+    openMenu({ clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4, preventDefault: () => {} }, [
       { header: "Open on GitHub, as you" },
       ...list.map((repo) => ({ label: `New issue on ${repo}`, run: () => void go(repo) })),
     ]);
   };
-  return (
-    <button
-      class="secondary small"
-      disabled={busy}
-      title="Send it to a linked GitHub repo as a new issue, as you. It stays here too, and new comments cross both ways."
-      data-issue-open-github
-      onClick={(e) => void pick(e)}
-    >
-      {busy ? "Sending…" : "Open on GitHub"}
-    </button>
-  );
+  return {
+    label: "Open on GitHub",
+    hint: "Send it to a linked GitHub repo as a new issue, as you. It stays here too, and new comments cross both ways.",
+    run: () => void pick(),
+  };
 }
 
 function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameOf: NameOf }) {

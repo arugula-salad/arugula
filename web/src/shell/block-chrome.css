@@ -1,28 +1,6 @@
 /* Shared embedded-pane chrome: keep controls subordinate to pane identity.
-   UI audit #177: one bar for every block, the same height and buttons,
-   the team chat's and the workspace graph's too (they ran 33-45px, each
-   with its own buttons). */
-.browser-bar,
-.agent-bar,
-.review-bar,
-.chat-block-bar,
-.ws-graph-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  height: 36px;
-  min-height: 36px;
-  flex: none;
-  box-sizing: border-box;
-  gap: 8px;
-  padding: 0 10px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  color: var(--subtle);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
+   UI audit #177: one bar for every block (shared/ui/bar.css, #686), the
+   team chat's and the workspace graph's too. */
 /* Its plain buttons are the bar button's (buttons.css); its selects are
    the same 24px. A primary or secondary in a bar keeps its own look. */
 :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {

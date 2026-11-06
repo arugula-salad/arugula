@@ -13,6 +13,7 @@ import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, MoreIcon, NVIM_GLYPH } from "./icons";
 import { HintChip } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
+import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -123,12 +124,12 @@ export function PaneHeader({
     openFresh(client, at, items);
   };
   return (
-    <div
+    <Bar
       class={`pane-header live${active ? " active" : ""}`}
       data-pane-header={id}
       aria-current={active ? "true" : undefined}
       style={style}
-      title={`${title}: click to type here, drag to move`}
+      tip={`${title}: click to type here, drag to move`}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
         e.preventDefault();
@@ -139,22 +140,57 @@ export function PaneHeader({
         e.preventDefault();
         more(e);
       }}
+      lead={
+        <>
+          {n > 0 && (
+            <span class="pane-header-n" title={jump ? `Pane ${n} (${jump})` : `Pane ${n}`} data-pane-ordinal={n}>
+              {String(n).padStart(2, "0")}
+            </span>
+          )}
+          <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={glyph} /></span>
+        </>
+      }
+      title={<BarTitle class="pane-header-title">{title}</BarTitle>}
+      status={
+        <>
+          {status.word && client.connected && (
+            <span class={`pane-header-status ${status.cls}`} data-pane-status={status.cls}>
+              <span class={`ws-dot ${status.cls}`} aria-hidden="true" />
+              {status.word}
+            </span>
+          )}
+          {host && <span class="pane-header-host" title={`Runs on ${host}`}>{host}</span>}
+        </>
+      }
+      where={where && where !== title ? <BarWhere class="pane-header-where" title={cwd ?? where}>{where}</BarWhere> : undefined}
+      actions={
+        <>
+          <HintChip client={client} pane={id} />
+          {sizedElsewhere && (
+            <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
+              <span class="pane-header-sized-what">Sized by another window</span>
+              <button aria-label="Use this window's size" title="Use this window's size" onClick={sizedElsewhere}>
+                Use this one
+              </button>
+            </span>
+          )}
+          <button
+            class={`pane-header-button bar-btn sq${focused ? " on" : ""}`}
+            data-pane-expand={id}
+            aria-pressed={focused}
+            aria-label={focused ? "Restore layout" : "Focus this pane"}
+            title={why ?? `${focused ? "Restore layout" : "Focus this pane"} (${keyHint("pane.focus")})`}
+            disabled={!!why}
+            onClick={() => toggleFocus(client, tab, id)}
+          >
+            <ExpandIcon on={focused} />
+          </button>
+          <button class="pane-header-button bar-btn sq" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
+            <MoreIcon size={13} />
+          </button>
+        </>
+      }
     >
-      {n > 0 && (
-        <span class="pane-header-n" title={jump ? `Pane ${n} (${jump})` : `Pane ${n}`} data-pane-ordinal={n}>
-          {String(n).padStart(2, "0")}
-        </span>
-      )}
-      <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={glyph} /></span>
-      <span class="pane-header-title">{title}</span>
-      {status.word && client.connected && (
-        <span class={`pane-header-status ${status.cls}`} data-pane-status={status.cls}>
-          <span class={`ws-dot ${status.cls}`} aria-hidden="true" />
-          {status.word}
-        </span>
-      )}
-      {host && <span class="pane-header-host" title={`Runs on ${host}`}>{host}</span>}
-      {where && where !== title && <span class="pane-header-where" title={cwd ?? where}>{where}</span>}
       {branch && (
         <span class="pane-header-branch" title={`Branch ${branch}`}>
           <BranchIcon size={11} />
@@ -163,31 +199,7 @@ export function PaneHeader({
       )}
       {/* #450: Claude Code running here, as it says from inside (its mod). */}
       {info?.live && info.type !== "agent" && <ContextStrip c={info.live} slim />}
-      <span class="pane-header-fill" />
-      <HintChip client={client} pane={id} />
-      {sizedElsewhere && (
-        <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
-          <span class="pane-header-sized-what">Sized by another window</span>
-          <button aria-label="Use this window's size" title="Use this window's size" onClick={sizedElsewhere}>
-            Use this one
-          </button>
-        </span>
-      )}
-      <button
-        class={`pane-header-button bar-btn sq${focused ? " on" : ""}`}
-        data-pane-expand={id}
-        aria-pressed={focused}
-        aria-label={focused ? "Restore layout" : "Focus this pane"}
-        title={why ?? `${focused ? "Restore layout" : "Focus this pane"} (${keyHint("pane.focus")})`}
-        disabled={!!why}
-        onClick={() => toggleFocus(client, tab, id)}
-      >
-        <ExpandIcon on={focused} />
-      </button>
-      <button class="pane-header-button bar-btn sq" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
-        <MoreIcon size={13} />
-      </button>
-    </div>
+    </Bar>
   );
 }
 

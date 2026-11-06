@@ -18,6 +18,7 @@ import type { Span } from "../swarm/code";
 import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
 import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
@@ -247,7 +248,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
   const owner = !client.state?.roles;
   return (
     <div class="review" data-diff={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <b class="review-name">{s.name ?? "…"}</b>
         {machine && (
           <Chip kind="tag" tone="info" class="chip-gap" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
@@ -290,7 +291,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
             ↻
           </button>
         )}
-      </div>
+      </Bar>
       <div class="review-body">
         {s.on_default && (
           <div class="diff-note" data-on-default>

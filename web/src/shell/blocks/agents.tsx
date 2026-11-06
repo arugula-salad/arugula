@@ -20,6 +20,7 @@ import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 interface Card {
   name: string;
@@ -131,7 +132,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
   };
   return (
     <div class="review ws agents" data-agents-block={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path">
           <b>Team agents</b>
         </span>
@@ -142,7 +143,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
         <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
           {busy === "refresh" ? "…" : "↻"}
         </button>
-      </div>
+      </Bar>
       {s.error && (
         <BlockError
           inline

@@ -1528,6 +1528,116 @@ async fn a_block_shows_to_those_who_reach_its_machine_or_by_its_own_agent() {
     assert_eq!(seen(&read("a").await.1, "1"), told("apad", "by a"), "nothing kept of the failure");
 }
 
+/// What a reader isn't told of a block stays untold everywhere: a block its
+/// own agent attached hides once the machine's grant is revoked, from a
+/// reader who can't reach the machine; a row stalls only on blocks the
+/// reader is told; a claim held by a block a person attached names neither
+/// its title nor its machine. A read asks the hub once for its Docs and
+/// blocks together, and waits on it two seconds at most.
+#[tokio::test]
+async fn what_a_reader_isnt_told_of_a_block_stays_untold() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_board_attachments, agent_project_claim_check};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("apad", "a", None);
+    hub.daemon("bmac", "b", Some("t"));
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, granted) =
+        call(&base, "a", "POST", "/api/grants", give("apad", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{granted}");
+    grant_write(&base, "b", "bmac", &t).await;
+    let (first, second) = (issue(&base, "a", &t, "Parser").await, issue(&base, "a", &t, "Lexer").await);
+    let (one, row1) = board_on(&base, "a", &t, "Launch", &first).await;
+    let (two, row2) = board_on(&base, "a", &t, "Later", &second).await;
+    let block = |row: &str, pane: &str| json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": "apad", "pane": pane } });
+    let read = |who: &'static str, board: &str| {
+        let (base, board) = (base.clone(), board.to_owned());
+        async move { call(&base, who, "GET", &format!("/api/boards/{board}"), None).await }
+    };
+    // The attachment on `row`: its machine as the reader is told it, and its state.
+    let seen = |v: &Value, row: &str| -> (String, Value) {
+        let a = &row_in(v, row)["attachments"][0];
+        (a["pointer"]["machine"].as_str().unwrap().to_owned(), a.get("block").cloned().unwrap_or(Value::Null))
+    };
+    let report = |pane: &str, state: &str| json!({ "pane": pane, "block": { "state": state, "title": "Secret lane" } });
+    let tick = || app.cache.advance(crate::cache::CACHE_TICK);
+
+    // a attaches apad's pane 1, idle for 42 minutes: stalled to a, who
+    // reaches apad; to b the row is in Doing with no stall.
+    assert_eq!(attach(&base, "a", &one, block(&row1, "1")).await.0, 200);
+    let idle = report("1", "idle");
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(idle.clone())).await.0, 200);
+    let long_ago = arugula_e2e::now_ms() - 42 * 60_000;
+    app.db.c().execute("UPDATE board_block_states SET state_since = ?1", params![long_ago]).unwrap();
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(idle)).await.0, 200);
+    let (_, v) = read("a", &one).await;
+    assert_eq!(row_in(&v, &row1)["marks"], json!([{ "kind": "stalled", "since": long_ago }]), "{v}");
+    let (_, v) = read("b", &one).await;
+    assert_eq!((row_in(&v, &row1)["marks"].clone(), lane(&v, &row1)), (Value::Null, "doing".to_owned()), "{v}");
+    assert_eq!(seen(&v, &row1), (String::new(), Value::Null), "{v}");
+
+    // bmac asks who holds #1: an agent on another machine, nothing more.
+    let held_of = |issue: &'static str| {
+        let (base, path) = (base.clone(), agent_project_claim_check(&t));
+        async move {
+            let check = json!({ "issue": issue, "machine": "bmac" });
+            let (st, v) = signed(&base, "b bmac", "POST", &path, Some(check)).await;
+            assert_eq!(st, 200, "{v}");
+            v["held"].as_str().unwrap_or_default().to_owned()
+        }
+    };
+    let held = held_of("#1").await;
+    assert!(held.contains("an agent on another machine"), "{held}");
+    assert!(!held.contains("Secret lane") && !held.contains("apad"), "{held}");
+
+    // apad's own agent attaches its pane 2: b is told while apad writes the
+    // project. A machine Doc a linked and the block cost one hub call a read.
+    let (st, v) = signed(&base, "a apad", "POST", &agent_board_attachments(&two), Some(block(&row2, "2"))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("2", "working"))).await.0, 200);
+    let doc = json!({ "kind": "machine_doc", "machine": "apad", "doc": "d1", "title": "notes" });
+    let (st, v) = call(&base, "a", "POST", &format!("/api/boards/{two}/docs"), Some(json!({ "pointer": doc }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(attach(&base, "a", &two, block(&row2, "3")).await.0, 200);
+    tick();
+    let asked = hub.calls_of("may_reach");
+    let (_, v) = read("b", &two).await;
+    assert_eq!(hub.calls_of("may_reach"), asked + 1, "one label call for Docs and blocks: {v}");
+    assert_eq!(seen(&v, &row2).0, "apad", "{v}");
+    assert_eq!(seen(&v, &row2).1["title"], "Secret lane", "{v}");
+    assert_eq!(v["docs"][0]["machine_name"], "a machine", "{v}");
+    let held = held_of("#2").await;
+    assert!(held.contains("Secret lane on apad-box"), "its own agent's, while apad writes: {held}");
+
+    // Revoked: b isn't told the block; a, who reaches apad, is told the
+    // machine but no state, as nothing apad reported shows now.
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/grants/{}/revoke", granted["id"].as_str().unwrap()), None).await;
+    assert_eq!(st, 200);
+    let (_, v) = read("b", &two).await;
+    assert_eq!(seen(&v, &row2), (String::new(), Value::Null), "{v}");
+    let (_, v) = read("a", &two).await;
+    assert_eq!(seen(&v, &row2), ("apad".to_owned(), Value::Null), "{v}");
+    let held = held_of("#2").await;
+    assert!(held.contains("an agent on another machine") && !held.contains("apad"), "revoked: {held}");
+
+    // A hub slower than two seconds: the read answers within them, telling
+    // a nothing it would have asked about.
+    hub.reach_slow(Some(std::time::Duration::from_secs(5)));
+    tick();
+    let started = std::time::Instant::now();
+    let (st, v) = read("a", &one).await;
+    let took = started.elapsed();
+    assert_eq!(st, 200, "{v}");
+    assert!(took < std::time::Duration::from_millis(4_000), "the read waited {took:?}");
+    assert_eq!(seen(&v, &row1).0, "", "{v}");
+    hub.reach_slow(None);
+    tick();
+    assert_eq!(seen(&read("a", &one).await.1, &row1).0, "apad", "told again");
+}
+
 /// Stalled: a Doing row whose open blocks have all been idle longer than the
 /// project's `stall_minutes`, with no PR on it. It is a mark for every
 /// reader, in Needs you only for the person who owns the block, and a reader

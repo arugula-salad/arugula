@@ -113,12 +113,12 @@ function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState
   const title = none ? NO_LINK : copied === "private" ? `Copied: ${ONLY_YOU}` : "Copy link";
   return (
     <span class="doc-bar-share" data-doc-bar-share-group>
-      <button type="button" class="doc-bar-icon" data-doc-bar-link data-copied={copied ?? undefined} disabled={none} title={title} aria-label="Copy link" onClick={link}>
+      <button type="button" class="doc-bar-icon bar-btn sq" data-doc-bar-link data-copied={copied ?? undefined} disabled={none} title={title} aria-label="Copy link" onClick={link}>
         {copied ? <span class="doc-bar-copied">Copied ✓</span> : <LinkIcon />}
       </button>
       <button
         type="button"
-        class="doc-bar-icon"
+        class="doc-bar-icon bar-btn sq"
         data-doc-bar-share
         data-older={older ? "" : undefined}
         title={older ? "Share… (the shared copy is older than this Doc)" : "Share…"}

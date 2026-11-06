@@ -25,6 +25,7 @@ import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 export interface Tool {
   type: "tool";
@@ -611,7 +612,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         setAttached([...attached, ...files]);
       }}
     >
-      <div class="agent-bar">
+      <Bar sub class="agent-bar">
         <span class={`agent-status ${s.status}`}>{chip}</span>
         <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
@@ -653,7 +654,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             Fork
           </button>
         )}
-      </div>
+      </Bar>
       <WornBar s={s} />
       {opened && (
         <div class="agent-import">

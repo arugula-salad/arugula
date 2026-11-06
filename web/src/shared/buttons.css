@@ -142,13 +142,25 @@ a.secondary.danger:hover {
 
   /* A bar of a fixed height (the panes' toolbar and header, a block's)
      keeps its 24: it has no room for more. */
-  .bar-btn:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+  .bar-btn:not(:is(.pane-toolbar, .pane-header, .hbar) *) {
     height: 40px;
     min-width: 40px;
   }
 
-  .bar-btn.sq:not(:is(.pane-toolbar, .pane-header, .review-bar) *) {
+  .bar-btn.sq:not(:is(.pane-toolbar, .pane-header, .hbar) *) {
     width: 40px;
+  }
+
+  /* The phone's bar is 44 (shared/ui/bar.css), so it has room for 40. */
+  @media (max-width: 700px) {
+    .hbar .bar-btn {
+      height: 40px;
+      min-width: 40px;
+    }
+
+    .hbar .bar-btn.sq {
+      width: 40px;
+    }
   }
 
   .seg > button {

@@ -1,0 +1,68 @@
+/* The bar (./bar.tsx, #686): one row, 34px, never wrapping. `:where` keeps
+   it under any bar that adds to it (the pane's header positions itself,
+   a block's second bar sits on the surface). The border is inside the
+   34px (border-box): a pane's reserved header row is exactly this. */
+
+:where(.hbar) {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex: none;
+  gap: 8px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--chrome-line, var(--line));
+  background: var(--chrome-panel, var(--surface));
+  color: var(--subtle);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* A block's own bar, under the pane's: the same height, on the surface so
+   it still reads as the block's. */
+:where(.hbar.sub) {
+  padding: 0 10px;
+  background: var(--surface);
+  border-bottom-color: var(--line);
+}
+
+.hbar-title {
+  /* It doesn't shrink while the where can: shrink is shared by flex-basis,
+     so a long topic would cut a short name first. A long title still stops
+     at 60% and ends in an ellipsis. */
+  flex: 0 0 auto;
+  max-width: 60%;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hbar-where {
+  /* Gives way first: the title is cut short last. */
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.hbar-fill {
+  flex: 1 0 0;
+}
+
+/* The phone's bar is a finger's height (the app's phone layout starts at
+   700px). A chat block narrow enough to draw as a phone's is still a
+   computer's bar: this is the window's width. */
+@media (max-width: 700px) {
+  :where(.hbar) {
+    height: 44px;
+    min-height: 44px;
+  }
+}

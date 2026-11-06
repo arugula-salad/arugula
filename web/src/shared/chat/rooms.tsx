@@ -38,6 +38,7 @@ import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
+import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -474,14 +475,16 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
         <aside class="chat-side">
-          <header class="chat-side-head" onContextMenu={workspaceMenu}>
-            <strong class="chat-side-name" title={head}>
-              {head}
-            </strong>
-            <button class="chat-new chat-workspace" title="Mark all as read, sections, unread only" aria-label="Chat options" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
-              ⋯
-            </button>
-          </header>
+          <HeadBar
+            class="chat-side-head"
+            onContextMenu={workspaceMenu}
+            title={<BarTitle class="chat-side-name" title={head}>{head}</BarTitle>}
+            actions={
+              <button class="chat-new chat-workspace bar-btn sq" title="Mark all as read, sections, unread only" aria-label="Chat options" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
+                ⋯
+              </button>
+            }
+          />
           {list}
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
@@ -583,60 +586,90 @@ function RoomView({
   return (
     <div class="chat-main">
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
-        <header class="chat-head">
-          {phone && !pinned && (
-            <button class="chat-back" title="Every room" aria-label="Every room" onClick={() => nav.openChat()}>
-              ‹
-            </button>
-          )}
-          <div class="chat-title">
-            <strong>
+        <HeadBar
+          class="chat-head"
+          lead={
+            phone && !pinned ? (
+              <button class="chat-back" title="Every room" aria-label="Every room" onClick={() => nav.openChat()}>
+                ‹
+              </button>
+            ) : undefined
+          }
+          title={
+            <BarTitle class="chat-title">
               <span class="chat-title-sigil">{roomSigil(room)}</span>
               {label}
-            </strong>
-            <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
-          </div>
-          <PinsButton room={room} toast={toast} />
-          {/* On a computer the room's About is in Details (UI audit #169):
-              one ⓘ, not two. A phone has no Details. */}
-          {phone && <AboutButton room={room} toast={toast} />}
-          {!phone && people.length > 0 && (
-            <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
-              {people.slice(0, 3).map((p) => (
-                <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
-              ))}
-              <span>{people.length}</span>
-            </button>
-          )}
-          {reachable && (
-            <button class="chat-go" data-chat-go onClick={go}>
-              {room.kind === "pane" ? "Go to pane" : "Go to session"}
-            </button>
-          )}
-          <AgentsChip room={room.id} />
-          <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
-          <button
-            class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
-            title={bellFor(room).title}
-            aria-label={bellFor(room).title}
-            aria-haspopup="menu"
-            data-room-bell
-            data-room-level={room.level}
-            onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
-          >
-            {bellFor(room).glyph}
-          </button>
-          {!phone && (
-            <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
-              ⓘ
-            </button>
-          )}
-          {phone && !pinned && (
-            <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-              ✕
-            </button>
-          )}
-        </header>
+            </BarTitle>
+          }
+          where={
+            <BarWhere class="chat-topic-line">
+              <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
+            </BarWhere>
+          }
+          foldBelow={600}
+          fold={[
+            ...(!phone && people.length > 0
+              ? [
+                  {
+                    key: "members",
+                    node: (
+                      <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
+                        {people.slice(0, 3).map((p) => (
+                          <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
+                        ))}
+                        <span>{people.length}</span>
+                      </button>
+                    ),
+                    item: { label: `Members (${people.length})`, run: () => !details && toggleDetails() },
+                  },
+                ]
+              : []),
+            ...(reachable
+              ? [
+                  {
+                    key: "go",
+                    node: (
+                      <button class="chat-go" data-chat-go onClick={go}>
+                        {room.kind === "pane" ? "Go to pane" : "Go to session"}
+                      </button>
+                    ),
+                    item: { label: room.kind === "pane" ? "Go to pane" : "Go to session", run: go },
+                  },
+                ]
+              : []),
+          ]}
+          actions={
+            <>
+              <PinsButton room={room} toast={toast} />
+              {/* On a computer the room's About is in Details (UI audit #169):
+                  one ⓘ, not two. A phone has no Details. */}
+              {phone && <AboutButton room={room} toast={toast} />}
+              <AgentsChip room={room.id} />
+              <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
+              <button
+                class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
+                title={bellFor(room).title}
+                aria-label={bellFor(room).title}
+                aria-haspopup="menu"
+                data-room-bell
+                data-room-level={room.level}
+                onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
+              >
+                {bellFor(room).glyph}
+              </button>
+              {!phone && (
+                <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
+                  ⓘ
+                </button>
+              )}
+              {phone && !pinned && (
+                <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
+                  ✕
+                </button>
+              )}
+            </>
+          }
+        />
         <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip />
       </section>
       {thread !== undefined ? (
@@ -656,12 +689,15 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
   const owner = room.kind === "channel" && teams(api).find((t) => t.team === room.team)?.role === "owner";
   return (
     <aside class="chat-details" aria-label="Details" data-chat-details-panel>
-      <header class="chat-head">
-        <strong>Details</strong>
-        <button class="thread-close" title="Close" onClick={close}>
-          ✕
-        </button>
-      </header>
+      <HeadBar
+        class="chat-head"
+        title={<BarTitle>Details</BarTitle>}
+        actions={
+          <button class="thread-close" title="Close" aria-label="Close" onClick={close}>
+            ✕
+          </button>
+        }
+      />
       <div class="chat-details-body">
         {(room.kind === "pane" || room.kind === "session") && (
           <p class="chat-none">

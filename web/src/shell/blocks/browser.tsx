@@ -11,6 +11,7 @@ import { BlockFrame, RoutePill } from "./block-frame";
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -134,7 +135,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
   })();
   return (
     <div class="browser">
-      <div class="browser-bar">
+      <Bar sub class="browser-bar">
         <button title="Back" aria-label="Back" disabled={s.back.length === 0} onClick={() => call("back")}>
           ←
         </button>
@@ -158,7 +159,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
         </form>
         <RoutePill id={id} />
         {/^https?:/.test(s.url) && <OpenOutside href={s.url} />}
-      </div>
+      </Bar>
       {s.error ? (
         <BlockError title={port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`} detail={s.error} retry={() => call("reload")}>
           {port && <p class="block-error-detail">It shows again when the server is back.</p>}
