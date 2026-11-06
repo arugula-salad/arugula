@@ -41,3 +41,6 @@ runs:
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new
+    - name: ops/ builds its Fly plans (#1983)
+      shell: bash
+      run: just ops-check

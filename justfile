@@ -152,10 +152,24 @@ _static arch side:
     esac
     for b in "${bins[@]}"; do file "{{target_dir}}/$t/release/$b"; done
 
+# ops/ builds its three Fly plans (#1983), so a broken component fails a
+# pull request instead of the release that cuts it. Lint runs it.
+ops-check:
+    cd ops && npm ci --silent --no-audit --no-fund && npm run build --silent
+
+# Release control's hub and its platform to production through chant
+# (#1983): server-release.yml cuts a chant release of ops/ from COMMIT (by
+# default the server lane's newest green commit) and deploys it. Each `v*`
+# tag starts it too; this is for another commit, or a re-run.
+server-release commit="":
+    gh workflow run server-release.yml -R arugula-salad/arugula -f commit={{quote(commit)}}
+    @echo "Started: gh run list -R arugula-salad/arugula -w server-release -L 1"
+
 # Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
 # the static x86_64 binary in a distroless image, from a small build context.
-# Release tags deploy it from CI (release.yml's `control` job, M133); this
-# is for hotfixes, and the fallback when that job can't.
+# Releases deploy it through chant (`just server-release`, #1983); this is
+# for hotfixes. Its image isn't a release's: chant's ledger still names the
+# release before it until the next one.
 control-deploy: static-server
     #!/usr/bin/env bash
     set -euo pipefail
@@ -165,8 +179,8 @@ control-deploy: static-server
     cd "$ctx" && fly deploy --local-only --ha=false
 
 # Deploy control's platform to Fly (packaging/platform/fly.toml, M140): the
-# static x86_64 binary in a distroless image. Release tags deploy it from
-# CI before the hub (release.yml's `platform` job); this is for hotfixes.
+# static x86_64 binary in a distroless image. Releases deploy it through
+# chant before the hub (`just server-release`, #1983); this is for hotfixes.
 platform-deploy: static-server
     #!/usr/bin/env bash
     set -euo pipefail
@@ -907,8 +921,8 @@ macos cmd="tools" *args:
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
-# a release deploying the hub only when what it's built from changed; the
-# hosted template's supervision of arugulad (M258); its templates, one
+# a server release's preflight and its older-release guard
+# (scripts/ci-server-deploy); the hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
 # binaries.yml's gate on pull requests that change CI (#304);
 # and the flaky tests' quarantine (.config/quarantine.toml): its script,
@@ -932,8 +946,7 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/release-notes.sh
-    scripts/tests/hub-changed.sh
-    scripts/tests/ci-fly-rollback.sh
+    scripts/tests/server-deploy.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
@@ -1017,6 +1030,7 @@ check: test mux-guard workspace-guard
     just api-contract check
     just decisions check
     just whats-new
+    just ops-check
     just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check
