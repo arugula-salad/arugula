@@ -312,8 +312,8 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
                 "does: first, before anyone approves it, on a box of its own with no FLY_API_TOKEN: fetch the \
                  commit with a GITHUB_TOKEN minted for it that only reads; then with no token at all, in {dir}, \
                  {npm}, then chant run {op} to its gate ({gates}), chant's ledger kept on the box; then, once \
-                 everything that ran is stopped, push chant's ledger with the gate's pending fact and chant's plan \
-                 digest, with a GITHUB_TOKEN minted for that push\n"
+                 nothing that ran is left, the box's daemon checks that chant's ledger only gained the gate's \
+                 pending fact and its run record, and pushes it itself, with a GITHUB_TOKEN minted for that push\n"
             ));
             t.push_str(&format!(
                 "does: the owner's passkey signs chant's gate statement for that plan (chant approve --statement), as \

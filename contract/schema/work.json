@@ -1856,7 +1856,7 @@
         },
         {
           "const": "push",
-          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, and the\ntoken reaches only the driver's own git.",
+          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, the box's\ndaemon checked what the plan added, and the token reaches only the\ndaemon's own push, never the run user.",
           "type": "string"
         }
       ]

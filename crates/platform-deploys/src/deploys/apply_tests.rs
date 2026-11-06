@@ -1233,6 +1233,14 @@ async fn a_chant_fly_plan_gets_a_token_that_reads_then_one_that_writes() {
     assert_eq!(given(ask_step(&app, &m, &run.id, Some(PlanStep::Fetch)).await), ["GITHUB_TOKEN"]);
     assert_eq!(gh.lock().unwrap().minted.last().unwrap()["contents"], "read", "the fetch's token only reads");
     refused(ask_step(&app, &m, &run.id, Some(PlanStep::Fetch)).await, "given already");
+    // Whoever asked can't ask now (an editor made a viewer): no push token,
+    // nothing minted. Back to an editor, it comes.
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Viewer), ("x", TeamRole::Viewer)]);
+    let minted = gh.lock().unwrap().minted.len();
+    refused(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await, "whoever asked for it can't now");
+    assert_eq!(gh.lock().unwrap().minted.len(), minted, "no token for a revoked asker");
+    assert!(app.db.deploy_plan(&id).unwrap().unwrap().secrets_at.is_none());
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     assert_eq!(given(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await), ["GITHUB_TOKEN"]);
     assert_eq!(gh.lock().unwrap().minted.last().unwrap()["contents"], "write", "the push's token writes");
     refused(ask_step(&app, &m, &run.id, Some(PlanStep::Push)).await, "once per run");

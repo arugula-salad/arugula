@@ -349,8 +349,9 @@ pub enum PlanStep {
     /// commit: nothing of the commit's has run yet.
     Fetch,
     /// A GitHub token that writes the repository's contents, to push
-    /// chant's ledger: everything the plan ran is stopped by then, and the
-    /// token reaches only the driver's own git.
+    /// chant's ledger: everything the plan ran is stopped by then, the box's
+    /// daemon checked what the plan added, and the token reaches only the
+    /// daemon's own push, never the run user.
     Push,
 }
 

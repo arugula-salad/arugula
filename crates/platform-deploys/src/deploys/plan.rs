@@ -12,9 +12,11 @@
 //!   approve yet, and the run gets none of the environment's secrets. Its
 //!   credentials are two GitHub tokens minted for it ([`secrets`]): one
 //!   that reads, to fetch the commit before anything of it runs, and one
-//!   that writes, to push chant's ledger, which the box asks for only once
-//!   everything the plan ran is stopped. chant's op runs with no token at
-//!   all: an op that needs Fly, or GitHub, before its gate fails here.
+//!   that writes, to push chant's ledger, which the box's daemon asks for
+//!   only once nothing the plan ran is left and it checked what chant
+//!   added, and uses itself: the run user never holds it. chant's op runs
+//!   with no token at all: an op that needs Fly, or GitHub, before its gate
+//!   fails here.
 //! - **What it found.** The run ends with the gate chant's run stopped at
 //!   and its pending fact (`chant_gate` in its result). Checked here
 //!   ([`gate_of`]), it ends the plan, and the asker's `requested` event
@@ -371,8 +373,10 @@ pub fn plan_work(db: &Db, p: &DeployPlan) -> Result<Option<DeployPlanWork>> {
 /// deploy waits to be asked for (#1985): for `fetch`, one that reads the
 /// deploy's repository, before anything of the commit's runs; for `push`,
 /// after it, one that writes the repository's contents, which the box asks
-/// for only once everything the plan ran is stopped. Never the
-/// environment's secrets, its own GitHub token among them.
+/// for only once everything the plan ran is stopped and it checked chant's
+/// ledger, and which goes only to this daemon's own push, never the run
+/// user; and only while the asker may still ask. Never the environment's
+/// secrets, its own GitHub token among them.
 pub async fn secrets(
     app: &Platform,
     m: &HostedMachine,
@@ -397,6 +401,14 @@ pub async fn secrets(
         && let Err(why) = driver.allowed_in(&env.project)
     {
         return refused(&why);
+    }
+    // The push's token writes the repository: only while whoever asked may
+    // still ask, as `planned` checks again before anyone is asked.
+    if step == PlanStep::Push {
+        let Some(by) = Actor::parse(&p.asked_by) else { return refused("whoever asked for it isn't one who asks") };
+        if let Err(why) = may_still_ask(app, &by, &p.deploy).await? {
+            return refused(&why);
+        }
     }
     if !db.release_plan_secrets(&run.id, step, arugula_e2e::now_ms())? {
         return refused(match step {

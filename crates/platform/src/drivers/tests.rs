@@ -318,7 +318,7 @@ fn chant_fly_checks_what_its_box_reported() {
         "setting fly_app acme-web\n",
         "fetch the commit with a GITHUB_TOKEN minted for it that only reads; then with no token at all, in ops, npm \
          ci --ignore-scripts (without the tokens), then chant run release to its gate",
-        "once everything that ran is stopped, push chant's ledger",
+        "nothing that ran is left, the box's daemon checks that chant's ledger only gained",
         "chant plan stale of the approved plan",
         "the repo's chant op release runs with FLY_API_TOKEN",
         "does: check Fly app acme-web is healthy",

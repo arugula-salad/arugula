@@ -242,7 +242,7 @@
     "chant-fly-apply": {
       "environment": "env_1",
       "environment_name": "production",
-      "plan": "a10ab44a2557f9b7fe4870968ea8fa875df42c331054397c2e6eb0e09f2583bf",
+      "plan": "6f533a5c27a72104ceed2d864733c1ac600c48875afb973de05054578732e5cb",
       "planned": "abababababababababababababababababababababababababababababababab",
       "project": "prj_1",
       "source_kind": "commit",
@@ -252,7 +252,7 @@
     "chant-fly-apply-renamed": {
       "environment": "env_1",
       "environment_name": "prod",
-      "plan": "a10ab44a2557f9b7fe4870968ea8fa875df42c331054397c2e6eb0e09f2583bf",
+      "plan": "6f533a5c27a72104ceed2d864733c1ac600c48875afb973de05054578732e5cb",
       "planned": "abababababababababababababababababababababababababababababababab",
       "project": "prj_1",
       "source_kind": "commit",

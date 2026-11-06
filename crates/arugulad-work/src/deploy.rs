@@ -891,9 +891,6 @@ pub enum Phase {
     PlanFetch,
     /// With no token: the commit's code, to chant's gate.
     Plan,
-    /// With a token that writes, asked for once everything `Plan` ran is
-    /// killed: chant's ledger, pushed.
-    PlanPush,
 }
 
 impl Phase {
@@ -902,7 +899,6 @@ impl Phase {
             Phase::Apply => "apply",
             Phase::PlanFetch => "plan-fetch",
             Phase::Plan => "plan",
-            Phase::PlanPush => "plan-push",
         }
     }
 
@@ -1036,50 +1032,206 @@ async fn step(
     Ok((code, said))
 }
 
-/// A deploy's plan run (#1985), in three steps, each a process of the
-/// driver's, and everything each left killed before the next starts:
-/// `plan-fetch`, with a token that reads, fetches the commit; `plan`, with
-/// no token at all, is the only one that runs the commit's code, to
-/// chant's gate; then `plan-push`, with a token that writes, which is
-/// asked for only now, pushes chant's ledger. So no token that writes
-/// exists on the box while anything of the commit's runs. Each step's
-/// tokens are revoked as it ends. Its exit (the first step's that isn't
-/// 0) and what `plan` said on its result pipe (chant's gate).
-pub async fn plan_steps<A, F>(
+/// A deploy's plan run (#1985). No token that writes ever reaches the run
+/// user, and none exists until everything the commit's code ran is gone:
+/// 1. With a token that reads, this daemon reads origin's ledger
+///    (`before`), and the driver's `plan-fetch` step fetches the commit.
+///    Nothing of the commit's runs.
+/// 2. The driver's `plan` step, with no token at all, runs the commit's
+///    code to chant's gate, and leaves what chant added to its ledger as a
+///    bundle (`before..tip`).
+/// 3. Everything the run user runs is killed, and `none_left` must say
+///    nothing is (else the plan fails here, before any token is asked for).
+/// 4. This daemon takes the bundle as data and checks it
+///    ([`plan_ledger::PlanLedger::check`]); only then is the token that
+///    writes asked for, and this daemon pushes the ledger itself
+///    ([`plan_ledger::PlanLedger::push`]).
+///
+/// Each token is revoked as its use ends. Its exit (a step's that isn't 0)
+/// and what `plan` said on its result pipe (chant's gate).
+#[allow(clippy::too_many_arguments)]
+pub async fn plan_steps<A, F, N, G>(
     run: &str,
     d: &DeployWork,
     argv: &[String],
     as_: Option<&RunAs>,
     dir: &std::path::Path,
+    origin: &str,
     out: &mut tokio::fs::File,
     ask: A,
+    none_left: N,
 ) -> Result<(i32, Vec<u8>), String>
 where
     A: Fn(PlanStep) -> F,
     F: std::future::Future<Output = Result<Vec<Secret>, String>>,
+    N: Fn() -> G,
+    G: std::future::Future<Output = Result<(), String>>,
 {
+    let ledger_dir = dir.join(DIR).join(format!("{run}.ledger"));
+    let ledger = plan_ledger::PlanLedger::new(ledger_dir.clone())?;
+    let r = plan_in(run, d, argv, as_, dir, origin, out, &ledger, ask, none_left).await;
+    let _ = std::fs::remove_dir_all(&ledger_dir);
+    r
+}
+
+/// The token named `GITHUB_TOKEN` among `given`.
+fn github_token(given: &[Secret]) -> Option<String> {
+    given.iter().find(|s| s.name == "GITHUB_TOKEN").map(|s| s.value.clone())
+}
+
+/// Run blocking `f` (git) off the runtime.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| format!("its ledger's check: {e}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn plan_in<A, F, N, G>(
+    run: &str,
+    d: &DeployWork,
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    origin: &str,
+    out: &mut tokio::fs::File,
+    ledger: &plan_ledger::PlanLedger,
+    ask: A,
+    none_left: N,
+) -> Result<(i32, Vec<u8>), String>
+where
+    A: Fn(PlanStep) -> F,
+    F: std::future::Future<Output = Result<Vec<Secret>, String>>,
+    N: Fn() -> G,
+    G: std::future::Future<Output = Result<(), String>>,
+{
+    let say = |s: &str| format!("arugula: {}\n", printable(s));
+    // 1. Origin's ledger, read here, and the commit, fetched by the run user.
     let given = ask(PlanStep::Fetch).await?;
     let tokens = tokens_of(&given);
-    let fetched = step(run, d, Phase::PlanFetch, &[], argv, as_, dir, given, out).await;
+    let token = github_token(&given);
+    let (l, o) = (ledger.clone(), origin.to_owned());
+    let before = blocking(move || l.fetch_before(&o, token.as_deref())).await.and_then(|r| r);
+    let before = match before {
+        Ok(b) => b,
+        Err(why) => {
+            wipe(given);
+            revoke_tokens(tokens).await;
+            return Err(why);
+        }
+    };
+    let _ = out
+        .write_all(
+            say(&format!("chant's ledger on origin is at {}", before.as_deref().unwrap_or("nothing yet"))).as_bytes(),
+        )
+        .await;
+    let extra = [("DEPLOY_LEDGER_BEFORE", before.clone().unwrap_or_default())];
+    let fetched = step(run, d, Phase::PlanFetch, &extra, argv, as_, dir, given, out).await;
     revoke_tokens(tokens).await;
     let (code, _) = fetched?;
     if code != 0 {
         return Ok((code, Vec::new()));
     }
-    let (code, said) = step(run, d, Phase::Plan, &[], argv, as_, dir, Vec::new(), out).await?;
+    // 2. The commit's code, with no token.
+    let (code, said) = step(run, d, Phase::Plan, &extra, argv, as_, dir, Vec::new(), out).await?;
+    // 3. Nothing of the run user's left.
+    none_left().await?;
     if code != 0 {
         return Ok((code, said));
     }
-    let Some(gate) = result_of(&said).and_then(|r| r.get("chant_gate").cloned()).filter(|g| g.is_object()) else {
-        return Err("its plan named no chant gate: nothing to push".into());
-    };
+    let gate: arugula_e2e::deploy::chant::Gate = result_of(&said)
+        .and_then(|r| serde_json::from_value(r.get("chant_gate")?.clone()).ok())
+        .ok_or_else(|| "its plan named no chant gate: nothing is pushed".to_owned())?;
+    // 4. Its ledger, taken as data and checked, then pushed from here.
+    let Some(uid) = run_uid(as_) else { return Err("the run user's id doesn't read".into()) };
+    let (l, from) = (ledger.clone(), work_dir(run, as_, dir).join(plan_ledger::BUNDLE));
+    let op = d.settings.get(arugula_e2e::drivers::CHANT_OP).cloned().unwrap_or_else(|| "release".into());
+    let gates_allowed = d.settings.get(arugula_e2e::drivers::CHANT_GATES).cloned();
+    let (g, source_ref, b) = (gate.clone(), d.operation.source_ref.clone(), before.clone());
+    let tip = blocking(move || {
+        l.take_bundle(&from, uid)?;
+        let want =
+            plan_ledger::Want { op: &op, gate: &g, gates_allowed: gates_allowed.as_deref(), source_ref: &source_ref };
+        l.check(b.as_deref(), &want)
+    })
+    .await
+    .and_then(|r| r)?;
+    let _ = out
+        .write_all(
+            say(&format!(
+                "chant's ledger from the plan holds run {}'s pending fact for gate {} and nothing else: pushing it",
+                gate.run, gate.gate
+            ))
+            .as_bytes(),
+        )
+        .await;
     let given = ask(PlanStep::Push).await?;
     let tokens = tokens_of(&given);
-    let extra = [("DEPLOY_CHANT_GATE", gate.to_string())];
-    let pushed = step(run, d, Phase::PlanPush, &extra, argv, as_, dir, given, out).await;
+    let token = github_token(&given);
+    wipe(given);
+    let (l, o) = (ledger.clone(), origin.to_owned());
+    let pushed = blocking(move || l.push(&o, &tip, before.as_deref(), token.as_deref())).await;
     revoke_tokens(tokens).await;
-    let (code, _) = pushed?;
-    Ok((code, said))
+    match pushed? {
+        Ok(()) => {
+            let _ = out.write_all(say("chant's ledger is on origin").as_bytes()).await;
+            Ok((0, said))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// The uid that owns what the run leaves: the run user's, or (tests only)
+/// this daemon's.
+#[cfg(unix)]
+fn run_uid(as_: Option<&RunAs>) -> Option<u32> {
+    match as_ {
+        Some(a) => nix::unistd::User::from_name(&a.user).ok().flatten().map(|u| u.uid.as_raw()),
+        None => Some(nix::unistd::getuid().as_raw()),
+    }
+}
+
+#[cfg(not(unix))]
+fn run_uid(_: Option<&RunAs>) -> Option<u32> {
+    None
+}
+
+/// Nothing of the run user's runs any more (#1985 review): everything it
+/// runs killed, the kill checked, and `pgrep -u` finding nothing, over a
+/// second at most. `Err` names what's left. With no run user (tests),
+/// nothing to look at.
+pub async fn none_left(as_: Option<&RunAs>) -> Result<(), String> {
+    let Some(a) = as_ else { return Ok(()) };
+    let mut left = String::new();
+    for _ in 0..20 {
+        let killed = tokio::process::Command::new("sudo")
+            .args(["-n", "-u", &a.user, "--", "kill", "-KILL", "-1"])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .map_err(|e| format!("killing what the plan left: {e}"))?;
+        // `kill -1` says 1 when it found nothing to kill; sudo's own
+        // refusals say `sudo:`.
+        if !killed.status.success() && String::from_utf8_lossy(&killed.stderr).starts_with("sudo:") {
+            return Err(format!(
+                "what the plan left couldn't be killed: {}",
+                printable(String::from_utf8_lossy(&killed.stderr).trim())
+            ));
+        }
+        let found = tokio::process::Command::new("pgrep")
+            .args(["-u", &a.user])
+            .env_clear()
+            .env("PATH", RUN_PATH)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .map_err(|e| format!("looking for what the plan left: {e}"))?;
+        match found.status.code() {
+            Some(1) => return Ok(()),
+            Some(0) => left = String::from_utf8_lossy(&found.stdout).split_whitespace().collect::<Vec<_>>().join(" "),
+            _ => return Err(format!("pgrep -u {} failed: nothing is pushed", a.user)),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Err(format!("the plan left processes of {} running ({left}) that weren't killed: nothing is pushed", a.user))
 }
 
 /// The driver's result pipe (M220): its write end becomes the driver's fd
@@ -1418,7 +1570,9 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
         // step by step.
         if plan {
             let ask = |step| secrets(&app, &l.run, &d.secrets, Some(step));
-            let (code, said) = plan_steps(&l.run, &d, &argv, as_.as_ref(), &dir, &mut out, ask).await?;
+            let left = || none_left(as_.as_ref());
+            let origin = format!("https://github.com/{}.git", d.operation.source_where);
+            let (code, said) = plan_steps(&l.run, &d, &argv, as_.as_ref(), &dir, &origin, &mut out, ask, left).await?;
             said_on_fd = said;
             return Ok(code);
         }
@@ -1558,6 +1712,8 @@ pub fn result_of(said: &[u8]) -> Option<serde_json::Value> {
 #[cfg(all(test, unix))]
 #[path = "deploy_chant_fly_tests.rs"]
 mod chant_fly_tests;
+#[path = "deploy_plan_ledger.rs"]
+pub mod plan_ledger;
 
 #[cfg(test)]
 mod tests {
@@ -1609,33 +1765,50 @@ mod tests {
         assert!(on_disk.iter().all(|f| !f.contains("multi")), "nothing of it on disk");
     }
 
-    /// A plan run's steps (#1985), as the box runs them: the fetch gets the
-    /// token that reads; the plan, the one step that runs the commit's
-    /// code, no token at all, and what it leaves running is killed before
-    /// the token that writes is even asked for; the push gets that token
-    /// and the gate the plan reported. The pushed token never reaches the
-    /// plan's environment.
+    /// A plan run (#1985), as the box runs it: the fetch step gets the token
+    /// that reads; the plan step, the one that runs the commit's code, no
+    /// token, and leaves chant's ledger as a bundle; once nothing it ran is
+    /// left, this daemon checks the bundle, only then asks for the token
+    /// that writes, and pushes the ledger itself. No run-user process or
+    /// file ever holds that token. A survivor of the plan step (here one
+    /// that left its process group) fails the plan before the token is
+    /// asked for, as does a plan step that fails.
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_plans_write_token_comes_only_once_its_code_is_stopped() {
+    async fn a_plans_ledger_is_pushed_by_the_daemon_once_its_code_is_gone() {
         let dir = crate::hosted::scratch("deploy-plan-steps");
-        let script = r#"case "$DEPLOY_PHASE" in
+        let sha = "c".repeat(40);
+        let gate = serde_json::json!({
+            "chant": "0.124.68", "op": "release", "gate": "ship", "plan": format!("sha256:{}", "ab".repeat(32)),
+            "run": "local-1", "recorded": "2026-11-06T23:27:30.435Z",
+        });
+        let pending = serde_json::json!({
+            "kind": "pending", "op": "release", "gate": "ship", "gitSha": sha, "planDigest": gate["plan"],
+            "runId": "local-1", "timestamp": gate["recorded"], "version": 1,
+        });
+        let script = format!(
+            r#"export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+case "$DEPLOY_PHASE" in
 plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; echo fetched;;
 plan) env > "$HOME/plan-env"; [ -z "$GITHUB_TOKEN" ] || exit 12
-  (trap '' HUP TERM; exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & echo $! > "$HOME/left"
-  printf '{"chant_gate":{"gate":"ship","run":"r1","plan":"p"}}' >&3; echo planned;;
-plan-push) [ "$GITHUB_TOKEN" = writes ] || exit 14
-  [ "$DEPLOY_CHANT_GATE" = '{"gate":"ship","plan":"p","run":"r1"}' ] || exit 15; echo pushed;;
+  if [ -e "$HOME/../survive" ]; then perl -e 'use POSIX; setsid(); exec "sleep", "30"' </dev/null >/dev/null 2>&1 3>&- & else (exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & fi
+  echo $! > "$HOME/left"
+  [ -e "$HOME/../fail" ] && exit 3
+  git init -q "$HOME/l" && cd "$HOME/l" && git checkout -q --orphan chant/lifecycle && mkdir _gates
+  echo '{pending}' > _gates/release.jsonl && git add -A && git commit -q -m pending
+  git bundle create -q "$HOME/ledger.bundle" refs/heads/chant/lifecycle
+  printf '%s' '{{"chant_gate":{gate}}}' >&3; echo planned;;
 *) exit 10;;
-esac"#;
-        let argv = vec!["/bin/sh".to_owned(), "-c".to_owned(), script.to_owned()];
+esac"#
+        );
+        let argv = vec!["/bin/sh".to_owned(), "-c".to_owned(), script];
         let op = arugula_e2e::deploy::Operation {
             project: "prj_1".into(),
             environment: "env_1".into(),
             environment_name: "production".into(),
             plan: "ab".repeat(32),
             source_kind: "commit".into(),
-            source_ref: "c".repeat(40),
+            source_ref: sha.clone(),
             source_where: "acme/app".into(),
             planned: "cd".repeat(32),
         };
@@ -1651,14 +1824,9 @@ esac"#;
             roll_back: None,
             approval_id: None,
         };
-        let home = work_dir("run_1", None, &dir);
-        // Whether what the plan left still runs: given a moment to be
-        // reaped once it's killed, never thirty seconds.
-        let left_runs = |home: &std::path::Path| {
-            let Some(pid) = std::fs::read_to_string(home.join("left")).ok().and_then(|p| p.trim().parse::<i32>().ok())
-            else {
-                return false;
-            };
+        // Whether a pid still runs: given a moment to be reaped once it's
+        // killed, never thirty seconds.
+        let runs = |pid: i32| {
             (0..40).all(|_| {
                 let alive = std::process::Command::new("ps")
                     .args(["-o", "stat=", "-p", &pid.to_string()])
@@ -1670,34 +1838,78 @@ esac"#;
                 alive
             })
         };
+        let left_of = |run: &str| {
+            std::fs::read_to_string(work_dir(run, None, &dir).join("left"))
+                .ok()
+                .and_then(|p| p.trim().parse::<i32>().ok())
+        };
+        let origin = crate::hosted::scratch("deploy-plan-steps-origin").join("origin.git");
+        assert!(
+            std::process::Command::new("git").args(["init", "-q", "--bare"]).arg(&origin).status().unwrap().success()
+        );
+        let origin = origin.to_str().unwrap().to_owned();
         let asked = std::sync::Mutex::new(Vec::new());
         let ask = |step: PlanStep| {
-            asked.lock().unwrap().push((step, left_runs(&home)));
+            asked.lock().unwrap().push(step);
             let value = if step == PlanStep::Fetch { "reads" } else { "writes" };
             std::future::ready(Ok(vec![s("GITHUB_TOKEN", value)]))
         };
         let mut out = tokio::fs::File::create(dir.join("pane")).await.unwrap();
-        let (code, said) = plan_steps("run_1", &d, &argv, None, &dir, &mut out, ask).await.unwrap();
+
+        // What the plan step left is gone when the daemon looks; the push
+        // lands, from here.
+        let gone = |run: &'static str| {
+            let left = left_of(run);
+            std::future::ready(match left {
+                Some(pid) if runs(pid) => Err(format!("process {pid} is left")),
+                _ => Ok(()),
+            })
+        };
+        let (code, said) =
+            plan_steps("run_1", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_1")).await.unwrap();
         let shown = std::fs::read_to_string(dir.join("pane")).unwrap();
         assert_eq!(code, 0, "{shown}");
-        assert_eq!(shown.lines().collect::<Vec<_>>(), ["fetched", "planned", "pushed"]);
-        assert_eq!(result_of(&said).unwrap()["chant_gate"]["gate"], "ship", "the plan's result is the run's");
-        assert_eq!(
-            *asked.lock().unwrap(),
-            [(PlanStep::Fetch, false), (PlanStep::Push, false)],
-            "the push token is asked for once what the plan left is gone"
+        assert!(
+            shown.contains("fetched") && shown.contains("planned") && shown.contains("chant's ledger is on origin"),
+            "{shown}"
         );
+        assert_eq!(result_of(&said).unwrap()["chant_gate"]["gate"], "ship");
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch, PlanStep::Push]);
+        let pushed = std::process::Command::new("git")
+            .args(["--git-dir", &origin, "show", "refs/heads/chant/lifecycle:_gates/release.jsonl"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&pushed.stdout).trim(), pending.to_string(), "the daemon pushed it");
+        // The token that writes never reached the run's environment or files.
+        let home = work_dir("run_1", None, &dir);
         let plan_env = std::fs::read_to_string(home.join("plan-env")).unwrap();
         assert!(!plan_env.contains("reads") && !plan_env.contains("writes"), "{plan_env}");
-        assert!(plan_env.contains("DEPLOY_PHASE=plan\n"), "{plan_env}");
+        let mut files = vec![home.clone()];
+        while let Some(p) = files.pop() {
+            match std::fs::read_dir(&p) {
+                Ok(rd) => files.extend(rd.flatten().map(|e| e.path())),
+                Err(_) => assert!(!std::fs::read(&p).unwrap_or_default().windows(6).any(|w| w == b"writes"), "{p:?}"),
+            }
+        }
+
+        // A survivor that left the step's group: the plan fails there, and
+        // the token that writes is never asked for.
+        std::fs::write(dir.join(DIR).join("survive"), "").unwrap();
+        asked.lock().unwrap().clear();
+        let r = plan_steps("run_2", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_2")).await;
+        let survivor = left_of("run_2").unwrap();
+        let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(survivor), nix::sys::signal::SIGKILL);
+        assert!(r.unwrap_err().contains("is left"));
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch], "no push token");
+        std::fs::remove_file(dir.join(DIR).join("survive")).unwrap();
 
         // A plan that fails asks for no push token, and pushes nothing.
-        let failing =
-            vec!["/bin/sh".to_owned(), "-c".to_owned(), r#"[ "$DEPLOY_PHASE" = plan ] && exit 3; exit 0"#.to_owned()];
+        std::fs::write(dir.join(DIR).join("fail"), "").unwrap();
         asked.lock().unwrap().clear();
-        let (code, _) = plan_steps("run_2", &d, &failing, None, &dir, &mut out, ask).await.unwrap();
+        let (code, _) =
+            plan_steps("run_3", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_3")).await.unwrap();
         assert_eq!(code, 3);
-        assert_eq!(asked.lock().unwrap().iter().map(|(s, _)| *s).collect::<Vec<_>>(), [PlanStep::Fetch]);
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch]);
     }
 
     /// The driver's shell, given `input` on its standard input, with

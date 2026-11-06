@@ -7,8 +7,9 @@ needs: control
 Asking for a chant-fly deploy's approval now starts a plan run on a box of its
 own, with no Fly token. The commit is fetched with a GitHub token that only
 reads, chant runs the op to its gate with no token at all and records its
-plan, and only once everything the op ran is stopped does the box get a token
-that writes, to push chant's ledger. Owners are asked once the plan is there,
+plan, and only once nothing the op ran is left does Arugula check what chant
+added to its ledger and push it itself, with a token the repository's code
+never sees. Owners are asked once the plan is there,
 and the approval page shows chant's gate and plan digest. Your passkey signs
 chant's own gate statement for that plan, and on the apply box chant checks the
 signature itself against `.chant/trust.json`, after checking the plan isn't

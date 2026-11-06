@@ -10,25 +10,23 @@
 // (DEPLOY_PHASE, #1985):
 //
 // - Its plan, on a box of its own before anyone approves it, with no Fly
-//   token, in three steps, each a process of its own: arugulad kills
-//   everything the run user runs between them, so nothing one step starts
-//   lives into the next.
+//   token, in two steps, each a process of its own: arugulad kills
+//   everything the run user runs after each. DEPLOY_LEDGER_BEFORE is
+//   origin's ledger as arugulad read it (empty: none).
 //   - `plan-fetch`, with GITHUB_TOKEN (minted for the run, reading only):
-//     check out the commit, exactly, and keep chant's ledger as origin has
-//     it in the stand-in (below). Nothing of the commit's runs.
+//     check out the commit, exactly, and keep chant's ledger at
+//     DEPLOY_LEDGER_BEFORE in the stand-in (below). Nothing of the commit's
+//     runs.
 //   - `plan`, with no token at all: in the chant member, `npm ci` (with
 //     `--ignore-scripts` unless the `npm_scripts` setting says otherwise),
 //     then `chant run <op> --json`, which stops at the op's gate (only the
 //     `chant_gates` setting's, when it names some) and records its pending
-//     fact with chant's plan digest in the stand-in. chant's ledger goes in
-//     a bundle (data) for the push. Its result is that gate (`chant_gate`),
+//     fact with chant's plan digest in the stand-in. What chant added to
+//     its ledger goes in a bundle (`ledger.bundle`, DEPLOY_LEDGER_BEFORE..
+//     its tip), which arugulad checks and pushes itself: the run user never
+//     holds a token that writes. Its result is that gate (`chant_gate`),
 //     which the owner's passkey signs chant's statement of. An op that
 //     needs Fly, or GitHub, before its gate fails here.
-//   - `plan-push`, with GITHUB_TOKEN (minted for the run, writing): in a
-//     repository made now, which reads none of the box's git configuration,
-//     take chant's ledger from the bundle, check it holds the gate the plan
-//     reported (DEPLOY_CHANT_GATE), and push it to origin. Nothing of the
-//     commit's runs, nor any program the plan's step left.
 // - Its apply (`apply`), on another box once an owner approved it: check
 //   FLY_API_TOKEN is a Fly deploy token for one app that expires within 30
 //   days (`flyctl tokens debug`); check out the commit; `npm ci`; `chant
@@ -57,10 +55,9 @@
 // - the driver's own git fetch, push and ls-remote: GITHUB_TOKEN (a GitHub
 //   App installation token the platform mints for this run, writing this
 //   repository's contents only, or in an apply the environment's own; in
-//   a plan, one that reads for `plan-fetch` and one that writes for
-//   `plan-push`, and none in `plan`, the step that runs the commit's
-//   code), through a credential helper for https://github.com that names
-//   the variable;
+//   a plan, one that reads for `plan-fetch`, and none in `plan`, the step
+//   that runs the commit's code), through a credential helper for
+//   https://github.com that names the variable;
 // - `npm ci`, `chant approve`, `chant plan stale` and `chant components
 //   release`: neither.
 // Neither token is ever on a command line or in a file. Without
@@ -77,9 +74,6 @@ import {
   closeSync,
   existsSync,
   fstatSync,
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -120,8 +114,7 @@ const sha = env.DEPLOY_SOURCE_REF;
 const where = env.DEPLOY_SOURCE_WHERE;
 // Its plan's steps, before anyone approves it, or its apply (#1985).
 const phase = env.DEPLOY_PHASE;
-if (!["plan-fetch", "plan", "plan-push", "apply"].includes(phase))
-  fail("DEPLOY_PHASE is plan-fetch, plan, plan-push or apply");
+if (!["plan-fetch", "plan", "apply"].includes(phase)) fail("DEPLOY_PHASE is plan-fetch, plan or apply");
 const planning = phase !== "apply";
 const approver = planning ? null : env.DEPLOY_APPROVER;
 if (!app || !chantEnv || !where || (!planning && !approver)) fail("the deploy's settings, source or approver are missing");
@@ -133,7 +126,6 @@ if (planning && env.FLY_API_TOKEN) fail("a deploy's plan runs without FLY_API_TO
 if (phase === "plan" && env.GITHUB_TOKEN)
   fail("a deploy's plan runs the commit's code with no GitHub token, and this one was given one: nothing runs");
 if (phase === "plan-fetch" && !env.GITHUB_TOKEN) fail("a deploy's plan needs GITHUB_TOKEN to fetch its source, and has none");
-if (phase === "plan-push" && !env.GITHUB_TOKEN) fail("a deploy's plan needs GITHUB_TOKEN to push chant's ledger, and has none");
 if (!planning && !env.FLY_API_TOKEN) fail("the environment gave no FLY_API_TOKEN: set it (fly tokens create deploy -a <app> -x 720h)");
 // What the owner's passkey signed (v3): chant's gate, the statement's time
 // and binding, the approver's principal, its challenge and the assertion.
@@ -212,63 +204,17 @@ function pendingFactIn(facts, gate, id) {
   return null;
 }
 
-if (phase === "plan-push") {
-  // The plan's last step (#1985): the only one with a token that writes.
-  // arugulad started it once everything the plan's step ran was killed,
-  // and asked for its token only then. What that step left is the run
-  // user's to change, so none of it is run or read as configuration:
-  // chant's ledger comes as a bundle (data), copied into a repository made
-  // here and now, and git reads no configuration but the command line's.
-  let gate = null;
-  try {
-    gate = JSON.parse(env.DEPLOY_CHANT_GATE || "null");
-  } catch {
-    gate = null;
-  }
-  if (![gate?.gate, gate?.run, gate?.plan].every((v) => typeof v === "string" && v))
-    fail("the plan's gate didn't come with its push: nothing is pushed");
-  const bundle = join(env.HOME, LEDGER_BUNDLE);
-  let st = null;
-  try {
-    st = lstatSync(bundle);
-  } catch {
-    st = null;
-  }
-  if (!st?.isFile()) fail("the plan left no bundle of chant's ledger: nothing is pushed");
-  const here = mkdtempSync(join(env.HOME, "push-"));
-  writeFileSync(join(here, LEDGER_BUNDLE), readFileSync(bundle));
-  const clean = { ...base, HOME: here, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
-  const repo = join(here, "ledger.git");
-  const g = (args, opts = {}) => run(["git", "--git-dir", repo, ...args], { cwd: here, penv: clean, ...opts });
-  run(["git", "init", "-q", "--bare", repo], { cwd: here, penv: clean });
-  g(["-c", "transfer.fsckObjects=true", "fetch", "-q", join(here, LEDGER_BUNDLE), "refs/heads/chant/lifecycle:refs/heads/chant/lifecycle"]);
-  const tip = g(["rev-parse", "-q", "--verify", "refs/heads/chant/lifecycle"], { capture: true, check: false }).stdout.trim();
-  const facts = g(["show", `refs/heads/chant/lifecycle:_gates/${op}.jsonl`], { capture: true, check: false }).stdout;
-  const fact = tip ? pendingFactIn(facts, gate.gate, gate.run) : null;
-  if (!fact || fact.planDigest !== gate.plan)
-    fail(`chant's ledger in the plan's bundle doesn't hold the plan it reported (gate ${gate.gate}, plan ${gate.plan}): nothing is pushed`);
-  const pushing = { ...clean, GITHUB_TOKEN };
-  const cred = ["-c", `credential.https://github.com.helper=${helper}`];
-  g([...cred, "push", "-q", originUrl, "refs/heads/chant/lifecycle:refs/heads/chant/lifecycle"], { penv: pushing, check: false });
-  const there = g([...cred, "ls-remote", originUrl, "refs/heads/chant/lifecycle"], { penv: pushing, capture: true, check: false })
-    .stdout.split(/\s/)[0];
-  if (there !== tip)
-    fail(
-      `chant's ledger, with its plan, didn't reach origin: the run's push token (minted through the platform's ` +
-        `GitHub App, which must be installed on ${where}) must be able to push`,
-      4,
-    );
-  say(`pushed chant's ledger with plan ${gate.plan} to ${where}`);
-  process.exit(0);
-}
-
 // chant's ledger as origin has it, before this run: what's new is this
 // run's (an apply's starts with its plan's pending fact).
 let before = null;
+// A plan's: what arugulad read, which its check of the plan's ledger
+// starts from.
+const planBefore = env.DEPLOY_LEDGER_BEFORE ?? "";
+if (planning && !/^([0-9a-f]{40})?$/.test(planBefore)) fail("DEPLOY_LEDGER_BEFORE isn't a commit id");
 if (phase === "plan") {
   // Fetched by `plan-fetch`, in this home.
   if (!existsSync(join(src, ".git"))) fail("the plan's source wasn't fetched first (plan-fetch)");
-  before = out(["rev-parse", "-q", "--verify", "refs/remotes/origin/chant/lifecycle"], { check: false });
+  before = planBefore || null;
 } else {
   run(["git", "init", "-q", src]);
   git(["remote", "add", "origin", originUrl]);
@@ -280,6 +226,12 @@ if (phase === "plan") {
   const at = out(["rev-parse", "HEAD"]);
   if (at !== sha) fail(`checked out ${at}, not ${sha}`);
   before = out(["rev-parse", "-q", "--verify", "refs/remotes/origin/chant/lifecycle"], { check: false });
+  if (phase === "plan-fetch") {
+    // The ledger arugulad read, which origin's must still hold.
+    if (planBefore && git(["cat-file", "-e", `${planBefore}^{commit}`], { check: false }).status !== 0)
+      fail("chant's ledger on origin moved while this plan fetched it: plan it again");
+    before = planBefore || null;
+  }
   if (before) git(["branch", "-q", "-f", "chant/lifecycle", before]);
 }
 // chant's ledger goes to origin: without a push, its entry would go with
@@ -560,14 +512,14 @@ if (planning) {
 
 if (planning) {
   // The pending fact goes to origin, where the apply's box reads it, but
-  // not from here: this step holds no token. chant's ledger goes in a
-  // bundle, and `plan-push` pushes it once nothing of this step runs.
+  // not from here: this step holds no token. What chant added to its
+  // ledger goes in a bundle, which arugulad checks and pushes.
   const tip = out(["rev-parse", "-q", "--verify", "refs/heads/chant/lifecycle"], { check: false });
   if (!tip || tip === before) fail(`chant run ${op} left nothing new in chant's ledger`);
-  git(["bundle", "create", "-q", join(env.HOME, LEDGER_BUNDLE), "refs/heads/chant/lifecycle"]);
+  git(["bundle", "create", "-q", join(env.HOME, LEDGER_BUNDLE), "refs/heads/chant/lifecycle", ...(before ? [`^${before}`] : [])]);
   writeSync(resultFd, JSON.stringify({ chant_gate: chantGate }));
   closeSync(resultFd);
-  say(`planned ${sha} for ${app}: chant's gate ${chantGate.gate}, plan ${chantGate.plan}; chant's ledger is pushed next`);
+  say(`planned ${sha} for ${app}: chant's gate ${chantGate.gate}, plan ${chantGate.plan}; arugulad pushes chant's ledger next`);
   process.exit(0);
 }
 

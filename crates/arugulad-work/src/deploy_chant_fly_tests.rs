@@ -17,10 +17,16 @@ use std::{
 use arugula_control_wire::work::{DeployWork, PasskeyAssertion};
 use arugula_e2e::deploy::{Approval, Operation, chant::Gate};
 
-use super::{CHANT_FLY, RESULT_FD, chant_relay, result_of};
+use super::{
+    CHANT_FLY, RESULT_FD, chant_relay,
+    plan_ledger::{BUNDLE, PlanLedger, Want},
+    result_of,
+};
 
 const TOKEN: &str = "fly-token-m220-secret"; // gitleaks:allow
 const GH: &str = "gh-token-m220-secret"; // gitleaks:allow
+/// The token that writes, which only arugulad's own push holds (#1985).
+const GH_WRITE: &str = "gh-write-token-1985-secret"; // gitleaks:allow
 
 fn image(n: char) -> String {
     format!("registry.fly.io/acme-web:deployment-{n}@sha256:{}", n.to_string().repeat(64))
@@ -378,6 +384,13 @@ impl Rig {
         std::fs::create_dir_all(&home).unwrap();
         let mut extra = extra.to_vec();
         extra.push(("HOME", home.to_str().unwrap()));
+        // arugulad's own read of origin's ledger, in a directory of its own.
+        let origin = self.dir.join("origin/acme/app.git");
+        let origin = origin.to_str().unwrap();
+        let ledger = PlanLedger::new(self.dir.join(format!("daemon-{}", self.plans()))).unwrap();
+        let before = ledger.fetch_before(origin, Some(GH)).unwrap();
+        let before_s = before.clone().unwrap_or_default();
+        extra.push(("DEPLOY_LEDGER_BEFORE", &before_s));
         let fetch = self.drive("plan-fetch", settings, None, None, &extra);
         if fetch.code != 0 {
             return fetch;
@@ -387,10 +400,33 @@ impl Rig {
         if plan.code != 0 {
             return Ran { out, ..plan };
         }
-        let gate = plan.result.as_ref().map(|r| r["chant_gate"].to_string()).unwrap_or_default();
-        extra.push(("DEPLOY_CHANT_GATE", &gate));
-        let push = self.drive("plan-push", settings, None, None, &extra);
-        Ran { code: push.code, out: format!("{out}{}", push.out), result: plan.result }
+        // Then arugulad takes its ledger as data, checks it, and pushes it.
+        let s: serde_json::Value = serde_json::from_str(settings).unwrap();
+        let gate: Gate = serde_json::from_value(plan.result.as_ref().unwrap()["chant_gate"].clone()).unwrap();
+        let want = Want {
+            op: s["chant_op"].as_str().unwrap_or("release"),
+            gate: &gate,
+            gates_allowed: s["chant_gates"].as_str(),
+            source_ref: &self.sha,
+        };
+        let uid = nix::unistd::getuid().as_raw();
+        let checked = ledger.take_bundle(&home.join(BUNDLE), uid).and_then(|()| ledger.check(before.as_deref(), &want));
+        let pushed = checked
+            .and_then(|tip| ledger.push(origin, &tip, before.as_deref(), Some(GH_WRITE)).map_err(|e| e.to_string()));
+        match pushed {
+            Ok(()) => Ran { code: 0, out, result: plan.result },
+            Err(why) => Ran { code: 4, out: format!("{out}{why}\n"), result: plan.result },
+        }
+    }
+
+    /// How many plans this rig made, for each one's own directory.
+    fn plans(&self) -> usize {
+        let n = std::fs::read_dir(&self.dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("daemon-"))
+            .count();
+        n + 1
     }
 
     /// Its plan, then its apply with the passkey's signature over chant's
@@ -537,11 +573,10 @@ fn chant_fly_plans_without_fly_and_says_which_gate() {
     assert!(ran.out.contains("before its gate"), "{}", ran.out);
 }
 
-/// #1985 review: no token that writes is where the commit's code can reach
-/// it. The plan's op runs with no token; its push takes chant's ledger as
-/// data into a repository of its own, which reads none of the git
-/// configuration the op could leave (a hook that keeps the token), and
-/// pushes only the ledger holding the gate the plan reported.
+/// #1985 review: the token that writes never reaches the run user. The
+/// plan's op runs with no token, and arugulad pushes chant's ledger itself:
+/// the token is in no run-user process's environment, no file of the
+/// plan's, and no hook the op planted sees it.
 #[test]
 fn chant_fly_pushes_its_plan_where_the_op_cant_reach_the_token() {
     needs_node!();
@@ -551,36 +586,23 @@ fn chant_fly_pushes_its_plan_where_the_op_cant_reach_the_token() {
     assert_eq!(ran.code, 0, "{}", ran.out);
     let home = r.dir.join("plan-home");
     assert!(home.join(".gitconfig").exists(), "the op planted its configuration");
-    // The op's own pushes ran its hook (with no token to see); the plan's
-    // push, the one with a token, never did.
     let leak = std::fs::read_to_string(r.dir.join("leak")).unwrap_or_default();
-    assert!(leak.lines().all(|l| l == "pre-push saw nothing") && !leak.contains(GH), "{leak}");
+    assert!(leak.lines().all(|l| l == "pre-push saw nothing"), "{leak}");
     assert!(r.log().iter().all(|l| l.contains("gh:no")), "{:?}", r.log());
+    let mut files = vec![home.clone()];
+    while let Some(p) = files.pop() {
+        match std::fs::read_dir(&p) {
+            Ok(rd) => files.extend(rd.flatten().map(|e| e.path())),
+            Err(_) => {
+                let b = std::fs::read(&p).unwrap_or_default();
+                assert!(!b.windows(GH_WRITE.len()).any(|w| w == GH_WRITE.as_bytes()), "{p:?}");
+            }
+        }
+    }
     let gate = &ran.result.unwrap()["chant_gate"];
     let tip = r.origin("git rev-parse refs/heads/chant/lifecycle");
     assert!(r.origin(&format!("git show {tip}:_gates/release.jsonl")).contains(gate["plan"].as_str().unwrap()));
-    assert!(!ran.out.contains(GH), "{}", ran.out);
-
-    // A push handed another gate than its bundle holds pushes nothing; nor
-    // one whose bundle is gone.
-    let r = rig("chant-fly-plan-other-gate");
-    let home = r.dir.join("plan-home");
-    std::fs::create_dir_all(&home).unwrap();
-    let h = [("HOME", home.to_str().unwrap())];
-    assert_eq!(r.drive("plan-fetch", SETTINGS, None, None, &h).code, 0);
-    let planned = r.drive("plan", SETTINGS, None, None, &h);
-    assert_eq!(planned.code, 0, "{}", planned.out);
-    let mut other = planned.result.unwrap()["chant_gate"].clone();
-    other["plan"] = format!("jcs1-sha256:{}", "0".repeat(64)).into();
-    let other = other.to_string();
-    let ran = r.drive("plan-push", SETTINGS, None, None, &[h[0], ("DEPLOY_CHANT_GATE", &other)]);
-    assert_eq!(ran.code, 1, "{}", ran.out);
-    assert!(ran.out.contains("doesn't hold the plan it reported"), "{}", ran.out);
-    assert!(r.origin("git rev-parse -q --verify refs/heads/chant/lifecycle || true").is_empty(), "nothing pushed");
-    std::fs::remove_file(home.join("ledger.bundle")).unwrap();
-    let ran = r.drive("plan-push", SETTINGS, None, None, &[h[0], ("DEPLOY_CHANT_GATE", &other)]);
-    assert_eq!(ran.code, 1, "{}", ran.out);
-    assert!(ran.out.contains("left no bundle"), "{}", ran.out);
+    assert!(!ran.out.contains(GH) && !ran.out.contains(GH_WRITE), "{}", ran.out);
 }
 
 /// #1985 review: the box checks the approval's gate against `chant_gates`
@@ -904,7 +926,7 @@ fn chant_fly_ties_its_evidence_to_this_release() {
     exe(&r.dir.join("origin/acme/app.git/hooks/pre-receive"), "#!/bin/sh\nexit 1\n");
     let ran = r.plan(SETTINGS, &[]);
     assert_eq!(ran.code, 4, "{}", ran.out);
-    assert!(ran.out.contains("didn't reach origin") && ran.out.contains("must be able to push"), "{}", ran.out);
+    assert!(ran.out.contains("chant's ledger wasn't pushed"), "{}", ran.out);
 }
 
 /// A short id, or one that isn't the commit checked out: refused.
