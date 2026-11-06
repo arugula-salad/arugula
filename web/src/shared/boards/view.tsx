@@ -31,6 +31,8 @@ import { ConfirmRemove } from "../ui/confirm";
 import { StateChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { CopyLinkButton } from "../ui/copy-link";
+import { PageHeader } from "../ui/page-header";
+import { SectionHead } from "../ui/section-head";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
 import { whoLabel } from "../issues/text";
@@ -287,19 +289,22 @@ export function BoardPanel({
 
   return (
     <div class="board" data-board={id}>
-      {back}
-      <div class="board-head">
-      <h1 class="board-title" data-board-title>
-        {write ? (
-          <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
-            {view.board.title}
+      <PageHeader
+        named
+        back={back}
+        title={
+          <span data-board-heading>
+            {write ? (
+              <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
+                {view.board.title}
+              </span>
+            ) : (
+              view.board.title
+            )}
           </span>
-        ) : (
-          view.board.title
-        )}
-      </h1>
-      <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
-      </div>
+        }
+        link={<CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />}
+      />
       <div class="board-find" role="search" data-board-find>
         <input
           ref={findBox}
@@ -364,24 +369,31 @@ export function BoardPanel({
         const rows = held;
         return (
           <GroupDrop key={s.group?.id ?? "none"} group={s.group?.id ?? null} take={write ? dropRow : undefined}>
-            <header class="board-group-head">
-              <h2 data-board-group-title>
+            <SectionHead
+              rule
+              titleData="board-group-title"
+              title={
                 <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
                   {title}
                   {folded && ` · ${rows}`}
                 </button>
-              </h2>
-              {s.group && (
-                <span class="board-group-progress dim" data-board-group-progress>
-                  {groupLine(s.group.progress)}
-                </span>
-              )}
-              {s.group && write && (
-                <button type="button" class="bar-btn sq board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
-                  ⋯
-                </button>
-              )}
-            </header>
+              }
+              count={folded ? undefined : rows}
+              action={
+                <>
+                  {s.group && (
+                    <span class="board-group-progress dim" data-board-group-progress>
+                      {groupLine(s.group.progress)}
+                    </span>
+                  )}
+                  {s.group && write && (
+                    <button type="button" class="bar-btn sq board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                      ⋯
+                    </button>
+                  )}
+                </>
+              }
+            />
             {!folded && lanes}
           </GroupDrop>
         );

@@ -17,7 +17,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
-import { SectionHead } from "../section-head";
+import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { blindLine, blindMachines, type Grant } from "../settings/grants";
 import { toast } from "../toast";
@@ -294,7 +294,7 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (
     <>
-      <SectionHead title="Boards" all={all} data="project-boards-link" />
+      <SectionHead title="Boards" all={all} onAll={(e) => follow(e, all)} data="project-boards-link" />
       {list.length === 0 && <p class="dim">No boards yet.</p>}
       {list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
       <BoardItems p={p} list={list} data="data-project-boards" q={q} />

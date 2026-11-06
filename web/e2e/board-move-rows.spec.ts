@@ -174,7 +174,7 @@ test("a row dragged onto another group moves into it, lane unchanged", async ({ 
   await alice.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await alice.mouse.down();
   await alice.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 3 });
-  const head = (await group(decide).locator(".board-group-head").boundingBox())!;
+  const head = (await group(decide).locator(".section-head").boundingBox())!;
   await alice.mouse.move(head.x + 60, head.y + head.height / 2, { steps: 8 });
   // Chromium delivers the first dragover only after a few moves inside the target.
   await alice.mouse.move(head.x + 70, head.y + head.height / 2, { steps: 4 });
@@ -212,7 +212,7 @@ test("a row dragged onto another group moves into it, lane unchanged", async ({ 
 
   // A grouped row onto "No group" lands there, in its lane.
   const doing = await laneOf("Pick a name");
-  await card("Pick a name").dragTo(group("none").locator(".board-group-head"));
+  await card("Pick a name").dragTo(group("none").locator(".section-head"));
   await open();
   await expect(group("none").locator(`[data-board-row="${rowOf("Pick a name")}"]`)).toHaveCount(1);
   expect(await laneOf("Pick a name")).toBe(doing);

@@ -75,7 +75,7 @@ test.beforeAll(async ({ browser }) => {
   await platform(`${project}/boards`);
   await alice.locator("[data-board-new-title]").fill("Launch");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
   await platform(`${project}/triage`);
   await alice.locator("[data-triage-row]", { hasText: "Fix the installer" }).locator("[data-triage-add]").click();

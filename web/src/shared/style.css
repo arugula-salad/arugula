@@ -3059,20 +3059,8 @@ a.work-chip:hover {
 }
 
 /* Control's own pages' titles (sign in, approve, no machines yet) are the
-   platform's page title (platform/swarm.css's .page-head h1): the display
-   face, in capitals. Theirs are sentences that wrap, so the lines get a
-   little more room, and a phone's are smaller (UI audit #198). */
-:is(.control-center, .control-page) h1 {
-  font: 800 32px/1 var(--f-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
-@media (max-width: 700px) {
-  :is(.control-center, .control-page) h1 {
-    font-size: 28px;
-  }
-}
+   page title too (shared/ui/page-header.css), set with the rule there
+   (UI audit #198). */
 
 /* The signed-out page's heading carries the mark (UI audit #179). */
 .control-brand {

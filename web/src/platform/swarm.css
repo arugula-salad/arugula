@@ -115,39 +115,6 @@
   text-transform: none;
 }
 
-/* The page's header (shared/ui/page-header.tsx): a page's name in the
-   display face, in capitals; a name someone wrote keeps its case (in the
-   fonts' wide fallbacks, capitals shout, and an issue's title is theirs).
-   The back link is mono, as the cards' ids and counts are, and keeps its
-   case: it can be a project's name. */
-.platform .page-head h1 {
-  margin: 0;
-  font: 800 32px/0.95 var(--f-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
-/* A written name wraps where a page's one word doesn't: its lines get room,
-   or a wrapped issue title's "#1" ran into the line above (UI audit #199). */
-.platform .page-head h1.named {
-  letter-spacing: 0;
-  line-height: 1.1;
-  text-transform: none;
-}
-
-.platform .page-head h1 .dim {
-  font-weight: 600;
-}
-
-.platform .page-back {
-  color: var(--dim);
-  font: 500 12px/1.3 var(--f-mono);
-}
-
-.platform .page-back:is(:hover, :focus-visible) {
-  color: var(--fg);
-}
-
 .platform .page-head > .sw-stats {
   margin: 12px 0 0;
 }
@@ -491,9 +458,6 @@
 }
 
 @media (max-width: 700px) {
-  .platform .page-head h1 {
-    font-size: 28px;
-  }
   .platform .sw-stats b {
     font-size: 18px;
   }

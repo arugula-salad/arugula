@@ -1,0 +1,49 @@
+/* A section's heading (./section-head.tsx), wherever it's drawn: the 19px
+   display h2, a mono count, what the section does and an "All ›" at the
+   right. On the platform page the same values come from platform/swarm.css
+   (`.sw-section-head`), which also styles the markup that isn't this
+   component. */
+
+.section-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 24px 0 10px;
+}
+
+.section-head h2 {
+  margin: 0;
+  font: 700 19px/1.05 var(--f-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.section-count {
+  font: 700 12px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+.section-head .sw-all {
+  margin-left: auto;
+  color: var(--dim);
+  font: 500 12px/1.3 var(--f-mono);
+  text-decoration: none;
+}
+
+.section-head .sw-all:is(:hover, :focus-visible) {
+  color: var(--fg);
+}
+
+/* A rule under the head, with its action at the right end of it. */
+.section-head.ruled {
+  flex-wrap: nowrap;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-head.ruled > :last-child:not(h2, .section-count) {
+  margin-left: auto;
+}
