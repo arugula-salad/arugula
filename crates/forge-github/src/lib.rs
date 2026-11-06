@@ -24,7 +24,7 @@ pub mod parse;
 mod token;
 pub mod util;
 
-pub use client::{EtagCache, Github};
+pub use client::{EtagCache, Github, UNREADABLE, unreadable};
 pub use token::{Purpose, Token, TokenSource};
 
 use model::{Check, Item};

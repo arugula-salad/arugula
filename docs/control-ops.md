@@ -2020,8 +2020,12 @@ never a body or a comment's text.
   first thing, at once. A commit status is kept for any commit (it may
   come before its PR's new head); the poller prunes checks on a commit
   no item has as its head after an hour. An issue deleted or transferred
-  goes, with its events and inbox rows; its drafts stay (M170's). An
-  unlinked repo's events write nothing.
+  goes, with its events, inbox rows and text; its drafts stay (M170's). An
+  unlinked repo's events write nothing. A delivery whose rows fail to
+  write is answered 500 and forgotten, so a redelivery is written, not
+  taken as a duplicate. GitHub doesn't redeliver on its own: redeliver
+  it from the App's advanced settings (*Recent Deliveries*), or through
+  the API. The full pass finds a delete that's never redelivered.
 - **One poller per repo**, leased like Cloud's jobs (`linked_repos.lease`,
   `FOR UPDATE SKIP LOCKED`: two machines never poll one repo). Its first
   turn after linking backfills: open PRs and issues, everything updated
@@ -2038,6 +2042,30 @@ never a body or a comment's text.
   `forge mirror: drift fixed` with the repo id, the item or check, and
   the fields (never a title). Its tokens are read-only, for the one repo,
   logged with purpose `ingest`.
+- **The full pass.** A reconcile only sees what GitHub lists as updated,
+  and a deleted or transferred item never is. So about once a day per
+  repo (each at its own time of day), after a reconcile, the poller runs
+  a full pass. It lists what's open on GitHub and reads again, at the
+  next turn, each open row GitHub didn't list; when those are over 100,
+  or a quarter of the open rows, it reads none and logs `too many open
+  rows GitHub didn't list`. Then it reads the 30 rows written or read
+  longest ago again, with their text where the project mirrors it, so a
+  comment deleted or edited while its webhook was lost catches up. The
+  reconcile and the pass's start (`linked_repos.full_at`) are recorded
+  first, and the pass is best effort: however it stops, the next is a
+  day off. A read GitHub answers with 404 or 410, or with an item that
+  names another number or repo (a transfer's redirect), deletes the row
+  with its text (`forge mirror: an item gone from GitHub went`), but only
+  once the repo itself still reads. An empty or garbled answer, and any
+  other refusal of one item or head (422 for a commit GitHub no longer
+  has), is logged and leaves the row. Its cost per repo per day: a list
+  page per 100 open items (at most 50), one or two reads per open row
+  not listed, and for the 30 stalest rows one read per issue and two per
+  PR, at most 60. Where text is mirrored they're read whole too, at most
+  180: three reads an issue, six a PR. These rows were last read a day
+  or more ago, so the ETag cache mostly won't make them free. A repo with
+  under 100 open items and none missing spends at most 61 reads a day,
+  or 181 with text, inside the reserve below.
 - **Merge states.** Lists don't carry a PR's `mergeable_state`, webhooks
   often say `unknown`, and a base branch that moves changes it with no
   event. At the end of each backfill and reconcile the poller reads up to
