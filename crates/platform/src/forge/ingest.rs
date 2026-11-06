@@ -21,10 +21,14 @@
 //!   poller prunes checks on a commit no item has as its head after an
 //!   hour.
 //! - **An issue deleted or transferred** goes, with its events, its
-//!   head's checks and its inbox rows (`db::mirror::delete_item`). Its
-//!   drafts stay, for M170: a send to it fails and says why.
-//! - A row that fails to write is logged and left to the poller
-//!   ([`super::poller`]), which finds it as drift.
+//!   head's checks, its inbox rows and its text (`db::mirror::delete_item`).
+//!   Its drafts stay, for M170: a send to it fails and says why.
+//! - **A delivery whose rows fail to write isn't taken:** the webhook
+//!   forgets it and answers 500, so a redelivery of it is written rather
+//!   than refused as a duplicate. GitHub doesn't redeliver on its own: a
+//!   person does it from the App's advanced settings, or a call to its
+//!   API. What's never redelivered the poller finds as drift, and the
+//!   full pass finds a delete ([`super::poller`]).
 
 use std::{collections::HashMap, sync::Mutex, time::Instant};
 
@@ -49,11 +53,14 @@ pub struct Settings {
     /// The most list pages a turn reads; a turn that has more carries on
     /// from where it stopped at the next.
     pub pages: usize,
+    /// About how often each repo gets the poller's full pass, in ms
+    /// ([`super::poller::full_due`]); 0, never.
+    pub full_every_ms: u64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { every_ms: 5 * 60_000, reserve: 30, pages: 50 }
+        Self { every_ms: 5 * 60_000, reserve: 30, pages: 50, full_every_ms: super::poller::FULL_EVERY_MS }
     }
 }
 
@@ -369,6 +376,39 @@ pub fn write(tx: &impl crate::db::sql::Sql, rows: &Rows, now: u64) -> anyhow::Re
     Ok(w)
 }
 
+/// What GitHub's answer to a read of one item is ([`answer_for`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answer {
+    /// That item.
+    Same,
+    /// Plainly another item: another number, or a PR of another repo (by
+    /// id). A transfer's redirect answers so.
+    Other,
+    /// That number, of a repo named otherwise than the caller knows it: a
+    /// transfer that kept the number, or the repo renamed since the caller
+    /// read its name. The caller reads the repo's name again to tell.
+    OtherName,
+    /// Nothing that names an item: it says neither way.
+    Unclear,
+}
+
+/// Whether `v`, GitHub's answer to a read of item `number` of repo
+/// `repo_id` (named `full_name`), is that item. Only an answer that names
+/// another number or repo is [`Answer::Other`]: one that names nothing is
+/// [`Answer::Unclear`], never a reason to delete.
+pub fn answer_for(v: &Value, repo_id: u64, full_name: &str, number: u64) -> Answer {
+    let Some(n) = v["number"].as_u64() else { return Answer::Unclear };
+    if n != number || v["base"]["repo"]["id"].as_u64().is_some_and(|id| id != repo_id) {
+        return Answer::Other;
+    }
+    match v["repository_url"].as_str() {
+        Some(url) if !url.to_ascii_lowercase().ends_with(&format!("/repos/{}", full_name.to_ascii_lowercase())) => {
+            Answer::OtherName
+        }
+        _ => Answer::Same,
+    }
+}
+
 /// A delivery whose rows land this long (ms) after GitHub's time for the
 /// change is logged on its own, `forge mirror: late delivery`.
 pub const LATE_MS: u64 = 30_000;
@@ -376,12 +416,13 @@ pub const LATE_MS: u64 = 30_000;
 /// A webhook's rows, for a linked repo, that came at `came`: written,
 /// and the time it took counted when one was new or changed. Its content
 /// changes (M166) in the same transaction, and what this machine's read
-/// cache kept of the item goes.
-pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Instant) {
-    let Some(gh) = &p.github else { return };
+/// cache kept of the item goes. False when they failed to write: the
+/// delivery isn't taken.
+pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Instant) -> bool {
+    let Some(gh) = &p.github else { return true };
     let rows = rows(event, v);
     let content = super::content::changes(event, v);
-    let Some(repo) = rows.as_ref().map(|(r, _)| *r).or(content.as_ref().map(|c| c.repo)) else { return };
+    let Some(repo) = rows.as_ref().map(|(r, _)| *r).or(content.as_ref().map(|c| c.repo)) else { return true };
     let now = arugula_e2e::now_ms();
     let wrote = p.db.mirror(repo, None, |tx| {
         let w = match &rows {
@@ -395,6 +436,9 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
     });
     if let Some(c) = &content {
         gh.bodies.forget(c.repo, c.number);
+    }
+    if let Some(n) = rows.as_ref().and_then(|(_, r)| r.deleted) {
+        gh.bodies.forget(repo, n);
     }
     match wrote {
         Ok(None) => {}
@@ -452,9 +496,12 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                 "webhook rows"
             );
         }
-        // The poller finds it as drift.
-        Err(e) => warn!(event, delivery, repo, error = format!("{e:#}"), "writing a webhook's mirror rows"),
+        Err(e) => {
+            warn!(event, delivery, repo, error = format!("{e:#}"), "writing a webhook's mirror rows");
+            return false;
+        }
     }
+    true
 }
 
 #[cfg(test)]

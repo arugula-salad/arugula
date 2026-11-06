@@ -6,7 +6,7 @@
 //! (`just test-platform-postgres`), Postgres.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -61,6 +61,23 @@ struct Gh {
     merge: BTreeMap<u64, &'static str>,
     /// The PRs read one by one, in order.
     pr_reads: Vec<u64>,
+    /// Heads whose checks GitHub refuses with 422 (a commit it no longer
+    /// has).
+    lost_heads: BTreeSet<String>,
+    /// Issues transferred away: a read of one is redirected to its new
+    /// home's answer, and no list here has it.
+    moved: BTreeMap<u64, Value>,
+    /// Issues whose reads fail, and how ([`Fail`]).
+    fails: BTreeMap<u64, Fail>,
+    /// Reads of an issue that came with `If-None-Match`, by number.
+    conditional: BTreeMap<u64, usize>,
+    /// The names the repo's next reads answer with, in turn; then `name`.
+    next_names: std::collections::VecDeque<String>,
+    /// Each issue's comments, by number.
+    comments: BTreeMap<u64, Vec<Value>>,
+    /// Reads of the repo itself, and from which one on they fail (502).
+    repo_reads: usize,
+    repo_fails_from: Option<usize>,
     remaining: u64,
     mints: usize,
     reads: usize,
@@ -155,6 +172,17 @@ async fn repo_read(State(h): State<Shared>, Path(id): Path<u64>) -> Response {
         let s = StatusCode::from_u16(*s).unwrap();
         return (s, Json(json!({ "message": "Repository access blocked" }))).into_response();
     }
+    if id == REPO {
+        h.repo_reads += 1;
+        if h.repo_fails_from.is_some_and(|from| h.repo_reads >= from) {
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
+    }
+    if id == REPO
+        && let Some(next) = h.next_names.pop_front()
+    {
+        h.name = next;
+    }
     let name = if id == REPO { h.name.clone() } else { format!("acme/r{id}") };
     let private = h.private;
     (limits(&mut h), Json(json!({ "id": id, "full_name": name, "private": private }))).into_response()
@@ -174,8 +202,44 @@ async fn one_pr(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Resp
     }
 }
 
-async fn one_issue(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Response {
+/// How a read of an issue fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fail {
+    /// This status, with no rate limit headers.
+    Status(u16),
+    /// A 200 with an empty body, and an ETag.
+    Empty,
+    /// A 200 whose body isn't JSON, and an ETag.
+    Garbled,
+    /// No answer before the platform's client gives up.
+    Slow,
+}
+
+async fn one_issue(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>, headers: HeaderMap) -> Response {
+    let fail = {
+        let mut h = h.lock().unwrap();
+        if headers.contains_key("if-none-match") {
+            *h.conditional.entry(n).or_default() += 1;
+        }
+        h.fails.get(&n).copied()
+    };
+    let etag = [("etag", "\"e1\"")];
+    match fail {
+        Some(Fail::Status(s)) => {
+            return (StatusCode::from_u16(s).unwrap(), Json(json!({ "message": "no" }))).into_response();
+        }
+        Some(Fail::Empty) => return (etag, "").into_response(),
+        Some(Fail::Garbled) => return (etag, "<html>unicorn</html>").into_response(),
+        Some(Fail::Slow) => {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            return StatusCode::GATEWAY_TIMEOUT.into_response();
+        }
+        None => {}
+    }
     let mut h = h.lock().unwrap();
+    if let Some(v) = h.moved.get(&n).cloned() {
+        return (limits(&mut h), Json(v)).into_response();
+    }
     match h.issues.get(&n).cloned() {
         Some(v) => (limits(&mut h), Json(v)).into_response(),
         None => (StatusCode::GONE, Json(json!({ "message": "This issue was deleted" }))).into_response(),
@@ -238,8 +302,18 @@ async fn reviews(State(h): State<Shared>, Path((id, n)): Path<(u64, u64)>, Query
     pages(&mut h, &format!("repositories/{id}/pulls/{n}/reviews"), list, &q, None)
 }
 
+async fn comments(State(h): State<Shared>, Path((id, n)): Path<(u64, u64)>, Query(q): Q) -> Response {
+    let mut h = h.lock().unwrap();
+    let list = h.comments.get(&n).cloned().unwrap_or_default();
+    pages(&mut h, &format!("repositories/{id}/issues/{n}/comments"), list, &q, None)
+}
+
 async fn runs(State(h): State<Shared>, Path((id, sha)): Path<(u64, String)>, Query(q): Q) -> Response {
     let mut h = h.lock().unwrap();
+    if h.lost_heads.contains(&sha) {
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "message": "No commit found for SHA" })))
+            .into_response();
+    }
     let list = h.runs.get(&sha).cloned().unwrap_or_default();
     pages(&mut h, &format!("repositories/{id}/commits/{sha}/check-runs"), list, &q, Some("check_runs"))
 }
@@ -263,6 +337,8 @@ async fn fake_github() -> (Shared, String) {
         .route("/repositories/{id}/pulls", get(pulls))
         .route("/repositories/{id}/issues", get(issues))
         .route("/repositories/{id}/pulls/{n}/reviews", get(reviews))
+        .route("/repositories/{id}/issues/{n}/comments", get(comments))
+        .route("/repositories/{id}/pulls/{n}/comments", get(|| async { Json(json!([])) }))
         .route("/repositories/{id}/commits/{sha}/check-runs", get(runs))
         .route("/repositories/{id}/commits/{sha}/status", get(statuses))
         .with_state(gh.clone());
@@ -281,7 +357,14 @@ fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 
 /// The platform on `db`, with the App against the fake GitHub at `api`.
 fn platform(db: Db, hub: &Arc<TestHub>, api: &str) -> Arc<Platform> {
-    platform_with(db, hub, api, Settings::default())
+    platform_with(db, hub, api, quiet())
+}
+
+/// The poller's settings, without the full pass: it comes on a day's
+/// boundary, which a test's turns could cross by chance. Its own tests
+/// turn it on.
+fn quiet() -> Settings {
+    Settings { full_every_ms: 0, ..Settings::default() }
 }
 
 fn platform_with(db: Db, hub: &Arc<TestHub>, api: &str, settings: Settings) -> Arc<Platform> {
@@ -308,7 +391,7 @@ fn platform_set(
 
 /// The fake GitHub, the platform, its address and its hub.
 async fn serve() -> (Shared, Arc<Platform>, String, Arc<TestHub>) {
-    serve_with(Settings::default()).await
+    serve_with(quiet()).await
 }
 
 async fn serve_with(settings: Settings) -> (Shared, Arc<Platform>, String, Arc<TestHub>) {
@@ -702,7 +785,7 @@ async fn the_poller_moves_the_plane_item_a_merged_pr_names() {
     let (gh, api) = fake_github().await;
     let hub = Arc::new(TestHub::default());
     let mut fake = None;
-    let app = platform_set(Db::test(), &hub, &api, Settings::default(), |p| fake = Some(plane(p)));
+    let app = platform_set(Db::test(), &hub, &api, quiet(), |p| fake = Some(plane(p)));
     let fake = fake.unwrap();
     let t = now_ms();
     link(&app, REPO, t);
@@ -1041,7 +1124,7 @@ async fn failures_back_off_longer_each_time() {
 /// the end.
 #[tokio::test]
 async fn a_long_backfill_carries_on() {
-    let (gh, app, _base, _hub) = serve_with(Settings { pages: 2, ..Settings::default() }).await;
+    let (gh, app, _base, _hub) = serve_with(Settings { pages: 2, ..quiet() }).await;
     let now = now_ms();
     fill(&gh, now);
     link(&app, REPO, now);
@@ -1223,12 +1306,16 @@ async fn a_deleted_issue_goes() {
             params![REPO],
         )
         .unwrap();
+    for n in [6, 7] {
+        text(&app, n);
+    }
     for (n, action, d) in [(6, "deleted", "x6"), (7, "transferred", "x7")] {
         let gone = json!({ "action": action, "repository": repository(REPO), "sender": {}, "issue": issue(n, "doomed", "open", t) });
         assert_eq!(hook(&base, "issues", d, &gone).await, 202);
     }
     assert_eq!(item(&app, 6), None);
     assert_eq!(item(&app, 7), None);
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_content"), 0, "a deleted item's text goes with it");
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events"), 0);
     assert_eq!(count(&app, "SELECT count(*) FROM inbox_items"), 0);
     assert_eq!(count(&app, "SELECT count(*) FROM drafts"), 1, "M170's");
@@ -1340,4 +1427,315 @@ async fn the_poller_learns_merge_states() {
     assert_eq!(std::mem::take(&mut gh.lock().unwrap().pr_reads), [4]);
     assert_eq!(merge_state(&app, 4).as_deref(), Some("clean"));
     assert_eq!(stats.drift_today(t2).get(&REPO).copied().unwrap_or(0), 0);
+}
+
+/// A body and a comment of item `number`, as content mirroring keeps them.
+fn text(app: &Platform, number: u64) {
+    for (kind, id) in [("body", number), ("comment", 9000 + number)] {
+        app.db
+            .c()
+            .execute(
+                "INSERT INTO forge_content (repo_id, number, kind, github_id, body, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 'kept text', 1, 1)",
+                params![REPO, number, kind, id],
+            )
+            .unwrap();
+    }
+}
+
+/// Every turn whose time has come at `now`.
+async fn turns(app: &Platform, now: u64) -> Vec<poller::Turn> {
+    let mut out = Vec::new();
+    while let Some(t) = poller::tick(app, now).await.unwrap() {
+        out.push(t);
+    }
+    out
+}
+
+/// The full pass, a day after the last: what GitHub deleted (410), moved
+/// (a read that answers with another number, as a transfer's redirect
+/// does) or no longer has (a PR's 404) goes, with its text, though no
+/// webhook said so and no list showed it updated. The rows read longest
+/// ago are read again.
+#[tokio::test]
+async fn the_full_pass_finds_what_github_deleted() {
+    let (gh, app, _base, _hub) = serve_with(Settings::default()).await;
+    let day = poller::FULL_EVERY_MS;
+    // Just past the repo's point in a day two days ago.
+    let (mut lo, mut hi) = (now_ms() - 3 * day, now_ms() - 2 * day);
+    let start = lo;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if poller::full_due(REPO, Some(start), mid, day) { hi = mid } else { lo = mid }
+    }
+    let t0 = hi + 1;
+    {
+        let mut g = gh.lock().unwrap();
+        for n in 1..=40 {
+            g.issues.insert(n, issue(n, &format!("issue {n}"), "open", t0 - 10_000));
+        }
+        g.prs.insert(50, pr(50, "a PR", "open", t0 - 10_000, "sha50"));
+    }
+    link(&app, REPO, t0);
+    assert!(matches!(turns(&app, t0).await[..], [poller::Turn::Done { backfill: true, .. }]));
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_items"), 41);
+    text(&app, 3);
+    {
+        let mut g = gh.lock().unwrap();
+        g.issues.remove(&3);
+        let mut moved = issue(97, "moved", "open", t0 - 10_000);
+        moved["repository_url"] = json!("https://api.github.com/repos/acme/elsewhere");
+        g.issues.remove(&4);
+        g.moved.insert(4, moved);
+        g.prs.remove(&50);
+    }
+    // Freshest, so only the open list's compare finds them, not the
+    // stalest reads.
+    app.db.c().execute("UPDATE forge_items SET synced_at = ?1 WHERE number IN (3, 4, 50)", params![t0 + 1]).unwrap();
+
+    // A reconcile in the same day: no full pass.
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    let t1 = t0 + every;
+    assert!(!poller::full_due(REPO, Some(t0), t1, day));
+    let same_day = turns(&app, t1).await;
+    assert!(matches!(same_day[..], [poller::Turn::Done { fixed: 0, .. }]), "{same_day:?}");
+    assert!(app.db.refetches(REPO).unwrap().is_empty(), "no full pass yet");
+
+    // The first reconcile past the repo's point in the day.
+    let t2 = t0 + day;
+    assert!(poller::full_due(REPO, Some(t1), t2, day));
+    let done = turns(&app, t2).await;
+    assert!(matches!(done[0], poller::Turn::Done { backfill: false, .. }), "{done:?}");
+    assert!(matches!(done.last(), Some(poller::Turn::Refetched { .. })), "{done:?}");
+    for n in [3, 4, 50] {
+        assert_eq!(item(&app, n), None, "#{n}");
+    }
+    assert_eq!(item(&app, 5).map(|i| i.1).as_deref(), Some("open"), "what GitHub has stays");
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_content"), 0, "a deleted item's text goes with it");
+    assert!(app.db.refetches(REPO).unwrap().is_empty());
+    assert_eq!(
+        count(&app, &format!("SELECT count(*) FROM forge_items WHERE synced_at = {t2}")),
+        poller::FULL_READS as u64,
+        "the stalest rows, read again"
+    );
+    // Once a day.
+    let every_more = turns(&app, t2 + every).await;
+    assert!(matches!(every_more[..], [poller::Turn::Done { fixed: 0, .. }]), "{every_more:?}");
+    assert!(app.db.refetches(REPO).unwrap().is_empty());
+}
+
+/// A refetch GitHub answers with 404 (a PR gone) or 422 (a commit it no
+/// longer has), and an open PR's head it won't give checks for, never stop
+/// the repo's turns: the PR goes, and the head is left.
+#[tokio::test]
+async fn a_refused_read_doesnt_stop_the_repo() {
+    let (gh, app, _base, _hub) = serve().await;
+    let t = now_ms();
+    {
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(5, pr(5, "five", "open", t - 10_000, "abc"));
+        g.prs.insert(6, pr(6, "six", "open", t - 10_000, "lost"));
+        g.lost_heads.insert("lost".into());
+    }
+    link(&app, REPO, t);
+    assert!(matches!(turns(&app, t).await[..], [poller::Turn::Done { backfill: true, .. }]));
+    gh.lock().unwrap().prs.remove(&5);
+    app.db
+        .mirror(REPO, None, |tx| {
+            crate::db::mirror::refetch(tx, REPO, "pr", "5", t)?;
+            crate::db::mirror::refetch(tx, REPO, "head", "lost", t)
+        })
+        .unwrap();
+    assert_eq!(turns(&app, t + 1000).await, [poller::Turn::Refetched { repo: REPO, fixed: 1 }]);
+    assert_eq!(item(&app, 5), None);
+    assert!(app.db.refetches(REPO).unwrap().is_empty());
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    assert!(matches!(turns(&app, t + every).await[..], [poller::Turn::Done { backfill: false, .. }]));
+}
+
+/// A delivery whose rows fail to write isn't taken: it's answered 500 and
+/// forgotten, so GitHub's redelivery of it is written, not refused as a
+/// duplicate.
+#[tokio::test]
+async fn a_delivery_that_fails_to_write_isnt_taken() {
+    let (_gh, app, base, _hub) = serve().await;
+    link(&app, REPO, now_ms());
+    let opened = json!({ "action": "opened", "repository": repository(REPO), "sender": { "login": "bob", "id": 2 },
+        "pull_request": pr(5, "Fix", "open", now_ms(), "abc") });
+    app.db.c().execute("ALTER TABLE forge_events RENAME TO forge_events_away", params![]).unwrap();
+    assert_eq!(hook(&base, "pull_request", "d1", &opened).await, 500);
+    assert_eq!(count(&app, "SELECT count(*) FROM github_webhook_deliveries WHERE delivery = 'd1'"), 0);
+    assert_eq!(item(&app, 5), None, "nothing half written");
+    app.db.c().execute("ALTER TABLE forge_events_away RENAME TO forge_events", params![]).unwrap();
+    assert_eq!(hook(&base, "pull_request", "d1", &opened).await, 202, "the redelivery is taken");
+    assert_eq!(item(&app, 5).map(|i| i.0).as_deref(), Some("Fix"));
+}
+
+/// The fake GitHub and a platform with the full pass on and a client that
+/// gives up after 2 s, its repo linked and backfilled with open issues 1 to
+/// 3 at `t0`: the time just past the repo's point in a day.
+async fn backfilled() -> (Shared, Arc<Platform>, u64) {
+    let (gh, api) = fake_github().await;
+    let hub = Arc::new(TestHub::default());
+    let app = platform_set(Db::test(), &hub, &api, Settings::default(), |p| {
+        p.http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(2)).build().unwrap();
+    });
+    let day = poller::FULL_EVERY_MS;
+    let (mut lo, mut hi) = (now_ms() - 3 * day, now_ms() - 2 * day);
+    let start = lo;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if poller::full_due(REPO, Some(start), mid, day) { hi = mid } else { lo = mid }
+    }
+    let t0 = hi + 1;
+    {
+        let mut g = gh.lock().unwrap();
+        for n in 1..=3 {
+            let mut v = issue(n, &format!("issue {n}"), "open", t0 - 10_000);
+            v["id"] = json!(1000 + n);
+            g.issues.insert(n, v);
+        }
+    }
+    link(&app, REPO, t0);
+    assert!(matches!(turns(&app, t0).await[..], [poller::Turn::Done { backfill: true, .. }]));
+    (gh, app, t0)
+}
+
+/// When the repo last reconciled and last started a full pass.
+fn passes(app: &Platform) -> (Option<u64>, Option<u64>) {
+    app.db
+        .c()
+        .query_row("SELECT reconciled_at, full_at FROM linked_repos WHERE repo_id = ?1", params![REPO], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap()
+}
+
+/// A full pass whose read of a row fails, however it fails (an empty or
+/// garbled 200, a 5xx, a 429 or 403, no answer in time), leaves the row:
+/// only an answer that names another item, or a 404 or 410, is gone. The
+/// reconcile before it stands, and the next pass is a day off. An empty
+/// or garbled answer is never kept for a 304 to hand back.
+#[tokio::test]
+async fn a_failed_read_in_the_full_pass_leaves_the_row() {
+    let fails = [Fail::Empty, Fail::Garbled, Fail::Status(500), Fail::Status(429), Fail::Status(403), Fail::Slow];
+    for fail in fails {
+        let (gh, app, t0) = backfilled().await;
+        gh.lock().unwrap().fails.insert(2, fail);
+        let t1 = t0 + poller::FULL_EVERY_MS;
+        let done = turns(&app, t1).await;
+        assert!(matches!(done[..], [poller::Turn::Done { backfill: false, .. }]), "{fail:?}: {done:?}");
+        for n in 1..=3 {
+            assert!(item(&app, n).is_some(), "{fail:?}: #{n} stays");
+        }
+        assert_eq!(passes(&app), (Some(t1), Some(t1)), "{fail:?}");
+        // Read again, the empty or garbled answer wasn't kept.
+        let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+        app.db.c().execute("UPDATE linked_repos SET full_at = NULL, backfilled_at = ?1", params![t0]).unwrap();
+        turns(&app, t1 + every).await;
+        assert!(item(&app, 2).is_some(), "{fail:?}");
+        assert_eq!(gh.lock().unwrap().conditional.get(&2), None, "{fail:?}: no ETag kept for it");
+    }
+}
+
+/// An issue whose read names the repo otherwise is read again once the
+/// repo's name is: renamed while the turn ran, the row stays (under the new
+/// name); still named as before, the answer is another repo's (a transfer
+/// that kept its number) and the row goes.
+#[tokio::test]
+async fn a_rename_mid_turn_isnt_a_transfer() {
+    for renamed in [true, false] {
+        let (gh, app, t0) = backfilled().await;
+        {
+            let mut g = gh.lock().unwrap();
+            let to = if renamed { "acme/renamed" } else { "acme/elsewhere" };
+            g.issues.get_mut(&2).unwrap()["repository_url"] = json!(format!("https://api.github.com/repos/{to}"));
+            if renamed {
+                g.next_names.extend(["acme/app".to_owned(), "acme/renamed".to_owned()]);
+            }
+        }
+        turns(&app, t0 + poller::FULL_EVERY_MS).await;
+        assert_eq!(item(&app, 2).is_some(), renamed, "renamed: {renamed}");
+        let name: String = app.db.c().query_row("SELECT full_name FROM linked_repos", params![], |r| r.get(0)).unwrap();
+        assert_eq!(name, if renamed { "acme/renamed" } else { "acme/app" });
+    }
+}
+
+/// A repo that mirrors text: a comment deleted on GitHub while its webhook
+/// was lost goes when the full pass reads its stale item again whole.
+#[tokio::test]
+async fn a_deleted_comments_text_goes_in_the_full_pass() {
+    let (gh, app, t0) = backfilled().await;
+    app.db.c().execute("UPDATE linked_repos SET mirror_content = TRUE", params![]).unwrap();
+    let comment = json!({ "id": 501, "body": "kept for now", "user": { "login": "bob", "id": 2 },
+        "created_at": iso(t0 - 5000), "updated_at": iso(t0 - 5000) });
+    gh.lock().unwrap().comments.insert(1, vec![comment]);
+    let t1 = t0 + poller::FULL_EVERY_MS;
+    turns(&app, t1).await;
+    let comments =
+        |app: &Platform| count(app, "SELECT count(*) FROM forge_content WHERE number = 1 AND kind = 'comment'");
+    assert_eq!(comments(&app), 1, "read whole in the first pass");
+    gh.lock().unwrap().comments.remove(&1);
+    turns(&app, t1 + poller::FULL_EVERY_MS).await;
+    assert_eq!(comments(&app), 0, "its deleted comment's text went");
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_content WHERE number = 1 AND kind = 'body'"), 1);
+}
+
+/// When a large share of the open rows aren't in GitHub's open list (over
+/// a quarter, and over 10), the list is what's wrong: none is read again
+/// for it.
+#[tokio::test]
+async fn too_many_missing_rows_are_none_read_again() {
+    let (gh, app, t0) = backfilled().await;
+    {
+        let mut g = gh.lock().unwrap();
+        for n in 4..=40 {
+            g.issues.insert(n, issue(n, &format!("issue {n}"), "open", t0 + 1000));
+        }
+    }
+    // A reconcile writes 4 to 40.
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    turns(&app, t0 + every).await;
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_items WHERE state = 'open'"), 40);
+    // Then 20 of them leave GitHub's open list (closed, as far as a list
+    // says), and are the freshest rows, so the stalest reads don't reach
+    // them.
+    {
+        let mut g = gh.lock().unwrap();
+        for n in 21..=40 {
+            g.issues.get_mut(&n).unwrap()["state"] = json!("closed");
+        }
+    }
+    app.db.c().execute("UPDATE forge_items SET synced_at = ?1 WHERE number > 20", params![t0 + 2 * every]).unwrap();
+    app.db.c().execute("UPDATE linked_repos SET reconciled_at = ?1", params![t0 + 2 * every]).unwrap();
+    turns(&app, t0 + poller::FULL_EVERY_MS).await;
+    assert!(app.db.refetches(REPO).unwrap().is_empty(), "none read again");
+    // The 30 stalest reads reach 1 to 30 (and close 21 to 30, as GitHub
+    // has them); 31 to 40, only the list's compare could have.
+    assert_eq!(
+        count(&app, "SELECT count(*) FROM forge_items WHERE number > 30 AND state = 'open'"),
+        10,
+        "no row the compare found is touched"
+    );
+}
+
+/// A row GitHub says is gone (410) stays while the repo itself doesn't
+/// read: the delete waits for the repo to read as this one.
+#[tokio::test]
+async fn gone_waits_for_the_repo_to_read() {
+    let (gh, app, t0) = backfilled().await;
+    {
+        let mut g = gh.lock().unwrap();
+        g.issues.remove(&3);
+        // The turn's own read of the repo answers; the one before the delete doesn't.
+        g.repo_fails_from = Some(g.repo_reads + 2);
+    }
+    app.db.mirror(REPO, None, |tx| crate::db::mirror::refetch(tx, REPO, "issue", "3", t0)).unwrap();
+    turns(&app, t0 + 1000).await;
+    assert!(item(&app, 3).is_some(), "kept while the repo didn't read");
+    assert!(app.db.refetches(REPO).unwrap().is_empty());
+    gh.lock().unwrap().repo_fails_from = None;
+    app.db.mirror(REPO, None, |tx| crate::db::mirror::refetch(tx, REPO, "issue", "3", t0)).unwrap();
+    turns(&app, t0 + 2000).await;
+    assert_eq!(item(&app, 3), None, "gone once the repo reads");
 }

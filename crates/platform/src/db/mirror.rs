@@ -362,10 +362,11 @@ pub fn refetched(c: &impl Sql, repo_id: u64, kind: &str, key: &str) -> Result<()
     Ok(())
 }
 
-/// An issue deleted, or transferred to another repo: its row, its
-/// events, the checks of a head no other item has, its inbox rows and
-/// any read again it waited for. Its drafts stay (M170's): a send to it
-/// fails and says so. Whether there was one.
+/// An item deleted, or transferred to another repo: its row, its
+/// events, the checks of a head no other item has, its inbox rows, any
+/// read again it waited for, and its text (`forge_content`'s bodies and
+/// comments): a deleted item's text goes with it. Its drafts stay
+/// (M170's): a send to it fails and says so. Whether there was one.
 pub fn delete_item(c: &impl Sql, repo_id: u64, number: u64) -> Result<bool> {
     let found = c
         .query_row(
@@ -377,6 +378,7 @@ pub fn delete_item(c: &impl Sql, repo_id: u64, number: u64) -> Result<bool> {
     let Some((id, head)) = found else { return Ok(false) };
     c.execute("DELETE FROM inbox_items WHERE item = ?1", params![id])?;
     c.execute("DELETE FROM forge_events WHERE repo_id = ?1 AND number = ?2", params![repo_id, number])?;
+    c.execute("DELETE FROM forge_content WHERE repo_id = ?1 AND number = ?2", params![repo_id, number])?;
     if let Some(sha) = head {
         c.execute(
             "DELETE FROM forge_checks WHERE repo_id = ?1 AND head_sha = ?2
@@ -416,9 +418,10 @@ pub struct MergeCandidate {
     pub checks: Vec<ForgeCheck>,
 }
 
-/// The poller read a PR again for its merge state at `now`: its row is as
-/// fresh as that, whether or not the answer changed it (the next
-/// rechecks go stalest first).
+/// The poller read an item again at `now` (a PR for its merge state, or
+/// any item in the full pass): its row is as fresh as that, whether or not
+/// the answer changed it (the next rechecks, and the next full pass's
+/// reads, go stalest first).
 pub fn merge_checked(c: &impl Sql, repo_id: u64, number: u64, now: u64) -> Result<()> {
     c.execute(
         "UPDATE forge_items SET synced_at = ?1 WHERE repo_id = ?2 AND number = ?3 AND synced_at < ?1",
@@ -445,6 +448,8 @@ pub struct PollJob {
     pub linked_at: u64,
     pub backfilled_at: Option<u64>,
     pub reconciled_at: Option<u64>,
+    /// When its last full pass started (`forge::poller`'s, about daily).
+    pub full_at: Option<u64>,
     /// Where the last turn stopped, when it ran out of pages.
     pub cursor: Option<String>,
     /// Turns that failed in a row.
@@ -519,7 +524,7 @@ impl Db {
             .query_row(
                 &format!(
                     "SELECT repo_id, full_name, installation_id, linked_at, backfilled_at, reconciled_at,
-                         poll_cursor, poll_failures
+                         poll_cursor, poll_failures, full_at
                      FROM linked_repos l
                      WHERE unlinked_at IS NULL AND lease_until <= ?1
                          AND (backfilled_at IS NULL OR reconciled_at IS NULL OR reconciled_at <= ?2
@@ -540,6 +545,7 @@ impl Db {
                         reconciled_at: r.get(5)?,
                         cursor: r.get(6)?,
                         failures: r.get(7)?,
+                        full_at: r.get(8)?,
                         due: false,
                         lease: String::new(),
                     })
@@ -594,6 +600,19 @@ impl Db {
                 params![cursor, now, job.repo_id, job.lease],
             )?,
         };
+        Ok(n == 1)
+    }
+
+    /// A reconcile is done and the repo's full pass starts at `now`: both
+    /// recorded at once, with the claim kept for the pass, so however the
+    /// pass ends the reconcile stands and the next pass is a day off. False
+    /// when the claim was lost.
+    pub fn start_full_pass(&self, job: &PollJob, now: u64) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE linked_repos SET reconciled_at = ?1, full_at = ?1, poll_cursor = NULL, poll_failures = 0
+             WHERE repo_id = ?2 AND lease = ?3 AND unlinked_at IS NULL",
+            params![now, job.repo_id, job.lease],
+        )?;
         Ok(n == 1)
     }
 
@@ -682,6 +701,27 @@ impl Db {
             }
         }
         Ok(out)
+    }
+
+    /// The repo's open PRs and issues: `(kind, number)`, for the full pass
+    /// to compare with what GitHub lists as open.
+    pub fn open_items(&self, repo_id: u64) -> Result<Vec<(String, u64)>> {
+        self.c().query_map(
+            "SELECT kind, number FROM forge_items WHERE repo_id = ?1 AND state = 'open' ORDER BY number",
+            params![repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// The repo's `most` items whose rows were written or read longest
+    /// ago: `(kind, number)`, stalest first, for the full pass to read
+    /// again.
+    pub fn stalest_items(&self, repo_id: u64, most: usize) -> Result<Vec<(String, u64)>> {
+        self.c().query_map(
+            "SELECT kind, number FROM forge_items WHERE repo_id = ?1 ORDER BY synced_at, number LIMIT ?2",
+            params![repo_id, most as u64],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
     }
 
     /// What waits to be read again for a repo: `(kind, key)`.

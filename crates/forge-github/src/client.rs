@@ -114,6 +114,16 @@ pub struct EtagCache(Arc<Mutex<HashMap<String, Cached>>>);
 /// More URLs than this: start again.
 const CACHED: usize = 2000;
 
+/// What an error says when GitHub answered a read with a success the client
+/// couldn't read or parse: [`unreadable`] finds it.
+pub const UNREADABLE: &str = "GitHub's answer didn't read as JSON";
+
+/// Whether `e` is a success GitHub sent that couldn't be read or parsed:
+/// it says nothing about what was asked for.
+pub fn unreadable(e: &Error) -> bool {
+    matches!(e, Error::Http(m) if m.contains(UNREADABLE))
+}
+
 #[derive(Default)]
 struct Limits {
     limit: Option<u64>,
@@ -277,7 +287,16 @@ impl<T: TokenSource> Github<T> {
                 return Err(Error::Http(format!("{}: 304 for nothing asked", redact(&url))));
             }
             let link = headers.get("link").and_then(|v| v.to_str().ok()).map(str::to_owned);
-            let text = res.text().await.unwrap_or_default();
+            let text = match res.text().await {
+                Ok(t) => t,
+                // A read's success whose body didn't arrive says nothing. A
+                // write's went through whatever its body: never an error, so
+                // nothing tries it again.
+                Err(e) if get && status.is_success() => {
+                    return Err(Error::Http(format!("{}: {UNREADABLE}: {}", redact(&url), short(&e))));
+                }
+                Err(_) => String::new(),
+            };
             if !status.is_success() {
                 let said = serde_json::from_str::<Value>(&text)
                     .ok()
@@ -303,9 +322,20 @@ impl<T: TokenSource> Github<T> {
                     c => Error::Http(format!("{c} {said}")),
                 });
             }
-            let v =
-                if text.trim().is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or(Value::Null) };
-            if get && let Some(e) = headers.get("etag").and_then(|v| v.to_str().ok()) {
+            // An empty body is `null` (a write's 204), and never kept for a
+            // 304 to hand back. A read's that isn't JSON is an error, never
+            // `null`, so no caller takes it for an answer; a write's is
+            // `null`, since the write went through.
+            let v = match serde_json::from_str::<Value>(&text) {
+                _ if text.trim().is_empty() => Value::Null,
+                Ok(v) => v,
+                Err(_) if get => return Err(Error::Http(format!("{}: {UNREADABLE}", redact(&url)))),
+                Err(_) => Value::Null,
+            };
+            if get
+                && !v.is_null()
+                && let Some(e) = headers.get("etag").and_then(|v| v.to_str().ok())
+            {
                 let mut c = self.cache.0.lock().unwrap();
                 if c.len() >= CACHED {
                     c.clear();

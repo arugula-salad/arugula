@@ -286,6 +286,12 @@ pub async fn fetch<T: TokenSource>(
     let base = format!("repositories/{repo_id}");
     let path = format!("{base}/{}/{number}", if pr { "pulls" } else { "issues" });
     let item = gh.read(name, &path).await.map_err(|e| anyhow::anyhow!("{path}: {e}"))?;
+    // Reads follow GitHub's redirects: a transferred item's answer is
+    // another repo's, and none of it is written as this one's.
+    let said = super::ingest::answer_for(&item, repo_id, name, number);
+    if said != super::ingest::Answer::Same {
+        anyhow::bail!("{path}: GitHub's answer isn't this repo's #{number} ({said:?})");
+    }
     let mut out: Vec<ContentRow> = body_row(repo_id, number, &item).into_iter().collect();
     let comments = list(gh, name, &format!("{base}/issues/{number}/comments?per_page=100")).await?;
     out.extend(comments.iter().filter_map(|v| comment_row(repo_id, number, "comment", v)));

@@ -447,7 +447,7 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
          {add}) VALUES ('tc_default', 'p', 'plane', 'w', 's3', 'C', 'C', -3, 1);"
     ))
     .unwrap();
-    assert_eq!(run(&mut c).unwrap().ran, [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]);
+    assert_eq!(run(&mut c).unwrap().ran, [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]);
     c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
     let row = |id: &str| -> (String, String) {
         c.query_row("SELECT write_policy, attribution FROM tracker_connections WHERE id = ?1", [id], |r| {
@@ -462,4 +462,30 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
     assert_eq!(row("tc_approve"), (json(["approve"; 5]), short.clone()));
     assert_eq!(row("tc_default"), (json(["approve"; 5]), short.clone()), "the default of agent_writes was approve");
     assert_eq!(row("tc_new"), (json(middle), short));
+}
+
+/// The forge mirror's full pass (0100): a repo linked before it starts as
+/// if its last pass came with its last reconcile (else its backfill), so
+/// repos' first passes come at their own points of the next day, not all
+/// at once after the deploy. One never backfilled has none.
+#[test]
+fn linked_repos_start_their_full_pass_clock_at_their_last_reconcile() {
+    let mut c = Connection::open_in_memory().unwrap();
+    run_to(&mut c, 99).unwrap();
+    c.execute_batch(
+        "INSERT INTO linked_repos (repo_id, full_name, private, project_id, installation_id, linked_at, backfilled_at, reconciled_at)
+             VALUES (1, 'a/one', 0, 'p', 9, 1, 10, 500), (2, 'a/two', 0, 'p', 9, 1, 20, NULL);
+         INSERT INTO linked_repos (repo_id, full_name, private, project_id, installation_id, linked_at)
+             VALUES (3, 'a/three', 0, 'p', 9, 1);",
+    )
+    .unwrap();
+    run(&mut c).unwrap();
+    let full: Vec<Option<u64>> = c
+        .prepare("SELECT full_at FROM linked_repos ORDER BY repo_id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(full, [Some(500), Some(20), None]);
 }
