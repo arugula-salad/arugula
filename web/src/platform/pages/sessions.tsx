@@ -14,6 +14,7 @@ import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -204,19 +205,27 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           </button>
         )}
       </div>
-      {error && (
-        <p class="control-error" role="alert">
-          {error}
-        </p>
+      {w === null && error ? (
+        <BlockError inline title="Can't read this project's sessions." detail={error} retry={() => setTick((n) => n + 1)} />
+      ) : (
+        error && (
+          <p class="control-error" role="alert">
+            {error}
+          </p>
+        )
       )}
       {w === null && !error && <ListLoading />}
-      {w?.sessions.length === 0 && (
-        <p class="dim issues-none" data-sessions-none>
-          {narrowed
-            ? "No sessions match."
-            : "No agent sessions yet. Agent on this on an issue, or @arugula in a channel, starts one."}
-        </p>
-      )}
+      {w?.sessions.length === 0 &&
+        (narrowed ? (
+          <EmptyLine data-sessions-none>No sessions match.</EmptyLine>
+        ) : (
+          <EmptyState
+            where="page"
+            data-sessions-none
+            title="No agent sessions yet."
+            why="Agent on this on an issue, or @arugula in a channel, starts one."
+          />
+        ))}
       <ul class="issues-list sw-cards" data-sessions-list>
         {w?.sessions.map((s) => (
           <Row key={s.session} p={p} s={s} />

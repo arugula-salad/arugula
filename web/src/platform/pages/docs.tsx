@@ -8,6 +8,7 @@
 // workspace makes them too, as itself. A write anywhere reaches an open
 // page live, through the Doc's thread (as a board's does).
 
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
@@ -210,17 +211,13 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
   ];
   const status =
     rows === null ? (
-      <p class="dim list-status" data-docs-loading>
-        Reading the Docs…
-      </p>
+      <BlockLoading inline data-docs-loading what="the Docs" />
     ) : all.length === 0 ? (
-      <p class="dim list-status" data-docs-none>
-        No Docs yet.
-      </p>
+      <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />
     ) : shown.length === 0 ? (
-      <p class="dim list-status" data-docs-none>
+      <EmptyLine data-docs-none>
         {q ? "No Doc's title or headings match." : filter === "private" ? "None of your Docs is private." : "No Doc is shared."}
-      </p>
+      </EmptyLine>
     ) : undefined;
   const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Every Doc you can read, in your projects";
   return (
@@ -252,7 +249,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         keyOf={(r) => r.doc.id}
         previewOn="click"
         onOpen={(r) => go(docPath(r))}
-        status={status}
+        status={status && <div class="list-status">{status}</div>}
         row={(r) => {
           const s = sections.get(readKey(r.doc));
           return {
@@ -609,7 +606,7 @@ export function ProjectDocs({ p }: { p: PlatformProject }) {
   return (
     <>
       <SectionHead title="Docs" all={all} onAll={(e) => follow(e, all)} data="project-docs-link" />
-      {list.length === 0 && <p class="dim">No Docs yet.</p>}
+      {list.length === 0 && <EmptyState where="page" title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
       <div data-project-docs>
         <DocRows p={p} list={list.slice(0, 5)} />
       </div>

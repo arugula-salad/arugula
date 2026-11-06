@@ -222,8 +222,9 @@ pane menu all use it.
 
 ## Empty and error states
 
-*(being built: #692.)* One `EmptyState`: a title, a why, and at most one
-`.primary`.
+One `EmptyState` (`shared/ui/block-states.tsx`): a title, a why, and at most
+one `.primary`. Loading is `BlockLoading`, which says nothing for the first
+300ms so a quick load doesn't flash it.
 
 - **The title is a statement with a full stop** ("No rows yet."), 15/600. The
   why says what the thing is and where it comes from, in one or two
@@ -232,14 +233,15 @@ pane menu all use it.
   gets the same card, centred. No picture.
 - **No button** when the action is already on screen (chat's composer, the
   phone's quick buttons) or the reader can't take it; the why says who can.
-- **No match is a dim line**, not a card, with Clear. So is "None yet." in a
-  settings section.
-- **An error** is the same card with a solid danger edge and a 15/600 title
-  starting "Can't…", and Try again as a `.secondary`. On a page it stands in
+- **No match is a dim line** (`EmptyLine`), not a card, with Clear when the
+  page has none beside it. So is "None yet." in a settings section.
+- **An error** (`BlockError`) is the same card with a solid danger edge and a
+  15/600 title starting "Can't…", and Try again as a `.secondary`. On a page it stands in
   for the content only when the whole list couldn't be read; a form error
   stays a red line by its field.
 - **Phone, Here, nothing waiting:** one short dim line under the Needs you
-  heading, "Nothing right now."
+  heading, "Nothing right now." Needs you is a 15/600 title there and in the
+  swarm's rail, not display caps.
 
 ## Touch
 

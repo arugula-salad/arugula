@@ -50,6 +50,7 @@ import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
 import { BookmarkIcon, MachineIcon, ReactIcon, ThreadIcon } from "./icons";
 import { presence } from "./presence";
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
 import { Chip } from "../ui/state-chip";
 
@@ -204,22 +205,26 @@ function keepDraft(key: string, text: string) {
 }
 
 /** What the room says before anything's in it. */
-function emptyNote(r: ChatRoom): string {
+export type EmptyNote = { title: string; why?: string };
+function emptyNote(r: ChatRoom): EmptyNote {
   switch (r.kind) {
     case "channel":
       return r.private
-        ? `This is the start of the private channel #${r.name}. Only the people in it read it; write @name to notify one of them.`
-        : `This is the start of #${r.name}. Anyone in the team can join it; write @name to notify someone.`;
+        ? { title: `This is the start of #${r.name}.`, why: "Only the people in it read it. Write @name to notify one of them." }
+        : { title: `This is the start of #${r.name}.`, why: "Anyone in the team can join it. Write @name to notify someone." };
     case "dm":
-      return r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`;
+      return {
+        title: r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`,
+        why: "Write @name to bring someone else in.",
+      };
     case "pane":
-      return "Talk about this pane here. Whoever may read its thread sees it; write @name to notify one of them.";
+      return { title: "Talk about this pane here.", why: "Whoever may read its thread sees it. Write @name to notify one of them." };
     case "session":
-      return "Talk about this session here; write @name to notify someone.";
+      return { title: "Talk about this session here.", why: "Write @name to notify someone." };
     case "object":
-      return "Talk about this here. Its project's members read it; write @name to notify one of them.";
+      return { title: "Talk about this here.", why: "Its project's members read it. Write @name to notify one of them." };
     default:
-      return "Nothing kept here.";
+      return { title: "Nothing kept here." };
   }
 }
 
@@ -277,7 +282,7 @@ export function RoomBody({
    * issue's timeline (M201). */
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
-  empty?: string;
+  empty?: EmptyNote;
   /** The host's header shows whose agents reach the room (a chip), so the
    * room doesn't repeat it above its messages. */
   chip?: boolean;
@@ -437,8 +442,8 @@ export function RoomBody({
             Earlier messages
           </button>
         )}
-        {msgs === null && !error && <p class="thread-empty">Loading…</p>}
-        {msgs?.length === 0 && !between?.length && <p class="thread-empty">{empty ?? emptyNote(current)}</p>}
+        {msgs === null && !error && <BlockLoading inline what="the room" />}
+        {msgs?.length === 0 && !between?.length && <EmptyState {...(empty ?? emptyNote(current))} />}
         {msgs &&
           rowsOf(msgs, between).map((row, i, rows) => {
             const at = row.m ? row.m.at : row.x.at;

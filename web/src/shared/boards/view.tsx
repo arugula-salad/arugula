@@ -32,6 +32,7 @@ import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { CopyLinkButton } from "../ui/copy-link";
+import { BlockError, BlockLoading, EmptyLine, EmptyState } from "../ui/block-states";
 import { PageHeader } from "../ui/page-header";
 import { SectionHead } from "../ui/section-head";
 import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/menu";
@@ -181,8 +182,8 @@ export function BoardPanel({
     if (rowKey) document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
   }, [rowKey, !!view]);
 
-  if (missing && !view) return <p class="board-none dim" data-board-missing>That board couldn't be read ({missing}).</p>;
-  if (!view) return <p class="board-none dim">Loading…</p>;
+  if (missing && !view) return <BlockError inline data-board-missing title="Can't read this board." detail={missing} retry={again} />;
+  if (!view) return <BlockLoading inline what="the board" />;
 
   /** Run a write; on 409 read again and say so. */
   const act = async (write: () => Promise<BoardView>): Promise<boolean> => {
@@ -342,9 +343,23 @@ export function BoardPanel({
         </p>
       )}
       {narrows && found.length === 0 && (
-        <p class="board-none dim" data-board-find-none>
-          {query ? `No row matches “${query}”.` : "No row matches the filter."}
-        </p>
+        <EmptyLine data-board-find-none>{query ? `No row matches “${query}”.` : "No row matches the filter."}</EmptyLine>
+      )}
+      {!narrows && allRows.length === 0 && editing !== "new" && (
+        <EmptyState
+          where="page"
+          data-board-empty
+          title="No rows yet."
+          why={`A row is one piece of work: an issue or a PR. Its lane follows the work, so you never move it.${write ? "" : " Its writers add rows."}`}
+          action={
+            write && (
+              <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+                <PlusIcon size={13} />
+                Add row
+              </button>
+            )
+          }
+        />
       )}
       {sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;
@@ -408,10 +423,12 @@ export function BoardPanel({
         <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />
       ) : (
         <p class="board-foot">
-          <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-            <PlusIcon size={13} />
-            Add row
-          </button>
+          {allRows.length > 0 && (
+            <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+              <PlusIcon size={13} />
+              Add row
+            </button>
+          )}
           {write && (
             <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
               <PlusIcon size={13} />

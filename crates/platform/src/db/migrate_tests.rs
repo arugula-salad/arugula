@@ -431,12 +431,12 @@ fn existing_channels_become_public_with_the_whole_team_in() {
     assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE dm_key IS NOT NULL"), 0, "old DMs have no key");
 }
 
-/// Relations take `before` (0101, #761): the edges there keep their rows, and
+/// Relations take `before` (0102, #761): the edges there keep their rows, and
 /// the kind is allowed.
 #[test]
 fn relations_keep_their_edges_and_take_before() {
     let mut c = Connection::open_in_memory().unwrap();
-    run_to(&mut c, 100).unwrap();
+    run_to(&mut c, 101).unwrap();
     let edge = |id: &str, kind: &str| {
         format!(
             "INSERT INTO work_relations (id, project_id, from_kind, from_id, to_kind, to_id, kind, source, created_at)
@@ -444,8 +444,8 @@ fn relations_keep_their_edges_and_take_before() {
         )
     };
     c.execute_batch(&edge("rel_1", "blocks")).unwrap();
-    assert!(c.execute_batch(&edge("rel_2", "before")).is_err(), "not before 0101");
-    assert_eq!(run(&mut c).unwrap().ran, [101]);
+    assert!(c.execute_batch(&edge("rel_2", "before")).is_err(), "not before 0102");
+    assert_eq!(run(&mut c).unwrap().ran, [102]);
     assert_eq!(count(&c, "SELECT count(*) FROM work_relations"), 1);
     c.execute_batch(&edge("rel_2", "before")).unwrap();
     assert!(c.execute_batch(&edge("rel_3", "before")).is_err(), "one edge of a kind between two items");
@@ -469,7 +469,7 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
     .unwrap();
     assert_eq!(
         run(&mut c).unwrap().ran,
-        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101]
+        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102]
     );
     c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
     let row = |id: &str| -> (String, String) {

@@ -204,8 +204,9 @@ pub struct WithheldRepo {
     pub repo: String,
     /// `no_github` (the reader didn't sign in to control with GitHub),
     /// `no_access` (GitHub doesn't give them access), `busy` (too many
-    /// lookups lately: it shows again within the hour) or `no_app` (this
-    /// control has no GitHub App to ask with).
+    /// lookups lately: it shows again within the hour), `unsure` (GitHub
+    /// couldn't be asked just now: it's asked again next time) or `no_app`
+    /// (this control has no GitHub App to ask with).
     pub why: String,
 }
 

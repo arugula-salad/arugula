@@ -698,8 +698,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/sqlite/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
         name: "work_relations_before",
-        sql: include_str!("../../migrations/sqlite/0101_work_relations_before.sql"),
+        sql: include_str!("../../migrations/sqlite/0102_work_relations_before.sql"),
         additive: true,
     },
 ];
@@ -1310,8 +1316,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/postgres/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
         name: "work_relations_before",
-        sql: include_str!("../../migrations/postgres/0101_work_relations_before.sql"),
+        sql: include_str!("../../migrations/postgres/0102_work_relations_before.sql"),
         additive: true,
     },
 ];

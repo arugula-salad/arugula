@@ -259,6 +259,10 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, from: Source, now: u64) -> Result
             it.state_reason
         ],
     )?;
+    // A native issue exported to it, on a board already, is the same work.
+    if was.is_none() && it.kind == "issue" {
+        super::work_items::mirrored(c, it.repo_id, it.number, now)?;
+    }
     Ok(wrote)
 }
 

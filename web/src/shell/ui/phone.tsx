@@ -2,6 +2,7 @@
 // tabs and panes to switch between, and a key bar supplies the keys a phone
 // keyboard lacks.
 
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openSettings } from "./settings-route";
 import { openAgentsPage } from "./agents-route";
 import { openDocsPage } from "./docs-route";
@@ -184,6 +185,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 })}
               </section>
             )}
+            {wanting.length === 0 && notices.length === 0 && (
+              <section class="sheet-group sheet-needs-none" data-needs-none>
+                <h2>Needs you</h2>
+                <EmptyLine>Nothing right now.</EmptyLine>
+              </section>
+            )}
               {/* What a phone is opened for most: right at the top. */}
               {!watching && (
               <div class="sheet-actions sheet-quick">
@@ -262,6 +269,21 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </div>
                 );
               })}
+              {state.sessions.length === 0 && (
+                <EmptyState
+                  where="page"
+                  data-sheet-no-sessions
+                  title="No sessions yet."
+                  why="A session holds tabs, and each tab its panes."
+                  action={
+                    !state.roles && (
+                      <button class="primary" onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>
+                        New session
+                      </button>
+                    )
+                  }
+                />
+              )}
             </section>
             </>
           )}

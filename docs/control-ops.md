@@ -54,8 +54,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     repository: the platform drops the access answers it keeps (10
     minutes) when one comes, so a removed collaborator is cut off at
     once rather than within 10 minutes. Without them, that's how long it
-    takes. Any event that carries a repository also marks a linked repo
-    private when GitHub says it is.
+    takes. Only a clear answer is kept: when GitHub can't be asked (an
+    error, a 5xx, its rate limit), the repo is withheld as `unsure` and
+    asked again next time, and the inbox keeps that person's entries,
+    seen and done, as they were. Any event that carries a repository also
+    marks a linked repo private when GitHub says it is.
   - **Webhook URL** `https://control.example.com/github/webhook`, with a
     secret. **Callback URL** `https://control.example.com/auth/github/callback`
     if it also signs people in.

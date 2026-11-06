@@ -1,3 +1,7 @@
+/* The block states (shared/ui/block-states.tsx) are drawn by the Doc
+   renderer too, so their styles ride in the app's stylesheet. */
+@import "./ui/block-states.css";
+
 :root {
   --bg: #1e1e2e;
   --fg: #cdd6f4;
@@ -115,7 +119,7 @@ body {
   height: 100%;
   background: var(--letterbox);
   color: var(--fg);
-  font: var(--t-body)/1.3 system-ui, sans-serif;
+  font: var(--t-body)/1.3 var(--f-ui);
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -330,7 +334,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 1px var(--space-1);
   border-radius: var(--tag-radius);
   background: var(--raised);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
 }
 
 /* A narrow window keeps the bar's room for tabs (and, in the desktop
@@ -2447,25 +2451,6 @@ button.att {
   line-height: 1.55;
 }
 
-.chat-block-empty {
-  margin: 18vh auto 0;
-  max-width: 420px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.chat-block-empty h3 {
-  margin: 0 0 6px;
-  color: var(--fg);
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-
-.chat-block-empty p {
-  margin: 0;
-  font-size: var(--text-md);
-}
-
 .chat-block-model {
   max-width: 40%;
   padding: 2px 6px;
@@ -3405,7 +3390,7 @@ button.att {
 }
 
 .control-name input {
-  font: var(--t-field) system-ui, sans-serif;
+  font: var(--t-field) var(--f-ui);
   width: 14rem;
   max-width: 100%;
 }
@@ -3769,7 +3754,7 @@ button.att {
   height: 22px;
   border-radius: 50%;
   overflow: hidden;
-  font: 600 10px system-ui, sans-serif; /* off-scale: avatar initials */
+  font: 600 10px var(--f-ui); /* off-scale: avatar initials */
   color: var(--on-color);
   background: var(--who);
   box-shadow: 0 0 0 2px var(--who);
@@ -3830,7 +3815,7 @@ button.att {
 .pane-driver {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 var(--text-xs) system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--who, var(--accent));
 }
@@ -3843,7 +3828,7 @@ button.att {
 .pane-take {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 var(--text-xs) system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--accent);
   pointer-events: auto;
@@ -4381,8 +4366,7 @@ button.att {
 }
 .swarm-rail h2 {
   margin: 0;
-  font: 800 var(--text-xl)/1 var(--f-display);
-  text-transform: uppercase;
+  font: 600 var(--text-lg)/20px var(--f-ui);
 }
 .swarm-rail header span {
   font: 500 var(--text-xs)/1 var(--f-mono);
@@ -4395,10 +4379,6 @@ button.att {
   gap: 10px;
   padding: 4px 14px 14px;
   overflow-y: auto;
-}
-.swarm-empty {
-  margin: 20px 4px;
-  color: var(--mute);
 }
 .swarm-waiting {
   padding: 10px 18px 16px;
@@ -4606,9 +4586,6 @@ button.att {
   }
   .swarm-rail header {
     padding: 10px 16px 6px;
-  }
-  .swarm-rail h2 {
-    font-size: var(--text-xl);
   }
   .swarm-cards {
     flex-direction: row;
@@ -4958,7 +4935,7 @@ button.att {
   flex-wrap: wrap;
   gap: 2px 10px;
   padding: 3px 8px;
-  font: var(--text-sm)/1.4 system-ui, sans-serif;
+  font: var(--text-sm)/1.4 var(--f-ui);
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
@@ -6898,24 +6875,6 @@ html[data-scheme="light"] .doc {
   font-size: var(--text-sm);
 }
 
-.agents-empty {
-  margin: 0 8px 16px;
-  padding: 16px 18px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--card-radius);
-  line-height: 1.5;
-}
-
-.agents-empty p {
-  margin: 4px 0 0;
-  color: var(--dim);
-}
-
-.agents-empty button {
-  margin-top: 10px;
-}
-
-.agents-empty b,
 .agents-none b {
   color: var(--fg);
 }
@@ -7445,7 +7404,6 @@ html[data-scheme="light"] .doc {
   padding: 8px 12px 12px;
 }
 
-.thread-empty,
 .thread-note {
   color: var(--dim);
   line-height: 1.45;
@@ -7561,7 +7519,7 @@ html[data-scheme="light"] .doc {
   border-radius: 8px;
   overflow: hidden;
   flex: none;
-  font: 700 var(--text-md) system-ui, sans-serif;
+  font: 700 var(--text-md) var(--f-ui);
   color: var(--on-color);
 }
 
@@ -9108,12 +9066,6 @@ input.chat-search {
 .chat-thread .thread-offer {
   margin-left: 8px;
   margin-right: 8px;
-}
-
-.chat-empty {
-  align-items: center;
-  justify-content: center;
-  color: var(--dim);
 }
 
 /* The room's head and Details' are bars (shared/ui/bar.css, #686); the
@@ -10731,16 +10683,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin: 6px;
 }
 
-.ws-empty {
-  padding: 20px 12px;
-  color: var(--dim);
-  text-align: center;
-}
-
-.ws-empty button {
-  color: var(--accent);
-}
-
 .ws-sidebar-resize {
   position: absolute;
   top: 0;
@@ -11099,7 +11041,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 var(--space-1);
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
 
@@ -11341,24 +11283,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* The empty drawer's steps (Discovery 5): Set up, Notify this device. */
-.ws-att-empty p {
-  margin: 0 0 6px;
-}
-
-.ws-att-empty .ws-att-acts {
-  justify-content: center;
-  margin-top: 12px;
-}
-
-.ws-att-empty .ws-att-acts .primary {
-  color: var(--on-color);
-}
-
-.ws-att-empty .ws-att-acts .secondary {
-  color: var(--fg);
 }
 
 /* The activity drawer's first-open line: what it keeps. */
@@ -11890,7 +11814,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: var(--text-xs) system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--muted);
 }
 
@@ -12166,21 +12090,10 @@ html[data-workspace="new"] .thread-panel {
   font-weight: 400;
 }
 
-/* An empty machine says what a session is, and how to make one. */
-.empty .empty-title {
-  margin: 0 0 4px;
-  color: var(--fg);
-  font-size: var(--text-lg);
-}
-
 .empty .dim {
   margin: 0 0 14px;
   max-width: 420px;
   text-align: center;
-}
-
-.empty [data-no-sessions-host] {
-  margin: 0 0 14px;
 }
 
 /* Disabled with a reason (the title says it): it looks it. */

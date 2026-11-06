@@ -69,8 +69,9 @@ it's never read for machine access.
 Only default projects exist so far: nothing creates a second one, so a team
 can't yet separate two products (aru-134).
 
-Step 1 adds the rows and backfills them, and nothing reads `project_id` yet,
-so behaviour doesn't change.
+Step 1 added the rows and backfilled them, and changed no behaviour. Later
+steps read `project_id`: for a row that has one, the reader's role in its
+project decides who reads and writes it (aru-134).
 Where: `crates/platform/src/db/projects.rs` (`projects`, `team_members`),
 `crates/platform/src/projects.rs`, and `project_id` on Cloud's and chat's
 tables (`crates/platform/src/db/`).

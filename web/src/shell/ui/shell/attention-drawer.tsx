@@ -9,6 +9,7 @@
 // Claude Code's hooks where they're missing, and this device's
 // notifications where they're off (Discovery 5).
 
+import { EmptyState } from "../../../shared/ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { type Client } from "../../client";
@@ -389,29 +390,34 @@ function Empty({ client }: { client: Client }) {
   };
   const push = pushNow() === "off";
   return (
-    <div class="ws-empty ws-att-empty" role="status" data-attention-empty>
-      <p>Nothing needs you on any machine.</p>
-      <p class="dim">Claude in a terminal? Its questions land here, to answer from any device.</p>
+    <EmptyState
+      where="page"
+      data-attention-empty
+      title="Nothing needs you on any machine."
+      why="Claude in a terminal? Its questions land here, to answer from any device."
+      action={
+        (hooks === "missing" || hooks === "busy" || push) && (
+          <>
+            {(hooks === "missing" || hooks === "busy") && (
+              <button class="primary" disabled={hooks === "busy"} onClick={() => void setUp()} data-attention-setup title="Install Arugula's hooks in Claude Code's settings">
+                {hooks === "busy" ? "Setting up…" : "Set up"}
+              </button>
+            )}
+            {push && (
+              <button class="secondary" onClick={() => void toggleNotify(client)} data-attention-notify title="Notifications on this device when something needs you">
+                Notify this device
+              </button>
+            )}
+          </>
+        )
+      }
+    >
       {typeof hooks === "object" && hooks !== null && (
         <p class={hooks.ok ? "dim" : "control-error"} data-attention-setup-said={hooks.ok ? "done" : "failed"}>
           {hooks.ok ? `${hooks.said} A Claude started from now on asks here.` : hooks.said}
         </p>
       )}
-      {(hooks === "missing" || hooks === "busy" || push) && (
-        <div class="ws-att-acts">
-          {(hooks === "missing" || hooks === "busy") && (
-            <button class="primary" disabled={hooks === "busy"} onClick={() => void setUp()} data-attention-setup title="Install Arugula's hooks in Claude Code's settings">
-              {hooks === "busy" ? "Setting up…" : "Set up"}
-            </button>
-          )}
-          {push && (
-            <button class="secondary" onClick={() => void toggleNotify(client)} data-attention-notify title="Notifications on this device when something needs you">
-              Notify this device
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+    </EmptyState>
   );
 }
 

@@ -193,6 +193,44 @@ pub(super) fn work_item_for(c: &impl Sql, target: &str, at: u64) -> Result<Optio
     Ok(Some(keep))
 }
 
+/// When `target` (an `iss_` or an `fi_` of an issue) has a work item, its
+/// counterpart joins it now ([`work_item_for`]): an issue exported, or its
+/// GitHub copy mirrored, after a board placed it. Nothing for one no board
+/// has placed: its work item is made when one does. In a savepoint of the
+/// caller's transaction: one that fails is logged and undone alone, so it
+/// never undoes what the caller recorded (a send's end, a mirror's row);
+/// the next placing joins them.
+pub(super) fn joined(c: &impl Sql, target: &str, at: u64) -> Result<()> {
+    c.execute("SAVEPOINT work_item_joined", params![])?;
+    let r = (|| -> Result<()> {
+        if ref_item(c, target)?.is_some() {
+            work_item_for(c, target, at)?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = r {
+        tracing::warn!(target, error = format!("{e:#}"), "joining an issue to its counterpart's work item");
+        c.execute("ROLLBACK TO SAVEPOINT work_item_joined", params![])?;
+    }
+    c.execute("RELEASE SAVEPOINT work_item_joined", params![])?;
+    Ok(())
+}
+
+/// The mirror wrote GitHub issue `number` of `repo_id` for the first time:
+/// a native issue exported to it that has a work item takes it in
+/// ([`joined`]), so a PR that closes the GitHub issue attaches to the row.
+pub(super) fn mirrored(c: &impl Sql, repo_id: u64, number: u64, at: u64) -> Result<()> {
+    let natives: Vec<String> = c.query_map(
+        "SELECT id FROM issues WHERE github_repo_id = ?1 AND github_number = ?2 ORDER BY id",
+        params![repo_id, number],
+        |r| r.get(0),
+    )?;
+    for n in natives {
+        joined(c, &n, at)?;
+    }
+    Ok(())
+}
+
 /// Merge work items `a` and `b` into the older, and say which that is. A
 /// board with a row for each folds them into one row first (the unique
 /// index would refuse the move otherwise); then every row and ref of the
