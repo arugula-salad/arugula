@@ -1773,3 +1773,146 @@ async fn a_grant_that_cant_be_read_keeps_a_persons_lane() {
     assert_eq!(lane(&v, &row), "review", "and wasn't cleared: {v}");
     assert_eq!(row_in(&v, &row)["lane_set"]["lane"], json!("review"), "{v}");
 }
+
+/// A machine whose grant can't be read leaves the rows of other machines'
+/// blocks alone: their lanes follow their work, and a person's lane there
+/// is cleared once the work outgrows it (Arugula #745).
+#[tokio::test]
+async fn an_unsure_machine_leaves_other_rows_lanes_alone() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    if std::env::var_os("ARUGULA_TEST_POSTGRES_URL").is_some() {
+        // The lookup is made to fail with a value SQLite keeps and Postgres
+        // refuses.
+        return eprintln!("skipped: SQLite only");
+    }
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let two = issue(&base, "a", &t, "Lexer").await;
+    let (board, row_one) = board_on(&base, "a", &t, "Launch", &one).await;
+    let (_, v) =
+        put(&base, "a", &board, json!({ "entry": "row", "note": "lexer", "pointer": { "kind": "issue", "id": two } }))
+            .await;
+    let row_two =
+        rows_in(&v).iter().find(|r| r["pointer"]["id"] == two.as_str()).unwrap()["id"].as_str().unwrap().to_owned();
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |n: &str, machine: &str, pane: &str| json!({ "issue": n, "machine": machine, "pane": pane });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("#1", "geek", "7"))).await.0, 200);
+    assert_eq!(signed(&base, "b bmac", "POST", &route(&t), Some(body("#2", "bmac", "3"))).await.0, 200);
+    let working = |pane: &str| json!({ "pane": pane, "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working("7"))).await.0, 200);
+    assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(working("3"))).await.0, 200);
+    for row in [&row_one, &row_two] {
+        let path = format!("/api/boards/{board}/rows/{row}/lane");
+        let (st, v) = call(&base, "a", "PUT", &path, Some(json!({ "lane": "review" }))).await;
+        assert_eq!((st, lane(&v, row)), (200, "review".to_owned()), "{v}");
+    }
+
+    // bmac's grant can't be read, and geek's block closes.
+    app.db.c().execute("UPDATE grants SET granted_by = x'ff' WHERE subject_id = 'bmac'", params![]).unwrap();
+    let closed = json!({ "pane": "7", "block": { "state": "closed" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(closed)).await.0, 200);
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row_two), "review", "bmac's row is left as it is: {v}");
+    assert_eq!(lane(&v, &row_one), "next", "geek's row follows its work: {v}");
+    assert_eq!(row_in(&v, &row_one)["lane_set"], Value::Null, "and its outgrown lane is cleared: {v}");
+
+    app.db.c().execute("UPDATE grants SET granted_by = 'b' WHERE subject_id = 'bmac'", params![]).unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row_two), "review", "{v}");
+    assert_eq!(row_in(&v, &row_two)["lane_set"]["lane"], json!("review"), "{v}");
+}
+
+/// A report that says again what a fresh one said counts against the larger
+/// limit alone, and pushes no change to readers; one that changes something
+/// counts against the 2,400 too. A turn's empty diffstat clears the last
+/// one, and a report that leaves the diffstat out keeps it (Arugula #745).
+#[tokio::test]
+async fn a_repeated_report_skips_the_change_limit_and_pushes_nothing() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    // The board's thread, so a change has somewhere to go.
+    let thread = crate::testing::hub::room("ch_board", &format!("project:{t}"), "object", None, Some(&board));
+    app.db.add_chat_room(&thread, &["a"], Some(&t)).unwrap();
+    let report = |state: &str, diffstat: Value| {
+        let mut b = json!({ "pane": "7", "block": { "state": state }, "age_ms": 0 });
+        if !diffstat.is_null() {
+            b["block"]["diffstat"] = diffstat;
+        }
+        b
+    };
+    let stat = json!({ "files": 3, "added": 40, "removed": 2 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", stat.clone()))).await.0, 200);
+    let pushed = app.chat.last();
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("working", Value::Null))).await.0, 200);
+    assert!(app.chat.last() > pushed, "a change is pushed");
+
+    // An idle turn that left no diff clears the stat; said again, it is a
+    // repeat.
+    let zero = json!({ "files": 0, "added": 0, "removed": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", zero.clone()))).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    let block = row_in(&v, &row)["attachments"][0]["block"].clone();
+    assert_eq!((block["state"].as_str(), block.get("diffstat")), (Some("idle"), None), "{v}");
+    let pushed = app.chat.last();
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", zero))).await.0, 200);
+    assert_eq!(app.chat.last(), pushed, "an empty stat said again is a repeat");
+
+    // The change limit used up: a repeat goes through, a change doesn't.
+    for _ in 0..2_400 {
+        let _ = app.limits.check_daemon(("board-block-state", 2_400), "geek");
+    }
+    let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", Value::Null))).await;
+    assert_eq!(st, 200, "a repeat isn't held to the change limit: {v}");
+    assert_eq!(app.chat.last(), pushed, "and pushes nothing");
+    let (st, _) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("working", stat))).await;
+    assert_eq!(st, 429, "a change is");
+}
+
+/// A stale block whose machine left control is released: the row reads it
+/// as an earlier agent, and a person's lane it outgrew is cleared, even
+/// before control has read the leave's grants (Arugula #745).
+#[tokio::test]
+async fn a_stale_block_from_a_machine_that_left_is_released() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BLOCK_STATE_STALE_MS, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let lane_path = format!("/api/boards/{board}/rows/{row}/lane");
+    assert_eq!(call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "review" }))).await.0, 200);
+    let long_ago = arugula_e2e::now_ms() - BLOCK_STATE_STALE_MS - 60_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![long_ago]).unwrap();
+    let read = || {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+    let kept =
+        || app.db.board_stored(&board).unwrap().unwrap().rows.iter().find(|r| r.id == row).unwrap().lane_set.clone();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "the block is unknown for now: {v}");
+    assert_eq!(kept().map(|s| s.lane), Some(arugula_control_wire::boards::Lane::Review), "stale: kept");
+
+    crate::cache::catch_up(&app).await.unwrap();
+    hub.leave("geek");
+    crate::cache::catch_up(&app).await.unwrap();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(kept(), None, "outgrown, and nothing in doubt: {v}");
+    let earlier = row_in(&v, &row)["attachments"][0]["id"].clone();
+    assert_eq!(row_in(&v, &row)["marks"], json!([{ "kind": "earlier", "attachment": earlier }]), "{v}");
+}

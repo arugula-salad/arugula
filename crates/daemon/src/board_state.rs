@@ -33,8 +33,9 @@
 //!   is kept stays kept through either wait, and events go on being kept,
 //!   so a block that closes during an outage is still told (its age says
 //!   when). A 5xx fails that report alone: the rest go on, and it is tried
-//!   again after [`TROUBLE`], up to [`TRIES`] times unless it is a close. A
-//!   report control refuses for itself (a 400, 413 or 422) is dropped.
+//!   again after [`TROUBLE`], up to [`TRIES`] times ([`CLOSE_TRIES`] for a
+//!   close). A report control refuses for itself (a 400, 413 or 422) is
+//!   dropped.
 //!
 //! Rows are not added here: a person or a lead adds them (`board_write`
 //! with an agent block's pointer), and this keeps their state current.
@@ -82,7 +83,14 @@ fn work_of(w: &Work) -> Repo {
         head: Some(w.head.clone()).filter(|h| !h.is_empty()),
         pushed: Some(w.pushed),
         uncommitted: Some(w.uncommitted_total),
-        diffstat: w.diffstat.as_deref().and_then(|d| d.lines().last()).and_then(diffstat),
+        // The turn's own diff: a turn that left none says so with zeros,
+        // which control reads as none, so the last turn's stat goes (a
+        // report that leaves a field out keeps what was said).
+        diffstat: Some(w.diffstat.as_deref().and_then(|d| d.lines().last()).and_then(diffstat).unwrap_or(Diffstat {
+            files: 0,
+            added: 0,
+            removed: 0,
+        })),
     }
 }
 
@@ -123,9 +131,14 @@ fn word_of(kind: &EventKind) -> Option<BlockWord> {
     }
 }
 
-/// How many times a word that isn't a close is tried before it is dropped;
-/// a close is tried until it goes (it is the word a board can't do without).
+/// How many times a word that isn't a close is tried before it is dropped.
 const TRIES: u32 = 5;
+/// How many 5xx answers a close is given before it is dropped: about an
+/// hour of them, with [`TROUBLE`] between, so a close control keeps
+/// failing doesn't slow every other report until the daemon restarts.
+/// Control out of reach counts none (see [`Queue::after`]). Control counts
+/// the block as unknown once its last report is stale.
+const CLOSE_TRIES: u32 = 120;
 
 /// A word not yet sent: when it was seen, and how many times it failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,18 +167,27 @@ impl Queue {
     }
 
     /// A word that wasn't sent, back in the queue: a word noted since is
-    /// newer and wins. `failed`: it was tried and failed, so it counts a
-    /// try, and a word that isn't a close goes after [`TRIES`] (false when
-    /// it went).
+    /// newer and wins. `failed`: control answered this report with a 5xx,
+    /// so it counts a try, and a word goes after [`TRIES`] ([`CLOSE_TRIES`]
+    /// for a close). False when it went.
     fn put_back(&mut self, id: PaneId, mut k: Kept, failed: bool) -> bool {
         if failed {
             k.tries += 1;
-            if k.word != BlockWord::Closed && k.tries >= TRIES {
+            let most = if k.word == BlockWord::Closed { CLOSE_TRIES } else { TRIES };
+            if k.tries >= most {
                 return false;
             }
         }
         self.0.entry(id).or_insert(k);
         true
+    }
+
+    /// A word that `wait` kept from being sent, back in the queue. Only a
+    /// 5xx for this report ([`Wait::Failed`]) counts a try: control out of
+    /// reach, slow or busy says nothing of the report, so a close made on a
+    /// flight waits as long as the flight. False when it went.
+    fn after(&mut self, id: PaneId, k: Kept, wait: &Wait) -> bool {
+        self.put_back(id, k, matches!(wait, Wait::Failed(_)))
     }
 
     /// Everything, the longest waiting first, so one pane that fails can't
@@ -316,19 +338,20 @@ pub async fn keep_reporting(app: Arc<App>) {
                         Err(Wait::Dropped(why)) => warn!(pane = id, "control refused a block's state: {why}"),
                         // This report failed: the rest go on, and it is
                         // tried again after a wait.
-                        Err(Wait::Failed(why)) => {
+                        Err(ref wait @ Wait::Failed(ref why)) => {
                             failed = true;
-                            if !pending.put_back(id, kept, true) {
+                            if !pending.after(id, kept, wait) {
                                 warn!(pane = id, "gave up telling control a block's state: {why}");
                             }
                         }
-                        Err(Wait::For(d, why)) => {
+                        Err(ref wait @ Wait::For(d, ref why)) => {
                             warn!(pane = id, "not telling control about a block for a while: {why}");
                             quiet_until = Some(Instant::now() + d);
                             // Kept for after the wait, with when each was
-                            // seen. After a refusal the grant may be new by
-                            // then, so every block is sent again.
-                            pending.put_back(id, kept, d == TROUBLE);
+                            // seen, no try counted. After a refusal the grant
+                            // may be new by then, so every block is sent
+                            // again.
+                            pending.after(id, kept, wait);
                             for (id, k) in batch.by_ref() {
                                 pending.put_back(id, k, false);
                             }
@@ -390,7 +413,7 @@ enum Wait {
     /// or refuses this machine.
     For(Duration, String),
     /// This report failed (a 5xx): the rest go on, and it is tried again
-    /// after [`TROUBLE`], up to [`TRIES`] times unless it is a close.
+    /// after [`TROUBLE`], up to [`TRIES`] times ([`CLOSE_TRIES`] for a close).
     Failed(String),
     /// Control refused this report itself: sending it again would be
     /// refused again.
@@ -436,7 +459,12 @@ async fn send(app: &App, id: PaneId, state: &BlockState, age: u64, plain: &mut b
         // A control from before Arugula #745 refuses a field it doesn't
         // know: if the same report without the age goes through, it's that.
         Err(Wait::Dropped(why)) => {
-            call(put(None)).await.map_err(|_| Wait::Dropped(why))?;
+            // Refused without the age too: this report. Failed or timed out:
+            // kept, as any other.
+            call(put(None)).await.map_err(|e| match e {
+                Wait::Dropped(_) => Wait::Dropped(why),
+                e => e,
+            })?;
             *plain = true;
             debug!("control takes a block's state without its age");
             Ok(())
@@ -457,6 +485,49 @@ mod tests {
         );
         assert_eq!(diffstat(" 1 file changed, 1 deletion(-)"), Some(Diffstat { files: 1, added: 0, removed: 1 }));
         assert_eq!(diffstat(" src/secret.rs | 4 ++--"), None);
+    }
+
+    /// A turn's work sets the diffstat, to zeros when the turn left no diff,
+    /// so the last turn's stat doesn't stay on the board.
+    #[test]
+    fn a_turn_with_no_diff_says_so() {
+        let work = |diffstat: Option<&str>| Work {
+            branch: "feat/x".into(),
+            head: "abc1234".into(),
+            pushed: false,
+            uncommitted: vec![],
+            uncommitted_total: 0,
+            commits: None,
+            diffstat: diffstat.map(str::to_owned),
+        };
+        let stat = work_of(&work(Some(" a.rs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"))).diffstat;
+        assert_eq!(stat, Some(Diffstat { files: 1, added: 1, removed: 1 }));
+        assert_eq!(work_of(&work(None)).diffstat, Some(Diffstat { files: 0, added: 0, removed: 0 }));
+    }
+
+    /// A close made while control is out of reach outlasts any number of
+    /// unreachable sends, timeouts and 429s: only a 5xx counts a try.
+    #[test]
+    fn a_close_survives_a_long_outage() {
+        let close = Kept { word: BlockWord::Closed, seen: Instant::now(), tries: 0 };
+        let mut q = Queue::default();
+        let mut k = close;
+        for n in 0..10 * CLOSE_TRIES {
+            let wait = match n % 3 {
+                0 => Wait::For(TROUBLE, "can't reach control".into()),
+                1 => Wait::For(TROUBLE, "control didn't answer".into()),
+                _ => Wait::For(NO_GRANT, "403".into()),
+            };
+            assert!(q.after(1, k, &wait), "kept after {n} waits");
+            k = q.take()[0].1;
+        }
+        assert_eq!(k.tries, 0, "no try counted");
+        let failed = Wait::Failed("502".into());
+        for _ in 1..CLOSE_TRIES {
+            assert!(q.after(1, k, &failed));
+            k = q.take()[0].1;
+        }
+        assert!(!q.after(1, k, &failed), "5xx after 5xx: given up at {CLOSE_TRIES}");
     }
 
     /// What wasn't sent goes back with when it was seen, a newer word wins,
@@ -486,9 +557,9 @@ mod tests {
 
     /// The longest waiting goes first, whatever its pane's number, so a pane
     /// that keeps failing can't hold back the others; a word that isn't a
-    /// close is given up after its tries, a close never.
+    /// close is given up after its tries, and a close after many more.
     #[test]
-    fn the_oldest_goes_first_and_only_a_close_is_tried_for_good() {
+    fn the_oldest_goes_first_and_a_close_is_tried_longest() {
         let start = Instant::now();
         let mut q = Queue::default();
         q.note(1, BlockWord::Working, start + Duration::from_secs(3));
@@ -506,7 +577,13 @@ mod tests {
             c = q.take()[0].1;
         }
         assert!(!q.put_back(3, w, true), "given up after {TRIES}");
-        assert!(q.put_back(4, c, true), "a close is kept");
+        assert!(q.put_back(4, c, true), "a close is kept longer");
+        let mut c = q.take()[0].1;
+        while c.tries + 1 < CLOSE_TRIES {
+            assert!(q.put_back(4, c, true));
+            c = q.take()[0].1;
+        }
+        assert!(!q.put_back(4, c, true), "but not for good: given up after {CLOSE_TRIES}");
         assert!(q.put_back(5, working, false), "not tried: no try counted");
     }
 

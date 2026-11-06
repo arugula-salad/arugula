@@ -26,6 +26,10 @@ struct FakeControl {
     down: Arc<AtomicBool>,
     old: Arc<AtomicBool>,
     failed: Arc<AtomicUsize>,
+    /// How many more of its reports to answer with a 500, and when each
+    /// report (failed or not) came.
+    fail_next: Arc<AtomicUsize>,
+    at: Arc<Mutex<Vec<(Instant, bool)>>>,
 }
 
 async fn fake_control(f: FakeControl) -> String {
@@ -36,7 +40,9 @@ async fn fake_control(f: FakeControl) -> String {
     };
     async fn block_state(State(f): State<FakeControl>, Json(b): Json<Value>) -> axum::response::Response {
         use axum::response::IntoResponse;
-        if f.down.load(Ordering::SeqCst) {
+        let failing = f.fail_next.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok();
+        f.at.lock().unwrap().push((Instant::now(), failing));
+        if failing || f.down.load(Ordering::SeqCst) {
             f.failed.fetch_add(1, Ordering::SeqCst);
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
@@ -152,4 +158,21 @@ async fn a_control_that_refuses_the_age_is_told_without_it() {
     d.post(&format!("/api/panes/{id}/close"), json!({}));
     let closed = told(&fake, id, "closed").await;
     assert_eq!(closed.get("age_ms"), None, "{closed}");
+}
+
+/// A 5xx for one report: the daemon waits about 30 seconds (its
+/// `TROUBLE`) before trying it again, not every tick.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_report_is_tried_again_after_a_pause() {
+    let fake = FakeControl::default();
+    fake.fail_next.store(1, Ordering::SeqCst);
+    let d = joined(fake_control(fake.clone()).await);
+    let id = d.open("hello");
+    told_within(&fake, id, "idle", Duration::from_secs(60)).await;
+    let at = fake.at.lock().unwrap().clone();
+    let failed = at.iter().position(|(_, f)| *f).expect("a report failed");
+    let next = at.get(failed + 1).expect("and was tried again");
+    let waited = next.0 - at[failed].0;
+    assert!(waited >= Duration::from_secs(25), "waited {waited:?}, not a pause");
+    assert!(waited < Duration::from_secs(45), "waited {waited:?}");
 }
