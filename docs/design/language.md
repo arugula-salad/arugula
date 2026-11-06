@@ -195,15 +195,19 @@ Sandboxes and the Doc share dialogs. Still hand-rolled: the rest of the
 
 ## Menus
 
-*(being built: #757.)* One menu: `openMenu` (`shared/ui/menu.tsx`). Chat's ⋯,
-Boards' facets and the pane menu all use it.
+One menu: `openMenu` (`shared/ui/menu.tsx`). Chat's ⋯, Boards' facets and the
+pane menu all use it.
 
-- An icon column of 16px stroke icons (`rail-icons.tsx`), only in a menu where
-  every row has one. ✓ is "several, and the menu stays open"; ● is "one of".
-- A menu of 13 rows or more gets a filter row. A work-item picker stays a
-  combobox (it takes pasted ids) and draws its list as the menu.
-- At ≤600px it is a bottom sheet on `--backdrop`, with 44px rows at 15px. A
-  coarse pointer wider than that keeps the dropdown at touch size.
+- An icon column of 16px stroke icons, only in a menu where every row has one
+  (`icon` on an item). Any row with an icon or a mark gives every row the
+  column. ✓ (`multi`) is "several, and the menu stays open"; ● (`checked`,
+  `current`) is "one of".
+- A work-item picker stays a combobox (it takes pasted ids) and draws its list
+  as the menu. A filter row for a menu of 13 rows or more is not built yet.
+- At ≤600px it is a bottom sheet on `--backdrop` (z 90, over a side sheet at
+  85 and under a dialog at 95), with 44px rows at 15px; a tap on the backdrop
+  closes the menu alone. A coarse pointer wider than that keeps the dropdown at
+  touch size.
 - A menu inherits the page's one UI face; it has no face rule of its own.
 
 ## Empty and error states

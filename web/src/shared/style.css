@@ -758,15 +758,76 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: var(--text-sm);
 }
 
-/* A checkable item's dot hangs in the item's left padding, so its label
-   lines up with the items around it. */
-.menu-check {
+/* The lead column, when any row has an icon or a mark: 16px, so the labels
+   line up. A mark is a ● for one of, a ✓ for several. */
+.menu-lead {
   display: inline-block;
-  width: 8px;
-  margin-left: -8px;
+  width: 16px;
+  margin-right: 8px;
+  color: var(--dim);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.menu-lead svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.menu-lead.menu-check {
   color: var(--accent);
-  font-size: 9px; /* off-scale: menu check glyph */
-  vertical-align: 1px;
+  font-size: var(--text-sm);
+}
+
+.menu-item.danger .menu-lead {
+  color: inherit;
+}
+
+/* A phone's menu: a sheet along the bottom over the one backdrop, its tap
+   closing it. Above the side sheet (85) a menu opened from it is over, and
+   below a dialog (95). */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: var(--backdrop);
+}
+
+.menu.sheet {
+  inset: auto 0 0;
+  width: auto;
+  max-width: none;
+  max-height: 85%;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+/* Under a finger: rows are 44px with 15px text and 20px icons. A coarse
+   pointer wider than a phone keeps the dropdown, at touch size. */
+@media (max-width: 600px), (pointer: coarse) {
+  .menu-item {
+    min-height: 44px;
+    font-size: var(--text-lg);
+  }
+
+  .menu-item:not(.menu-parent) {
+    display: flex;
+    align-items: center;
+  }
+
+  .menu-lead,
+  .menu-lead svg {
+    width: 20px;
+  }
+
+  .menu-lead svg {
+    height: 20px;
+  }
+
+  .menu-key {
+    display: none;
+  }
 }
 
 /* A submenu's rows, under their parent and indented. */
@@ -7671,73 +7732,6 @@ html[data-scheme="light"] .doc {
   font-size: 14px; /* off-scale: emoji glyph */
 }
 
-/* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
-.msg-menu {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-}
-
-.msg-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: var(--field-radius);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.msg-item:hover,
-.msg-item:focus-visible {
-  background: var(--raised);
-}
-
-.msg-item[aria-pressed="true"] {
-  color: var(--accent);
-}
-
-.msg-item.danger {
-  color: var(--danger);
-}
-
-.msg-item-icon {
-  width: 16px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.msg-item.danger .msg-item-icon {
-  color: inherit;
-}
-
-/* The long-press sheet's items sit under the emoji row. */
-.react-menu.with-items {
-  flex-wrap: wrap;
-}
-
-.react-menu-items {
-  display: flex;
-  flex: 1 0 100%;
-  flex-direction: column;
-}
-
-.react-menu.with-items > button + .react-menu-items,
-.react-menu.with-items > .react-menu-items:not(:first-child) {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
-}
-
 /* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
    wrapper has no height, so the list's scroll size is the same with it. */
 .jump-newest {
@@ -7961,7 +7955,7 @@ html[data-scheme="light"] .doc {
   }
 }
 
-/* On a phone the menu is a sheet along the bottom, under a long-press. */
+/* On a phone the menu is a sheet along the bottom. */
 @media (max-width: 600px) {
   .react-menu {
     position: fixed;
@@ -7986,6 +7980,27 @@ html[data-scheme="light"] .doc {
     top: auto;
     right: 0;
     bottom: 0;
+  }
+}
+
+/* The same row at the top of the message menu a long-press opens (its
+   `head`): part of that menu's sheet, not a sheet of its own. */
+.react-menu.react-row {
+  position: relative;
+  inset: auto;
+  justify-content: space-around;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+@media (max-width: 600px) {
+  .react-menu.react-row .emoji-picker {
+    position: fixed;
+    inset: auto 0 0;
   }
 }
 
@@ -12761,40 +12776,9 @@ html[data-workspace="new"] .thread-panel {
   border-radius: 50%;
 }
 
-/* The message menu and Saved for later (#116). */
-.msg-menu-wrap {
-  position: relative;
-  display: flex;
-}
-
+/* Saved for later (#116). */
 .msg-tools .msg-saved.on {
   color: var(--warn, var(--accent));
-}
-
-.msg-menu {
-  position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.msg-tools .msg-menu button {
-  width: auto;
-  height: auto;
-  padding: 6px 10px;
-  border-radius: var(--tag-radius);
-  color: var(--fg);
-  font-size: var(--text-md);
-  text-align: left;
-  white-space: nowrap;
 }
 
 .saved-item {

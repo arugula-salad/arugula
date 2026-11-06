@@ -99,7 +99,10 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
     await alice.locator('[data-board-facet-value="ui"]').uncheck();
     await alice.locator('[data-board-facet-value="boards"]').check();
     await expect(alice.locator("[data-board-row]")).toHaveCount(3, { message: "any label of the menu: docs or boards" });
-    await alice.locator('[data-board-facet-button="label"]').click();
+    // The menu shuts with its button on a desktop, with a tap on its backdrop on a phone, where it is a sheet over the page.
+    if (name === "narrow") await alice.locator("[data-menu-backdrop]").click({ position: { x: 5, y: 5 } });
+    else await alice.locator('[data-board-facet-button="label"]').click();
+    await expect(alice.locator('[data-board-facet-menu="label"], [data-board-facet-value="docs"]')).toHaveCount(0);
     await alice.locator('[data-board-facet-button="person"]').click();
     await alice.locator('[data-board-facet-value="bob"]').check();
     await expect(alice.locator("[data-board-row]")).toHaveCount(2, { message: "across menus every one holds: (docs or boards) and bob" });
