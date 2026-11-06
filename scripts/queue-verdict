@@ -24,7 +24,7 @@ set -uo pipefail
 
 repo=${GITHUB_REPOSITORY:?}
 sha=${GITHUB_SHA:?}
-chant=${ARUGULA_VERDICT_CHANT:-npx --yes @intentius/chant@0.124.64}
+chant=${ARUGULA_VERDICT_CHANT:-npx --yes @intentius/chant@0.124.68}
 poll=${ARUGULA_VERDICT_POLL:-30}
 deadline=$(($(date +%s) + ${ARUGULA_VERDICT_MINUTES:-85} * 60))
 errors=0
