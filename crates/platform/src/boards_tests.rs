@@ -244,6 +244,14 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(shape(&v), lanes(&["the plan"], &[], &[], &[]), "nothing moved, nothing was made");
     assert_eq!(v["groups"], json!([]), "{v}");
+    // A status an old row kept from before lanes reads as none.
+    use crate::db::Sql as _;
+    app.db
+        .c()
+        .execute("UPDATE board_entries SET status = 'done' WHERE id = ?1", crate::db::sql::params![plan])
+        .unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(row_in(&v, &plan)["status"], json!("none"), "{v}");
 }
 
 /// The notes of every row in the lane `next`, in order: a board's rows as it

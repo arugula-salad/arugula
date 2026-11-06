@@ -419,6 +419,8 @@ pub async fn machine(
     let now = now_ms();
     let draft = match b.step.as_str() {
         "start" => {
+            // Open on GitHub (M205), as a send from the page checks it.
+            super::export::before_send(&app, &app.db.draft(&r, &id)?.ok_or_else(no_draft)?)?;
             let held = app
                 .db
                 .hold_draft(&r, &id, &author, now)?

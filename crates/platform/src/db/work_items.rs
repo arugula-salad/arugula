@@ -235,7 +235,8 @@ fn merge(c: &impl Sql, a: &str, b: &str, at: u64) -> Result<String> {
 
 /// Fold row `from` of `board` into row `into`, two rows of one work item:
 /// its attachments (those `into` has already go) and asks move over, its
-/// note is added to the end of `into`'s, and the row is dropped.
+/// note is added to the end of `into`'s on the same line ([`joined_note`]),
+/// and the row is dropped.
 pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u64) -> Result<()> {
     let (Some(keep), Some(drop)) = (entry(c, board, into)?, entry(c, board, from)?) else { return Ok(()) };
     c.execute(
@@ -249,7 +250,7 @@ pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u
     super::boards_docs::fold_rows(c, into, from)?;
     boards_asks::absorb(c, from, into)?;
     if !drop.note.is_empty() {
-        let note = if keep.note.is_empty() { drop.note } else { format!("{}\n{}", keep.note, drop.note) };
+        let note = if keep.note.is_empty() { drop.note } else { joined_note(&keep.note, &drop.note) };
         c.execute(
             "UPDATE board_entries SET rev = rev + 1, note = ?2, updated_at = ?3 WHERE id = ?1",
             params![into, note, at],
@@ -258,6 +259,21 @@ pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u
     c.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
     renumber(c, &siblings(c, board)?)?;
     touch(c, board, at)
+}
+
+/// Two rows' notes as one: still one line, and no longer than a note may
+/// be ([`NOTE_MAX`](arugula_control_wire::boards::NOTE_MAX)), cut with an
+/// ellipsis.
+fn joined_note(keep: &str, other: &str) -> String {
+    let max = arugula_control_wire::boards::NOTE_MAX;
+    let note = format!("{keep}; {other}");
+    if note.chars().count() <= max {
+        return note;
+    }
+    let mut cut: String = note.chars().take(max - 1).collect();
+    cut.truncate(cut.trim_end().len());
+    cut.push('…');
+    cut
 }
 
 /// How a reference names each of `ids` (`iss_` and `fi_` ids of issues; any

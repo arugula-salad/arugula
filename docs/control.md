@@ -421,6 +421,10 @@ rule take them (`outsiders`). Each rule starts at most 20 runs an hour,
 unless it says otherwise (`max_per_hour`). A schedule or a rule fires only
 while the person who made it is still an owner or editor of the project,
 on `ARUGULA_HOSTED_ACCOUNTS`; otherwise it passes with no run and says why.
+Deleting a cloud workspace turns off its specs' schedules and rules, and a
+schedule says "its cloud workspace is gone". Moving the spec to another
+workspace turns those schedules back on. Its rules stay off: turn each one
+on again by hand (*Turn on* on the Runs page).
 What an event's source says is untrusted text, written by whoever caused
 it: it's shown quoted, and never reaches a run's environment, command or
 an agent's prompt unquoted. A push rule needs the
