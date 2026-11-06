@@ -357,21 +357,21 @@
   position: relative;
 }
 
+/* The list under the field is drawn as the menu: its surface, shadow and rows. */
 .board-pick-list {
   position: absolute;
-  z-index: 5;
+  z-index: 90;
   left: 0;
   right: 0;
   top: 100%;
-  margin: 2px 0 0;
-  padding: 2px;
+  margin: 4px 0 0;
+  padding: 4px;
   list-style: none;
   max-height: 16em;
   overflow-y: auto;
-  border: 1px solid var(--divider);
-  border-radius: 6px;
-  background: var(--surface);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
 }
 
 .board-pick-list[hidden] {
@@ -380,16 +380,16 @@
 
 .board-pick-list li {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border-radius: var(--field-radius);
   cursor: pointer;
 }
 
 .board-pick-list li.active,
 .board-pick-list li:hover {
-  background: var(--hover, rgb(127 127 127 / 0.15));
+  background: var(--raised-hover);
 }
 
 .board-pick-title {
@@ -398,11 +398,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.board-pick-state {
-  flex: none;
-  font-size: var(--text-sm);
 }
 
 .board-form-buttons {
@@ -919,14 +914,12 @@
   white-space: nowrap;
 }
 
-/* The Label and Person menus beside it (#547): a list of checkboxes that stays open while you pick. */
+/* The Label and Person menus beside it (#547): the button opens the shared menu, whose ticks stay open while you pick. */
 .board-facet {
-  position: relative;
   flex: 0 0 auto;
 }
 
-.board-facet summary {
-  cursor: pointer;
+.board-facet-button {
   padding: 4px 8px;
   border-radius: var(--chip-radius);
   background: var(--raised);
@@ -934,36 +927,7 @@
   white-space: nowrap;
 }
 
-.board-facet-list {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 160px;
-  max-height: 50vh;
-  overflow: auto;
-  padding: 6px;
-  border: 1px solid var(--border, currentColor);
-  border-radius: 6px;
-  background: var(--bg);
-}
-
-.board-facet-item input {
-  flex: 0 0 auto;
-  width: auto;
-  margin: 0;
-}
-
-.board-facet-item {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  padding: 4px 2px;
-  white-space: nowrap;
-}
-
-/* A narrow board, whatever the window: the box takes the row, the rest wrap under it, and an open menu's list sits inline. */
+/* A narrow board, whatever the window: the box takes the row, the rest wrap under it. */
 @container (max-width: 519px) {
   .board-find {
     flex-wrap: wrap;
@@ -971,15 +935,6 @@
 
   .board-find > input {
     flex-basis: 100%;
-  }
-
-  .board-facet[open] {
-    flex-basis: 100%;
-  }
-
-  .board-facet-list {
-    position: static;
-    margin-top: 4px;
   }
 }
 

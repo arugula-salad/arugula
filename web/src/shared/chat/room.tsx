@@ -29,14 +29,15 @@ import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alert
 import "./saved-hooks";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
-import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
+import { closeMenu, MenuHost, type MenuItem } from "../ui/menu";
+import { hookFor, itemsOf, openMsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
 import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
 import { MentionStatus } from "./mention-status";
-import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
+import { longPress, mayReact, ReactionChips, ReactMenu, ReactRow } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
@@ -47,7 +48,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon, ReactIcon } from "./icons";
+import { BookmarkIcon, MachineIcon, ReactIcon, ThreadIcon } from "./icons";
 import { presence } from "./presence";
 import { Time } from "../ui/time";
 import { Chip } from "../ui/state-chip";
@@ -554,7 +555,6 @@ export function RoomMessage({
   const reached = m.mentions.length ? [...tokens].filter(([, who]) => m.mentions.includes(who)).map(([t]) => t) : [];
   // The same function while it's for the same people: Markdown parses again for a new one.
   const landed = useCallback((t: string) => (chat.isMe(t) ? forMe : reached.includes(t.toLowerCase())), [forMe, reached.join(" ")]);
-  const [copied, setCopied] = useState(false);
   // `@geek`, when geek is a machine this message mentions: its icon (#428).
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
   const machineIcon = useCallback(
@@ -562,9 +562,11 @@ export function RoomMessage({
       heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size={13} /> : null,
     [room.id, heard.join(" ")],
   );
-  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet
-  // a long-press opens on a phone (the emoji and the menu's items together).
+  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the menu a
+  // long-press opens (a sheet on a phone: the emoji row over the items).
   const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
+  const msgRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const may = mayReact(room, m);
   const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq, m.parent);
@@ -574,16 +576,7 @@ export function RoomMessage({
   const save = hookFor("save", ctx);
   const items = itemsOf(ctx, {
     quote: room.writable ? () => reply(m.text || m.quote || "") : undefined,
-    copied,
-    copy: () => {
-      void navigator.clipboard?.writeText(link).then(
-        () => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        },
-        () => {},
-      );
-    },
+    copy: () => void navigator.clipboard?.writeText(link).catch(() => {}),
     edit: mine && room.writable ? () => setEditing(true) : undefined,
     remove: owned
       ? () => {
@@ -591,6 +584,13 @@ export function RoomMessage({
         }
       : undefined,
   });
+  // The toolbar has these two as buttons; the long-press menu lists them first.
+  const onToolbar: MenuItem[] = [
+    ...(thread ? [{ label: "Reply in thread", icon: <ThreadIcon />, run: () => thread.run(ctx), attrs: { "data-msg-thread": "" } }] : []),
+    ...(save
+      ? [{ label: save.label?.(ctx) ?? "Save for later", icon: <BookmarkIcon on={save.on?.(ctx)} size={16} />, run: () => save.run(ctx), attrs: { "data-msg-save": "", ...(save.on === undefined ? {} : { "aria-pressed": !!save.on(ctx) }) } }]
+      : []),
+  ];
   if (isSystemLine(m)) {
     return (
       <div class="msg-system" data-msg={m.seq} data-system role="note">
@@ -625,6 +625,7 @@ export function RoomMessage({
       data-author={m.author}
       data-agent={m.agent?.machine}
       data-said={said ?? undefined}
+      ref={msgRef}
       {...longPress(() => setPanel("sheet"))}
     >
       <div class="msg-gutter">
@@ -749,29 +750,23 @@ export function RoomMessage({
             <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
-        <button class="bar-btn sq" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
+        <button class="bar-btn sq" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more ref={moreRef} onClick={() => setPanel(panel === "menu" ? null : "menu")}>
           ⋯
         </button>
       </div>
-      {panel === "menu" && <MsgMenu items={items} close={close} />}
       {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
-      {panel === "sheet" && (
-        <ReactMenu room={room} m={m} close={close} setError={setError} react={may}>
-          {thread && (
-            <button type="button" role="menuitem" class="msg-item" data-msg-thread onClick={() => (close(), thread.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">↩</span>Reply in thread
-            </button>
-          )}
-          {save && (
-            <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">
-                <BookmarkIcon on={save.on?.(ctx)} />
-              </span>
-              {save.label?.(ctx) ?? "Save for later"}
-            </button>
-          )}
-          <MsgItems items={items} done={close} />
-        </ReactMenu>
+      {(panel === "menu" || panel === "sheet") && (
+        <MenuHost
+          key={panel}
+          show={() => {
+            const at = panel === "menu" ? moreRef.current : msgRef.current;
+            // The ⋯ lists the items; the long-press one the toolbar's too, under the emoji row.
+            const list = panel === "menu" ? items : [...onToolbar, ...(onToolbar.length ? ["separator" as const] : []), ...items];
+            const head = panel === "sheet" && may ? <ReactRow room={room} m={m} close={closeMenu} setError={setError} /> : undefined;
+            return !!at && openMsgMenu(list, at, { head, button: panel === "menu", onClose: close });
+          }}
+          close={close}
+        />
       )}
     </div>
   );
