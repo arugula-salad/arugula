@@ -198,27 +198,23 @@ the newest green commit, and `--lane server` (or `app`, `daemon`) the
 newest of a lane's.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
-each `chant-ci-green` run, so a red main gets heard: when a commit gets a
+each `chant-ci-green` run, so a red main gets heard: when main has gone 6
+hours (`ARUGULA_RED_HOURS`) without a green commit, when a commit gets a
 `ci/revoked` tag, or at once when chant's record for main's newest decided
 commit says red after its one retry (`chant ci list`, pinned like
 chant-ci-green.yml's; the comment names the failed phase, job and run, and a
 later one names the bisect's culprit; if chant can't be read the script logs
 it and uses the tags alone), it opens an issue titled
-"main is red", or comments on the open one, once per revocation or red
-commit; GitHub notifies the repo's watchers and anyone the
+"main is red", or comments on the open one, once per red stretch or
+revocation; GitHub notifies the repo's watchers and anyone the
 `ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
 green commit newer than everything it reported. `scripts/tests/ci-red.sh`
 (`just test-scripts`) runs it with a fake gh.
 
-Main red for hours with nothing decided, such as runs that never finish,
-is chant's tick's to tell (chant#4678): `ci.green.notify` in
-`chant.workspace.json` has `staleAfter: 6`, so when the oldest commit above
-main's newest green one is 6 hours old the tick sends `ci.stale`, once per
-red stretch, and `ci.green` when a newer commit goes green. It sends them
-to the Slack incoming webhook in the `ARUGULA_CI_SLACK_WEBHOOK` secret,
-which chant-ci-green.yml gives the tick's step. The tick runs every 15
-minutes even when nothing else does, and marks what it sent in
-`_ci/branch/main.json` on `chant/lifecycle`.
+chant's tick can say the same with `ci.stale` (chant#4678, `staleAfter` in
+`ci.green.notify`), and that replaces the 6-hour timer once chant's events
+reach Arugula's own issues (Arugula issue 774). Until then `scripts/ci-red`
+keeps it.
 
 The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
@@ -263,10 +259,10 @@ everyone. Until someone fixes it, it can go in chant's quarantine,
 "Quarantine"): CI's runs leave it out, and
 `.github/workflows/quarantine-nightly.yml` runs the quarantined tests
 alone every night, where a red run says one still fails. That run gates
-nothing. `chant ci quarantine report` there sends `ci.quarantine-passed`
-through `ci.green.notify` for each test that passed, so someone can check
-its issue and take it out. `just test` and `just e2e` on your own machine
-still run them with the rest.
+nothing. `chant ci quarantine report` there lists each test that passed,
+in the run's summary, so someone can check its issue and take it out.
+Once `ci.green.notify` is set it also sends `ci.quarantine-passed`. `just
+test` and `just e2e` on your own machine still run them with the rest.
 
 Each entry is under its phase and names the test, the issue that tracks
 the fix, the last day it stays out (`until`, UTC, at most `maxDays`, 14,

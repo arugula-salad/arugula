@@ -30,7 +30,7 @@ set -euo pipefail
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
 hours=${ARUGULA_REVERT_HOURS:-6}
 now=${ARUGULA_RED_NOW:-$(date +%s)}
-chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.61}
+chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.64}
 main=$(git rev-parse --verify "${ARUGULA_RED_MAIN:-origin/main}^{commit}")
 
 stay_out() {
