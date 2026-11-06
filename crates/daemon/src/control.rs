@@ -4042,21 +4042,25 @@ impl crate::mux::People for Control {
     }
 
     /// The members of this machine's team, and of teams sessions were
-    /// shared with, kept out only because their team is locked: everyone
-    /// but its owners.
-    fn locked_out(&self) -> Vec<String> {
+    /// shared with (with the team), kept out only because their team is
+    /// locked: everyone but its owners.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
         let Some(e) = self.enrolled() else { return Vec::new() };
-        let out_of = |r: &Roster| -> Vec<String> {
-            r.members.iter().filter(|m| m.role != TeamRole::Owner).map(|m| format!("account:{}", m.account)).collect()
+        let out_of = |r: &Roster, team: Option<&String>| -> Vec<(String, Option<String>)> {
+            r.members
+                .iter()
+                .filter(|m| m.role != TeamRole::Owner)
+                .map(|m| (format!("account:{}", m.account), team.cloned()))
+                .collect()
         };
-        let mut out: Vec<String> = Vec::new();
+        let mut out = Vec::new();
         if let Some(t) = e.saved.team().filter(|t| t.locked)
             && let Some(r) = &t.roster
         {
-            out.extend(out_of(r));
+            out.extend(out_of(r, None));
         }
-        for t in e.saved.shared_teams.values().filter(|t| t.locked) {
-            out.extend(out_of(&t.roster));
+        for (team, t) in e.saved.shared_teams.iter().filter(|(_, t)| t.locked) {
+            out.extend(out_of(&t.roster, Some(team)));
         }
         out
     }

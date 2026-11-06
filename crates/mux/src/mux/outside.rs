@@ -46,10 +46,12 @@ pub trait People: Send + Sync + Debug {
     fn roster_known(&self) -> bool {
         true
     }
-    /// People kept out for now only because their team is locked (by
-    /// principal id): a lock is lifted, so they haven't lost what they
-    /// read, though they're refused it while it lasts.
-    fn locked_out(&self) -> Vec<String> {
+    /// People kept out for now only because their team is locked: by
+    /// principal id, with the team when it's one a session was shared with
+    /// (`None`: this machine's own team). A lock is lifted, so what their
+    /// team gives them they haven't lost, though they're refused it while
+    /// it lasts.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
         Vec::new()
     }
 }

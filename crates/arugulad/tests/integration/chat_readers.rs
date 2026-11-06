@@ -32,6 +32,9 @@ use serde_json::{Value, json};
 /// its members' certificates.
 type Team = (Vec<Roster>, AccountCerts);
 
+/// Whether control says a team is locked, and its owner's signed word on it.
+type Locked = (bool, Option<TeamLock>);
+
 /// A control that records what a daemon tells it.
 #[derive(Clone, Default)]
 struct Fake {
@@ -53,7 +56,10 @@ struct Fake {
     team: Arc<Mutex<Option<Team>>>,
     /// Whether control says that team is locked, and its owner's signed
     /// word on it.
-    locked: Arc<Mutex<(bool, Option<TeamLock>)>>,
+    locked: Arc<Mutex<Locked>>,
+    /// Teams sessions were shared with, by id: each one's team, and
+    /// whether control says it's locked with its owner's signed word.
+    teams: Arc<Mutex<std::collections::BTreeMap<String, (Team, Locked)>>>,
     /// Any call to the import route of M124, which is gone.
     imports: Arc<Mutex<Vec<Value>>>,
     /// Each reader list posted, and when.
@@ -158,6 +164,18 @@ async fn team(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
     Json(json!({ "locked": locked, "lock": lock, "rosters": rosters, "certs": certs }))
 }
 
+async fn teams(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
+    let ids = query(q, "ids").unwrap_or_default();
+    let teams = f.teams.lock().unwrap();
+    let mut out = serde_json::Map::new();
+    for id in ids.split(',') {
+        if let Some(((rosters, certs), (locked, lock))) = teams.get(id) {
+            out.insert(id.into(), json!({ "locked": locked, "lock": lock, "rosters": rosters, "certs": certs }));
+        }
+    }
+    Json(Value::Object(out))
+}
+
 async fn import(State(f): State<Fake>, Json(b): Json<Value>) -> Json<Value> {
     f.imports.lock().unwrap().push(b);
     Json(json!({ "rooms": 0, "messages": 0, "already": 0 }))
@@ -186,6 +204,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/control.json", get(about))
             .route("/api/daemon/trust", get(trust))
             .route("/api/daemon/team", get(team))
+            .route("/api/daemon/teams", get(teams))
             .route("/api/daemon/peers", get(|| async { Json(json!({ "a1": { "name": "jake" } })) }))
             .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
@@ -805,6 +824,14 @@ fn a_teams_lock_doesnt_take_a_closed_pane_for_good() {
             && newest(&f, "pane", &closed) == Some(vec![])
     });
 
+    // Control's plain word that it isn't locked any more doesn't lift it:
+    // cy is still in no list.
+    *f.locked.lock().unwrap() = (false, None);
+    eve(&d, sid, false);
+    d.wait_for("eve off the open pane", || newest(&f, "pane", &open).is_some_and(|l| !l.contains(&"a9".to_owned())));
+    assert!(!newest(&f, "pane", &open).unwrap().contains(&"a3".to_owned()), "a plain word unlocked it");
+    assert_eq!(newest(&f, "pane", &closed), Some(vec![]));
+
     // Its owner lifts the lock: cy reads both again.
     let mut lock = TeamLock {
         team: "t1".into(),
@@ -816,9 +843,144 @@ fn a_teams_lock_doesnt_take_a_closed_pane_for_good() {
     };
     lock.sign_with(&alex);
     *f.locked.lock().unwrap() = (false, Some(lock));
-    eve(&d, sid, false);
+    eve(&d, sid, true);
     d.wait_for("cy back on the closed pane", || newest(&f, "pane", &closed) == cy);
     assert!(newest(&f, "pane", &open).is_some_and(|l| l.contains(&"a3".to_owned())));
+}
+
+/// The owner's signed word that team `team` (whose roster is at
+/// `version`) is unlocked.
+fn unlock(team: &str, version: u64, owner: &DeviceKeys) -> TeamLock {
+    let mut lock = TeamLock {
+        team: team.into(),
+        locked: false,
+        version,
+        at: arugula_e2e::now_ms(),
+        by: String::new(),
+        sig: String::new(),
+    };
+    lock.sign_with(owner);
+    lock
+}
+
+/// A member who leaves the team while it's locked is off a closed pane's
+/// thread for good: the lock lifted, they don't read it.
+#[test]
+fn a_member_leaving_during_a_lock_is_gone_for_good() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, cy_root) = device("a3");
+    *f.team.lock().unwrap() = Some(alex_and_cy(&alex, &alex_root, &cy_root, 1, true));
+    let d = team_machine("leavelockreaders", &f, &url, &alex, &alex_root);
+    let (closed, open, sid) = close_one(&d, &f, |f, c, o| {
+        newest(f, "pane", c) == Some(vec!["a3".to_owned()]) && newest(f, "pane", o).is_some()
+    });
+    d.wait_for("the closed pane held", || held_panes(&f).contains(&closed));
+
+    // Locked, and cy leaves the team meanwhile.
+    *f.locked.lock().unwrap() = (true, None);
+    eve(&d, sid, true);
+    d.wait_for("cy off the panes while locked", || newest(&f, "pane", &closed) == Some(vec![]));
+    let (rosters, certs) = alex_and_cy(&alex, &alex_root, &cy_root, 1, true);
+    let (later, _) = alex_and_cy(&alex, &alex_root, &cy_root, 2, false);
+    *f.team.lock().unwrap() = Some((rosters.into_iter().chain(later).collect(), certs));
+    eve(&d, sid, false);
+    d.wait_for("eve off the open pane", || newest(&f, "pane", &open).is_some_and(|l| !l.contains(&"a9".to_owned())));
+
+    // Back in the team and unlocked: the open pane is his, the closed one
+    // isn't.
+    let (back, certs) = alex_and_cy(&alex, &alex_root, &cy_root, 3, true);
+    let mut all = f.team.lock().unwrap().clone().unwrap().0;
+    all.extend(back);
+    *f.team.lock().unwrap() = Some((all, certs));
+    *f.locked.lock().unwrap() = (false, Some(unlock("t1", 3, &alex)));
+    eve(&d, sid, true);
+    d.wait_for("cy on the open pane", || newest(&f, "pane", &open).is_some_and(|l| l.contains(&"a3".to_owned())));
+    assert_eq!(newest(&f, "pane", &closed), Some(vec![]), "he left during the lock");
+}
+
+/// A team a session was shared with is locked; meanwhile its share of the
+/// session is taken away and given again. Its members don't get the
+/// session's closed pane back when the lock is lifted: while the share was
+/// gone, their team didn't give them the session.
+#[test]
+fn a_locked_teams_share_taken_away_and_given_again_doesnt_give_back_a_closed_pane() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    // Team t2: Bo (b1) founds it, Cy (a3) an editor; alex's machine is
+    // personal, and shares a session with t2.
+    let (bo, bo_root) = device("b1");
+    let (_, cy_root) = device("a3");
+    let t2 = |version: u64| -> Team {
+        let members = vec![member("b1", &bo_root, TeamRole::Owner), member("a3", &cy_root, TeamRole::Editor)];
+        let mut certs = AccountCerts::new();
+        for (a, c) in [("b1", &bo_root), ("a3", &cy_root)] {
+            certs.insert(a.into(), (vec![c.clone()], vec![]));
+        }
+        let mut r = Roster {
+            v: 1,
+            team: "t2".into(),
+            name: "Other".into(),
+            version,
+            at: version,
+            members,
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        r.sign_with(&bo);
+        (vec![r], certs)
+    };
+    f.teams.lock().unwrap().insert("t2".into(), (t2(1), (false, None)));
+    let mut d = arugulad!("sharedlockreaders")
+        .no_provider()
+        .no_tailscale()
+        .env_remove("ARUGULA_FEATURES")
+        .wait_secs(30)
+        .start();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("a refresh", || !f.features.lock().unwrap().is_empty());
+    let share = |sid: u64, on: bool| {
+        let body = if on {
+            json!({ "session": sid, "principal": "team:t2", "name": "Other", "role": "editor", "history": true,
+                    "root": format!("b1.{}", bo_root.device) })
+        } else {
+            json!({ "session": sid, "principal": "team:t2", "role": null })
+        };
+        d.post("/api/acl", body);
+    };
+    let sid = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    share(sid, true);
+    // Bo, t2's owner, reads as Cy does; a lock keeps out only Cy.
+    let has = |l: Option<Vec<String>>, a: &str| l.is_some_and(|l| l.iter().any(|x| x == a));
+    let (closed, open, sid) =
+        close_one(&d, &f, |f, c, o| has(newest(f, "pane", c), "a3") && has(newest(f, "pane", o), "a3"));
+    d.wait_for("the closed pane held", || held_panes(&f).contains(&closed));
+
+    // t2 locked: cy is in no list, Bo still is. Its share taken away and
+    // given again meanwhile.
+    f.teams.lock().unwrap().get_mut("t2").unwrap().1 = (true, None);
+    eve(&d, sid, true);
+    d.wait_for("cy off both panes while locked", || {
+        newest(&f, "pane", &closed) == Some(vec!["b1".to_owned()]) && !has(newest(&f, "pane", &open), "a3")
+    });
+    share(sid, false);
+    share(sid, true);
+
+    // Unlocked by Bo: cy reads the open pane again, not the closed one;
+    // nor does Bo, whose team's share was gone too.
+    f.teams.lock().unwrap().get_mut("t2").unwrap().1 = (false, Some(unlock("t2", 1, &bo)));
+    eve(&d, sid, false);
+    d.wait_for("cy on the open pane", || has(newest(&f, "pane", &open), "a3"));
+    assert_eq!(newest(&f, "pane", &closed), Some(vec![]), "the share given again gave back the closed pane");
 }
 
 /// While the machine's enrollment can't be read, who's in its team isn't

@@ -66,8 +66,12 @@ impl Daemon {
     /// said), make the closed panes' and sessions' readers stick: whoever
     /// no longer reads one is taken off it for good, so a share given them
     /// again later doesn't bring it back, whether chat is on or not. Not
-    /// those kept out only by their team's lock, which is lifted: they're
-    /// refused while it lasts (`readers`) and read again after. Only once
+    /// those kept out only by their team's lock, which is lifted, while
+    /// their team would give them the pane were it unlocked: this
+    /// machine's own team gives every session (a private pane only to its
+    /// owners, who aren't locked out), a team a session was shared with
+    /// only a session that still carries its share. They're refused while
+    /// the lock lasts (`readers`) and read again after. Only once
     /// the team's roster is known, which is also when one that closed
     /// before it was gets the team's part of who read it: its members and
     /// owners (its shares were known when it closed).
@@ -77,7 +81,20 @@ impl Daemon {
             return;
         }
         let people: std::collections::HashMap<String, Principal> = self.people().into_iter().collect();
-        let locked: HashSet<String> = self.config.people.locked_out().into_iter().collect();
+        let locked = self.config.people.locked_out();
+        let shares: HashSet<(SessionId, String)> =
+            self.config.acl.list().into_iter().map(|g| (g.session, g.principal)).collect();
+        // Whether `id`'s team would give them a pane of `session`
+        // (`private` or not) were it not locked.
+        let team_gives = |id: &str, session: SessionId, private: bool| {
+            locked.iter().any(|(who, team)| {
+                who == id
+                    && match team {
+                        None => !private,
+                        Some(t) => !private && shares.contains(&(session, format!("team:{t}"))),
+                    }
+            })
+        };
         let team: Vec<(&String, &Principal)> = {
             let ids: HashSet<String> = self
                 .config
@@ -102,7 +119,8 @@ impl Daemon {
             }
             let before = readers.len();
             readers.retain(|id, _| {
-                locked.contains(id) || people.get(id).is_some_and(|who| self.role_in(who, session, private).is_some())
+                team_gives(id, session, private)
+                    || people.get(id).is_some_and(|who| self.role_in(who, session, private).is_some())
             });
             changed |= readers.len() != before;
         };
