@@ -13,7 +13,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
 import { askText } from "../../shared/ui/menu";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import type { Span } from "../swarm/code";
 import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
@@ -303,7 +303,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         ) : s.loading && !s.files.length ? (
           <BlockLoading what="the changes" />
         ) : !s.files.length ? (
-          <BlockEmpty>Nothing changed ({s.against}).</BlockEmpty>
+          <EmptyState title="Nothing changed." why={`This worktree matches ${s.against}. Edits show here as they are made.`} />
         ) : (
           s.files.map((f) => {
             const slash = f.path.lastIndexOf("/");

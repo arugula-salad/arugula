@@ -72,6 +72,15 @@
   letter-spacing: var(--track-caps);
 }
 
+/* Needs you is a title, whether something waits or not (#692). */
+.sheet .needs-you h2,
+.sheet .sheet-needs-none h2 {
+  margin: 2px 4px 6px;
+  font: 600 var(--text-lg)/20px var(--f-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .sheet h3 {
   margin: 6px 4px 4px;
   font-size: var(--text-sm);

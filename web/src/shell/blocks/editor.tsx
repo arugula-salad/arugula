@@ -9,7 +9,7 @@ import type { Client } from "../client";
 import { editorTheme } from "../editor-theme";
 import type { OpenRequest, PaneId } from "../../shared/proto";
 import { BlockFrame, RoutePill, throughControl } from "./block-frame";
-import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
@@ -94,10 +94,11 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   } else if (server.is === "fetching") {
     const pct = server.of ? Math.floor((100 * server.got) / server.of) : 0;
     body = (
-      <BlockEmpty data-editor="fetching">
-        <p>Downloading VS Code (code-server) for the first time…</p>
-        <p>{server.of ? `${pct}% of ${MB(server.of)}` : MB(server.got)}</p>
-      </BlockEmpty>
+      <EmptyState
+        data-editor="fetching"
+        title="Downloading VS Code (code-server) for the first time."
+        why={server.of ? `${pct}% of ${MB(server.of)}` : MB(server.got)}
+      />
     );
   } else if (!s.src) {
     body = <BlockLoading what={s.name || "the folder"} />;

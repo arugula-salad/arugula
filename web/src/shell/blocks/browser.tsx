@@ -8,7 +8,7 @@ import { OPS, opPath } from "../ops";
 import type { ListeningPort, PaneId, Ports } from "../../shared/proto";
 import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
 import { BlockFrame, RoutePill } from "./block-frame";
-import { BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
@@ -167,12 +167,16 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
       ) : s.framable === false ? (
         // The host, not the page's title: a long one flooded the card
         // (UI audit #177).
-        <div class="block-empty" data-browser-refused>
-          <p>{where} doesn't allow being shown inside another page.</p>
-          <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
-            Open in a new tab ↗
-          </a>
-        </div>
+        <EmptyState
+          data-browser-refused
+          title={`${where} won't show here.`}
+          why="It doesn't allow being shown inside another page."
+          action={
+            <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
+              Open in a new tab ↗
+            </a>
+          }
+        />
       ) : s.framable === null ? (
         <BlockLoading what={where} />
       ) : port ? (

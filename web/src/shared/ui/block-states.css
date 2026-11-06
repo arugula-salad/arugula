@@ -1,0 +1,160 @@
+/* One empty state, one error card and one loading line, for every page,
+   pane and block (#692). Moved from shell/block-chrome.css and the many
+   `*-empty` rules so a platform page draws them too. */
+
+/* A block's error. */
+.block-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.block-error.inline {
+  flex: none;
+  display: block;
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.block-error-card {
+  box-sizing: border-box;
+  max-width: 34em;
+  padding: var(--space-4) 18px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--card-radius);
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
+  color: var(--fg);
+  text-align: left;
+}
+
+.block-error.inline .block-error-card {
+  max-width: none;
+}
+
+.block-error-card > * {
+  margin: 0;
+}
+
+.block-error-card > * + * {
+  margin-top: 6px;
+}
+
+.block-error-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.block-error-detail {
+  color: var(--dim);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.block-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-3);
+}
+
+/* Empty: the same card, dashed for "not there yet" where the error's is
+   solid danger. A page's sits in its column; a pane's is centred. */
+.empty-state.in-pane {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.empty-state.in-page {
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+/* A list page's status already pads its own edge. */
+.list-status > .empty-state.in-page,
+.list-status > .empty-line {
+  margin: 0;
+}
+
+.empty-state-card {
+  box-sizing: border-box;
+  max-width: 34em;
+  padding: var(--space-4) 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--card-radius);
+  color: var(--dim);
+  text-align: left;
+}
+
+.empty-state-card > * {
+  margin: 0;
+}
+
+.empty-state-card > * + * {
+  margin-top: var(--space-1);
+}
+
+.empty-state-title {
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.empty-state-why {
+  max-width: 420px;
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+.empty-state-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* No match, "None yet.", and the phone's Here with nothing waiting. */
+.empty-line {
+  margin: var(--space-2) 0;
+  color: var(--dim);
+  font-size: var(--t-body);
+  line-height: 1.45;
+}
+
+/* A block loading: one dim line, centred, once it has taken a moment. */
+.block-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  color: var(--dim);
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  .empty-state-card,
+  .block-error-card {
+    max-width: none;
+    width: 100%;
+  }
+
+  .empty-state-why {
+    max-width: none;
+    font-size: var(--text-lg);
+    line-height: 1.4;
+  }
+
+  .empty-state-action > *,
+  .block-error-actions > * {
+    flex: 1;
+  }
+}

@@ -10,6 +10,7 @@
 // (archive/spikes:spikes/s16-swarm/canvas.html). On a phone the rail is a strip of cards
 // along the bottom, and the field pinches and pans.
 
+import { EmptyLine } from "../../shared/ui/block-states";
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
@@ -588,7 +589,7 @@ export function SwarmView({
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
           {shown.length === 0 && answered.length === 0 && (
-            <p class="swarm-empty">Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</p>
+            <EmptyLine>Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</EmptyLine>
           )}
           {railed.map((b) => (
             <Card

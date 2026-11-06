@@ -8,7 +8,7 @@
 import { render } from "preact";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { BlockEmpty } from "./block-states";
+import { EmptyState } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Bar } from "../../shared/ui/bar";
 
@@ -64,7 +64,7 @@ function InviteBlock({ client, id, s }: { client: Client; id: PaneId; s: InviteS
         </span>
       </Bar>
       <div class="review-body ws-body">
-        {drafts.length === 0 && <BlockEmpty>No invites yet.</BlockEmpty>}
+        {drafts.length === 0 && <EmptyState title="No invites yet." why="When an agent asks to bring someone into a session, the ask waits here for you to send." />}
         {drafts.map((d) => (
           <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
             <div>
