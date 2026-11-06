@@ -4025,18 +4025,20 @@ button.att {
 /* ---- the swarm (M26): the prototype's look (archive/spikes:spikes/s16-swarm/canvas.html) */
 
 :where(.swarm, .start, .start-toast) {
-  /* The swarm's own dark set, whatever the palette: the swarm, the getting
-     started overlay and its toast (UI audit #180: once, here). The
-     canvases read it from the page (swarm/field.ts's readColors). */
-  --void: #06080d;
-  --ink: #e6ebf4;
-  --mute: #7c8698;
-  --line: #1a2030;
-  --panel: rgba(12, 16, 25, 0.86);
-  --s-ask: #b98cff;
-  --s-fail: #ff5468;
-  --s-done: #63e0a0;
-  --s-wait: #ffc04d;
+  /* The swarm's names for the palette's colors (#729): the swarm, the
+     getting started overlay and its toast, so Latte reaches them. The
+     canvases read them from the page (swarm/field.ts's readColors). An ask
+     is an agent live and waiting on you, so it takes the accent. */
+  --void: var(--letterbox);
+  --ink: var(--fg);
+  --mute: var(--dim);
+  --panel: color-mix(in srgb, var(--bg) 86%, transparent);
+  --s-ask: var(--accent);
+  --s-fail: var(--danger);
+  --s-done: var(--ok);
+  --s-wait: var(--warn);
+  /* What the rail and the tour tint with: a tile's kind, and a plain card. */
+  --s-plain: var(--subtle);
 }
 
 .swarm {
@@ -4117,13 +4119,10 @@ button.att {
    (UI audit #172). */
 .swarm-seg {
   display: flex;
-  /* On the swarm's own dark set, whatever the palette (above), so the
-     control's colors are its. */
-  --fg: var(--ink);
+  /* The control's words are the swarm's dim, and its "on" is the accent's
+     tint over the page's bg, which legible() checks (not over the letterbox). */
   --subtle: var(--mute);
   --raised: color-mix(in srgb, var(--ink) 10%, transparent);
-  --accent: var(--s-ask);
-  --bg: var(--void);
 }
 .swarm-seg-l {
   font: 500 var(--text-xs)/1 var(--f-mono);
@@ -4268,7 +4267,7 @@ button.att {
 }
 .swarm-key dd {
   margin: 0;
-  color: #b7c0d0;
+  color: var(--subtle);
   min-width: 0;
 }
 .swarm-rail {
@@ -4279,7 +4278,7 @@ button.att {
   bottom: 0;
   width: var(--rail);
   border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10, 13, 20, 0.92), rgba(6, 8, 13, 0.96));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--void) 96%, transparent));
   display: flex;
   flex-direction: column;
 }
@@ -4324,7 +4323,7 @@ button.att {
   --c: var(--s-ask);
   position: relative;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  background: color-mix(in srgb, var(--c) 7%, #0b0e16);
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
   border-radius: var(--card-radius);
   padding: 10px 12px 10px 14px;
   flex: 0 0 auto;
@@ -4404,7 +4403,7 @@ button.att {
 }
 .swarm-card code {
   font: 500 var(--text-sm)/1 var(--f-mono);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
   padding: 1px 4px;
   border-radius: var(--tag-radius);
 }
@@ -4476,7 +4475,7 @@ button.att {
 .swarm-peek pre {
   margin: 0;
   font: 400 var(--text-xs)/1.45 var(--f-mono);
-  color: #a9b3c4;
+  color: var(--subtle);
   white-space: pre-wrap;
   word-break: break-word;
   min-height: 1em;
@@ -5555,45 +5554,16 @@ button.diff-why-run {
 
 /* Doc blocks (#963): one scrolling column, title and sections.
 
-   A Doc wears Arugula's own look (#253), not the reader's app theme, so a
-   shared Doc reads the same for everyone: the site's warm paper and ink,
-   and leaf as its one accent. Two sets, dark here and light below; the
-   app's scheme picks (`html[data-scheme]`), and the share viewer sets that
-   from `prefers-color-scheme` (doc-view.tsx). The hues (leaf, pepper, sky,
-   plum) are a chart's series, `--c1..c4`, checked with the dataviz palette
-   validator against `--doc-paper` in each set. The named colours an agent
-   writes (#256: leaf, pepper, sky, plum, sun, stone, each with a `-soft`
-   fill, and ink and paper) are these tokens; their values are
-   shared/docs/colours.json's, which a spec holds equal to these. */
+   A Doc wears the house pair (#729): Slate in dark, Latte in light, whatever
+   palette the reader picked, so a shared Doc reads the same for everyone.
+   Its tokens, `--doc-*`, are set on the root, as the palette's are: by
+   appearance.ts's apply() in the app (houseColours), and for the share
+   viewer by the build, into doc-view.css. The hues (leaf, pepper, sky, plum)
+   are a chart's series, `--c1..c4`: the palette's ok, peach, info and merged.
+   The named colours an agent writes (#256: leaf, pepper, sky, plum, sun,
+   stone, each with a `-soft` fill, and ink and paper) are these tokens;
+   shared/docs/colours.json holds the same, which a spec checks. */
 .doc {
-  /* The page and its text. */
-  --doc-paper: #1a1b18;
-  --doc-sunken: #141512;
-  --doc-tint: #23241f;
-  --doc-ink: #ecebe4;
-  --doc-ink-soft: #b5b3a9;
-  --doc-ink-faint: #918f85;
-  --doc-line: #383a34;
-  --doc-line-quiet: #2e302b;
-  /* The accent: links, list markers, the header's rule, a fresh fill. */
-  --doc-link: #a9cf7a;
-  --doc-rule: #9cc36b;
-  /* The series hues, in their order. */
-  --doc-leaf: #7ca34d;
-  --doc-pepper: #a85a35;
-  --doc-sky: #4d97de;
-  --doc-plum: #9b5aa0;
-  --doc-sun: #b0801c;
-  --doc-stone: #68665e;
-  /* Each hue's soft fill, for a box with ink on it. */
-  --doc-leaf-soft: #354127;
-  --doc-pepper-soft: #422d20;
-  --doc-sky-soft: #283e4f;
-  --doc-plum-soft: #3e2d3e;
-  --doc-sun-soft: #443719;
-  --doc-stone-soft: #30302c;
-  /* What a drawing sits on in either scheme: the light set's paper. */
-  --doc-drawing: #f8f6f0;
   --c1: var(--doc-leaf);
   --c2: var(--doc-pepper);
   --c3: var(--doc-sky);
@@ -5608,28 +5578,6 @@ button.diff-why-run {
 }
 
 html[data-scheme="light"] .doc {
-  --doc-paper: #f8f6f0;
-  --doc-sunken: #efebe1;
-  --doc-tint: #ebe7dc;
-  --doc-ink: #161a13;
-  --doc-ink-soft: #45483f;
-  --doc-ink-faint: #5d5c54;
-  --doc-line: #d6d0bd;
-  --doc-line-quiet: #e2ddcf;
-  --doc-link: #325a20;
-  --doc-rule: #3f6b2a;
-  --doc-leaf: #3f6b2a;
-  --doc-pepper: #c2714a;
-  --doc-sky: #2f7fc8;
-  --doc-plum: #80458a;
-  --doc-sun: #9a6e10;
-  --doc-stone: #525049;
-  --doc-leaf-soft: #dae0d0;
-  --doc-pepper-soft: #efe1d5;
-  --doc-sky-soft: #d8e3ea;
-  --doc-plum-soft: #e5dae0;
-  --doc-sun-soft: #e9e0cc;
-  --doc-stone-soft: #dddbd5;
   color-scheme: light;
 }
 
@@ -5708,7 +5656,7 @@ html[data-scheme="light"] .doc {
 
 @keyframes doc-fresh {
   from {
-    background: color-mix(in srgb, var(--doc-rule) 22%, transparent);
+    background: color-mix(in srgb, var(--doc-live) 22%, transparent);
   }
   to {
     background: transparent;
@@ -5891,7 +5839,7 @@ html[data-scheme="light"] .doc {
   max-width: 100%;
   height: auto;
   margin: 0 0 0.7em;
-  background: var(--doc-drawing, #fff);
+  background: var(--doc-drawing);
   border-radius: var(--field-radius);
 }
 
@@ -5961,7 +5909,7 @@ html[data-scheme="light"] .doc {
 }
 
 .doc .md li::marker {
-  color: var(--doc-rule);
+  color: var(--doc-ink-faint);
 }
 
 .doc .md ol > li::marker {
@@ -6279,7 +6227,7 @@ html[data-scheme="light"] .doc {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(720px, calc(100vw - 24px));
   height: min(640px, 86vh);
-  background: radial-gradient(120% 80% at 100% 0%, rgba(185, 140, 255, 0.08), transparent 60%), var(--void);
+  background: radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--s-ask) 8%, transparent), transparent 60%), var(--void);
   color: var(--ink);
   font: var(--text-md)/1.45 var(--f-ui);
   border: 1px solid var(--line);
@@ -6414,7 +6362,7 @@ html[data-scheme="light"] .doc {
 }
 
 .start-lede {
-  color: #c4cbd8;
+  color: var(--subtle);
   max-width: 56ch;
 }
 
@@ -6437,18 +6385,18 @@ html[data-scheme="light"] .doc {
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-left: 3px solid rgb(138, 160, 190);
+  border-left: 3px solid var(--s-plain);
   border-radius: var(--card-radius);
   background: var(--panel);
 }
 
 .start-cards > li:has(.agent) {
-  border-left-color: rgb(185, 140, 255);
+  border-left-color: var(--s-ask);
 }
 
 .start-cards p {
   margin: 0 0 6px;
-  color: #c4cbd8;
+  color: var(--subtle);
   font-size: var(--text-md);
 }
 
@@ -6499,11 +6447,11 @@ html[data-scheme="light"] .doc {
   flex: none;
   width: 30px;
   font: 600 var(--text-lg)/1.4 var(--f-mono);
-  color: rgb(138, 160, 190);
+  color: var(--s-plain);
 }
 
 .start-glyph.agent {
-  color: rgb(185, 140, 255);
+  color: var(--s-ask);
 }
 
 .start kbd {
@@ -6512,7 +6460,7 @@ html[data-scheme="light"] .doc {
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--tag-radius);
-  background: #0c1019;
+  background: var(--surface);
 }
 
 .start-checks {
@@ -6550,7 +6498,7 @@ html[data-scheme="light"] .doc {
 .start-check.done i {
   background: var(--s-done);
   border-color: var(--s-done);
-  box-shadow: 0 0 10px rgba(99, 224, 160, 0.6);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--s-done) 60%, transparent);
 }
 
 .start-check.wait i {
@@ -6574,10 +6522,10 @@ html[data-scheme="light"] .doc {
 .start-said {
   margin: 12px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 84, 104, 0.4);
+  border: 1px solid color-mix(in srgb, var(--s-fail) 40%, transparent);
   border-left: 3px solid var(--s-fail);
   border-radius: var(--card-radius);
-  background: rgba(255, 84, 104, 0.06);
+  background: color-mix(in srgb, var(--s-fail) 6%, transparent);
 }
 
 .start-said p:first-child {
@@ -6591,7 +6539,7 @@ html[data-scheme="light"] .doc {
 
 .start-together p {
   margin: 0 0 10px;
-  color: #c4cbd8;
+  color: var(--subtle);
   font-size: var(--text-md);
 }
 
@@ -6628,14 +6576,14 @@ html[data-scheme="light"] .doc {
   margin: 14px 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-left: 3px solid rgb(185, 140, 255);
+  border-left: 3px solid var(--s-ask);
   border-radius: var(--panel-radius);
   background: var(--panel);
 }
 
 .start-offer p {
   margin: 0 0 10px;
-  color: #c4cbd8;
+  color: var(--subtle);
   font-size: var(--text-md);
 }
 
@@ -6668,9 +6616,9 @@ html[data-scheme="light"] .doc {
 .start-code {
   margin: 16px 0;
   padding: 18px;
-  border: 1px solid rgba(185, 140, 255, 0.35);
+  border: 1px solid color-mix(in srgb, var(--s-ask) 35%, transparent);
   border-radius: var(--panel-radius);
-  background: rgba(185, 140, 255, 0.05);
+  background: color-mix(in srgb, var(--s-ask) 5%, transparent);
   text-align: center;
 }
 
@@ -6679,7 +6627,7 @@ html[data-scheme="light"] .doc {
   font: 800 52px/1 var(--f-display); /* off-scale: the start code */
   letter-spacing: 0.18em; /* off-scale: the start code */
   color: var(--s-ask);
-  text-shadow: 0 0 24px rgba(185, 140, 255, 0.35);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--s-ask) 35%, transparent);
 }
 
 /* A join secret (#760): after the code, smaller, on a line of its own. */

@@ -65,7 +65,7 @@ contrast against that, not the palette as written.
 - **The Doc wears the house pair** (Slate in dark, Latte in light, whatever
   palette is picked), so a shared Doc reads the same for everyone. Its paper
   is `--bg`, its reading ink a stronger text colour, and its named hues map
-  to palette colours. *(being built: #729.)*
+  to palette colours (`houseColours` in `appearance.ts`; the share page gets the same from the build). The swarm's `--void`, `--ink`, `--mute` and state colours are palette tokens too.
 
 Don't add a palette, a `var(--x)33` hex suffix (it's invalid CSS and draws
 nothing; use `color-mix`), or a `var(--x, #fallback)`.

@@ -5,6 +5,7 @@
 // theme lays out its panes in world units and draws them; this does the rest.
 
 import type { WorkKind } from "../../shared/proto";
+import { onAppearance } from "../../shared/appearance";
 import { clusterOrder } from "../../shared/boards/text";
 import { C, Meter, readColors, type FieldHooks, type FieldPane, type Measured, type SwarmScene } from "./field";
 
@@ -69,6 +70,7 @@ export abstract class Flat implements SwarmScene {
   /** Someone panned, zoomed or dived: stop fitting by ourselves. */
   protected userMoved = false;
   private raf = 0;
+  private offAppearance: (() => void) | null = null;
   private measuring: Meter | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
@@ -303,6 +305,7 @@ export abstract class Flat implements SwarmScene {
   start() {
     this.resize();
     this.last = performance.now();
+    this.offAppearance = onAppearance(() => readColors(this.cv));
     const frame = (t: number) => {
       const dt = Math.min(50, t - this.last);
       this.last = t;
@@ -322,6 +325,7 @@ export abstract class Flat implements SwarmScene {
 
   stop() {
     cancelAnimationFrame(this.raf);
+    this.offAppearance?.();
   }
 
   measure(ms: number): Promise<Measured> {
