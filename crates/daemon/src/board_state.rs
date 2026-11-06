@@ -133,10 +133,11 @@ fn word_of(kind: &EventKind) -> Option<BlockWord> {
 
 /// How many times a word that isn't a close is tried before it is dropped.
 const TRIES: u32 = 5;
-/// How many times a close is tried before it is dropped: an hour of
-/// [`TROUBLE`]'s waits, so a close that keeps failing doesn't slow every
-/// other report until the daemon restarts. Control counts the block as
-/// unknown once its last report is stale.
+/// How many 5xx answers a close is given before it is dropped: about an
+/// hour of them, with [`TROUBLE`] between, so a close control keeps
+/// failing doesn't slow every other report until the daemon restarts.
+/// Control out of reach counts none (see [`Queue::after`]). Control counts
+/// the block as unknown once its last report is stale.
 const CLOSE_TRIES: u32 = 120;
 
 /// A word not yet sent: when it was seen, and how many times it failed.
@@ -166,10 +167,9 @@ impl Queue {
     }
 
     /// A word that wasn't sent, back in the queue: a word noted since is
-    /// newer and wins. `failed`: it was tried and failed, so it counts a
-    /// try, and a word goes after [`TRIES`] ([`CLOSE_TRIES`] for a close)
-    /// (false when
-    /// it went).
+    /// newer and wins. `failed`: control answered this report with a 5xx,
+    /// so it counts a try, and a word goes after [`TRIES`] ([`CLOSE_TRIES`]
+    /// for a close). False when it went.
     fn put_back(&mut self, id: PaneId, mut k: Kept, failed: bool) -> bool {
         if failed {
             k.tries += 1;
@@ -180,6 +180,14 @@ impl Queue {
         }
         self.0.entry(id).or_insert(k);
         true
+    }
+
+    /// A word that `wait` kept from being sent, back in the queue. Only a
+    /// 5xx for this report ([`Wait::Failed`]) counts a try: control out of
+    /// reach, slow or busy says nothing of the report, so a close made on a
+    /// flight waits as long as the flight. False when it went.
+    fn after(&mut self, id: PaneId, k: Kept, wait: &Wait) -> bool {
+        self.put_back(id, k, matches!(wait, Wait::Failed(_)))
     }
 
     /// Everything, the longest waiting first, so one pane that fails can't
@@ -330,19 +338,20 @@ pub async fn keep_reporting(app: Arc<App>) {
                         Err(Wait::Dropped(why)) => warn!(pane = id, "control refused a block's state: {why}"),
                         // This report failed: the rest go on, and it is
                         // tried again after a wait.
-                        Err(Wait::Failed(why)) => {
+                        Err(ref wait @ Wait::Failed(ref why)) => {
                             failed = true;
-                            if !pending.put_back(id, kept, true) {
+                            if !pending.after(id, kept, wait) {
                                 warn!(pane = id, "gave up telling control a block's state: {why}");
                             }
                         }
-                        Err(Wait::For(d, why)) => {
+                        Err(ref wait @ Wait::For(d, ref why)) => {
                             warn!(pane = id, "not telling control about a block for a while: {why}");
                             quiet_until = Some(Instant::now() + d);
                             // Kept for after the wait, with when each was
-                            // seen. After a refusal the grant may be new by
-                            // then, so every block is sent again.
-                            pending.put_back(id, kept, d == TROUBLE);
+                            // seen, no try counted. After a refusal the grant
+                            // may be new by then, so every block is sent
+                            // again.
+                            pending.after(id, kept, wait);
                             for (id, k) in batch.by_ref() {
                                 pending.put_back(id, k, false);
                             }
@@ -494,6 +503,31 @@ mod tests {
         let stat = work_of(&work(Some(" a.rs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"))).diffstat;
         assert_eq!(stat, Some(Diffstat { files: 1, added: 1, removed: 1 }));
         assert_eq!(work_of(&work(None)).diffstat, Some(Diffstat { files: 0, added: 0, removed: 0 }));
+    }
+
+    /// A close made while control is out of reach outlasts any number of
+    /// unreachable sends, timeouts and 429s: only a 5xx counts a try.
+    #[test]
+    fn a_close_survives_a_long_outage() {
+        let close = Kept { word: BlockWord::Closed, seen: Instant::now(), tries: 0 };
+        let mut q = Queue::default();
+        let mut k = close;
+        for n in 0..10 * CLOSE_TRIES {
+            let wait = match n % 3 {
+                0 => Wait::For(TROUBLE, "can't reach control".into()),
+                1 => Wait::For(TROUBLE, "control didn't answer".into()),
+                _ => Wait::For(NO_GRANT, "403".into()),
+            };
+            assert!(q.after(1, k, &wait), "kept after {n} waits");
+            k = q.take()[0].1;
+        }
+        assert_eq!(k.tries, 0, "no try counted");
+        let failed = Wait::Failed("502".into());
+        for _ in 1..CLOSE_TRIES {
+            assert!(q.after(1, k, &failed));
+            k = q.take()[0].1;
+        }
+        assert!(!q.after(1, k, &failed), "5xx after 5xx: given up at {CLOSE_TRIES}");
     }
 
     /// What wasn't sent goes back with when it was seen, a newer word wins,
