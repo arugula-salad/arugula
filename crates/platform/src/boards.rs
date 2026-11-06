@@ -134,6 +134,7 @@ pub mod lanes;
 pub mod refs;
 pub mod relations;
 pub mod resolve;
+pub mod steps;
 pub mod work;
 
 /// The reason a refusal gives for a write made on a stale rev.
@@ -1148,6 +1149,13 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rows: vec![],
         })
         .collect();
+    let elsewhere = elsewhere_of(app, &project, id, &others)?;
+    let at_item: HashMap<&str, usize> =
+        stored.rows.iter().enumerate().filter_map(|(i, r)| item_id(&r.pointer).map(|x| (x, i))).collect();
+    // For each row, in order: where it sits in `zones`, and what its steps
+    // are worked out from.
+    let mut placed: Vec<((usize, usize), steps::Node)> = vec![];
+    let mut prs: HashMap<(Option<String>, u64), usize> = HashMap::new();
     let mut ready: Vec<String> = vec![];
     let mut groups: Vec<wire::Group> = stored
         .groups
@@ -1168,9 +1176,28 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let mut ordered = mine.clone();
         ordered.sort_by_key(|a| is_earlier(a, &facts));
         let (relations, blocked) = match item_id(&e.pointer) {
-            Some(item) => edges.of(item, &facts, &live),
+            Some(item) => edges.of(item, &facts, &live, &elsewhere),
             None => (vec![], vec![]),
         };
+        let mut node = steps::Node {
+            open: item_id(&e.pointer).is_some() && a.lane != wire::Lane::Done,
+            started: matches!(a.lane, wire::Lane::Doing | wire::Lane::Review),
+            ..Default::default()
+        };
+        if let Some(item) = item_id(&e.pointer) {
+            for other in edges.before(item, &facts) {
+                match at_item.get(other) {
+                    Some(&j) => node.before.push(j),
+                    None => node.off = true,
+                }
+            }
+        }
+        let work = mine.iter().filter(|a| a.role == wire::AttachRole::Work).map(|a| &a.pointer);
+        for p in std::iter::once(&e.pointer).chain(work) {
+            if let (wire::Pointer::ForgeItem { .. }, Some(l)) = (p, chip(p, None).0) {
+                prs.entry((l.repo, l.number)).or_insert(placed.len());
+            }
+        }
         if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
             ready.push(e.id.clone());
         }
@@ -1194,6 +1221,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             g.progress.proven += u32::from(a.proof.is_some());
         }
         let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
+        placed.push(((at, zones[at].rows.len()), node));
         // Needs you, when the reader owns a block that stalled the row.
         let stalled_yours =
             stalled.zip(mine.iter().filter(|a| a.role == wire::AttachRole::Work && a.released_at.is_none()).find_map(
@@ -1225,6 +1253,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             ask,
             asked,
             relations,
+            step: None,
             live: row_live,
             block: row_block,
             agent: e.agent.clone().map(|m| ChatAgent {
@@ -1236,8 +1265,53 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
+    // A PR stacked on another waits for it, so its row comes after the row
+    // that holds the lower PR.
+    for (i, ((z, k), node)) in placed.iter_mut().enumerate() {
+        let after = zones[*z].rows[*k].marks.iter().find_map(|m| match m {
+            wire::Mark::After { number, repo } => Some((repo.clone(), *number)),
+            _ => None,
+        });
+        node.before.extend(after.and_then(|key| prs.get(&key).copied()).filter(|&j| j != i));
+    }
+    let nodes: Vec<steps::Node> = placed.iter().map(|(_, n)| n.clone()).collect();
+    let found = steps::work_out(&nodes);
+    for (i, ((z, k), _)) in placed.iter().enumerate() {
+        let row = &mut zones[*z].rows[*k];
+        row.step = found.step[i];
+        if found.cycle[i] {
+            row.marks.push(wire::Mark::Cycle);
+        }
+    }
+    let row_id = |i: &usize| stored.rows[*i].id.clone();
+    let (sequence, chain) = (found.sequence.iter().map(row_id).collect(), found.chain.iter().map(row_id).collect());
     let docs = docs::view(strip_only, &names, &named, &copies);
-    Ok(wire::BoardView { board, zones, groups, docs, ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs, ready, sequence, chain, said: None })
+}
+
+/// For each of these items (the other ends of a board's edges) that a row
+/// of another board of `project` points at, that board's title and lead.
+fn elsewhere_of(
+    app: &Platform,
+    project: &str,
+    board: &str,
+    others: &[wire::Pointer],
+) -> Result<HashMap<String, relations::Elsewhere>, ApiError> {
+    let held = app.db.boards_holding(project, &others.iter().filter_map(item_id).collect::<Vec<_>>())?;
+    let mut out = HashMap::new();
+    if held.iter().all(|(_, b)| b == board) {
+        return Ok(out);
+    }
+    let boards = app.db.boards(project)?;
+    for (item, b) in held.into_iter().filter(|(_, b)| b != board) {
+        if let (false, Some(b)) = (out.contains_key(&item), boards.iter().find(|x| x.id == b)) {
+            out.insert(
+                item,
+                relations::Elsewhere { board: b.title.clone(), lead: b.lead.as_ref().map(|l| l.session.clone()) },
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again

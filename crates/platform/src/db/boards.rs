@@ -1271,6 +1271,27 @@ impl Db {
         )
     }
 
+    /// For each of these item ids (`iss_` or `fi_`) that a row of one of
+    /// `project`'s boards points at, the item and that board, boards in the
+    /// order [`Self::boards`] lists them.
+    pub fn boards_holding(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT DISTINCT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                 WHERE e.kind = 'row' AND e.target_kind IN ('issue', 'forge_item') AND b.project_id = ?2
+                   AND {}
+                 ORDER BY b.closed_at IS NOT NULL, b.created_at, b.id",
+                in_json(&c, "e.target", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The native issues among `ids` in `project`, as (id, number, title,
     /// closed, assignees): one read for any number (a board's rows).
     pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {

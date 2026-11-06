@@ -284,6 +284,7 @@ impl Edges {
         item: &str,
         facts: &Facts,
         live: &HashMap<String, wire::Live>,
+        elsewhere: &HashMap<String, Elsewhere>,
     ) -> (Vec<wire::RowRelation>, Vec<wire::Mark>) {
         let mut shown = vec![];
         let mut marks = vec![];
@@ -307,20 +308,49 @@ impl Edges {
                 continue;
             }
             match seen {
-                Some(l) => marks.push(wire::Mark::BlockedBy {
-                    number: Some(l.number),
-                    title: Some(l.title.clone()),
-                    repo: l.repo.clone(),
-                }),
+                Some(l) => {
+                    let there = elsewhere.get(other.as_str());
+                    marks.push(wire::Mark::BlockedBy {
+                        number: Some(l.number),
+                        title: Some(l.title.clone()),
+                        repo: l.repo.clone(),
+                        board: there.map(|e| e.board.clone()),
+                        lead: there.and_then(|e| e.lead.clone()),
+                    })
+                }
                 None if !hidden => {
                     hidden = true;
-                    marks.push(wire::Mark::BlockedBy { number: None, title: None, repo: None });
+                    marks.push(wire::Mark::BlockedBy {
+                        number: None,
+                        title: None,
+                        repo: None,
+                        board: None,
+                        lead: None,
+                    });
                 }
                 None => {}
             }
         }
         (shown, marks)
     }
+
+    /// The open items that come before `item` in a board's steps
+    /// ([`super::steps::orders_steps`]): the ends of its edges that still
+    /// count, whether or not the reader may see them.
+    pub(super) fn before(&self, item: &str, facts: &Facts) -> Vec<&str> {
+        self.rels
+            .iter()
+            .filter(|r| r.to == item && super::steps::orders_steps(r.kind))
+            .filter(|r| is_open(facts.by_id.get(r.from.as_str())))
+            .map(|r| r.from.as_str())
+            .collect()
+    }
+}
+
+/// The other board a blocker is a row of, and its lead's session.
+pub(super) struct Elsewhere {
+    pub board: String,
+    pub lead: Option<String>,
 }
 
 /// The pointer an item id is.
