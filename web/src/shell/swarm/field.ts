@@ -29,6 +29,16 @@ export function alpha(color: string, a: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+const brightness = (color: string) => {
+  const n = parseInt(color.slice(1, 7), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+};
+
+/** What is written on a pane's kind color (a tile's title bar, its stubs):
+ * the darker of the letterbox and the text, as the kinds are pale in both
+ * schemes, so it's the letterbox in dark and the text in light (#729). */
+export const onKind = () => (brightness(C.void) <= brightness(C.ink) ? C.void : C.ink);
+
 /** Takes C from the swarm's custom properties, as `el` (a canvas in the
  * swarm) inherits them. */
 export function readColors(el: Element) {
@@ -869,7 +879,7 @@ export class Field implements SwarmScene {
         cx.beginPath();
         cx.rect(x, y, w, h);
         cx.clip();
-        cx.fillStyle = C.void;
+        cx.fillStyle = onKind();
         cx.fillText(`${t.label} · ${t.where}`, x + fs * 0.6, y + fs * 1.15);
         cx.fillStyle = alpha(C.ink, 0.35);
         stubs(t.key).forEach((len, i) => cx.fillRect(x + fs * 0.6, y + fs * 2.4 + i * fs * 1.35, (w - fs * 1.2) * len * act, fs * 0.5));
@@ -878,7 +888,7 @@ export class Field implements SwarmScene {
         cx.fillStyle = `rgba(${c},${a})`;
         cx.fillRect(x, y, w, h);
         if (w > 16) {
-          cx.fillStyle = alpha(C.void, 0.55);
+          cx.fillStyle = alpha(onKind(), 0.55);
           stubs(t.key).forEach((len, i) => cx.fillRect(x + w * 0.1, y + h * (0.25 + i * 0.22), w * 0.8 * len, Math.max(1, h * 0.08)));
         }
       }
