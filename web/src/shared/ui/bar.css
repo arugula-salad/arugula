@@ -30,7 +30,11 @@
 }
 
 .hbar-title {
-  flex: 0 1 auto;
+  /* It doesn't shrink while the where can: shrink is shared by flex-basis,
+     so a long topic would cut a short name first. A long title still stops
+     at 60% and ends in an ellipsis. */
+  flex: 0 0 auto;
+  max-width: 60%;
   min-width: 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
