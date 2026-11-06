@@ -338,12 +338,12 @@ fn no_item() -> ApiError {
 /// `GET /api/forge/items/{id}/content` (module docs).
 pub async fn get(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::ForgeContent>, ApiError> {
     // The check first: a reader it refuses never reaches the mirror, the
     // cache or GitHub.
-    let (readable, repo) = viewer::item(&app, &v, &id).await?.ok_or_else(no_item)?;
+    let (readable, repo) = viewer::item(&app, &mut v, &id).await?.ok_or_else(no_item)?;
     let i = app.db.forge_item(&readable, &id)?.ok_or_else(no_item)?;
     if repo.mirror_content
         && let Some(rows) = app.db.forge_content(&readable, repo.repo_id, i.number)?

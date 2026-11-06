@@ -255,7 +255,7 @@ async fn gather(
 
     if issues || prs {
         let repos = app.db.linked_repos(&project)?;
-        let checked = viewer::check(app, &Viewer::of(app, account).await?, &repos).await?;
+        let checked = viewer::check(app, &mut Viewer::of(app, account).await?, &repos).await?;
         let f = ItemFilter {
             kind: match (issues, prs) {
                 (true, true) => None,

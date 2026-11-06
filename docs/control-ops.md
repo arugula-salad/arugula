@@ -1710,11 +1710,13 @@ the relay, push, block and doc origins, the jump host, telemetry) and
 the platform (`arugula-platform`:
 chat, Cloud, billing, projects and grants, and the GitHub App's webhook
 and key, M161). The platform runs in one of two ways, from the same binaries.
-**Production runs it out of process, through Flycast**, since M145's
-window (2026-10-21): the hub's `ARUGULA_PLATFORM` is
-`http://arugula-platform.flycast:7700`, and `arugula-platform` runs two
-machines. In process is only the rollback ("Rolling back to in process",
-below), and it starts by copying the platform's tables back.
+**Production runs it out of process.** It went out of process at M141's
+window, with the hub calling `http://arugula-platform.internal:7700`, and
+has gone through Flycast since M145's window (2026-10-21): the hub's
+`ARUGULA_PLATFORM` is `http://arugula-platform.flycast:7700`, and
+`arugula-platform` runs two machines. In process is only the rollback
+("Rolling back to in process", below), and it starts by copying the
+platform's tables back.
 
 - **In process** (`ARUGULA_PLATFORM=in-process`, the default when it's
   unset, and the rollback): inside the hub, as one Fly app. Production

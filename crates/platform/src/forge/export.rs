@@ -150,8 +150,8 @@ pub(super) async fn draft(
         return Err(conflict(&format!("it's on GitHub already, as {}#{}", g.repo, g.number)));
     }
     let link = target(app, &issue, &b.repo)?;
-    let v = Viewer::of(app, &d.account).await?;
-    let checked = viewer::check(app, &v, std::slice::from_ref(&link)).await?;
+    let mut v = Viewer::of(app, &d.account).await?;
+    let checked = viewer::check(app, &mut v, std::slice::from_ref(&link)).await?;
     if !checked.readable.has(link.repo_id) {
         return Err(err(StatusCode::FORBIDDEN, &format!("GitHub doesn't let you read {}", link.full_name)));
     }
@@ -540,8 +540,8 @@ pub async fn posted(
         }
     }
     let made = async {
-        let v = Viewer::of(app, author).await?;
-        let checked = viewer::check(app, &v, std::slice::from_ref(&link)).await?;
+        let mut v = Viewer::of(app, author).await?;
+        let checked = viewer::check(app, &mut v, std::slice::from_ref(&link)).await?;
         let new = NewDraftRow {
             project_id: &link.project_id,
             author,

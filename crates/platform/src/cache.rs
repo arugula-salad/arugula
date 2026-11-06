@@ -1044,10 +1044,6 @@ mod tests {
         assert!(cache.machines_for(&hub, "c").await.unwrap().is_empty());
     }
 
-    /// Only what's there is kept: an empty list, a missing id or a "no" is
-    /// asked again every time, so a hub write that just ended it (a team
-    /// made, a machine joined, a share given) is read at once, feed or no
-    /// feed.
     /// A GitHub identity, "no" included, is kept a cache tick at most, even
     /// with the feed read; linking and unlinking drop it through the feed;
     /// and `github_user_now` asks.
@@ -1086,6 +1082,10 @@ mod tests {
         assert_eq!(hub.calls_of("github_user"), calls + 2, "asked again at the tick");
     }
 
+    /// Only what's there is kept: an empty list, a missing id or a "no" is
+    /// asked again every time, so a hub write that just ended it (a team
+    /// made, a machine joined, a share given) is read at once, feed or no
+    /// feed.
     #[tokio::test]
     async fn an_absence_is_never_kept() {
         let hub = TestHub::default();

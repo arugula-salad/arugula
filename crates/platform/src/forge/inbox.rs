@@ -519,7 +519,7 @@ pub struct InboxQuery {
 }
 
 /// The readable repos of an account's inbox.
-async fn readable(app: &Platform, v: &Viewer) -> Result<viewer::Readable, ApiError> {
+async fn readable(app: &Platform, v: &mut Viewer) -> Result<viewer::Readable, ApiError> {
     let mut repos = Vec::new();
     for id in app.db.inbox_repos(&v.account)? {
         repos.extend(app.db.linked_repo(id)?);
@@ -535,8 +535,8 @@ pub async fn list(
     d: Drafter,
     Query(q): Query<InboxQuery>,
 ) -> Result<Json<wire::Inbox>, ApiError> {
-    let v = Viewer::of(&app, &d.account).await?;
-    let r = readable(&app, &v).await?;
+    let mut v = Viewer::of(&app, &d.account).await?;
+    let r = readable(&app, &mut v).await?;
     let f = InboxFilter { done: q.done, limit: q.limit.unwrap_or(DEFAULT).clamp(1, MOST) };
     let mut entries = Vec::new();
     for x in app.db.inbox(&r, &v.account, &f)? {
@@ -592,8 +592,8 @@ pub async fn mark_for(
         let marked = crate::inbox::mark(app, account, &item, b).await?;
         return Ok(wire::InboxMarked { item, marked });
     }
-    let v = Viewer::of(app, account).await?;
-    let (r, _) = viewer::item(app, &v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
+    let mut v = Viewer::of(app, account).await?;
+    let (r, _) = viewer::item(app, &mut v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
     let n = app.db.mark_inbox(&r, account, &item, b.reason.as_deref(), b.seen, b.done, now_ms())?;
     Ok(wire::InboxMarked { item, marked: n as u32 })
 }
