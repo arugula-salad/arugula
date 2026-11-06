@@ -2414,6 +2414,18 @@ button.att {
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
 }
 
+.sandboxes {
+  position: relative;
+}
+
+/* The × is no row of the grid (Modal draws it first): it sits at the corner. */
+.sandboxes > .modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0;
+}
+
 .sandboxes h2 {
   margin: 0;
 }
