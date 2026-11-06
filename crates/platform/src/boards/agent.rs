@@ -257,6 +257,18 @@ pub async fn relate(
     Ok(Json(super::relations::add(&app, actor(&d), &project, &n).await?))
 }
 
+/// `POST /api/daemon/projects/{project}/relations/batch`: links added and
+/// removed together (`issues.write` over the project), each on its own.
+pub async fn link(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(b): Json<wire::LinkBatch>,
+) -> J<wire::LinksDone> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::relations::batch(&app, actor(&d), &project, &b).await?))
+}
+
 /// `DELETE /api/daemon/projects/{project}/relations/{relation}`: a relation
 /// this machine's agents made.
 pub async fn unrelate(

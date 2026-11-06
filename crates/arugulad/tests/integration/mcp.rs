@@ -148,7 +148,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 40 - NO_FORGE);
+    assert_eq!(tools.len(), 41 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -431,7 +431,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 40 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 41 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -1026,7 +1026,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 40 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 41 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1034,7 +1034,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 41, "{:?}", names(&with));
+        assert_eq!(with.len(), 42, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1051,7 +1051,7 @@ async fn labs_lists_all_the_tools() {
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 40 - NO_FORGE);
+        assert_eq!(without.len(), 41 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1060,7 +1060,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 40 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 41 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -2823,8 +2823,6 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 #[derive(Clone, Default)]
 struct FakeBoards {
     calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
-    /// Whether #31 blocks #12's row: it shows the relation and leaves the Ready line.
-    related: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(feature = "labs")]
@@ -2880,22 +2878,13 @@ async fn fake_boards(f: FakeBoards) -> String {
             .into_response(),
             ("GET", "/api/daemon/boards/brd_1") => {
                 let mut v = view();
-                if f.related.load(std::sync::atomic::Ordering::SeqCst) {
-                    v["zones"][0]["rows"][0]["relations"] = json!([{ "id": "rel_1", "kind": "blocks", "direction": "in",
-                        "source": "agent", "item": "fi_31", "removable": true }]);
-                } else {
-                    v["ready"] = json!(["row_1"]);
-                }
+                v["ready"] = json!(["row_1"]);
                 Json(v).into_response()
             }
-            ("POST", "/api/daemon/projects/prj_1/relations") => {
-                f.related.store(true, std::sync::atomic::Ordering::SeqCst);
-                Json(json!({ "id": "rel_1" })).into_response()
-            }
-            ("DELETE", "/api/daemon/projects/prj_1/relations/rel_1") => {
-                f.related.store(false, std::sync::atomic::Ordering::SeqCst);
-                Json(json!({})).into_response()
-            }
+            ("POST", "/api/daemon/projects/prj_1/relations/batch") => Json(json!({
+                "add": [{ "outcome": "added" }, { "outcome": "refused", "why": "that would make a cycle" }],
+                "remove": [{ "outcome": "not_there" }] }))
+            .into_response(),
             ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
                 let mut v = view();
                 if b["title"].is_string() {
@@ -3237,8 +3226,6 @@ async fn an_agent_reads_and_writes_a_board() {
             "link_doc",
             "unlink_doc",
             "ask",
-            "relate",
-            "unrelate",
             "note",
             "group",
             "drop",
@@ -3306,20 +3293,22 @@ async fn an_agent_reads_and_writes_a_board() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
-    // Relate as an agent sends it: #31 blocks #12, so #12's row leaves the Ready line; `to` as a list of one
-    // is taken too.
-    let relate = json!({ "kind": "relate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": "#12" });
-    let related = call(&s, "board_write", relate).await;
-    let text = related["summary"].as_str().unwrap();
-    assert!(text.contains("Related: #31 blocks #12.") && text.contains("0 ready."), "{related}");
-    let unrelated = call(
+    // Link as an agent sends it: no board, `kind` left out is before. One refused link doesn't stop the rest.
+    let linked = call(
         &s,
-        "board_write",
-        json!({ "kind": "unrelate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": ["#12"] }),
+        "link",
+        json!({ "add": [{ "from": "#31", "to": "#12" }, { "from": "#12", "to": "#31" }],
+                "remove": [{ "from": "#31", "to": "#12", "kind": "blocks" }] }),
     )
     .await;
-    let text = unrelated["summary"].as_str().unwrap();
-    assert!(text.contains("Took off the relation between #31 and #12.") && text.contains("1 ready."), "{unrelated}");
+    let text = linked["summary"].as_str().unwrap();
+    assert!(
+        text.contains("added: #31 before #12\nrefused: #12 before #31 (that would make a cycle)")
+            && text.contains("not there: #31 blocks #12\n3 link(s): 1 added, 1 not there, 1 refused."),
+        "{linked}"
+    );
+    let sent = fake.calls.lock().unwrap().iter().find(|(at, _)| at.ends_with("/relations/batch")).cloned().unwrap();
+    assert_eq!(sent.1["add"][0], json!({ "from": "#31", "to": "#12", "kind": "before" }), "{sent:?}");
     call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,

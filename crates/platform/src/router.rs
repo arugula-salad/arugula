@@ -123,6 +123,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))
+        .route(boards::AGENT_PROJECT_RELATIONS_BATCH, post(crate::boards::agent::link))
         .route(boards::AGENT_PROJECT_RELATION, axum::routing::delete(crate::boards::agent::unrelate))
         .route(boards::PROJECT_RELATIONS, post(crate::boards::relations::add_route))
         .route(boards::PROJECT_RELATION, axum::routing::delete(crate::boards::relations::remove_route))

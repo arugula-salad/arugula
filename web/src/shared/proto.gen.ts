@@ -4569,9 +4569,10 @@ export type RelationDirection = "out" | "in";
 /**
  * What an edge between two work items says (Arugula #403). Only `blocks`
  * gates: it keeps the blocked item's row out of the ready set until the
- * blocker is closed.
+ * blocker is closed. `before` (#761) says an order and gates nothing; it
+ * can't close a cycle with `blocks` edges.
  */
-export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from";
+export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from" | "before";
 
 /**
  * Who made an edge. `plane` and `github` edges are read from there, and
