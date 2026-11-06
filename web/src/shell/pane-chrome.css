@@ -185,7 +185,7 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   position: absolute;
   inset: 0;
   z-index: 8;
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  background: var(--backdrop);
 }
 .pane-tip {
   position: absolute;
@@ -223,6 +223,7 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 .pane-tip h2 {
   margin: 0 0 10px;
   font-size: var(--text-lg);
+  font-weight: 600;
 }
 .pane-tip h3 {
   margin: 12px 0 4px;

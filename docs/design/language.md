@@ -172,7 +172,10 @@ Don't add a `*-chip`, `*-tag` or `*-badge` rule outside the shared chip file.
 
 ## Dialogs, side sheets and the backdrop
 
-*(being built: #690.)*
+*(being built: #690. Built: `Modal`, `ConfirmRemove`, `SideSheet`
+(`shared/ui/side-sheet.tsx`), `--backdrop`, Boards' row drawer, Appearance,
+Sandboxes and the Doc share dialogs. Still hand-rolled: the rest of the
+`role="dialog"` list in #690, and Add a pane and Needs you as sheets.)*
 
 - **The dialog** is `Modal` / `.prompt` (`shared/ui/modal.tsx`): a 15/600
   title, a body, a right-aligned button row, Cancel first and the action last.

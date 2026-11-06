@@ -774,37 +774,8 @@
   margin-left: auto;
 }
 
-/* The drawer: a row's item, read-only, as a side panel; a sheet on a phone. */
-.board-drawer {
-  position: fixed;
-  z-index: 20;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  box-sizing: border-box;
-  width: min(420px, 100%);
-  padding: 14px 16px;
-  overflow-y: auto;
-  overflow-wrap: anywhere;
-  border-left: 1px solid var(--divider);
-  background: var(--bg, var(--surface));
-  box-shadow: -8px 0 24px rgb(0 0 0 / 0.25);
-  outline: none;
-}
-
-.board-drawer-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.board-drawer-title {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--text-lg);
-}
-
+/* The drawer: a row's item, read-only, in the shared side sheet
+   (../ui/side-sheet.css); what is inside it is drawn here. */
 .board-drawer h3 {
   margin: 14px 0 4px;
   font-size: var(--text-xs);
@@ -843,17 +814,6 @@
 @media (max-width: 600px) {
   .board-rows > [data-needs-you] {
     order: -1;
-  }
-
-  .board-drawer {
-    top: auto;
-    left: 0;
-    width: auto;
-    max-height: 80vh;
-    border-left: 0;
-    border-top: 1px solid var(--divider);
-    border-radius: 12px 12px 0 0;
-    box-shadow: 0 -8px 24px rgb(0 0 0 / 0.25);
   }
 }
 

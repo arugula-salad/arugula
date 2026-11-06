@@ -21,7 +21,7 @@ import type { PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import type { MenuItem } from "../../shared/ui/menu";
-import { useModal } from "../../shared/ui/modal";
+import { Modal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
@@ -170,10 +170,6 @@ export function DocShareLayer() {
       listeners.delete(fn);
     };
   }, []);
-  // UI audit #150: the update's dialog takes the focus and closes on
-  // Escape (the share dialog and Unshare's ConfirmRemove do their own).
-  const ref = useRef<HTMLDivElement>(null);
-  useModal(ref, () => show(null), !!shown && shown.kind === "update");
   const o = shown;
   if (!o) return null;
   const close = () => show(null);
@@ -194,15 +190,20 @@ export function DocShareLayer() {
   }
   if (o.kind === "update") {
     return (
-      <div class="prompt-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-        <div class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label="Update shared copy" data-doc-update-dialog ref={ref}>
-          <h2>Update shared copy?</h2>
-          <p>{UPDATE_NOTE}</p>
-          <div class="prompt-buttons">
+      <Modal
+        alert
+        x={false}
+        title="Update shared copy?"
+        label="Update shared copy"
+        close={close}
+        root={{ "data-doc-update-dialog": true }}
+        buttons={
+          <>
             <button class="secondary" type="button" onClick={close}>
               Cancel
             </button>
-            <button class="secondary"
+            <button
+              class="secondary"
               type="button"
               data-doc-update-go
               onClick={() => {
@@ -212,9 +213,11 @@ export function DocShareLayer() {
             >
               Update
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      >
+        <p>{UPDATE_NOTE}</p>
+      </Modal>
     );
   }
   return <ShareDialog client={o.client} id={o.id} close={close} />;
@@ -226,8 +229,6 @@ export function DocShareLayer() {
  * lane E) adds a section here. */
 function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close: () => void }) {
   useSubscribe(onLinks);
-  const ref = useRef<HTMLDivElement>(null);
-  useModal(ref, close, true);
   const [made, setMade] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const s = client.blocks.get(id)?.state as DocState | null | undefined;
@@ -249,63 +250,69 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
     setBusy(false);
   };
   return (
-    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label={shared ? "Link to this Doc" : "Share this Doc with a link?"} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={ref} class="prompt control-prompt" data-doc-link-dialog data-doc-share-dialog={shared ? "shared" : "unshared"}>
-        <h2>{shared ? "Link to this Doc" : "Share this Doc with a link?"}</h2>
-        <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
-        {shared ? (
+    <Modal
+      x={false}
+      title={shared ? "Link to this Doc" : "Share this Doc with a link?"}
+      close={close}
+      root={{ "data-doc-link-dialog": true, "data-doc-share-dialog": shared ? "shared" : "unshared" }}
+      buttons={
+        shared ? (
           <>
-            {url ? <CopyText text={url} share data-doc-link-url /> : <p class="hint">Loading the link…</p>}
-            {s?.shared && (
-              <p class="hint" data-doc-bar-shared title={when(s.shared.updated)}>
-                Shared; the link shows it as it was {ago(s.shared.updated, Date.now(), "long")}.
-              </p>
-            )}
-            {s?.shared && s.shared_older && (
-              <Count
-                for="you"
-                data-doc-bar-older
-                title="A section changed after the link was updated. One tap makes the link show the Doc as it is; the link stays the same."
-                onClick={() => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is"))}
-              >
-                Shared copy is older · Update
-              </Count>
-            )}
-            <div class="prompt-buttons">
-              <button
-                class="secondary danger"
-                type="button"
-                data-doc-share-unshare
-                onClick={() => show({ kind: "unshare", run: () => void run(client, id, "doc_unshare", () => client.toast("Unshared")) })}
-              >
-                Unshare
-              </button>
-              <button
-                class="secondary"
-                type="button"
-                data-doc-share-update
-                onClick={() => show({ kind: "update", run: () => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is")) })}
-              >
-                Update shared copy
-              </button>
-              {url && <OpenOutside href={url} data-doc-bar-open />}
-              <button class="secondary" type="button" onClick={close}>
-                Done
-              </button>
-            </div>
+            <button
+              class="secondary danger"
+              type="button"
+              data-doc-share-unshare
+              onClick={() => show({ kind: "unshare", run: () => void run(client, id, "doc_unshare", () => client.toast("Unshared")) })}
+            >
+              Unshare
+            </button>
+            <button
+              class="secondary"
+              type="button"
+              data-doc-share-update
+              onClick={() => show({ kind: "update", run: () => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is")) })}
+            >
+              Update shared copy
+            </button>
+            {url && <OpenOutside href={url} data-doc-bar-open />}
+            <button class="secondary" type="button" onClick={close}>
+              Done
+            </button>
           </>
         ) : (
-          <div class="prompt-buttons">
+          <>
             <button class="secondary" type="button" onClick={close}>
               Cancel
             </button>
             <button class="primary" type="button" data-doc-share-go disabled={busy} onClick={() => void confirm()}>
               Create link
             </button>
-          </div>
-        )}
-      </div>
-    </div>
+          </>
+        )
+      }
+    >
+      <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
+      {shared && (
+        <>
+          {url ? <CopyText text={url} share data-doc-link-url /> : <p class="hint">Loading the link…</p>}
+          {s?.shared && (
+            <p class="hint" data-doc-bar-shared title={when(s.shared.updated)}>
+              Shared; the link shows it as it was {ago(s.shared.updated, Date.now(), "long")}.
+            </p>
+          )}
+          {s?.shared && s.shared_older && (
+            <Count
+              for="you"
+              data-doc-bar-older
+              title="A section changed after the link was updated. One tap makes the link show the Doc as it is; the link stays the same."
+              onClick={() => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is"))}
+            >
+              Shared copy is older · Update
+            </Count>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
