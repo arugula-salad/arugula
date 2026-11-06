@@ -29,6 +29,7 @@ impl Daemon {
                 let _ = reply.send(self.may_drive_here(&who, pane));
             }
             Api::Readers(reply) => {
+                self.settle_closed();
                 let _ = reply.send(self.readers());
             }
             Api::InviteTo(session, pane, reply) => {

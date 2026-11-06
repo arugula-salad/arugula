@@ -55,6 +55,10 @@ struct Fake {
     imports: Arc<Mutex<Vec<Value>>>,
     /// Each reader list posted, and when.
     readers: Arc<Mutex<Vec<(Instant, Value)>>>,
+    /// Refuse reader lists, as a control the machine can't reach would,
+    /// and how many it refused.
+    refuse: Arc<Mutex<bool>>,
+    refused: Arc<Mutex<u32>>,
     /// A hosted machine's project (native #705): the team that owns it,
     /// with the roster and certificates in `team`.
     hosted: Arc<Mutex<Option<HostedProject>>>,
@@ -155,10 +159,14 @@ async fn import(State(f): State<Fake>, Json(b): Json<Value>) -> Json<Value> {
     Json(json!({ "rooms": 0, "messages": 0, "already": 0 }))
 }
 
-async fn readers(State(f): State<Fake>, Json(b): Json<Value>) -> Json<Value> {
+async fn readers(State(f): State<Fake>, Json(b): Json<Value>) -> Response {
+    if *f.refuse.lock().unwrap() {
+        *f.refused.lock().unwrap() += 1;
+        return StatusCode::BAD_GATEWAY.into_response();
+    }
     let n = b["targets"].as_array().map_or(0, Vec::len);
     f.readers.lock().unwrap().push((Instant::now(), b));
-    Json(json!({ "stored": n }))
+    Json(json!({ "stored": n })).into_response()
 }
 
 async fn dial(up: WebSocketUpgrade) -> Response {
@@ -226,6 +234,13 @@ fn lists_for(f: &Fake, kind: &str, target: &str) -> Vec<Value> {
 fn newest(f: &Fake, kind: &str, target: &str) -> Option<Vec<String>> {
     let list = lists_for(f, kind, target).pop()?;
     Some(list.as_array().unwrap().iter().map(|r| r["account"].as_str().unwrap().to_owned()).collect())
+}
+
+/// The panes the newest send said the machine holds.
+fn held_panes(f: &Fake) -> Vec<String> {
+    let r = f.readers.lock().unwrap();
+    let held = r.iter().rev().find_map(|(_, b)| b.get("held").cloned()).unwrap_or_default();
+    held["panes"].as_array().map(|a| a.iter().map(|p| p.as_str().unwrap().to_owned()).collect()).unwrap_or_default()
 }
 
 /// How long ago control was last given a reader list.
@@ -318,6 +333,100 @@ fn reader_lists_follow_controls_chat_setting_and_old_threads_stay_put() {
     // The old threads were never sent anywhere, and stay where they were.
     assert!(f.imports.lock().unwrap().is_empty());
     assert!(d.state.join("threads/pane-4.jsonl").exists() && !d.state.join("threads.imported").exists());
+}
+
+/// A closed pane's thread keeps the readers it would have now: the
+/// machine goes on holding it (across a restart too), a private one stays
+/// its owner's, and a share of its session taken away later reaches
+/// control. A share taken away while
+/// control refuses the lists reaches it once control takes them again,
+/// without waiting for a refresh, and that send names every list.
+#[test]
+fn a_closed_panes_readers_and_a_revoke_during_a_failed_send_reach_control() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    // No `--direct-url`, for `set_private` (see the co-owner test).
+    let mut d =
+        arugulad!("closedreaders").no_provider().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("a refresh", || !f.features.lock().unwrap().is_empty());
+
+    let first = &d.get("/api/panes")[0];
+    let (closing, sid) = (first["id"].as_u64().unwrap(), first["session"].as_u64().unwrap());
+    let other = d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }))["pane"].as_u64().unwrap();
+    let secret = d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }))["pane"].as_u64().unwrap();
+    let (closing_t, other_t, session) = (closing.to_string(), other.to_string(), sid.to_string());
+    let secret_t = secret.to_string();
+    d.post(
+        "/api/acl",
+        json!({ "session": sid, "principal": "account:a2", "name": "alex", "role": "editor", "history": true,
+                "root": DeviceKeys::generate().id() }),
+    );
+    let alex = Some(vec!["a2".to_owned()]);
+    d.wait_for("alex reads the panes", || {
+        newest(&f, "pane", &closing_t) == alex
+            && newest(&f, "pane", &other_t) == alex
+            && newest(&f, "pane", &secret_t) == alex
+    });
+
+    // One made private, then closed: held, and nobody's but the owner's.
+    set_private(&d, secret, true);
+    d.wait_for("the private pane the owner's", || newest(&f, "pane", &secret_t) == Some(vec![]));
+    d.post(&format!("/api/panes/{secret}/close"), json!({}));
+
+    // The pane closes: still held, and alex still reads its thread.
+    d.post(&format!("/api/panes/{closing}/close"), json!({}));
+    d.wait_for("the closed pane held", || {
+        held_panes(&f).contains(&closing_t)
+            && !d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == closing)
+    });
+    assert_eq!(newest(&f, "pane", &closing_t), alex);
+
+    // Held across a restart.
+    d.stop();
+    let sent = f.readers.lock().unwrap().len();
+    d.start();
+    d.wait_for("the lists after a restart", || f.readers.lock().unwrap().len() > sent);
+    let held = held_panes(&f);
+    assert!(held.contains(&closing_t) && held.contains(&secret_t), "forgotten on restart: {held:?}");
+    // That first send names every list, worked out again.
+    assert_eq!((newest(&f, "pane", &closing_t), newest(&f, "pane", &secret_t)), (alex.clone(), Some(vec![])));
+
+    // Control refuses the lists; alex's share is taken away meanwhile.
+    *f.refuse.lock().unwrap() = true;
+    let sent = f.readers.lock().unwrap().len();
+    d.post("/api/acl", json!({ "session": sid, "principal": "account:a2", "role": null }));
+    d.wait_for("a refused send", || *f.refused.lock().unwrap() > 0);
+    assert_eq!(f.readers.lock().unwrap().len(), sent, "control took nothing");
+    assert_eq!(newest(&f, "pane", &closing_t), alex, "control still has what it last took");
+    *f.refuse.lock().unwrap() = false;
+    let back = Instant::now();
+    d.wait_for("alex in no list", || {
+        newest(&f, "pane", &closing_t) == Some(vec![])
+            && newest(&f, "pane", &other_t) == Some(vec![])
+            && newest(&f, "session", &session) == Some(vec![])
+    });
+    assert!(back.elapsed() < Duration::from_secs(30), "the retry waited {:?}", back.elapsed());
+    assert!(held_panes(&f).contains(&closing_t));
+
+    // Shared the session again: the open pane is alex's, the closed one
+    // stays not, here and after a restart.
+    d.post(
+        "/api/acl",
+        json!({ "session": sid, "principal": "account:a2", "name": "alex", "role": "editor", "history": true,
+                "root": DeviceKeys::generate().id() }),
+    );
+    d.wait_for("alex on the open pane again", || newest(&f, "pane", &other_t) == alex);
+    assert_eq!(newest(&f, "pane", &closing_t), Some(vec![]), "a share again brought back the closed pane");
+    d.stop();
+    let sent = f.readers.lock().unwrap().len();
+    d.start();
+    d.wait_for("the lists after a restart", || f.readers.lock().unwrap().len() > sent);
+    assert_eq!((newest(&f, "pane", &closing_t), newest(&f, "pane", &other_t)), (Some(vec![]), alex));
 }
 
 fn device(account: &str) -> (DeviceKeys, Cert) {
@@ -446,6 +555,95 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     );
     std::thread::sleep(Duration::from_secs(6));
     assert!(f.doc_puts.lock().unwrap().is_empty(), "a team's machine copied: {:?}", f.doc_puts.lock().unwrap());
+}
+
+/// A closed pane's thread only narrows (Jake, 2026-11-05). Alex (`a1`)
+/// owns the machine in team `t1`, with Cy (`a3`) an editor. A pane
+/// closes while Cy reads it: Dee (`a5`) joining the team, and a share of
+/// the session with Eve (`a9`), give them the session's open pane and not
+/// the closed one; the roster taking Cy out takes the closed one from him.
+#[test]
+fn a_closed_panes_readers_only_narrow() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.chat.lock().unwrap() = true;
+    let url = serve(&rt, f.clone());
+    let (alex, alex_root) = device("a1");
+    let (_, cy_root) = device("a3");
+    let (_, dee_root) = device("a5");
+    let members = |cy: bool, dee: bool| {
+        let mut m = vec![member("a1", &alex_root, TeamRole::Owner)];
+        if cy {
+            m.push(member("a3", &cy_root, TeamRole::Editor));
+        }
+        if dee {
+            m.push(member("a5", &dee_root, TeamRole::Editor));
+        }
+        m
+    };
+    let mut certs = AccountCerts::new();
+    for (a, c) in [("a1", &alex_root), ("a3", &cy_root), ("a5", &dee_root)] {
+        certs.insert(a.into(), (vec![c.clone()], vec![]));
+    }
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 1, members(true, false))], certs.clone()));
+
+    let mut d =
+        arugulad!("narrowreaders").no_provider().no_tailscale().env_remove("ARUGULA_FEATURES").wait_secs(30).start();
+    d.stop();
+    let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let mut daemon_cert = Cert::new(&daemon, "a1", Kind::Daemon, "box");
+    daemon_cert.sign_with(&alex);
+    *f.certs.lock().unwrap() = vec![alex_root.clone(), daemon_cert.clone()];
+    let saved = json!({
+        "url": url, "trust": { "account": "a1", "root": alex_root.device }, "cert": daemon_cert,
+        "certs": [alex_root], "revocations": [], "login": "alex",
+        "team": TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: alex_root.device.clone() },
+    });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    d.start();
+
+    let first = &d.get("/api/panes")[0];
+    let (closing, sid) = (first["id"].as_u64().unwrap(), first["session"].as_u64().unwrap());
+    let open = d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }))["pane"].as_u64().unwrap();
+    let (closing_t, open_t) = (closing.to_string(), open.to_string());
+    let cy = Some(vec!["a3".to_owned()]);
+    d.wait_for("cy reads both panes", || newest(&f, "pane", &closing_t) == cy && newest(&f, "pane", &open_t) == cy);
+    d.post(&format!("/api/panes/{closing}/close"), json!({}));
+    d.wait_for("the closed pane held", || held_panes(&f).contains(&closing_t));
+
+    // Dee joins the team and Eve is shared the session (which nudges the
+    // daemon to read the roster): the open pane is theirs, the closed one
+    // isn't. Every send works out the closed pane's list again, so a wider
+    // one would have gone with it.
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 2, members(true, true))], certs.clone()));
+    d.post(
+        "/api/acl",
+        json!({ "session": sid, "principal": "account:a9", "name": "eve", "role": "viewer", "history": true,
+                "root": DeviceKeys::generate().id() }),
+    );
+    d.wait_for("dee and eve on the open pane", || {
+        newest(&f, "pane", &open_t).is_some_and(|l| l.contains(&"a5".to_owned()) && l.contains(&"a9".to_owned()))
+    });
+    assert_eq!(newest(&f, "pane", &closing_t), cy, "nobody new reads the closed pane");
+
+    // Cy leaves the team: the closed pane goes from him too.
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 3, members(false, true))], certs.clone()));
+    d.post("/api/acl", json!({ "session": sid, "principal": "account:a9", "role": null }));
+    d.wait_for("cy off the closed pane", || newest(&f, "pane", &closing_t) == Some(vec![]));
+    assert_eq!(newest(&f, "pane", &open_t), Some(vec!["a5".to_owned()]));
+
+    // Back in the team, he reads the open pane again and not the closed
+    // one: taken off it is for good.
+    *f.team.lock().unwrap() = Some((vec![roster(&alex, 4, members(true, true))], certs));
+    d.post(
+        "/api/acl",
+        json!({ "session": sid, "principal": "account:a9", "name": "eve", "role": "viewer", "history": true,
+                "root": DeviceKeys::generate().id() }),
+    );
+    d.wait_for("cy back on the open pane", || {
+        newest(&f, "pane", &open_t).is_some_and(|l| l.contains(&"a3".to_owned()))
+    });
+    assert_eq!(newest(&f, "pane", &closing_t), Some(vec![]), "cy back on the closed pane");
 }
 
 /// A Cloud workspace of team `t1`'s project, whose founder Alex (`a1`)

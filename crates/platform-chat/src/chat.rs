@@ -29,6 +29,10 @@
 //!   and only while control would route them to the machine at all
 //!   (`HubPort::may_reach`). Before the machine has said, its owner and, for
 //!   a team's machine, the team's owners. The machine's owner always reads.
+//!   A list the machine no longer holds (it says which it holds) is
+//!   emptied. While the machine can't say, its last lists stand: they
+//!   don't age out, so a team's machine asleep overnight doesn't take its
+//!   threads from the team.
 //!
 //! - an archive (an old conversation a machine brought in, M124, until
 //!   the import went, native #203): its members, each from when they
@@ -3136,11 +3140,22 @@ async fn chat_machine(app: &Platform, d: Machine) -> Result<(String, String), Ap
     Ok((machine, row.account))
 }
 
-fn check_reader_lists(lists: &[ChatReaderList]) -> Result<(), ApiError> {
+fn check_reader_lists(b: &ChatReaders) -> Result<(), ApiError> {
+    let lists = &b.targets;
     if lists.len() > wire::MAX_READER_TARGETS
         || lists.iter().any(|t| t.readers.len() > wire::MAX_READERS || !valid_target(&t.target))
     {
         return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads of 500 readers each, by their ids"));
+    }
+    if b.seq.is_some_and(|n| i64::try_from(n).is_err()) {
+        return Err(err(StatusCode::BAD_REQUEST, "a post's number is at most 2^63 - 1"));
+    }
+    if let Some(h) = &b.held
+        && (h.panes.len() > wire::MAX_HELD
+            || h.sessions.len() > wire::MAX_HELD
+            || !h.panes.iter().chain(&h.sessions).all(|t| valid_target(t)))
+    {
+        return Err(err(StatusCode::BAD_REQUEST, "at most 20000 panes and 20000 sessions held, by their ids"));
     }
     // An object's thread is its project's members', never a machine's say.
     if lists.iter().any(|t| t.kind == wire::ChatTargetKind::Object) {
@@ -3158,10 +3173,35 @@ fn target_kind(k: wire::ChatTargetKind) -> &'static str {
     }
 }
 
-/// Keep a machine's reader lists; the rooms they change.
-fn store_readers(app: &Platform, machine: &str, lists: &[ChatReaderList]) -> anyhow::Result<Vec<String>> {
+/// What a post changed: whether any list did, and the rooms of those that
+/// did (a thread nobody has opened has none).
+#[derive(Default)]
+struct ListsChanged {
+    any: bool,
+    rooms: Vec<String>,
+}
+
+impl ListsChanged {
+    fn list(&mut self, app: &Platform, kind: &str, machine: &str, target: &str) -> anyhow::Result<()> {
+        self.any = true;
+        if let Some(r) = app.db.chat_room_for(kind, machine, target)? {
+            self.rooms.push(r.id);
+        }
+        Ok(())
+    }
+}
+
+/// Keep a machine's reader lists from its post numbered `seq`.
+fn store_readers(
+    app: &Platform,
+    machine: &str,
+    lists: &[ChatReaderList],
+    seq: Option<u64>,
+    changed: &mut ListsChanged,
+) -> anyhow::Result<()> {
     let now = now_ms();
-    let mut rooms = Vec::new();
+    let ids: Vec<&str> = lists.iter().map(|t| t.target.as_str()).collect();
+    let stored = app.db.chat_reader_rows(machine, &ids)?;
     for t in lists {
         let kind = target_kind(t.kind);
         let mut readers: Vec<wire::ChatReader> = Vec::new();
@@ -3170,31 +3210,78 @@ fn store_readers(app: &Platform, machine: &str, lists: &[ChatReaderList]) -> any
                 readers.push(r.clone());
             }
         }
-        app.db.set_chat_readers(machine, kind, &t.target, &readers, now)?;
-        if let Some(r) = app.db.chat_room_for(kind, machine, &t.target)? {
-            rooms.push(r.id);
+        let had = stored.get(&(kind.to_owned(), t.target.clone()));
+        // Not written: a newer post's list stands.
+        if app.db.put_chat_readers(machine, kind, &t.target, &readers, now, seq)?
+            && !had.is_some_and(|(l, _)| *l == readers)
+        {
+            changed.list(app, kind, machine, &t.target)?;
         }
     }
-    Ok(rooms)
+    Ok(())
+}
+
+/// A machine said which targets it still has lists for: every other list
+/// it has here is emptied (only the machine's owner reads those threads
+/// then), whether the machine closed the pane long ago or forgot it. A
+/// list is never dropped, which would let the team's owners back in
+/// (`target_sight`). Only lists that aren't empty already are looked at.
+fn drop_unheld(
+    app: &Platform,
+    machine: &str,
+    held: &wire::ChatTargetsHeld,
+    named: &[ChatReaderList],
+    seq: Option<u64>,
+    changed: &mut ListsChanged,
+) -> anyhow::Result<()> {
+    use std::collections::HashSet;
+    let panes: HashSet<&str> = held.panes.iter().map(String::as_str).collect();
+    let sessions: HashSet<&str> = held.sessions.iter().map(String::as_str).collect();
+    let named: HashSet<(&str, &str)> = named.iter().map(|t| (target_kind(t.kind), t.target.as_str())).collect();
+    let now = now_ms();
+    for (kind, target) in app.db.chat_readers_listed(machine)? {
+        let holds = match kind.as_str() {
+            "pane" => panes.contains(target.as_str()),
+            "session" => sessions.contains(target.as_str()),
+            _ => true,
+        };
+        if holds || named.contains(&(kind.as_str(), target.as_str())) {
+            continue;
+        }
+        // Not written: a newer post named it.
+        if app.db.put_chat_readers(machine, &kind, &target, &[], now, seq)? {
+            changed.list(app, &kind, machine, &target)?;
+        }
+    }
+    Ok(())
 }
 
 /// `POST /api/daemon/chat/readers`: a machine says who may read the threads
 /// on its panes and sessions (decision 2). Each list it names replaces the
-/// last; control still routes nobody it wouldn't anyway (`target_sight`).
+/// last, and with `held` the lists it no longer has are emptied, unless a
+/// newer post (`seq`) said otherwise; control still routes nobody it
+/// wouldn't anyway (`target_sight`). Rooms hear of lists that changed.
 pub async fn daemon_readers(
     State(app): State<Arc<Platform>>,
     d: Machine,
     Json(b): Json<ChatReaders>,
 ) -> J<ChatReadersStored> {
     let (machine, _) = chat_machine(&app, d).await?;
-    check_reader_lists(&b.targets)?;
+    check_reader_lists(&b)?;
     app.limits.check_daemon(CHAT_READERS, &machine)?;
-    let rooms = store_readers(&app, &machine, &b.targets)?;
-    app.chat.changed_everywhere(&app.db);
-    for r in rooms {
+    let mut changed = ListsChanged::default();
+    store_readers(&app, &machine, &b.targets, b.seq, &mut changed)?;
+    if let Some(held) = &b.held {
+        drop_unheld(&app, &machine, held, &b.targets, b.seq, &mut changed)?;
+    }
+    if changed.any {
+        app.chat.changed_everywhere(&app.db);
+    }
+    for r in changed.rooms {
         app.chat.room(&app.db, &r);
     }
-    Ok(Json(ChatReadersStored { stored: b.targets.len() }))
+    let seq = app.db.chat_readers_seq(&machine)?;
+    Ok(Json(ChatReadersStored { stored: b.targets.len(), seq }))
 }
 
 /// `PUT /api/daemon/chat/mention-state`: a machine's daemon says its

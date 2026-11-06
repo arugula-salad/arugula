@@ -41,6 +41,11 @@ pub trait People: Send + Sync + Debug {
     fn as_owner(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
     fn team_people(&self) -> Vec<Principal>;
+    /// Whether the team's roster is known here yet (a machine in no team
+    /// knows it has none), so who of the team reads what can be said.
+    fn roster_known(&self) -> bool {
+        true
+    }
 }
 
 /// The Claude Code conversations on this machine (#146).

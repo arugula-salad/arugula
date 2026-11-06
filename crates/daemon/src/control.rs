@@ -4022,6 +4022,11 @@ impl crate::mux::People for Control {
     fn team_people(&self) -> Vec<Principal> {
         Control::team_people(self)
     }
+
+    /// Known unless this machine is a team's and has no roster from it yet.
+    fn roster_known(&self) -> bool {
+        self.enrolled().is_none_or(|e| e.saved.team().is_none_or(|t| t.roster.is_some()))
+    }
 }
 
 #[cfg(test)]
