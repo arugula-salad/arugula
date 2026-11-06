@@ -231,6 +231,7 @@ function Page({ client }: { client: Client }) {
         setQuery={setQuery}
         groups={groups}
         keyOf={(r) => r.id}
+        previewOn="click"
         onOpen={(r) => void open(r)}
         notice={
           error && (

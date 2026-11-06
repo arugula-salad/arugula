@@ -253,6 +253,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         setQuery={setQuery}
         groups={groupsOf(shown, narrowed)}
         keyOf={(r) => r.doc.id}
+        previewOn="click"
         onOpen={(r) => go(docPath(r))}
         status={status}
         row={(r) => {

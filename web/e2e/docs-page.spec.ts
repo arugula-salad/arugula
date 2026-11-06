@@ -281,6 +281,42 @@ test.describe("the list", () => {
     await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
   });
 
+  test("sweeping the pointer down the list changes nothing and reads nothing; a click shows the Doc", async ({ page }) => {
+    await seed(page);
+    const head = page.locator("[data-list-preview] .list-preview-head h2");
+    await expect(head).toHaveText("Long plan");
+    await expect(page.locator("[data-list-preview] .list-preview-words")).toContainText("Opening of the plan.");
+    const reads: string[] = [];
+    page.on("request", (r) => {
+      if (/\/api\/docs\/[^/]+\/(content|preview)/.test(r.url())) reads.push(r.url());
+    });
+    // Slowly, with longer on each row than the old hover took to preview it.
+    for (const title of ["Short note", "Long plan", "Short note"]) {
+      const b = (await row(page, title).boundingBox())!;
+      await page.mouse.move(b.x + 20, b.y + b.height / 2, { steps: 6 });
+      await page.waitForTimeout(400);
+      await expect(row(page, title)).toBeVisible();
+    }
+    await expect(head).toHaveText("Long plan");
+    await expect(page.locator('[data-doc][aria-selected="true"]')).toContainText("Long plan");
+    expect(reads).toEqual([]);
+    // A click shows it, and a second click on it asks for nothing more.
+    await row(page, "Short note").click();
+    await expect(head).toHaveText("Short note");
+    await expect(page.locator("[data-list-preview] .list-preview-words")).toContainText("The opening line of the note.");
+    expect(reads.length).toBeGreaterThan(0);
+    const after = reads.length;
+    await row(page, "Short note").click();
+    await page.waitForTimeout(300);
+    expect(reads.length).toBe(after);
+    // The keys still move it, and a double click opens it.
+    await page.keyboard.press("ArrowUp");
+    await expect(head).toHaveText("Long plan");
+    await row(page, "Short note").dblclick();
+    await expect(page.locator("[data-docs-page]")).toHaveCount(0);
+    await expect(page.locator("[data-doc-block]")).toHaveCount(2);
+  });
+
   test("↑↓ and j/k move, Enter opens, / searches and Esc clears", async ({ page }) => {
     await seed(page);
     const selected = page.locator('[data-doc][aria-selected="true"]');

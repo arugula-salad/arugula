@@ -201,6 +201,24 @@ test("/docs puts a person's private Docs first, and keeps them from the team", a
   // The first row is selected, and its whole Doc is on the right.
   const preview = alice.locator("[data-list-preview]");
   await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
+  // Sweeping the pointer over the rows leaves the first Doc, and reads none;
+  // a click shows the one clicked (Arugula #657).
+  const head = preview.locator(".list-preview-head h2");
+  await expect(head).toHaveText("Private notes");
+  const reads: string[] = [];
+  alice.on("request", (r) => {
+    if (/\/docs\/pdc_/.test(r.url())) reads.push(r.url());
+  });
+  for (const title of ["Team roadmap", "Private notes", "Team roadmap"]) {
+    const b = (await alice.locator("[data-list-rows] [data-doc]", { hasText: title }).boundingBox())!;
+    await alice.mouse.move(b.x + 20, b.y + b.height / 2, { steps: 6 });
+    await alice.waitForTimeout(400);
+  }
+  await expect(head).toHaveText("Private notes");
+  expect(reads).toEqual([]);
+  await alice.locator("[data-list-rows] [data-doc]", { hasText: "Team roadmap" }).click();
+  await expect(head).toHaveText("Team roadmap");
+  await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
   await alice.locator("[data-list-count=shared]").click();
   await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
   await preview.locator("[data-open-doc]").click();
