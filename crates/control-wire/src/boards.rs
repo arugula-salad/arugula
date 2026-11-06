@@ -2122,7 +2122,7 @@ pub fn render(view: &BoardView) -> String {
         .ready
         .iter()
         .filter_map(|id| view.zones.iter().flat_map(|z| &z.rows).find(|r| &r.id == id))
-        .map(|r| r.pointer.label())
+        .map(Row::item_label)
         .collect();
     if !ready.is_empty() {
         out += &format!("{}\n", fit(&format!("Ready ({}): {}", ready.len(), ready.join(", ")), TEXT_WIDTH));
@@ -2882,7 +2882,7 @@ Done: People can sign up.
     }
 
     /// A blocked row says what blocks it (or that it can't say), and the
-    /// ready set is a line of the rows that can start; only `blocks` gates.
+    /// ready set is a line of the rows that can start, by `#N`; only `blocks` gates.
     #[test]
     fn the_text_says_what_blocks_a_row_and_what_is_ready() {
         let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
@@ -2893,11 +2893,25 @@ Done: People can sign up.
         ];
         let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
         free.id = "row_f".into();
+        free.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 8,
+            title: "Design".into(),
+            assignees: vec![],
+            labels: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
         let text = render(&v);
         assert!(text.contains("blocked by #7 · blocked by something you can't see"), "{text}");
-        assert!(text.contains("Ready (1): iss_free"), "{text}");
+        assert!(text.contains("Ready (1): #8"), "{text}");
         assert!(!text.contains("Ready (2)"), "{text}");
         assert!(RelationKind::Blocks.blocks_ready());
         assert!(
