@@ -572,7 +572,7 @@ impl Db {
         } else {
             // As `clones_done` says it of what's kept.
             " AND NOT (setup_status IS NOT NULL AND (setup_status <> 'setting_up'
-                 OR (COALESCE(setup_step, '') NOT IN ('', 'start') AND COALESCE(setup_step, '') NOT LIKE 'clone %')))"
+                 OR (COALESCE(setup_step, '') NOT IN ('', 'start') AND substr(COALESCE(setup_step, ''), 1, 6) <> 'clone ')))"
         };
         Ok(self.c().execute(
             &format!(

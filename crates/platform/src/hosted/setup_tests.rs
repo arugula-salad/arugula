@@ -336,3 +336,30 @@ async fn a_box_clones_a_linked_repo_with_a_token_of_its_own() {
     assert_eq!(plan.repos[0].via, "github_app");
     assert!(app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().is_none(), "the old box");
 }
+
+/// Whether a kept step is done cloning follows `clones_done` exactly, case
+/// and all: a step `CLONE app` isn't one of the box's clone steps, so it's
+/// done cloning, and a report back to `clone app` isn't kept.
+#[tokio::test]
+async fn a_kept_step_is_done_cloning_as_the_box_says_it() {
+    use arugula_control_wire::hosted::clones_done;
+    let (hub, _fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "alice", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    drive(&app, now_ms()).await;
+    assert!(clones_done(SetupStatus::SettingUp, "CLONE app"));
+    let upper = report(SetupStatus::SettingUp, "CLONE app", "");
+    assert!(app.hosted_setup(&project, &id, "hosted-machine-1", &upper).await.unwrap());
+    let back = report(SetupStatus::SettingUp, "clone app", "");
+    assert!(!app.hosted_setup(&project, &id, "hosted-machine-1", &back).await.unwrap());
+    assert_eq!(show(&base, &project, &id).await["setup"]["step"], "CLONE app");
+    // A step that is one of its clones is still cloning: the next is kept.
+    let w2 = make(&base, "alice", &project, "dev2").await.1;
+    let id2 = w2["id"].as_str().unwrap().to_owned();
+    drive(&app, now_ms()).await;
+    for step in ["start", "clone app", "clone lib"] {
+        let r = report(SetupStatus::SettingUp, step, "");
+        assert!(app.hosted_setup(&project, &id2, "hosted-machine-2", &r).await.unwrap(), "{step}");
+    }
+}
