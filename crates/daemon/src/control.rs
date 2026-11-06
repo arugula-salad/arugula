@@ -1227,6 +1227,10 @@ pub struct Control {
     /// `control.json`'s stamp as [`Control::reload`] last read it, taken
     /// before the read: where the watcher starts from.
     loaded: std::sync::Mutex<Option<std::time::SystemTime>>,
+    /// `control.json` is there and couldn't be read at the last
+    /// [`Control::reload`]: whether this machine is a team's, and who's in
+    /// it, isn't known.
+    unreadable: std::sync::atomic::AtomicBool,
     /// Bumped whenever the trusted set changes: open channels re-check
     /// their device and close if it's gone.
     pub changed: watch::Sender<u64>,
@@ -1558,6 +1562,7 @@ impl Control {
             unsaved: Default::default(),
             now: RwLock::new(None),
             loaded: Default::default(),
+            unreadable: Default::default(),
             changed: watch::channel(0).0,
             direct_urls,
             default_url,
@@ -2303,9 +2308,13 @@ impl Control {
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
             Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents())))
         }) {
-            Ok(n) => n,
+            Ok(n) => {
+                self.unreadable.store(false, std::sync::atomic::Ordering::SeqCst);
+                n
+            }
             Err(e) => {
                 warn!(error = %e, "can't read the control enrollment; ignoring it");
+                self.unreadable.store(true, std::sync::atomic::Ordering::SeqCst);
                 None
             }
         };
@@ -4023,9 +4032,37 @@ impl crate::mux::People for Control {
         Control::team_people(self)
     }
 
-    /// Known unless this machine is a team's and has no roster from it yet.
+    /// Known unless this machine is a team's and has no roster from it
+    /// yet, or its enrollment can't be read.
     fn roster_known(&self) -> bool {
-        self.enrolled().is_none_or(|e| e.saved.team().is_none_or(|t| t.roster.is_some()))
+        match self.enrolled() {
+            Some(e) => e.saved.team().is_none_or(|t| t.roster.is_some()),
+            None => !self.unreadable.load(std::sync::atomic::Ordering::SeqCst),
+        }
+    }
+
+    /// The members of this machine's team, and of teams sessions were
+    /// shared with (with the team), kept out only because their team is
+    /// locked: everyone but its owners.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
+        let Some(e) = self.enrolled() else { return Vec::new() };
+        let out_of = |r: &Roster, team: Option<&String>| -> Vec<(String, Option<String>)> {
+            r.members
+                .iter()
+                .filter(|m| m.role != TeamRole::Owner)
+                .map(|m| (format!("account:{}", m.account), team.cloned()))
+                .collect()
+        };
+        let mut out = Vec::new();
+        if let Some(t) = e.saved.team().filter(|t| t.locked)
+            && let Some(r) = &t.roster
+        {
+            out.extend(out_of(r, None));
+        }
+        for (team, t) in e.saved.shared_teams.iter().filter(|(_, t)| t.locked) {
+            out.extend(out_of(&t.roster, Some(team)));
+        }
+        out
     }
 }
 
