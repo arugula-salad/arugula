@@ -298,7 +298,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
   };
   return (
     <SideSheet
-      class="ws-att"
+      class={waiting || items.length ? "ws-att" : "ws-att ws-att-quiet"}
       title="Needs you"
       subtitle={`${waiting ? `${waiting} waiting` : "nothing waiting"}${items.length > waiting ? `, ${items.length - waiting} failed` : ""}`}
       close={() => closeAttention()}

@@ -1,11 +1,11 @@
-// The question about usage counts (the telemetry track): a dialog (#690), so
-// it is answered or put off before another opens. Control's page asks for the
+// The question about usage counts (the telemetry track): a card in the
+// corner, not a dialog (#690), so nothing waits on it: no backdrop, no focus
+// trap, and the page under it stays usable. Its title and footer are the
+// dialogs' (15/600; buttons.css order, Cancel first). Control's page asks for the
 // account (M104, ./account-telemetry.tsx); the machine's web client
 // asks for the machine (M103, shell/ui/machine-telemetry.tsx), with its own
 // words and the machine's preview under *What's sent*. Closing it without
 // answering asks again on the next load.
-
-import { Modal } from "./modal";
 
 export function TelemetryCard({
   about,
@@ -22,29 +22,22 @@ export function TelemetryCard({
   later: () => void;
 }) {
   return (
-    <Modal
-      class="telemetry-card"
-      title="Help improve Arugula?"
-      close={later}
-      x={false}
-      root={{ "data-telemetry-card": true }}
-      buttons={
-        <>
-          <button class="secondary" data-telemetry-no onClick={() => answer(false)}>
-            No thanks
-          </button>
-          <button class="primary" data-telemetry-yes onClick={() => answer(true)}>
-            Yes, send them
-          </button>
-        </>
-      }
-    >
+    <section class="telemetry-card" role="region" aria-label="Help improve Arugula?" data-telemetry-card>
       <button class="modal-close" aria-label="Not now" title="Not now" onClick={later}>
         ×
       </button>
+      <h2>Help improve Arugula?</h2>
       <p>{about}</p>
       {preview !== undefined && <TelemetryPreview preview={preview} />}
-    </Modal>
+      <div class="prompt-buttons">
+        <button class="secondary" data-telemetry-no onClick={() => answer(false)}>
+          No thanks
+        </button>
+        <button class="primary" data-telemetry-yes onClick={() => answer(true)}>
+          Yes, send them
+        </button>
+      </div>
+    </section>
   );
 }
 

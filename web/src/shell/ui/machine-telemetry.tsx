@@ -16,9 +16,8 @@
 //   machine's answer is yes. Control's page sends its own to control (M104),
 //   never here, so no view counts twice.
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { dialogUp, Modal, subscribeDialogs } from "../../shared/ui/modal";
-import { greetingDue } from "./welcome";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import { OPS, opPath } from "../ops";
@@ -154,8 +153,6 @@ export function MachineTelemetryLayer() {
     listeners.add(fn);
     return () => listeners.delete(fn);
   });
-  useSubscribe(subscribeDialogs);
-  const up = useRef(false);
   if (dialog)
     return (
       <MachineTelemetrySettings
@@ -168,12 +165,7 @@ export function MachineTelemetryLayer() {
       />
     );
   const c = followed;
-  const want = !!c && mayAsk() && !!info && info.why === "not_asked" && !later && !automated() && owner(c);
-  // The card is a dialog (#690): one at a time. It waits for another that's up,
-  // and for Getting started on the load that opens it; once up it stays.
-  const wait = !up.current && (dialogUp() || (!!c && greetingDue(c) && !navigator.webdriver));
-  up.current = want && !wait;
-  if (!c || !info || !up.current) return null;
+  if (!c || !mayAsk() || !info || info.why !== "not_asked" || later || automated() || !owner(c)) return null;
   return (
     <TelemetryCard
       about={ABOUT}

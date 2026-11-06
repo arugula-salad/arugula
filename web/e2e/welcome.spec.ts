@@ -50,12 +50,6 @@ test("opens once on first run, a step at a time, then from the account menu", as
   await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
   await expect(page.locator(".session-button")).toBeVisible();
   await expect(panel).toBeHidden();
-  // The machine's usage question is a dialog (#690): it waited for Getting
-  // started on the first load, and asks now. Put away, it asks again next load.
-  const ask = page.getByRole("dialog", { name: "Help improve Arugula?" });
-  await expect(ask).toBeVisible();
-  await ask.getByRole("button", { name: "Not now" }).click();
-  await expect(ask).toHaveCount(0);
 
   // Always in Settings, from the start.
   await settingsRow(page, "Getting started");

@@ -168,6 +168,18 @@ test("the attention drawer, on a desktop: Escape and the backdrop close it, and 
   const box = (await drawer.boundingBox())!;
   expect(Math.round(box.x + box.width)).toBe(1000);
   expect(Math.round(box.width)).toBe(440);
+  // The backdrop is drawn over the panes: what is at a terminal's centre is the backdrop, not the terminal.
+  const backdrop = page.locator("[data-side-sheet-backdrop]");
+  await expect(backdrop).toBeVisible();
+  const pane = (await page.locator(".pane").first().boundingBox())!;
+  const bb = (await backdrop.boundingBox())!;
+  expect(bb.x).toBeLessThanOrEqual(pane.x);
+  expect(bb.y).toBeLessThanOrEqual(pane.y);
+  expect(bb.x + bb.width).toBeGreaterThanOrEqual(pane.x + pane.width);
+  expect(bb.y + bb.height).toBeGreaterThanOrEqual(pane.y + pane.height);
+  const x = Math.min(pane.x + pane.width / 2, box.x - 20);
+  const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.hasAttribute("data-side-sheet-backdrop"), [x, pane.y + pane.height / 2]);
+  expect(top).toBe(true);
 
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);

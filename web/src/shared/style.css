@@ -3194,7 +3194,8 @@ button.att {
 
 /* Every dialog's title, one size: they were 15, 16 and 20px (UI audit
  * #174). Each dialog's own rule keeps only its margin. */
-.prompt h2 {
+.prompt h2,
+.telemetry-card h2 {
   font-size: var(--text-lg);
   font-weight: 600;
 }
@@ -3204,10 +3205,27 @@ button.att {
   line-height: 1.45;
 }
 
-/* The usage counts question (shared/ui/telemetry-card.tsx): a Modal, a little
-   wider than the one-line prompt. */
+/* The usage counts question (shared/ui/telemetry-card.tsx): a card in the
+   corner, over the page but not in its way. */
 .telemetry-card {
+  position: fixed;
+  z-index: 60;
+  right: 16px;
+  bottom: 16px;
   width: min(380px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: var(--panel-radius);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.telemetry-card h2 {
+  margin: 0 0 8px;
+}
+
+.telemetry-card p {
+  margin: 6px 0;
+  line-height: 1.45;
 }
 
 /* *What's sent* (M103): the next report as JSON, folded away. */
@@ -11101,6 +11119,10 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
    subtitle, its note the foot's. */
 .ws-att .side-sheet-sub {
   color: var(--warn);
+}
+
+.ws-att-quiet .side-sheet-sub {
+  color: var(--dim);
 }
 
 .ws-att .side-sheet-body {
