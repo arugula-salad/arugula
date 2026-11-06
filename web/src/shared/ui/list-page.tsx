@@ -100,6 +100,10 @@ export interface ListPageProps<T> {
   keyOf: (item: T) => string;
   row: (item: T) => ListRowParts;
   preview: (item: T) => ComponentChildren;
+  /** What shows a row's preview: the pointer resting on it (the default), or
+   * only a click, for a preview that's costly to draw (a Doc). The keys move
+   * the selection either way. */
+  previewOn?: "hover" | "click";
   /** Enter, or a double click. */
   onOpen: (item: T) => void;
   /** Where the divider's position is kept. */
@@ -141,7 +145,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -266,7 +270,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
 
   const hovered = (key: string, e: PointerEvent) => {
     // A form in the preview's place stays, so what's under the pointer can't show.
-    if (e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
+    if (previewOn === "click" || e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
     clearTimeout(hover.current);
     hover.current = setTimeout(() => {
       if (performance.now() - keyed.current > KEYS_HOLD_MS) setPicked(key);
