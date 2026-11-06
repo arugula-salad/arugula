@@ -231,11 +231,14 @@ test.describe("the list", () => {
     return { short, big };
   };
 
-  test("a row shows its opening and its shape, and a long Doc's is longer", async ({ page }) => {
+  test("a row is one line with its shape, and a long Doc's is longer", async ({ page }) => {
     await seed(page);
     const big = row(page, "Long plan");
-    await expect(row(page, "Short note")).toContainText("The opening line of the note.");
-    await expect(big).toContainText("Opening of the plan.");
+    // The opening isn't under the title; the row is one line, not the 52px it was with it.
+    await expect(row(page, "Short note").locator(".list-row-detail")).toBeHidden();
+    await expect(row(page, "Short note")).not.toContainText("The opening line of the note.");
+    await expect(big).not.toContainText("Opening of the plan.");
+    expect((await row(page, "Short note").boundingBox())!.height).toBeLessThan(40);
     const w = async (t: string) => (await row(page, t).locator("[data-doc-shape]").boundingBox())!.width;
     expect(await w("Long plan")).toBeGreaterThan(await w("Short note"));
     // Its section with a figure is drawn as one, and only that one.
@@ -330,6 +333,10 @@ test.describe("the list", () => {
     await seed(page);
     await page.locator("[data-list-search]").fill("risks");
     await expect(page.locator("[data-doc]")).toHaveCount(2);
+    // The opening isn't drawn on the row, but a search still finds it.
+    await page.locator("[data-list-search]").fill("opening line of the note");
+    await expect(page.locator("[data-doc]")).toHaveCount(1);
+    await expect(row(page, "Short note")).toBeVisible();
     await page.locator("[data-list-search]").fill("nothing like this");
     await expect(page.locator("[data-docs-none]")).toContainText("No Doc's title");
   });

@@ -99,23 +99,7 @@ function Shape({ sections }: { sections: ProjectDocSection[] }) {
   );
 }
 
-/** The first written section's first line of prose, plain. */
-function openingOf(sections: ProjectDocSection[]): string {
-  for (const s of sections) {
-    for (const line of s.body?.split("\n") ?? []) {
-      const t = line.trim();
-      if (!t || t.startsWith("```") || t.startsWith("#") || t.startsWith("|")) continue;
-      return t
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-        .replace(/^([>*+-]|\d+\.)\s+/, "")
-        .replace(/[*_`]/g, "")
-        .slice(0, 200);
-    }
-  }
-  return "";
-}
-
-/** The Docs the page has read whole, by Doc and its rev: their opening and shape. */
+/** The Docs the page has read whole, by Doc and its rev: their shape and headings. */
 const read = new Map<string, ProjectDocSection[]>();
 const readKey = (d: ProjectDoc) => `${d.id}:${d.rev}`;
 
@@ -149,7 +133,7 @@ function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<str
       document.removeEventListener("visibilitychange", back);
     };
   }, [key]);
-  // Each Doc is read whole, a few at a time, for its opening and shape.
+  // Each Doc is read whole, a few at a time, for its headings and shape.
   useEffect(() => {
     if (!lists) return;
     let live = true;
@@ -260,7 +244,6 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
           return {
             title: <span data-doc-title>{r.doc.title}</span>,
             age: <Time at={r.doc.updated_at} title="Updated" />,
-            detail: s ? openingOf(s) : "",
             mark: s ? <Shape sections={s} /> : undefined,
             attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },
           };

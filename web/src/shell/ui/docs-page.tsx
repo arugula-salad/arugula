@@ -263,7 +263,6 @@ function Page({ client }: { client: Client }) {
             </>
           ),
           age: <Time at={r.updated} title="Updated" />,
-          detail: r.summary,
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
