@@ -1000,6 +1000,8 @@ button.att {
 
 .sheet-item.sheet-pane.current {
   border-left-color: var(--accent);
+  /* The 2px guide line is the bar's first 2px: 1px more makes it 3. */
+  box-shadow: inset 1px 0 0 var(--accent), var(--selected-edge);
 }
 
 /* Pressed on the selected row keeps the selection: a deeper tint. */
