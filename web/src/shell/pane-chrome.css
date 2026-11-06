@@ -251,14 +251,16 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   padding: 12px 16px;
   border-top: 1px solid var(--line);
 }
-.pane-tip-never {
+.prompt .pane-tip-never {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-right: auto;
   color: var(--dim);
   font-size: var(--text-sm);
+  font-weight: 400;
 }
+.pane-tip-never input { margin: 0; padding: 0; }
 
 /* A narrow or short panel: tighter type and spacing. */
 @container (max-width: 340px) or (max-height: 320px) {
@@ -270,5 +272,5 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   .pane-tip ul { margin-bottom: 6px; }
   .pane-tip > .prompt-buttons { gap: 4px; padding: 6px 10px; }
   .pane-tip > .prompt-buttons button { padding: 3px 8px; font-size: var(--text-sm); }
-  .pane-tip-never { font-size: var(--text-xs); }
+  .prompt .pane-tip-never { font-size: var(--text-xs); }
 }
