@@ -54,13 +54,17 @@ runs:
         APT::Sandbox::User "root";
         EOF
         echo "dir=$dir" >> "$GITHUB_OUTPUT"
+        # The runner's image, from its environment: a composite action's env
+        # context has only what a workflow set.
+        echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+        echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
         echo "playwright=$(node -p 'require("./web/node_modules/@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v4
       if: steps.debs.outputs.dir != ''
       with:
         path: ${{ steps.debs.outputs.dir }}/*.deb
-        key: browser-debs-${{ env.ImageOS }}-${{ steps.debs.outputs.playwright }}-${{ env.ImageVersion }}
-        restore-keys: browser-debs-${{ env.ImageOS }}-
+        key: browser-debs-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.playwright }}-${{ steps.debs.outputs.image }}
+        restore-keys: browser-debs-${{ steps.debs.outputs.os }}-
     - name: Playwright's browsers
       shell: bash
       run: just browsers
