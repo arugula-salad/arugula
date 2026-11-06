@@ -203,6 +203,21 @@ pub const AGENT_PROJECT_RELATIONS: &str = "/api/daemon/projects/{project}/relati
 /// `DELETE`: an agent takes off a relation its own machine made.
 pub const AGENT_PROJECT_RELATION: &str = "/api/daemon/projects/{project}/relations/{relation}";
 
+/// `POST` [`LinkBatch`]: an agent adds and removes up to [`LINKS_MAX`] links
+/// between items of the project (`issues.write`), each on its own; answered
+/// [`LinksDone`], one outcome for each. A reference may be `#N`,
+/// `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id.
+pub const AGENT_PROJECT_RELATIONS_BATCH: &str = "/api/daemon/projects/{project}/relations/batch";
+
+/// The most links one [`AGENT_PROJECT_RELATIONS_BATCH`] takes, added and
+/// removed together.
+pub const LINKS_MAX: usize = 50;
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`] for `project`.
+pub fn agent_project_relations_batch(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/relations/batch")
+}
+
 /// [`PROJECT_RELATIONS`] for `project`.
 pub fn project_relations(project: &str) -> String {
     format!("/api/projects/{project}/relations")
@@ -1274,7 +1289,8 @@ pub struct AnsweredAsk {
 
 /// What an edge between two work items says (Arugula #403). Only `blocks`
 /// gates: it keeps the blocked item's row out of the ready set until the
-/// blocker is closed.
+/// blocker is closed. `before` (#761) says an order and gates nothing; it
+/// can't close a cycle with `blocks` edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationKind"))]
@@ -1287,6 +1303,9 @@ pub enum RelationKind {
     DuplicateOf,
     /// The first item was found while working on the second.
     DiscoveredFrom,
+    /// The first item comes before the second, in the order the work is
+    /// done in.
+    Before,
 }
 
 impl RelationKind {
@@ -1296,6 +1315,7 @@ impl RelationKind {
             RelationKind::Relates => "relates",
             RelationKind::DuplicateOf => "duplicate_of",
             RelationKind::DiscoveredFrom => "discovered_from",
+            RelationKind::Before => "before",
         }
     }
 
@@ -1305,6 +1325,7 @@ impl RelationKind {
             "relates" => RelationKind::Relates,
             "duplicate_of" => RelationKind::DuplicateOf,
             "discovered_from" => RelationKind::DiscoveredFrom,
+            "before" => RelationKind::Before,
             _ => return None,
         })
     }
@@ -1360,6 +1381,64 @@ pub struct NewRelation {
     pub from: String,
     pub to: String,
     pub kind: RelationKind,
+}
+
+/// One link of a [`LinkBatch`]: `from` is `kind` `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkEnds"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkEnds {
+    pub from: String,
+    pub to: String,
+    pub kind: RelationKind,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkBatch"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkBatch {
+    #[serde(default)]
+    pub add: Vec<LinkEnds>,
+    #[serde(default)]
+    pub remove: Vec<LinkEnds>,
+}
+
+/// What became of one link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkOutcome"))]
+#[serde(rename_all = "snake_case")]
+pub enum LinkOutcome {
+    Added,
+    AlreadyThere,
+    Removed,
+    NotThere,
+    /// Not done; `why` says.
+    Refused,
+}
+
+/// One link's outcome, in the order it was given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkResult"))]
+pub struct LinkResult {
+    pub outcome: LinkOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of
+/// `add` and of `remove`, in order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinksDone"))]
+pub struct LinksDone {
+    pub add: Vec<LinkResult>,
+    pub remove: Vec<LinkResult>,
 }
 
 /// An edge made, as [`PROJECT_RELATIONS`] answers it.

@@ -1201,6 +1201,107 @@
       },
       "type": "object"
     },
+    "LinkBatch": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s body.",
+      "properties": {
+        "add": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "LinkEnds": {
+      "additionalProperties": false,
+      "description": "One link of a [`LinkBatch`]: `from` is `kind` `to`.",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "LinkOutcome": {
+      "description": "What became of one link.",
+      "oneOf": [
+        {
+          "enum": [
+            "added",
+            "already_there",
+            "removed",
+            "not_there"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Not done; `why` says.",
+          "type": "string"
+        }
+      ]
+    },
+    "LinkResult": {
+      "description": "One link's outcome, in the order it was given.",
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/LinkOutcome"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "LinksDone": {
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of\n`add` and of `remove`, in order.",
+      "properties": {
+        "add": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "add",
+        "remove"
+      ],
+      "type": "object"
+    },
     "Live": {
       "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
       "properties": {
@@ -1957,7 +2058,7 @@
       ]
     },
     "RelationKind": {
-      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
       "oneOf": [
         {
           "enum": [
@@ -1978,6 +2079,11 @@
         {
           "const": "discovered_from",
           "description": "The first item was found while working on the second.",
+          "type": "string"
+        },
+        {
+          "const": "before",
+          "description": "The first item comes before the second, in the order the work is\ndone in.",
           "type": "string"
         }
       ]

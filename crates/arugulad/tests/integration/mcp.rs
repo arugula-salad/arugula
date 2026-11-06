@@ -2823,8 +2823,6 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 #[derive(Clone, Default)]
 struct FakeBoards {
     calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
-    /// Whether #31 blocks #12's row: it shows the relation and leaves the Ready line.
-    related: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(feature = "labs")]
@@ -2880,22 +2878,13 @@ async fn fake_boards(f: FakeBoards) -> String {
             .into_response(),
             ("GET", "/api/daemon/boards/brd_1") => {
                 let mut v = view();
-                if f.related.load(std::sync::atomic::Ordering::SeqCst) {
-                    v["zones"][0]["rows"][0]["relations"] = json!([{ "id": "rel_1", "kind": "blocks", "direction": "in",
-                        "source": "agent", "item": "fi_31", "removable": true }]);
-                } else {
-                    v["ready"] = json!(["row_1"]);
-                }
+                v["ready"] = json!(["row_1"]);
                 Json(v).into_response()
             }
-            ("POST", "/api/daemon/projects/prj_1/relations") => {
-                f.related.store(true, std::sync::atomic::Ordering::SeqCst);
-                Json(json!({ "id": "rel_1" })).into_response()
-            }
-            ("DELETE", "/api/daemon/projects/prj_1/relations/rel_1") => {
-                f.related.store(false, std::sync::atomic::Ordering::SeqCst);
-                Json(json!({})).into_response()
-            }
+            ("POST", "/api/daemon/projects/prj_1/relations/batch") => Json(json!({
+                "add": [{ "outcome": "added" }, { "outcome": "refused", "why": "that would make a cycle" }],
+                "remove": [{ "outcome": "not_there" }] }))
+            .into_response(),
             ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
                 let mut v = view();
                 if b["title"].is_string() {
@@ -3237,8 +3226,6 @@ async fn an_agent_reads_and_writes_a_board() {
             "link_doc",
             "unlink_doc",
             "ask",
-            "relate",
-            "unrelate",
             "note",
             "group",
             "drop",
@@ -3306,20 +3293,22 @@ async fn an_agent_reads_and_writes_a_board() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
-    // Relate as an agent sends it: #31 blocks #12, so #12's row leaves the Ready line; `to` as a list of one
-    // is taken too.
-    let relate = json!({ "kind": "relate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": "#12" });
-    let related = call(&s, "board_write", relate).await;
-    let text = related["summary"].as_str().unwrap();
-    assert!(text.contains("Related: #31 blocks #12.") && text.contains("0 ready."), "{related}");
-    let unrelated = call(
+    // Link as an agent sends it: no board, `kind` left out is before. One refused link doesn't stop the rest.
+    let linked = call(
         &s,
-        "board_write",
-        json!({ "kind": "unrelate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": ["#12"] }),
+        "link",
+        json!({ "add": [{ "from": "#31", "to": "#12" }, { "from": "#12", "to": "#31" }],
+                "remove": [{ "from": "#31", "to": "#12", "kind": "blocks" }] }),
     )
     .await;
-    let text = unrelated["summary"].as_str().unwrap();
-    assert!(text.contains("Took off the relation between #31 and #12.") && text.contains("1 ready."), "{unrelated}");
+    let text = linked["summary"].as_str().unwrap();
+    assert!(
+        text.contains("added: #31 before #12\nrefused: #12 before #31 (that would make a cycle)")
+            && text.contains("not there: #31 blocks #12\n3 link(s): 1 added, 1 not there, 1 refused."),
+        "{linked}"
+    );
+    let sent = fake.calls.lock().unwrap().iter().find(|(at, _)| at.ends_with("/relations/batch")).cloned().unwrap();
+    assert_eq!(sent.1["add"][0], json!({ "from": "#31", "to": "#12", "kind": "before" }), "{sent:?}");
     call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,

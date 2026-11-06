@@ -5,8 +5,8 @@
 //!
 //! - An edge is stored once: the same (from, to, kind) is a conflict, and so
 //!   is the other way round for the kinds that read both ways.
-//! - An item never relates to itself, and `blocks` edges never close a
-//!   cycle. Both are checked inside the project's lock, so two edges added
+//! - An item never relates to itself, and `blocks` and `before` edges
+//!   (together) never close a cycle. Both are checked inside the project's lock, so two edges added
 //!   together can't make one.
 //! - An edge from Plane or GitHub (`source`) is read from there and set by
 //!   the mirror ([`Db::plane_relations_set`]); Arugula never deletes it.
@@ -75,6 +75,14 @@ pub struct NewRelation<'a> {
     pub agent: Option<&'a str>,
 }
 
+/// What [`Db::relation_put`] did.
+pub enum Put {
+    /// A new edge.
+    Made(RelRow),
+    /// The id of the one stored already.
+    There(String),
+}
+
 /// Lock the project, so edges added together are checked one after the other.
 fn lock(c: &impl Sql, project: &str) -> Result<bool> {
     let found: Option<String> = c
@@ -83,16 +91,17 @@ fn lock(c: &impl Sql, project: &str) -> Result<bool> {
     Ok(found.is_some())
 }
 
-/// Whether `target` can be reached from `start` along `blocks` edges (from
-/// blocker to blocked). `None`: the walk was longer than [`WALK_MAX`].
+/// Whether `target` can be reached from `start` along `blocks` and `before`
+/// edges (from the first item to the second). `None`: the walk was longer than [`WALK_MAX`].
 fn reaches(c: &impl Sql, start: &str, target: &str) -> Result<Option<bool>> {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::from([start.to_owned()]);
     let mut frontier = vec![start.to_owned()];
     while let Some(at) = frontier.pop() {
-        let next: Vec<String> =
-            c.query_map("SELECT to_id FROM work_relations WHERE kind = 'blocks' AND from_id = ?1", params![at], |r| {
-                r.get(0)
-            })?;
+        let next: Vec<String> = c.query_map(
+            "SELECT to_id FROM work_relations WHERE kind IN ('blocks', 'before') AND from_id = ?1",
+            params![at],
+            |r| r.get(0),
+        )?;
         for n in next {
             if n == target {
                 return Ok(Some(true));
@@ -111,13 +120,28 @@ fn reaches(c: &impl Sql, start: &str, target: &str) -> Result<Option<bool>> {
 impl Db {
     /// Store an edge of `project`. Refused for an edge to itself, one that
     /// is stored already (either way round, for a kind that reads both
-    /// ways), and a `blocks` edge that would close a cycle.
+    /// ways), and a `blocks` or `before` edge that would close a cycle.
     pub fn relation_add(
         &self,
         project: &str,
         n: &NewRelation<'_>,
         at: u64,
     ) -> Result<std::result::Result<RelRow, Refused>> {
+        Ok(match self.relation_put(project, n, at)? {
+            Ok(Put::Made(r)) => Ok(r),
+            Ok(Put::There(_)) => Err(Refused::Conflict("that relation is there already".to_owned())),
+            Err(r) => Err(r),
+        })
+    }
+
+    /// [`Db::relation_add`], but an edge that is stored already is not a
+    /// refusal: it is [`Put::There`].
+    pub fn relation_put(
+        &self,
+        project: &str,
+        n: &NewRelation<'_>,
+        at: u64,
+    ) -> Result<std::result::Result<Put, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, project)? {
@@ -135,21 +159,21 @@ impl Db {
                 |r| r.get(0),
             )
             .optional()?;
-        if there.is_some() {
-            return Ok(Err(Refused::Conflict("that relation is there already".to_owned())));
+        if let Some(id) = there {
+            return Ok(Ok(Put::There(id)));
         }
-        if n.kind == RelationKind::Blocks {
+        if matches!(n.kind, RelationKind::Blocks | RelationKind::Before) {
             match reaches(&tx, n.to, n.from)? {
                 Some(false) => {}
                 Some(true) => {
                     return Ok(Err(Refused::Conflict(
-                        "that would make a cycle: the second item blocks the first, directly or through others"
+                        "that would make a cycle: the second item is before or blocks the first, directly or through others"
                             .to_owned(),
                     )));
                 }
                 None => {
                     return Ok(Err(Refused::Unprocessable(
-                        "too many blocking relations to check for a cycle".to_owned(),
+                        "too many ordering relations to check for a cycle".to_owned(),
                     )));
                 }
             }
@@ -185,7 +209,20 @@ impl Db {
             created_at: at,
         };
         tx.commit()?;
-        Ok(Ok(row))
+        Ok(Ok(Put::Made(row)))
+    }
+
+    /// The edge of `project` from `from` to `to` of `kind`, if stored.
+    pub fn relation_between(&self, project: &str, from: &str, to: &str, kind: RelationKind) -> Result<Option<RelRow>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {COLS} FROM work_relations WHERE project_id = ?1 AND from_id = ?2 AND to_id = ?3 AND kind = ?4"
+                ),
+                params![project, from, to, kind.as_str()],
+                rel_row,
+            )
+            .optional()
     }
 
     /// One edge of a project.

@@ -3036,7 +3036,7 @@ path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+note = "Relates two items of the project (Arugula #403): blocks, before, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a cycle of blocks and before edges are 409."
 
 [[route]]
 method = "DELETE"
@@ -3431,6 +3431,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Relates two items of the project for a machine's agent (Arugula #403): needs `issues.write` over the project (403 without), the owner's role is the ceiling, and the edge says an agent made it."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/relations/batch"  # wire::boards::AGENT_PROJECT_RELATIONS_BATCH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Adds and removes up to 50 links between items of the project for a machine's agent (Arugula #761), each on its own, and answers what became of every one: added, already there, removed, not there, or refused with why. Needs `issues.write` over the project (403 without). A reference is `#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id. A cycle of `before` and `blocks` links is refused; only links this machine's agents made come off."
 
 [[route]]
 method = "DELETE"

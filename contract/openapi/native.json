@@ -11696,7 +11696,7 @@
         ]
       },
       "RelationKind": {
-        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
         "oneOf": [
           {
             "enum": [
@@ -11717,6 +11717,11 @@
           {
             "const": "discovered_from",
             "description": "The first item was found while working on the second.",
+            "type": "string"
+          },
+          {
+            "const": "before",
+            "description": "The first item comes before the second, in the order the work is\ndone in.",
             "type": "string"
           }
         ]
