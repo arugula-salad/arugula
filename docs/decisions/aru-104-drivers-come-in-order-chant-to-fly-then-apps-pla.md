@@ -65,3 +65,13 @@ criterion that a planter app reaches `*.apps.arugula.io`. Until then,
 planter's Prod and Go live keep their own approval.
 Where: the drivers (Arugula #16, #17 and #18, M220–M222, native).
 From: #1317 (platform step 7), the plan in #1290, #1121.
+
+**Since (lex00, 2026-11-06).** Arugula's own release doesn't go through the
+chant to Fly driver. The binaries and the desktop app are cut by lane and
+published with `chant release publish` (#1986, #1995). Control and the
+platform are a chant release cut on each `v*` tag and deployed by
+`chant run --components --release` in GitHub Actions, with no approval gate
+(#1983, #2067), as the tag's deploy jobs ran before. The `arugula-release`
+driver (M221) stops deploying them then. The chant to Fly driver stays for
+the deploys Arugula's users run, with chant planning first and the passkey
+signing chant's gate statement (#1985, #2071).
