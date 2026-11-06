@@ -14,6 +14,7 @@ import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
+import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
@@ -121,6 +122,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it.
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A Doc of this machine's, beside it (#703).
+    ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
