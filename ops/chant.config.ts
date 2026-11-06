@@ -8,6 +8,4 @@ export default {
   lexicons: ["fly"],
   environments: ["prod"],
   release: { lane: "server" },
-  // control's mount names its volume by id (src/fly/control/control.fly.ts).
-  lint: { rules: { FLY011: "off" } },
 } satisfies ChantConfig;

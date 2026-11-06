@@ -1147,12 +1147,17 @@ Fly, in `ops/src/`.
 - `platform`: arugula-platform's two Machines (`shy-snowflake-5940`, which
   `fly-release` releases and verifies, and `dawn-tree-5447`, which takes
   the same image in the same apply). It deploys with every release. The
-  apply waits for each Machine to start, one after the other, but not for
-  its Fly checks as `fly deploy` did (INTENTIUS/chant#4719).
+  apply rolls them one at a time on their Fly checks, as `fly deploy` did:
+  each must pass `/platform.json` before the next is updated
+  (`checks`, INTENTIUS/chant#4719). Before it, the job checks that the app
+  has the `ARUGULA_PLATFORM_DATABASE_URL` secret and no public address
+  (`flyctl secrets list` and `flyctl ips list`, names only), and deploys
+  nothing when either fails.
 - `platform-dump`: the nightly dump's scheduled Machine ("The nightly
   dump"), on `packaging/platform-dump`'s image around the release's
   `arugula-platform`. It runs after the platform, under the same
-  release. It's updated and left stopped.
+  release. It's updated and left stopped. A failure here is a warning and
+  fails nothing, as before.
 - `control`: the hub's Machine (`throbbing-surf-5942`). The hub holds every
   relayed terminal and a deploy drops them all, so it deploys only when
   something it's built from changed since the release production runs it
@@ -1161,10 +1166,14 @@ Fly, in `ops/src/`.
   (the platform's too, which it runs in process) less their tests, `web/`'s
   sources less the specs, `editors/nvim`, the manifests and lock files, the
   toolchain and build scripts, the `justfile`, `packaging/control`, the
-  release workflow and the component's own files. chant also compares the
-  plan it deploys (`dist/control.fly.json`). A release bump's version
-  numbers count as a change for now (INTENTIUS/chant#4718), so a
-  daemon release between two server releases deploys the hub.
+  release workflow, `scripts/release` and the component's own files. chant
+  also compares the plan it deploys (`dist/control.fly.json`). Version
+  numbers alone don't count: chant compares each changed `Cargo.toml` and
+  `Cargo.lock` after `scripts/release blank`, which writes every arugula
+  crate's version as `@V@` (`inputs.normalize`, INTENTIUS/chant#4718), so
+  a daemon-, docs- or desktop-only release leaves the hub alone. Its mount
+  names the `control_data` volume, which chant resolves to its id
+  (`vol_r68lmz2doox9myd4`) at apply time (INTENTIUS/chant#4717).
 
 Each Machine's config is declared in `ops/src/fly/`, as `fly.toml` and
 `fly deploy` left it, with no image: the release hands the image over, so
@@ -1180,7 +1189,11 @@ and `just server-release <sha>` for another green commit:
 1. `build`: the commit's `just static-server x86_64`, on the home
    cloud's runner. On a tag the commit is the tag's, when it has a
    `ci/green-server/<sha>` tag; otherwise, and by hand, it's the newest on
-   main with one (`chant ci last-green --lane server`).
+   main with one (`chant ci last-green --lane server`). Before it builds,
+   `scripts/release stamp` writes a daemon release's version into the
+   checkout, as release.yml's builds do: the tag's on its own commit, else
+   the newest `v*` tag the commit has. The binaries report it, and the
+   platform picks a workspace's E2B template by it.
 2. `images`: `packaging/control`'s, `packaging/platform`'s and
    `packaging/platform-dump`'s images around those binaries, pushed to
    Fly's registry as `server-<run>` (and `dump-server-<run>`), handed on by
@@ -1191,14 +1204,27 @@ and `just server-release <sha>` for another green commit:
    checks the commit is on main with a `ci/green-server` tag and no
    `ci/revoked-server` one, and records the release on `chant/lifecycle`.
    The job's summary lists what's in it (`chant release candidates`).
-4. `platform`: `chant run --components platform-dump,platform --env prod
-   --release server-<run>` (`scripts/ci-server-deploy`), with the
-   platform's token.
+4. `platform`: the preflight above, then `chant run --components platform
+   --env prod --release server-<run>` (`scripts/ci-server-deploy`), with
+   the platform's token, then the same for `platform-dump`.
 5. `control`: the same for `control`, with the hub's token, once the
    platform's job has passed. A skip says so in the log ("inputs
    unchanged since the deploy prod runs"), and chant records it with
    `unchangedSince`. The workflow's `deploy-unchanged` input deploys the
-   hub whatever changed.
+   hub whatever changed. Deployed or not, the job then checks that
+   `https://control.arugula.io/control.json` answers as control.
+
+**A release that doesn't come up healthy goes back.** `fly-release` waits
+for each Machine's Fly checks after its update (five minutes at most) and
+verifies the release; if either fails, it puts back the config each Machine
+it changed had before, the last one changed first, each waiting for its
+checks, and the job fails. That replaced `scripts/ci-fly-rollback` (#2203).
+Going back can fail too: an older build refuses a migration that isn't
+additive, and then the app needs a person.
+
+**One release at a time,** and an older one doesn't take production back: a
+re-run of an older run's deploy job finds a newer `server-<run>` in prod
+(`chant components status prod`) and deploys nothing.
 
 **What runs where:** `chant release list` (in `ops/`) lists the releases
 and where each runs; `chant components status prod` lists what each
@@ -1211,10 +1237,9 @@ release's, so chant's ledger names the release before it until the next
 one. Don't run one while a release's job is deploying: they don't wait
 for each other.
 
-**Rolling back:** release an older green commit (`just server-release
-<sha>`). chant's
-`fly-rollback` puts back a Machine config it recorded for an earlier
-release, which is how a failed release restores itself.
+**Rolling back by hand:** release an older green commit (`just
+server-release <sha>`). It's a new run with a higher number, so the check
+above lets it through.
 
 ### Releasing Arugula as a deploy (M221)
 
@@ -3069,8 +3094,8 @@ backs it up.
     M2=$(fly machine list -a arugula-platform --json | jq -r --arg m "$M" '.[] | select(.config.metadata.fly_process_group == "app" and .id != $m) | .id')
     ```
 
-    From here CI deploys both machines, rolling. `ci-platform-deploy`
-    allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
+    From here a release deploys both machines, rolling on their checks.
+    Its preflight allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
 
 11. **The hub through Flycast** (one hub restart; relay sockets reconnect
     by themselves):
@@ -3264,7 +3289,7 @@ arugula's `.infisical.json` is):
    T=$(fly status -a arugula-platform --json | jq -r '[.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag] | unique | .[]')
    echo "$T"                                     # one tag, e.g. v0.60.11
    (cd packaging/platform && fly deploy --image "registry.fly.io/arugula-platform:$T" --ha=false --no-public-ips)
-   scripts/ci-platform-deploy check "$T"         # every app machine on $T, checks passing
+   fly status -a arugula-platform                # every app machine on $T, checks passing
    ```
 
    If the deploy stops partway (one machine replaced, the other not), run

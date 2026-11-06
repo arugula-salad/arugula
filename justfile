@@ -921,7 +921,8 @@ macos cmd="tools" *args:
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
-# the hosted template's supervision of arugulad (M258); its templates, one
+# a server release's preflight and its older-release guard
+# (scripts/ci-server-deploy); the hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
 # binaries.yml's gate on pull requests that change CI (#304);
 # and the flaky tests' quarantine (.config/quarantine.toml): its script,
@@ -945,6 +946,7 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/release-notes.sh
+    scripts/tests/server-deploy.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh

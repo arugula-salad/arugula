@@ -8,26 +8,127 @@
 #                    LABEL`, with FLAGs (--deploy-unchanged) passed on.
 #
 # chant writes its pending fact, its release records and any skip to
-# chant/lifecycle, and pushes it with the checkout's credentials.
+# chant/lifecycle, and pushes it with the checkout's credentials. Its
+# fly-release step rolls the Machines on their Fly checks and puts back the
+# config each had when the release doesn't come up healthy, and the job
+# fails either way (ops/src/*.component.ts).
+#
+# Around it, what scripts/ci-control-deploy and scripts/ci-platform-deploy
+# did before (#1983):
+# - a release older than the one a component runs (a re-run of an older
+#   release's job) leaves it alone: labels are server-<run number>;
+# - before the platform deploys, arugula-platform must have the
+#   ARUGULA_PLATFORM_DATABASE_URL secret (it's Postgres only) and no public
+#   address (`flyctl`, names only, never values);
+# - after the hub's run, deployed or skipped, control.json must answer as
+#   control.
 set -euo pipefail
 components=${1:?usage: ci-server-deploy COMPONENTS LABEL [FLAG...]}
 label=${2:?usage: ci-server-deploy COMPONENTS LABEL [FLAG...]}
 shift 2
 [ -n "${FLY_API_TOKEN:-}" ] || { echo "::error::FLY_API_TOKEN isn't set: nothing was deployed"; exit 1; }
+chant=${ARUGULA_SERVER_CHANT:-npx chant}
+flyctl=${ARUGULA_SERVER_FLYCTL:-flyctl}
+platform_app=arugula-platform
+control_url=https://control.arugula.io
 
 summary() {
   [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '%s\n' "$@" >>"$GITHUB_STEP_SUMMARY"
 }
 
+has() { [[ ",$components," == *",$1,"* ]]; }
+
+# The run number in a server-<run> label, or nothing.
+run_of() { [[ $1 =~ ^server-([0-9]+)$ ]] && echo "${BASH_REMATCH[1]}"; }
+
+# newer: prints which of COMPONENTS runs a newer release in prod than
+# LABEL, or nothing: `chant release list` says which components of each
+# release run in each environment. What can't be read says nothing, and the
+# run goes on.
+newer() {
+  local mine list
+  mine=$(run_of "$label") || return 0
+  list=$($chant release list --json 2>/dev/null) || return 0
+  jq -r --argjson mine "$mine" --arg cs "$components" '
+    ($cs | split(",")) as $want
+    | [.releases[]? | select(.label | test("^server-[0-9]+$"))
+       | (.label | ltrimstr("server-") | tonumber) as $n | select($n > $mine)
+       | .label as $l | .environments[]? | select(.env == "prod")
+       | .components[]? | select(. as $c | $want | index($c)) | "\(.) runs \($l)"]
+    | first // empty' <<<"$list" 2>/dev/null || true
+}
+
+# The platform is Postgres only (packaging/platform/fly.toml sets
+# ARUGULA_PLATFORM_REQUIRE_POSTGRES): without ARUGULA_PLATFORM_DATABASE_URL
+# among its secrets it has no database to start on, so it isn't deployed.
+# Fly lists secrets' names, never their values; if it won't list them, say
+# so and go on.
+postgres() {
+  local names
+  if ! names=$($flyctl secrets list -a "$platform_app" --json 2>/dev/null | jq -r '.[] | (.Name // .name)'); then
+    echo "::warning::fly wouldn't list $platform_app's secrets to check it's on Postgres"
+    return 0
+  fi
+  if ! grep -qx ARUGULA_PLATFORM_DATABASE_URL <<<"$names"; then
+    echo "::error::$platform_app has no ARUGULA_PLATFORM_DATABASE_URL secret: it's Postgres only, with no volume for a SQLite file. Nothing was deployed. docs/control-ops.md, \"Two platform machines\"."
+    return 1
+  fi
+}
+
+# The platform has no public address: Flycast needs only a private IPv6. A
+# public one would put its service on the internet, so a deploy stops until
+# it's released (fly ips release ADDRESS -a arugula-platform).
+private() {
+  local ips
+  if ! ips=$($flyctl ips list -a "$platform_app" --json 2>/dev/null); then
+    echo "::warning::fly wouldn't list $platform_app's addresses to check none is public"
+    return 0
+  fi
+  if jq -e '[.[] | select((.Type // .type) != "private_v6")] | length > 0' <<<"$ips" >/dev/null; then
+    echo "::error::$platform_app has a public address: $(jq -r '[.[] | select((.Type // .type) != "private_v6") | (.Address // .address)] | join(", ")' <<<"$ips"). Release it (fly ips release ADDRESS -a $platform_app); only a private IPv6 belongs there. Nothing was deployed."
+    return 1
+  fi
+}
+
+# control.json answers as control, through Fly's proxy, a few tries.
+answers() {
+  local _
+  for _ in $(seq 1 "${ARUGULA_DEPLOY_CHECK_TRIES:-6}"); do
+    if curl -fsS --max-time 10 "$control_url/control.json" | jq -e '.control == true' >/dev/null 2>&1; then
+      echo "$control_url/control.json answers as control"
+      return 0
+    fi
+    sleep "${ARUGULA_DEPLOY_CHECK_WAIT:-10}"
+  done
+  echo "::error::$control_url/control.json didn't answer as control after the release's run"
+  return 1
+}
+
+# What runs where is on chant/lifecycle; a CI checkout has it only as
+# origin's.
+git fetch -q origin chant/lifecycle:chant/lifecycle 2>/dev/null || true
+
+if why=$(newer) && [ -n "$why" ]; then
+  echo "::notice::$why, newer than $label: $components not deployed"
+  summary "### $components: not deployed" "" "$why, newer than \`$label\`."
+  exit 0
+fi
+
+if has platform; then
+  postgres || exit 1
+  private || exit 1
+fi
+
 rc=0
-npx chant run --components "$components" --env prod --release "$label" "$@" || rc=$?
-case $rc in
-  0)
-    summary "### $components: release $label runs in prod" "" \
-      "\`chant components status prod\` lists what each runs; a component whose inputs didn't change kept its release, and its record says since when (\`unchangedSince\`)."
-    ;;
-  *)
-    echo "::error::chant run --components $components exited $rc: see above"
-    exit "$rc"
-    ;;
-esac
+$chant run --components "$components" --env prod --release "$label" "$@" || rc=$?
+if [ "$rc" != 0 ]; then
+  echo "::error::chant run --components $components exited $rc: see above"
+  summary "### $components: release $label failed" "" \
+    "When fly-release had changed a Machine, it put back the config each one it changed had before. The log says what failed and what was restored."
+  exit "$rc"
+fi
+summary "### $components: release $label runs in prod" "" \
+  "\`chant components status prod\` lists what each runs; a component whose inputs didn't change kept its release, and the log above says since when (\`unchangedSince\`)."
+if has control; then
+  answers
+fi

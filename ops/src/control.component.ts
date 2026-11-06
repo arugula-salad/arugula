@@ -6,7 +6,15 @@
 // release deploys it only when something it's built from changed since the
 // release production runs it from (`inputs`, INTENTIUS/chant#4695; this
 // replaced scripts/ci-hub-changed). The plan, dist/control.fly.json, is
-// compared too, whether listed or not. `--deploy-unchanged` deploys it anyway.
+// compared too, whether listed or not. A version number alone isn't a
+// change: the manifests and lock files are compared after `scripts/release
+// blank`, which writes every arugula crate's version as @V@
+// (INTENTIUS/chant#4718). `--deploy-unchanged` deploys it anyway.
+//
+// `fly-release` waits for the Machine's Fly check (/control.json) after the
+// update and verifies it, and puts the config it replaced back if either
+// fails (INTENTIUS/chant#4719), so a hub that doesn't come up healthy goes
+// back to the release before it, as scripts/ci-fly-rollback did.
 import { phase, type Component } from "@intentius/chant/components/component";
 
 // Every crate arugula-control compiles (it runs the platform in process, so
@@ -59,8 +67,8 @@ export const control: Component = {
       ":(top,exclude,glob)web/scripts/perf-*",
       // control's build.rs serves editors/nvim as a git repository.
       ":(top)editors/nvim",
-      // How the binary and its image are built. A release bump's version
-      // numbers count here too (INTENTIUS/chant#4718).
+      // How the binary and its image are built. Version numbers alone don't
+      // count (`normalize`, below).
       ":(top)Cargo.toml",
       ":(top)Cargo.lock",
       ":(top)server/Cargo.toml",
@@ -72,6 +80,8 @@ export const control: Component = {
       ":(top)scripts/zig-cc-musl",
       ":(top)scripts/zig-ar",
       ":(top)scripts/server-cargo",
+      // The normalizer itself: a change to how versions are blanked deploys.
+      ":(top)scripts/release",
       ":(top).github/actions/setup",
       ":(top).github/workflows/server-release.yml",
       ":(top)justfile",
@@ -79,6 +89,20 @@ export const control: Component = {
       // Its own steps and Machine.
       "src/control.component.ts",
       "src/fly/control",
+    ],
+    // Each changed manifest or lock file is read at both commits and compared
+    // after this, so a release's version numbers alone leave the hub alone.
+    normalize: [
+      {
+        paths: [
+          ":(top)Cargo.toml",
+          ":(top)Cargo.lock",
+          ":(top)server/Cargo.toml",
+          ":(top)server/Cargo.lock",
+          ":(top,glob)crates/*/Cargo.toml",
+        ],
+        command: "scripts/release blank {path}",
+      },
     ],
   },
   deploy: [
@@ -91,6 +115,9 @@ export const control: Component = {
         image: "@Image.uri",
         digest: "@Image.digest",
         verify: { url: "https://control.arugula.io", healthPath: "/control.json" },
+        // Wait for the Machine's Fly checks after the update, five minutes
+        // at most, and restore it when they don't pass.
+        checks: true,
       },
     ]),
   ],

@@ -17,9 +17,15 @@ import {
   MachineServiceCheck,
   MachineServiceConcurrency,
   StopConfig,
+  Volume,
 } from "@intentius/chant-lexicon-fly";
 
 export const controlApp = new App({ name: "illogical-control", org_slug: "jake-gaylor" });
+
+// The hub's SQLite database (Litestream replicates it). It exists already
+// (vol_r68lmz2doox9myd4, made with the app): an apply finds it by name and
+// leaves it alone, and creates it only in an app that has none.
+export const controlData = new Volume({ name: "control_data", region: "ewr", size_gb: 10, encrypted: true });
 
 export const control = new Machine({
   name: "throbbing-surf-5942",
@@ -41,11 +47,10 @@ export const control = new Machine({
       PRIMARY_REGION: "ewr",
     },
     guest: new MachineGuest({ cpu_kind: "shared", cpus: 1, memory_mb: 1024 }),
-    // control_data (10 GB, encrypted), by its id: Fly's Machines API takes a
-    // volume's id here, and chant passes a declared Volume's name as it is
-    // (INTENTIUS/chant#4717). So no Volume is declared, and FLY011 is
-    // off (chant.config.ts) until chant resolves the name.
-    mounts: [new MachineMount({ volume: "vol_r68lmz2doox9myd4", name: "control_data", path: "/data" })],
+    // By name: chant looks the volume's id up at apply time, the volume
+    // already attached to this Machine (INTENTIUS/chant#4717). The plan keeps
+    // the name, so it's the same bytes whichever id the name resolves to.
+    mounts: [new MachineMount({ volume: "control_data", name: "control_data", path: "/data" })],
     restart: new MachineRestart({ policy: "on-failure", max_retries: 10 }),
     // On a stop, control lets Litestream sync one last time (up to 10 s).
     stop_config: new StopConfig({ signal: "SIGTERM", timeout: "15s" }),
