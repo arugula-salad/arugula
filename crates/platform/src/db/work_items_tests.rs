@@ -567,6 +567,9 @@ fn an_export_links_only_the_issue_its_send_opened() {
                 // A resend of it, or of another draft of the issue, is refused.
                 let blocked = db.export_blocked(&d, hour * 2).unwrap().unwrap();
                 assert!(blocked.contains(&format!("it may be on GitHub as {url}")), "{blocked}");
+                // Nothing links it later, so it promises no link, and says
+                // what discarding costs.
+                assert!(blocked.contains("can't be linked") && blocked.contains("second GitHub issue"), "{blocked}");
             }
             None => assert_eq!((state.as_str(), origin.is_some()), ("sent", true), "{url}"),
         }
