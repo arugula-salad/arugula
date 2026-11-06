@@ -1,12 +1,11 @@
 /* The new-channel dialog, the channel browser, the group-DM picker and the
-   member tools (./members.tsx). Palette tokens only; the dialogs sit on the
-   shell's .prompt. */
+   member tools (./members.tsx). Palette tokens only; the dialogs are Modals. */
 
-.members-dialog {
+/* The dialog is a Modal (shared/ui/modal.tsx), which scrolls itself; the
+   fields sit in the body between its title and its buttons. */
+.members-body {
   display: grid;
   gap: 12px;
-  max-height: 70vh;
-  overflow-y: auto;
 }
 
 .members-dialog small {

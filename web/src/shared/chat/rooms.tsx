@@ -17,6 +17,7 @@ import { bellFor, openBell } from "./bell";
 import { loadNotify, subscribeNotify } from "./notify";
 import type { ChatRoom } from "../proto";
 import { MaintenanceNote } from "../ui/maintenance-note";
+import { Modal } from "../ui/modal";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
@@ -30,7 +31,6 @@ import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
 import { browseChannels, ChatDialogs, LeaveButton, leaveItem, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
-import { handled } from "./escape";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
@@ -774,52 +774,47 @@ function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean
     if (r) api.nav.openRoom(r.id);
   };
   return (
-    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="chat-switcher" role="dialog" aria-label="Jump to a room" data-chat-switcher>
-        <input
-          ref={input}
-          placeholder="Jump to…"
-          value={q}
-          onInput={(e) => {
-            setQ((e.target as HTMLInputElement).value);
-            setPick(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              handled(e);
-              close();
-            } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    <Modal bare close={close} label="Jump to a room" class="picker palette chat-switcher" root={{ "data-chat-switcher": "" }}>
+      <input
+        ref={input}
+        placeholder="Jump to…"
+        value={q}
+        onInput={(e) => {
+          setQ((e.target as HTMLInputElement).value);
+          setPick(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            go(list[pick]);
+          }
+        }}
+      />
+      <ul role="listbox">
+        {list.map((r, i) => (
+          <li
+            key={r.id}
+            role="option"
+            aria-selected={i === pick}
+            class={`${i === pick ? "picked" : ""}${r.unread ? " unread" : ""}`}
+            onMouseDown={(e) => {
               e.preventDefault();
-              if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
-            } else if (e.key === "Enter") {
-              e.preventDefault();
-              go(list[pick]);
-            }
-          }}
-        />
-        <ul role="listbox">
-          {list.map((r, i) => (
-            <li
-              key={r.id}
-              role="option"
-              aria-selected={i === pick}
-              class={`${i === pick ? "picked" : ""}${r.unread ? " unread" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                go(r);
-              }}
-            >
-              <span class="chat-sigil">{roomSigil(r)}</span>
-              <span class="chat-label">{roomLabel(r, api)}</span>
-              {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
-              {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
-              {r.unread ? <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count> : null}
-            </li>
-          ))}
-          {list.length === 0 && <li class="chat-none">No room matches.</li>}
-        </ul>
-      </div>
-    </div>
+              go(r);
+            }}
+          >
+            <span class="chat-sigil">{roomSigil(r)}</span>
+            <span class="chat-label">{roomLabel(r, api)}</span>
+            {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
+            {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
+            {r.unread ? <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count> : null}
+          </li>
+        ))}
+        {list.length === 0 && <li class="chat-none">No room matches.</li>}
+      </ul>
+    </Modal>
   );
 }
 

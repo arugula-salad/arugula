@@ -9,8 +9,8 @@ import type { ChatStore } from "../chat-store";
 import { usePlatformApi, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { ConfirmRemove } from "../ui/confirm";
 import type { MenuItem } from "../ui/menu";
+import { Modal } from "../ui/modal";
 import { MsgAvatar } from "./avatar";
-import { closeOnEscape } from "./escape";
 import "./members.css";
 
 /** The most people in one DM, me included: control's `DM_PEOPLE`. */
@@ -47,16 +47,12 @@ export function ChatDialogs() {
   const d = open;
   const close = () => show(null);
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label={dialogTitle(d)} onPointerDown={(e) => e.target === e.currentTarget && close()}>
+    <>
       {d.kind === "channel" && <NewChannel d={d} close={close} />}
       {d.kind === "browse" && <Browser d={d} close={close} />}
       {d.kind === "dm" && <NewDm d={d} close={close} />}
-    </div>
+    </>
   );
-}
-
-function dialogTitle(d: Dialog): string {
-  return d.kind === "channel" ? "New channel" : d.kind === "browse" ? "Browse channels" : "New direct message";
 }
 
 function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; close: () => void }) {
@@ -65,10 +61,21 @@ function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; clo
   const [priv, setPriv] = useState(false);
   const [busy, setBusy] = useState(false);
   return (
-    <form
-      class="prompt members-dialog"
-      aria-label={`New channel in ${d.name}`}
-      data-new-channel
+    <Modal
+      title={`New channel in ${d.name}`}
+      class="members-dialog"
+      close={close}
+      root={{ "data-new-channel": "" }}
+      buttons={
+        <>
+          <button class="secondary" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={busy || !name.trim()}>
+            Create
+          </button>
+        </>
+      }
       onSubmit={async (e) => {
         e.preventDefault();
         if (!name.trim() || busy) return;
@@ -83,39 +90,33 @@ function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; clo
         }
       }}
     >
-      <label>
-        New channel in {d.name}
-        <input autoFocus value={name} placeholder="one word, like general" data-new-channel-name onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
-      </label>
-      <label>
-        Topic (optional)
-        <input value={topic} placeholder="what it's for" onInput={(e) => setTopic((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
-      </label>
-      <div class="members-kind" role="radiogroup" aria-label="Who can find it">
-        <label class="members-radio">
-          <input type="radio" name="members-kind" checked={!priv} data-new-channel-public onChange={() => setPriv(false)} />
-          <span>
-            <b>Public</b>
-            <small>Anyone in {d.name} can find it and join.</small>
-          </span>
+      <div class="members-body">
+        <label>
+          Name
+          <input autoFocus value={name} placeholder="one word, like general" data-new-channel-name onInput={(e) => setName((e.target as HTMLInputElement).value)} />
         </label>
-        <label class="members-radio">
-          <input type="radio" name="members-kind" checked={priv} data-new-channel-private onChange={() => setPriv(true)} />
-          <span>
-            <b>Private</b>
-            <small>Only people you add see it; it isn't listed.</small>
-          </span>
+        <label>
+          Topic (optional)
+          <input value={topic} placeholder="what it's for" onInput={(e) => setTopic((e.target as HTMLInputElement).value)} />
         </label>
+        <div class="members-kind" role="radiogroup" aria-label="Who can find it">
+          <label class="members-radio">
+            <input type="radio" name="members-kind" checked={!priv} data-new-channel-public onChange={() => setPriv(false)} />
+            <span>
+              <b>Public</b>
+              <small>Anyone in {d.name} can find it and join.</small>
+            </span>
+          </label>
+          <label class="members-radio">
+            <input type="radio" name="members-kind" checked={priv} data-new-channel-private onChange={() => setPriv(true)} />
+            <span>
+              <b>Private</b>
+              <small>Only people you add see it; it isn't listed.</small>
+            </span>
+          </label>
+        </div>
       </div>
-      <div class="prompt-buttons">
-        <button class="secondary" type="button" onClick={close}>
-          Cancel
-        </button>
-        <button type="submit" class="primary" disabled={busy || !name.trim()}>
-          Create
-        </button>
-      </div>
-    </form>
+    </Modal>
   );
 }
 
@@ -143,42 +144,46 @@ function Browser({ d, close }: { d: Extract<Dialog, { kind: "browse" }>; close: 
     }
   };
   return (
-    <div class="prompt members-dialog" aria-label={`Channels in ${d.name}`} data-channel-browser>
-      <label>
-        Channels in {d.name}
-        <input autoFocus value={q} placeholder="search by name or topic" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
-      </label>
-      {failed && <p class="chat-none">{failed}</p>}
-      {list && list.length === 0 && <p class="chat-none">{q ? "No public channel matches." : "No public channels yet."}</p>}
-      <ul class="members-list">
-        {(list ?? []).map((c) => (
-          <li key={c.id} data-browse-channel={c.name}>
-            <div class="members-what">
-              <b>#{c.name}</b>
-              {c.archived && <span class="dim"> archived</span>}
-              <small>{c.topic || "No topic"}</small>
-              <small>
-                {c.members} {c.members === 1 ? "member" : "members"}
-              </small>
-            </div>
-            {c.joined ? (
-              <button type="button" data-browse-open onClick={() => void go(c)}>
-                Open
-              </button>
-            ) : (
-              <button type="button" class="primary" data-browse-join onClick={() => void go(c)}>
-                Join
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div class="prompt-buttons">
+    <Modal
+      title={`Channels in ${d.name}`}
+      class="members-dialog"
+      close={close}
+      root={{ "data-channel-browser": "" }}
+      buttons={
         <button class="secondary" type="button" onClick={close}>
           Close
         </button>
+      }
+    >
+      <div class="members-body">
+        <input autoFocus aria-label="Search channels" value={q} placeholder="search by name or topic" onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+        {failed && <p class="chat-none">{failed}</p>}
+        {list && list.length === 0 && <p class="chat-none">{q ? "No public channel matches." : "No public channels yet."}</p>}
+        <ul class="members-list">
+          {(list ?? []).map((c) => (
+            <li key={c.id} data-browse-channel={c.name}>
+              <div class="members-what">
+                <b>#{c.name}</b>
+                {c.archived && <span class="dim"> archived</span>}
+                <small>{c.topic || "No topic"}</small>
+                <small>
+                  {c.members} {c.members === 1 ? "member" : "members"}
+                </small>
+              </div>
+              {c.joined ? (
+                <button type="button" data-browse-open onClick={() => void go(c)}>
+                  Open
+                </button>
+              ) : (
+                <button type="button" class="primary" data-browse-join onClick={() => void go(c)}>
+                  Join
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -207,44 +212,46 @@ function NewDm({ d, close }: { d: Extract<Dialog, { kind: "dm" }>; close: () => 
     }
   };
   return (
-    <form
-      class="prompt members-dialog"
-      aria-label={`Message people in ${t.roster.name}`}
-      data-new-dm
+    <Modal
+      title={`Message people in ${t.roster.name}`}
+      class="members-dialog"
+      close={close}
+      root={{ "data-new-dm": "" }}
+      buttons={
+        <>
+          <button class="secondary" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={busy || !picked.length} data-dm-start>
+            {picked.length > 1 ? "Start group" : "Open"}
+          </button>
+        </>
+      }
       onSubmit={(e) => {
         e.preventDefault();
         void start();
       }}
     >
-      <label>
-        Message people in {t.roster.name}
-        <input autoFocus value={q} placeholder="search their names" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
-      </label>
-      {people.length === 0 && <p class="chat-none">Nobody else is in {t.roster.name} yet.</p>}
-      <ul class="members-list">
-        {shown.map((p) => (
-          <li key={p.account} data-dm-person={p.account}>
-            <label class="members-radio">
-              <input type="checkbox" checked={picked.includes(p.account)} disabled={full && !picked.includes(p.account)} onChange={() => toggle(p.account)} />
-              <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
-              <span>{p.name}</span>
-            </label>
-          </li>
-        ))}
-      </ul>
-      <p class="chat-none members-hint">
-        {picked.length > 1 ? `A group of ${picked.length + 1}, named after you all.` : "Pick up to seven; more than one makes a group."}
-        {full && " That's the most."}
-      </p>
-      <div class="prompt-buttons">
-        <button class="secondary" type="button" onClick={close}>
-          Cancel
-        </button>
-        <button type="submit" class="primary" disabled={busy || !picked.length} data-dm-start>
-          {picked.length > 1 ? "Start group" : "Open"}
-        </button>
+      <div class="members-body">
+        <input autoFocus aria-label="Search people" value={q} placeholder="search their names" onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+        {people.length === 0 && <p class="chat-none">Nobody else is in {t.roster.name} yet.</p>}
+        <ul class="members-list">
+          {shown.map((p) => (
+            <li key={p.account} data-dm-person={p.account}>
+              <label class="members-radio">
+                <input type="checkbox" checked={picked.includes(p.account)} disabled={full && !picked.includes(p.account)} onChange={() => toggle(p.account)} />
+                <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
+                <span>{p.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <p class="chat-none members-hint">
+          {picked.length > 1 ? `A group of ${picked.length + 1}, named after you all.` : "Pick up to seven; more than one makes a group."}
+          {full && " That's the most."}
+        </p>
       </div>
-    </form>
+    </Modal>
   );
 }
 

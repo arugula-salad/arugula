@@ -28,8 +28,8 @@
 import { opPath } from "../ops";
 import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { dialogUp, subscribeDialogs, useModal } from "../../shared/ui/modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal, dialogUp, subscribeDialogs } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
@@ -245,9 +245,6 @@ function stepFor(section?: Section): number {
 }
 
 function GettingStarted({ client, section, close }: { client: Client | null; section?: Section; close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [step, setStep] = useState(stepFor(section));
   const [host, setHost] = useState<HostSays | null>(null);
   const [setup, setSetup] = useState<Setup | null>(null);
@@ -321,84 +318,85 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   const name = host?.name ?? (directory.current || "this machine");
 
   return (
-    <div class="prompt-backdrop start-backdrop" role="dialog" aria-modal="true" aria-label="Getting started" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div
-        ref={ref}
-        class="start"
-        data-getting-started
-        data-step={id}
-        onKeyDown={(e) => {
+    <Modal
+      bare
+      close={close}
+      label="Getting started"
+      class="start"
+      root={{
+        "data-getting-started": "",
+        "data-step": id,
+        onKeyDown: (e: KeyboardEvent) => {
           if ((e.target as HTMLElement).closest("input, textarea")) return;
           if (e.key === "ArrowRight") go(step + 1);
           if (e.key === "ArrowLeft") go(step - 1);
-        }}
-        tabIndex={-1}
-      >
-        <header class="start-head">
-          <div class="start-brand">
-            Arugula <span>setup</span>
-          </div>
-          <button class="start-x" aria-label="Close" onClick={close}>
-            ✕
-          </button>
-        </header>
-
-        <ol class="start-rail" aria-label="Steps">
-          {STEPS.map((s, i) => (
-            <li key={s.id}>
-              <button
-                class={`start-seg${i === step ? " now" : ""}${done[s.id] && s.id !== "welcome" ? " done" : ""}`}
-                aria-current={i === step ? "step" : undefined}
-                onClick={() => go(i)}
-                data-start-seg={s.id}
-              >
-                <b>{String(i + 1).padStart(2, "0")}</b> <span>{s.label}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
-
-        <div class="start-body">
-          <div class="start-kicker" data-start-progress>
-            Step {step + 1} / {STEPS.length} · {STEPS[step].label}
-          </div>
-          {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
-          {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
-          {id === "cloud" && (
-            <Cloud
-              name={name}
-              client={client}
-              setup={setup}
-              early={early}
-              host={host}
-              manual={manual}
-              refresh={refresh}
-              setSetup={setSetup}
-              onConfirmed={() => setConfirmed(true)}
-              close={close}
-            />
-          )}
-          {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
-          {id === "try" && <Try client={client} done={done} go={go} close={close} />}
+        },
+      }}
+    >
+      <header class="start-head">
+        <div class="start-brand">
+          Arugula <span>setup</span>
         </div>
+        <button class="start-x" aria-label="Close" onClick={close}>
+          ✕
+        </button>
+      </header>
 
-        <footer class="start-foot">
-          <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
-            ‹ Back
-          </button>
-          <span class="start-hint">Always in Settings: Getting started</span>
-          {last ? (
-            <button class="primary" onClick={close}>
-              Done
+      <ol class="start-rail" aria-label="Steps">
+        {STEPS.map((s, i) => (
+          <li key={s.id}>
+            <button
+              class={`start-seg${i === step ? " now" : ""}${done[s.id] && s.id !== "welcome" ? " done" : ""}`}
+              aria-current={i === step ? "step" : undefined}
+              onClick={() => go(i)}
+              data-start-seg={s.id}
+            >
+              <b>{String(i + 1).padStart(2, "0")}</b> <span>{s.label}</span>
             </button>
-          ) : (
-            <button class="primary" onClick={() => go(step + 1)} data-start-next>
-              {step === 0 ? "Set it up ›" : done[id] ? "Next ›" : "Skip for now ›"}
-            </button>
-          )}
-        </footer>
+          </li>
+        ))}
+      </ol>
+
+      <div class="start-body">
+        <div class="start-kicker" data-start-progress>
+          Step {step + 1} / {STEPS.length} · {STEPS[step].label}
+        </div>
+        {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
+        {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
+        {id === "cloud" && (
+          <Cloud
+            name={name}
+            client={client}
+            setup={setup}
+            early={early}
+            host={host}
+            manual={manual}
+            refresh={refresh}
+            setSetup={setSetup}
+            onConfirmed={() => setConfirmed(true)}
+            close={close}
+          />
+        )}
+        {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
+        {id === "try" && <Try client={client} done={done} go={go} close={close} />}
       </div>
-    </div>
+
+      <footer class="start-foot">
+        <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
+          ‹ Back
+        </button>
+        <span class="start-hint">Always in Settings: Getting started</span>
+        {last ? (
+          <button class="primary" onClick={close}>
+            Done
+          </button>
+        ) : (
+          <button class="primary" onClick={() => go(step + 1)} data-start-next>
+            {step === 0 ? "Set it up ›" : done[id] ? "Next ›" : "Skip for now ›"}
+          </button>
+        )}
+      </footer>
+    </Modal>
   );
 }
 

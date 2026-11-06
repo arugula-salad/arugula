@@ -157,7 +157,7 @@ test.describe("phone", () => {
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
     const dialog = picker(page);
-    await expect(dialog.locator(".picker.phone")).toBeVisible();
+    await expect(dialog).toHaveClass(/\bphone\b/);
     await dialog.locator(`[data-conversation="${id}"]`).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => agentBlock(page)).not.toBeNull();

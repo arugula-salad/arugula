@@ -14,6 +14,7 @@ import { isDir, listDirs, recentDirs, type FsList } from "../fs";
 import { fuzzy } from "../../shared/fuzzy";
 import { isWorkspace, openWorkspace } from "../blocks/open-labs";
 import { Chip } from "../../shared/ui/state-chip";
+import { Modal } from "../../shared/ui/modal";
 
 /** `choose`: the picker only picks (+ Pane's directory, M110). */
 let open: { client: Client; pane: PaneId; phone: boolean; choose?: (path: string) => void } | null = null;
@@ -192,10 +193,7 @@ function Picker({ client, pane, phone, close, choose }: { client: Client; pane: 
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(rows.length - 1, s + 1));
     } else if (e.key === "ArrowUp") {
@@ -229,92 +227,85 @@ function Picker({ client, pane, phone, close, choose }: { client: Client; pane: 
   ];
 
   return (
-    <div
-      class="prompt-backdrop picker-backdrop"
-      role="dialog"
-      aria-label="Go to directory"
-      onPointerDown={(e) => e.target === e.currentTarget && close()}
-    >
-      <div class={phone ? "picker phone" : "picker"} onKeyDown={onKey}>
-        <div class="picker-where">
-          <span class="picker-host">{host}</span>
-          {machineLabel && <Chip kind="tag" tone="info">{machine?.borrowed ? `${machineLabel} · shell` : `VM ${machineLabel}`}</Chip>}
-        </div>
-        <div class="picker-path" data-path={list?.path ?? ""}>
-          {crumbs.map((c, i) => (
-            <button key={c.path} class="crumb-button" onClick={() => void go(c.path)}>
-              {c.label}
-              {i > 0 && i < crumbs.length - 1 ? "/" : ""}
-            </button>
-          ))}
-        </div>
-        <input
-          ref={input}
-          class="picker-filter"
-          placeholder="Filter, or type a path"
-          value={query}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSel(0);
-          }}
-        />
-        <ul class="picker-list" role="listbox" ref={listRef}>
-          {!list && !error && <li class="picker-empty">Reading…</li>}
-          {list && rows.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No directories here"}</li>}
-          {rows.map((r, i) => (
-            <li
-              key={`${r.recent ? "r" : "d"}:${r.path}`}
-              role="option"
-              aria-selected={i === sel}
-              class={`picker-row${i === sel ? " selected" : ""}${r.recent ? " recent" : ""}`}
-              data-path={r.path}
-              onClick={() => void go(r.path)}
-            >
-              {r.recent ? <span class="picker-icon">↺</span> : <span class="picker-icon">{r.up ? "↑" : "▸"}</span>}
-              <span class="picker-label">{r.recent ? r.path : r.label}</span>
-            </li>
-          ))}
-          {list?.truncated && <li class="picker-empty">More entries than one listing holds: type to filter</li>}
-        </ul>
-        {error && <p class="error picker-error">{error}</p>}
-        <div class="picker-actions">
-          <span class="picker-target" title={where}>
-            {base(where)}
-          </span>
-          {choose ? (
-            <button class="primary" data-picker-choose disabled={!list || moving} title="Ctrl+Enter" onClick={chosen}>
-              Use this directory
-            </button>
-          ) : (
-            <>
-              <button class="primary" disabled={!list || busy || moving || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
-                New pane here
-              </button>
-              <button disabled={!list || busy || moving || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
-                New tab here
-              </button>
-              <button disabled={!list || busy || moving || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
-                cd there
-              </button>
-            </>
-          )}
-          {!choose && workspace && list && !moving && (
-            <button
-              data-open-workspace
-              onClick={() => {
-                openWorkspace(client, list.path, pane);
-                close();
-              }}
-            >
-              Open as workspace
-            </button>
-          )}
-          <button onClick={close}>Cancel</button>
-        </div>
+    <Modal bare close={close} label="Go to directory" class={phone ? "picker phone" : "picker"} root={{ onKeyDown: onKey }}>
+      <div class="picker-where">
+        <span class="picker-host">{host}</span>
+        {machineLabel && <Chip kind="tag" tone="info">{machine?.borrowed ? `${machineLabel} · shell` : `VM ${machineLabel}`}</Chip>}
       </div>
-    </div>
+      <div class="picker-path" data-path={list?.path ?? ""}>
+        {crumbs.map((c, i) => (
+          <button key={c.path} class="crumb-button" onClick={() => void go(c.path)}>
+            {c.label}
+            {i > 0 && i < crumbs.length - 1 ? "/" : ""}
+          </button>
+        ))}
+      </div>
+      <input
+        ref={input}
+        class="picker-filter"
+        placeholder="Filter, or type a path"
+        value={query}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck={false}
+        onInput={(e) => {
+          setQuery(e.currentTarget.value);
+          setSel(0);
+        }}
+      />
+      <ul class="picker-list" role="listbox" ref={listRef}>
+        {!list && !error && <li class="picker-empty">Reading…</li>}
+        {list && rows.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No directories here"}</li>}
+        {rows.map((r, i) => (
+          <li
+            key={`${r.recent ? "r" : "d"}:${r.path}`}
+            role="option"
+            aria-selected={i === sel}
+            class={`picker-row${i === sel ? " selected" : ""}${r.recent ? " recent" : ""}`}
+            data-path={r.path}
+            onClick={() => void go(r.path)}
+          >
+            {r.recent ? <span class="picker-icon">↺</span> : <span class="picker-icon">{r.up ? "↑" : "▸"}</span>}
+            <span class="picker-label">{r.recent ? r.path : r.label}</span>
+          </li>
+        ))}
+        {list?.truncated && <li class="picker-empty">More entries than one listing holds: type to filter</li>}
+      </ul>
+      {error && <p class="error picker-error">{error}</p>}
+      <div class="picker-actions">
+        <span class="picker-target" title={where}>
+          {base(where)}
+        </span>
+        {choose ? (
+          <button class="primary" data-picker-choose disabled={!list || moving} title="Ctrl+Enter" onClick={chosen}>
+            Use this directory
+          </button>
+        ) : (
+          <>
+            <button class="primary" disabled={!list || busy || moving || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
+              New pane here
+            </button>
+            <button disabled={!list || busy || moving || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
+              New tab here
+            </button>
+            <button disabled={!list || busy || moving || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
+              cd there
+            </button>
+          </>
+        )}
+        {!choose && workspace && list && !moving && (
+          <button
+            data-open-workspace
+            onClick={() => {
+              openWorkspace(client, list.path, pane);
+              close();
+            }}
+          >
+            Open as workspace
+          </button>
+        )}
+        <button onClick={close}>Cancel</button>
+      </div>
+    </Modal>
   );
 }
