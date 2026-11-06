@@ -1,0 +1,383 @@
+diff --git a/crates/cli/src/control.rs b/crates/cli/src/control.rs
+index 8c0d9544d..e58f6a40d 100644
+--- a/crates/cli/src/control.rs
++++ b/crates/cli/src/control.rs
+@@ -645,7 +645,7 @@ fn private_host(host: &str) -> bool {
+     match host.parse::<std::net::IpAddr>() {
+         Ok(std::net::IpAddr::V4(v4)) => v4.is_loopback() || v4.is_private(),
+         Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+-        Err(_) => host == "localhost",
++        Err(_) => host == "localhost" || host.ends_with(".localhost"), // S47 (#655): the same-site rig
+     }
+ }
+ 
+diff --git a/crates/control/src/lib.rs b/crates/control/src/lib.rs
+index f22edd665..d012aa50f 100644
+--- a/crates/control/src/lib.rs
++++ b/crates/control/src/lib.rs
+@@ -869,10 +869,12 @@ async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut
+             "default-src 'self';{scripts} connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
+         )
+     };
++    // S47 (#655): a local control's platform page is http, which `https:` misses.
++    let platform = app.cfg.platform_host.as_ref().map(|p| format!(" {}", p.origin)).unwrap_or_default();
+     let csp = match &app.cfg.block_domain {
+-        Some(d) => HeaderValue::from_str(&csp(&format!(" *.{d}:*")))
++        Some(d) => HeaderValue::from_str(&csp(&format!(" *.{d}:*{platform}")))
+             .unwrap_or(HeaderValue::from_static("frame-ancestors 'none'")),
+-        None => HeaderValue::from_str(&csp("")).expect("a fixed policy"),
++        None => HeaderValue::from_str(&csp(&platform)).expect("a fixed policy"),
+     };
+     let h = res.headers_mut();
+     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+diff --git a/crates/control/src/platform_host.rs b/crates/control/src/platform_host.rs
+index 6b09da2cc..dd0ab5a9b 100644
+--- a/crates/control/src/platform_host.rs
++++ b/crates/control/src/platform_host.rs
+@@ -195,6 +195,19 @@ pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) ->
+     };
+     let proto = crate::blocks::proto_url(&app.cfg.public_url, app.cfg.block_domain.as_deref());
+     let mut res = secured(res, own, app.cfg.presence_origin.as_deref(), proto.as_deref());
++    // S47 (#655): control's page, and nothing else, may hold this page in a frame.
++    if let Some(v) = res.headers().get(header::CONTENT_SECURITY_POLICY).and_then(|v| v.to_str().ok()) {
++        let v = v.replacen("frame-ancestors 'none'", &format!("frame-ancestors {}", app.cfg.public_url.trim_end_matches('/')), 1);
++        if let Ok(v) = HeaderValue::from_str(&v) {
++            res.headers_mut().insert(header::CONTENT_SECURITY_POLICY, v);
++        }
++    }
++    res.headers_mut().remove(header::X_FRAME_OPTIONS);
++    // Measured: without this Chromium runs the frame in the keys' process.
++    res.headers_mut().insert(
++        header::HeaderName::from_static("origin-agent-cluster"),
++        HeaderValue::from_static("?1"),
++    );
+     // Where the hub is, for the page's sign-in and its links back to
+     // control's page (M152): the hub says it, the page never guesses.
+     if let Ok(v) = HeaderValue::from_str(&app.cfg.public_url) {
+diff --git a/crates/daemon/src/control.rs b/crates/daemon/src/control.rs
+index 3568ede29..0de71e7b5 100644
+--- a/crates/daemon/src/control.rs
++++ b/crates/daemon/src/control.rs
+@@ -3399,7 +3399,7 @@ fn private_http(url: &str) -> bool {
+         return false;
+     }
+     match u.host() {
+-        Some(url::Host::Domain(d)) => d == "localhost",
++        Some(url::Host::Domain(d)) => d == "localhost" || d.ends_with(".localhost"), // S47 (#655): the same-site rig
+         Some(url::Host::Ipv4(ip)) => {
+             ip.is_loopback() || ip.is_private() || (ip.octets()[0] == 100 && ip.octets()[1] & 0xc0 == 64)
+         }
+diff --git a/web/src/platform/main.tsx b/web/src/platform/main.tsx
+index bb705f7ee..6754b9b81 100644
+--- a/web/src/platform/main.tsx
++++ b/web/src/platform/main.tsx
+@@ -26,6 +26,7 @@ import { platformApi } from "./api";
+ // Live presence (#343): in the reader's teams' rooms while their switch says so.
+ import "../shared/live/live";
+ import { PlatformPage } from "./page";
++import { go, onRoute } from "./router";
+ 
+ // This device's palette and finish, before anything draws: on
+ // app.arugula.io, the one picked on control's page too (the cookie,
+@@ -37,6 +38,27 @@ setupDesktop();
+ // A Doc's prototype can't run by srcdoc under this page's CSP: until the
+ // hub says where its proto page is (session.ts), it shows a note (#506).
+ setProtoOrigin(null);
++// S47 (#655), spike only: in the shell's kept frame the shell's rail stands in
++// for this page's. The page says where it is, and hands the shell Commands.
++if (window.top !== window) {
++  document.documentElement.dataset.framed = "";
++  const parentOrigin = location.ancestorOrigins?.[0] ?? "*";
++  const at = () => location.pathname + location.search;
++  const say = () => parent.postMessage({ at: at() }, parentOrigin);
++  onRoute(say);
++  say();
++  addEventListener("message", (e) => {
++    if (e.source !== parent) return;
++    const to = (e.data as { go?: unknown })?.go;
++    if (typeof to === "string" && to.startsWith("/") && !to.startsWith("//")) go(to);
++  });
++  addEventListener("keydown", (e) => {
++    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
++      e.preventDefault();
++      parent.postMessage({ commands: true }, parentOrigin);
++    }
++  });
++}
+ render(
+   <PlatformApiContext.Provider value={platformApi}>
+     <PlatformPage />
+diff --git a/web/src/shared/style.css b/web/src/shared/style.css
+index d8e1c8d1a..e1ffe446a 100644
+--- a/web/src/shared/style.css
++++ b/web/src/shared/style.css
+@@ -13789,3 +13789,8 @@ html[data-workspace="new"] .thread-panel {
+ .md .doc-prototype-box .doc-prototype {
+   margin: 0;
+ }
++
++/* S47 (#655), spike only. */
++.s47-frame-tools { position: fixed; top: 8px; right: 12px; z-index: 47; display: flex; gap: 4px; }
++html[data-framed] .ws-rail { display: none; }
++html[data-framed] .platform-bar, html[data-framed] .frame .app-bar { padding-right: 56px; }
+diff --git a/web/src/shell/platform-frame.ts b/web/src/shell/platform-frame.ts
+new file mode 100644
+index 000000000..32b485a97
+--- /dev/null
++++ b/web/src/shell/platform-frame.ts
+@@ -0,0 +1,114 @@
++// S47 (#655), spike only: the shell holds the platform page in a kept frame.
++// Control's page stays the top page, so the panes never unload. `?noframe`
++// turns it off, to measure today's behaviour on the same build. `?framehide=
++// visibility` hides the frame by visibility rather than display.
++
++import { platformOrigin } from "./platform-links";
++
++const query = new URLSearchParams(location.search);
++const off = query.has("noframe");
++const hideBy = query.get("framehide") === "visibility" ? "visibility" : "display";
++
++let frame: HTMLIFrameElement | null = null;
++let shown = false;
++let path = "/";
++const listeners = new Set<() => void>();
++const tell = () => listeners.forEach((fn) => fn());
++
++export const frameOn = () => !off && !!platformOrigin();
++export const frameShown = () => shown;
++export const framePath = () => path;
++export function onFrame(fn: () => void) {
++  listeners.add(fn);
++  return () => void listeners.delete(fn);
++}
++
++/** What the address bar says: `?at=` is the frame's path. */
++function address(at: string | null, push: boolean) {
++  const u = new URL(location.href);
++  if (at) u.searchParams.set("at", at);
++  else u.searchParams.delete("at");
++  history[push ? "pushState" : "replaceState"](null, "", u);
++}
++
++function place() {
++  if (!frame) return;
++  const rail = document.querySelector(".ws-rail")?.getBoundingClientRect();
++  frame.style.left = `${rail?.right ?? 0}px`;
++  frame.style.width = `${innerWidth - (rail?.right ?? 0)}px`;
++  if (hideBy === "display") frame.style.display = shown ? "block" : "none";
++  else {
++    frame.style.visibility = shown ? "visible" : "hidden";
++    frame.style.pointerEvents = shown ? "auto" : "none";
++  }
++}
++
++function ensure(to: string) {
++  if (frame) return false;
++  frame = document.createElement("iframe");
++  frame.dataset.platformFrame = "";
++  frame.title = "Projects";
++  frame.setAttribute("allow", "clipboard-write; camera; microphone; display-capture; fullscreen");
++  // No allow-top-navigation of either kind: after any click in it, an unsandboxed
++  // frame can move the whole tab (measured). Leaving goes through the shell.
++  if (!query.has("nosandbox")) frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads");
++  frame.style.cssText = "position:fixed;top:0;bottom:0;height:100%;border:0;z-index:46;background:var(--bg)";
++  frame.src = `${platformOrigin()}${to}`;
++  document.body.append(frame);
++  return true;
++}
++
++/** Show the frame at `to`. A path it's already on moves nothing. */
++export function showPlatform(to: string, push = true) {
++  const fresh = ensure(to);
++  if (!fresh && to !== "/?back" && to !== path) frame!.contentWindow?.postMessage({ go: to }, platformOrigin()!);
++  if (to !== "/?back") path = to;
++  const was = shown;
++  shown = true;
++  place();
++  if (!was) address(path, push);
++  frame!.focus();
++  tell();
++}
++
++export function hidePlatform(push = true) {
++  if (!shown) return;
++  shown = false;
++  place();
++  address(null, push);
++  tell();
++}
++
++// The frame says where it is, and asks for the two things only the shell has.
++addEventListener("message", (e) => {
++  if (!frame || e.source !== frame.contentWindow || e.origin !== platformOrigin()) return;
++  const d = e.data as { at?: unknown; commands?: unknown };
++  if (typeof d?.at === "string" && d.at.startsWith("/") && !d.at.startsWith("//")) {
++    path = d.at;
++    if (shown) address(path, false);
++    tell();
++  }
++  if (d?.commands === true) dispatchEvent(new CustomEvent("s47-commands"));
++});
++
++// A rail item that isn't the platform page's leaves it. Back and Forward: the
++// address says whether the frame shows.
++addEventListener("click", (e) => {
++  const t = e.target as HTMLElement;
++  if (!shown || !t.closest?.(".ws-rail")) return;
++  if (!t.closest("[data-open-projects],[data-open-chat],[data-open-settings]")) hidePlatform();
++}, true);
++addEventListener("hashchange", () => shown && hidePlatform(false));
++addEventListener("popstate", () => {
++  const at = new URLSearchParams(location.search).get("at");
++  if (at && at.startsWith("/") && !at.startsWith("//")) {
++    if (!shown) showPlatform(at, false);
++  } else hidePlatform(false);
++});
++addEventListener("resize", place);
++
++/** A reload with `?at=` comes back to the frame. */
++export function restoreFrame() {
++  const at = query.get("at");
++  if (frameOn() && at && at.startsWith("/") && !at.startsWith("//")) showPlatform(at, false);
++}
+diff --git a/web/src/shell/platform-links.ts b/web/src/shell/platform-links.ts
+index 8f5480665..f83a4b4c6 100644
+--- a/web/src/shell/platform-links.ts
++++ b/web/src/shell/platform-links.ts
+@@ -8,6 +8,7 @@
+ // platform page's code.
+ 
+ import { desktopApp } from "../shared/desktop";
++import { frameOn, showPlatform } from "./platform-frame";
+ 
+ let origin: string | null = null;
+ 
+@@ -25,6 +26,7 @@ export function setPlatformOrigin(o: string | null | undefined) {
+  * page. */
+ export function openPlatform(path: string) {
+   if (!origin) return;
++  if (frameOn()) return showPlatform(path);
+   const url = `${origin}${path}`;
+   const standalone = matchMedia?.("(display-mode: standalone)").matches;
+   if (desktopApp() || standalone || !window.open(url, "arugula-platform")) location.assign(url);
+diff --git a/web/src/shell/ui/app.tsx b/web/src/shell/ui/app.tsx
+index 7fab4ab27..17da58cb2 100644
+--- a/web/src/shell/ui/app.tsx
++++ b/web/src/shell/ui/app.tsx
+@@ -42,6 +42,7 @@ import { connection, ContextHeader } from "./shell/context-header";
+ import type { Renaming } from "./shell/rename-input";
+ import { StatusFooter, StatusPill } from "./shell/status-footer";
+ import { Rail } from "./shell/rail";
++import { FrameTools } from "./shell/frame-tools";
+ import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
+ import { TabStrip } from "./shell/tab-strip";
+ import { PaneToolbar } from "./shell/pane-toolbar";
+@@ -168,6 +169,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
+     return (
+       <div class={stale ? "app ws frame stale" : "app ws frame"}>
+         <Rail client={client} />
++        <FrameTools client={client} />
+         <div class="ws-shell-body">
+           <ContextHeader client={client} setRenaming={setRenaming} />
+           <div class="ws-row">
+diff --git a/web/src/shell/ui/shell/frame-tools.tsx b/web/src/shell/ui/shell/frame-tools.tsx
+new file mode 100644
+index 000000000..765a28709
+--- /dev/null
++++ b/web/src/shell/ui/shell/frame-tools.tsx
+@@ -0,0 +1,30 @@
++// S47 (#655), spike only: the shell draws its own bell over the kept frame, so
++// the platform page gets no machine data. Commands opens from a key press the
++// frame forwards.
++
++import { useEffect, useState } from "preact/hooks";
++import type { Client } from "../../client";
++import { frameShown, onFrame, restoreFrame } from "../../platform-frame";
++import { openPalette } from "../palette";
++import { AttentionBell } from "./attention-drawer";
++
++export function FrameTools({ client }: { client: Client }) {
++  const [, tick] = useState(0);
++  useEffect(() => {
++    const fn = () => tick((t) => t + 1);
++    const off = onFrame(fn);
++    const commands = () => openPalette(client, false);
++    addEventListener("s47-commands", commands);
++    restoreFrame();
++    return () => {
++      off();
++      removeEventListener("s47-commands", commands);
++    };
++  }, []);
++  if (!frameShown()) return null;
++  return (
++    <div class="s47-frame-tools" data-frame-tools>
++      <AttentionBell client={client} />
++    </div>
++  );
++}
+diff --git a/web/src/shell/ui/shell/rail.tsx b/web/src/shell/ui/shell/rail.tsx
+index bee1f0b07..2b6444ef6 100644
+--- a/web/src/shell/ui/shell/rail.tsx
++++ b/web/src/shell/ui/shell/rail.tsx
+@@ -16,6 +16,7 @@ import { settingsItems } from "../commands";
+ import { openMenu } from "../../../shared/ui/menu";
+ import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
+ import { openPlatform, platformHref } from "../../platform-links";
++import { framePath, frameShown, onFrame } from "../../platform-frame";
+ import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
+ import { countView } from "../../../shared/telemetry";
+ import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+@@ -29,9 +30,11 @@ export function usePlace(client: Client): Place {
+   useEffect(() => {
+     const fn = () => tick((t) => t + 1);
+     const off = onSwarmRoute(fn);
++    const offFrame = onFrame(fn);
+     addEventListener("hashchange", fn);
+     return () => {
+       off();
++      offFrame();
+       removeEventListener("hashchange", fn);
+     };
+   }, []);
+@@ -40,6 +43,8 @@ export function usePlace(client: Client): Place {
+ 
+ export function Rail({ client }: { client: Client }) {
+   const at = usePlace(client);
++  const framed = frameShown();
++  const inChat = framed && framePath().startsWith("/chat");
+   const threads = hasChat();
+   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
+   const host = directory.current || "this machine";
+@@ -61,19 +66,19 @@ export function Rail({ client }: { client: Client }) {
+     !!projects && {
+       label: "Projects",
+       tip: "Projects: their issues, boards, runs, deploys and chat, on the platform page",
+-      here: false,
++      here: framed && !inChat,
+       hook: "data-open-projects",
+       icon: <ProjectsIcon />,
+       href: projects,
+       target: "arugula-platform",
+       onClick: () => openPlatform(PROJECTS_PATH),
+     },
+-    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "docs" || at === "agents", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
++    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: !framed && (at === "panes" || at === "docs" || at === "agents"), hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
+     {
+       label: "Swarm",
+       aria: `Swarm: ${SWARM_ABOUT}`,
+       tip: `Swarm: ${SWARM_ABOUT}. Panes brings you back here.`,
+-      here: at === "swarm",
++      here: !framed && at === "swarm",
+       hook: "data-open-swarm",
+       icon: <SwarmIcon />,
+       onClick: () => at !== "swarm" && openSwarm(),
+@@ -82,7 +87,7 @@ export function Rail({ client }: { client: Client }) {
+       label: "Chat",
+       aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
+       tip: "Chat: every thread, on every machine, on the platform page",
+-      here: false,
++      here: inChat,
+       hook: "data-open-chat",
+       icon: <ChatIcon />,
+       count: { n, mention },

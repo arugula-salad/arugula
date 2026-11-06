@@ -1,0 +1,128 @@
+{
+ "webkit": {
+  "version": "26.6",
+  "today's headers (DENY + 'none') frame?": {
+   "blocked": true
+  },
+  "frame-ancestors control, control frames it?": {
+   "loaded": "https://app.example.com/?framing=control",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "cookie the frame sets, frame's request carries it": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "top-level app sees the frame's cookie": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "top-level app sees the frame's localStorage": "1",
+  "frame sees top-level's cookie": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1; top_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "frame sees top-level's localStorage": "1",
+  "new framed document request carries the session cookie": {
+   "loaded": "https://app.example.com/?framing=control",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "frame reads parent.document": {
+   "err": "SecurityError: Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame. Protocols, domains, and ports must match."
+  },
+  "frame reads parent.localStorage": {
+   "err": "SecurityError: Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame. Protocols, domains, and ports must match."
+  },
+  "frame sets document.domain, reads parent": {
+   "err": "SecurityError: Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame. Protocols, domains, and ports must match."
+  },
+  "frame fetches control with credentials": {
+   "err": "TypeError: Load failed"
+  },
+  "frame origin-keyed (no header)": false,
+  "frame origin-keyed (Origin-Agent-Cluster)": false,
+  "frame moves the top page with no click": {
+   "call": "SecurityError",
+   "topNow": "https://control.example.com/"
+  },
+  "hop: hub redirects (302) under frame-ancestors 'none'": {
+   "loaded": "https://app.example.com/?framing=control&code=1",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "hop: hub redirects (302) under frame-ancestors 'self'": {
+   "loaded": "https://app.example.com/?framing=control&code=1",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "hop: hub's page under frame-ancestors 'none'": {
+   "blocked": true
+  },
+  "hop: hub's page under frame-ancestors 'self'": {
+   "loaded": "hop page",
+   "origin": "https://control.example.com"
+  },
+  "GitHub-like stranger in a frame": {
+   "blocked": true
+  },
+  "display:none frame": {
+   "visibility": "visible",
+   "hasFocus": false,
+   "width": 300,
+   "timersIn2s": 17,
+   "rafIn2s": 62
+  },
+  "visibility:hidden frame": {
+   "visibility": "visible",
+   "width": 300,
+   "timersIn2s": 17,
+   "rafIn2s": 62
+  },
+  "history": {
+   "before": 2,
+   "after": 4,
+   "topAfterBack": "https://control.example.com/",
+   "frameAfterBack": "/p/one"
+  },
+  "powers without allow=": {
+   "camera": "no featurePolicy API",
+   "microphone": "no featurePolicy API",
+   "clipboard-write": "no featurePolicy API",
+   "publickey-credentials-get": "no featurePolicy API",
+   "fullscreen": "no featurePolicy API"
+  },
+  "powers with allow=": {
+   "camera": "no featurePolicy API",
+   "microphone": "no featurePolicy API",
+   "clipboard-write": "no featurePolicy API",
+   "publickey-credentials-get": "no featurePolicy API",
+   "fullscreen": "no featurePolicy API"
+  },
+  "passkey get: framed app, allow= (no authenticator; SecurityError is a refusal)": {
+   "err": "TypeError: undefined is not an object (evaluating 'navigator.credentials.get')"
+  }
+ }
+}
