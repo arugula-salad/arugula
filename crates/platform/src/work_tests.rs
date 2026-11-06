@@ -66,6 +66,7 @@ impl Machine {
 
 pub struct World {
     pub app: Arc<Platform>,
+    pub hub: Arc<TestHub>,
     pub project: String,
     pub clock: Arc<AtomicU64>,
     pub worker: Worker,
@@ -75,7 +76,7 @@ impl World {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let hub = Arc::new(TestHub::default());
-        let p = Platform::new(Default::default(), Db::test(), hub, reqwest::Client::new(), Default::default());
+        let p = Platform::new(Default::default(), Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
         let app = Arc::new(p);
         let project = app.db.team_project("t1", "t1", 0).unwrap();
         let clock = Arc::new(AtomicU64::new(1_000));
@@ -84,7 +85,7 @@ impl World {
             .with(Dispatch { app: app.clone() })
             .clock(Clock::new(move || read.load(SeqCst)))
             .heartbeat(Duration::from_secs(60));
-        Self { app, project, clock, worker }
+        Self { app, hub, project, clock, worker }
     }
 
     /// A hosted workspace whose box enrolled as `m`, in `state`.
@@ -314,6 +315,134 @@ async fn a_run_whose_box_went_fails() {
     w.settle().await;
     assert_eq!(w.state(&run), State::Failed);
     assert_eq!(w.job(&run), "done");
+}
+
+/// A workspace that fails (its box gone, its daemon not back, or its
+/// machine removed at the hub) keeps its machine: its running run fails
+/// anyway, saying why in words, and so does one still waiting
+/// (Arugula #744).
+#[tokio::test]
+async fn a_run_on_a_failed_workspace_fails() {
+    let w = World::new();
+    let m = Machine::new(&w.project, "hw_1");
+    w.workspace("hw_1", &m, "ready");
+    let running = w.run(&m.m.machine, "hw_1", Some("g1"));
+    let waiting = w.run(&m.m.machine, "hw_1", Some("g1"));
+    for r in [&running, &waiting] {
+        crate::db::runs::dispatch(&w.app.db.c(), r, 1_000).unwrap();
+    }
+    w.settle().await;
+    let took = m.report(&running, 2, State::Pending, State::Running, "{}");
+    assert_eq!(report(&w.app, &m.m, &took).await.unwrap(), Reported::Taken);
+    w.app.db.c().execute("UPDATE hosted_workspaces SET state = 'failed' WHERE id = 'hw_1'", params![]).unwrap();
+    w.at(1_000 + RUNNING_MS + WAITING_MS);
+    w.settle().await;
+    for r in [&running, &waiting] {
+        assert_eq!(w.state(r), State::Failed, "{r}");
+        assert_eq!(w.job(r), "done");
+        let last = w.app.db.run_events(r).unwrap().pop().unwrap();
+        let reason = serde_json::from_str::<serde_json::Value>(&last.detail).unwrap()["reason"].clone();
+        assert_eq!(reason, json!(WORKSPACE_FAILED));
+        assert_eq!(last.daemon, None, "control's");
+    }
+    assert!(w.ready(&m).await.is_empty());
+}
+
+/// Past [`RUN_MAX_MS`] a run goes on while its box says it's busy, however
+/// long (an agent's run may take days), and a moment idle between turns
+/// doesn't end it. It fails, saying why, once its box has been idle or off
+/// the relay for [`STALLED_MS`]; a hub that can't say changes nothing.
+#[tokio::test]
+async fn a_long_run_fails_only_once_its_box_stops_running_it() {
+    let w = World::new();
+    let m = Machine::new(&w.project, "hw_1");
+    w.workspace("hw_1", &m, "ready");
+    let run = w.run(&m.m.machine, "hw_1", Some("g1"));
+    crate::db::runs::dispatch(&w.app.db.c(), &run, 1_000).unwrap();
+    w.settle().await;
+    let took = m.report(&run, 2, State::Pending, State::Running, "{}");
+    assert_eq!(report(&w.app, &m.m, &took).await.unwrap(), Reported::Taken);
+    let started = w.app.db.run(&run).unwrap().unwrap().started_at.unwrap();
+    let running = |what: &str| assert_eq!((w.state(&run), w.job(&run)), (State::Running, "pending".into()), "{what}");
+
+    // Busy, a day and more: it runs.
+    w.hub.say_busy(&m.m.machine, Some(true));
+    let mut t = started + RUN_MAX_MS;
+    for _ in 0..4 {
+        t += 8 * 3_600_000;
+        w.at(t);
+        w.settle().await;
+        running("busy");
+    }
+    // Idle a moment between turns, then busy again: the wait starts over.
+    w.hub.say_busy(&m.m.machine, Some(false));
+    t += RUNNING_MS;
+    w.at(t);
+    w.settle().await;
+    w.hub.say_busy(&m.m.machine, Some(true));
+    t += STALLED_MS - RUNNING_MS;
+    w.at(t);
+    w.settle().await;
+    running("busy again");
+    // The hub can't say: nothing changes.
+    w.hub.activity_down();
+    t += STALLED_MS + RUNNING_MS;
+    w.at(t);
+    w.settle().await;
+    running("can't say");
+
+    // Off the relay: it fails once that has lasted STALLED_MS.
+    w.hub.say_busy(&m.m.machine, None);
+    t += RUNNING_MS;
+    w.at(t);
+    w.settle().await;
+    running("off a moment");
+    t += STALLED_MS;
+    w.at(t);
+    w.settle().await;
+    assert_eq!((w.state(&run), w.job(&run).as_str()), (State::Failed, "done"));
+    let last = w.app.db.run_events(&run).unwrap().pop().unwrap();
+    assert!(last.detail.contains(TOO_LONG), "{}", last.detail);
+    // Its box's end, late, is refused: the run ended.
+    let late = m.report(&run, 3, State::Running, State::Succeeded, r#"{"exit":0}"#);
+    assert!(matches!(report(&w.app, &m.m, &late).await.unwrap(), Reported::Refused { .. }));
+}
+
+/// The operator's stuck view lists a run by its age, not only when no job
+/// follows it: one older than any run may live is there with its job
+/// still pending, oldest first, with how old it is (Arugula #744).
+#[tokio::test]
+async fn the_stuck_view_lists_old_runs_whatever_their_job() {
+    let w = World::new();
+    let m = Machine::new(&w.project, "hw_1");
+    w.workspace("hw_1", &m, "ready");
+    let old = w.run(&m.m.machine, "hw_1", Some("g1"));
+    crate::db::runs::dispatch(&w.app.db.c(), &old, 1_000).unwrap();
+    let made = w.app.db.run(&old).unwrap().unwrap().created_at;
+    let listed = |now: u64| w.app.db.stuck(now).unwrap().runs.into_iter().map(|u| u.id).collect::<Vec<_>>();
+    assert!(listed(made + crate::stuck::OLD_RUN_MS - 1).is_empty(), "young, and followed");
+    let now = made + crate::stuck::OLD_RUN_MS + 2 * 3_600_000;
+    let s = w.app.db.stuck(now).unwrap();
+    assert_eq!(
+        s.runs.iter().map(|u| (u.id.as_str(), u.job.as_deref())).collect::<Vec<_>>(),
+        [(old.as_str(), Some("pending"))]
+    );
+    let shown = s.render_at(now);
+    assert!(shown.contains(&format!("{old}  {}  pending", w.project)) && shown.contains("(8h 15m ago)"), "{shown}");
+    assert!(shown.contains("or made over 6h 15m ago, oldest first: 1"), "{shown}");
+}
+
+#[test]
+fn a_reasons_words_leave_its_code_out() {
+    assert_eq!(
+        reason_words(TOO_LONG),
+        Some("it ran for over 6 hours, and its cloud workspace hasn't been running anything for 10 minutes")
+    );
+    assert_eq!(reason_words("operator: box is wedged"), Some("box is wedged"));
+    assert_eq!(reason_words("not_taken"), None, "a bare code says nothing");
+    assert_eq!(reason_words("stopped from its card"), Some("stopped from its card"));
+    assert_eq!(reason_words("Box: gone"), Some("Box: gone"), "not a code");
+    assert_eq!(reason_words("  "), None);
 }
 
 /// C4: every pull carries the project's revokes, ready runs or not, so a

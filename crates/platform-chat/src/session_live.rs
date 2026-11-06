@@ -245,11 +245,18 @@ fn line(e: &Event, name: &dyn Fn(&str) -> String) -> String {
         (Kind::State, _, State::Stopped) if d.reason.as_deref().is_some_and(|r| r.starts_with(REVIEWED)) => {
             "Its review is posted in the thread".into()
         }
+        // Why, in words: a reason's code is for pages, not people.
         (Kind::State, _, State::Stopped) => match by {
             Some(n) => format!("Stopped by {n}"),
-            None => format!("Stopped{}", d.reason.map(|r| format!(": {r}")).unwrap_or_default()),
+            None => match d.reason.as_deref().and_then(crate::work::reason_words) {
+                Some(w) => format!("Stopped: {w}"),
+                None => "Stopped".into(),
+            },
         },
-        (Kind::State, _, State::Failed) => format!("Failed: {}", d.reason.unwrap_or_default()),
+        (Kind::State, _, State::Failed) => match d.reason.as_deref().and_then(crate::work::reason_words) {
+            Some(w) => format!("Failed: {w}"),
+            None => "Failed".into(),
+        },
         (Kind::State, _, to) => format!("Now {}", said(to)),
         (Kind::Error, ..) => format!("Error: {}", d.error.unwrap_or_default()),
         (Kind::Turn, ..) => {

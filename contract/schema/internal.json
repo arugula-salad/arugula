@@ -1354,6 +1354,22 @@
       ],
       "type": "object"
     },
+    "HostedRemovedArgs": {
+      "description": "`hosted_removed`: the hosted machine the hub removed, and the\nworkspace whose box it was.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
     "IdsArgs": {
       "properties": {
         "ids": {

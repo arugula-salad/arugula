@@ -10,7 +10,11 @@
 //!   operation names any other machine (a person's, or a box that left)
 //!   fails, saying so, and never reaches it. The job then follows the run
 //!   until it ends: it wakes a paused box while the run waits for it or
-//!   runs, and fails a run no machine took within [`TAKE_MS`].
+//!   runs, and fails a run no machine took within [`TAKE_MS`], one whose
+//!   workspace failed ([`WORKSPACE_FAILED`]: its box is gone, its daemon
+//!   didn't come back, or the hub no longer lists its machine), and one
+//!   still running after [`RUN_MAX_MS`] once its box has stopped running
+//!   anything for [`STALLED_MS`] ([`TOO_LONG`]).
 //! - **Pulling** ([`work`]). The hub's `GET /api/hosted/work` takes only a
 //!   hosted machine's signature, and asks here with what that signature
 //!   proved ([`HostedMachine`]). The answer is every run that's ready for
@@ -60,10 +64,52 @@ pub const TAKE_MS: u64 = 15 * 60_000;
 pub const WAITING_MS: u64 = 5_000;
 /// How often a running run's job looks again.
 pub const RUNNING_MS: u64 = 30_000;
+/// How long a run runs before its job starts asking whether its box is
+/// still running it. Six hours: three times a deploy box's whole life
+/// (`BOX_LIFE_MS`), so no deploy's run gets there. It isn't a limit: a run
+/// whose box says it's busy goes on as long as it runs (an agent's run may
+/// take days, and failing it here would leave its process running, and
+/// its box held and billed, under a card that says failed). Past it, a
+/// run fails only once its box has been off the relay, paused or idle for
+/// [`STALLED_MS`] ([`TOO_LONG`]): it stopped reporting, or hangs with
+/// nothing running.
+///
+/// Busy is the whole box's (M180's activity: an agent turn or a
+/// foreground command anywhere on it), not this run's. So a run that
+/// hangs on a box kept busy by something else, such as its agent
+/// sessions' turns, isn't failed while that goes on; it fails once the
+/// box has been quiet for [`STALLED_MS`], or an operator fails it (the
+/// stuck view lists it by its age).
+pub const RUN_MAX_MS: u64 = 6 * 60 * 60_000;
+/// How long a run past [`RUN_MAX_MS`] may go with its box not busy before
+/// it fails: long enough for an agent's pause between turns, and for a box
+/// to dial back in after a blip.
+pub const STALLED_MS: u64 = 10 * 60_000;
+/// Why a run failed past [`RUN_MAX_MS`]: the code, then the words.
+pub const TOO_LONG: &str =
+    "too_long: it ran for over 6 hours, and its cloud workspace hasn't been running anything for 10 minutes";
+/// Why a run failed when its workspace did ([`crate::hosted`]'s worker).
+pub const WORKSPACE_FAILED: &str =
+    "workspace_failed: its cloud workspace failed, so it can't finish. The workspace says why; rebuild it to run again";
 /// The most runs one pull answers.
 pub const PULL_LIMIT: u32 = 20;
 
 pub use arugula_control_wire::internal::HostedMachine;
+
+/// A reason's words, for a person: `not_taken: its cloud workspace didn't
+/// ask for it` is "its cloud workspace didn't ask for it". `None` for a
+/// bare code (`not_taken`), which says nothing to a person. Runs' and
+/// sessions' reasons are written code first, so pages can tell them apart
+/// (the web client strips the code the same way).
+pub fn reason_words(reason: &str) -> Option<&str> {
+    let reason = reason.trim();
+    let words = match reason.split_once(": ") {
+        Some((code, rest)) if !code.is_empty() && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') => rest,
+        _ if reason.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') => return None,
+        _ => reason,
+    };
+    Some(words.trim()).filter(|w| !w.is_empty())
+}
 
 /// What a dispatch job keeps.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -77,6 +123,10 @@ pub struct Checkpoint {
     /// When the job last asked for its box's wake (M182's `hosted::wake`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub woke_at: Option<u64>,
+    /// Past [`RUN_MAX_MS`]: since when its box has been seen not busy,
+    /// while it still is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_since: Option<u64>,
 }
 
 /// How long a ready run goes unpulled before its job wakes the box: its
@@ -96,7 +146,7 @@ async fn fail(app: &Platform, db: &Db, run: &str, from: State, reason: &str, now
     let detail = json!({ "reason": reason }).to_string();
     match db.move_run(run, &Move::Control { from, to: State::Failed, at: now, detail: &detail })? {
         Ok((failed, _)) => {
-            info!(run, reason, "run failed before it reached its machine");
+            info!(run, reason, "control failed a run");
             crate::inbox::run_failed(app, &failed).await;
         }
         // It moved meanwhile (its machine took it): what it says stands.
@@ -136,6 +186,14 @@ impl Dispatch {
             fail(&self.app, db, &run.id, run.state, reason, now).await?;
             return Ok(Step::Done);
         };
+        // Its workspace failed (its box is gone, its daemon never came
+        // back, or the hub removed its machine): nothing will run it or
+        // report its end. It waits for a person's rebuild, which a run
+        // doesn't outlive.
+        if w.state == "failed" {
+            fail(&self.app, db, &run.id, run.state, WORKSPACE_FAILED, now).await?;
+            return Ok(Step::Done);
+        }
         let mut cp = match job.checkpoint.as_ref().and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok()) {
             Some(c) => c,
             None => {
@@ -146,6 +204,31 @@ impl Dispatch {
                 c
             }
         };
+        // Running past six hours: it goes on while its box is busy (with
+        // anything: [`RUN_MAX_MS`] says why that's the box's, not the
+        // run's), and fails once its box has been off the relay, paused or
+        // idle for [`STALLED_MS`]. A hub that can't say changes nothing.
+        if run.state == State::Running && run.started_at.is_some_and(|t| now.saturating_sub(t) >= RUN_MAX_MS) {
+            match self.app.hub.activity(std::slice::from_ref(&run.daemon)).await {
+                Ok(said) => {
+                    let busy = said.iter().any(|a| a.machine == run.daemon && a.busy);
+                    if busy {
+                        cp.idle_since = None;
+                    } else {
+                        let since = *cp.idle_since.get_or_insert(now);
+                        if now.saturating_sub(since) >= STALLED_MS {
+                            fail(&self.app, db, &run.id, run.state, TOO_LONG, now).await?;
+                            return Ok(Step::Done);
+                        }
+                    }
+                    job.checkpoint = Some(serde_json::to_value(&cp)?);
+                    db.checkpoint_job(job, now)?;
+                }
+                Err(e) => {
+                    warn!(run = run.id, error = %format!("{e:#}"), "the hub didn't say whether a long run's box is busy")
+                }
+            }
+        }
         let seen = cp.pulled_at.unwrap_or(cp.ready_at).max(cp.ready_at);
         // Awake while it waits: a box that's paused, or one whose daemon
         // hasn't asked for its work in a while (it may have paused itself
