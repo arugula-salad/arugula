@@ -362,7 +362,7 @@ function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
           </label>
         );
       })}
-      {/* M36: a forge draft is sent (with your login) or dropped. #234: an
+      {/* M36: a forge draft is sent (with your login) or discarded. #234: an
           agent's invite is sent, or declined with the reason you gave. */}
       <Buttons
         actions={ask.source === "invite" ? { ...actions, decline: () => actions.answer({ decline: true, ...(filled(values.reason) ? { reason: values.reason } : {}) }) } : actions}
@@ -371,7 +371,7 @@ function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
         more={more}
         labels={
           ask.source === "forge"
-            ? { submit: "Send", decline: "Drop" }
+            ? { submit: "Send", decline: "Discard" }
             : ask.source === "invite"
               ? { submit: "Invite", decline: "Decline" }
               : ask.source === "doc"

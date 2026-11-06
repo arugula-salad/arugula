@@ -1034,9 +1034,14 @@ pub struct ChatThreadAgents {
 #[serde(rename_all = "snake_case")]
 pub enum ChatThreadAgentState {
     Working,
+    /// Between turns, ready for the next prompt.
     Idle,
     NeedsYou,
     Offline,
+    /// A hosted session that failed.
+    Failed,
+    /// A hosted session that was stopped.
+    Stopped,
     /// Its machine answered without saying: an older daemon, a session it
     /// doesn't show, or one that has ended.
     Unknown,

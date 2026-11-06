@@ -201,7 +201,7 @@ export function stateOf(state: string, quiet: boolean): { label: string; tone: T
     case "needs_input":
       return { label: "needs input", tone: "warn" };
     case "done":
-      return { label: "done", tone: "ok" };
+      return { label: "turn ended", tone: "ok" };
     case "failed":
       return { label: "failed", tone: "danger" };
     default:

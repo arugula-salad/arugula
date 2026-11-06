@@ -64,6 +64,11 @@
   --ct: var(--warn);
 }
 
+.thread-agent.failed {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
 .thread-agent-name {
   font-weight: 650;
   overflow: hidden;

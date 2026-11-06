@@ -35,7 +35,7 @@
 
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS, WorkItem};
+use arugula_control_wire::work::{DeployWork, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS};
 use arugula_e2e::{
     deploy::{Pinned, check_apply},
     now_ms,
@@ -387,7 +387,7 @@ fn word(s: &str) -> bool {
 
 /// The checks a deploy's run passes before it starts, instead of the
 /// standing grant's: what this machine can check of the approval itself.
-pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> {
+pub fn check(app: &App, item: &ReadyRun, d: &DeployWork) -> Result<(), Refused> {
     // Only a deploy's own box applies one: never a people's workspace.
     if !deploy_box(app) {
         return Err(Refused("not_deploy_box", "only a box made for a deploy applies one".into()));
@@ -975,7 +975,7 @@ async fn pane(app: &App, l: &Ledger, d: &DeployWork) -> Result<(u32, Option<u64>
 /// Apply the deploy `item` carries (checked, and its ledger entry made):
 /// its pane, its start taken by control, its secrets, its driver with its
 /// output redacted into the pane, and its end reported.
-pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<RunAs>) {
+pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<RunAs>) {
     let dir = app.control.state_dir().to_owned();
     let Some(d) = item.deploy.clone() else { return };
     let run_id = l.run.clone();

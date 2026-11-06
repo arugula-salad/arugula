@@ -140,7 +140,7 @@ test("a pushed session offers its diff, and its PR merging marks it merged ✓",
   moved(first.id, "turn", null, { branch: first.branch, pushed: true, commits: ["a1b2c3 cache the session lookup"], diffstat: " web/login.ts | 12 ++++++++----\n 1 file changed" }, true);
   moved(first.id, "state", "done", {}, true);
   const a = card(alice, first.id);
-  await expect(a.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(a.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   const diff = a.locator("[data-session-diff]");
   await expect(diff).toHaveAttribute("href", `https://github.com/o/app/compare/${first.branch}`);
   await a.scrollIntoViewIfNeeded();

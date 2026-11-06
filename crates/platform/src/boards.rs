@@ -1138,9 +1138,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             None => strip_only.push(d),
         }
     }
-    let mut zones: Vec<wire::Zone> = wire::Lane::ALL
+    let mut zones: Vec<wire::LaneView> = wire::Lane::ALL
         .iter()
-        .map(|l| wire::Zone {
+        .map(|l| wire::LaneView {
             id: l.id().to_owned(),
             rev: 0,
             title: l.title().to_owned(),
