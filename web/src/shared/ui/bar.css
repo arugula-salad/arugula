@@ -40,6 +40,7 @@
 }
 
 .hbar-where {
+  /* Gives way first: the title is cut short last. */
   flex: 0 3 auto;
   min-width: 0;
   overflow: hidden;
@@ -52,8 +53,12 @@
   flex: 1 0 0;
 }
 
-/* The phone's bar is a finger's height. */
-.phone :where(.hbar) {
-  height: 44px;
-  min-height: 44px;
+/* The phone's bar is a finger's height (the app's phone layout starts at
+   700px). A chat block narrow enough to draw as a phone's is still a
+   computer's bar: this is the window's width. */
+@media (max-width: 700px) {
+  :where(.hbar) {
+    height: 44px;
+    min-height: 44px;
+  }
 }

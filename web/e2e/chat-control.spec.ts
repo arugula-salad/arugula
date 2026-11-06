@@ -38,6 +38,8 @@ let app = "";
 let general = "";
 let bobAccount = "";
 let quotedPane = 0;
+/** The pane thread's room (it has Members and Go to pane). */
+let paneRoom = "";
 
 const chatOn = (p: Page) => p.evaluate(() => window.__arugula.chat.on);
 const roomsOf = (p: Page) => p.evaluate(() => window.__arugula.chat.rooms.map((r) => ({ id: r.id, kind: r.kind, name: r.name, unread: r.unread, mentions: r.mentions })));
@@ -226,6 +228,7 @@ test("a pane's thread opens beside it, quotes its pane, and only its machine's o
   const drawer = alice.locator("[data-room-drawer]");
   await expect(drawer).toBeVisible();
   const room = (await drawer.getAttribute("data-room-drawer"))!;
+  paneRoom = room;
   // The quote: the pane read end to end, and the lines kept.
   await drawer.locator("[data-quote-pane]").click();
   await drawer.locator(`[data-quote-from="alices:${quotedPane}"]`).click();
@@ -244,6 +247,56 @@ test("a pane's thread opens beside it, quotes its pane, and only its machine's o
   // Bob reads no thread of a machine he can't reach: control says 404.
   const seen = await bob.evaluate(async (r) => (await fetch(`/api/chat/rooms/${r}`)).status, room);
   expect(seen).toBe(404);
+});
+
+test("a room's bar keeps one row: under 600px Members is in ⋯ (and a pane's Go to pane), and they come back when it widens", async () => {
+  test.setTimeout(120_000);
+  expect(paneRoom).not.toBe("");
+  const size = aliceChat.viewportSize()!;
+  // On the platform page the room is the window less the rail and the
+  // sidebar: wide, both are in the row; at 800px the room is under 600
+  // (a computer's still) and Members is in ⋯, which opens Details.
+  await aliceChat.setViewportSize({ width: 1280, height: 800 });
+  await platform(aliceChat, `/chat/${general}`);
+  const head = aliceChat.locator(`[data-room-view="${general}"] .chat-head`);
+  await expect(head).toBeVisible();
+  await expect(head.locator(".chat-members")).toBeVisible();
+  await expect(head.locator("[data-hbar-more]")).toHaveCount(0);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await aliceChat.setViewportSize({ width: 800, height: 800 });
+  await expect.poll(async () => (await head.boundingBox())!.width, { timeout: 5_000 }).toBeLessThan(600);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await expect(head.locator(".chat-members")).toHaveCount(0);
+  const more = head.locator("[data-hbar-more]");
+  await expect(more).toBeVisible();
+  await more.click();
+  await expect(aliceChat.locator("[data-chat-details-panel]")).toHaveCount(0);
+  await aliceChat.getByRole("menuitem", { name: /^Members/ }).click();
+  await expect(aliceChat.locator("[data-chat-details-panel]")).toBeVisible();
+  await aliceChat.locator("[data-chat-details-panel] .thread-close").click();
+  await aliceChat.setViewportSize({ width: 1280, height: 800 });
+  await expect(head.locator(".chat-members")).toBeVisible();
+  await expect(head.locator("[data-hbar-more]")).toHaveCount(0);
+  // The next tests have the page as it was.
+  await aliceChat.setViewportSize(size);
+
+  // A chat block pinned to the pane's thread, split beside the pane: a
+  // narrow slot, so Go to pane is in ⋯ and not in the row, in a bar that's
+  // still 34px (it draws as a phone's room, but on a computer).
+  await alice.bringToFront();
+  const opened = await call(alice, "POST", "/api/blocks", { type: "team_chat", config: { room: paneRoom, pinned: true }, split: quotedPane, local: true });
+  expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+  const id = (opened.body as { block: number }).block;
+  await alice.evaluate((p) => window.__arugula.client.setActive(p), quotedPane);
+  const bar = alice.locator(`[data-chat-block="${id}"] [data-room-view="${paneRoom}"] .chat-head`);
+  await expect(bar).toBeVisible({ timeout: 15_000 });
+  expect((await bar.boundingBox())!.width).toBeLessThan(600);
+  expect((await bar.boundingBox())!.height).toBe(34);
+  await expect(bar.locator("[data-chat-go]")).toHaveCount(0);
+  await bar.locator("[data-hbar-more]").click();
+  await expect(alice.getByRole("menuitem", { name: "Go to pane" })).toBeVisible();
+  await alice.keyboard.press("Escape");
+  await alice.evaluate((p) => window.__arugula.client.intent({ op: "close_pane", pane: p }), id);
 });
 
 test("with every daemon stopped, they write in #general and a DM, from the web and a phone", async () => {

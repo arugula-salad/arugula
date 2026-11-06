@@ -4684,7 +4684,7 @@ button.att {
 /* Room for the pane's grip, at the top right of the pane: every block's
    bar ends short of it (UI audit #177 made them one fixed-height row, so
    a full bar's last items ran under it and the grip took their clicks). */
-.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) {
+.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar, .chat.pinned .chat-head) {
   padding-right: 28px;
 }
 
@@ -9201,6 +9201,15 @@ input.chat-search {
   .compose-send {
     min-width: 40px;
     min-height: 40px;
+  }
+}
+
+/* A computer's bar is 34px: a touch screen's wide window keeps the bar's
+   24 there (#686). */
+@media (pointer: coarse) and (min-width: 701px) {
+  .hbar :is(.chat-back, .chat-info, .thread-close) {
+    min-width: 24px;
+    min-height: 0;
   }
 }
 
