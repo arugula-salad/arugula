@@ -536,6 +536,7 @@ function ShareWithModal({ project, id, done }: { project: string; id: string; do
         id={id}
         ask={setAsking}
         say={toast}
+        done={toast}
         open={(c) => {
           done();
           go(pathOf({ page: "doc", project: c.project, doc: c.id }, names));

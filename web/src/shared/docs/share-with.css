@@ -23,3 +23,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A section's own buttons, at its end (the machine's share dialog). */
+.share-with-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}

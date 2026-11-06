@@ -139,6 +139,9 @@ pub enum Refused {
     Bad(String),
     /// A snapshot of this copy is in the project already: its id.
     Made(String),
+    /// The team edited the Doc since its last snapshot, and the refresh
+    /// wasn't told to replace their edits.
+    Edited,
 }
 
 const COLS: &str = "d.id, d.project_id, d.title, d.made_by, d.made_by_session, d.rev, d.created_at, d.updated_at, \
@@ -537,22 +540,34 @@ impl Db {
     }
 
     /// Update copy: replace the team Doc `id`'s title, sections and pictures
-    /// with its copy's as they are now, and record both revs again. New
-    /// sections take ids past any it ever had. Who may is the caller's to
-    /// have checked.
-    pub fn refresh_project_doc_snapshot(&self, id: &str, at: u64) -> Result<std::result::Result<Stored, Refused>> {
+    /// with its copy's as they are now, and record both revs again. Unless
+    /// `replace`, a Doc the team edited since ([`Refused::Edited`]) is left
+    /// alone: that is read with the Doc's row held, so an edit can't land
+    /// between the check and the replace. New sections are numbered past
+    /// the highest the Doc has: sections are only ever taken out here, all
+    /// at once, and this numbers past them first, so the highest it has is
+    /// the highest it ever had. Who may is the caller's to have checked.
+    pub fn refresh_project_doc_snapshot(
+        &self,
+        id: &str,
+        at: u64,
+        replace: bool,
+    ) -> Result<std::result::Result<Stored, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
-        let made: Option<Option<String>> = tx
+        let made: Option<(Option<String>, u64, Option<u64>)> = tx
             .query_row(
-                &format!("SELECT made_from_doc FROM project_docs WHERE id = ?1{}", tx.for_update()),
+                &format!("SELECT made_from_doc, rev, made_rev FROM project_docs WHERE id = ?1{}", tx.for_update()),
                 params![id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let Some(Some(src)) = made else {
+        let Some((Some(src), rev, made_rev)) = made else {
             return Ok(Err(Refused::Missing("no such Doc")));
         };
+        if !replace && rev > made_rev.unwrap_or(0) {
+            return Ok(Err(Refused::Edited));
+        }
         let Some(from) = read_copy(&tx, &src)? else {
             return Ok(Err(Refused::Missing("the copy is gone")));
         };

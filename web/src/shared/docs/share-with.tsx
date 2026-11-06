@@ -66,7 +66,8 @@ type Loaded = { projects: PlatformProject[]; copies: ProjectDocCopy[] };
 
 /**
  * The rows for the copy `id` in `project`. `ask` hears when Update copy
- * would replace the team's edits; `say` hears what happened (a toast);
+ * would replace the team's edits; `say` hears a refusal (an error toast);
+ * `done` hears a success, for a host whose row doesn't say it already;
  * `open` follows a team Doc's link in the host (else it opens in a tab);
  * `unreachable` is what shows when the platform can't be called as the
  * person from here.
@@ -76,6 +77,7 @@ export function ShareWith({
   id,
   ask,
   say,
+  done,
   open,
   unreachable = null,
 }: {
@@ -83,6 +85,7 @@ export function ShareWith({
   id: string;
   ask: (e: Edited) => void;
   say: (message: string) => void;
+  done?: (message: string) => void;
   open?: (c: ProjectDocCopy) => void;
   unreachable?: ComponentChildren;
 }) {
@@ -110,7 +113,7 @@ export function ShareWith({
     setBusy(p.id);
     try {
       await projectDocs.share(project, id, p.id);
-      say(`Shared with ${p.name}`);
+      done?.(`Shared with ${p.name}`);
     } catch (e) {
       // Someone made it there since the list was read: it shows as made.
       if (!(e instanceof DocError && e.status === 409)) refused(e);
@@ -122,7 +125,7 @@ export function ShareWith({
     setBusy(c.project);
     try {
       await projectDocs.updateCopy(project, id, c.project, replace);
-      say(`${c.project_name}'s copy now matches`);
+      done?.(`${c.project_name}'s copy now matches`);
     } catch (e) {
       if (e instanceof DocError && e.status === 409 && e.body.edited) ask({ project: c.project_name, go: () => update(c, true) });
       else refused(e);

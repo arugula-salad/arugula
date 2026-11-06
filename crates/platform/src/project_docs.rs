@@ -236,6 +236,9 @@ pub(crate) fn refused(r: Refused) -> ApiError {
     match r {
         Refused::Missing(what) => err(StatusCode::NOT_FOUND, what),
         Refused::Bad(why) => bad(&why),
+        Refused::Edited => {
+            err(StatusCode::CONFLICT, "the team edited this Doc since; Update copy replaces their edits")
+        }
         Refused::Made(_) => err(StatusCode::CONFLICT, "a Doc was made from this copy in that project already"),
     }
 }
@@ -551,11 +554,13 @@ pub async fn update(
     // the project can't change its Docs by way of one they made.
     let place = place(app, account, to, true).await?;
     let team = app.db.project_doc_snapshot(&src.id, &place.project)?.ok_or_else(no_doc)?;
-    let made = team.made_from.as_ref().ok_or_else(no_doc)?;
-    if team.rev > made.made_rev && !replace {
-        return Ok(Err(()));
-    }
-    let team = app.db.refresh_project_doc_snapshot(&team.id, now_ms())?.map_err(refused)?;
+    team.made_from.as_ref().ok_or_else(no_doc)?;
+    // Whether the team edited it is read again under the Doc's lock.
+    let team = match app.db.refresh_project_doc_snapshot(&team.id, now_ms(), replace)? {
+        Ok(t) => t,
+        Err(db::Refused::Edited) => return Ok(Err(())),
+        Err(r) => return Err(refused(r)),
+    };
     changed(app, &place.project, &team.id);
     let src = app.db.project_doc(&src.id)?.ok_or_else(no_doc)?;
     let made = team.made_from.as_ref().ok_or_else(no_doc)?;

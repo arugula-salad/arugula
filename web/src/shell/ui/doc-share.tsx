@@ -261,48 +261,28 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
     });
     setBusy(false);
   };
-  return (
-    <Modal
-      x={false}
-      title={shared ? "Link to this Doc" : "Share this Doc with a link?"}
-      close={close}
-      root={{ "data-doc-link-dialog": true, "data-doc-share-dialog": shared ? "shared" : "unshared" }}
-      buttons={
-        shared ? (
-          <>
-            <button
-              class="secondary danger"
-              type="button"
-              data-doc-share-unshare
-              onClick={() => show({ kind: "unshare", run: () => void run(client, id, "doc_unshare", () => client.toast("Unshared")) })}
-            >
-              Unshare
-            </button>
-            <button
-              class="secondary"
-              type="button"
-              data-doc-share-update
-              onClick={() => show({ kind: "update", run: () => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is")) })}
-            >
-              Update shared copy
-            </button>
-            {url && <OpenOutside href={url} data-doc-bar-open />}
-            <button class="secondary" type="button" onClick={close}>
-              Done
-            </button>
-          </>
-        ) : (
-          <>
-            <button class="secondary" type="button" onClick={close}>
-              Cancel
-            </button>
-            <button class="primary" type="button" data-doc-share-go disabled={busy} onClick={() => void confirm()}>
-              Create link
-            </button>
-          </>
-        )
-      }
-    >
+  const team = !!(s?.platform && copyAt?.copy);
+  const unshare = () => show({ kind: "unshare", run: () => void run(client, id, "doc_unshare", () => client.toast("Unshared")) });
+  const update = () => show({ kind: "update", run: () => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is")) });
+  /** The link's own buttons: in the footer, or with a team section, in the
+   * link's section, where they say what they act on. */
+  const linkButtons = shared ? (
+    <>
+      <button class="secondary danger" type="button" data-doc-share-unshare onClick={unshare}>
+        Unshare
+      </button>
+      <button class="secondary" type="button" data-doc-share-update onClick={update}>
+        Update shared copy
+      </button>
+      {url && <OpenOutside href={url} data-doc-bar-open />}
+    </>
+  ) : (
+    <button class="primary" type="button" data-doc-share-go disabled={busy} onClick={() => void confirm()}>
+      Create link
+    </button>
+  );
+  const linkBody = (
+    <>
       <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
       {shared && (
         <>
@@ -324,9 +304,25 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
           )}
         </>
       )}
-      {s?.platform && copyAt?.copy && (
+    </>
+  );
+  const root = { "data-doc-link-dialog": true, "data-doc-share-dialog": shared ? "shared" : "unshared" };
+  if (team && copyAt?.copy) {
+    // One Share dialog, two sections, the team's first (Arugula #418).
+    return (
+      <Modal
+        x={false}
+        title="Share this Doc"
+        close={close}
+        root={{ ...root, "data-doc-share-team-dialog": true }}
+        buttons={
+          <button class="secondary" type="button" onClick={close}>
+            Done
+          </button>
+        }
+      >
         <section data-doc-share-team>
-          <SectionHead title="Share with a team" />
+          <SectionHead title="With a team" />
           <p class="dim">Makes a Doc in the project from this one as it is now. The team owns and edits it; this one stays yours.</p>
           <ShareWith
             project={copyAt.copy.project}
@@ -346,7 +342,39 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
             }
           />
         </section>
-      )}
+        <section data-doc-share-link>
+          <SectionHead title="With a link" />
+          {linkBody}
+          <div class="share-with-actions">{linkButtons}</div>
+        </section>
+      </Modal>
+    );
+  }
+  return (
+    <Modal
+      x={false}
+      title={shared ? "Link to this Doc" : "Share this Doc with a link?"}
+      close={close}
+      root={root}
+      buttons={
+        shared ? (
+          <>
+            {linkButtons}
+            <button class="secondary" type="button" onClick={close}>
+              Done
+            </button>
+          </>
+        ) : (
+          <>
+            <button class="secondary" type="button" onClick={close}>
+              Cancel
+            </button>
+            {linkButtons}
+          </>
+        )
+      }
+    >
+      {linkBody}
     </Modal>
   );
 }
