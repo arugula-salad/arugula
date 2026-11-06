@@ -845,3 +845,19 @@ fn actions_wait_for_the_box_and_the_first_answer_wins() {
     let ended = db.add_session_action(&s.id, &ask(ActionKind::Cancel, None), T0 + 43).unwrap();
     assert_eq!(ended, Err(Refused::Moved { now: State::Stopped }));
 }
+
+/// A thread's latest session is its own, or the try picked from its Try 3:
+/// never a review of it or a try nobody picked, however new.
+#[test]
+fn a_threads_latest_session_skips_its_reviews_and_unpicked_tries() {
+    let db = Db::test();
+    let b = Machine::new();
+    seed(&db, Some(&b.id));
+    let s = create(&db, 1);
+    create_review_in(&db.c(), &s, "alice", "codex", "look at it", T0 + 5).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, s.id, "not its review");
+    let tries = db.start_tries(&s.id, &["codex", "claude"], T0 + 10).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, s.id, "not a try nobody picked");
+    db.pick_try(&s.id, &tries[0].id, "alice", T0 + 20).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, tries[0].id, "the picked try");
+}

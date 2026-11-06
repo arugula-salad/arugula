@@ -53,6 +53,10 @@ contrast against that, not the palette as written.
 - **Accent means live:** the thing you're in, on or choosing now. The "on"
   tint, the selected row, a count that's for you, the primary button, a
   fresh fill. Links are `--info`, not accent.
+- **Accent can also be a tone**, for a row that is live without being picked:
+  the Docs list's "open in a block" and Boards' Review lane keep their accent
+  bar. A selected row tells itself apart by more than the bar: the tint and
+  the edge (Rows).
 - **Status colours mean a state:** ok, warn, danger, merged, info. They go
   on a status chip, a tone bar or a dot, and a state is always said in
   words as well, never by colour alone.
@@ -133,20 +137,26 @@ second row.
 
 ## Rows and the selected state
 
-*(being built: #756.)* Two shapes, with one selected state.
+Two shapes, with one selected state.
 
 - **Flat row** (`.list-row`, `shared/ui/list-page.css`): a Docs or Agents row,
   a session, a chat room, an attention item. 13px title at 600, 11px tags.
-  Modifiers: `.inset` (rounded, in a sidebar), `.dense` (26px, chat rooms),
-  `.touch` (44px, at ≤600px or on a coarse pointer).
+  In a sidebar it is inset and rounded (sessions, chat rooms, the attention
+  drawer), dense (26px) for chat rooms, and 44px at ≤600px or on a coarse
+  pointer. Those sizes are in each area's own CSS, on the one selected state;
+  they aren't classes yet.
 - **Card row** (`.sw-card`): a platform or Boards card, 13px. It opens a page
   or a sheet.
 - A settings row is a list of things to open: the whole row is the button,
   with hover, and it is never selected.
 
 **Selected** is the same on every shape: the `--selected` tint (accent at
-14%, mixed over `transparent` so it works on any surface), a 3px accent bar,
-and the title stays in the text colour. A card also gets a 1px accent edge.
+14%, mixed over `transparent` so it works on any surface), a 3px accent bar
+and a 1px accent edge, both drawn inset (`--selected-mark`, or `--selected-edge`
+for a flat row, whose bar is its `::before`) so a row never moves. The title
+stays in the text colour. The edge is what tells a selected row from an
+accent-toned one, which has the bar and no tint. `legible()` checks every text
+colour on the tint, so a palette can't make a selected row unreadable.
 A selected row keeps its tint under hover. **Hover** is raised at 45%.
 **Focus** is a 2px accent outline, drawn for the keyboard only. **Unread** is
 a 700 title and an accent count. Selection owns the bar: a selected row
@@ -195,21 +205,26 @@ Sandboxes and the Doc share dialogs. Still hand-rolled: the rest of the
 
 ## Menus
 
-*(being built: #757.)* One menu: `openMenu` (`shared/ui/menu.tsx`). Chat's ⋯,
-Boards' facets and the pane menu all use it.
+One menu: `openMenu` (`shared/ui/menu.tsx`). Chat's ⋯, Boards' facets and the
+pane menu all use it.
 
-- An icon column of 16px stroke icons (`rail-icons.tsx`), only in a menu where
-  every row has one. ✓ is "several, and the menu stays open"; ● is "one of".
-- A menu of 13 rows or more gets a filter row. A work-item picker stays a
-  combobox (it takes pasted ids) and draws its list as the menu.
-- At ≤600px it is a bottom sheet on `--backdrop`, with 44px rows at 15px. A
-  coarse pointer wider than that keeps the dropdown at touch size.
+- An icon column of 16px stroke icons, only in a menu where every row has one
+  (`icon` on an item). Any row with an icon or a mark gives every row the
+  column. ✓ (`multi`) is "several, and the menu stays open"; ● (`checked`,
+  `current`) is "one of".
+- A work-item picker stays a combobox (it takes pasted ids) and draws its list
+  as the menu. A filter row for a menu of 13 rows or more is not built yet.
+- At ≤600px it is a bottom sheet on `--backdrop` (z 90, over a side sheet at
+  85 and under a dialog at 95), with 44px rows at 15px; a tap on the backdrop
+  closes the menu alone. A coarse pointer wider than that keeps the dropdown at
+  touch size.
 - A menu inherits the page's one UI face; it has no face rule of its own.
 
 ## Empty and error states
 
-*(being built: #692.)* One `EmptyState`: a title, a why, and at most one
-`.primary`.
+One `EmptyState` (`shared/ui/block-states.tsx`): a title, a why, and at most
+one `.primary`. Loading is `BlockLoading`, which says nothing for the first
+300ms so a quick load doesn't flash it.
 
 - **The title is a statement with a full stop** ("No rows yet."), 15/600. The
   why says what the thing is and where it comes from, in one or two
@@ -218,14 +233,15 @@ Boards' facets and the pane menu all use it.
   gets the same card, centred. No picture.
 - **No button** when the action is already on screen (chat's composer, the
   phone's quick buttons) or the reader can't take it; the why says who can.
-- **No match is a dim line**, not a card, with Clear. So is "None yet." in a
-  settings section.
-- **An error** is the same card with a solid danger edge and a 15/600 title
-  starting "Can't…", and Try again as a `.secondary`. On a page it stands in
+- **No match is a dim line** (`EmptyLine`), not a card, with Clear when the
+  page has none beside it. So is "None yet." in a settings section.
+- **An error** (`BlockError`) is the same card with a solid danger edge and a
+  15/600 title starting "Can't…", and Try again as a `.secondary`. On a page it stands in
   for the content only when the whole list couldn't be read; a form error
   stays a red line by its field.
 - **Phone, Here, nothing waiting:** one short dim line under the Needs you
-  heading, "Nothing right now."
+  heading, "Nothing right now." Needs you is a 15/600 title there and in the
+  swarm's rail, not display caps.
 
 ## Touch
 
@@ -248,22 +264,3 @@ Use the scale: `--space-1` … `--space-6` (4, 8, 12, 16, 20, 24). Corners come
 from the Corners setting (`--btn-radius`, `--tag-radius`, `--card-radius`,
 `--panel-radius`), never a raw `6px`. A page header ends in a 1px `--line`
 rule; a page's sections are separated by a section head, not a box.
-
-## Open
-
-**Is accent also a tone?** The rule above says accent means live, which is
-"the thing you're in or on". Two places use it as a *tone* for a row that is
-neither selected nor chosen: the Docs list's "open in a block"
-(`shell/ui/docs-page.tsx`) and Boards' Review lane (`shared/boards/text.ts`).
-An unselected accent-toned row draws the same bar as a selected one, and only
-the tint tells them apart. Cards get past it with an accent edge; flat rows
-don't.
-
-- **A. Accent is only live/selected.** "Open" becomes a mark (the `%956` the
-  row already shows) and not a bar, and Review gets a status colour. One
-  meaning for accent.
-- **B. Accent is also a tone.** Rows keep their accent bar, and the selected
-  state has to differ from it by something other than the bar (a stronger
-  tint, or an edge).
-
-Until this is decided, don't add a new accent-toned row.

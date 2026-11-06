@@ -17,7 +17,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { blockRoute, onBlockRoutes, routeTitle, setBlockRoute, type BlockRoute } from "./block-route";
-import { BlockEmpty, BlockError } from "./block-states";
+import { BlockError, EmptyState } from "./block-states";
 import { blockOrigin, blockSrc, credsFor, frameAllow, frameBlock, type Routing } from "./through-control";
 
 export interface FrameProps {
@@ -108,10 +108,11 @@ export function BlockFrame(p: FrameProps) {
       <p class="block-error-detail">This machine has no block site of its own to fall back to. Try Chrome, or another browser.</p>
     </BlockError>
   ) : (
-    <BlockEmpty data-block-nowhere>
-      <p>This block shows in Arugula cloud</p>
-      <p>This machine has no block site of its own (--block-listen), so its ports and editors open from there.</p>
-    </BlockEmpty>
+    <EmptyState
+      data-block-nowhere
+      title="This block shows in Arugula cloud."
+      why="This machine has no block site of its own (--block-listen), so its ports and editors open from there."
+    />
   );
 }
 

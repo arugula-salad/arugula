@@ -177,35 +177,33 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   padding: 4px 4px 4px 10px;
 }
 
-/* A big tip (shell/hints' pane modal): a panel over 90% of its pane (5%
+/* A big tip (shell/hints' pane modal): a Modal over 90% of its pane (5%
    margin each side), which keeps drawing under it, dimmed. Its content sits
    in the middle at a reading width; a short or narrow pane scrolls it
-   inside the panel. */
-.pane-tip-backdrop {
+   inside the panel, and its buttons stay pinned at the bottom. The backdrop
+   is the pane's, not the window's. */
+html:root .prompt-backdrop.pane-tip-backdrop {
   position: absolute;
-  inset: 0;
   z-index: 8;
-  background: var(--backdrop);
+  display: block;
+  padding: 0;
+  backdrop-filter: none;
 }
-.pane-tip {
+.prompt.pane-tip {
   position: absolute;
   inset: 5%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  width: auto;
+  max-height: none;
+  padding: 0;
   overflow: hidden;
-  border-radius: var(--panel-radius);
-  background: var(--raised);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  box-shadow: var(--shadow-lg);
-  color: var(--fg);
   font-size: var(--text-md);
   line-height: 1.45;
   container-type: size;
 }
-.pane-tip:focus { outline: none; }
-/* `margin: auto` on the inner box centres it when it fits and starts at the
-   top, scrollable, when it doesn't. */
 .pane-tip-scroll {
   flex: 1;
   min-height: 0;
@@ -220,11 +218,7 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   margin: auto;
   text-align: center;
 }
-.pane-tip h2 {
-  margin: 0 0 10px;
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
+.pane-tip h2 { margin: 0 0 10px; }
 .pane-tip h3 {
   margin: 12px 0 4px;
   font-size: var(--text-md);
@@ -247,51 +241,39 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   margin: 0;
   z-index: 1;
 }
-.pane-tip-buttons {
-  display: flex;
+/* The footer is Modal's (buttons.css order, right-aligned); the opt-out sits
+   at its left. */
+.pane-tip > .prompt-buttons {
+  flex: none;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
+  align-items: center;
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
 }
-.pane-tip-never {
+.prompt .pane-tip-never {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 16px;
+  margin-right: auto;
   color: var(--dim);
   font-size: var(--text-sm);
+  font-weight: 400;
 }
+.pane-tip-never input { margin: 0; padding: 0; }
 
-/* A narrow or short panel: tighter type and spacing, and the buttons (with
-   the "don't show again" row) stay pinned at the bottom of the scroller
-   while the text scrolls behind them. */
+/* A narrow or short panel: tighter type and spacing. */
 @container (max-width: 340px) or (max-height: 320px) {
   .pane-tip { font-size: var(--text-sm); }
-  .pane-tip-scroll { padding: 12px 10px 0; }
-  .pane-tip h2 { margin-bottom: 6px; font-size: var(--text-md); }
+  .pane-tip-scroll { padding: 12px 10px; }
+  .pane-tip h2 { margin-bottom: 6px; }
   .pane-tip h3 { margin-top: 8px; font-size: var(--text-sm); }
   .pane-tip p,
   .pane-tip ul { margin-bottom: 6px; }
-  .pane-tip-foot {
-    position: sticky;
-    bottom: 0;
-    padding: 6px 0 8px;
-    background: var(--raised);
-  }
-  /* A fade over the text's last line, so text cut off under the buttons
-     reads as scrolled away rather than broken. */
-  .pane-tip-foot::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    height: 14px;
-    background: linear-gradient(transparent, var(--raised));
-    pointer-events: none;
-  }
-  .pane-tip-buttons { gap: 4px; margin-top: 0; }
-  .pane-tip-buttons button { padding: 3px 8px; font-size: var(--text-sm); }
-  .pane-tip-never { margin-top: 6px; font-size: var(--text-xs); }
+  /* The buttons take the compact size and centre, and the opt-out gets a
+     row of its own under them, so a narrow pane's footer stays a few short
+     rows rather than one per button. */
+  .pane-tip > .prompt-buttons { gap: 4px; padding: 6px 8px; justify-content: center; }
+  .pane-tip > .prompt-buttons :is(.primary, .secondary) { min-height: 24px; padding: 3px 8px; font-size: var(--text-sm); }
+  .prompt .pane-tip-never { order: 1; flex-basis: 100%; justify-content: center; margin-right: 0; font-size: var(--text-xs); }
 }

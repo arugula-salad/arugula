@@ -11,7 +11,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import type { CodeView } from "../swarm/code";
 import { registerBlock, type BlockView } from "./view";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import { editFile } from "./diff";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
@@ -97,7 +97,7 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
         )}
       </Bar>
       {problem && (
-        s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <BlockEmpty>{problem}.</BlockEmpty>
+        s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <EmptyState title={`${problem}.`} />
       )}
       {!s || (s.loading && !s.text) ? <BlockLoading what={s?.name ?? "the file"} /> : null}
       <div class="file-code" ref={box} style={problem || !s || (s.loading && !s.text) ? { display: "none" } : undefined} />

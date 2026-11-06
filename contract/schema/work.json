@@ -947,6 +947,18 @@
             "null"
           ]
         },
+        "made_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadeFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For a team Doc made from a copy (Share with…): where from. Null for\nany other Doc, and from an older platform."
+        },
         "project": {
           "type": "string"
         },
@@ -1596,6 +1608,31 @@
       ],
       "type": "object"
     },
+    "MadeFrom": {
+      "description": "The copy a team Doc was made from.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": null,
+          "description": "The name of the machine the copy is from, when control knows it. Only\nwhat the platform could tell; the copy itself is its owner's to read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "The copy's project (its owner's personal one) and its id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "id"
+      ],
+      "type": "object"
+    },
     "NewDoc": {
       "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
       "properties": {
@@ -1856,6 +1893,91 @@
           "type": "object"
         }
       ]
+    },
+    "ReadyRun": {
+      "description": "A run that's ready for this machine and hasn't started.",
+      "properties": {
+        "deploy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeployWork"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's run (M219): the deploy it applies, with its owner's\napproval, which the machine checks itself before it starts."
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectGrant"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project's standing grant the run starts under (M211), when it's\n`pending` under one, and the project's revokes the platform holds.\nThe machine checks them against its own enrollment before anything\nstarts, and keeps the revokes."
+        },
+        "last_seq": {
+          "description": "The run's latest event: the machine's first report is the next.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "description": "The S37 operation's bytes (`arugula op v1`), exactly as stored.",
+          "type": "string"
+        },
+        "op_hash": {
+          "description": "Their SHA-256, hex: the machine checks the bytes against it.",
+          "type": "string"
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A v2 grant's granter's passkey log, as the platform read it from the\nhub (DK6, as `crate::runs::RunStart::passkey_log`): the machine takes\nonly its removals."
+        },
+        "project": {
+          "type": "string"
+        },
+        "revokes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GrantRevoke"
+          },
+          "type": "array"
+        },
+        "run": {
+          "description": "`run_` and 32 hex characters.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`pending` (under the project's standing grant) or `approved`.",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The hosted workspace (`hw_…`) the machine is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "project",
+        "workspace",
+        "op",
+        "op_hash",
+        "state",
+        "last_seq"
+      ],
+      "type": "object"
     },
     "Report": {
       "description": "One state change, signed by the machine that made it.",
@@ -2908,7 +3030,7 @@
         "items": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/WorkItem"
+            "$ref": "#/$defs/ReadyRun"
           },
           "type": "array"
         },
@@ -2928,91 +3050,6 @@
           "type": "array"
         }
       },
-      "type": "object"
-    },
-    "WorkItem": {
-      "description": "A run that's ready for this machine and hasn't started.",
-      "properties": {
-        "deploy": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DeployWork"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A deploy's run (M219): the deploy it applies, with its owner's\napproval, which the machine checks itself before it starts."
-        },
-        "grant": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ProjectGrant"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The project's standing grant the run starts under (M211), when it's\n`pending` under one, and the project's revokes the platform holds.\nThe machine checks them against its own enrollment before anything\nstarts, and keeps the revokes."
-        },
-        "last_seq": {
-          "description": "The run's latest event: the machine's first report is the next.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "op": {
-          "description": "The S37 operation's bytes (`arugula op v1`), exactly as stored.",
-          "type": "string"
-        },
-        "op_hash": {
-          "description": "Their SHA-256, hex: the machine checks the bytes against it.",
-          "type": "string"
-        },
-        "passkey_log": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Log"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A v2 grant's granter's passkey log, as the platform read it from the\nhub (DK6, as `crate::runs::RunStart::passkey_log`): the machine takes\nonly its removals."
-        },
-        "project": {
-          "type": "string"
-        },
-        "revokes": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/GrantRevoke"
-          },
-          "type": "array"
-        },
-        "run": {
-          "description": "`run_` and 32 hex characters.",
-          "type": "string"
-        },
-        "state": {
-          "description": "`pending` (under the project's standing grant) or `approved`.",
-          "type": "string"
-        },
-        "workspace": {
-          "description": "The hosted workspace (`hw_…`) the machine is.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "run",
-        "project",
-        "workspace",
-        "op",
-        "op_hash",
-        "state",
-        "last_seq"
-      ],
       "type": "object"
     }
   },

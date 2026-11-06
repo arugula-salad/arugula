@@ -8,6 +8,7 @@
 // workspace makes them too, as itself. A write anywhere reaches an open
 // page live, through the Doc's thread (as a board's does).
 
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
@@ -16,14 +17,17 @@ import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
 import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
+import { Modal } from "../../shared/ui/modal";
 import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
@@ -210,17 +214,13 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
   ];
   const status =
     rows === null ? (
-      <p class="dim list-status" data-docs-loading>
-        Reading the Docs…
-      </p>
+      <BlockLoading inline data-docs-loading what="the Docs" />
     ) : all.length === 0 ? (
-      <p class="dim list-status" data-docs-none>
-        No Docs yet.
-      </p>
+      <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />
     ) : shown.length === 0 ? (
-      <p class="dim list-status" data-docs-none>
+      <EmptyLine data-docs-none>
         {q ? "No Doc's title or headings match." : filter === "private" ? "None of your Docs is private." : "No Doc is shared."}
-      </p>
+      </EmptyLine>
     ) : undefined;
   const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Every Doc you can read, in your projects";
   return (
@@ -252,7 +252,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         keyOf={(r) => r.doc.id}
         previewOn="click"
         onOpen={(r) => go(docPath(r))}
-        status={status}
+        status={status && <div class="list-status">{status}</div>}
         row={(r) => {
           const s = sections.get(readKey(r.doc));
           return {
@@ -382,6 +382,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const last = useRef<ProjectDocView | null>(null);
   /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
+  /** Share with… is open (a copy's owner's). */
+  const [sharing, setSharing] = useState(false);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -435,6 +437,19 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       {view && copy && (
         <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
           A copy of a Doc in {copy}'s library, updated <Time at={view.doc.updated_at} on />. It's read-only here: change it on {copy}, and its next copy brings the change.
+          {!p.team && (
+            <>
+              {" "}
+              <button type="button" class="link" data-doc-share-with onClick={() => setSharing(true)}>
+                Share with…
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {view && !copy && view.doc.made_from && (
+        <p class="dim project-doc-copy" data-doc-made-from>
+          Made from {madeFrom(view.doc, p)}.
         </p>
       )}
       {missing && !view && (
@@ -481,9 +496,52 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           })}
         </p>
       )}
+      {sharing && view && <ShareWithModal project={project} id={view.doc.id} done={() => setSharing(false)} />}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
       {view && copy && deleter && <CopyDeleter project={project} view={view} machine={copy} mine={view.doc.author === session.me?.account} />}
     </section>
+  );
+}
+
+/** Where a team Doc was made from, in words: whose Doc, and on which machine. */
+function madeFrom(d: ProjectDoc, p: PlatformProject): string {
+  const owner = nameOf(p)(d.author);
+  const whose = owner === "you" ? "your" : `${owner ?? "a teammate"}'s`;
+  const machine = d.made_from?.machine_name;
+  return `${whose} Doc${machine ? ` on ${machine}` : ""}`;
+}
+
+/** Share with…: the projects the reader writes Docs in, and what each has of
+ * this copy. Update copy that would replace the team's edits asks first, in
+ * this same dialog. */
+function ShareWithModal({ project, id, done }: { project: string; id: string; done: () => void }) {
+  const [asking, setAsking] = useState<Edited | null>(null);
+  if (asking) return <EditedDialog edited={asking} cancel={() => setAsking(null)} />;
+  return (
+    <Modal
+      title="Share with…"
+      close={done}
+      root={{ "data-share-with-dialog": true }}
+      buttons={
+        <button class="secondary" type="button" onClick={done}>
+          Done
+        </button>
+      }
+    >
+      <p class="dim">Makes a Doc in the project from this copy as it is now. The team owns and edits it; this one stays the machine's.</p>
+      <ShareWith
+        project={project}
+        id={id}
+        ask={setAsking}
+        say={toast}
+        done={toast}
+        open={(c) => {
+          done();
+          go(pathOf({ page: "doc", project: c.project, doc: c.id }, names));
+        }}
+        unreachable={<p class="dim">Couldn't reach the platform.</p>}
+      />
+    </Modal>
   );
 }
 
@@ -506,15 +564,11 @@ function CopyDeleter({ project, view, machine, mine }: { project: string; view: 
         Delete the copy
       </button>
       {gone && (
-        <p class="project-doc-confirm" data-doc-confirm>
-          Delete “{view.doc.title}” from the project? {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.{" "}
-          <button type="button" class="danger" data-doc-confirm-delete onClick={() => void remove()}>
-            Delete
-          </button>{" "}
-          <button type="button" onClick={() => setGone(false)}>
-            Keep
-          </button>
-        </p>
+        <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
+          <p data-doc-confirm>
+            It leaves the project. {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.
+          </p>
+        </ConfirmRemove>
       )}
     </div>
   );
@@ -563,6 +617,7 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
   };
   const ready = section === NEW ? !!heading.trim() : markdown !== (current?.body ?? "");
   return (
+    <>
     <form class="project-doc-form project-doc-writer" onSubmit={(e) => void save(e)} data-doc-writer>
       <label>
         Write{" "}
@@ -586,18 +641,13 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
           Delete the Doc
         </button>
       </span>
-      {gone && (
-        <p class="project-doc-confirm" data-doc-confirm>
-          Delete “{view.doc.title}” for everyone in the project?{" "}
-          <button type="button" class="danger" data-doc-confirm-delete onClick={() => void remove()}>
-            Delete
-          </button>{" "}
-          <button type="button" onClick={() => setGone(false)}>
-            Keep
-          </button>
-        </p>
-      )}
     </form>
+    {gone && (
+      <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
+        <p data-doc-confirm>It goes for everyone in the project.</p>
+      </ConfirmRemove>
+    )}
+    </>
   );
 }
 
@@ -609,7 +659,7 @@ export function ProjectDocs({ p }: { p: PlatformProject }) {
   return (
     <>
       <SectionHead title="Docs" all={all} onAll={(e) => follow(e, all)} data="project-docs-link" />
-      {list.length === 0 && <p class="dim">No Docs yet.</p>}
+      {list.length === 0 && <EmptyState where="page" title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
       <div data-project-docs>
         <DocRows p={p} list={list.slice(0, 5)} />
       </div>

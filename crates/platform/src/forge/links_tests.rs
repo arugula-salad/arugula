@@ -53,6 +53,15 @@ pub struct Gh {
     pub posted: Vec<(String, String, Value)>,
     /// A status every post is refused with, while set.
     pub(super) refuse: Option<u16>,
+    /// A status every question about a person's permission is answered
+    /// with, while set (GitHub having a bad minute).
+    pub(super) permission_fails: Option<u16>,
+    /// A permission answered 200 with a body that isn't JSON, while set.
+    pub(super) permission_garbled: bool,
+    /// A status every installation lookup is answered with, while set.
+    pub(super) installation_fails: Option<u16>,
+    /// A status every token mint is answered with, while set.
+    pub(super) mint_fails: Option<u16>,
     /// What an installation grants the App, by repo, when not the real
     /// App's today ([`granted`]).
     pub grants: BTreeMap<String, Value>,
@@ -132,6 +141,9 @@ pub type Shared = Arc<Mutex<Gh>>;
 
 async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let h = h.lock().unwrap();
+    if let Some(s) = h.installation_fails {
+        return StatusCode::from_u16(s).unwrap().into_response();
+    }
     let repo = format!("{o}/{r}");
     match h.installed.get(&repo) {
         Some((id, account, login)) => Json(json!({
@@ -157,6 +169,9 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
         assert!(b.get("repositories").is_none(), "{b}");
     }
     let mut h = h.lock().unwrap();
+    if let Some(s) = h.mint_fails {
+        return StatusCode::from_u16(s).unwrap().into_response();
+    }
     h.minted.push(b["permissions"].clone());
     let token = if h.numbered { format!("ghs_fake_{}", h.minted.len()) } else { "ghs_fake".to_owned() };
     // By GitHub's id (a deploy's own repository), or by its short name.
@@ -283,6 +298,12 @@ async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> 
 async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, String, String)>) -> Response {
     let mut h = h.lock().unwrap();
     h.asked += 1;
+    if let Some(s) = h.permission_fails {
+        return StatusCode::from_u16(s).unwrap().into_response();
+    }
+    if h.permission_garbled {
+        return "<html>unicorn</html>".into_response();
+    }
     let Some((role, id)) = h.roles.get(&(format!("{o}/{r}"), login.clone())) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -291,6 +312,34 @@ async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, 
         r => r,
     };
     Json(json!({ "permission": permission, "role_name": role, "user": { "id": id, "login": login } })).into_response()
+}
+
+/// An issue by the repo's id, as a send reads back the one it opened:
+/// opened just now, in that repo.
+async fn one_issue(State(h): State<Shared>, Path((repo, n)): Path<(u64, u64)>) -> Response {
+    let h = h.lock().unwrap();
+    let now = iso(arugula_e2e::now_ms());
+    let mut v = json!({ "number": n, "title": "an issue", "state": "open", "created_at": now, "updated_at": now });
+    if let Some((name, _)) = h.repos.iter().find(|(_, (id, _))| *id == repo) {
+        v["repository_url"] = json!(format!("https://api.github.com/repos/{name}"));
+    }
+    Json(v).into_response()
+}
+
+/// GitHub's time for `ms`.
+pub fn iso(ms: u64) -> String {
+    let s = ms / 1000;
+    let (days, rem) = ((s / 86_400) as i64, s % 86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 fn bearer(headers: &axum::http::HeaderMap) -> String {
@@ -421,6 +470,7 @@ pub async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}/actions/jobs/{job}/logs", get(job_logs))
         .route("/_logs/{job}", get(log_blob))
         .route("/repositories/{repo}/issues/{n}/comments", get(issue_comments))
+        .route("/repositories/{repo}/issues/{n}", get(one_issue))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

@@ -145,6 +145,7 @@ export function readyCount(v: Pick<BoardView, "ready">): number {
 /** The kinds a person may relate by, with their words from the first item's side and the second's. */
 export const RELATION_KINDS: { kind: RelationKind; out: string; in: string }[] = [
   { kind: "blocks", out: "Blocks", in: "Blocked by" },
+  { kind: "before", out: "Before", in: "After" },
   { kind: "relates", out: "Relates to", in: "Relates to" },
   { kind: "duplicate_of", out: "Duplicate of", in: "Duplicated by" },
   { kind: "discovered_from", out: "Discovered from", in: "Led to" },

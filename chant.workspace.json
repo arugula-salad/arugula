@@ -223,6 +223,13 @@
       ]
     },
     {
+      "name": "ops",
+      "dir": "ops",
+      "kind": "chant",
+      "because": "control's hub and its platform as chant components on Fly, released from the server lane's green commits behind a production gate (server-release.yml, #1983)",
+      "links": [{ "member": "control", "output": "arugula-control" }]
+    },
+    {
       "name": "chant-fixtures",
       "kind": "examples",
       "glob": "web/e2e/fixtures/chant-*"

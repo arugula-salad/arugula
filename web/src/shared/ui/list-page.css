@@ -254,14 +254,14 @@ button.list-count:hover {
 }
 
 .list-row[aria-selected="true"] {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-edge);
 }
 
-.list-row[aria-selected="true"]:not(.bad, .warn)::before {
+/* Selection owns the bar, whatever the row's tone; the tone comes back off it. */
+.list-row[aria-selected="true"]::before {
   background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
 }
-
 .list-rows:focus-visible .list-row[aria-selected="true"] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

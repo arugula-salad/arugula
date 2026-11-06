@@ -195,7 +195,7 @@ impl WorkQuery {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Work {
     #[serde(default)]
-    pub items: Vec<WorkItem>,
+    pub items: Vec<ReadyRun>,
     /// Every revoke of the project's grants the platform holds, on every
     /// pull, ready runs or not: a machine checks them against the grants
     /// its runs going were started under, and stops those a `running stop`
@@ -211,7 +211,7 @@ pub struct Work {
 /// A run that's ready for this machine and hasn't started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct WorkItem {
+pub struct ReadyRun {
     /// `run_` and 32 hex characters.
     pub run: String,
     pub project: String,

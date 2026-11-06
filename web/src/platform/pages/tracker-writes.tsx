@@ -1,6 +1,6 @@
 // "Waiting for your approval" at the top of a project's Triage (Arugula
 // #359): the writes its agents asked to make to a connected Plane project,
-// each with Approve, Edit and Drop. Approving sends it as that agent's, with
+// each with Approve, Edit and Discard. Approving sends it as that agent's, with
 // the "via Arugula" footer added then; editing changes its text, never the
 // footer. Only owners and editors see the list, so a viewer's is empty.
 
@@ -152,7 +152,7 @@ export function WaitingWrites({ project }: { project: string }) {
                 Edit
               </button>
               <button class="secondary danger" disabled={busy} data-waiting-drop onClick={() => void act(() => call("POST", `${base}/${w.id}/drop`))}>
-                Drop
+                Discard
               </button>
             </li>
           );

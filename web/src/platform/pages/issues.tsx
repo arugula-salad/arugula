@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { IssueHome, NativeIssue } from "../../shared/proto";
 import { MsgAvatar } from "../../shared/chat/avatar";
+import { BlockError, EmptyLine, EmptyState, LOADING_DELAY_MS, useAfter } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -57,6 +58,7 @@ export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact
 /** Rows' shapes while a list loads (UI audit #163, #164): the page's
  * frame paints at once, and its rows when they come. */
 export function ListLoading({ rows = 3 }: { rows?: number }) {
+  if (!useAfter(LOADING_DELAY_MS)) return null;
   return (
     <ul class="issues-list sw-cards issues-loading" aria-busy="true" aria-label="Loading" data-list-loading>
       {Array.from({ length: rows }, (_, i) => (
@@ -113,6 +115,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   const [typed, setTyped] = useState(filter.q ?? "");
   const nameOf = nameIn(p);
   const key = JSON.stringify([p.id, filter.state, filter.label, filter.assignee, filter.q]);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
     setError(null);
@@ -121,7 +124,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
       (e: Error) => live && setError(e.message),
     );
     return () => void (live = false);
-  }, [key]);
+  }, [key, tick]);
 
   // Typing searches as it goes; the address keeps the words.
   const typing = useRef<number | undefined>(undefined);
@@ -210,21 +213,32 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
           </button>
         )}
       </div>
-      {error && <p class="control-error" role="alert">{error}</p>}
-      {list === null && !error && <ListLoading />}
-      {list?.length === 0 && (
-        <p class="dim issues-none" data-issues-none>
-          {narrowed
-            ? `No ${filter.state === "closed" ? "closed" : "open"} issues match.`
-            : filter.state === "closed"
-              ? "No closed issues."
-              : onGithub
-                ? `No open issues here. This project's issues are on ${home!.repos.join(", ")} on GitHub.`
-                : mayWrite(p)
-                  ? "No open issues. Open one with New issue."
-                  : "No open issues."}
-        </p>
+      {list === null && error ? (
+        <BlockError inline title="Can't read this project's issues." detail={error} retry={() => setTick((n) => n + 1)} />
+      ) : (
+        error && <p class="control-error" role="alert">{error}</p>
       )}
+      {list === null && !error && <ListLoading />}
+      {list?.length === 0 &&
+        (narrowed || filter.state === "closed" ? (
+          <EmptyLine data-issues-none>
+            {narrowed ? `No ${filter.state === "closed" ? "closed" : "open"} issues match.` : "No closed issues."}
+          </EmptyLine>
+        ) : onGithub ? (
+          <EmptyState
+            where="page"
+            data-issues-none
+            title="No open issues here."
+            why={`This project's issues are on ${home!.repos.join(", ")} on GitHub.`}
+          />
+        ) : (
+          <EmptyState
+            where="page"
+            data-issues-none
+            title="No open issues."
+            why="An issue is a bug, a follow-up or a ticket for later. Agents open them too."
+          />
+        ))}
       <ul class="issues-list sw-cards" data-issues-list>
         {list?.map((i) => (
           <IssueRow key={i.id} p={p} i={i} nameOf={nameOf} label={(l) => to({ ...filter, label: l })} />
@@ -565,7 +579,7 @@ export function ProjectIssues({ p }: { p: PlatformProject }) {
   return (
     <>
       <SectionHead title="Issues" all={all} onAll={(e) => follow(e, all)} data="project-issues-link" action={mayWrite(p) && <NewIssueButton p={p} home={home} small />} />
-      {list?.length === 0 && <p class="dim">No open issues.</p>}
+      {list?.length === 0 && <EmptyState where="page" title="No open issues." why="An issue is a bug, a follow-up or a ticket for later. Agents open them too." />}
       {/* Rows, as the home's rooms are (UI audit #162): a title and its
           number, no underline until hovered. */}
       <ul class="platform-list sw-rows" data-project-issues>

@@ -904,7 +904,7 @@
         },
         "zones": {
           "items": {
-            "$ref": "#/$defs/Zone"
+            "$ref": "#/$defs/LaneView"
           },
           "type": "array"
         }
@@ -1109,11 +1109,19 @@
     },
     "EntryKind": {
       "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-      "enum": [
-        "zone",
-        "row"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "row"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "zone",
+          "description": "A group; `group` is read as this too.",
+          "type": "string"
+        }
+      ]
     },
     "Group": {
       "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
@@ -1199,6 +1207,45 @@
       ],
       "type": "object"
     },
+    "LaneView": {
+      "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title",
+        "rows"
+      ],
+      "type": "object"
+    },
     "LeadBoard": {
       "description": "`POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's\nlead (`session`, its name on its machine), or with `release` the lead is\ncleared, by the machine of the session that leads or by a person.",
       "properties": {
@@ -1213,6 +1260,107 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "LinkBatch": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s body.",
+      "properties": {
+        "add": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "LinkEnds": {
+      "additionalProperties": false,
+      "description": "One link of a [`LinkBatch`]: `from` is `kind` `to`.",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "LinkOutcome": {
+      "description": "What became of one link.",
+      "oneOf": [
+        {
+          "enum": [
+            "added",
+            "already_there",
+            "removed",
+            "not_there"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Not done; `why` says.",
+          "type": "string"
+        }
+      ]
+    },
+    "LinkResult": {
+      "description": "One link's outcome, in the order it was given.",
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/LinkOutcome"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "LinksDone": {
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of\n`add` and of `remove`, in order.",
+      "properties": {
+        "add": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "add",
+        "remove"
+      ],
       "type": "object"
     },
     "Live": {
@@ -1536,7 +1684,7 @@
           ]
         },
         "zone": {
-          "description": "The group the row goes to; `null`: none. Absent: its own.",
+          "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
           "type": [
             "string",
             "null"
@@ -1938,7 +2086,7 @@
         },
         "zone": {
           "default": null,
-          "description": "A new row's group (`zon_…`).",
+          "description": "A new row's group (`zon_…`); `group` is read as this too.",
           "type": [
             "string",
             "null"
@@ -1998,7 +2146,7 @@
       ]
     },
     "RelationKind": {
-      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
       "oneOf": [
         {
           "enum": [
@@ -2019,6 +2167,11 @@
         {
           "const": "discovered_from",
           "description": "The first item was found while working on the second.",
+          "type": "string"
+        },
+        {
+          "const": "before",
+          "description": "The first item comes before the second, in the order the work is\ndone in.",
           "type": "string"
         }
       ]
@@ -2258,6 +2411,90 @@
       ],
       "type": "object"
     },
+    "RowCandidate": {
+      "description": "One thing a row may point at.",
+      "properties": {
+        "assignees": {
+          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`issue`, `pr` or `run`.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "A run has none.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "`native`, `github`, `plane` or `run`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+          "type": "string"
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pointer",
+        "source",
+        "kind",
+        "title",
+        "state",
+        "assignees",
+        "updated_at"
+      ],
+      "type": "object"
+    },
     "RowRelation": {
       "description": "An edge of a row's item, as the reader sees it.",
       "properties": {
@@ -2362,96 +2599,12 @@
       ],
       "type": "object"
     },
-    "WorkItem": {
-      "description": "One thing a row may point at.",
-      "properties": {
-        "assignees": {
-          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "identifier": {
-          "description": "A tracker item's project key (`ARUGU`).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "description": "`issue`, `pr` or `run`.",
-          "type": "string"
-        },
-        "labels": {
-          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "number": {
-          "description": "A run has none.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "pointer": {
-          "$ref": "#/$defs/Pointer",
-          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-        },
-        "repo": {
-          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "source": {
-          "description": "`native`, `github`, `plane` or `run`.",
-          "type": "string"
-        },
-        "state": {
-          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-          "type": "string"
-        },
-        "title": {
-          "description": "A run's: how it started (`manual run`).",
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "url": {
-          "description": "Where a tracker item is, in the tracker.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "pointer",
-        "source",
-        "kind",
-        "title",
-        "state",
-        "assignees",
-        "updated_at"
-      ],
-      "type": "object"
-    },
     "WorkItems": {
       "description": "[`PROJECT_WORK`]'s answer: the newest first, across sources.",
       "properties": {
         "items": {
           "items": {
-            "$ref": "#/$defs/WorkItem"
+            "$ref": "#/$defs/RowCandidate"
           },
           "type": "array"
         },
@@ -2566,44 +2719,6 @@
           "type": "boolean"
         }
       },
-      "type": "object"
-    },
-    "Zone": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "kind": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ZoneKind"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "rev": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "rows": {
-          "items": {
-            "$ref": "#/$defs/Row"
-          },
-          "type": "array"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "rev",
-        "title",
-        "rows"
-      ],
       "type": "object"
     },
     "ZoneKind": {

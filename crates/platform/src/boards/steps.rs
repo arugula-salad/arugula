@@ -15,7 +15,7 @@ use arugula_control_wire::boards as wire;
 /// Whether an open `kind` edge puts its first end before its second in a
 /// board's steps. The one place that says which kinds order.
 pub fn orders_steps(kind: wire::RelationKind) -> bool {
-    kind == wire::RelationKind::Blocks
+    matches!(kind, wire::RelationKind::Blocks | wire::RelationKind::Before)
 }
 
 /// One row, as the steps see it.

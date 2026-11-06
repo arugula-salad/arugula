@@ -48,7 +48,7 @@ test.afterAll(() => {
 
 type Info = { on: boolean; why: string; via?: string; preview: { events: { event: string; views?: Record<string, number> }[] } };
 const info = async (): Promise<Info> => (await (await fetch(`${base}/api/telemetry`)).json()) as Info;
-const card = (p: Page) => p.getByRole("dialog", { name: "Help improve Arugula?" });
+const card = (p: Page) => p.getByRole("region", { name: "Help improve Arugula?" });
 const optIn = (p: Page) => p.addInitScript(() => Object.assign(window, { __arugulaTelemetry: true }));
 
 /** The page, connected and drawn, then a moment for the card to come. */

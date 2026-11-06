@@ -1455,7 +1455,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -3603,7 +3603,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -3722,7 +3722,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -3955,7 +3955,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -4033,15 +4033,6 @@
             ],
             "type": "object"
           },
-          "RelationKindArg": {
-            "enum": [
-              "blocks",
-              "relates",
-              "duplicate_of",
-              "discovered_from"
-            ],
-            "type": "string"
-          },
           "StringOrList": {
             "anyOf": [
               {
@@ -4068,7 +4059,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title).",
             "type": "string"
           },
           "doc": {
@@ -4107,7 +4098,7 @@
             "type": "string"
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -4126,8 +4117,6 @@
               "link_doc",
               "unlink_doc",
               "ask",
-              "relate",
-              "unrelate",
               "note",
               "group",
               "drop",
@@ -4170,10 +4159,6 @@
               "string",
               "null"
             ]
-          },
-          "relation": {
-            "$ref": "#/$defs/RelationKindArg",
-            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
           },
           "release": {
             "default": false,
@@ -4228,7 +4213,7 @@
           },
           "to": {
             "$ref": "#/$defs/StringOrList",
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them."
           },
           "verbose": {
             "default": false,
@@ -4787,6 +4772,80 @@
       },
       "name": "tracker_write",
       "title": "Write to Plane"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link work items"
+      },
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "inputSchema": {
+        "$defs": {
+          "LinkArg": {
+            "properties": {
+              "from": {
+                "description": "The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/$defs/LinkKind",
+                "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
+              },
+              "to": {
+                "description": "The second item, written the same way. `from` is `kind` it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "LinkKind": {
+            "enum": [
+              "before",
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "description": "Links to add.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "description": "Links to take off: the same from, to and kind as when added.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          }
+        },
+        "title": "LinkArgs",
+        "type": "object"
+      },
+      "name": "link",
+      "title": "Link work items"
     }
   ],
   "block, labs true": [
@@ -6361,7 +6420,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -8556,7 +8615,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -8675,7 +8734,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -8908,7 +8967,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -8986,15 +9045,6 @@
             ],
             "type": "object"
           },
-          "RelationKindArg": {
-            "enum": [
-              "blocks",
-              "relates",
-              "duplicate_of",
-              "discovered_from"
-            ],
-            "type": "string"
-          },
           "StringOrList": {
             "anyOf": [
               {
@@ -9021,7 +9071,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title).",
             "type": "string"
           },
           "doc": {
@@ -9060,7 +9110,7 @@
             "type": "string"
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -9079,8 +9129,6 @@
               "link_doc",
               "unlink_doc",
               "ask",
-              "relate",
-              "unrelate",
               "note",
               "group",
               "drop",
@@ -9123,10 +9171,6 @@
               "string",
               "null"
             ]
-          },
-          "relation": {
-            "$ref": "#/$defs/RelationKindArg",
-            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
           },
           "release": {
             "default": false,
@@ -9181,7 +9225,7 @@
           },
           "to": {
             "$ref": "#/$defs/StringOrList",
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them."
           },
           "verbose": {
             "default": false,
@@ -9740,6 +9784,80 @@
       },
       "name": "tracker_write",
       "title": "Write to Plane"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link work items"
+      },
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "inputSchema": {
+        "$defs": {
+          "LinkArg": {
+            "properties": {
+              "from": {
+                "description": "The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/$defs/LinkKind",
+                "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
+              },
+              "to": {
+                "description": "The second item, written the same way. `from` is `kind` it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "LinkKind": {
+            "enum": [
+              "before",
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "description": "Links to add.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "description": "Links to take off: the same from, to and kind as when added.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          }
+        },
+        "title": "LinkArgs",
+        "type": "object"
+      },
+      "name": "link",
+      "title": "Link work items"
     }
   ],
   "full, labs false": [
@@ -11198,7 +11316,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -13346,7 +13464,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -13465,7 +13583,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -13698,7 +13816,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -13776,15 +13894,6 @@
             ],
             "type": "object"
           },
-          "RelationKindArg": {
-            "enum": [
-              "blocks",
-              "relates",
-              "duplicate_of",
-              "discovered_from"
-            ],
-            "type": "string"
-          },
           "StringOrList": {
             "anyOf": [
               {
@@ -13811,7 +13920,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title).",
             "type": "string"
           },
           "doc": {
@@ -13850,7 +13959,7 @@
             "type": "string"
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -13869,8 +13978,6 @@
               "link_doc",
               "unlink_doc",
               "ask",
-              "relate",
-              "unrelate",
               "note",
               "group",
               "drop",
@@ -13913,10 +14020,6 @@
               "string",
               "null"
             ]
-          },
-          "relation": {
-            "$ref": "#/$defs/RelationKindArg",
-            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
           },
           "release": {
             "default": false,
@@ -13971,7 +14074,7 @@
           },
           "to": {
             "$ref": "#/$defs/StringOrList",
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them."
           },
           "verbose": {
             "default": false,
@@ -14530,6 +14633,80 @@
       },
       "name": "tracker_write",
       "title": "Write to Plane"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link work items"
+      },
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "inputSchema": {
+        "$defs": {
+          "LinkArg": {
+            "properties": {
+              "from": {
+                "description": "The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/$defs/LinkKind",
+                "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
+              },
+              "to": {
+                "description": "The second item, written the same way. `from` is `kind` it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "LinkKind": {
+            "enum": [
+              "before",
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "description": "Links to add.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "description": "Links to take off: the same from, to and kind as when added.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          }
+        },
+        "title": "LinkArgs",
+        "type": "object"
+      },
+      "name": "link",
+      "title": "Link work items"
     }
   ],
   "full, labs true": [
@@ -16104,7 +16281,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -18299,7 +18476,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -18418,7 +18595,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -18651,7 +18828,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, groups?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -18729,15 +18906,6 @@
             ],
             "type": "object"
           },
-          "RelationKindArg": {
-            "enum": [
-              "blocks",
-              "relates",
-              "duplicate_of",
-              "discovered_from"
-            ],
-            "type": "string"
-          },
           "StringOrList": {
             "anyOf": [
               {
@@ -18764,7 +18932,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…, or its exact title).",
             "type": "string"
           },
           "doc": {
@@ -18803,7 +18971,7 @@
             "type": "string"
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -18822,8 +18990,6 @@
               "link_doc",
               "unlink_doc",
               "ask",
-              "relate",
-              "unrelate",
               "note",
               "group",
               "drop",
@@ -18866,10 +19032,6 @@
               "string",
               "null"
             ]
-          },
-          "relation": {
-            "$ref": "#/$defs/RelationKindArg",
-            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
           },
           "release": {
             "default": false,
@@ -18924,7 +19086,7 @@
           },
           "to": {
             "$ref": "#/$defs/StringOrList",
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them."
           },
           "verbose": {
             "default": false,
@@ -19483,6 +19645,80 @@
       },
       "name": "tracker_write",
       "title": "Write to Plane"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link work items"
+      },
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "inputSchema": {
+        "$defs": {
+          "LinkArg": {
+            "properties": {
+              "from": {
+                "description": "The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/$defs/LinkKind",
+                "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
+              },
+              "to": {
+                "description": "The second item, written the same way. `from` is `kind` it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "LinkKind": {
+            "enum": [
+              "before",
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "description": "Links to add.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "description": "Links to take off: the same from, to and kind as when added.",
+            "items": {
+              "$ref": "#/$defs/LinkArg"
+            },
+            "type": "array"
+          }
+        },
+        "title": "LinkArgs",
+        "type": "object"
+      },
+      "name": "link",
+      "title": "Link work items"
     }
   ],
   "read, labs false": [
@@ -21166,7 +21402,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -23147,7 +23383,7 @@
           },
           "room": {
             "default": "",
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or Cloud\nworkspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {

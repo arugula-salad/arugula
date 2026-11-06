@@ -14,6 +14,7 @@ import { BoardPanel } from "../../shared/boards/view";
 import { boards } from "../../shared/boards/store";
 import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -134,13 +135,13 @@ export function AllBoardsPage() {
   return (
     <section class="platform-section sw-page" data-all-boards-page>
       <PageHeader title="Boards" />
-      {lists === null && <p class="dim">Loading…</p>}
-      {lists && shown.length === 0 && <p class="dim">No boards yet. Make one on a project's Boards page.</p>}
+      {lists === null && <BlockLoading inline what="boards" />}
+      {lists && shown.length === 0 && (
+        <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />
+      )}
       {shown.length > 0 && <BoardFilter q={q} setQ={setQ} />}
       {q.trim() && shown.length > 0 && kept.length === 0 && (
-        <p class="dim" data-boards-filter-none>
-          No board matches “{q.trim()}”.
-        </p>
+        <EmptyLine data-boards-filter-none>No board matches “{q.trim()}”.</EmptyLine>
       )}
       {kept.map(({ p, list }) => {
         const all = pathOf({ page: "boards", project: p.id }, names);
@@ -239,8 +240,10 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
           </button>
         </div>
       )}
-      {list === null && <p class="dim">Loading…</p>}
-      {list?.length === 0 && <p class="dim">No boards yet.</p>}
+      {list === null && <BlockLoading inline what="boards" />}
+      {list?.length === 0 && (
+        <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one below." />
+      )}
       {list && list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
       {list && <BoardItems p={p} list={list} data="data-boards" q={q} drop={tri} between={<NotOnBoard p={p} tri={tri} open={open} scroll={scroll} />} />}
       {mayWrite(p) && (
@@ -295,7 +298,7 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
   return (
     <>
       <SectionHead title="Boards" all={all} onAll={(e) => follow(e, all)} data="project-boards-link" />
-      {list.length === 0 && <p class="dim">No boards yet.</p>}
+      {list.length === 0 && <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs." />}
       {list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
       <BoardItems p={p} list={list} data="data-project-boards" q={q} />
     </>

@@ -1,8 +1,8 @@
 # arugula-control, as the hosted one runs: the static binary (`just static`)
 # on distroless, which brings CA certificates (for GitHub's API) and nothing
-# else. It runs as root: Fly volumes are root-owned. A release tag
-# (scripts/ci-control-deploy) or `just control-deploy` builds the context
-# and deploys to Fly.
+# else. It runs as root: Fly volumes are root-owned. A release
+# (server-release.yml, through chant) or `just control-deploy` builds the
+# context.
 
 # Litestream (#174), for the off-site backup: a static binary, checked
 # against the release's checksum. Control runs it only when LITESTREAM_BUCKET

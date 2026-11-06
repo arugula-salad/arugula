@@ -74,6 +74,44 @@ async fn a_chain_has_one_ready_row_and_closing_the_blocker_moves_it() {
     assert!(text.contains("Ready (2): "), "{text}");
 }
 
+/// A `before` link (Arugula #761) shows on both rows, one each way, and
+/// gates nothing: B stays ready. It counts in a cycle with `blocks`.
+#[tokio::test]
+async fn a_before_link_shows_both_ways_gates_nothing_and_cycles_with_blocks() {
+    let (base, _app, team, id) = start().await;
+    let (a, _) = native(&base, &team, "Design").await;
+    let (b, _) = native(&base, &team, "Build").await;
+    let (c, _) = native(&base, &team, "Ship").await;
+    for i in [&a, &b, &c] {
+        add(&base, &id, json!({ "kind": "issue", "id": i })).await;
+    }
+    let (s, v) = relate(&base, "bob", &team, &a, "before", &b).await;
+    assert_eq!((s, v["kind"].as_str()), (200, Some("before")), "{v}");
+
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(ready(&v), [row_id(&v, &a), row_id(&v, &b), row_id(&v, &c)], "before gates nothing: {v}");
+    let (_, ra) = on(&v, &a);
+    let (_, rb) = on(&v, &b);
+    assert_eq!(
+        (ra["relations"][0]["kind"].as_str(), ra["relations"][0]["direction"].as_str()),
+        (Some("before"), Some("out"))
+    );
+    assert_eq!(
+        (rb["relations"][0]["kind"].as_str(), rb["relations"][0]["direction"].as_str()),
+        (Some("before"), Some("in"))
+    );
+    assert!(rb.get("marks").is_none(), "{rb}");
+
+    // A before B, B blocks C: C before A, and A blocks C's way round, are cycles.
+    let (s, v) = relate(&base, "bob", &team, &b, "blocks", &c).await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = relate(&base, "bob", &team, &c, "before", &a).await;
+    assert_eq!(s, 409, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("cycle"), "{v}");
+    let (s, v) = relate(&base, "bob", &team, &b, "before", &a).await;
+    assert_eq!(s, 409, "two before links the other way round: {v}");
+}
+
 /// A cycle of `blocks` is refused when written, of two or of three; so is an
 /// edge to the item itself and the same edge twice. `relates` has no such
 /// rule about direction.

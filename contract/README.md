@@ -65,8 +65,8 @@ and types, or matched by a rule in `out` that says why not. A type two modules
 define differently is written `module.Name`.
 
 The map and the generator are outside `crates/control-wire` and `routes.toml`
-on purpose: `scripts/ci-hub-changed` counts a change to either as a hub change,
-and a hub deploy drops every relayed terminal.
+on purpose: the hub's release inputs (`ops/src/control.component.ts`) count a
+change to either as a hub change, and a hub deploy drops every relayed terminal.
 
 ## examples/wire/
 

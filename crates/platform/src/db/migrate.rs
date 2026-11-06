@@ -696,6 +696,24 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0100_forge_full_pass.sql"),
         additive: true,
     },
+    Migration {
+        version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/sqlite/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
+        name: "project_doc_made_from",
+        sql: include_str!("../../migrations/sqlite/0102_project_doc_made_from.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 103,
+        name: "work_relations_before",
+        sql: include_str!("../../migrations/sqlite/0103_work_relations_before.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -1300,6 +1318,24 @@ const POSTGRES: &[Migration] = &[
         version: 100,
         name: "forge_full_pass",
         sql: include_str!("../../migrations/postgres/0100_forge_full_pass.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/postgres/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
+        name: "project_doc_made_from",
+        sql: include_str!("../../migrations/postgres/0102_project_doc_made_from.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 103,
+        name: "work_relations_before",
+        sql: include_str!("../../migrations/postgres/0103_work_relations_before.sql"),
         additive: true,
     },
 ];

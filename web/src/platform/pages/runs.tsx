@@ -21,6 +21,7 @@ import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
+import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
@@ -213,13 +214,17 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           </button>
         )}
       </div>
-      {error && <p class="control-error" role="alert">{error}</p>}
+      {list === null && error ? (
+        <BlockError inline title="Can't read this project's runs." detail={error} retry={() => setTick((n) => n + 1)} />
+      ) : (
+        error && <p class="control-error" role="alert">{error}</p>
+      )}
       {list === null && !error && <ListLoading />}
       {list?.length === 0 &&
         (narrowed ? (
-          <p class="dim issues-none" data-runs-none>
+          <EmptyLine data-runs-none>
             No runs match.
-          </p>
+          </EmptyLine>
         ) : (
           <NoRuns p={p} workspaces={listed} starting={starting} start={() => setStarting(true)} />
         ))}
@@ -271,26 +276,32 @@ function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; worksp
   const why = whyNoStart(p);
   if (why || workspaces === null)
     return (
-      <p class="dim issues-none" data-runs-none data-runs-why={why ? "" : undefined}>
-        No runs yet.{why ? ` ${why}` : ""}
-      </p>
+      <EmptyState where="page" data-runs-none data-runs-why={why ? "" : undefined} title="No runs yet." why={why ?? undefined} />
     );
   if (!workspaces.length)
     return (
-      <div class="issues-none platform-empty" data-runs-none>
-        <p>No runs yet. A run is a command on one of the project's cloud workspaces, and it has none yet: make one first.</p>
-        <NewWorkspaceButton project={p.id} />
-      </div>
+      <EmptyState
+        where="page"
+        data-runs-none
+        title="No runs yet."
+        why="A run is a command on one of the project's cloud workspaces. It has none yet: make one first."
+        action={<NewWorkspaceButton project={p.id} />}
+      />
     );
   return (
-    <div class="issues-none platform-empty" data-runs-none>
-      <p>No runs yet. Start one by hand (a command, or a run spec), or give a run spec a schedule.</p>
-      {!starting && (
-        <button class="primary" data-runs-none-start onClick={start}>
-          Start a run
-        </button>
-      )}
-    </div>
+    <EmptyState
+      where="page"
+      data-runs-none
+      title="No runs yet."
+      why="A run is a command on one of the project's cloud workspaces. Start one by hand, or give a run spec a schedule."
+      action={
+        !starting && (
+          <button class="primary" data-runs-none-start onClick={start}>
+            Start a run
+          </button>
+        )
+      }
+    />
   );
 }
 
@@ -1049,7 +1060,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
+            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty={{ title: "Nothing said about this run yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}

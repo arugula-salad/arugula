@@ -3036,7 +3036,7 @@ path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+note = "Relates two items of the project (Arugula #403): blocks, before, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a cycle of blocks and before edges are 409."
 
 [[route]]
 method = "DELETE"
@@ -3091,6 +3091,30 @@ process = "platform"
 auth = "session"
 clients = ["page", "native"]
 note = "Renames a Doc, writes a section (its body replaced) or adds one at the end: owners and editors. Capped at 64 KB a section, 40 sections and 1 MiB a Doc."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The team Docs made from a machine Doc's copy (Share with…), in the projects the reader still reads. Only the copy's owner, from their personal project: anyone else is refused."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Share with…: makes a new, ordinary Doc in the project `to` from the copy's title, sections and pictures as they are now, and records where it came from. Only the copy's owner, who writes Docs in `to`; 409 with the Doc's id when one was made from this copy there already."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/docs/{id}/copies/{to}"  # wire::project_docs::PROJECT_DOC_COPY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Update copy: the team Doc in `to` made from this copy takes the copy's title, sections and pictures as they are now. Only the copy's owner, who still writes Docs in `to`; 409 `edited` when the team edited it since and `replace` isn't set."
 
 [[route]]
 method = "DELETE"
@@ -3431,6 +3455,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Relates two items of the project for a machine's agent (Arugula #403): needs `issues.write` over the project (403 without), the owner's role is the ceiling, and the edge says an agent made it."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/relations/batch"  # wire::boards::AGENT_PROJECT_RELATIONS_BATCH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Adds and removes up to 50 links between items of the project for a machine's agent (Arugula #761), each on its own, and answers what became of every one: added, already there, removed, not there, or refused with why. Needs `issues.write` over the project (403 without). A reference is `#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id. A cycle of `before` and `blocks` links is refused; only links this machine's agents made come off."
 
 [[route]]
 method = "DELETE"

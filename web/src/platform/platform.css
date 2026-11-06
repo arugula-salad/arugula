@@ -935,19 +935,6 @@ html[data-corners="square"] .platform-section {
   padding: 0;
 }
 
-/* An empty section's next step (Discovery 5): what it's for in a line,
-   then its button. */
-.platform-empty {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-  margin: 6px 0 14px;
-}
-
-.platform-empty > p {
-  margin: 0;
-}
-
 .platform .copy-text > .control-cmd {
   font-family: var(--f-mono);
 }
@@ -1373,11 +1360,6 @@ span.untri-title {
 .untri-add:is(:hover, :focus-visible) {
   border-color: var(--line);
   color: var(--accent);
-}
-
-.untri-empty {
-  padding: 14px;
-  text-align: center;
 }
 
 /* The selection's bar at the foot of the screen, and the boards that drop

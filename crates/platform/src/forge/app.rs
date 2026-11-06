@@ -367,6 +367,24 @@ impl std::fmt::Debug for WriteToken {
     }
 }
 
+/// Why GitHub's App won't say yes ([`GithubApp::may_said`]), for the
+/// person, and whether it's GitHub's clear no or only couldn't be asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub why: String,
+    pub clear: bool,
+}
+
+impl Refused {
+    fn no(why: impl Into<String>) -> Self {
+        Refused { why: why.into(), clear: true }
+    }
+
+    fn unsure(why: impl Into<String>) -> Self {
+        Refused { why: why.into(), clear: false }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Install {
     pub id: u64,
@@ -869,19 +887,27 @@ impl GithubApp {
     /// platform's database, where GitHub's events drop them on every
     /// machine.
     pub async fn may(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
+        self.may_said(c, user, repo).await.map_err(|r| r.why)
+    }
+
+    /// [`may`](Self::may), saying whether a refusal is GitHub's clear no
+    /// (not installed there, not a collaborator, a login that changed
+    /// hands) or only that it couldn't be asked now (an error, a timeout,
+    /// GitHub's 5xx or rate limit).
+    pub async fn may_said(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, Refused> {
         let login = user.login.as_str();
         let owner = repo.split('/').next().unwrap_or_default();
         let install = match self.installation(c.http, repo).await {
             Ok(Some(i)) => i,
             Ok(None) => {
-                return Err(format!(
+                return Err(Refused::no(format!(
                     "the GitHub App {} isn't installed on {owner}: https://github.com/apps/{}/installations/new",
                     self.slug, self.slug
-                ));
+                )));
             }
             Err(e) => {
                 warn!(error = %e, "asking GitHub about the App's installation");
-                return Err("couldn't ask GitHub about the App's installation".into());
+                return Err(Refused::unsure("couldn't ask GitHub about the App's installation"));
             }
         };
         // Their own: by id, as a login that changed hands would match.
@@ -894,20 +920,41 @@ impl GithubApp {
             Ok(t) => t,
             Err(e) => {
                 warn!(error = %e, "minting a token to check access");
-                return Err("couldn't check your access to it with the App".into());
+                return Err(Refused::unsure("couldn't check your access to it with the App"));
             }
         };
         let path = format!("repos/{repo}/collaborators/{login}/permission");
-        let r =
-            self.req(c.http, reqwest::Method::GET, &path, token.secret()).send().await.map_err(|e| e.to_string())?;
-        let v: Value = if r.status().is_success() { r.json().await.unwrap_or_default() } else { Value::Null };
+        let r = self
+            .req(c.http, reqwest::Method::GET, &path, token.secret())
+            .send()
+            .await
+            .map_err(|e| Refused::unsure(e.without_url().to_string()))?;
+        let status = r.status();
+        let v: Value = match status.as_u16() {
+            // A success that doesn't say a permission says nothing.
+            _ if status.is_success() => match r.json::<Value>().await {
+                Ok(v) if v["permission"].is_string() => v,
+                _ => {
+                    return Err(Refused::unsure(format!(
+                        "GitHub's answer about {login}'s access to {repo} was garbled"
+                    )));
+                }
+            },
+            404 => Value::Null,
+            s => {
+                warn!(status = s, "asking GitHub about a collaborator");
+                return Err(Refused::unsure(format!("GitHub said {s} asking about {login}'s access to {repo}")));
+            }
+        };
         // The login control knows may belong to someone else by now.
         if v["user"]["id"].as_u64().is_some_and(|id| id != user.id) {
-            return Err(format!("the GitHub login {login} isn't yours any more: sign in to control with GitHub again"));
+            return Err(Refused::no(format!(
+                "the GitHub login {login} isn't yours any more: sign in to control with GitHub again"
+            )));
         }
         match (v["permission"].as_str(), v["user"]["id"].as_u64()) {
             (Some(p), Some(_)) if p != "none" => Ok(install),
-            _ => Err(format!("GitHub doesn't list {login} as a collaborator on {repo}")),
+            _ => Err(Refused::no(format!("GitHub doesn't list {login} as a collaborator on {repo}"))),
         }
     }
 

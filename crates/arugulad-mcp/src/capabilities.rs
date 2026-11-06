@@ -150,11 +150,12 @@ fn reconnect(told: bool) -> String {
 /// The power each control tool needs: any one of them, held over a project
 /// (`arugula grants add`). Asked of control on each call; `capabilities`
 /// says what is missing from the reach it already reads.
-const GRANTS: [(&str, &[&str]); 8] = [
+const GRANTS: [(&str, &[&str]); 9] = [
     ("read_thread", &["threads.read"]),
     ("search_threads", &["threads.read"]),
     ("post_thread", &["threads.post"]),
     ("issue_write", &["issues.write"]),
+    ("link", &["issues.write"]),
     ("start_run", &["runs.start", "runs.command"]),
     ("read_run", &["runs.read"]),
     ("board_read", &["boards.read", "boards.write"]),

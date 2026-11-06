@@ -62,12 +62,16 @@ impl Db {
             .flatten())
     }
 
-    /// The newest session made on a thread, ended or not.
+    /// The newest session made on a thread, ended or not: the thread's own,
+    /// or a Try 3's sibling once it's picked, as [`Db::session_on_thread`]
+    /// counts them. A review, or a try nobody picked, isn't the thread's.
     pub fn latest_thread_session(&self, room: &str, parent_seq: u64) -> Result<Option<AgentSession>> {
         let id: Option<String> = self
             .c()
             .query_row(
-                "SELECT id FROM agent_sessions WHERE room_id = ?1 AND parent_seq = ?2
+                "SELECT id FROM agent_sessions s WHERE room_id = ?1 AND parent_seq = ?2
+                   AND (parent_session IS NULL OR (role = 'try' AND EXISTS (
+                       SELECT 1 FROM agent_sessions p WHERE p.id = s.parent_session AND p.picked = s.id)))
                  ORDER BY created_at DESC, id DESC LIMIT 1",
                 params![room, parent_seq],
                 |r| r.get(0),

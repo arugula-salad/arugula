@@ -18,7 +18,7 @@ import { OPS, opPath } from "../../ops";
 import { startAgent } from "../agent-dialog";
 import { EditInNvim } from "../edit-in-nvim";
 import { pickConversation } from "../conversations";
-import { useEscape } from "../keys";
+import { SideSheet } from "../../../shared/ui/side-sheet";
 import { openPicker } from "../picker";
 import { closeAttention } from "./attention-drawer";
 import { ordinal } from "../panes/layout";
@@ -129,7 +129,6 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const first = useRef<HTMLButtonElement>(null);
   /** Stops waiting for the pane being made (it failed). */
   const waiting = useRef<(() => void) | null>(null);
-  useEscape("add-pane.close", busy ? null : () => addPane.close(), [busy]);
   useEffect(() => first.current?.focus(), []);
 
   // What each kind may be, here and for this person (as the pane menu
@@ -281,21 +280,36 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
     settle(before, place === "down");
   };
 
+  // The sheet's Escape and backdrop close it; not while a pane is being made.
+  const close = () => !busy && addPane.close();
   return (
-    <div
+    <SideSheet
       class="add-pane"
-      data-add-pane-drawer
-      role="dialog"
-      aria-label="Add a pane"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          void create();
-        }
-      }}
+      title="Add a pane"
+      subtitle={`${tab.name || "Current tab"} · ${anchorName}`}
+      close={close}
+      root={{ "data-add-pane-drawer": true }}
+      closeAttrs={{ "aria-label": "Close Add Pane", disabled: busy }}
+      foot={
+        <>
+          <button class="secondary" onClick={() => addPane.close()} disabled={busy}>
+            Cancel
+          </button>
+          <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>
+            {busy ? "Opening…" : NEXT.includes(kind) ? "Next…" : `Open ${label.toLowerCase()}`}
+          </button>
+        </>
+      }
     >
-      <header class="add-pane-head"><div><h2>Add a pane</h2><p>{tab.name || "Current tab"} · {anchorName}</p></div><button aria-label="Close Add Pane" disabled={busy} onClick={() => addPane.close()}>✕</button></header>
-      <div class="add-pane-body">
+      <div
+        class="add-pane-body"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            void create();
+          }
+        }}
+      >
       <div class="add-pane-row">
         <span class="add-pane-label" id="add-pane-kind">
           Pane type
@@ -416,15 +430,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
         </p>
       )}
       </div>
-      <div class="add-pane-actions">
-        <button class="secondary" onClick={() => addPane.close()} disabled={busy}>
-          Cancel
-        </button>
-        <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>
-          {busy ? "Opening…" : NEXT.includes(kind) ? "Next…" : `Open ${label.toLowerCase()}`}
-        </button>
-      </div>
-    </div>
+    </SideSheet>
   );
 }
 

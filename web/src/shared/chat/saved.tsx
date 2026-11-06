@@ -3,6 +3,7 @@
 // Activity. What's saved is control's, per account, and reaches this page's
 // other copies over the live stream (../chat-store).
 
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -91,11 +92,16 @@ export function SavedView({ phone }: { phone: boolean }) {
     <section class="chat-thread chat-view" aria-label="Saved" data-chat-saved-view>
       <ViewHead title="Saved" sub={items ? `${todo.length} to do` : undefined} phone={phone} />
       <div class="thread-list">
-        {items === null && <p class="thread-empty">Loading…</p>}
+        {items === null && <BlockLoading inline what="what you saved" />}
         {items?.length === 0 && (
-          <p class="thread-empty">
-            Nothing saved. Save a message with <BookmarkIcon size={12} /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
-          </p>
+          <EmptyState
+            title="Nothing saved."
+            why={
+              <>
+                Save a message with <BookmarkIcon size={12} /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
+              </>
+            }
+          />
         )}
         {err && <p class="thread-error">{err}</p>}
         {todo.length > 0 && (

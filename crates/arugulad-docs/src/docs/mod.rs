@@ -48,7 +48,9 @@
 //! a few seconds after it changes. The state says so with `platform: true`
 //! (when the copy lands and when the machine leaves control, [`moved`]); the
 //! page it opens at is `doc_shares`' `platform`, the owner's to ask for, as
-//! the share link is (Arugula #708).
+//! the share link is (Arugula #708), with `copy`, the copy's project and id,
+//! which Share with… (the dialog's, from the page as the person) names it
+//! by. The machine itself never writes to a team's project.
 //!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
@@ -528,6 +530,13 @@ impl Doc {
         library::read_meta(&self.dir).and_then(|m| m.platform).map(|p| p.link)
     }
 
+    /// The copy's project and id, for `doc_shares`: what Share with… names
+    /// it by.
+    fn platform_copy(&self) -> Option<Value> {
+        let on = library::read_meta(&self.dir).and_then(|m| m.platform)?;
+        Some(json!({ "project": on.project, "id": on.id }))
+    }
+
     /// `doc_share` and `doc_share_update`: the URL.
     async fn share(&self, update: bool) -> Result<Value, String> {
         let _one = self.shares.lock().await;
@@ -558,17 +567,23 @@ impl Doc {
         let got = match self.link.shares().await {
             Ok(Some(s)) => {
                 self.set_shared(Some(SharedAt { made: s.made, updated: s.updated }));
-                return Ok(
-                    json!({ "url": s.url, "made": s.made, "updated": s.updated, "platform": self.platform_link() }),
-                );
+                return Ok(json!({
+                    "url": s.url, "made": s.made, "updated": s.updated,
+                    "platform": self.platform_link(), "copy": self.platform_copy(),
+                }));
             }
             Ok(None) | Err(Fail::Gone) => self.link.available().await,
             Err(Fail::Said(e)) => return Err(e),
         };
         self.set_shared(None);
         Ok(match got {
-            Ok(()) => json!({ "shared": null, "can": true, "platform": self.platform_link() }),
-            Err(why) => json!({ "shared": null, "can": false, "why": why, "platform": self.platform_link() }),
+            Ok(()) => json!({
+                "shared": null, "can": true, "platform": self.platform_link(), "copy": self.platform_copy(),
+            }),
+            Err(why) => json!({
+                "shared": null, "can": false, "why": why, "platform": self.platform_link(),
+                "copy": self.platform_copy(),
+            }),
         })
     }
 
@@ -1635,6 +1650,8 @@ mod share_tests {
         assert_eq!(told.load(Ordering::SeqCst), 1, "clients are told once");
         assert!(!doc.state().to_string().contains("pdc_1"), "the state holds no link");
         assert_eq!(doc.platform_link().as_deref(), Some(on.link.as_str()));
+        let said = doc.call("doc_shares", json!({})).await.unwrap();
+        assert_eq!(said["copy"], json!({ "project": "prj_1", "id": "pdc_1" }), "{said}");
         // The same copy again says nothing.
         library::set_platform(&library::dir(&state_dir, &id).unwrap(), on);
         assert_eq!(told.load(Ordering::SeqCst), 1);
@@ -1642,6 +1659,7 @@ mod share_tests {
         library::forget_platform(&state_dir);
         assert!(doc.state().get("platform").is_none(), "the machine left control");
         assert_eq!(doc.platform_link(), None);
+        assert_eq!(doc.call("doc_shares", json!({})).await.unwrap()["copy"], Value::Null, "no copy, no section");
         assert_eq!(told.load(Ordering::SeqCst), 2);
         let _ = std::fs::remove_dir_all(&root);
     }

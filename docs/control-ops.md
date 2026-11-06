@@ -54,8 +54,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     repository: the platform drops the access answers it keeps (10
     minutes) when one comes, so a removed collaborator is cut off at
     once rather than within 10 minutes. Without them, that's how long it
-    takes. Any event that carries a repository also marks a linked repo
-    private when GitHub says it is.
+    takes. Only a clear answer is kept: when GitHub can't be asked (an
+    error, a 5xx, its rate limit), the repo is withheld as `unsure` and
+    asked again next time, and the inbox keeps that person's entries,
+    seen and done, as they were. Any event that carries a repository also
+    marks a linked repo private when GitHub says it is.
   - **Webhook URL** `https://control.example.com/github/webhook`, with a
     secret. **Callback URL** `https://control.example.com/auth/github/callback`
     if it also signs people in.
@@ -301,9 +304,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/arugula-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.
-- **The hosted one** is `packaging/control/` on Fly. Each release tag
-  deploys it ("Deploys" below); `just control-deploy` deploys from a
-  laptop.
+- **The hosted one** is `packaging/control/` on Fly. `just
+  server-release` releases it through chant ("Deploys" below); `just
+  control-deploy` deploys from a laptop.
 
 - **Relay limits per account**, so one account can't take the whole
   machine (0 turns each off):
@@ -1133,92 +1136,110 @@ erases its part.
 
 ### Deploys
 
-Each release tag deploys control (M133, #1129). It's automatic, with no
-approval step. The platform deploys from every tag ("The platform"
-below); the hub, which holds every relayed terminal, only from a tag that
-changed something it's built from.
+Control's hub and its platform are released through chant (#1983), from
+the server lane's green commits. Each `v*` tag releases them, with no
+approval step, as the tag's deploy jobs did before (Jake, 2026-10-20):
+chant's cut refuses a commit that isn't green on the server lane.
 
-- **The `control` job** in `.github/workflows/release.yml` runs as soon
-  as the `linux` job has built the tag's static binaries (and the
-  platform's job has ended). It doesn't wait for macOS, Windows or the
-  release to be published.
-- **Only when the hub changed.** A hub deploy drops every relayed
-  terminal for a few seconds, so the job first compares what this tag's
-  hub is built from with the release the hub runs now (`fly status`'s
-  image label, `vX`), and deploys nothing when they match. What the hub
-  is built from (`scripts/ci-hub-changed inputs`, run by the `linux` job
-  and handed over as `hub-inputs`): every workspace file rustc read to
-  build `arugula-control`, from cargo's dep-info beside the binary (all of
-  `crates/control`, `control-common`, `control-wire`, `core`, `e2e`,
-  `forge-github`, `proto` and `platform` that it compiles, `routes.toml`,
-  migrations; no tests), `web/`'s sources for the pages it embeds (less
-  the specs and dev servers), the platform's contract with the hub
-  (`HubPort`, `PlatformPort`, the signed internal calls, `routes.toml`)
-  whatever the hub compiles, every crate's `Cargo.toml`, `Cargo.toml`,
-  `Cargo.lock`, the toolchain and Zig pins, the setup action, the
-  `static`, `web` and `bootstrap` recipes, and `packaging/control`. A
-  bump's own changes (version numbers in the manifests and lock file,
-  THIRD_PARTY.md, release notes, the client fixtures) don't count. A
-  daemon-, docs- or desktop-only release leaves the hub alone.
-  - **It deploys whenever it can't tell:** no `hub-inputs`, machines on
-    different images, a hotfix's image (`deployment-…`), a tag it can't
-    fetch, a comparison that fails.
-  - **A skip is loud:** a notice and the job's summary say `hub unchanged
-    since vX: not deployed`, and the job checks that the hub answers and
-    every machine runs vX (`scripts/ci-control-deploy check vX`). A deploy's
-    summary lists what changed.
-  - **To deploy it anyway**, set the repository variable
-    `ARUGULA_HUB_DEPLOY` to `always` (`gh variable set ARUGULA_HUB_DEPLOY
-    -b always -R arugula-salad/arugula`), re-run the tag's `control` job,
-    and unset it again (`gh variable delete ARUGULA_HUB_DEPLOY -R
-    arugula-salad/arugula`). Or `just control-deploy` (Hotfixes, below).
-  - **So the hub's version lags the tag's.** The hub reports the version
-    it was built as (its user agent, PostHog's `$lib_version`), and `fly
-    releases -a illogical-control` lists only the tags that deployed it.
-    Nothing compares the hub's version with the newest release: daemons
-    and the app read `/control.json`'s capabilities, which carry no
-    version, and control's own page is embedded in the hub, so it changes
-    only when the hub deploys.
-- **The image** is built on GitHub's runner the way `just control-deploy`
-  builds it: `packaging/control/Dockerfile` around `arugula-control` and
-  `arugulad`, with `fly deploy --local-only`. It's labelled with the tag,
-  so `fly releases -a illogical-control` shows
-  `registry.fly.io/illogical-control:vX.Y.Z`.
-- **After the deploy,** `scripts/ci-control-deploy` checks that
-  `https://control.arugula.io/control.json` answers and that every machine
-  runs the tag's image with its health check passing (after a skip, the
-  image of the release it runs). If either fails, the job fails. To run
-  the same check by hand: `scripts/ci-control-deploy check vX.Y.Z`, with
-  the version the hub runs (`fly status -a illogical-control`).
-- **One deploy at a time.** A tag's deploy waits for the one before.
-  With a third tag, the one waiting is dropped, since the newer tag
-  deploys anyway.
-- **Re-running an older tag's job** doesn't take control back: if a newer
-  release is already running, the job says so and deploys nothing.
-  Re-running the job of the tag it runs deploys nothing either, unless
-  `ARUGULA_HUB_DEPLOY=always`.
-- **The token** is the repository secret `FLY_API_TOKEN`, a deploy token
-  for this app only. Without it the job fails and says so; control isn't
-  deployed until it's set and the job is re-run. The one set on
-  2026-10-20 is named `github-release-arugula-v2` and expires in 2046
-  (`fly tokens list -a illogical-control`). To replace it, make a new one
-  (`-x` sets a shorter expiry), then revoke the old:
+They're the `ops/` member (`chant.workspace.json`): three components on
+Fly, in `ops/src/`.
 
-  ```
-  fly tokens create deploy -a illogical-control -n github-release -x 8760h
-  gh secret set FLY_API_TOKEN -R arugula-salad/arugula
-  ```
+- `platform`: arugula-platform's two Machines (`shy-snowflake-5940`, which
+  `fly-release` releases and verifies, and `dawn-tree-5447`, which takes
+  the same image in the same apply). It deploys with every release. The
+  apply rolls them one at a time on their Fly checks, as `fly deploy` did:
+  each must pass `/platform.json` before the next is updated
+  (`checks`, INTENTIUS/chant#4719). Before it, the job checks that the app
+  has the `ARUGULA_PLATFORM_DATABASE_URL` secret and no public address
+  (`flyctl secrets list` and `flyctl ips list`, names only), and deploys
+  nothing when either fails.
+- `platform-dump`: the nightly dump's scheduled Machine ("The nightly
+  dump"), on `packaging/platform-dump`'s image around the release's
+  `arugula-platform`. It runs after the platform, under the same
+  release. It's updated and left stopped. A failure here is a warning and
+  fails nothing, as before.
+- `control`: the hub's Machine (`throbbing-surf-5942`). The hub holds every
+  relayed terminal and a deploy drops them all, so it deploys only when
+  something it's built from changed since the release production runs it
+  from. What it's built from is its `inputs` in
+  `ops/src/control.component.ts`: every crate `arugula-control` compiles
+  (the platform's too, which it runs in process) less their tests, `web/`'s
+  sources less the specs, `editors/nvim`, the manifests and lock files, the
+  toolchain and build scripts, the `justfile`, `packaging/control`, the
+  release workflow, `scripts/release` and the component's own files. chant
+  also compares the plan it deploys (`dist/control.fly.json`). Version
+  numbers alone don't count: chant compares each changed `Cargo.toml` and
+  `Cargo.lock` after `scripts/release blank`, which writes every arugula
+  crate's version as `@V@` (`inputs.normalize`, INTENTIUS/chant#4718), so
+  a daemon-, docs- or desktop-only release leaves the hub alone. Its mount
+  names the `control_data` volume, which chant resolves to its id
+  (`vol_r68lmz2doox9myd4`) at apply time (INTENTIUS/chant#4717).
 
-- **Hotfixes:** `just control-deploy` builds and deploys from your
-  checkout. Its image is labelled `deployment-…`, not a version. The next
-  tag deploys over it. Don't run it while a tag's `control` job is
-  deploying: the two don't wait for each other.
-- **Rolling back:** since a newer release stays (above), re-running an
-  older tag's job won't do it. Deploy the older tag's image instead, from
-  `packaging/control/`:
-  `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`. Only
-  tags that deployed the hub have an image: pick one `fly releases -a
-  illogical-control` lists.
+Each Machine's config is declared in `ops/src/fly/`, as `fly.toml` and
+`fly deploy` left it, with no image: the release hands the image over, so
+the plans are the same bytes from one release to the next unless a
+Machine changes. Secrets are each app's, so an update keeps them. Change a
+Machine in `ops/src/fly/` and in its `fly.toml` together, while hotfixes
+still deploy from the `fly.toml`s.
+
+**Each release:** a `v*` tag starts `.github/workflows/server-release.yml`
+(release.yml no longer deploys). `just server-release` starts it by hand,
+and `just server-release <sha>` for another green commit:
+
+1. `build`: the commit's `just static-server x86_64`, on the home
+   cloud's runner. On a tag the commit is the tag's, when it has a
+   `ci/green-server/<sha>` tag; otherwise, and by hand, it's the newest on
+   main with one (`chant ci last-green --lane server`). Before it builds,
+   `scripts/release stamp` writes a daemon release's version into the
+   checkout, as release.yml's builds do: the tag's on its own commit, else
+   the newest `v*` tag the commit has. The binaries report it, and the
+   platform picks a workspace's E2B template by it.
+2. `images`: `packaging/control`'s, `packaging/platform`'s and
+   `packaging/platform-dump`'s images around those binaries, pushed to
+   Fly's registry as `server-<run>` (and `dump-server-<run>`), handed on by
+   digest. It uses the repository secrets `FLY_API_TOKEN` (a deploy token
+   for illogical-control) and `FLY_PLATFORM_API_TOKEN` (for
+   arugula-platform).
+3. `cut`: `chant release cut server-<run> --lane server --image ...`. chant
+   checks the commit is on main with a `ci/green-server` tag and no
+   `ci/revoked-server` one, and records the release on `chant/lifecycle`.
+   The job's summary lists what's in it (`chant release candidates`).
+4. `platform`: the preflight above, then `chant run --components platform
+   --env prod --release server-<run>` (`scripts/ci-server-deploy`), with
+   the platform's token, then the same for `platform-dump`.
+5. `control`: the same for `control`, with the hub's token, once the
+   platform's job has passed. A skip says so in the log ("inputs
+   unchanged since the deploy prod runs"), and chant records it with
+   `unchangedSince`. The workflow's `deploy-unchanged` input deploys the
+   hub whatever changed. Deployed or not, the job then checks that
+   `https://control.arugula.io/control.json` answers as control.
+
+**A release that doesn't come up healthy goes back.** `fly-release` waits
+for each Machine's Fly checks after its update (five minutes at most) and
+verifies the release; if either fails, it puts back the config each Machine
+it changed had before, the last one changed first, each waiting for its
+checks, and the job fails. That replaced `scripts/ci-fly-rollback` (#2203).
+Going back can fail too: an older build refuses a migration that isn't
+additive, and then the app needs a person.
+
+**One release at a time,** and an older one doesn't take production back: a
+re-run of an older run's deploy job finds a newer `server-<run>` in prod
+(`chant components status prod`) and deploys nothing.
+
+**What runs where:** `chant release list` (in `ops/`) lists the releases
+and where each runs; `chant components status prod` lists what each
+component runs, and `--live` compares it with what the Machines' metadata
+says they serve.
+
+**Hotfixes:** `just control-deploy` and `just platform-deploy` build and
+deploy from your checkout with `fly deploy`. Their image isn't a
+release's, so chant's ledger names the release before it until the next
+one. Don't run one while a release's job is deploying: they don't wait
+for each other.
+
+**Rolling back by hand:** release an older green commit (`just
+server-release <sha>`). It's a new run with a higher number, so the check
+above lets it through.
 
 ### Releasing Arugula as a deploy (M221)
 
@@ -1251,9 +1272,9 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
    workflow's `publish` job succeeded and the release is out. It reports
    the tag, the commits, `scripts/release`'s blob id, the release's page,
    the workflow's run and the jobs that failed (today `template` fails on
-   every release; it doesn't fail the deploy). The release's `control` job
-   deploys the hub only when the hub changed, as for any tag
-   ("Deploys" above).
+   every release; it doesn't fail the deploy). The same tag starts
+   server-release.yml, which releases the hub and the platform through
+   chant ("Deploys" above); the deploy doesn't follow that run.
 
 **There's no roll back.** A bad release is fixed by a new patch release,
 deployed the same way.
@@ -1709,12 +1730,19 @@ platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
 the relay, push, block and doc origins, the jump host, telemetry) and
 the platform (`arugula-platform`:
 chat, Cloud, billing, projects and grants, and the GitHub App's webhook
-and key, M161). The platform runs in one of two ways, from the same binaries:
+and key, M161). The platform runs in one of two ways, from the same binaries.
+**Production runs it out of process.** It went out of process at M141's
+window, with the hub calling `http://arugula-platform.internal:7700`, and
+has gone through Flycast since M145's window (2026-10-21): the hub's
+`ARUGULA_PLATFORM` is `http://arugula-platform.flycast:7700`, and
+`arugula-platform` runs two machines. In process is only the rollback
+("Rolling back to in process", below), and it starts by copying the
+platform's tables back.
 
-- **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
-  rollback): inside the hub, as one Fly app. Production runs this way
-  until M141's window.
-- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145):
+- **In process** (`ARUGULA_PLATFORM=in-process`, the default when it's
+  unset, and the rollback): inside the hub, as one Fly app. Production
+  ran this way until M141's window.
+- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145; production's):
   its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), on
   its own Fly Managed Postgres (`arugula-platform-db`, from M145), with no
   volume (Arugula #72; it had `platform_data` at `/data` for `platform.db` until
@@ -1753,8 +1781,8 @@ machines" below).
   handlers) is for Flycast, which needs a **private** IPv6:
   `fly ips allocate-v6 --private -a arugula-platform`. Never
   `fly ips allocate-v4` or a public `allocate-v6` for it: the service
-  would be on the internet. Deploys pass `--no-public-ips`, and
-  `scripts/ci-platform-deploy` won't deploy while the app has a public
+  would be on the internet. A hotfix's `fly deploy` passes
+  `--no-public-ips`, and chant's plan (`ops/src/fly/platform`) declares no
   address. Fly's proxy passes the TCP through untouched, and the platform
   trusts no address: only the hub's signed principal (and, for
   `PlatformPort`, the signed internal call).
@@ -1805,20 +1833,16 @@ then tells the platform (`PlatformPort::account_deleted`). Until the
 platform confirms, a row in the hub's `untold_deletions` keeps what to
 tell it, and the hub tries again every 30 seconds.
 
-**Deploys.** A release tag deploys the platform first (release.yml's
-`platform` job), then the hub (`control`, which waits for it but deploys
-whatever became of it), the hub only when something it's built from
-changed since the release it runs ("Deploys" above). A hub method the
-platform will call ships in the hub a release ahead, which is a change
-to the hub, so that release deploys it; a change to the contract between
-the two (`HubPort`, `PlatformPort`, the signed calls, `routes.toml`)
-always deploys the hub. `scripts/ci-platform-deploy` builds the platform's
-image on GitHub's runner and checks every machine runs the tag with its
-health check passing. Then it builds the nightly dump's image around the
-same binary and moves the dump machine onto it ("The nightly dump"). It needs the repository secret
-`FLY_PLATFORM_API_TOKEN`, a deploy token for `arugula-platform`, which
-can't exist before the app does: without it the job says so and
-succeeds, deploying nothing, and the hub deploys as before. Hotfix:
+**Deploys.** A release deploys the platform first, then the hub, the hub
+only when something it's built from changed since the release production
+runs it from ("Deploys" above). A hub method the platform will call ships
+in the hub a release ahead, which is a change to the hub, so that release
+deploys it; a change to the contract between the two (`HubPort`,
+`PlatformPort`, the signed calls, `routes.toml`) is among the hub's inputs,
+so it deploys the hub. The release's `platform` job moves the nightly
+dump's machine onto the release's dump image after the platform ("The
+nightly dump"). It needs the repository secret `FLY_PLATFORM_API_TOKEN`, a
+deploy token for `arugula-platform`. Hotfix:
 `just platform-deploy`. Roll back: from `packaging/platform/`,
 `fly deploy --image registry.fly.io/arugula-platform:vX.Y.Z`. An older
 platform starts on a database whose migrations it doesn't know only while
@@ -2333,8 +2357,7 @@ the platform's default where you run your own, as one machine, but not
 here: a file on a machine with no volume would be lost on its next
 restart. So `fly.toml` sets `ARUGULA_PLATFORM_REQUIRE_POSTGRES=1`, and the
 platform refuses to start unless `ARUGULA_PLATFORM_DATABASE_URL` names
-Postgres; `scripts/ci-platform-deploy` refuses to deploy while the app has
-no such secret. A deploy replaces one machine at a time (`[deploy] strategy =
+Postgres. A `fly deploy` replaces one machine at a time (`[deploy] strategy =
 "rolling"`), each waiting for `/platform.json`, which answers 503 while the
 machine can't reach its database and says whether it leads
 (`{"database": true, "leader": false, ...}`). A stopping machine takes no
@@ -3071,8 +3094,8 @@ backs it up.
     M2=$(fly machine list -a arugula-platform --json | jq -r --arg m "$M" '.[] | select(.config.metadata.fly_process_group == "app" and .id != $m) | .id')
     ```
 
-    From here CI deploys both machines, rolling. `ci-platform-deploy`
-    allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
+    From here a release deploys both machines, rolling on their checks.
+    Its preflight allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
 
 11. **The hub through Flycast** (one hub restart; relay sockets reconnect
     by themselves):
@@ -3266,7 +3289,7 @@ arugula's `.infisical.json` is):
    T=$(fly status -a arugula-platform --json | jq -r '[.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag] | unique | .[]')
    echo "$T"                                     # one tag, e.g. v0.60.11
    (cd packaging/platform && fly deploy --image "registry.fly.io/arugula-platform:$T" --ha=false --no-public-ips)
-   scripts/ci-platform-deploy check "$T"         # every app machine on $T, checks passing
+   fly status -a arugula-platform                # every app machine on $T, checks passing
    ```
 
    If the deploy stops partway (one machine replaced, the other not), run
@@ -3528,8 +3551,8 @@ encrypted, in R2, kept 30 days.
 **Where it runs:** a scheduled Fly machine in the `arugula-platform` app,
 started every hour (`--schedule hourly`, "Hourly, and the gate" below),
 that dumps about once a day. It isn't one of the app's process
-groups, so `fly deploy`, `fly scale` and `ci-platform-deploy`'s checks
-leave it alone (they count only `fly_process_group == "app"`). It has no
+groups, so `fly deploy` and `fly scale` leave it alone (they count only
+`fly_process_group == "app"`). It has no
 service, so Flycast never sends it a call. It skips DNS registration, so
 `arugula-platform.internal` never names it. It's found by its metadata,
 `role=platform-dump`.
@@ -3538,12 +3561,13 @@ service, so Flycast never sends it a call. It skips DNS registration, so
   version), plus `age`, `curl` and `jq`, plus the **same `arugula-platform`
   binary the platform runs**.
 - **Why the same binary:** the migration check and the checksums are that
-  build's, so they read the tables the platform has. After each platform
-  deploy, `scripts/ci-platform-deploy dump` builds the image from the
-  release's binary, pushes it as `registry.fly.io/arugula-platform:dump-vX.Y.Z`,
-  and moves the dump machine onto it with `--schedule hourly --skip-start`,
-  so every deploy also asserts the schedule. It never fails a deploy. If the two builds ever differ, the dump says so in its log and
-  runs on.
+  build's, so they read the tables the platform has. Each release builds
+  the image from the release's binary and pushes it as
+  `registry.fly.io/arugula-platform:dump-server-<run>`, and after the
+  platform, chant's `platform-dump` component moves the dump machine onto
+  it, left stopped, with its declared config (`ops/src/fly/platform-dump`),
+  schedule included ("Deploys"). If the two builds ever differ, the dump
+  says so in its log and runs on.
 - **Considered and not chosen:**
   - *A separate app:* fewer secrets on the machine, but its image would
     need its own deploy token in CI (a workflow change) or would drift
@@ -3559,7 +3583,7 @@ service, so Flycast never sends it a call. It skips DNS registration, so
 `--schedule daily`, and the dump ran once, by hand, on 2026-10-21 at
 06:39Z, and then never again until someone noticed two days later. The
 cause: a `fly machine update` restarts Fly's schedule clock, and every
-platform deploy runs one (`ci-platform-deploy dump`, above). A daily run
+platform deploy runs one (above). A daily run
 comes due only 24 h after the last update, and no two platform deploys had
 been 24 h apart since. So:
 - **The machine starts every hour.** A deploy delays a run by an hour at
@@ -3701,8 +3725,10 @@ watch the house. So, in order of effort:
    ```
 
 3. **No bucket rule:** the job prunes its own dumps (above).
-4. **The machine,** on the image the release pushed (`ci-platform-deploy`
-   pushes `dump-vX.Y.Z` even before the machine exists):
+4. **The machine,** on a dump image a release pushed (a release's
+   `images` job pushes `dump-server-<run>`; this is how it was first made,
+   on 2026-10-21, as `dump-vX.Y.Z`; a release now finds it by name, and its
+   plan, `ops/src/fly/platform-dump`, has to match):
 
    ```
    fly machine run registry.fly.io/arugula-platform:dump-vX.Y.Z -a arugula-platform \

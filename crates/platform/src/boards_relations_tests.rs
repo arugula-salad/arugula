@@ -9,7 +9,9 @@ use crate::{
     agents_tests::{give, seeded},
     chat_tests::call,
 };
-use arugula_control_wire::boards::{agent_project_relation, agent_project_relations, project_relations};
+use arugula_control_wire::boards::{
+    agent_project_relation, agent_project_relations, agent_project_relations_batch, project_relations,
+};
 
 /// A call signed by a's machine geek.
 async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
@@ -138,4 +140,75 @@ async fn a_boards_rows_have_steps_and_a_loop_reads_without_end() {
     assert_eq!(v["chain"], json!([rows[0], rows[1], rows[2]]), "{v}");
     let marks = of(&rows[2])["marks"].as_array().unwrap().clone();
     assert!(marks.iter().any(|m| m["kind"] == json!("blocked_by") && m["board"] == json!("Other")), "{marks:?}");
+}
+
+/// An agent's batch of links (Arugula #761): each lands on its own and the
+/// answer says what became of every one. It takes off only its own
+/// machine's, and a cycle of `before` and `blocks` is refused.
+#[tokio::test]
+async fn an_agent_links_a_batch_each_on_its_own_and_takes_off_only_its_own() {
+    let (_hub, _app, base, t, _u) = seeded().await;
+    let (a, b) = (issue(&base, "a", &t, "Design").await, issue(&base, "a", &t, "Build").await);
+    let batch = |add: Value, remove: Value| Some(json!({ "add": add, "remove": remove }));
+    let ends = |from: &str, to: &str, kind: &str| json!({ "from": from, "to": to, "kind": kind });
+
+    // Without the grant: refused.
+    let (st, v) =
+        geek(&base, "POST", &agent_project_relations_batch(&t), batch(json!([ends(&a, &b, "before")]), json!([])))
+            .await;
+    assert_eq!(st, 403, "{v}");
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "issues.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+
+    // Added; the same again is there already; a cycle (before, then blocks the other way) and a stranger are refused.
+    let add =
+        json!([ends(&a, &b, "before"), ends(&a, &b, "before"), ends(&b, &a, "blocks"), ends(&a, "iss_nope", "before")]);
+    let (st, v) = geek(&base, "POST", &agent_project_relations_batch(&t), batch(add, json!([]))).await;
+    assert_eq!(st, 200, "{v}");
+    let outcomes: Vec<&str> = v["add"].as_array().unwrap().iter().map(|r| r["outcome"].as_str().unwrap()).collect();
+    assert_eq!(outcomes, ["added", "already_there", "refused", "refused"], "{v}");
+    assert!(v["add"][2]["why"].as_str().unwrap().contains("cycle"), "{v}");
+
+    // A person's edge stays; the machine's own comes off, then isn't there.
+    let (st, mine) =
+        call(&base, "b", "POST", &project_relations(&t), Some(json!({ "from": b, "to": a, "kind": "relates" }))).await;
+    assert_eq!(st, 200, "{mine}");
+    let remove = json!([ends(&b, &a, "relates"), ends(&a, &b, "before"), ends(&a, &b, "before")]);
+    let (st, v) = geek(&base, "POST", &agent_project_relations_batch(&t), batch(json!([]), remove)).await;
+    assert_eq!(st, 200, "{v}");
+    let outcomes: Vec<&str> = v["remove"].as_array().unwrap().iter().map(|r| r["outcome"].as_str().unwrap()).collect();
+    assert_eq!(outcomes, ["refused", "removed", "not_there"], "{v}");
+
+    // More than 50 links is refused whole.
+    let many = json!((0..51).map(|_| ends(&a, &b, "before")).collect::<Vec<_>>());
+    let (st, v) = geek(&base, "POST", &agent_project_relations_batch(&t), batch(many, json!([]))).await;
+    assert_eq!(st, 400, "{v}");
+}
+
+/// A `before` link orders a board's steps as `blocks` does (Arugula #762),
+/// though it gates nothing.
+#[tokio::test]
+async fn a_before_link_puts_a_row_in_a_later_step() {
+    let (_hub, _app, base, t, _u) = seeded().await;
+    let (a, b) = (issue(&base, "a", &t, "Design").await, issue(&base, "a", &t, "Build").await);
+    let n = json!({ "from": a, "to": b, "kind": "before" });
+    let (st, v) = call(&base, "a", "POST", &project_relations(&t), Some(n)).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, board) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "B" }))).await;
+    assert_eq!(st, 200, "{board}");
+    let id = board["board"]["id"].as_str().unwrap().to_owned();
+    for item in [&a, &b] {
+        let entry = json!({ "entry": "row", "note": "", "pointer": { "kind": "issue", "id": item } });
+        let (st, v) = super::tests::put(&base, "a", &id, entry).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    let rows = v["zones"][0]["rows"].as_array().unwrap();
+    assert_eq!((&rows[0]["step"], &rows[1]["step"]), (&json!(1), &json!(2)), "{v}");
+    assert_eq!(v["chain"], json!([rows[0]["id"], rows[1]["id"]]), "{v}");
+    assert_eq!(v["ready"].as_array().map(Vec::len), Some(2), "a before link doesn't gate Ready: {v}");
 }

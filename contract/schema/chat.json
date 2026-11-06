@@ -2565,10 +2565,24 @@
         {
           "enum": [
             "working",
-            "idle",
             "needs_you",
             "offline"
           ],
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Between turns, ready for the next prompt.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A hosted session that failed.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "A hosted session that was stopped.",
           "type": "string"
         },
         {

@@ -199,7 +199,8 @@ test("Add Pane previews the selected split and keeps its actions reachable in a 
   expect(b.x).toBe(a.x);
   const bounds = (await drawer.boundingBox())!;
   const action = (await drawer.locator("[data-add-pane-create]").boundingBox())!;
-  expect(bounds.y).toBeGreaterThanOrEqual(44);
+  // A side sheet (#690): the window's full height, over the header too.
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(600);
   expect(action.y + action.height).toBeLessThanOrEqual(bounds.y + bounds.height);
   await page.keyboard.press("Escape");

@@ -85,7 +85,7 @@ use std::{
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
     work::{
-        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery,
+        ReadyRun, Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkQuery,
         session_users_take,
     },
 };
@@ -602,7 +602,7 @@ pub fn pane_command(
 /// the revokes it carries kept first ([`crate::hosted::runs::allows`]). An
 /// approved run (one with no grant) waits for M218's check of its
 /// approval: until then it doesn't start here (fail closed).
-pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
+pub fn grant(app: &App, item: &ReadyRun) -> Result<(), Refused> {
     if item.state != State::Pending.as_str() {
         return Err(Refused("approval_unchecked", "this machine can't check a run's approval yet".into()));
     }
@@ -633,7 +633,7 @@ pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, Str
 /// operation): the operation, and the directory its copy is made from.
 pub fn check(
     app: &App,
-    item: &WorkItem,
+    item: &ReadyRun,
     me: &str,
     project: &str,
     workspace: &str,
@@ -874,7 +874,7 @@ fn tab_name(run: &str, op_hash: &str, shown: &str) -> String {
 
 /// Take `item`, once: a run in the ledger already (or one whose entry
 /// can't be read) is only reported. One run goes at a time.
-async fn take(app: &Arc<App>, item: WorkItem) {
+async fn take(app: &Arc<App>, item: ReadyRun) {
     let dir = app.control.state_dir().to_owned();
     let Some((keys, me, project, workspace)) = me(app) else { return };
     if !good_id(&item.run) {

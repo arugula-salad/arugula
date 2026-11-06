@@ -83,14 +83,6 @@
   gap: 8px;
 }
 
-.project-doc-confirm {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
 /* The Docs list fills the page's frame, as the machine's page does. */
 .platform-main:has(> .docs-list) {
   display: flex;

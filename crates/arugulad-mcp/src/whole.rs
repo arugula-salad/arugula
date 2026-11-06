@@ -47,7 +47,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
     const CUT: usize = 2048;
     // Over the cut today, and filed as #607: each may only shrink, to the
     // longest it is in any variant. No tool is added here.
-    const OVER: [(&str, usize); 4] = [("board_write", 6111), ("list", 2961), ("forge_read", 2697), ("show", 3097)];
+    const OVER: [(&str, usize); 4] = [("board_write", 5046), ("list", 2961), ("forge_read", 2697), ("show", 3097)];
     let mut wrong = vec![];
     for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
         for labs in [true, false] {
@@ -70,7 +70,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 40 - no_forge());
+    assert_eq!(all.len(), 41 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -185,9 +185,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 41);
-    assert_eq!(defs(fl(false)).len(), 40 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 41 - no_forge());
+    assert_eq!(every.len(), 42);
+    assert_eq!(defs(fl(false)).len(), 41 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 42 - no_forge());
     assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 

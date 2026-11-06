@@ -202,7 +202,7 @@ pub(crate) struct RunArgs {
     #[arg(long, hide = true)]
     pub(crate) no_relay: bool,
 
-    /// A hosted workspace's box (M180): headless, enrolls itself with the
+    /// A Cloud workspace's hosted machine (M180): headless, enrolls itself with the
     /// ticket in ARUGULA_HOSTED_TICKET or its sandbox id, at
     /// ARUGULA_CONTROL_URL (else --control), and tells control when it's
     /// working.

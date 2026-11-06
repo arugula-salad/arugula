@@ -2,6 +2,7 @@
 // most recently active first, each with its unread count. A row opens the
 // thread beside its room; the corner stops following it.
 
+import { EmptyState } from "../ui/block-states";
 import "./threads.css";
 import { useEffect } from "preact/hooks";
 import type { ChatStore } from "../chat-store";
@@ -88,7 +89,9 @@ export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean
         </div>
       </header>
       <div class="thread-list">
-        {list && n === 0 && <p class="thread-empty">Nothing yet. When you reply in a thread, or someone replies to your message, it is here, with what's new in it.</p>}
+        {list && n === 0 && (
+          <EmptyState title="No threads yet." why="When you reply in a thread, or someone replies to your message, it's here, with what's new in it." />
+        )}
         <ul class="chat-hits">
           {shown.map((it) => (
             <Row key={`${it.room}/${it.parent.seq}`} store={store} it={it} />

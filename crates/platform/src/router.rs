@@ -123,6 +123,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))
+        .route(boards::AGENT_PROJECT_RELATIONS_BATCH, post(crate::boards::agent::link))
         .route(boards::AGENT_PROJECT_RELATION, axum::routing::delete(crate::boards::agent::unrelate))
         .route(boards::PROJECT_RELATIONS, post(crate::boards::relations::add_route))
         .route(boards::PROJECT_RELATION, axum::routing::delete(crate::boards::relations::remove_route))
@@ -150,6 +151,11 @@ fn routes() -> Routes {
                 .delete(crate::project_docs::delete_route),
         )
         .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
+        .route(
+            project_docs::PROJECT_DOC_COPIES,
+            get(crate::project_docs::copies_route).post(crate::project_docs::share_route),
+        )
+        .route(project_docs::PROJECT_DOC_COPY, put(crate::project_docs::update_route))
         .route(
             project_docs::MACHINE_DOC,
             put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),

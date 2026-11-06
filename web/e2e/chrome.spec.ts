@@ -276,7 +276,7 @@ test.describe("states", () => {
       for (const s of c.state!.sessions) c.intent({ op: "close_session", session: s.id });
     });
     const empty = page.locator("[data-no-sessions]");
-    await expect(empty.locator(".empty-title")).toHaveText(/^No sessions on /);
+    await expect(empty.locator(".empty-state-title")).toHaveText(/^No sessions on /);
     await expect(page.locator("[data-session-empty]")).toBeVisible();
     // Nothing that needs a session: no tab strip, toolbar or activity.
     await expect(page.locator(".ws-tabs, [data-pane-toolbar], [data-activity-toggle]")).toHaveCount(0);

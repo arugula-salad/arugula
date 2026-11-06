@@ -7,6 +7,7 @@
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { build } from "vite";
+import { closeContexts, open as openApp, reset } from "./helpers";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = fileURLToPath(new URL("./dialogs-page.tsx", import.meta.url));
@@ -36,7 +37,7 @@ async function open(page: Page, width: number, height = 800) {
   await page.setViewportSize({ width, height });
   await page.route("**/dialogs.html", (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto("/dialogs.html");
-  await expect(page.locator("[data-open]")).toHaveCount(3);
+  await expect(page.locator("[data-open]")).toHaveCount(4);
 }
 
 const escapes = (page: Page) => page.evaluate(() => (window as unknown as { escapes: number }).escapes);
@@ -142,5 +143,79 @@ for (const [width, height] of [
     await opener.click();
     await sheet.getByRole("button", { name: "Close" }).click();
     await expect(sheet).toHaveCount(0);
+  });
+}
+
+// The attention drawer is a side sheet (shell/ui/shell/attention-drawer.tsx):
+// Escape and a click on the backdrop each close it alone. On a desktop that is
+// the real drawer, opened by the bell. A phone (700px and under) mounts no
+// drawer, so the bottom-sheet width is the fixture's sheet with the drawer's
+// own class, list and foot.
+test.afterAll(closeContexts);
+
+test("the attention drawer, on a desktop: Escape and the backdrop close it, and the focus returns to the bell", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await reset(page);
+  const bell = page.locator("[data-open-attention]");
+  const drawer = page.locator("[data-attention-drawer]");
+  await bell.focus();
+  await bell.press("Enter");
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toHaveAttribute("role", "dialog");
+  await expect(drawer).toHaveClass(/side-sheet/);
+  await expect(page.locator("[data-side-sheet-backdrop]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.4)");
+  expect(await inside(page, "[data-attention-drawer]")).toBe(true);
+  const box = (await drawer.boundingBox())!;
+  expect(Math.round(box.x + box.width)).toBe(1000);
+  expect(Math.round(box.width)).toBe(440);
+  // The backdrop is drawn over the panes: what is at a terminal's centre is the backdrop, not the terminal.
+  const backdrop = page.locator("[data-side-sheet-backdrop]");
+  await expect(backdrop).toBeVisible();
+  const pane = (await page.locator(".pane").first().boundingBox())!;
+  const bb = (await backdrop.boundingBox())!;
+  expect(bb.x).toBeLessThanOrEqual(pane.x);
+  expect(bb.y).toBeLessThanOrEqual(pane.y);
+  expect(bb.x + bb.width).toBeGreaterThanOrEqual(pane.x + pane.width);
+  expect(bb.y + bb.height).toBeGreaterThanOrEqual(pane.y + pane.height);
+  const x = Math.min(pane.x + pane.width / 2, box.x - 20);
+  const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.hasAttribute("data-side-sheet-backdrop"), [x, pane.y + pane.height / 2]);
+  expect(top).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(bell).toBeFocused();
+
+  await bell.click();
+  await expect(drawer).toBeVisible();
+  await page.mouse.click(10, 400);
+  await expect(drawer).toHaveCount(0);
+  await expect(bell).toBeFocused();
+});
+
+for (const [width, height] of [
+  [1000, 800],
+  [390, 844],
+] as const) {
+  test(`the attention drawer's sheet at ${width}px: Escape and the backdrop close it`, async ({ page }) => {
+    await open(page, width, height);
+    const opener = page.locator('[data-open="attention"]');
+    const sheet = page.locator("[data-attention-drawer]");
+    await opener.focus();
+    await opener.press("Enter");
+    await expect(sheet).toBeVisible();
+    expect(await inside(page, "[data-attention-drawer]")).toBe(true);
+    const box = (await sheet.boundingBox())!;
+    if (width > 600) expect(Math.round(box.x + box.width)).toBe(width);
+    else expect(Math.round(box.y + box.height)).toBe(height);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    expect(await escapes(page)).toBe(0);
+    await expect(opener).toBeFocused();
+
+    await opener.click();
+    await expect(sheet).toBeVisible();
+    await page.mouse.click(width > 600 ? 10 : width / 2, width > 600 ? height / 2 : 10);
+    await expect(sheet).toHaveCount(0);
+    await expect(opener).toBeFocused();
   });
 }

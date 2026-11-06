@@ -81,7 +81,7 @@ test.afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-const card = (p: Page) => p.getByRole("dialog", { name: "Help improve Arugula?" });
+const card = (p: Page) => p.getByRole("region", { name: "Help improve Arugula?" });
 const answer = async (p: Page) =>
   ((await (await p.request.get("/api/me/telemetry")).json()) as { on: boolean | null }).on;
 

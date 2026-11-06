@@ -3,7 +3,6 @@
 // set, then the picker for the rest), and the long-press itself. The
 // quick set, tooltips and the optimistic update are in ./reactions.ts.
 
-import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
@@ -90,30 +89,14 @@ export function useDismiss(root: { current: HTMLElement | null }, close: () => v
   }, [close]);
 }
 
-/** The quick set under the toolbar (a sheet along the bottom on a phone),
- * and "more…" for the picker. Closes after one is chosen, on Escape and on
- * a press outside. As the long-press sheet it carries the message's other
- * items (`children`) under the emoji, and without `react` only those. */
-export function ReactMenu({
-  room,
-  m,
-  close,
-  setError,
-  react = true,
-  children,
-}: {
-  room: ChatRoom;
-  m: ChatMessage;
-  close: () => void;
-  setError: (e: string | null) => void;
-  react?: boolean;
-  children?: ComponentChildren;
-}) {
+/** The quick set and "more…" for the picker, as buttons: each adds the
+ * emoji (or takes mine back) and calls `close`. They sit in the toolbar's
+ * menu, and at the top of the long-press menu (`ReactRow`). */
+function ReactButtons({ room, m, close, setError, root }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void; root: { current: HTMLElement | null } }) {
   const [more, setMore] = useState(false);
   // The picker opens below the menu unless the room under it is short (the
   // last message: it would grow the list's scroll area) and above has more.
   const [above, setAbove] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const menu = root.current;
     const picker = menu?.querySelector<HTMLElement>(".emoji-picker");
@@ -125,29 +108,47 @@ export function ReactMenu({
     const over = m.top - Math.max(list?.top ?? 0, 0);
     setAbove(below < h && over > below);
   }, [more]);
-  useDismiss(root, close, "[data-react-button]");
   const choose = (emoji: string) => {
     toggle(room, m, emoji, setError);
     close();
   };
   return (
-    <div class={children ? "react-menu with-items" : "react-menu"} ref={root} role="menu" aria-label={children ? "Message" : "React"} data-react-menu>
-      {react &&
-        QUICK.map((e) => {
-          const mine = !!m.reactions?.some((c) => c.emoji === e && c.mine);
-          return (
-            <button type="button" role="menuitem" key={e} class={mine ? "mine" : ""} aria-pressed={mine} aria-label={`React with ${e}`} data-quick={e} onClick={() => choose(e)}>
-              {e}
-            </button>
-          );
-        })}
-      {react && (
-        <button type="button" role="menuitem" class="more" aria-label="More emoji" aria-expanded={more} data-react-more onClick={() => setMore((v) => !v)}>
-          …
-        </button>
-      )}
+    <>
+      {QUICK.map((e) => {
+        const mine = !!m.reactions?.some((c) => c.emoji === e && c.mine);
+        return (
+          <button type="button" role="menuitem" key={e} class={mine ? "mine" : ""} aria-pressed={mine} aria-label={`React with ${e}`} data-quick={e} onClick={() => choose(e)}>
+            {e}
+          </button>
+        );
+      })}
+      <button type="button" role="menuitem" class="more" aria-label="More emoji" aria-expanded={more} data-react-more onClick={() => setMore((v) => !v)}>
+        …
+      </button>
       {more && <EmojiPicker pick={choose} close={close} above={above} />}
-      {children && <div class="react-menu-items">{children}</div>}
+    </>
+  );
+}
+
+/** The quick set under the toolbar. Closes after one is chosen, on Escape
+ * and on a press outside. */
+export function ReactMenu({ room, m, close, setError }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  useDismiss(root, close, "[data-react-button]");
+  return (
+    <div class="react-menu" ref={root} role="menu" aria-label="React" data-react-menu>
+      <ReactButtons room={room} m={m} close={close} setError={setError} root={root} />
+    </div>
+  );
+}
+
+/** The same row, at the top of the message menu a long-press opens (its
+ * `head`): the menu's items follow it. */
+export function ReactRow({ room, m, close, setError }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  return (
+    <div class="react-menu react-row" ref={root} role="group" aria-label="React" data-react-menu>
+      <ReactButtons room={room} m={m} close={close} setError={setError} root={root} />
     </div>
   );
 }

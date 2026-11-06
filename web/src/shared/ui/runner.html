@@ -50,6 +50,7 @@
   --ar-radius: 8px;
   --ar-radius-lg: 10px;
   --ar-shadow: 0 12px 40px light-dark(rgb(0 0 0 / 0.21), rgb(0 0 0 / 0.6));
+  --ar-backdrop: rgb(0 0 0 / 0.4);
 }
 
 .ar-btn {
@@ -171,6 +172,12 @@
   margin: 0;
   font-size: var(--ar-text-lg);
   font-weight: 600;
+}
+.ar-dialog > .ar-dialog-buttons {
+  /* The app's footer: right-aligned, Cancel first and the action last. */
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ar-space-2);
 }
 
 .ar-menu {
