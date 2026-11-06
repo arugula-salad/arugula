@@ -34,7 +34,7 @@ use std::{
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, ReadyRun},
+    work::{DeployWork, PasskeyAssertion, ReadyRun, Report, Secret, SecretsAsk, SecretsGiven, Work},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,

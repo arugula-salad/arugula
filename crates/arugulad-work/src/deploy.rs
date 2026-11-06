@@ -35,7 +35,7 @@
 
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS, ReadyRun};
+use arugula_control_wire::work::{DeployWork, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS};
 use arugula_e2e::{
     deploy::{Pinned, check_apply},
     now_ms,

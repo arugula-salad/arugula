@@ -85,7 +85,7 @@ use std::{
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
     work::{
-        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, ReadyRun, WorkQuery,
+        ReadyRun, Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkQuery,
         session_users_take,
     },
 };

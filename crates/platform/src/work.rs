@@ -40,7 +40,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, Work, ReadyRun};
+use arugula_control_wire::work::{ReadyRun, Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, Work};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
