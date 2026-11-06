@@ -99,7 +99,9 @@
   margin-top: var(--space-1);
 }
 
-.empty-state-title {
+/* Two classes: a page's own `h3` rule (the phone sheet's) must not win. */
+.empty-state-card > .empty-state-title {
+  margin: 0;
   color: var(--fg);
   font-family: inherit;
   font-size: var(--text-lg);

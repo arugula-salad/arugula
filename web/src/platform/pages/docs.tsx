@@ -606,7 +606,7 @@ export function ProjectDocs({ p }: { p: PlatformProject }) {
   return (
     <>
       <SectionHead title="Docs" all={all} onAll={(e) => follow(e, all)} data="project-docs-link" />
-      {list.length === 0 && <p class="dim">No Docs yet.</p>}
+      {list.length === 0 && <EmptyState where="page" title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
       <div data-project-docs>
         <DocRows p={p} list={list.slice(0, 5)} />
       </div>

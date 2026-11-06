@@ -579,7 +579,7 @@ export function ProjectIssues({ p }: { p: PlatformProject }) {
   return (
     <>
       <SectionHead title="Issues" all={all} onAll={(e) => follow(e, all)} data="project-issues-link" action={mayWrite(p) && <NewIssueButton p={p} home={home} small />} />
-      {list?.length === 0 && <p class="dim">No open issues.</p>}
+      {list?.length === 0 && <EmptyState where="page" title="No open issues." why="An issue is a bug, a follow-up or a ticket for later. Agents open them too." />}
       {/* Rows, as the home's rooms are (UI audit #162): a title and its
           number, no underline until hovered. */}
       <ul class="platform-list sw-rows" data-project-issues>

@@ -81,6 +81,10 @@
   text-transform: none;
 }
 
+.sheet .sheet-needs-none h2 {
+  color: var(--fg);
+}
+
 .sheet h3 {
   margin: 6px 4px 4px;
   font-size: var(--text-sm);

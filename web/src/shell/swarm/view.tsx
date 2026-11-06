@@ -571,7 +571,7 @@ export function SwarmView({
         {board && (
           <div class="swarm-lanes" data-swarm-lanes>
             {read.missing && !read.view && <p class="dim" data-swarm-board-missing>That board isn't one you can read ({read.missing}).</p>}
-            {lanes?.lanes.length === 0 && <p class="dim">No rows on this board yet.</p>}
+            {lanes?.lanes.length === 0 && <EmptyLine>No rows on this board yet.</EmptyLine>}
             {lanes?.lanes.map((l) => (
               <span key={l.name} class="swarm-lane" data-lane={l.name} data-workers={l.keys.length} data-rows={l.rows}>
                 {l.label}

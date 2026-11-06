@@ -303,7 +303,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         ) : s.loading && !s.files.length ? (
           <BlockLoading what="the changes" />
         ) : !s.files.length ? (
-          <EmptyState title="Nothing changed." why={`This worktree matches ${s.against}. Edits show here as they are made.`} />
+          <EmptyState title="Nothing changed." why={`Compared ${s.against}. Edits show here as they're made.`} />
         ) : (
           s.files.map((f) => {
             const slash = f.path.lastIndexOf("/");

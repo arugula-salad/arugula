@@ -13,7 +13,7 @@ import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { Time } from "../../shared/ui/time";
-import { EmptyState } from "../../shared/ui/block-states";
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names, roomPath } from "../links";
@@ -72,7 +72,7 @@ export function ProjectHome({ id }: { id: string }) {
           <SectionHead title="Chat" all={chatPath} onAll={(e) => follow(e, chatPath)} />
           {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
-          {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
+          {chat.on && rooms.length === 0 && <EmptyLine>No channels yet.</EmptyLine>}
           <ul class="platform-list sw-rows" data-project-rooms>
             {rooms
               .sort((a, b) => Number(a.kind === "dm") - Number(b.kind === "dm") || a.name.localeCompare(b.name))
