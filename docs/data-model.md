@@ -191,6 +191,7 @@ forge.
 | **Library Doc** | A Doc on a machine | `<state>/docs/<id>/` | 16 hex |
 | **Project Doc** | A Doc made on the platform, in a project | Platform `project_docs` | `pdc_` |
 | **Copy** | A library Doc's copy in its owner's personal project, put again on every change. Read-only: the machine's Doc is the truth, and the copy goes with it | Machine | `pdc_` |
+| **Team Doc made from a copy** | Share with…: a project Doc made from a copy's title, sections and pictures as they were, in a project its owner writes in. The team owns and edits it; it records the copy it came from and both revs | Platform `project_docs` (`made_from_*`) | `pdc_` |
 | **Shared Doc** | An encrypted snapshot behind a link, frozen until someone updates it | Hub `doc_links`; the key stays out of control | 32 hex |
 
 A library Doc has one truth, on its machine (aru-134, aru-135). What follows
@@ -203,6 +204,17 @@ from that, settled in native #673:
   its project's to delete on the platform, as any Doc there is. A personal
   machine whose account gave the word brings a new one at its next change
   to the Doc, and the page says so; a team's machine never does.
+- **Share with… is a snapshot** (Arugula #418). A person makes a team Doc
+  from their copy through the platform's routes, as themselves: nothing
+  new on the machine, and the machine never writes to a team's project.
+  The team Doc is an ordinary one, and the copy stays the machine's truth.
+  It keeps the copy's rev at the snapshot and its own rev right after,
+  so the copy's owner is shown "the copy changed since" and "the team edited
+  it since", and Update copy replaces the team Doc whole, asking first when
+  the team edited it. Only the copy's owner does either, from their
+  personal project, and only into a project where they still write Docs;
+  one team Doc per copy per project. The copy going away leaves the team
+  Doc as it is.
 - **The machine knows where its copy is.** The put's answer (the project,
   the `pdc_` id, the link) is kept in the Doc's `meta.json` as `platform`,
   and `doc list`, `/api/docs` and the Docs page show it; it's forgotten when

@@ -40,6 +40,11 @@ async function platform(p: Page, path = "/") {
   await expect(p.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
 }
 
+/** A picture of the page for the PR, when E2E_SHOTS names a folder. */
+const shot = async (p: Page, name: string) => {
+  if (process.env.E2E_SHOTS) await p.screenshot({ path: `${process.env.E2E_SHOTS}/${name}` });
+};
+
 const CHART = '```chart\n{"type": "bar", "x": "week", "y": "shipped", "rows": [{"week": "w1", "shipped": 3}, {"week": "w2", "shipped": 5}]}\n```';
 
 test("an owner makes a Doc from the project's Docs and writes it", async ({ browser }) => {
@@ -319,6 +324,51 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await expect(page.locator(".doc-section[data-section=s1] .doc-body")).toContainText("again", { timeout: 30_000 });
   await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
   await expect(page).toHaveAttribute("data-writer", "false");
+
+  // Share with… (Arugula #418): a team Doc made from the copy, a snapshot
+  // Acme owns. The copy stays read-only and geek's.
+  const copyUrl = alice.url();
+  await page.locator("[data-doc-share-with]").click();
+  const dialog = alice.locator("[data-share-with-dialog]");
+  const acme = dialog.locator("[data-share-with-project]", { hasText: "Acme" });
+  await expect(acme.locator("[data-share-with-go]")).toBeVisible({ timeout: 15_000 });
+  await shot(alice, "share-with-modal.png");
+  await acme.locator("[data-share-with-go]").click();
+  await expect(acme.locator("[data-share-with-made]")).toContainText("Made", { timeout: 15_000 });
+  await expect(acme.locator("[data-share-with-update]")).toBeDisabled();
+  await shot(alice, "share-with-modal-shared.png");
+  await acme.locator("[data-share-with-open]").click();
+  await expect(page).toHaveAttribute("data-writer", "true", { timeout: 15_000 });
+  await expect(page.locator("[data-doc-made-from]")).toHaveText("Made from your Doc on geek.");
+  await expect(page.locator("[data-doc-copy]")).toHaveCount(0);
+  await expect(page.locator(".doc-section[data-section=s1] .doc-body")).toContainText("again");
+  const teamDoc = /\/p\/(prj_[0-9a-f]+)[^/]*\/docs\/(pdc_[0-9a-f]{32})/.exec(new URL(alice.url()).pathname)!;
+  expect(teamDoc[2]).not.toBe(m[2]);
+  // The team edits its Doc; geek changes the copy. Update copy asks first.
+  const edit = await alice.evaluate(async ([project, id]) => {
+    const r = await fetch(`/api/projects/${project}/docs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ section: "s1", markdown: "Ours." }),
+    });
+    return r.status;
+  }, [teamDoc[1], teamDoc[2]]);
+  expect(edit).toBe(200);
+  await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "Changed on **geek** once more." });
+  await alice.goto(copyUrl);
+  await expect(async () => {
+    await alice.reload();
+    await page.locator("[data-doc-share-with]").click();
+    await expect(acme.locator("[data-share-with-update]")).toBeEnabled({ timeout: 3_000 });
+  }).toPass({ timeout: 60_000, intervals: [2000] });
+  await acme.locator("[data-share-with-update]").click();
+  const sure = alice.locator("[data-share-with-confirm]");
+  await expect(sure).toContainText("Acme edited its copy since; Update copy replaces their edits.");
+  await sure.locator("[data-share-with-replace]").click();
+  await expect(sure).toHaveCount(0);
+  await alice.goto(`${app}/p/${teamDoc[1]}/docs/${teamDoc[2]}`);
+  await expect(page.locator(".doc-section[data-section=s2] .doc-body")).toContainText("once more", { timeout: 15_000 });
+  await alice.goto(copyUrl);
 
   // The copy is the project's to delete (native #673), and the page says
   // geek's next change brings a new one, which it does, under a new id.

@@ -151,6 +151,11 @@ fn routes() -> Routes {
         )
         .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
         .route(
+            project_docs::PROJECT_DOC_COPIES,
+            get(crate::project_docs::copies_route).post(crate::project_docs::share_route),
+        )
+        .route(project_docs::PROJECT_DOC_COPY, put(crate::project_docs::update_route))
+        .route(
             project_docs::MACHINE_DOC,
             put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),
         )

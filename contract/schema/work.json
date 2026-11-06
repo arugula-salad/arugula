@@ -947,6 +947,18 @@
             "null"
           ]
         },
+        "made_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadeFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For a team Doc made from a copy (Share with…): where from. Null for\nany other Doc, and from an older platform."
+        },
         "project": {
           "type": "string"
         },
@@ -1593,6 +1605,31 @@
       "required": [
         "account",
         "events"
+      ],
+      "type": "object"
+    },
+    "MadeFrom": {
+      "description": "The copy a team Doc was made from.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": null,
+          "description": "The name of the machine the copy is from, when control knows it. Only\nwhat the platform could tell; the copy itself is its owner's to read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "The copy's project (its owner's personal one) and its id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "id"
       ],
       "type": "object"
     },

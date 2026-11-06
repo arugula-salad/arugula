@@ -4322,7 +4322,12 @@ machine: string | null,
  * That machine's name, when control knows it: null for a Doc made
  * here, or once the machine left. Older pages don't read it.
  */
-machine_name: string | null, };
+machine_name: string | null, 
+/**
+ * For a team Doc made from a copy (Share with…): where from. Null for
+ * any other Doc, and from an older platform.
+ */
+made_from: ProjectDocMadeFrom | null, };
 
 /**
  * One picture of a Doc, without its bytes: the shape a machine Doc's
@@ -4341,6 +4346,33 @@ mime: string, size: number,
 rev: number, };
 
 /**
+ * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a copy, earliest
+ * first, in the projects its owner still reads.
+ */
+export type ProjectDocCopies = { copies: Array<ProjectDocCopy>, };
+
+/**
+ * A team Doc made from a copy, as its owner sees it.
+ */
+export type ProjectDocCopy = { project: string, project_name: string, 
+/**
+ * The team Doc's id, and its page on the platform's page.
+ */
+id: string, link: string, 
+/**
+ * When it was made, and when it last changed (ms since the epoch).
+ */
+made: number, updated: number, 
+/**
+ * The copy changed since: its rev is above the one recorded.
+ */
+stale: boolean, 
+/**
+ * The team changed it since: its rev is above the one recorded.
+ */
+edited: boolean, };
+
+/**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
  */
 export type ProjectDocList = { project: string, docs: Array<ProjectDoc>, 
@@ -4348,6 +4380,20 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
  * Whether the reader may make one.
  */
 writer: boolean, };
+
+/**
+ * The copy a team Doc was made from.
+ */
+export type ProjectDocMadeFrom = { 
+/**
+ * The copy's project (its owner's personal one) and its id.
+ */
+project: string, id: string, 
+/**
+ * The name of the machine the copy is from, when control knows it. Only
+ * what the platform could tell; the copy itself is its owner's to read.
+ */
+machine_name: string | null, };
 
 /**
  * One section: pending (`body` null) until it's written.
