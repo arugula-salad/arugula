@@ -26,6 +26,25 @@
   font-weight: 400;
 }
 
+/* New channel's Public/Private: the radio beside its label, the hint under
+   it. (.prompt label is a grid: this has to out-rank it.) */
+.prompt .members-kind .members-radio {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  text-align: left;
+}
+
+.members-kind .members-radio input {
+  margin: 3px 0 0;
+}
+
+.members-kind .members-radio > span {
+  display: grid;
+  gap: 2px;
+}
+
 .prompt .members-radio input {
   flex: none;
   padding: 0;
