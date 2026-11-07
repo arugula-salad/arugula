@@ -480,6 +480,17 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::deploys::DeploysCmd,
     },
+    /// What chant needs from Arugula.
+    ///
+    /// `trust-entry` prints your passkeys as entries for chant's
+    /// `.chant/trust.json` (`passkeys`), as `arugula:<account>`: a chant-fly
+    /// deploy's approval is your passkey's signature over chant's gate
+    /// statement, which chant counts only for a passkey listed there. It
+    /// only prints. Needs `arugula login`.
+    Chant {
+        #[command(subcommand)]
+        cmd: cmd::chant::ChantCmd,
+    },
     /// A project's linked GitHub repos on Arugula control.
     ///
     /// `link OWNER/REPO` links one (you need admin or maintain on it on
@@ -667,7 +678,7 @@ const GROUPS: &[(&str, &[&str])] = &[
             "sandboxes",
         ],
     ),
-    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "chant", "project", "draft", "forge", "studio"]),
     ("Setup", &["install", "setup", "hooks", "mcp"]),
 ];
 
@@ -858,6 +869,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Deploys { cmd } = cli.cmd {
         return cmd::deploys::run(cmd, cli.json);
     }
+    if let Command::Chant { cmd } = cli.cmd {
+        return cmd::chant::run(cmd, cli.json);
+    }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
@@ -981,6 +995,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }
+        | Command::Chant { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

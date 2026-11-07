@@ -118,6 +118,19 @@ fn checked_id(id: &str) -> anyhow::Result<&str> {
     Ok(id)
 }
 
+/// What asking for a deploy's approval did: its owners got a card, or (a
+/// chant-fly deploy, #1985) chant plans it first, and they get one once it
+/// has.
+fn asked_text(d: &Value) -> &'static str {
+    match d["chant"]["state"].as_str() {
+        Some("planning") => {
+            "chant plans it first, on a box of its own with no Fly token; its owners get a card once it has. \
+             `arugula deploys show` follows it."
+        }
+        _ => "Its owners got a card: one of them approves it on their phone or in a browser.",
+    }
+}
+
 /// `OWNER/NAME`.
 fn repo_ok(r: &str) -> bool {
     let part = |s: &str| {
@@ -216,7 +229,7 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
             let d = e.api("POST", &format!("/api/deploys/{}/request", checked_id(&id)?), None)?;
             if !json_out {
                 println!("{}", deploy_line(&d));
-                println!("Its owners got a card: one of them approves it on their phone or in a browser.");
+                println!("{}", asked_text(&d));
                 return Ok(0);
             }
             d

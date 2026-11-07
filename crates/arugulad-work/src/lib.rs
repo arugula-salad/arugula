@@ -112,6 +112,7 @@ use crate::{
 
 pub mod agent_run;
 mod deploy;
+mod run_files;
 mod run_logs;
 pub mod sessions;
 
@@ -644,19 +645,24 @@ pub fn check(
     if hex::encode(Sha256::digest(item.op.as_bytes())) != item.op_hash {
         return Err(Refused("op_hash", "the operation's bytes don't hash to the run's operation hash".into()));
     }
-    // A deploy's box (M219) takes its one deploy's run, nothing else.
-    if deploy::deploy_box(app) && item.deploy.is_none() {
+    // A deploy's box (M219) takes its one deploy's run (or, #1985, its
+    // plan's), nothing else.
+    if deploy::deploy_box(app) && item.deploy.is_none() && item.deploy_plan.is_none() {
         return Err(Refused("deploy_box", "this box was made for one deploy, and takes nothing else".into()));
     }
     // A deploy's run (M219) goes by its owner's approval of the deploy,
-    // checked here against what this machine pinned; any other run by the
-    // project's standing grant.
-    match &item.deploy {
-        Some(d) => deploy::check(app, item, d)?,
-        None => grant(app, item)?,
+    // checked here against what this machine pinned; its plan run (#1985)
+    // by what a plan may do; any other run by the project's standing grant.
+    match (&item.deploy, &item.deploy_plan) {
+        (Some(d), None) => deploy::check(app, item, d)?,
+        (None, Some(p)) => deploy::check_plan(app, item, p)?,
+        (None, None) => grant(app, item)?,
+        (Some(_), Some(_)) => {
+            return Err(Refused("op_deploy", "a run is a deploy's apply or its plan, not both".into()));
+        }
     }
     let op = parse_op(&item.op, me)?;
-    deploy::matches(&op, item.deploy.as_ref())?;
+    deploy::matches(&op, item.deploy.as_ref(), item.deploy_plan.as_ref())?;
     let src = op.directory.as_deref().map(|d| source_dir(d, &arugula_mux::sys::home())).transpose()?;
     Ok((op, src))
 }
@@ -895,7 +901,11 @@ async fn take(app: &Arc<App>, item: ReadyRun) {
         taken_at: now_ms(),
         grant: item.grant.clone(),
         turn: None,
-        deploy: item.deploy.as_ref().map(|d| d.deploy.clone()),
+        deploy: item
+            .deploy
+            .as_ref()
+            .map(|d| d.deploy.clone())
+            .or_else(|| item.deploy_plan.as_ref().map(|p| p.deploy.clone())),
         agent: false,
         events: vec![],
         logs: Default::default(),

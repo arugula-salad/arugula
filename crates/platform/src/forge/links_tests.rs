@@ -888,7 +888,7 @@ async fn a_machine_links_for_its_owner_with_its_grant() {
 }
 
 /// Link `repo` (GitHub id `id`, installation 9) to `project`.
-fn linked(app: &Platform, project: &str, repo: &str, id: u64) {
+pub fn linked(app: &Platform, project: &str, repo: &str, id: u64) {
     let l = crate::db::forge::LinkedRepo {
         repo_id: id,
         full_name: repo.into(),

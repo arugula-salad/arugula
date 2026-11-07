@@ -116,7 +116,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             transcripts::TranscriptPost, transcripts::ArchiveOpen, transcripts::ArchiveBlocks, transcripts::TranscriptArchived,
         ],
         "work" => [
-            work::Work, work::ReadyRun, work::DeployWork, work::PasskeyAssertion, work::SecretsAsk, work::SecretsGiven, work::ArtifactGiven, work::Secret, work::AgentSessionWork, work::FinishStep, work::FinishResult, work::SessionAction, work::SessionPrompt, work::SessionReport, work::SessionDetail, work::PushAsk, work::PushGiven, work::SessionIssuesAsk, work::SessionIssuesOp, work::SessionIssuesGiven, work::Report, work::Reported,
+            work::Work, work::ReadyRun, work::DeployWork, work::DeployPlanWork, work::PasskeyAssertion, work::SecretsAsk, work::PlanStep, work::SecretsGiven, work::ArtifactGiven, work::Secret, work::AgentSessionWork, work::FinishStep, work::FinishResult, work::SessionAction, work::SessionPrompt, work::SessionReport, work::SessionDetail, work::PushAsk, work::PushGiven, work::SessionIssuesAsk, work::SessionIssuesOp, work::SessionIssuesGiven, work::Report, work::Reported,
         ],
     }
 }

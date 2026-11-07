@@ -18,8 +18,8 @@ use arugula_control_wire::{
         AgentMessages, AgentMessagesQuery, AgentRooms, ChatFound, ChatMessage, ChatPost, ChatPosted, ChatSearchQuery,
     },
     work::{
-        ArtifactGiven, DeployWork, PushAsk, PushGiven, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
-        SessionIssuesGiven, SessionReport,
+        ArtifactGiven, DeployPlanWork, DeployWork, PushAsk, PushGiven, Reported, SecretsAsk, SecretsGiven,
+        SessionIssuesAsk, SessionIssuesGiven, SessionReport,
     },
 };
 use axum::{Router, http::StatusCode, routing::MethodRouter};
@@ -86,6 +86,14 @@ pub trait Deploys: Send + Sync + 'static {
     }
     /// What a deploy's run carries to the box that applies it.
     fn deploy_work(&self, _db: &Db, _run: &str) -> anyhow::Result<Option<DeployWork>> {
+        Ok(None)
+    }
+    /// What a deploy's plan run carries to the box that plans it (#1985).
+    fn deploy_plan_work(
+        &self,
+        _db: &Db,
+        _plan: &crate::db::deploy_plans::DeployPlan,
+    ) -> anyhow::Result<Option<DeployPlanWork>> {
         Ok(None)
     }
     /// A deploy's run moved: its deploy moves too, and the box may be told

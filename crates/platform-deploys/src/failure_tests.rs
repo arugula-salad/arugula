@@ -404,7 +404,7 @@ async fn crashes_between_approved_and_dispatched(open: impl Fn() -> Db) {
     let b = its_box(&two.app, &second);
     let a = two.app.db.deploy_approvals(&second).unwrap().pop().unwrap();
     let op = Op {
-        deploy: Some(DeployApply { deploy: second.clone(), driver: "fake".into(), op: a.op.clone() }),
+        deploy: Some(DeployApply { deploy: second.clone(), driver: "fake".into(), op: a.op.clone(), plan: false }),
         ..Op::default()
     }
     .encode(&m.m.machine);

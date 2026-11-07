@@ -105,10 +105,25 @@
         "account": {
           "type": "string"
         },
+        "at": {
+          "description": "v3: the statement's time, as chant writes one (`--at`).",
+          "type": "string"
+        },
         "by": {
           "default": "",
           "description": "v1: the signing device's id. Empty in v2, which no device signs.",
           "type": "string"
+        },
+        "chant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "v3: the chant gate it approves, as the deploy's plan box read it."
         },
         "decision": {
           "$ref": "#/$defs/Decision"
@@ -132,7 +147,7 @@
           "type": "string"
         },
         "v": {
-          "description": "Its format, [`V1`] or [`V2`]: absent is v1 (every approval from\nbefore DK4).",
+          "description": "Its format, [`V1`], [`V2`] or [`V3`]: absent is v1 (every approval\nfrom before DK4).",
           "format": "uint8",
           "maximum": 255,
           "minimum": 0,
@@ -823,6 +838,41 @@
       ],
       "type": "string"
     },
+    "DeployPlanWork": {
+      "description": "What a deploy's plan run plans (#1985): the deploy's operation, its\ndriver and settings. No approval: the plan comes before one, and its\nrun gets no secret of the environment's, only a GitHub token the\nplatform mints to push chant's ledger ([`DeployPlanWork::secrets`]).",
+      "properties": {
+        "deploy": {
+          "description": "`dep_` and 32 hex characters.",
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "secrets": {
+          "default": [],
+          "description": "The secrets it gets: `GITHUB_TOKEN`, minted.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "deploy",
+        "operation",
+        "driver"
+      ],
+      "type": "object"
+    },
     "DeployWork": {
       "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and an owner's approval over\nit (v2 since DK4: the approval's bytes, and the passkey assertion over\nthem that is its signature), with the approver's passkey log as the hub\npublishes it (DK3). The machine takes only its removals after the log it\npinned from control, never a key it adds\n(`arugula_e2e::deploy::check_apply`, `arugula_e2e::passkey::removed_since`).",
       "properties": {
@@ -1242,6 +1292,57 @@
       },
       "required": [
         "command"
+      ],
+      "type": "object"
+    },
+    "Gate": {
+      "description": "The gate a chant→Fly deploy's plan stopped at, as its plan box read it\nfrom the pending fact chant's run recorded on `chant/lifecycle`.",
+      "properties": {
+        "chant": {
+          "description": "The chant that planned it (`x.y.z`).",
+          "type": "string"
+        },
+        "checkpoint": {
+          "description": "The checkpoint a resuming gate carries its outputs from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "environment": {
+          "description": "The pending fact's environment: a component gate's; an op's has none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gate": {
+          "type": "string"
+        },
+        "op": {
+          "description": "The op, and its gate.",
+          "type": "string"
+        },
+        "plan": {
+          "description": "chant's plan digest (`jcs1-sha256:…`, or an older run's `sha256:…`).",
+          "type": "string"
+        },
+        "recorded": {
+          "description": "When it did, as chant wrote it: an approval's time can't be earlier.",
+          "type": "string"
+        },
+        "run": {
+          "description": "The chant run that recorded the pending fact.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chant",
+        "op",
+        "gate",
+        "plan",
+        "run",
+        "recorded"
       ],
       "type": "object"
     },
@@ -1745,6 +1846,21 @@
       ],
       "type": "object"
     },
+    "PlanStep": {
+      "description": "Which of a deploy plan run's two tokens a box asks for (#1985).",
+      "oneOf": [
+        {
+          "const": "fetch",
+          "description": "A GitHub token that reads the deploy's repository, to fetch the\ncommit: nothing of the commit's has run yet.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, the box's\ndaemon checked what the plan added, and the token reaches only the\ndaemon's own push, never the run user.",
+          "type": "string"
+        }
+      ]
+    },
     "ProjectGrant": {
       "description": "A project owner saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
       "properties": {
@@ -1907,6 +2023,17 @@
             }
           ],
           "description": "A deploy's run (M219): the deploy it applies, with its owner's\napproval, which the machine checks itself before it starts."
+        },
+        "deploy_plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeployPlanWork"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A chant→Fly deploy's plan run (#1985): the deploy whose plan it\nruns, before anyone approves it. A machine from before it reads\nneither this nor [`ReadyRun::deploy`], and a deploy's box refuses\nthat."
         },
         "grant": {
           "anyOf": [
@@ -2148,6 +2275,17 @@
     "SecretsAsk": {
       "description": "[`WORK_SECRETS`]'s body: which run.",
       "properties": {
+        "plan_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's plan run (#1985) asks twice, a token each time: to fetch\nits source, before anything of the commit's runs, and to push\nchant's ledger, after everything that ran is stopped. Any other\nrun asks once, with none."
+        },
         "run": {
           "type": "string"
         }

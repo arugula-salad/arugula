@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
-use arugula_control_wire::work::{ArtifactGiven, DeployWork, Reported, SecretsAsk, SecretsGiven};
+use arugula_control_wire::work::{ArtifactGiven, DeployPlanWork, DeployWork, Reported, SecretsAsk, SecretsGiven};
 use axum::{
     Json,
     extract::{Path, State},
@@ -62,8 +62,8 @@ impl features::Feature for Feature {
     }
 
     fn jobs(&self, p: &Arc<Platform>, w: jobs::Worker) -> jobs::Worker {
-        // Deploys' applies (M219).
-        w.with(deploys::apply::Apply { app: p.clone() })
+        // Deploys' applies (M219), and chant→Fly deploys' plans (#1985).
+        w.with(deploys::apply::Apply { app: p.clone() }).with(deploys::plan::Plan { app: p.clone() })
     }
 }
 
@@ -76,6 +76,14 @@ impl features::Deploys for Hooks {
 
     fn deploy_work(&self, db: &db::Db, run: &str) -> anyhow::Result<Option<DeployWork>> {
         deploys::apply::deploy_work(db, run)
+    }
+
+    fn deploy_plan_work(
+        &self,
+        db: &db::Db,
+        plan: &db::deploy_plans::DeployPlan,
+    ) -> anyhow::Result<Option<DeployPlanWork>> {
+        deploys::plan::plan_work(db, plan)
     }
 
     fn reported<'a>(

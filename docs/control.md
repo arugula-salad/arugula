@@ -1152,9 +1152,8 @@ Settings (each starts with a letter or a digit):
 - `chant_dir` (the chant member, from the repository's root) defaults to
   `.`, and `chant_op` to `release`. `fly_config` (a `fly.toml` in the
   repository) is used by a roll back.
-- `chant_gates`: the only gates the driver approves, comma separated.
-  Left out, it approves each gate of the op it stops at, never another
-  op's.
+- `chant_gates`: the only gates its plan may stop at, comma separated.
+  Left out, the op's own gate, never another op's.
 - `npm_scripts: "true"` lets `npm ci` run install scripts. Without it,
   `npm ci --ignore-scripts`.
 - `chant_github: "true"` gives the op `GITHUB_TOKEN` too, for an op that
@@ -1187,29 +1186,104 @@ Secrets:
   `git fetch`, `push` and `ls-remote` use it, through a credential helper
   for `https://github.com`.
 
-**The repository's chant op runs with `FLY_API_TOKEN`** in its environment:
-that's how it deploys. `npm ci` and `chant components release` get neither
-token. The plan says all of this, and the deploy's page shows it
-(`plan_text`). The approval dialog checks that the text hashes to the
-plan it signs, and says not to approve if it doesn't.
+**The repository's chant op runs with `FLY_API_TOKEN`** in its environment
+when the deploy applies: that's how it deploys. `npm ci`, `chant approve`,
+`chant plan stale` and `chant components release` get neither token. The
+plan says all of this, and the deploy's page shows it (`plan_text`). The
+approval dialog checks that the text hashes to the plan it signs, and says
+not to approve if it doesn't.
 
-On the box, the driver:
-1. checks out the commit by its full id, exactly;
-2. runs `npm ci` and `chant run <op> --json` in the chant member;
-3. at each gate, runs `chant approve <op> <gate> --approver <account>
-   --relayed-by arugula --note "..." --plan <digest>`, then runs the op
-   again. The note names the platform's deploy, approval, approving
-   device, operation hash and run. The digest is the plan chant's run
-   recorded: the `planDigest` of its pending fact in
-   `_gates/<op>.jsonl` on `chant/lifecycle`. A gate with no plan digest,
-   or one the run's `approve` hint disagrees with, isn't approved, so a
-   chant op's gates need a plan.
+**chant plans it first** (#1985, aru-126). Asking for a chant-fly deploy's
+approval doesn't ask anyone yet: the platform runs its plan on a box of its
+own (`<deploy>-plan`), which gets no `FLY_API_TOKEN`:
+1. With a `GITHUB_TOKEN` minted for the run that only reads, the box's
+   daemon reads origin's `chant/lifecycle` itself (`before`), and the
+   driver's `plan-fetch` step checks out the commit by its full id, exactly,
+   with chant's ledger at `before`. Nothing of the commit's runs.
+2. The driver's `plan` step, with no token at all, runs `npm ci` and `chant
+   run <op> --json` in the chant member, which stops at the op's gate (only
+   `chant_gates`' when it names some) and records its pending fact with
+   chant's plan digest in a ledger on the box. An op that needs Fly or
+   GitHub before its gate fails here, and so does one with no gate. It
+   leaves what chant added (`before..tip`) as a bundle, and says on fd 3
+   which gate it stopped at: chant's version, the op, the gate, its
+   environment, the plan digest, its checkpoint, the chant run and when it
+   recorded it.
+3. The box kills everything the run user runs, and `pgrep -u` must find
+   nothing; else the plan fails here, before any token that writes exists.
+4. The daemon, as its own user, in a directory of its own, takes the bundle
+   as data. The run's home is the run user's (0700), so the run user hands
+   it over (`sudo -n -u <run user>`, `crates/arugulad-work/src/run_file_read.sh`):
+   only a regular file with one name that it owns, not a link, at most 32
+   MiB, streamed. The daemon checks it with git reading no configuration but
+   its own, `git fsck --strict` first. Its commits are one line on top of
+   `before` (or new from nothing when origin had none). Each only appends
+   whole lines to the two files chant writes when an op stops at a gate,
+   under this deploy's member's prefix (`_members/<member>/` when the
+   repository's root `chant.workspace.json` makes `chant_dir` a member's,
+   read at the commit by `plan-fetch`; else none) and environment
+   (`chant_env`, or `local` for an op with no `Env` label):
+   `<prefix>_gates/<op>.jsonl` and `<prefix><env>/runs__<op>.jsonl`. In all
+   they add this run's pending fact and at most its run record, each with
+   exactly the keys chant writes there and values from the gate, run, commit
+   and time (`origin` `cli`, `expiresAt` after the fact by at most 30 days).
+   The gate must be one `chant_gates` names, from a chant whose layout is
+   verified (`VERIFIED_CHANT`, 0.124.64 to 0.124.68); another chant, a gate
+   that resumes from a checkpoint, or a workspace layout other than those
+   (nested, example groups, `.jsonc`) is refused as not supported for
+   planning yet.
+5. Only then does it ask for a `GITHUB_TOKEN` minted for the run that writes
+   its contents, and pushes `chant/lifecycle` itself, the token in its own
+   git's environment only, leased on `before`. A ledger that moved since says
+   so ("plan it again"), apart from a token or permission failure.
+
+So the run user never holds a token that writes, and none exists until
+nothing of the commit's code is left (#1985's reviews). The platform gives
+each token once, the one that writes only after the one that reads and only
+while whoever asked may still ask.
+
+The platform records the ask then, as its `requested` event, with that gate
+in its detail (`{"chant": …}`), and the owners get their cards. A plan that
+didn't get to its gate leaves the deploy planned, saying why on its page
+(`chant.why`): plan another. A deploy's JSON says where its plan is
+(`chant.state`: `planning`, `planned` or `failed`) and that it's approved
+as v3 (`approval_v`).
+
+The owner's passkey signs chant's own gate statement for that plan, the
+bytes `chant approve <op> <gate> --statement` prints, as
+`arugula:<account>`, relayed by `arugula`, ending with a binding line:
+`binding arugula deploy <deploy> op <operation hash> expires <ms>`. That's
+approval v3: one assertion is the deploy's approval and chant's. A deny is
+v2 still. chant counts the signature only for a passkey that
+`.chant/trust.json` lists at base for `arugula:<account>`, under
+`passkeys`; `arugula chant trust-entry` prints yours, to paste there (a
+protected write in chant). Keep a signers file at base too, even an empty
+one.
+
+Then the apply, on another box, once the box checked the approval against
+what it pinned:
+1. checks the Fly token and checks out the commit, as above, and runs
+   `npm ci`;
+2. runs `chant plan stale <digest>`, and stops if anything applied to the
+   plan's targets since it was recorded (a laptop's apply, another CI's);
+3. runs `chant approve <op> <gate> --actor arugula:<account> --relayed-by
+   arugula --plan <digest> [--env <env>] --binding <binding> --at <time>
+   --statement`, and stops unless its challenge is the one the passkey
+   signed;
+4. runs the same with `--note "…" --signature -`, the passkey's assertion
+   on its standard input, which chant checks against `.chant/trust.json`;
+5. runs `chant run <op> --json` again, which applies. A gate it stops at
+   again stops the deploy: the plan changed, or it's another gate, which
+   is a deploy of its own.
+
+The driver needs chant 0.124.64 or newer, the first that signs and checks
+a binding line, as the chant member pins it; it refuses an older one.
 
 chant's records then say:
-- the gate's resolution: `resolvedBy` is the approver's account id (not
-  their email), `relayedBy` is `arugula`, with the note and the plan's
-  digest;
-- the release: `actor` is `arugula`, `approver` is the account id.
+- the gate's resolution: `resolvedBy` is `arugula:<account>`, `relayedBy`
+  is `arugula`, with the note, the plan's digest, the binding and the
+  passkey's seal (`kind: webauthn`, version 3);
+- the release: `actor` is `arugula`, `approver` is `arugula:<account>`.
 
 The driver finds the release record this run added for the commit in
 `chant_env`, pushes chant's ledger, and checks the app with `flyctl
@@ -1223,7 +1297,8 @@ healthy, the entry reached origin, and the record is tied to what Fly runs.
 
 **Rolling back** is a new deploy, planned with `"roll_back": true` and the
 commit to go back to. That commit must be one the environment ran, and the
-image comes from that deploy's log. It's approved like any other deploy.
+image comes from that deploy's log. It's approved with a v2 approval: it
+goes through no gate of chant's, so it has no plan run.
 The box runs `flyctl deploy --app <app> --image <image>` and checks the app
 runs that image, healthy. Then `chant components release` records the
 release again in chant's ledger, as the approver, and the run links that

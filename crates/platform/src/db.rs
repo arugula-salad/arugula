@@ -47,6 +47,7 @@ pub mod chat_threads;
 pub mod clients;
 pub mod content;
 pub mod deploy_approvals;
+pub mod deploy_plans;
 pub mod deploy_runs;
 pub mod deploys;
 pub mod forge;

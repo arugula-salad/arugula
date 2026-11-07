@@ -22,6 +22,9 @@ import {
   DEFAULT_LIFE_MS,
   NotHere,
   checkDeploy,
+  approvalFor,
+  approvalPosted,
+  type ChantGate,
   passkeyOver,
   passkeysNotHere,
   type Approval,
@@ -216,9 +219,12 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
     try {
       const account = session.me?.account;
       if (!account) throw new Error("sign in first");
-      const a: Approval = { v: 2, deploy: phase.deploy, op: phase.hash, account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const now = Date.now();
+      // A chant-fly deploy's `once` signs chant's statement of the gate its
+      // check read (#1985).
+      const a: Approval = approvalFor({ ...d, id: phase.deploy, operation: { ...d.operation, hash: phase.hash }, chant: phase.ok.chant ? { state: "planned", gate: phase.ok.chant, why: null } : null }, account, decision, now, now + DEFAULT_LIFE_MS);
       const passkey = await passkeyOver(a, phase.rp, phase.cd.passkeys);
-      const after = await post<Deploy>(`/api/deploys/${phase.deploy}/${decision === "once" ? "approve" : "deny"}`, { op: a.op, expires: a.expires, passkey });
+      const after = await post<Deploy>(`/api/deploys/${phase.deploy}/${decision === "once" ? "approve" : "deny"}`, { ...approvalPosted(a), passkey });
       onDecided(after, decision);
     } catch (e) {
       if (e instanceof NotHere) setPhase({ kind: "elsewhere", why: e.message });
@@ -335,6 +341,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
             <p class="dim">
               Its hash <code class="deploy-digest" data-deploy-op-hash>{d.operation.hash}</code>
             </p>
+            {ok.chant ? <ChantPlan g={ok.chant} /> : null}
           </div>
           {err ? (
             <p class="control-error" data-deploy-error>
@@ -631,5 +638,18 @@ export function WaitingDeploys({ list }: { list: Deploy[] | null }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/** What chant planned for a chant-fly deploy (#1985): the gate its plan
+ * stopped at and chant's plan digest, which an approval signs chant's own
+ * statement of. */
+function ChantPlan({ g }: { g: ChantGate }) {
+  return (
+    <p class="dim" data-deploy-chant={g.plan}>
+      chant planned it: op <code>{g.op}</code> stopped at gate <code>{g.gate}</code> with plan{" "}
+      <code class="deploy-digest">{g.plan}</code>. Approving signs chant's own statement of that plan, which chant checks again
+      before it applies.
+    </p>
   );
 }
