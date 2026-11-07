@@ -122,6 +122,17 @@ a.secondary.danger:hover {
   font-size: var(--text-sm);
 }
 
+/* An icon-only secondary: a square as tall as the set's size, its glyph
+   centred (the ⋯ of a page's head). */
+.secondary.sq {
+  width: 32px;
+  padding: 0;
+}
+
+.secondary.sq.small {
+  width: 24px;
+}
+
 .link.small {
   font-size: var(--text-sm);
 }
@@ -138,6 +149,14 @@ a.secondary.danger:hover {
   .primary.small,
   .secondary.small {
     min-height: 34px;
+  }
+
+  .secondary.sq {
+    width: 40px;
+  }
+
+  .secondary.sq.small {
+    width: 34px;
   }
 
   /* A bar of a fixed height (the panes' toolbar and header, a block's)
