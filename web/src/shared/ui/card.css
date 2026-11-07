@@ -1,0 +1,235 @@
+/* The card (#698, ./card.tsx): one surface for what a list or a page holds
+   one of: a board on the Boards page, a project, a run, a board's row.
+   A plain card is the surface with a 1px edge, and hover lifts the edge.
+   A tone (--c, set by .card-accent … .card-muted) adds a 3px bar, an edge
+   and a fill from the tone: the numbers are in shared/style.css
+   (--card-edge, --card-tint), where Latte's differ. Every size is a token
+   there (--card-pad, --card-pad-dense, --card-gap, --card-bar,
+   --card-radius). A card's own state, set by the page that draws it:
+   [aria-current="true"] is the one whose drawer is open, .seen is one that
+   has been dealt with and is plain again, and .drop-over (shared/style.css's
+   `.drop-target.drop-over`) is a drag over it. */
+
+.card {
+  --c: var(--muted);
+  --ct: var(--subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: var(--card-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+}
+
+/* A card that is a link opens as a whole, and fills its cell, so the cards
+   in a row are one height (UI audit #162). */
+a.card {
+  height: 100%;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.card-tone {
+  /* Room for the bar. */
+  padding-left: 14px;
+  border-color: var(--card-edge);
+  background: var(--card-tint);
+}
+
+.card-tone::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: var(--card-bar);
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.card-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.card-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.card-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.card-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.card-info {
+  --c: var(--info);
+  --ct: var(--info);
+}
+
+.card-teal {
+  --c: var(--teal);
+  --ct: var(--teal);
+}
+
+.card-muted {
+  --c: var(--muted);
+  --ct: var(--subtle);
+}
+
+/* One line, as a row of a long list: a box small enough to stack. */
+.card-dense {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: var(--card-pad-dense);
+  border-radius: var(--field-radius);
+  white-space: nowrap;
+}
+
+.card-dense.card-tone {
+  padding-left: 14px;
+}
+
+/* One that has been dealt with: plain again, its bar faint. */
+.card.seen {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.card.seen::before {
+  opacity: 0.4;
+}
+
+/* Hover lifts the edge: to --dim, or toward the tone. */
+.card:is(:hover, :focus-visible, :focus-within),
+.card.seen:is(:hover, :focus-visible, :focus-within) {
+  border-color: var(--dim);
+}
+
+.card-tone:is(:hover, :focus-visible, :focus-within) {
+  border-color: color-mix(in srgb, var(--c) 80%, var(--line));
+}
+
+/* The selected card (#756): the tint, the accent bar and a 1px accent edge, whatever the tone. */
+.card[aria-current="true"] {
+  background-image: linear-gradient(var(--selected), var(--selected));
+  box-shadow: var(--selected-edge);
+}
+
+.card[aria-current="true"]::before {
+  background: var(--accent);
+}
+
+/* A Bar (#694) as the card's head: the card's padding goes to the body, and
+   the card clips the bar's corners. */
+.card.has-bar {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--card-pad);
+}
+
+/* The title row: a name and what sits beside it (a count, a chip). As tall
+   as a team's pill, so a card without one lines up with its neighbours
+   (UI audit #162). */
+.card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  min-height: 20px;
+}
+
+.card-title {
+  min-width: 0;
+  color: var(--fg);
+  font: 600 var(--text-md)/1.35 var(--f-ui);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+/* A project's name: the display face, in its tone's text color. */
+.card-title.big {
+  color: var(--ct);
+  font: 700 var(--text-xl)/1.05 var(--f-display);
+}
+
+.card-meta {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A thing's id: mono, one line. */
+.card-id {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What a card ends on: a progress strip and its words. */
+.card-foot {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+}
+
+.card-grid,
+.card-list {
+  display: grid;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+
+/* A list's item that is not itself the card (a link inside it is). */
+:is(.card-grid, .card-list) > li:not(.card) {
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A card that arrives, in a list of them. */
+  :is(.card-grid, .card-list) .card-tone {
+    animation: card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

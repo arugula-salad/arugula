@@ -16,6 +16,7 @@
 // GitHub lets read it, and a native issue's to its project's members.
 // Deploys waiting for the reader's approval (M218) come first, as cards.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import type { ChatRoom, Inbox, InboxEntry } from "../../shared/proto.gen";
 import { chat, chatStore } from "../../shared/chat-store";
@@ -33,7 +34,7 @@ import { follow, pathOf } from "../router";
 import { runs } from "../runs";
 import { STATES as RUN_STATES, runTitle } from "../runs-text";
 import { session } from "../session";
-import { issueTone, reasonTone, roomTone, runTone, toneClass } from "../swarm";
+import { issueTone, reasonTone, roomTone, runTone } from "../swarm";
 import { toast } from "../toast";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -175,7 +176,7 @@ export function InboxPage() {
             <h2>
               {heading} <span class="dim">{group.length}</span>
             </h2>
-            <ul class="platform-list platform-inbox-list sw-cards">
+            <ul class="platform-list platform-inbox-list card-list">
               {group.map((e) => {
                 const key = `${e.item} ${e.reason}`;
                 const link = linkOf(e);
@@ -189,7 +190,7 @@ export function InboxPage() {
                   // A card in the swarm's language (../swarm.css): its bar is
                   // why it wants the reader, full while it's unseen (a done
                   // one never is: UI audit #192).
-                  <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${seen ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
+                  <Card as="li" key={key} tone={reasonTone(e.reason)} seen={seen} class={seen ? undefined : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
                       <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo} ·` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>
@@ -209,7 +210,7 @@ export function InboxPage() {
                         Dismiss
                       </button>
                     </div>
-                  </li>
+                  </Card>
                 );
               })}
             </ul>
@@ -268,7 +269,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
       <h2>
         {heading} <span class="dim">{rooms.length}</span>
       </h2>
-      <ul class="platform-list platform-inbox-list sw-cards">
+      <ul class="platform-list platform-inbox-list card-list">
         {rooms.map((r) => {
           const t = r.target ?? "";
           const href = roomPath(r.id);
@@ -282,7 +283,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
           const n = counted(r);
           return (
             // As an entry's card: its bar is chat's colour for the room.
-            <li key={r.id} class={`sw-card ${toneClass(roomTone(n, r.mentions))} unseen`} data-inbox-entry={t} data-inbox-reason="thread" data-inbox-thread={r.id}>
+            <Card as="li" key={r.id} tone={roomTone(n, r.mentions)} class="unseen" data-inbox-entry={t} data-inbox-reason="thread" data-inbox-thread={r.id}>
               <a class="platform-inbox-item" href={href} onClick={(ev) => follow(ev, href)}>
                 {ref && <span class="platform-inbox-ref">{ref}</span>} <span class="platform-inbox-title">{title}</span>
               </a>
@@ -294,7 +295,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
                   Dismiss
                 </button>
               </div>
-            </li>
+            </Card>
           );
         })}
       </ul>

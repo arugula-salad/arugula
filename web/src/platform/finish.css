@@ -69,8 +69,7 @@ html[data-finish="aqua"] .chat-row.selected {
   background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
 }
 
-html[data-finish="aqua"] .platform-card,
-html[data-finish="aqua"] .deploy-card,
+html[data-finish="aqua"] .deploy-card:not(.card),
 html[data-finish="aqua"] .deploy-form,
 html[data-finish="aqua"] .run-start {
   background: linear-gradient(#fff2, #fff0 30px), var(--surface);
@@ -114,8 +113,7 @@ html[data-finish="brushed"] .chat-switcher li.picked {
 
 /* A card is solid metal with a bevelled top: grain under its dim text read
    as busy, so the grain stays behind the cards. */
-html[data-finish="brushed"] .platform-card,
-html[data-finish="brushed"] .deploy-card,
+html[data-finish="brushed"] .deploy-card:not(.card),
 html[data-finish="brushed"] .deploy-form,
 html[data-finish="brushed"] .run-start {
   background: linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
@@ -175,8 +173,7 @@ html[data-finish="glass"] .chat-switcher li.picked {
 
 /* On the page the glow behind a card is smooth, so it needs no blur to
    frost: see-through is enough, and cheaper with many cards. */
-html[data-finish="glass"] .platform-card,
-html[data-finish="glass"] .deploy-card,
+html[data-finish="glass"] .deploy-card:not(.card),
 html[data-finish="glass"] .deploy-form,
 html[data-finish="glass"] .run-start {
   background: color-mix(in srgb, var(--surface) 62%, transparent);

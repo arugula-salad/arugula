@@ -9861,6 +9861,32 @@ html[data-corners="round"] {
   --tag-radius: 6px;
 }
 
+/* A card (#698, shared/ui/card.css): its padding, the gap between cards,
+   and the bar a tone draws. */
+:root {
+  --card-pad: 10px 12px;
+  --card-pad-dense: 6px 12px;
+  --card-gap: 10px;
+  --card-bar: 3px;
+}
+
+/* A toned card's edge and fill, from its own --c, so they're set on the
+   card, not on :root, where --c isn't known. On a dark palette a tone is
+   45% of its color in the edge and 7% in the fill. On a light one that
+   draws a brownish grey (7% of a darkened amber over grey), so Latte takes
+   the tone's hue at a light card's lightness instead. */
+.card-tone {
+  --card-edge: color-mix(in srgb, var(--c) 45%, var(--line));
+  --card-tint: color-mix(in srgb, var(--c) 7%, var(--surface));
+}
+
+@supports (color: oklch(from red l c h)) {
+  html[data-scheme="light"] .card-tone {
+    --card-edge: oklch(from var(--c) 0.8 min(calc(c * 0.7), 0.1) h);
+    --card-tint: oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h);
+  }
+}
+
 /* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
       blue-lit selection */
 

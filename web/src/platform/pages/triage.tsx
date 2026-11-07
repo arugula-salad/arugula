@@ -220,7 +220,7 @@ export function dropOn(tri: Triage, board: { id: string; title: string }, done?:
 
 /** Whether any of the page's board cards is on screen. */
 function boardsInView(): boolean {
-  const g = document.querySelector("[data-boards] .board-card");
+  const g = document.querySelector("[data-boards] [data-board-card]");
   if (!g) return false;
   const r = g.getBoundingClientRect();
   return r.bottom > 40 && r.top < innerHeight;

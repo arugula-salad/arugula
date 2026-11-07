@@ -9,6 +9,7 @@
 // asked, and to the ones going. A row reads again when its session's live
 // event comes (`chat.onObject`), and the list now and then while any goes.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
@@ -25,7 +26,6 @@ import { names } from "../links";
 import { waveQuery, type WaveFilter } from "../paths";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
-import { toneClass } from "../swarm";
 import { ListLoading } from "./issues";
 import { Missing } from "./project";
 
@@ -228,7 +228,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
             why="Agent on this on an issue, or @arugula in a channel, starts one."
           />
         ))}
-      <ul class="issues-list sw-cards" data-sessions-list>
+      <ul class="issues-list card-list" data-sessions-list>
         {w?.sessions.map((s) => (
           <Row key={s.session} p={p} s={s} />
         ))}
@@ -293,8 +293,10 @@ function Row({ p, s }: { p: PlatformProject; s: SessionRow }) {
     : null;
   const st = stateOf(s.state, false);
   return (
-    <li
-      class={`issue-row sw-card ${toneClass(st.tone)}`}
+    <Card
+      as="li"
+      class="issue-row"
+      tone={st.tone}
       data-session-row={s.session}
       data-session-state={s.state}
     >
@@ -347,9 +349,9 @@ function Row({ p, s }: { p: PlatformProject; s: SessionRow }) {
           <span class="issue-row-meta">It asks: {s.question}</span>
         )}
       </div>
-      <code class="sw-id" title={s.session}>
+      <code class="card-id" title={s.session}>
         {s.session.replace(/^ses_/, "").slice(0, 8)}
       </code>
-    </li>
+    </Card>
   );
 }
