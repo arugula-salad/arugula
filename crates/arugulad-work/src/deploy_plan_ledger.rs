@@ -918,6 +918,7 @@ mod tests {
     }
 
     /// A bundle larger than [`MAX_BUNDLE`], or a link, isn't taken.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_oversized_bundle_or_a_link_isnt_taken() {
         let dir = scratch("big", true);
