@@ -552,8 +552,15 @@ export function RoomMessage({
    * worked out once by the list, not by each message (#438). */
   tokens?: Map<string, string>;
 }) {
+  // An agent's name is its tab (#632), so a post from another of its
+  // sessions starts a head of its own rather than reading as the last one's.
   const head =
-    !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
+    !prev ||
+    prev.author !== m.author ||
+    prev.agent?.machine !== m.agent?.machine ||
+    (prev.agent?.session ?? null) !== (m.agent?.session ?? null) ||
+    prev.via !== m.via ||
+    m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
