@@ -600,13 +600,20 @@ lead?: string, } | { "kind": "cycle" };
  * one. A group moves among groups:
  * `before` is a group, `zone` is absent. A lane is never set (aru-125): a
  * `zone` that is a lane is refused.
+ *
+ * `seen` is the row ids of the group the row goes to, in the order the
+ * caller read them. A row's `rev` doesn't count moves, so this is what a
+ * move that mustn't overwrite someone else's checks: if the group's rows
+ * aren't those, in that order, nothing moves and the answer is 409
+ * `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+ * Absent, a move is made whatever the order.
  */
 export type BoardMoveEntry = { rev: number | null, 
 /**
  * The group the row goes to; `null`: none. Absent: its own. `group`
  * is read as this too.
  */
-zone?: string | null, before: string | null, };
+zone?: string | null, before: string | null, seen?: Array<string>, };
 
 /**
  * A board that lists a project Doc.
@@ -830,6 +837,12 @@ left_out: number,
 started: boolean, };
 
 /**
+ * The body of a move refused as `stale_order`: the group's rows now, in
+ * order.
+ */
+export type BoardStaleOrder = { error: string, reason: string, rows: Array<string>, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
@@ -871,6 +884,13 @@ sequence?: Array<string>,
  * no row waits on another (#762).
  */
 chain?: Array<string>, 
+/**
+ * Every row (`row_…`) as the board stores them: by group, in the
+ * groups' order, then by position inside each, those with no group
+ * last. A move that names the order it read (`seen`) names a group's
+ * rows from here.
+ */
+order?: Array<string>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.

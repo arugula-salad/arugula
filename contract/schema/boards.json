@@ -881,6 +881,13 @@
           },
           "type": "array"
         },
+        "order": {
+          "description": "Every row (`row_…`) as the board stores them: by group, in the\ngroups' order, then by position inside each, those with no group\nlast. A move that names the order it read (`seen`) names a group's\nrows from here.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "ready": {
           "description": "The ready set (Arugula #403): the rows (`row_…`) with an issue or a\nPR as their item that are in Next and have no open blocker.",
           "items": {
@@ -1665,7 +1672,7 @@
       "type": "object"
     },
     "MoveEntry": {
-      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
+      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.\n\n`seen` is the row ids of the group the row goes to, in the order the\ncaller read them. A row's `rev` doesn't count moves, so this is what a\nmove that mustn't overwrite someone else's checks: if the group's rows\naren't those, in that order, nothing moves and the answer is 409\n`stale_order` with the group's rows as they are now ([`StaleOrder`]).\nAbsent, a move is made whatever the order.",
       "properties": {
         "before": {
           "default": null,
@@ -1680,6 +1687,15 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "seen": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
             "null"
           ]
         },
@@ -2560,6 +2576,29 @@
       },
       "required": [
         "lane"
+      ],
+      "type": "object"
+    },
+    "StaleOrder": {
+      "description": "The body of a move refused as `stale_order`: the group's rows now, in\norder.",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "error",
+        "reason",
+        "rows"
       ],
       "type": "object"
     },

@@ -1,0 +1,222 @@
+/* A board's Steps view (Arugula #763): phases with their open rows in columns by step, one line to a row, and arrows for the hovered row's links. Slate and Latte's tokens only. */
+.board-views {
+  display: inline-flex;
+  width: max-content;
+  margin: 0 0 var(--space-3, 12px);
+}
+
+.steps {
+  position: relative;
+  /* Wider than the page when the steps are many: the arrows scroll with the bars they join. */
+  overflow-x: auto;
+  /* Room for an arrow that bends round the right of the bars it joins. */
+  padding-right: 28px;
+}
+
+.steps-links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+
+.steps-phase {
+  margin-top: 20px;
+}
+
+.steps-phase:first-of-type {
+  margin-top: 4px;
+}
+
+.steps-phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.steps-phase-head h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.steps-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--steps), minmax(220px, 1fr));
+  column-gap: 32px;
+  padding-bottom: 4px;
+}
+
+.steps-col {
+  min-width: 0;
+}
+
+.steps-col-head {
+  margin: 8px 0 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.steps-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.step-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.step-bar[data-tone="warn"] {
+  border-left-color: var(--warn);
+}
+
+.step-bar[data-tone="accent"] {
+  border-left-color: var(--accent);
+}
+
+.step-bar[data-tone="danger"] {
+  border-left-color: var(--danger);
+}
+
+.step-bar[data-tone="ok"] {
+  border-left-color: var(--ok);
+}
+
+.step-bar:is(:hover, :focus-visible),
+.step-bar[data-selected] {
+  background: var(--selected);
+}
+
+.step-bar[aria-current="true"] {
+  box-shadow: var(--selected-edge);
+}
+
+.step-bar[draggable="true"] {
+  cursor: grab;
+}
+
+.step-bar[data-dragging] {
+  opacity: 0.4;
+}
+
+.step-bar[data-drop="before"] {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+
+.step-bar[data-drop="after"] {
+  box-shadow: 0 2px 0 var(--accent);
+}
+
+.step-glyph {
+  flex: none;
+}
+
+.step-label {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-agent {
+  flex: none;
+  display: inline-flex;
+  max-width: 45%;
+}
+
+.step-said {
+  flex: none;
+  color: var(--warn);
+  font-size: var(--text-xs);
+}
+
+.steps-more {
+  padding-top: 2px;
+}
+
+/* A link's kind is how its arrow looks: before thin, blocks heavy and warm, relates dotted without a head, duplicate_of double, discovered_from dashed. */
+.step-link {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+}
+
+.step-link-blocks {
+  stroke: var(--warn);
+  stroke-width: 2.75;
+}
+
+.step-link-relates {
+  stroke: var(--dim);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-dasharray: 0.5 5;
+}
+
+.step-link-duplicate_of {
+  stroke: var(--dim);
+  stroke-width: 5;
+}
+
+/* The gap between a duplicate's two lines: the track's own colour over its middle. */
+.step-link-gap {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.step-link-discovered_from {
+  stroke: var(--ok);
+  stroke-dasharray: 6 4;
+}
+
+.step-head path {
+  stroke: none;
+}
+
+.step-head-before path {
+  fill: var(--accent);
+}
+
+.step-head-blocks path {
+  fill: var(--warn);
+}
+
+.step-head-discovered_from path {
+  fill: var(--ok);
+}
+
+/* A phone: the steps stack as sections, and a bar takes the width. */
+@media (max-width: 700px) {
+  .steps {
+    padding-right: 24px;
+  }
+
+  .steps-cols {
+    display: block;
+  }
+}

@@ -1492,7 +1492,8 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                 None => Some(None),
             };
             // Not `given`: a `zone` of null is the move out of a group.
-            let body = serde_json::to_value(MoveEntry { rev: None, zone, before: None }).map_err(|e| e.to_string())?;
+            let body = serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None })
+                .map_err(|e| e.to_string())?;
             let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &row.id), Some(body)).await?;
             one_row(&view_of(v)?, &format!("Moved {}.", row.item_label()), &row.id, a.verbose)
         }
@@ -1530,7 +1531,7 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let view = read_view(c, &a.board).await?;
             let g = find_group(&view, &a.group)?;
             let before = a.before.as_deref().map(|b| find_group(&view, b).map(|b| b.id.clone())).transpose()?;
-            let m = MoveEntry { rev: None, zone: None, before };
+            let m = MoveEntry { rev: None, zone: None, before, seen: None };
             let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &g.id), Some(given(m)?)).await?;
             board_done("Moved a group", v, a.verbose)
         }
@@ -1841,7 +1842,7 @@ mod tests {
         let stay: GroupArgs = serde_json::from_value(json!({ "board": "b", "item": "#1" })).unwrap();
         let into: GroupArgs = serde_json::from_value(json!({ "board": "b", "item": "#1", "group": "Wave 1" })).unwrap();
         assert_eq!((out.group, stay.group, into.group), (Some(None), None, Some(Some("Wave 1".into()))));
-        let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None }).unwrap();
+        let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None }).unwrap();
         assert_eq!(body(Some(None))["zone"], Value::Null, "out of its group goes out as null");
         assert!(body(None).get("zone").is_none(), "no zone: its own");
     }

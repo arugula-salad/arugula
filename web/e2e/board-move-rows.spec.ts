@@ -127,6 +127,8 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
   // A phone has the menu and the drawer, and no dragging.
   await alice.setViewportSize({ width: 390, height: 844 });
   await open(alice);
+  // Steps is the default at this width (#763); the lanes are one tap away.
+  await alice.locator('[data-board-view="lanes"]').click();
   await expect(card(alice, titles[1])).not.toHaveAttribute("draggable", "true");
   await shot(alice, "390-board");
   await card(alice, titles[1]).locator(".board-sub").click({ position: { x: 4, y: 4 } });

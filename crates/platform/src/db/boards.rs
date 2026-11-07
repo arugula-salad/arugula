@@ -85,6 +85,9 @@ pub enum Refused {
     Missing(&'static str),
     /// The entry's rev isn't the one named: read the board again.
     Stale { rev: u64 },
+    /// The group's rows aren't in the order the move read them: they are,
+    /// now, these (row ids).
+    Order { rows: Vec<String> },
     /// The change isn't allowed; why.
     Bad(String),
     /// The change is something its author may not do; why.
@@ -248,6 +251,9 @@ pub struct Move<'a> {
     pub before: Option<&'a str>,
     /// The rev it must still have.
     pub rev: Option<u64>,
+    /// The row ids of the group a row goes to, as its caller read them: the
+    /// group's whole order, not part of it.
+    pub seen: Option<&'a [String]>,
 }
 
 pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
@@ -1007,7 +1013,7 @@ impl Db {
     /// goes to), or last in it. `rev`, if named, must be the row's or
     /// group's.
     pub fn move_entry(&self, board: &str, id: &str, m: &Move, at: u64) -> Result<std::result::Result<(), Refused>> {
-        let Move { zone, before, rev } = *m;
+        let Move { zone, before, rev, seen } = *m;
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
@@ -1054,6 +1060,15 @@ impl Db {
                 params![board],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            if let Some(seen) = seen {
+                // The destination group's whole order, the row itself in it
+                // if it's there already.
+                let now: Vec<&str> = all.iter().filter(|(_, z)| *z == to).map(|(i, _)| i.as_str()).collect();
+                if now.len() != seen.len() || now.iter().zip(seen).any(|(a, b)| *a != b.as_str()) {
+                    let rows = now.into_iter().map(str::to_owned).collect();
+                    return Ok(Err(Refused::Order { rows }));
+                }
+            }
             all.retain(|(i, _)| i != id);
             let index = match before {
                 Some(b) => match all.iter().position(|(i, z)| i == b && *z == to) {

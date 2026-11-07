@@ -40,7 +40,9 @@ import { issues } from "../issues/store";
 import { whoLabel } from "../issues/text";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
-import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
+import { BoardError, STALE_ORDER, STALE_REV, boards, type ForgeChecks } from "./store";
+import { StepsView } from "./steps-view";
+import { loadMode, nudge, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
@@ -97,6 +99,16 @@ export function BoardPanel({
   const [editing, setEditing] = useState<string | null>(null);
   /** The row whose drawer is open. */
   const [drawer, setDrawer] = useState<string | null>(null);
+  /** Lanes or Steps, as this viewer last picked (Steps on a phone until they do). */
+  const [mode, setModeNow] = useState<BoardMode>(() => loadMode());
+  const setMode = (m: BoardMode) => (setModeNow(m), saveMode(m), setBehind(null));
+  /** The row whose reorder was refused because someone else moved its group first (Steps). */
+  const [behind, setBehind] = useState<string | null>(null);
+  useEffect(() => {
+    if (!behind) return;
+    const t = setTimeout(() => setBehind(null), 10_000);
+    return () => clearTimeout(t);
+  }, [behind]);
   /** The headings this viewer folded, kept in this browser per board. */
   const [folds, setFolds] = useState<Folds>(() => loadFolds(id));
   useEffect(() => setFolds(loadFolds(id)), [id]);
@@ -253,6 +265,19 @@ export function BoardPanel({
     if (to) void act(() => boards.move(id, g.id, g.rev, to));
   };
   const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
+  /** A reorder inside a step (Steps): it names the group's rows as this view read them. If someone moved them first, nothing moves; the board is read again and the row says so. It isn't made again by itself. */
+  const reorderRow = async (r: BoardRow, m: Reorder) => {
+    setBehind(null);
+    try {
+      setView(await boards.reorder(id, r.id, m.before, m.seen));
+      setStale(false);
+    } catch (e) {
+      if (e instanceof BoardError && e.reason === STALE_ORDER) {
+        setBehind(r.id);
+        again();
+      } else toast(`Couldn't move it: ${(e as Error).message}`);
+    }
+  };
   /** A row dropped on a group (#664): it moves there with its lane unchanged. */
   const dropRow = (row: string, group: string | null) => {
     const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
@@ -307,6 +332,13 @@ export function BoardPanel({
         }
         link={<CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />}
       />
+      <div class="seg small board-views" role="group" aria-label="View" data-board-views>
+        {(["lanes", "steps"] as const).map((m) => (
+          <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
+            {m === "lanes" ? "Lanes" : "Steps"}
+          </button>
+        ))}
+      </div>
       <div class="board-find" role="search" data-board-find>
         <input
           ref={findBox}
@@ -361,7 +393,10 @@ export function BoardPanel({
           }
         />
       )}
-      {sections(narrowed).map((s) => {
+      {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
+        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} chip={(a) => <AttachmentChip a={a} platform={platform} />} />
+      )}
+      {mode === "lanes" && sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;
         const key = groupFold(s.group?.id ?? null);
         const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
@@ -475,7 +510,7 @@ export function BoardPanel({
           </label>
         </ConfirmRemove>
       )}
-      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
+      {opened && <Drawer steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined} r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
     </div>
   );
 }
@@ -1203,8 +1238,9 @@ async function readRow(r: BoardRow): Promise<Read> {
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-function Drawer({ r, platform, close, project, others, write, act, id, moveLane, nameOf }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
+function Drawer({ steps, r, platform, close, project, others, write, act, id, moveLane, nameOf }: { /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
   const [read, setRead] = useState<Read | null>(null);
+  const phone = usePhone();
   const href = pointerHref(r, platform);
   const key = `${r.id}:${r.updated_at}`;
   useEffect(() => {
@@ -1251,6 +1287,18 @@ function Drawer({ r, platform, close, project, others, write, act, id, moveLane,
           </Chip>
         )}
       </div>
+      {steps?.place && phone && (
+        <div class="board-line board-drawer-steps" data-board-drawer-steps>
+          {([true, false] as const).map((up) => {
+            const m = nudge(steps.place!.group, steps.place!.step, r.id, up);
+            return (
+              <button key={String(up)} type="button" class="secondary small" disabled={!m} aria-label={up ? "Move up in its step" : "Move down in its step"} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
+                {up ? "↑" : "↓"}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div class="board-line">
         {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
         {href && (
