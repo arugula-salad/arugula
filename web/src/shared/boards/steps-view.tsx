@@ -158,7 +158,7 @@ export function StepsView({
       <svg class="steps-links" width={drawn.width} height={drawn.height} aria-hidden="true" data-steps-links>
         <defs>
           {[...HEADS].map((k) => (
-            <marker key={k} id={`${uid}-${k}`} class={`step-head step-head-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+            <marker key={k} id={`${uid}-${k}`} class={`step-head step-head-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
               <path d="M0 0L8 4L0 8z" />
             </marker>
           ))}
