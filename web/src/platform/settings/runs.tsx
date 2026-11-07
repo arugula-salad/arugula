@@ -10,11 +10,11 @@
 // refuse it or it expires soon. Shown on every project, with nothing in
 // place too (UI audit #166: a project's settings show every section).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
-import { toneClass } from "../swarm";
 import { Section } from "../../shared/ui/settings-section";
 import { Chip } from "../../shared/ui/state-chip";
 
@@ -79,10 +79,10 @@ export function RunGrant({ project }: { project: string }) {
       }
     >
       {g ? (
-        <ul class="platform-list sw-cards settings-cards">
-          <li class={`sw-card ${toneClass(v.stale || v.renew || v.signer_gone ? "warn" : "ok")}`}>
-            <div class="sw-head">
-              <b class="sw-name">Standing grant</b>
+        <ul class="platform-list card-list settings-cards">
+          <Card as="li" tone={v.stale || v.renew || v.signer_gone ? "warn" : "ok"}>
+            <div class="card-head">
+              <b class="card-title big">Standing grant</b>
               <Chip kind="tag">
                 {g.expires ? (
                   <>
@@ -105,7 +105,7 @@ export function RunGrant({ project }: { project: string }) {
             ) : v.renew ? (
               <span class="settings-warn">It expires soon: renew it to keep runs starting.</span>
             ) : null}
-          </li>
+          </Card>
         </ul>
       ) : null}
       {v.role === "owner" ? (

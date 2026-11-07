@@ -101,15 +101,11 @@ details.issues-note > summary {
   display: none;
 }
 
-.issue-row {
-  display: flex;
+/* A row is a Card (shared/ui/card.css) laid out as a line, not a column. */
+.issue-row.card {
+  flex-direction: row;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
-}
-
-.issue-row + .issue-row {
-  border-top: 1px solid var(--line);
 }
 
 .issue-row-main {

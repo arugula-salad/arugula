@@ -2,12 +2,13 @@
 // Each is a card in the swarm's language (./swarm.css): its bar is the
 // reader's role in it, its pill the people in its team.
 
+import { Card } from "../../shared/ui/card";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { session } from "../session";
-import { roleTone, toneClass } from "../swarm";
+import { roleTone } from "../swarm";
 import { Count } from "../../shared/ui/state-chip";
 
 export function Home() {
@@ -29,28 +30,28 @@ export function Home() {
           </div>
         }
       />
-      <ul class="platform-cards sw-cards">
+      <ul class="card-grid">
         {session.projects.map((p) => {
           const to = pathOf({ page: "project", project: p.id }, names);
           const people = p.team?.members.length ?? 0;
           return (
             <li key={p.id}>
-              <a class={`platform-card sw-card ${toneClass(roleTone(p.team?.role))}`} href={to} data-project={p.id} onClick={(e) => follow(e, to)}>
-                <span class="sw-head">
-                  <b class="sw-name">{p.name}</b>
+              <Card as="a" tone={roleTone(p.team?.role)} href={to} data-project={p.id} onClick={(e) => follow(e, to)}>
+                <span class="card-head">
+                  <b class="card-title big">{p.name}</b>
                   {p.team && (
                     <Count class="count-end" title={`${people} ${people === 1 ? "person" : "people"} in ${p.team.name}`}>
                       {people}
                     </Count>
                   )}
                 </span>
-                <span class="sw-id" title={p.id}>
+                <span class="card-id" title={p.id}>
                   {p.id.slice(0, 12)}
                 </span>
                 <span class="dim">
                   {p.team ? `Team ${p.team.name} · ${people} ${people === 1 ? "person" : "people"} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : "Yours alone"}
                 </span>
-              </a>
+              </Card>
             </li>
           );
         })}

@@ -13,11 +13,11 @@
 // grants add` (`/api/grants`, the platform's). What each switch reads of
 // the grants is ./grants's, tested.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
-import { toneClass } from "../swarm";
 import {
   boardsLimit,
   boardsLevel,
@@ -255,9 +255,9 @@ export function AgentGrants() {
     const rows = matrixOf(grants, machines, s, columns, s.role);
     const n = reaching(rows);
     return (
-      <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
-        <div class="sw-head">
-          <b class="sw-name">{title}</b>
+      <Card key={s.id ?? "dms"} class="agent-card" tone={n ? "accent" : "muted"} {...data}>
+        <div class="card-head">
+          <b class="card-title big">{title}</b>
           <Count class="count-end" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
             {n}/{machines.length}
           </Count>
@@ -313,7 +313,7 @@ export function AgentGrants() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     );
   };
 
@@ -358,7 +358,7 @@ export function AgentGrants() {
       {machines.length === 0 ? (
         <p class="dim">No machines on your account yet.</p>
       ) : (
-        <div class="sw-cards agent-cards" data-agent-grants>
+        <div class="card-list agent-cards" data-agent-grants>
           {session.projects.map((p) => {
             const s: AgentScope = { kind: "project", id: p.id, name: p.team ? p.name : "your personal project", role: roleIn(p) as Role };
             return card(

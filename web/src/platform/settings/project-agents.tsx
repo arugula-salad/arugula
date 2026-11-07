@@ -8,6 +8,7 @@
 // (./section): the tokens as cards, as /settings's are (the bar: live or
 // revoked), and the secrets as rows.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
@@ -15,7 +16,6 @@ import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
-import { toneClass } from "../swarm";
 import { reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
@@ -150,12 +150,12 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
       >
         {tokens?.length === 0 && <p class="dim">None yet.</p>}
         {tokens?.length ? (
-          <ul class="platform-list sw-cards settings-cards agent-tokens">
+          <ul class="platform-list card-list settings-cards agent-tokens">
             {/* The bar: live, or revoked. */}
             {tokens.map((t) => (
-              <li key={t.id} class={`sw-card ${toneClass(t.live ? "accent" : "muted")}`} data-project-agent-token={t.id}>
-                <div class="sw-head">
-                  <b class="sw-name">
+              <Card as="li" key={t.id} tone={t.live ? "accent" : "muted"} data-project-agent-token={t.id}>
+                <div class="card-head">
+                  <b class="card-title big">
                     <bdi>{t.name}</bdi>
                   </b>
                   <span class="dim">
@@ -177,7 +177,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                     "Never used"
                   )}
                 </span>
-              </li>
+              </Card>
             ))}
           </ul>
         ) : null}

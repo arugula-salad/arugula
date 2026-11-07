@@ -7,6 +7,7 @@
 // project's members read its issues whatever their chat setting (Arugula
 // #746); only the comments, chat's thread, need chat.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { IssueHome, NativeIssue } from "../../shared/proto";
 import { MsgAvatar } from "../../shared/chat/avatar";
@@ -24,7 +25,7 @@ import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
-import { issueTone, toneClass } from "../swarm";
+import { issueTone } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
@@ -60,14 +61,14 @@ export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact
 export function ListLoading({ rows = 3 }: { rows?: number }) {
   if (!useAfter(LOADING_DELAY_MS)) return null;
   return (
-    <ul class="issues-list sw-cards issues-loading" aria-busy="true" aria-label="Loading" data-list-loading>
+    <ul class="issues-list card-list issues-loading" aria-busy="true" aria-label="Loading" data-list-loading>
       {Array.from({ length: rows }, (_, i) => (
-        <li key={i} class="issue-row sw-card" aria-hidden="true">
+        <Card as="li" key={i} class="issue-row" tone={null} aria-hidden="true">
           <div class="issue-row-main">
             <span class="loading-bar" style={{ width: `${[46, 62, 38][i % 3]}%` }} />
             <span class="loading-bar short" />
           </div>
-        </li>
+        </Card>
       ))}
     </ul>
   );
@@ -239,7 +240,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
             why="An issue is a bug, a follow-up or a ticket for later. Agents open them too."
           />
         ))}
-      <ul class="issues-list sw-cards" data-issues-list>
+      <ul class="issues-list card-list" data-issues-list>
         {list?.map((i) => (
           <IssueRow key={i.id} p={p} i={i} nameOf={nameOf} label={(l) => to({ ...filter, label: l })} />
         ))}
@@ -348,7 +349,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
   return (
     // A card in the swarm's language (../swarm.css), as a run's is: its bar
     // is the issue's state (open ok, closed muted: done, not failed).
-    <li class={`issue-row sw-card ${toneClass(issueTone(i.state))}`} data-issue-row={i.number} data-issue-row-state={i.state}>
+    <Card as="li" class="issue-row" tone={issueTone(i.state)} data-issue-row={i.number} data-issue-row-state={i.state}>
       <div class="issue-row-main">
         <a href={to} class="issue-row-title" onClick={(e) => follow(e, to)}>
           {i.title}
@@ -371,7 +372,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
           ))}
         </span>
       )}
-    </li>
+    </Card>
   );
 }
 

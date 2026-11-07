@@ -217,11 +217,11 @@
 }
 
 @media (max-width: 390px) {
-  .board-card .board-labels-top {
+  .board-row .board-labels-top {
     display: none;
   }
 
-  .board-card .board-labels-all {
+  .board-row .board-labels-all {
     display: inline;
   }
 }
@@ -536,76 +536,35 @@
   font: 700 var(--text-xl)/1.05 var(--f-display);
 }
 
-/* A board on a list is a compact card (#704, the approved prototype's): in a
-   grid of 250px-and-up cells, a title, the goal's first line, a 6px bar and
-   its words. Nothing of swarm.css's cards: one surface, one border. */
-.platform-section ul.board-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.platform-section li.board-card[data-board-card] {
-  position: relative;
-  min-width: 0;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
+/* A board on a list is a Card (shared/ui/card.css) in a grid of 250px-and-up
+   cells (#704): a title, the goal's first line, a 6px bar and its words. The
+   whole card is the link (#656): the title's box stretches over it, so a
+   click anywhere on the card opens the board. */
+.card[data-board-card] {
   cursor: pointer;
 }
 
-.platform-section li.board-card[data-board-card]:hover {
-  border-color: var(--dim);
-}
-
-.platform-section a.board-card-title {
-  display: block;
+.platform-section a.card-title {
   color: var(--fg);
-  font: 600 var(--text-md)/1.35 var(--f-ui);
-  overflow-wrap: anywhere;
-  text-decoration: none;
 }
 
-/* The whole card is the link (#656): the title's box stretches over it, so a
-   click anywhere on the card opens the board. */
-.platform-section a.board-card-title::after {
+.platform-section a.card-title::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
 }
 
-.platform-section a.board-card-title:focus-visible {
+.platform-section a.card-title:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.board-card-line {
-  margin: 2px 0 0;
-  overflow: hidden;
-  font-size: var(--text-sm);
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.board-card-progress {
-  margin-top: 8px;
-  font-size: var(--text-sm);
-  line-height: 1.35;
-}
-
-.board-card-progress .board-bar {
+.card-foot .board-bar {
   margin-bottom: 6px;
 }
 
-.board-card-progress span {
+.card-foot[data-board-progress] span {
   display: block;
   overflow-wrap: anywhere;
 }
@@ -614,82 +573,19 @@
   margin-top: 8px;
 }
 
-/* A row is a swarm card (platform/swarm.css scopes those rules to the platform page, so the shell's block gets the same look here): its bar the lane's tone. */
-.board .board-card {
-  --c: var(--muted);
-  --ct: var(--subtle);
-}
-
-.board .board-card.sw-accent {
-  --c: var(--accent);
-}
-
-.board .board-card.sw-ok {
-  --c: var(--ok);
-}
-
-.board .board-card.sw-warn {
-  --c: var(--warn);
-}
-
-.board .board-card.sw-muted {
-  --c: var(--muted);
-}
-
-.board .board-card.sw-danger {
-  --c: var(--danger);
-}
-
-/* The card whose drawer is open is selected: the tint over its surface, the accent bar (selection owns it) and a 1px accent edge, inset so nothing moves. */
-.board .board-rows > .board-card[aria-current="true"] {
-  background-image: linear-gradient(var(--selected), var(--selected));
-  box-shadow: var(--selected-edge);
-}
+/* A row is a Card with its lane's tone (shared/ui/card.css): its bar, edge and fill, and selected, are the card's. */
 
 /* Open and waiting on the reader: the ring stays outside the edge. */
-.board .board-rows > .board-card[aria-current="true"][data-needs-you] {
+.board .board-rows > .board-row[aria-current="true"][data-needs-you] {
   box-shadow: var(--selected-edge), 0 0 0 2px var(--accent);
 }
 
-.board .board-rows > .board-card[aria-current="true"]::before {
-  background: var(--accent);
-}
-
 /* A row that waits on the reader keeps its lane's tone; the ring is what sets it apart. */
-.board .board-rows > .board-card[data-needs-you] {
+.board .board-rows > .board-row[data-needs-you] {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-.board .board-rows {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.board .board-rows > .board-card {
-  position: relative;
-  min-width: 0;
-  margin: 0;
-  padding: 10px 12px 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line, var(--divider)));
-  border-radius: var(--card-radius, 8px);
-  background: color-mix(in srgb, var(--c) 7%, var(--surface));
-}
-
-.board .board-rows > .board-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
-}
-
-.board .board-card .board-main {
+.board .board-row .board-main {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -731,13 +627,13 @@
   text-decoration: underline;
 }
 
-.board .board-card {
+.board .board-row {
   cursor: pointer;
 }
 
-.board .board-card a,
-.board .board-card button,
-.board .board-card summary {
+.board .board-row a,
+.board .board-row button,
+.board .board-row summary {
   cursor: pointer;
 }
 
@@ -881,7 +777,7 @@
 
 /* A card dragged to another lane (#494) or group (#664): the one under it takes it
    (`.drop-target`, shared/style.css). */
-.board-card[draggable="true"] {
+.board-row[draggable="true"] {
   cursor: grab;
 }
 

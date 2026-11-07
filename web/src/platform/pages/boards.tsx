@@ -15,6 +15,7 @@ import { boards } from "../../shared/boards/store";
 import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
+import { Card } from "../../shared/ui/card";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -312,18 +313,18 @@ function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoar
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
   return (
-    <li class={`board-card${drop && !closed ? " drop-target" : ""}`} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
-      <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
+    <Card as="li" class={drop && !closed ? "drop-target" : undefined} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
+      <a href={to} class="card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
         {b.title}
       </a>
       {waiting && (
-        <p class="board-card-line dim" data-board-not-started>
+        <p class="card-meta" data-board-not-started>
           {NOT_STARTED}
         </p>
       )}
-      {line && <p class="board-card-line dim">{line}</p>}
+      {line && <p class="card-meta">{line}</p>}
       {!closed && (
-        <div class="board-card-progress dim" data-board-progress>
+        <div class="card-foot" data-board-progress>
           {b.progress.total > 0 && (
             <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
               {e.segments.map((s) => (
@@ -334,7 +335,7 @@ function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoar
           <span>{e.words}</span>
         </div>
       )}
-    </li>
+    </Card>
   );
 }
 
@@ -349,7 +350,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
   const waiting = plane.filter((b) => !b.source?.started);
   return (
     <>
-      <ul class="board-list" {...{ [data]: true }}>
+      <ul class="board-list card-grid" {...{ [data]: true }}>
         {made.map((b) => (
           <BoardItem key={b.id} p={p} b={b} drop={drop} />
         ))}
@@ -357,7 +358,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
       {plane.length > 0 && (
         <section class="board-plane-group" aria-labelledby={`plane-boards-${p.id}`} data-boards-plane>
           <h3 id={`plane-boards-${p.id}`}>From Plane</h3>
-          <ul class="board-list">
+          <ul class="board-list card-grid">
             {started.map((b) => (
               <BoardItem key={b.id} p={p} b={b} drop={drop} />
             ))}
@@ -371,7 +372,7 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
       {done.length > 0 && (
         <details class="board-done-list" data-boards-done open={q.trim() ? true : undefined}>
           <summary>Done ({done.length})</summary>
-          <ul class="board-list">
+          <ul class="board-list card-grid">
             {done.map((b) => (
               <BoardItem key={b.id} p={p} b={b} />
             ))}

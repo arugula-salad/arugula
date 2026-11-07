@@ -15,6 +15,7 @@
 // environment holds it or the platform mints it per run, and its deploys a
 // compact table under mono column heads, as the repos' are.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
@@ -23,7 +24,7 @@ import { DeployRow } from "../pages/deploy";
 import { ENVIRONMENTS_MEAN } from "../pages/project";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
-import { deployTone, toneClass } from "../swarm";
+import { deployTone } from "../swarm";
 import { Section } from "../../shared/ui/settings-section";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 
@@ -91,7 +92,7 @@ export function Environments({ p }: { p: PlatformProject }) {
         </p>
       )}
       {envs?.length ? (
-        <div class="sw-cards settings-cards env-cards">
+        <div class="card-list settings-cards env-cards">
           {envs.map((env) => (
             <EnvironmentCard
               key={env.id}
@@ -133,9 +134,9 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
   // The bar: its latest deploy's state, muted until it has one.
   const latest = history.page?.deploys[0];
   return (
-    <article class={`sw-card env-card ${toneClass(latest ? deployTone(latest.state) : "muted")}`} data-environment={env.name}>
-      <div class="sw-head">
-        <b class="sw-name">{env.name}</b>
+    <Card as="article" class="env-card" tone={latest ? deployTone(latest.state) : "muted"} data-environment={env.name}>
+      <div class="card-head">
+        <b class="card-title big">{env.name}</b>
         <Chip kind="tag" title="Its driver: what applies its deploys">
           {env.driver}
         </Chip>
@@ -181,7 +182,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
         </div>
       )}
       <RecentDeploys env={env.id} history={history} />
-    </article>
+    </Card>
   );
 }
 

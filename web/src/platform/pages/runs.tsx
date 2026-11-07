@@ -16,6 +16,7 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
@@ -38,7 +39,7 @@ import { ListLoading, mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { NewWorkspaceButton } from "./hosted-workspace";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
-import { runTone, toneClass, type Tone } from "../swarm";
+import { runTone, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
 
@@ -228,7 +229,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
         ) : (
           <NoRuns p={p} workspaces={listed} starting={starting} start={() => setStarting(true)} />
         ))}
-      <ul class="issues-list sw-cards" data-runs-list>
+      <ul class="issues-list card-list" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
           const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
@@ -237,7 +238,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           return (
             // A card in the swarm's language (../swarm.css): its bar is the
             // run's state, which the meta line says in words.
-            <li class={`issue-row run-row sw-card ${toneClass(runTone(r.state))}`} key={r.id} data-run-row={r.id} data-run-state={r.state}>
+            <Card as="li" class="issue-row run-row" tone={runTone(r.state)} key={r.id} data-run-row={r.id} data-run-state={r.state}>
               <div class="issue-row-main">
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
                   {runTitle(r.op, specName(r.source.spec), r.deploy)}
@@ -249,11 +250,11 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
                 </span>
               </div>
-              <code class="run-id sw-id" title={r.id}>
+              <code class="run-id card-id" title={r.id}>
                 {short(r.id)}
                 {ws ? ` · ${ws}` : ""}
               </code>
-            </li>
+            </Card>
           );
         })}
       </ul>

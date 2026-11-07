@@ -45,6 +45,7 @@ import { names } from "../links";
 import { follow, followRow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 import { deployTone, toneClass } from "../swarm";
+import { cardToneClass } from "../../shared/ui/card";
 import { where } from "../where";
 import { noteWaitingDeploys } from "../inbox-count";
 
@@ -400,7 +401,7 @@ export function DeployCard({
   const path = `/deploys/${d.id}`;
   const project = pathOf({ page: "project", project: d.project.id }, names);
   return (
-    <article class={headless ? "deploy-card" : `deploy-card sw-card ${toneClass(deployTone(d.state))}`} data-deploy-card={d.id} data-deploy-state={d.state}>
+    <article class={headless ? "deploy-card" : `deploy-card card ${cardToneClass(deployTone(d.state))}`} data-deploy-card={d.id} data-deploy-state={d.state}>
       {!headless && (
         <header class="deploy-card-head">
           <h2>
@@ -632,7 +633,7 @@ export function WaitingDeploys({ list }: { list: Deploy[] | null }) {
       <h2>
         Deploys waiting for you <span class="dim">{list.length}</span>
       </h2>
-      <div class="deploy-cards sw-cards">
+      <div class="deploy-cards card-list">
         {list.map((d) => (
           <DeployCard key={d.id} d={d} link />
         ))}

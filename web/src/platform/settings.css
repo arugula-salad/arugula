@@ -36,21 +36,15 @@
   font-size: var(--text-md);
 }
 
-.platform .settings-cards .sw-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 /* On a light palette a settings card is big (an environment's holds its
-   deploys), and swarm.css's tint flooded it with its tone: Latte's
+   deploys), and the card's Latte tint flooded it with its tone: Latte's
    production read solid green. Here the bar says the state, the border
    only hints at it, and the card is the surface with the faintest cast,
    as calm as it is on a dark palette. */
 @supports (color: oklch(from red l c h)) {
-  html[data-scheme="light"] .platform .sw-cards.settings-cards .sw-card {
-    border-color: oklch(from var(--c) 0.88 min(calc(c * 0.35), 0.04) h);
-    background: color-mix(in srgb, var(--c) 4%, var(--surface));
+  html[data-scheme="light"] .platform .settings-cards .card-tone {
+    --card-edge: oklch(from var(--c) 0.88 min(calc(c * 0.35), 0.04) h);
+    --card-tint: color-mix(in srgb, var(--c) 4%, var(--surface));
   }
 }
 
@@ -160,6 +154,10 @@
   display: inline;
   margin: 0;
   color: var(--dim);
+}
+
+.platform .agent-card.card {
+  display: block;
 }
 
 .platform .agent-cards {
@@ -420,7 +418,7 @@
 
 /* An environment: its card's head holds its name, its driver's tag and
    Deploy… at the end. */
-.platform .env-card .sw-head {
+.platform .env-card .card-head {
   flex-wrap: wrap;
   align-items: center;
 }
@@ -753,7 +751,7 @@
   .platform .env-deploy {
     margin-left: 0;
   }
-  .platform .env-card .sw-head .chip-tag {
+  .platform .env-card .card-head .chip-tag {
     margin-right: auto;
   }
   .platform .env-secret {

@@ -14,6 +14,7 @@
 // project's inference keys are `./hosted-manage`'s, as `arugula cloud`'s
 // edit, rebuild, preview, secret and key (Discovery 10).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
@@ -27,7 +28,7 @@ import { follow, go, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { Modal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { toneClass, workspaceTone, type Tone } from "../swarm";
+import { workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 import { Time } from "../../shared/ui/time";
 import { SIZES, sizeOf, type Size } from "../settings/workspace-size";
@@ -152,16 +153,16 @@ export function useHostedWorkspaces(id: string): HostedWorkspace[] | null {
  * rebuild (UI audit #165). */
 export function HostedWorkspaceList({ project: id, list }: { project: string; list: HostedWorkspace[] }) {
   return (
-    <ul class="platform-list sw-cards sw-grid" data-hosted-workspaces-list>
+    <ul class="platform-list card-grid" data-hosted-workspaces-list>
       {list.map((w) => {
         const to = pathOf({ page: "workspace", project: id, workspace: w.id }, names);
         return (
           <li key={w.id}>
-            <a class={`sw-card ${toneClass(workspaceTone(w.state, w.asked))}`} href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
-              <span class="sw-head">
-                <b class="sw-name">{w.name}</b>
+            <Card as="a" tone={workspaceTone(w.state, w.asked)} href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
+              <span class="card-head">
+                <b class="card-title big">{w.name}</b>
               </span>
-              <span class="sw-id">
+              <span class="card-id">
                 <span title={w.id}>{w.id.slice(0, 11)}</span> ·{" "}
                 {w.machine ? <span title={`Its machine: ${w.machine}`}>machine {shortMachine(w.machine)}</span> : "no machine yet"}
               </span>
@@ -171,7 +172,7 @@ export function HostedWorkspaceList({ project: id, list }: { project: string; li
                   Wants a rebuild
                 </StateChip>
               )}
-            </a>
+            </Card>
           </li>
         );
       })}

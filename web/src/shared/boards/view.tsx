@@ -25,6 +25,7 @@ import { useEffect, useId, useRef, useState } from "preact/hooks";
 import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
+import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
 import { PlusIcon } from "../ui/rail-icons";
 import { ConfirmRemove } from "../ui/confirm";
@@ -850,7 +851,7 @@ function Lane({
         </span>
       </header>
       {!fold.folded && (
-        <ul class="board-rows sw-cards">
+        <ul class="board-rows card-list">
           {z.rows.map((r) => (
             <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} opened={opened} />
           ))}
@@ -1080,7 +1081,7 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
+    <Card as="li" tone={tone} class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
       e.dataTransfer?.setData(ROW_DRAG, r.id);
       e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
     }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
@@ -1187,7 +1188,7 @@ function Row({
           {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
         </div>
       )}
-    </li>
+    </Card>
   );
 }
 
