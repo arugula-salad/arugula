@@ -156,8 +156,8 @@ export function AllBoardsPage() {
                       {open.get(p.id)} not on a board
                     </a>
                   )}
-                  <a class="sw-all" href={all} aria-label={`${p.name}'s boards`} onClick={(e) => follow(e, all)} data-all-boards-project-link>
-                    All ›
+                  <a class="sw-all" href={all} onClick={(e) => follow(e, all)} data-all-boards-project-link>
+                    All boards ›
                   </a>
                 </>
               }

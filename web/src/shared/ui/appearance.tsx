@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "./modal";
-import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
+import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, legible, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
 let shown = false;
 const listeners = new Set<() => void>();
@@ -140,7 +140,8 @@ function AppearanceDialog({ close }: { close: () => void }) {
 /** A palette as a tiny window: its bar, its background with text, and its
  * colors in a row. */
 function PaletteCard({ p, id, name, hint, on }: { p: Palette; id: string; name: string; hint?: string; on: boolean }) {
-  const u = p.ui;
+  // The colours the page will paint (legible()), not the raw palette's.
+  const u = legible(p);
   return (
     <button
       role="radio"
