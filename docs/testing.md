@@ -187,13 +187,17 @@ opens an issue for each whose newest scheduled run failed (below). `.github/work
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
 workflows' job names, run the command its first line names (it also
-writes check.yml's and windows*.yml's triggers and concurrency). Its
+writes check.yml's and windows*.yml's triggers and concurrency, and
+chant-merge-queue.yml, the merge queue's verdict). It also rewrites
+server-release.yml's triggers and concurrency and adds server-release to the
+tick's workflows, because server-release.yml has a job named `build`: keep
+neither change. Its
 `--install` step gives git an author, without which the tick can't write
 its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.69 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.70 ci last-green` (after `git fetch --tags`) prints
 the newest green commit, and `--lane server` (or `app`, `daemon`) the
 newest of a lane's.
 
