@@ -1427,9 +1427,9 @@ button.att {
   font-weight: 600;
   pointer-events: auto;
   cursor: default;
-  background: var(--accent)22;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
-  border: 1px solid var(--accent)66;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   opacity: 0.85;
 }
 
@@ -1513,7 +1513,7 @@ button.att {
   flex: 1;
   width: 100%;
   border: 0;
-  background: #fff;
+  background: #fff; /* lint: literal — a web page is painted for white and sets nothing of its own */
 }
 
 .browser-card {
@@ -1602,7 +1602,7 @@ button.att {
   padding: 0 var(--space-1);
   border-radius: var(--tag-radius);
   color: var(--info);
-  border: 1px solid var(--info)66;
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
 }
 
 .host-seen {
@@ -2267,7 +2267,7 @@ button.att {
   margin: 0 8px 8px;
   padding: 6px 10px;
   border-radius: var(--field-radius);
-  background: var(--danger)22;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
   color: var(--danger);
 }
 
@@ -5141,7 +5141,7 @@ button.diff-why-run {
 
 .conv-source.desktop {
   color: var(--accent);
-  border-color: var(--accent)66;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .conv-live {
@@ -6300,10 +6300,10 @@ html[data-scheme="light"] .doc {
 
 /* ---- Getting started (#110): five steps in the swarm's own look */
 
-/* Heavier than the other dialogs': a night layer over the one --backdrop. */
+/* Heavier than the other dialogs': a second --backdrop over the first. */
 .prompt-backdrop:has(> .start) {
   padding-top: 6vh;
-  background-image: linear-gradient(rgb(3 5 9 / 0.5), rgb(3 5 9 / 0.5));
+  background-image: linear-gradient(var(--backdrop), var(--backdrop));
   backdrop-filter: blur(3px);
 }
 
@@ -6317,7 +6317,7 @@ html[data-scheme="light"] .doc {
   font: var(--text-md)/1.45 var(--f-ui);
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
-  box-shadow: 0 24px 80px #000c;
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   outline: none;
 }
@@ -6780,7 +6780,7 @@ html[data-scheme="light"] .doc {
   background: var(--void);
   color: var(--ink);
   font: 500 var(--text-sm)/1 var(--f-mono);
-  box-shadow: 0 12px 40px #000a;
+  box-shadow: var(--shadow-lg);
 }
 
 @media (max-width: 600px) {
@@ -10114,7 +10114,7 @@ html[data-finish="glass"] .prompt-backdrop {
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: var(--field-radius);
-  background: #000;
+  background: #000; /* lint: literal — a camera frame is letterboxed in black in every scheme */
 }
 
 .conv-teammates {
@@ -13171,7 +13171,7 @@ html[data-workspace="new"] .thread-panel {
   font: inherit;
   font-size: var(--text-xs);
   color: var(--dim, inherit);
-  background: var(--raised, rgba(128, 128, 128, 0.2));
+  background: var(--raised);
   border: 0;
   border-radius: var(--field-radius);
   cursor: pointer;
@@ -13223,7 +13223,7 @@ html[data-workspace="new"] .thread-panel {
 .doc-prototype-box:popover-open .doc-prototype-bar {
   margin: 0;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  border-bottom: 1px solid var(--line);
 }
 
 .doc-prototype-box:popover-open .doc-prototype-full {
@@ -13231,7 +13231,7 @@ html[data-workspace="new"] .thread-panel {
   font: inherit;
   font-size: var(--text-lg);
   color: inherit;
-  background: var(--raised, rgba(128, 128, 128, 0.35));
+  background: var(--raised);
   border: 0;
   cursor: pointer;
 }
@@ -13244,7 +13244,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 1px 8px;
   font-size: var(--text-xs);
   color: var(--dim, inherit);
-  background: var(--raised, rgba(128, 128, 128, 0.2));
+  background: var(--raised);
   border-radius: var(--field-radius) 0 0 0;
   pointer-events: none;
 }
@@ -13256,7 +13256,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 8px 12px;
   padding: 12px 14px;
   margin: 0 0 0.7em;
-  border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
 }
 
@@ -13268,7 +13268,7 @@ html[data-workspace="new"] .thread-panel {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  border: 1px solid var(--line);
   border-radius: var(--field-radius);
   margin: 0 0 0.7em;
   background: transparent;
