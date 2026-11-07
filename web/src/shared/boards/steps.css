@@ -156,6 +156,7 @@
 .step-agent > .chip-object {
   flex: 0 1 auto;
   min-width: 0;
+  min-height: 0; /* the bar is the touch target: a phone's 32px chip would be clipped by it */
   overflow: hidden;
   white-space: nowrap;
 }
