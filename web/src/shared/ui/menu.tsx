@@ -1,5 +1,8 @@
 // Right-click menus: one open at a time, closed by Escape, a click
-// elsewhere, or choosing an item.
+// elsewhere, or choosing an item. A `Popover` is the same box for content
+// that isn't a list of items (chat's agents and emoji): it hangs from its
+// button as a menu does, is a sheet on a phone, closes the same ways, and
+// keeps the focus inside until it does.
 
 import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -87,6 +90,8 @@ interface OpenMenu extends MenuOpts {
   /** The keys go into it: its first row has the focus once it's shown
    * (UI audit #171). */
   focus: boolean;
+  /** A popover's content, in place of the items. */
+  content?: ComponentChildren;
 }
 
 /** How long a row asking to be confirmed ignores clicks: the second click
@@ -135,10 +140,20 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
 }
 
 /** Where a menu hangs from a button: under it, its left edge at the
- * button's (or its right edge at the button's, with `end`). */
-export function menuBelow(el: HTMLElement) {
+ * button's (or, with `end`, its right edge at the button's: pass `end` to
+ * the menu too). */
+export function menuBelow(el: HTMLElement, end = false) {
   const r = el.getBoundingClientRect();
-  return { clientX: r.left, clientY: r.bottom + 4, preventDefault() {} };
+  return { clientX: end ? r.right : r.left, clientY: r.bottom + 4, preventDefault() {} };
+}
+
+/** Whether a press on `el` just shut the menu or popover that hung from it:
+ * the click that follows is the same tap, so a button that toggles one
+ * leaves it shut. Asking consumes it. */
+export function pressedShut(el: HTMLElement | null): boolean {
+  const was = !!el && pressShut?.el === el && Date.now() - pressShut.at < PRESS_SHUT_MS;
+  if (was) pressShut = null;
+  return was;
 }
 
 function expanded(el: HTMLElement | null) {
@@ -196,6 +211,87 @@ export function MenuHost({ show, close }: { show: () => boolean; close: () => vo
   return <MenuLayer />;
 }
 
+/** Arbitrary content in the menu's box, hanging from the button `from`
+ * (below it, or above when there's no room; its right edge at the button's
+ * with `end`) and a sheet along the bottom on a phone. Mounted while it's
+ * open: `onClose` is told when the menu's own ways shut it (Escape, a click
+ * elsewhere, another menu), and the caller drops it. Escape puts the focus
+ * back on `from`; a caller that closes it on a choice puts it where it
+ * wants. What inside is marked `data-autofocus` has the focus once it's
+ * shown, else the popover itself; Tab stays inside it. It is drawn where it
+ * is mounted, so a spec can reach it from its owner. A press on `from`
+ * shuts it: check `pressedShut(from)` before opening it again. */
+export function Popover({
+  from,
+  end,
+  label,
+  attrs,
+  onClose,
+  children,
+}: {
+  from: { current: HTMLElement | null };
+  end?: boolean;
+  /** Its accessible name. */
+  label: string;
+  /** Attributes for the popover itself, such as a `data-` hook for the specs. */
+  attrs?: Attrs;
+  onClose: () => void;
+  children: ComponentChildren;
+}) {
+  const me = useRef<OpenMenu | null>(null);
+  const [hold] = useState(() => ({}));
+  const told = useRef(onClose);
+  told.current = onClose;
+  useLayoutEffect(() => {
+    const el = from.current;
+    if (!el) return told.current();
+    const at = menuBelow(el, end);
+    let leaving = false;
+    const mine: OpenMenu = {
+      x: at.clientX,
+      y: at.clientY,
+      items: [],
+      focus: false,
+      content: children,
+      from: el,
+      end,
+      label,
+      attrs,
+      onClose: () => !leaving && told.current(),
+    };
+    pressShut = null;
+    if (current) current.onClose?.();
+    else opener = el;
+    // Its own layer (below) is the one that draws it: held here so that no
+    // other layer, such as the page's, draws it first and drops it again.
+    layers.push(hold);
+    expanded(el);
+    current = mine;
+    me.current = mine;
+    changed();
+    return () => {
+      leaving = true;
+      const held = layers.indexOf(hold);
+      if (held >= 0) layers.splice(held, 1);
+      if (current === mine) closeMenu();
+      else changed();
+    };
+  }, []);
+  // What it shows follows the caller's render: a choice made in it uses
+  // the caller's state as it is now.
+  useLayoutEffect(() => {
+    if (me.current && current === me.current && me.current.content !== children) {
+      me.current.content = children;
+      changed();
+    }
+  });
+  // Drawn here, inside the element that has it, as `MenuHost` does.
+  return <MenuLayer />;
+}
+
+/** What can take the Tab key in a popover. */
+const TABBABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
 export function MenuLayer() {
   const [, setTick] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -226,6 +322,9 @@ export function MenuLayer() {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !current) return;
       tookEscape.add(e);
+      // A popover's Escape is chat's: marked handled, so the page and the
+      // desktop app's window leave it be (#380).
+      if (current.content !== undefined) e.preventDefault();
       closeAndReturn();
     };
     const down = (e: PointerEvent) => {
@@ -267,9 +366,16 @@ export function MenuLayer() {
     focusIn.current = current.focus;
     if (matchMedia(SHEET).matches) return setPos({ left: 0, top: 0 });
     const x = current.end ? current.x - r.width : current.x;
+    let y = current.y;
+    // A popover with no room below its button opens above it, when that has
+    // more (the composer's emoji, at the foot of the page).
+    if (current.content !== undefined && current.from && y + r.height > window.innerHeight - 8) {
+      const f = current.from.getBoundingClientRect();
+      if (f.top - 4 >= r.height + 8 || f.top > window.innerHeight - f.bottom) y = f.top - 4 - r.height;
+    }
     setPos({
       left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
-      top: Math.max(8, Math.min(current.y, window.innerHeight - r.height - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)),
     });
   }, [current, top]);
   useEffect(() => {
@@ -301,8 +407,32 @@ export function MenuLayer() {
     focusIn.current = false;
     ref.current?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus({ preventScroll: true });
   }, [pos]);
+  // A popover takes the focus once it's shown (it is hidden until placed, and
+  // a hidden element can't have it): what is marked `data-autofocus`, else
+  // the popover itself, so the Tab key starts inside it.
+  const shownFor = useRef<OpenMenu | null>(null);
+  useEffect(() => {
+    if (!pos || !current || current.content === undefined || shownFor.current === current) return;
+    const el = ref.current;
+    if (!el || getComputedStyle(el).visibility !== "visible") return;
+    shownFor.current = current;
+    if (el.contains(document.activeElement)) return;
+    (el.querySelector<HTMLElement>("[data-autofocus]") ?? el).focus({ preventScroll: true });
+  }, [pos, current]);
   // The arrows, Home and End move between the items.
   const onKey = (e: KeyboardEvent) => {
+    // A popover keeps the Tab key: from its last control to its first, and
+    // back, rather than out to the page behind it.
+    if (e.key === "Tab" && current?.content !== undefined) {
+      const tabs = [...(ref.current?.querySelectorAll<HTMLElement>(TABBABLE) ?? [])];
+      const at = document.activeElement;
+      const wrap = !tabs.length || (e.shiftKey ? at === tabs[0] || at === ref.current : at === tabs[tabs.length - 1]);
+      if (wrap) {
+        e.preventDefault();
+        (e.shiftKey ? tabs[tabs.length - 1] : tabs[0] ?? ref.current)?.focus({ preventScroll: true });
+      }
+      return;
+    }
     const items = [...(ref.current?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? [])];
     if (!items.length) return;
     const i = items.indexOf(document.activeElement as HTMLElement);
@@ -423,13 +553,15 @@ export function MenuLayer() {
 
   if (!current || !top) return null;
   const sheet = matchMedia(SHEET).matches;
+  const popover = current.content !== undefined;
   return (
     <>
       {sheet && <div class="menu-backdrop" data-menu-backdrop onClick={closeAndReturn} />}
       <div
         ref={ref}
-        class={sheet ? "menu sheet" : "menu"}
-        role="menu"
+        class={`menu${sheet ? " sheet" : ""}${popover ? " popover" : ""}`}
+        role={popover ? "dialog" : "menu"}
+        tabIndex={popover ? -1 : undefined}
         aria-label={current.label}
         {...current.attrs}
         style={
@@ -449,6 +581,7 @@ export function MenuLayer() {
         onKeyDown={onKey}
       >
         {current.head}
+        {current.content}
         {current.items.map((item, i) =>
           typeof item === "object" && "submenu" in item ? (
             <Fragment key={i}>

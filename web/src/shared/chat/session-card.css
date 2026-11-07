@@ -4,10 +4,10 @@
 
    element        what it shows
    -------------- ---------------------------------------------------------
-   bar, border    its state: queued and needs input warn, working accent,
-                  done ok, failed and stopped responding danger, stopped
-                  muted
-   state (display) its state in words
+   status chip    its state in words, in its tone: queued and needs input
+                  warn, working accent, done ok, failed and stopped
+                  responding danger, stopped muted (the tone also colors
+                  the body's links, rules and focus)
    mono id        ses_ and 8 of its hex (its own page, where there is one)
    mono time      how long it's run, or ran
    mono line      its repo and branch, and the workspace it runs on
@@ -22,42 +22,39 @@
                   border its state (kept ok, not picked muted), its harness,
                   its diffstat, its finish, its page and its diff, and Pick
 
-   Palette tokens only, so every appearance holds; the swarm's font stacks
-   where the page has them (control's platform page), else the UI's own. */
+   The frame is an item block's (shared/ui/item-block.css): its edge,
+   radius and surface, a Bar (shared/ui/bar.tsx) for the head, and the
+   buttons are buttons.css's. Palette tokens only, so every appearance
+   holds. */
 
 .session-card {
   --c: var(--muted);
   --ct: var(--subtle);
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   box-sizing: border-box;
   width: 100%;
   max-width: 560px;
   margin: 2px 0 4px;
-  padding: var(--space-2) 12px var(--space-2) 15px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
-  border-radius: var(--field-radius);
-  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
+  background: var(--surface);
   color: var(--fg);
   font-size: var(--text-md);
   animation: session-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
-.session-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
+/* The head is an item block's: raised, square under its rounded corners. */
+.session-card > .session-card-bar {
+  background: var(--raised);
+  border-radius: var(--btn-radius) var(--btn-radius) 0 0;
 }
 
-.session-card:is(:hover, :focus-within) {
-  box-shadow: 0 0 20px color-mix(in srgb, var(--c) 30%, transparent);
+.session-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
 }
 
 @keyframes session-card-in {
@@ -75,8 +72,10 @@
 
 .session-card.large {
   max-width: none;
-  padding: 14px 16px 14px 19px;
-  font-size: var(--text-md);
+}
+
+.session-card.large .session-card-body {
+  padding: 14px 16px;
 }
 
 .session-card.tone-accent {
@@ -99,7 +98,6 @@
   --ct: var(--danger);
 }
 
-.session-card-top,
 .session-card-where,
 .session-card-buttons {
   display: flex;
@@ -111,24 +109,6 @@
 
 .session-card-fill {
   flex: 1;
-}
-
-.session-card-state {
-  color: var(--ct);
-  font: 800 var(--text-xl)/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif);
-  letter-spacing: var(--track-display);
-  text-transform: uppercase;
-}
-
-.session-card.large .session-card-state {
-  font-size: var(--text-xl);
-}
-
-.session-card-what {
-  color: var(--dim);
-  font-size: var(--text-xs);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
 }
 
 .session-card-id,
@@ -209,34 +189,8 @@ a.session-card-id:hover {
 }
 
 .session-card-buttons {
+  align-items: center;
   margin-top: 2px;
-}
-
-.session-card-buttons :is(button, a.button) {
-  padding: 3px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  background: var(--surface);
-  color: var(--fg);
-  font-size: var(--text-sm);
-  text-decoration: none;
-}
-
-.session-card-buttons :is(button, a.button):not(:disabled):hover {
-  border-color: var(--c);
-}
-
-.session-card-buttons button:disabled {
-  color: var(--dim);
-  cursor: default;
-}
-
-.session-card-buttons button.danger {
-  color: var(--danger);
-}
-
-.session-card-buttons button.danger:not(:disabled):hover {
-  border-color: var(--danger);
 }
 
 /* Its PR's draft, as its asker writes it. */
@@ -323,18 +277,15 @@ a.session-card-id:hover {
 }
 
 .session-try3 button {
-  border-top-right-radius: 0 !important;
-  border-bottom-right-radius: 0 !important;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
-.session-try3 select {
-  padding: 2px 4px;
-  border: 1px solid var(--divider);
+.session-try3 select.field {
+  min-height: 24px;
+  padding-right: 22px;
   border-left: 0;
-  border-radius: 0 5px 5px 0;
-  background: var(--surface);
-  color: var(--subtle);
-  font-size: var(--text-sm);
+  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
 /* Its compare view: the three side by side, each a small card of its own
@@ -464,19 +415,6 @@ a.session-card-id:hover {
   color: var(--accent);
 }
 
-.session-try-links button {
-  padding: 1px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--fg);
-  font: var(--text-sm)/1.4 inherit;
-}
-
-.session-try-links button:not(:disabled):hover {
-  border-color: var(--ok);
-}
-
 /* The three side by side want more room than one card. */
 .session-card:has(.session-tries) {
   max-width: 860px;
@@ -505,24 +443,6 @@ a.session-card-id:hover {
   margin: 0;
 }
 
-.session-ask-choices button,
-.session-ask-words button,
-.session-move {
-  padding: 4px 12px;
-  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--line));
-  border-radius: var(--btn-radius);
-  background: var(--surface);
-  color: var(--fg);
-  font: 500 var(--text-sm)/1.4 var(--f-mono);
-}
-
-.session-ask-choices button:not(:disabled):hover,
-.session-ask-words button:not(:disabled):hover,
-.session-move:not(:disabled):hover {
-  border-color: var(--c);
-  background: color-mix(in srgb, var(--c) 12%, var(--surface));
-}
-
 .session-ask-words input {
   flex: 1;
   min-width: 140px;
@@ -537,12 +457,6 @@ a.session-card-id:hover {
 .session-ask-done {
   margin: 2px 0;
   font-size: var(--text-sm);
-}
-
-/* Move to… (Arugula #214): a menu among the card's buttons. */
-.session-move {
-  padding: 3px 8px;
-  font-family: inherit;
 }
 
 /* What an agent session said in its thread (Arugula #215): a turn's answer

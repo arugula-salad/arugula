@@ -17,7 +17,6 @@ const SHARED = new Set(["chip-tag"]);
  * is a chip of its own, to move onto a shape in a follow-up. Don't add one;
  * the list only gets shorter. */
 export const ALLOWED = new Set([
-  "agents-chip", // the room's agents button (shared/chat/agents-chip.tsx)
   "avatar-badge", // an agent's mark on an avatar
   "chat-pane-chip", // a pane named in a message
   "control-badge", // control's trust UI labels

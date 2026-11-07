@@ -167,6 +167,16 @@ test("an agent grant: the room shows a chip and says so once", async () => {
   await page.locator("[data-agents-chip]").click();
   await expect(page.locator("[data-agents-pop] [data-agents-machine]")).toContainText("read and post");
   await expect(page.locator("[data-agents-grants]")).toBeVisible();
+  // It takes the focus, the Tab key stays inside it, and Escape gives the chip the focus back.
+  const pop = page.locator("[data-agents-pop]");
+  await expect(pop).toBeFocused();
+  await aliceChat.keyboard.press("Tab");
+  await expect(page.locator("[data-agents-grants]")).toBeFocused();
+  await aliceChat.keyboard.press("Tab");
+  await expect(page.locator("[data-agents-grants]")).toBeFocused();
+  await aliceChat.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+  await expect(page.locator("[data-agents-chip]")).toBeFocused();
   // Said in the room: once for read, once for read and post; not again.
   const said = page.locator("[data-system]");
   await expect(said).toHaveCount(2);

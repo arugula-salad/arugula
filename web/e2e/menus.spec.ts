@@ -53,7 +53,7 @@ async function open(page: Page, width: number, height = 800) {
     r.fulfill({ contentType: "text/html", body }),
   );
   await page.goto("/menus.html");
-  await expect(page.locator("[data-open]")).toHaveCount(3);
+  await expect(page.locator("[data-open]")).toHaveCount(4);
 }
 
 const phone = {
@@ -85,8 +85,81 @@ test("a desktop menu is a dropdown under its button, closed by Escape", async ({
   await expect(menu).toHaveCount(0);
 });
 
+test("a popover keeps the Tab key, gives the focus back on Escape, and is a toggle", async ({
+  page,
+}) => {
+  await open(page, 1000);
+  const button = page.locator('[data-open="popover"]');
+  await button.click();
+  const pop = page.locator("[data-popover]");
+  await expect(pop).toBeVisible();
+  await expect(pop).toHaveAttribute("role", "dialog");
+  await expect(pop).toHaveAttribute("aria-label", "Details");
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  // Under its button, and the focus is inside it, on what asked for it.
+  const at = (await button.boundingBox())!;
+  expect((await pop.boundingBox())!.y).toBeGreaterThanOrEqual(at.y + at.height);
+  await expect(page.locator('[data-pop="name"]')).toBeFocused();
+  // Tab goes round inside it, both ways.
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-pop="link"]')).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-pop="ok"]')).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-pop="name"]')).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator('[data-pop="ok"]')).toBeFocused();
+  // Escape shuts it and the focus is back on the button.
+  await page.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  // A press on the button while it is open shuts it and the click doesn't reopen it.
+  await button.click();
+  await expect(pop).toBeVisible();
+  await button.click();
+  await expect(pop).toHaveCount(0);
+  // A click elsewhere shuts it.
+  await button.click();
+  await expect(pop).toBeVisible();
+  await page.mouse.click(600, 500);
+  await expect(pop).toHaveCount(0);
+  // Another menu takes its place.
+  await button.click();
+  await page.locator('[data-open="menu"]').click();
+  await expect(pop).toHaveCount(0);
+  await expect(page.locator('[data-menu-name="Actions"]')).toBeVisible();
+});
+
 test.describe("on a phone", () => {
   test.use(phone);
+
+  test("at 390px a popover is a sheet, and Escape gives the focus back", async ({
+    page,
+  }) => {
+    await open(page, 390, 800);
+    const button = page.locator('[data-open="popover"]');
+    await button.click();
+    const pop = page.locator("[data-popover]");
+    await expect(pop).toHaveClass(/sheet/);
+    const box = (await pop.boundingBox())!;
+    expect(box.width).toBe(390);
+    expect(Math.round(box.y + box.height)).toBe(800);
+    await expect(page.locator("[data-menu-backdrop]")).toBeVisible();
+    await expect(page.locator('[data-pop="name"]')).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.locator('[data-pop="ok"]')).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('[data-pop="name"]')).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(pop).toHaveCount(0);
+    await expect(button).toBeFocused();
+    // A tap on the backdrop shuts it too.
+    await button.click();
+    await expect(pop).toBeVisible();
+    await page.touchscreen.tap(200, 100);
+    await expect(pop).toHaveCount(0);
+  });
 
   test("at 390px a menu is a sheet along the bottom, and a tap on the backdrop closes it", async ({
     page,

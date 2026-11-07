@@ -38,7 +38,7 @@ export function DiffLink({ c }: { c: SessionCard }) {
   const branch = c.branch.split("/").map(encodeURIComponent).join("/");
   return (
     <a
-      class="button"
+      class="secondary small"
       href={`https://github.com/${c.repo}/compare/${branch}`}
       target="_blank"
       rel="noopener"

@@ -1,6 +1,6 @@
 // The fixture page for the shared menu (#757): a menu with icons, a facet
 // menu whose ticks stay open, and a side sheet with a menu opened from inside
-// it, over a page with a counter under where the menu's backdrop sits (a tap
+// it, a popover (arbitrary content in the menu's box), over a page with a counter under where the menu's backdrop sits (a tap
 // on the backdrop must not reach it). menus.spec.ts builds this with Vite and
 // serves it, so no daemon is involved.
 
@@ -13,6 +13,8 @@ import {
   MenuLayer,
   menuBelow,
   openMenu,
+  Popover,
+  pressedShut,
   type MenuItem,
 } from "../src/shared/ui/menu";
 import { SideSheet } from "../src/shared/ui/side-sheet";
@@ -27,6 +29,8 @@ function Page() {
   const [ran, setRan] = useState("");
   const [facet, setFacet] = useState<string[]>([]);
   const [sheet, setSheet] = useState(false);
+  const [pop, setPop] = useState(false);
+  const popButton = useRef<HTMLButtonElement>(null);
   const [under, setUnder] = useState(0);
   const menuButton = useRef<HTMLButtonElement>(null);
   const facetButton = useRef<HTMLButtonElement>(null);
@@ -104,6 +108,34 @@ function Page() {
       >
         Open sheet
       </button>
+      <button
+        type="button"
+        class="secondary"
+        ref={popButton}
+        data-open="popover"
+        aria-haspopup="dialog"
+        onClick={() => pressedShut(popButton.current) || setPop(!pop)}
+      >
+        Details
+      </button>
+      {pop && (
+        <Popover
+          from={popButton}
+          label="Details"
+          attrs={{ "data-popover": true }}
+          onClose={() => setPop(false)}
+        >
+          <div style="padding:12px">
+            <input aria-label="Name" data-autofocus data-pop="name" />
+            <a href="#top" data-pop="link">
+              A link
+            </a>
+            <button type="button" data-pop="ok" onClick={() => setPop(false)}>
+              OK
+            </button>
+          </div>
+        </Popover>
+      )}
       <p data-ran>{ran}</p>
       {/* Under the phone's backdrop, bottom left, where a tap lands if it falls through. */}
       <button
