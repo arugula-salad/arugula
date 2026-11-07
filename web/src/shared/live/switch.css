@@ -34,6 +34,6 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--danger, #e5484d);
+  background: var(--danger);
   box-shadow: 0 0 0 2px var(--bg);
 }

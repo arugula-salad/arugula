@@ -170,7 +170,7 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   bottom: 40px;
   transform: translateX(-50%);
   padding: 6px 6px 6px 12px;
-  box-shadow: 0 8px 28px #0006;
+  box-shadow: var(--shadow-lg);
 }
 .hint-empty {
   margin-top: 12px;
