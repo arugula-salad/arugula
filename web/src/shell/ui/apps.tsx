@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { OpenRequest, OpenResponse, PaneId } from "../../shared/proto";
 import { Chip } from "../../shared/ui/state-chip";
+import { Modal } from "../../shared/ui/modal";
 
 export interface StudioApp {
   name: string;
@@ -120,10 +121,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: AppsWh
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(rows.length - 1, s + 1));
     } else if (e.key === "ArrowUp") {
@@ -138,68 +136,66 @@ function Picker({ client, where, phone, close }: { client: Client; where: AppsWh
 
   const chosen = rows[sel];
   return (
-    <div class="prompt-backdrop picker-backdrop" role="dialog" aria-label="Studio apps" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class={phone ? "picker apps phone" : "picker apps"} onKeyDown={onKey}>
-        <div class="picker-where">
-          <span class="picker-host">Studio apps</span>
-          {studio && <span class="dim">{hostOf(studio)}</span>}
-        </div>
-        <input
-          ref={input}
-          class="picker-filter"
-          placeholder="Search apps"
-          value={query}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSel(0);
-          }}
-        />
-        <ul class="picker-list" role="listbox">
-          {!list && !error && <li class="picker-empty">Asking the studio…</li>}
-          {list && rows.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No apps in the studio"}</li>}
-          {rows.map((a, n) => (
-            <li
-              key={a.name}
-              role="option"
-              aria-selected={n === sel}
-              class={`picker-row app-row${n === sel ? " selected" : ""}`}
-              data-app={a.name}
-              onClick={() => {
-                setSel(n);
-                void pick(a);
-              }}
-              title={a.url}
-            >
-              <span class="picker-label">{a.title ?? a.name}</span>
-              {a.title && <span class="dim">{a.name}</span>}
-              {a.blocks.length > 0 && <Chip kind="tag" tone="info">%{a.blocks[0]}</Chip>}
-              {a.status && a.status !== "running" && <span class="dim">{a.status}</span>}
-            </li>
-          ))}
-        </ul>
-        {error && (
-          <p class="error picker-error">
-            {error}
-            {/not logged in/.test(error) && (
-              <>
-                {" "}
-                In a terminal: <code>arugula studio login &lt;studio url&gt;</code>
-              </>
-            )}
-          </p>
-        )}
-        <div class="picker-actions">
-          <span class="picker-target">{chosen ? hostOf(chosen.url) : ""}</span>
-          <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen)}>
-            {chosen && chosen.blocks.length > 0 ? "Go to it" : "Open"}
-          </button>
-          <button onClick={close}>Cancel</button>
-        </div>
+    <Modal bare close={close} label="Studio apps" class={phone ? "picker apps phone" : "picker apps"} root={{ onKeyDown: onKey }}>
+      <div class="picker-where">
+        <span class="picker-host">Studio apps</span>
+        {studio && <span class="dim">{hostOf(studio)}</span>}
       </div>
-    </div>
+      <input
+        ref={input}
+        class="picker-filter"
+        placeholder="Search apps"
+        value={query}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck={false}
+        onInput={(e) => {
+          setQuery(e.currentTarget.value);
+          setSel(0);
+        }}
+      />
+      <ul class="picker-list" role="listbox">
+        {!list && !error && <li class="picker-empty">Asking the studio…</li>}
+        {list && rows.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No apps in the studio"}</li>}
+        {rows.map((a, n) => (
+          <li
+            key={a.name}
+            role="option"
+            aria-selected={n === sel}
+            class={`picker-row app-row${n === sel ? " selected" : ""}`}
+            data-app={a.name}
+            onClick={() => {
+              setSel(n);
+              void pick(a);
+            }}
+            title={a.url}
+          >
+            <span class="picker-label">{a.title ?? a.name}</span>
+            {a.title && <span class="dim">{a.name}</span>}
+            {a.blocks.length > 0 && <Chip kind="tag" tone="info">%{a.blocks[0]}</Chip>}
+            {a.status && a.status !== "running" && <span class="dim">{a.status}</span>}
+          </li>
+        ))}
+      </ul>
+      {error && (
+        <p class="error picker-error">
+          {error}
+          {/not logged in/.test(error) && (
+            <>
+              {" "}
+              In a terminal: <code>arugula studio login &lt;studio url&gt;</code>
+            </>
+          )}
+        </p>
+      )}
+      <div class="picker-actions">
+        <span class="picker-target">{chosen ? hostOf(chosen.url) : ""}</span>
+        <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen)}>
+          {chosen && chosen.blocks.length > 0 ? "Go to it" : "Open"}
+        </button>
+        <button onClick={close}>Cancel</button>
+      </div>
+    </Modal>
   );
 }
 

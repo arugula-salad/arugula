@@ -27,6 +27,7 @@ import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
 import { CLAUDE_COST_NOTE, COST_NOTE, ContextStrip, costLabel, usd, type AgentContext, type Estimate } from "../blocks/agent-context";
 import { Chip } from "../../shared/ui/state-chip";
+import { Modal } from "../../shared/ui/modal";
 
 export interface Conversation {
   id: string;
@@ -290,10 +291,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(convs.length - 1, s + 1));
     } else if (e.key === "ArrowUp") {
@@ -311,128 +309,121 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   const chosenHost = chosenRow?.host ?? here;
   let i = -1;
   return (
-    <div
-      class="prompt-backdrop picker-backdrop"
-      role="dialog"
-      aria-label="Claude Code conversations"
-      onPointerDown={(e) => e.target === e.currentTarget && close()}
-    >
-      <div class={phone ? "picker conversations phone" : "picker conversations"} onKeyDown={onKey}>
-        <div class="picker-where">
-          <span class="picker-host">Claude Code conversations</span>
-          {hosts?.some((h) => h.list.some((c) => c.estimate)) && (
-            <span class="conv-cost-note" title={COST_NOTE}>
-              ≈ costs at API prices
-            </span>
-          )}
-          <label class="check">
-            <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
-            Open now
-          </label>
-          <label class="check" title="claude -p and SDK runs, archived ones, ones whose folder is gone">
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
-            All
-          </label>
-        </div>
-        <input
-          ref={input}
-          class="picker-filter"
-          placeholder="Search titles, prompts and folders"
-          value={query}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSel(0);
-          }}
-        />
-        <ul class="picker-list" role="listbox" ref={listRef}>
-          {!multi && reading && !error && <li class="picker-empty">Reading…</li>}
-          {!multi && hosts && !reading && convs.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No conversations here"}</li>}
-          {rows.map((r) => {
-            if (r.kind === "host") {
-              const h = r.h;
-              const n = h.list.length;
-              const what = h.state === "reading" ? "reading…" : h.state === "ok" ? `${n} conversation${n === 1 ? "" : "s"}` : (h.note ?? "");
-              return (
-                <li key={`h:${h.host}`} class={`conv-host ${h.state}`} data-host={h.host}>
-                  <span class="conv-host-name">{h.host}</span>
-                  <span class="conv-host-state">{what}</span>
-                </li>
-              );
-            }
-            if (r.kind === "folder") {
-              return (
-                <li key={`f:${r.host}:${r.cwd}`} class="conv-folder" title={r.cwd}>
-                  {tilde(r.cwd, r.home) || "(no folder)"}
-                </li>
-              );
-            }
-            const { c, host } = r;
-            i += 1;
-            const n = i;
+    <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
+      <div class="picker-where">
+        <span class="picker-host">Claude Code conversations</span>
+        {hosts?.some((h) => h.list.some((c) => c.estimate)) && (
+          <span class="conv-cost-note" title={COST_NOTE}>
+            ≈ costs at API prices
+          </span>
+        )}
+        <label class="check">
+          <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
+          Open now
+        </label>
+        <label class="check" title="claude -p and SDK runs, archived ones, ones whose folder is gone">
+          <input type="checkbox" checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
+          All
+        </label>
+      </div>
+      <input
+        ref={input}
+        class="picker-filter"
+        placeholder="Search titles, prompts and folders"
+        value={query}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck={false}
+        onInput={(e) => {
+          setQuery(e.currentTarget.value);
+          setSel(0);
+        }}
+      />
+      <ul class="picker-list" role="listbox" ref={listRef}>
+        {!multi && reading && !error && <li class="picker-empty">Reading…</li>}
+        {!multi && hosts && !reading && convs.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No conversations here"}</li>}
+        {rows.map((r) => {
+          if (r.kind === "host") {
+            const h = r.h;
+            const n = h.list.length;
+            const what = h.state === "reading" ? "reading…" : h.state === "ok" ? `${n} conversation${n === 1 ? "" : "s"}` : (h.note ?? "");
             return (
-              <li
-                key={`${host}:${c.id}`}
-                role="option"
-                aria-selected={n === sel}
-                class={`picker-row conv-row${n === sel ? " selected" : ""}`}
-                data-conversation={c.id}
-                data-host={host}
-                onClick={() => {
-                  setSel(n);
-                  void pick(c, host);
-                }}
-                title={c.first_prompt ?? c.title}
-              >
-                <span class={`conv-source ${c.source}`}>{SOURCE[c.source]}</span>
-                <span class="picker-label conv-title">{c.title}</span>
-                {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
-                {c.block !== null && <Chip kind="tag" tone="info">%{c.block}</Chip>}
-                {c.context && (
-                  // Its popover, not the row: a click on the strip opens that.
-                  <span class="conv-context" data-conv-context onClick={(e) => e.stopPropagation()}>
-                    <ContextStrip c={c.context} slim />
-                  </span>
-                )}
-                {c.context?.cost_usd != null ? (
-                  <span class="conv-cost" data-cost={c.context.cost_usd} data-cost-from="claude" title={CLAUDE_COST_NOTE}>
-                    {usd(c.context.cost_usd)}
-                  </span>
-                ) : (
-                  c.estimate && (
-                    <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
-                      {costLabel(c.estimate)}
-                    </span>
-                  )
-                )}
-                <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
+              <li key={`h:${h.host}`} class={`conv-host ${h.state}`} data-host={h.host}>
+                <span class="conv-host-name">{h.host}</span>
+                <span class="conv-host-state">{what}</span>
               </li>
             );
-          })}
-        </ul>
-        {error && <p class="error picker-error">{error}</p>}
-        <div class="picker-actions">
-          <span class="picker-target" title={chosen?.live?.place ?? chosen?.cwd}>
-            {chosen ? (chosen.live ? chosen.live.place : (chosen.last_prompt ?? chosen.first_prompt ?? "")) : ""}
-          </span>
-          <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen, chosenHost)}>
-            {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Open"}
-          </button>
-          <button
-            disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
-            title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
-            onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
-          >
-            Continue
-          </button>
-          <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
-            Fork
-          </button>
-          <button onClick={close}>Cancel</button>
-        </div>
+          }
+          if (r.kind === "folder") {
+            return (
+              <li key={`f:${r.host}:${r.cwd}`} class="conv-folder" title={r.cwd}>
+                {tilde(r.cwd, r.home) || "(no folder)"}
+              </li>
+            );
+          }
+          const { c, host } = r;
+          i += 1;
+          const n = i;
+          return (
+            <li
+              key={`${host}:${c.id}`}
+              role="option"
+              aria-selected={n === sel}
+              class={`picker-row conv-row${n === sel ? " selected" : ""}`}
+              data-conversation={c.id}
+              data-host={host}
+              onClick={() => {
+                setSel(n);
+                void pick(c, host);
+              }}
+              title={c.first_prompt ?? c.title}
+            >
+              <span class={`conv-source ${c.source}`}>{SOURCE[c.source]}</span>
+              <span class="picker-label conv-title">{c.title}</span>
+              {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
+              {c.block !== null && <Chip kind="tag" tone="info">%{c.block}</Chip>}
+              {c.context && (
+                // Its popover, not the row: a click on the strip opens that.
+                <span class="conv-context" data-conv-context onClick={(e) => e.stopPropagation()}>
+                  <ContextStrip c={c.context} slim />
+                </span>
+              )}
+              {c.context?.cost_usd != null ? (
+                <span class="conv-cost" data-cost={c.context.cost_usd} data-cost-from="claude" title={CLAUDE_COST_NOTE}>
+                  {usd(c.context.cost_usd)}
+                </span>
+              ) : (
+                c.estimate && (
+                  <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
+                    {costLabel(c.estimate)}
+                  </span>
+                )
+              )}
+              <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p class="error picker-error">{error}</p>}
+      <div class="picker-actions">
+        <span class="picker-target" title={chosen?.live?.place ?? chosen?.cwd}>
+          {chosen ? (chosen.live ? chosen.live.place : (chosen.last_prompt ?? chosen.first_prompt ?? "")) : ""}
+        </span>
+        <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen, chosenHost)}>
+          {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Open"}
+        </button>
+        <button
+          disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
+          title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
+          onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
+        >
+          Continue
+        </button>
+        <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
+          Fork
+        </button>
+        <button onClick={close}>Cancel</button>
       </div>
-    </div>
+    </Modal>
   );
 }

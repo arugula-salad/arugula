@@ -192,7 +192,7 @@ test.describe("phone", () => {
     await expect.poll(() => hostStates(page), { timeout: 15_000 }).toEqual({ geek: "connected", "jake-mini": "connected", laptop: "connected" });
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
-    await expect(picker(page).locator(".picker.phone")).toBeVisible();
+    await expect(picker(page)).toHaveClass(/\bphone\b/);
     await expect(picker(page).locator(".conv-host .conv-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
     await row(page, "laptop").click();
     await expect(picker(page)).toBeHidden();

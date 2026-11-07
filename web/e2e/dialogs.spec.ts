@@ -37,7 +37,7 @@ async function open(page: Page, width: number, height = 800) {
   await page.setViewportSize({ width, height });
   await page.route("**/dialogs.html", (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto("/dialogs.html");
-  await expect(page.locator("[data-open]")).toHaveCount(4);
+  await expect(page.locator("[data-open]")).toHaveCount(5);
 }
 
 const escapes = (page: Page) => page.evaluate(() => (window as unknown as { escapes: number }).escapes);
@@ -92,6 +92,57 @@ test("the backdrop is one colour: 40% black under a dialog and a sheet", async (
   await page.locator('[data-open="sheet"]').click();
   await expect(page.locator("[data-side-sheet-backdrop]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.4)");
 });
+
+// The palette, the pickers and the room switcher: a Modal without its card.
+// It takes the focus into its search field, Escape closes it alone, and the
+// focus goes back to what opened it, on a desktop (top-anchored, a box) and
+// at 390px (the whole screen).
+for (const [width, height] of [
+  [1000, 800],
+  [390, 844],
+] as const) {
+  test(`palette at ${width}px: opens in its field, Escape closes it alone, focus comes back`, async ({ page }) => {
+    await open(page, width, height);
+    const opener = page.locator('[data-open="palette"]');
+    await opener.focus();
+    await opener.press("Enter");
+    const palette = page.locator(".picker.palette");
+    await expect(palette).toBeVisible();
+    // One dialog, the Modal's: the palette adds no role of its own.
+    await expect(page.locator('[role="dialog"], [aria-modal]')).toHaveCount(1);
+    await expect(palette).toHaveAttribute("role", "dialog");
+    await expect(palette).toHaveAccessibleName("Command palette");
+    await expect(page.locator("[data-palette-input]")).toBeFocused();
+    const box = (await palette.boundingBox())!;
+    if (width > 600) {
+      // Top-anchored, not centred.
+      expect(box.y).toBeLessThan(height / 3);
+      expect(Math.round(box.width)).toBeLessThan(width);
+    } else {
+      // The phone's layout: the whole screen.
+      expect(Math.round(box.width)).toBe(width);
+      expect(Math.round(box.height)).toBe(height);
+    }
+    // The focus stays in it.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Tab");
+      expect(await inside(page, ".picker.palette")).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(palette).toHaveCount(0);
+    expect(await escapes(page)).toBe(0);
+    await expect(opener).toBeFocused();
+
+    // A click on the backdrop closes it too.
+    if (width > 600) {
+      await opener.click();
+      await expect(palette).toBeVisible();
+      await page.mouse.click(10, height / 2);
+      await expect(palette).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    }
+  });
+}
 
 for (const [width, height] of [
   [1000, 800],

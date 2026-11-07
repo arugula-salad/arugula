@@ -12,6 +12,7 @@ import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter, loadAdapters, type Adapter } from "./adapter";
 import { pickConversation } from "./conversations";
 import { AgentCanCard } from "./agent-can";
+import { Modal } from "../../shared/ui/modal";
 
 type Kind = "claude" | "codex" | "acp";
 
@@ -142,17 +143,26 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   };
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <form
-        class="prompt agent-dialog"
-        aria-label="Start an agent"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-        onKeyDown={(e) => e.key === "Escape" && close()}
-      >
-        <h2>Start an agent</h2>
+    <Modal
+      title="Start an agent"
+      class="agent-dialog"
+      close={close}
+      buttons={
+        <>
+          <button class="secondary" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={blocked}>
+            Start
+          </button>
+        </>
+      }
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <div class="agent-body">
         <p class="hint">
           Or{" "}
           <button
@@ -262,15 +272,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             promptRef.current?.focus();
           }}
         />
-        <div class="prompt-buttons">
-          <button class="secondary" type="button" onClick={close}>
-            Cancel
-          </button>
-          <button type="submit" class="primary" disabled={blocked}>
-            Start
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </Modal>
   );
 }

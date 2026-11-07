@@ -191,7 +191,3 @@ html[data-finish="glass"] .platform-toast {
   backdrop-filter: blur(20px) saturate(1.6);
   box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px #0006;
 }
-
-html[data-finish="glass"] .chat-switcher-back {
-  backdrop-filter: blur(3px);
-}

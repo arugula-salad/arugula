@@ -2390,13 +2390,9 @@ button.att {
   color: var(--dim);
 }
 
-.agent-dialog {
+.agent-dialog .agent-body {
   display: grid;
   gap: 10px;
-}
-
-.agent-dialog h2 {
-  margin: 0;
 }
 
 .agent-dialog select,
@@ -2672,9 +2668,15 @@ button.att {
   color: var(--dim);
 }
 
-.picker-backdrop:has(.picker.phone) {
+.prompt-backdrop:has(> .picker.phone) {
   padding-top: 0;
   place-items: stretch;
+}
+
+/* A picker is a Modal (shared/ui/modal.tsx) without its card: no ring when
+   it holds the focus itself. */
+.picker:focus {
+  outline: none;
 }
 
 /* A sheet on a phone: the whole screen above the keyboard, thumb-sized. */
@@ -2709,6 +2711,20 @@ button.att {
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(620px, calc(100vw - 32px));
   height: min(460px, 70vh);
+}
+
+/* The palette's box, here so the platform page's room switcher draws it
+   too (the shell's interaction-chrome.css sizes the palette itself). */
+.picker.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
 }
 
 .picker.palette.phone {
@@ -6284,9 +6300,10 @@ html[data-scheme="light"] .doc {
 
 /* ---- Getting started (#110): five steps in the swarm's own look */
 
-.start-backdrop {
+/* Heavier than the other dialogs': a night layer over the one --backdrop. */
+.prompt-backdrop:has(> .start) {
   padding-top: 6vh;
-  background: rgba(3, 5, 9, 0.72);
+  background-image: linear-gradient(rgb(3 5 9 / 0.5), rgb(3 5 9 / 0.5));
   backdrop-filter: blur(3px);
 }
 
@@ -6767,7 +6784,7 @@ html[data-scheme="light"] .doc {
 }
 
 @media (max-width: 600px) {
-  .start-backdrop {
+  .prompt-backdrop:has(> .start) {
     padding: 0;
   }
   .start {
@@ -8593,24 +8610,10 @@ input.chat-search {
   border-radius: 2px;
 }
 
-.chat-switcher-back {
-  position: fixed;
-  inset: 0;
-  z-index: 49;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 12vh;
-  background: var(--backdrop);
-}
-
-.chat-switcher {
+/* The room switcher is the palette's box (a Modal, .picker.palette) at 560px. */
+.picker.palette.chat-switcher {
   width: min(560px, calc(100vw - 32px));
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  height: auto;
 }
 
 .chat-switcher input {

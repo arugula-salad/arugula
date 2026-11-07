@@ -22,7 +22,7 @@
 .add-pane-preview-cell.active { border-color: var(--accent); }
 .add-pane-preview-cell.new { border: 1px dashed var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
 .add-pane-dest { margin: 0; border: 0; padding: 0; line-height: 1.6; color: var(--subtle); }
-.picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); border: 1px solid var(--line-strong); border-radius: var(--panel-radius); overflow: hidden; box-shadow: var(--shadow-lg); }
+.picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); }
 .palette-search { display: flex; align-items: center; padding: 6px 20px; gap: 12px; border-bottom: 1px solid var(--line); color: var(--accent); }
 /* Sans, as the rows under it (UI audit #176); 16px on a phone (style.css), where less zooms the page. */
 .palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-family: inherit; font-size: var(--text-lg); box-shadow: none; }
@@ -60,7 +60,7 @@
   .palette-help { flex-wrap: wrap; }
 }
 /* The heading and keyboard legend stay visible while results scroll. */
-.picker.palette { display: flex; flex-direction: column; padding: 0; gap: 0; background: var(--surface); height: auto; }
+.picker.palette { height: auto; }
 .palette-search, .palette-results-heading, .palette-help { flex: none; }
 .palette .picker-list { flex: 0 1 auto; min-height: 0; max-height: 460px; overflow-y: auto; }
 

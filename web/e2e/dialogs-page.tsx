@@ -8,12 +8,13 @@ import { render } from "preact";
 import { useState } from "preact/hooks";
 import "../src/shared/style.css";
 import "../src/shared/buttons.css";
+import "../src/shell/interaction-chrome.css";
 import { Modal } from "../src/shared/ui/modal";
 import { ConfirmRemove } from "../src/shared/ui/confirm";
 import { SideSheet } from "../src/shared/ui/side-sheet";
 
 function Page() {
-  const [open, setOpen] = useState<"modal" | "confirm" | "sheet" | "attention" | null>(null);
+  const [open, setOpen] = useState<"modal" | "confirm" | "sheet" | "attention" | "palette" | null>(null);
   const close = () => setOpen(null);
   return (
     <main style="padding:24px">
@@ -28,6 +29,9 @@ function Page() {
       </button>
       <button type="button" class="secondary" data-open="attention" onClick={() => setOpen("attention")}>
         Open attention
+      </button>
+      <button type="button" class="secondary" data-open="palette" onClick={() => setOpen("palette")}>
+        Open palette
       </button>
       <p>
         <input data-pane-field aria-label="A pane's field" />
@@ -54,6 +58,23 @@ function Page() {
         <ConfirmRemove title="Close this pane?" go={close} cancel={close}>
           <p>What runs in it stops.</p>
         </ConfirmRemove>
+      )}
+      {open === "palette" && (
+        // The palette's and the pickers' shape (shell/ui/palette.tsx): a Modal
+        // without its card, a search field over a list.
+        <Modal bare close={close} label="Command palette" class={matchMedia("(max-width: 600px)").matches ? "picker palette phone" : "picker palette"}>
+          <div class="palette-search">
+            <input class="picker-filter" role="combobox" aria-expanded="true" aria-label="Command" aria-controls="fixture-results" placeholder="Type a command" data-palette-input data-autofocus />
+          </div>
+          <ul id="fixture-results" class="picker-list" role="listbox" aria-label="Commands">
+            <li class="picker-row palette-row selected" role="option" aria-selected="true">
+              <span class="picker-label">New tab</span>
+            </li>
+            <li class="picker-row palette-row" role="option">
+              <span class="picker-label">Split pane</span>
+            </li>
+          </ul>
+        </Modal>
       )}
       {open === "sheet" && (
         <SideSheet title="A row with a long title that wraps over more than one line" close={close} root={{ "data-sheet": true }}>
