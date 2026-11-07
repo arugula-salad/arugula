@@ -172,7 +172,8 @@ export function StepsView({
       </svg>
       {ps.map((p) => {
         const key = p.group?.id ?? "none";
-        const cols = phone ? p.steps.map((s) => s.step) : Array.from({ length: last }, (_, i) => i + 1);
+        // A phase with nothing open draws only its head.
+        const cols = phone || !p.steps.length ? p.steps.map((s) => s.step) : Array.from({ length: last }, (_, i) => i + 1);
         return (
           <section class="steps-phase" key={key} data-steps-phase={key}>
             <header class="steps-phase-head">
@@ -183,67 +184,69 @@ export function StepsView({
                 </span>
               )}
             </header>
-            <div class="steps-cols" style={{ "--steps": String(cols.length) }}>
-              {cols.map((n) => {
-                const rows = p.steps.find((s) => s.step === n)?.rows ?? [];
-                const folded = shown(n, rows, unfolded.has(key));
-                const here = drag?.phase === key && drag.step === n;
-                return (
-                  <div
-                    class="steps-col"
-                    key={n}
-                    data-steps-col={n}
-                    onDragOver={(e) => {
-                      if (!here) return;
-                      e.preventDefault();
-                      setOver({ id: null, phase: key, step: n, after: true });
-                    }}
-                    onDrop={(e) => {
-                      if (!here || !dragged) return;
-                      e.preventDefault();
-                      drop(dragged, p.group?.id ?? null, rows, null);
-                    }}
-                  >
-                    <h3 class="steps-col-head dim">Step {n}</h3>
-                    <ul class="steps-bars">
-                      {folded.rows.map((r) => (
-                        <Bar
-                          key={r.id}
-                          r={r}
-                          phone={phone}
-                          selected={active === r.id}
-                          opened={opened === r.id}
-                          dragging={drag?.id === r.id}
-                          drop={over?.id === r.id ? (over.after ? "after" : "before") : undefined}
-                          draggable={canDrag}
-                          said={behind === r.id}
-                          chip={chip}
-                          waiting={waiting}
-                          hover={setHover}
-                          tap={() => (phone && pinned !== r.id ? setPinned(r.id) : open(r.id))}
-                          start={() => setDrag({ id: r.id, phase: key, step: n })}
-                          end={() => (setDrag(null), setOver(null))}
-                          over={(after) => setOver({ id: r.id, phase: key, step: n, after })}
-                          accepts={here}
-                          release={(after) => {
-                            if (!dragged) return;
-                            const at = rows.findIndex((x) => x.id === r.id);
-                            drop(dragged, p.group?.id ?? null, rows, after ? (rows[at + 1]?.id ?? null) : r.id);
-                          }}
-                        />
-                      ))}
-                      {folded.more > 0 && (
-                        <li class="steps-more">
-                          <button type="button" class="secondary small" data-steps-more={key} onClick={() => setUnfolded(new Set(unfolded).add(key))}>
-                            {moreLine(folded.more)}
-                          </button>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
+            {cols.length > 0 && (
+              <div class="steps-cols" style={{ "--steps": String(cols.length) }}>
+                {cols.map((n) => {
+                  const rows = p.steps.find((s) => s.step === n)?.rows ?? [];
+                  const folded = shown(n, rows, unfolded.has(key));
+                  const here = drag?.phase === key && drag.step === n;
+                  return (
+                    <div
+                      class="steps-col"
+                      key={n}
+                      data-steps-col={n}
+                      onDragOver={(e) => {
+                        if (!here) return;
+                        e.preventDefault();
+                        setOver({ id: null, phase: key, step: n, after: true });
+                      }}
+                      onDrop={(e) => {
+                        if (!here || !dragged) return;
+                        e.preventDefault();
+                        drop(dragged, p.group?.id ?? null, rows, null);
+                      }}
+                    >
+                      <h3 class="steps-col-head dim">Step {n}</h3>
+                      <ul class="steps-bars">
+                        {folded.rows.map((r) => (
+                          <Bar
+                            key={r.id}
+                            r={r}
+                            phone={phone}
+                            selected={active === r.id}
+                            opened={opened === r.id}
+                            dragging={drag?.id === r.id}
+                            drop={over?.id === r.id ? (over.after ? "after" : "before") : undefined}
+                            draggable={canDrag}
+                            said={behind === r.id}
+                            chip={chip}
+                            waiting={waiting}
+                            hover={setHover}
+                            tap={() => (phone && pinned !== r.id ? setPinned(r.id) : open(r.id))}
+                            start={() => setDrag({ id: r.id, phase: key, step: n })}
+                            end={() => (setDrag(null), setOver(null))}
+                            over={(after) => setOver({ id: r.id, phase: key, step: n, after })}
+                            accepts={here}
+                            release={(after) => {
+                              if (!dragged) return;
+                              const at = rows.findIndex((x) => x.id === r.id);
+                              drop(dragged, p.group?.id ?? null, rows, after ? (rows[at + 1]?.id ?? null) : r.id);
+                            }}
+                          />
+                        ))}
+                        {folded.more > 0 && (
+                          <li class="steps-more">
+                            <button type="button" class="secondary small" data-steps-more={key} onClick={() => setUnfolded(new Set(unfolded).add(key))}>
+                              {moreLine(folded.more)}
+                            </button>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         );
       })}

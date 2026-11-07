@@ -50,6 +50,7 @@ let phaseA = "";
 let alice: Page;
 /** Row ids by title. */
 const rowOf: Record<string, string> = {};
+const LONG = "Rework the whole importer so a row with a very long title still leaves room for its agent";
 const FILLERS = Array.from({ length: 9 }, (_, i) => `Filler ${i + 1}`);
 
 /** The block an agent on Design reports; the board is read with it in place of a daemon's report (a spec can't sign as a machine). */
@@ -109,6 +110,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   board = (await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Launch" })).body!.board.id as string;
   phaseA = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase A" })).body!.groups[0].id as string;
   const phaseB = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase B" })).body!.groups[1].id as string;
+  const phaseC = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase C" })).body!.groups[2].id as string;
   const titles: [string, string][] = [
     ["Design", phaseA],
     ...FILLERS.map((f): [string, string] => [f, phaseA]),
@@ -117,6 +119,8 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
     ["Docs", phaseB],
     ["Old duplicate", phaseB],
     ["Found in testing", phaseB],
+    [LONG, phaseB],
+    ["Already shipped", phaseC],
   ];
   const issue: Record<string, string> = {};
   for (const [title, group] of titles) {
@@ -141,6 +145,11 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
     const j = await r.json();
     const design = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf["Design"]);
     if (design) design.attachments = [{ id: "att_0000000000000000000000000000aa01", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "640" }, block: { state: agent.state, title: "API lane", branch: "feat/api", head: "abc1234", pushed: false, uncommitted: 1 } }];
+    // A long title with an agent whose own title is long too; and a phase whose only row is done.
+    const long = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf[LONG]);
+    if (long) long.attachments = [{ id: "att_0000000000000000000000000000aa02", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "641" }, block: { state: "idle", title: "Importer lane for the long one", branch: "feat/import", head: "def5678", pushed: false, uncommitted: 0 } }];
+    const shipped = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf["Already shipped"]);
+    if (shipped) shipped.lane = "done";
     await route.fulfill({ response: r, json: j });
   });
 
@@ -152,7 +161,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   await expect(alice.locator("[data-board-zone]")).toHaveCount(0);
 
   // Phases and steps: Phase A's step 1 shows eight of ten behind "+2 more"; Build is step 2 and Ship step 3.
-  await expect(alice.locator('[data-steps-phase] h2')).toHaveText(["Phase A", "Phase B"]);
+  await expect(alice.locator('[data-steps-phase] h2')).toHaveText(["Phase A", "Phase B", "Phase C"]);
   expect(await column(alice, phaseA, 1)).toHaveLength(8);
   await expect(alice.locator(`[data-steps-more="${phaseA}"]`)).toHaveText("+2 more");
   await expect(bar(alice, "Build")).toHaveAttribute("data-step", "2");
@@ -284,4 +293,49 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await phone.locator('[data-board-view="lanes"]').click();
   await phone.reload();
   await expect(phone.locator("[data-board-zone]").first()).toBeVisible();
+});
+
+/** The right edge of the bar, of its agent, and of the furthest thing inside the agent (the chip and the facts after it): none is clipped. */
+async function chipInBar(p: Page) {
+  return bar(p, LONG).evaluate((bar) => {
+    const agent = bar.querySelector("[data-step-agent]")!;
+    return {
+      bar: bar.getBoundingClientRect().right,
+      agent: agent.getBoundingClientRect().right,
+      inside: Math.max(...[...agent.querySelectorAll("*")].map((e) => e.getBoundingClientRect().right)),
+    };
+  });
+}
+
+test("a row's agent chip stays inside its bar and looks like the lanes' chip, and a phase with nothing open has no steps", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${app}/p/${project}/boards/${board}`);
+    await page.locator('[data-board-view="steps"]').click();
+    await expect(bar(page, LONG).locator("[data-step-agent]")).toBeVisible();
+    const { bar: right, agent, inside } = await chipInBar(page);
+    expect(agent, `${width}px: the agent's right edge ${agent} against the bar's ${right}`).toBeLessThanOrEqual(right);
+    expect(inside, `${width}px: the chip's right edge ${inside} against the agent's ${agent}`).toBeLessThanOrEqual(agent + 0.5);
+    // The title gave way, and the chip still shows its state.
+    expect(await bar(page, LONG).locator("[data-step-title]").evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+    await shot(page, `${width}-chip`);
+  }
+
+  // The chip is drawn the same here and on a lane card.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const look = (loc: ReturnType<Page["locator"]>) => loc.evaluate((e) => ({ family: getComputedStyle(e).fontFamily, size: getComputedStyle(e).fontSize, decoration: getComputedStyle(e).textDecorationLine }));
+  const steps = await look(bar(page, "Design").locator("[data-step-agent] a.board-ptr"));
+  await page.locator('[data-board-view="lanes"]').click();
+  await expect(page.locator("[data-board-zone]").first()).toBeVisible();
+  const lanes = await look(page.locator(`[data-board-row="${rowOf["Design"]}"] [data-board-attachment] a.board-ptr`));
+  expect(steps).toEqual(lanes);
+  await page.locator('[data-board-view="steps"]').click();
+
+  // Phase C has one row, done: its head says so, and no step is drawn under it.
+  const c = page.locator('[data-steps-phase]', { has: page.locator("h2", { hasText: "Phase C" }) });
+  await expect(c.locator("[data-steps-done]")).toHaveText("1 done");
+  await expect(c.locator(".steps-col")).toHaveCount(0);
+  await expect(page.locator(`[data-steps-phase="${phaseA}"] .steps-col`).first()).toBeVisible();
 });
