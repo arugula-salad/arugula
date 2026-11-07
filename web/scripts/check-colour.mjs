@@ -94,7 +94,7 @@ function walk(dir, acc = []) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const src = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "src");
-  const bad = walk(src).flatMap((p) => offenders(readFileSync(p, "utf8"), relative(src, p)));
+  const bad = walk(src).flatMap((p) => offenders(readFileSync(p, "utf8"), relative(src, p).replaceAll("\\", "/")));
   for (const b of bad) console.error(`${b.file}:${b.line}: ${b.prop}: ${b.found.join(" ")} is a raw colour. Use a palette token, or color-mix() of one (scripts/check-colour.mjs).`);
   process.exit(bad.length ? 1 : 0);
 }
