@@ -752,7 +752,7 @@ function GroupDrop({ group, take, children }: { group: string | null; take?: (ro
   const takes = (e: DragEvent) => !!take && dragFrom(e, group) === false;
   return (
     <section
-      class={`board-group${over ? " drop-over" : ""}`}
+      class={`board-group drop-target${over ? " drop-over" : ""}`}
       data-board-group={group ?? "none"}
       data-drop-over={over ? "" : undefined}
       onDragOver={(e) => {
@@ -825,7 +825,7 @@ function Lane({
   };
   return (
     <section
-      class={`board-zone${over ? " drop-over" : ""}`}
+      class={`board-zone drop-target${over ? " drop-over" : ""}`}
       data-board-zone={z.id}
       data-zone-kind={z.kind ?? undefined}
       data-drop-over={over ? "" : undefined}

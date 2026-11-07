@@ -427,7 +427,7 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
       <div class="untri-dock" data-on={dock || undefined} data-triage-dock aria-hidden="true">
         <span class="untri-dock-label">Drop on a board:</span>
         {open.map((b) => (
-          <ObjectChip key={b.id} data-dock-board={b.id} {...dropOn(tri, b, () => setDock(false))}>
+          <ObjectChip key={b.id} class="drop-target" data-dock-board={b.id} {...dropOn(tri, b, () => setDock(false))}>
             {b.title}
           </ObjectChip>
         ))}
