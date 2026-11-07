@@ -7628,20 +7628,11 @@ html[data-scheme="light"] .doc {
   font-weight: 700;
 }
 
-/* The session an agent's post came from (#429), after "<owner>'s agent on
-   <machine>": muted, and the first thing to give way in a narrow row. */
-.thread-session {
-  color: var(--dim);
-  font-size: var(--text-sm);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .thread-head time {
+  flex: none;
   font-size: var(--text-xs);
   color: var(--dim);
+  white-space: nowrap;
 }
 
 .thread-text {
@@ -7912,6 +7903,22 @@ html[data-scheme="light"] .doc {
 
 .reaction-emoji {
   font-size: 14px; /* off-scale: emoji glyph */
+}
+
+/* The agents' share of a chip (#632): a teal divider after the people's
+   count, then the agent icon and the agents' count. */
+.reaction-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 0;
+  background: var(--teal);
+}
+
+.reaction-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--teal);
 }
 
 .reaction.add {
@@ -12038,17 +12045,28 @@ html[data-workspace="new"] .thread-panel {
   display: none;
 }
 
-/* An agent's message (M197): its owner's, labelled "<owner>'s agent on
-   <machine>", set apart with its own rule and badge; and the line a room
-   shows when an agent grant reaches it. */
-.thread-msg.by-agent .msg-body {
-  border-left: 2px solid var(--teal);
-  padding-left: 8px;
+/* An agent's message (M197): its owner's, named by its tab, `machine/tab`,
+   in teal (#632); and the line a room shows when an agent grant reaches it.
+   No rule down its left for now. */
+.chat-agent-name {
+  color: var(--teal);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.thread-msg.by-agent .thread-name,
-.chat-hit-text.by-agent > b {
-  color: var(--teal);
+button.chat-agent-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.chat-agent-name:hover {
+  text-decoration: underline;
 }
 
 .thread-msg.by-agent .msg-avatar {
@@ -12549,24 +12567,25 @@ html[data-workspace="new"] .thread-panel {
   border-color: var(--dim);
 }
 
-/* An agent: its owner's picture, round, with the machine's badge. */
+/* An agent: its owner's picture, round, with the agent icon in a teal-ringed
+   circle on its corner (#632). */
 .avatar-wrap.by-agent .msg-avatar {
   border-radius: 50%;
 }
 
 .avatar-badge {
   position: absolute;
-  left: -3px;
-  bottom: -3px;
+  left: -4px;
+  bottom: -4px;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid var(--bg);
-  background: var(--teal);
-  color: var(--on-color);
-  font-size: 9px; /* off-scale: avatar badge */
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--teal);
+  background: var(--bg);
+  color: var(--teal);
   line-height: 1;
 }
 

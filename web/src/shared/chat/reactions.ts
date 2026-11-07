@@ -16,9 +16,17 @@ export function reactor(r: ChatReactor, me: string): string {
   return r.account === me ? "You" : name;
 }
 
-/** "You, Sam and 2 more reacted with 👍": yours first, the rest as they came. */
+/** How many of a chip's are people's: the rest are agents' (#632). An
+ * older control leaves `agents` out. */
+export function peopleOf(c: ChatReaction): number {
+  return c.count - (c.agents ?? 0);
+}
+
+/** "You, Sam and 2 more reacted with 👍": people first, yours at the head,
+ * then the agents, each in the order they came. */
 export function tip(c: ChatReaction, me: string): string {
-  const who = [...c.who].sort((a, b) => Number(b.account === me && !b.agent) - Number(a.account === me && !a.agent));
+  const rank = (w: ChatReactor) => (w.agent ? 2 : w.account === me ? 0 : 1);
+  const who = [...c.who].sort((a, b) => rank(a) - rank(b));
   const names = who.map((w) => reactor(w, me));
   const more = c.count - names.length;
   if (more > 0) names.push(`${more} more`);
@@ -43,11 +51,11 @@ export function reacted(m: ChatMessage, emoji: string, on: boolean, me: string, 
     if (on === c.mine) {
       out.push(c);
     } else if (on) {
-      out.push({ ...c, count: c.count + 1, mine: true, who: [...c.who, { account: me, name: "", agent: null }] });
+      out.push({ ...c, count: c.count + 1, agents: (c.agents ?? 0) + (by ? 1 : 0), mine: true, who: [...c.who, { account: me, name: "", agent: null }] });
     } else if (c.count > 1) {
-      out.push({ ...c, count: c.count - 1, mine: false, who: c.who.filter((w) => !mine(w)) });
+      out.push({ ...c, count: c.count - 1, agents: Math.max(0, (c.agents ?? 0) - (by ? 1 : 0)), mine: false, who: c.who.filter((w) => !mine(w)) });
     }
   }
-  if (on && !found) out.push({ emoji, count: 1, mine: true, who: [{ account: me, name: "", agent: null }] });
+  if (on && !found) out.push({ emoji, count: 1, agents: by ? 1 : 0, mine: true, who: [{ account: me, name: "", agent: null }] });
   return { ...m, reactions: out };
 }

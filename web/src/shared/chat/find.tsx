@@ -9,7 +9,7 @@ import { Markup } from "../ui/markup";
 import type { ChatStore } from "../chat-store";
 import type { ChatHit, ChatMessage, ChatRoom } from "../proto";
 import { AuthorAvatar, roomLabel, roomSigil, machineName } from "./room";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { handled } from "./escape";
@@ -74,7 +74,7 @@ function RoomHits({ store, hits, mark }: { store: ChatStore; hits: { room: strin
               <span class="chat-hit-body">
                 <AuthorAvatar m={m} />
                 <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-                  <b>{authorLabel(m)}</b>
+                  <AuthorName m={m} />
                   {m.text ? <Markup text={m.text} mark={mark} /> : <p class="thread-text">{m.quote}</p>}
                 </span>
               </span>

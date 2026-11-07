@@ -1550,6 +1550,11 @@ export type ChatReaction = { emoji: string,
  */
 count: number, 
 /**
+ * How many of `count` are agents' (#632); the rest are people's. An
+ * older control leaves it out, and it reads as none.
+ */
+agents: number, 
+/**
  * The reader has: a person's own reaction, or for an agent reading,
  * its own (never the owner's, nor the agent's for the owner).
  */

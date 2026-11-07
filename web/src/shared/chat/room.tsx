@@ -22,6 +22,7 @@ import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { AuthorName } from "./agent-name";
 import { TypingLine } from "./typing";
 import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
@@ -551,8 +552,15 @@ export function RoomMessage({
    * worked out once by the list, not by each message (#438). */
   tokens?: Map<string, string>;
 }) {
+  // An agent's name is its tab (#632), so a post from another of its
+  // sessions starts a head of its own rather than reading as the last one's.
   const head =
-    !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
+    !prev ||
+    prev.author !== m.author ||
+    prev.agent?.machine !== m.agent?.machine ||
+    (prev.agent?.session ?? null) !== (m.agent?.session ?? null) ||
+    prev.via !== m.via ||
+    m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
@@ -658,17 +666,7 @@ export function RoomMessage({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
-            {m.agent?.session && !said && (
-              <span class="thread-session" title={`The session that wrote it, on ${m.agent.machine_name || "its machine"}`}>
-                · {m.agent.session}
-              </span>
-            )}
-            {m.agent && (
-              <Chip tone="teal" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </Chip>
-            )}
+            {said ? <SaidHead ses={said} project={room.project} /> : <AuthorName m={m} open tag="span" />}
             {m.imported && (
               <Chip kind="tag" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported

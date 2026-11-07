@@ -56,7 +56,9 @@ export function agentSessionTests(what: string, context: { serviceWorkers?: "blo
     general = (await aliceChat.locator("[data-room-view]").getAttribute("data-room-view"))!;
   });
 
-  test("an agent's post names its session beside its machine, muted; one without names none", async () => {
+  // An agent's name is its tab, written as a mention tags it (#632): the
+  // machine, then the session's slug; without a session, the machine alone.
+  test("an agent's post is named machine/tab; one without a session names its machine alone", async () => {
     test.setTimeout(60_000);
     const machine = await alice.evaluate(() => window.__arugula.fleet.host("alices")!.id!);
     const account = await alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.find((m) => m.name === "alice")!.account);
@@ -67,13 +69,13 @@ export function agentSessionTests(what: string, context: { serviceWorkers?: "blo
     const posts = aliceChat.locator(".thread-msg.by-agent");
     await expect(posts).toHaveCount(2, { timeout: 15_000 });
     const named = posts.filter({ hasText: "from the ux session" });
-    await expect(named.locator(".thread-name")).toHaveText("alice's agent on alices");
-    const session = named.locator(".thread-session");
-    await expect(session).toHaveText("· UX Improvements");
-    // Muted: not the name's colour.
-    const colour = (l: typeof session) => l.evaluate((e) => getComputedStyle(e).color);
-    expect(await colour(session)).not.toBe(await colour(named.locator(".thread-name")));
-    await expect(posts.filter({ hasText: "from a session with no name" }).locator(".thread-session")).toHaveCount(0);
+    await expect(named.locator(".thread-name")).toHaveText("alices/ux-improvements");
+    // The owner is in the tooltip now, not the name.
+    await expect(named.locator("[data-agent-name]")).toHaveAttribute("title", /alice's agent/);
+    const unnamed = posts.filter({ hasText: "from a session with no name" });
+    await expect(unnamed.locator(".thread-name")).toHaveText("alices");
+    // No separate session span: the name carries it.
+    await expect(posts.locator(".thread-session")).toHaveCount(0);
   });
 
   test("on a phone it still fits, and a long name gives way", async ({ browser }) => {
@@ -87,7 +89,7 @@ export function agentSessionTests(what: string, context: { serviceWorkers?: "blo
     const page = await phone.newPage();
     await page.goto(`${app}/chat/${general}`);
     const post = page.locator(".thread-msg.by-agent", { hasText: "from a long one" });
-    await expect(post.locator(".thread-session")).toContainText("Refactor the whole");
+    await expect(post.locator(".thread-name")).toContainText("alices/refactor-the-whole");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await phone.close();
   });
