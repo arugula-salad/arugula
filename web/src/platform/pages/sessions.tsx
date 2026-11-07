@@ -168,7 +168,8 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       />
       <div class="issues-tools">
         <button
-          class={filter.label ? "issues-filter on" : "issues-filter"}
+          class="secondary"
+          aria-pressed={!!filter.label}
           data-sessions-label
           onClick={labelMenu}
         >
@@ -177,7 +178,8 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         </button>
         <TrackerFilter filter={filter} to={to} tracker={w?.tracker ?? null} />
         <button
-          class={filter.asker ? "issues-filter on" : "issues-filter"}
+          class="secondary"
+          aria-pressed={!!filter.asker}
           data-sessions-asker
           onClick={askerMenu}
         >
@@ -250,7 +252,8 @@ function TrackerFilter({
   if (filter.tracker !== undefined)
     return (
       <button
-        class="issues-filter on"
+        class="secondary"
+        aria-pressed="true"
         data-sessions-tracker={filter.tracker}
         title="Show every session again"
         onClick={() => to({ ...filter, tracker: undefined })}

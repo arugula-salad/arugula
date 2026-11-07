@@ -199,13 +199,13 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       />
       {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
       <div class="issues-tools">
-        <button class={filter.state ? "issues-filter on" : "issues-filter"} data-runs-state onClick={stateMenu}>
+        <button class="secondary" aria-pressed={!!filter.state} data-runs-state onClick={stateMenu}>
           {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <span class="caret">▾</span>
         </button>
-        <button class={filter.trigger ? "issues-filter on" : "issues-filter"} data-runs-trigger onClick={triggerMenu}>
+        <button class="secondary" aria-pressed={!!filter.trigger} data-runs-trigger onClick={triggerMenu}>
           {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <span class="caret">▾</span>
         </button>
-        <button class={filter.spec ? "issues-filter on" : "issues-filter"} data-runs-spec onClick={specMenu}>
+        <button class="secondary" aria-pressed={!!filter.spec} data-runs-spec onClick={specMenu}>
           {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <span class="caret">▾</span>
         </button>
         {narrowed && (

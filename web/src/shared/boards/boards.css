@@ -307,18 +307,6 @@
   gap: 6px;
 }
 
-.board-ask-option,
-.board-ask-text button {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-}
-
-.board-ask-option.recommended {
-  border-color: var(--ok);
-  font-weight: 600;
-}
-
 .board-ask-text input {
   flex: 1;
   min-width: 0;
@@ -921,14 +909,6 @@
 /* The Label and Person menus beside it (#547): the button opens the shared menu, whose ticks stay open while you pick. */
 .board-facet {
   flex: 0 0 auto;
-}
-
-.board-facet-button {
-  padding: 4px 8px;
-  border-radius: var(--chip-radius);
-  background: var(--raised);
-  font-size: var(--text-sm);
-  white-space: nowrap;
 }
 
 /* A narrow board, whatever the window: the box takes the row, the rest wrap under it. */

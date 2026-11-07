@@ -201,10 +201,10 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
           </button>
         </div>
         <input type="search" class="issues-search" placeholder="Search issues" aria-label="Search issues" value={typed} data-issues-search onInput={(e) => search(e.currentTarget.value)} />
-        <button class={filter.label ? "issues-filter on" : "issues-filter"} data-issues-label onClick={labelMenu}>
+        <button class="secondary" aria-pressed={!!filter.label} data-issues-label onClick={labelMenu}>
           {filter.label ? `Label: ${filter.label}` : "Label"} <span class="caret">▾</span>
         </button>
-        <button class={filter.assignee ? "issues-filter on" : "issues-filter"} data-issues-assignee onClick={assigneeMenu}>
+        <button class="secondary" aria-pressed={!!filter.assignee} data-issues-assignee onClick={assigneeMenu}>
           {filter.assignee ? `Assignee: ${nameOf(filter.assignee) ?? "someone"}` : "Assignee"} <span class="caret">▾</span>
         </button>
         {narrowed && (

@@ -122,6 +122,17 @@ a.secondary.danger:hover {
   font-size: var(--text-sm);
 }
 
+/* An icon-only secondary: a square as tall as the set's size, its glyph
+   centred (the ⋯ of a page's head). */
+.secondary.sq {
+  width: 32px;
+  padding: 0;
+}
+
+.secondary.sq.small {
+  width: 24px;
+}
+
 .link.small {
   font-size: var(--text-sm);
 }
@@ -138,6 +149,14 @@ a.secondary.danger:hover {
   .primary.small,
   .secondary.small {
     min-height: 34px;
+  }
+
+  .secondary.sq {
+    width: 40px;
+  }
+
+  .secondary.sq.small {
+    width: 34px;
   }
 
   /* A bar of a fixed height (the panes' toolbar and header, a block's)
@@ -270,12 +289,12 @@ a.secondary.danger:hover {
   color: var(--fg);
 }
 
-:is(.bar-btn, .seg > button, .issues-filter, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+:is(.bar-btn, .seg > button, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
   background: var(--on-fill);
   color: var(--accent);
 }
 
-:is(.bar-btn, .seg > button, .issues-filter, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+:is(.bar-btn, .seg > button, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
   background: var(--on-fill-hover);
   color: var(--accent);
 }
@@ -420,6 +439,14 @@ html[data-finish="glass"] .secondary {
 
 html[data-finish="glass"] .primary {
   box-shadow: inset 0 1px 0 #fff5, 0 2px 10px color-mix(in srgb, var(--btn-fill) 35%, transparent);
+}
+
+/* A filter that's set: the .secondary with accent text and edge. Not a tint,
+   which Aqua, Brushed and Glass paint over; so it sits after them. */
+html .secondary:is(.on, [aria-pressed="true"]),
+html .secondary:is(.on, [aria-pressed="true"]):hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* -- A field (a text box, a select, a time) outside a dialog: the dialogs'

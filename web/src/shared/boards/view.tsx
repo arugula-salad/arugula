@@ -702,7 +702,7 @@ function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | 
       {a.can_answer && a.options.length > 0 && (
         <div class="board-line board-ask-options">
           {a.options.map((o) => (
-            <button key={o} type="button" class={`board-ask-option${o === a.recommend ? " recommended" : ""}`} disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
+            <button key={o} type="button" class="secondary small" disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
               {o}
               {o === a.recommend && <span class="dim"> · recommended</span>}
             </button>
@@ -985,7 +985,7 @@ function FilterMenu({ name, title, choices, picked, set }: { name: string; title
       <button
         ref={button}
         type="button"
-        class="board-facet-button"
+        class="secondary small"
         aria-haspopup="menu"
         aria-expanded={open}
         data-board-facet-button={name}
