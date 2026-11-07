@@ -7,7 +7,8 @@
 // (dim, inline), `status`, then `children` (a block's own controls, free
 // to shrink), then `fold` and `actions` at the right. `fold` is what may
 // leave the row for ⋯, the least important first: it goes when the bar is
-// narrower than `foldBelow`, or one at a time while the row overflows.
+// narrower than `foldBelow` (a number for all of them, or one for each, in
+// the order of `fold`), or one at a time while the row overflows.
 // `actions` stay.
 
 import { Fragment, type ComponentChildren, type JSX } from "preact";
@@ -49,8 +50,10 @@ export function Bar({
   actions?: ComponentChildren;
   /** May go into ⋯, the least important first. */
   fold?: BarFold[];
-  /** Fold all of them when the bar is narrower than this many px. */
-  foldBelow?: number;
+  /** Fold all of them when the bar is narrower than this many px; or an
+   * array, one width for each of `fold`: that one (and those before it)
+   * folds when the bar is narrower. */
+  foldBelow?: number | number[];
   /** A block's second bar, under the pane's. */
   sub?: boolean;
   /** The whole bar's tooltip. */
@@ -60,33 +63,37 @@ export function Bar({
 } & DivProps) {
   const row = useRef<HTMLDivElement>(null);
   const [folded, setFolded] = useState(0);
-  const [narrow, setNarrow] = useState(false);
+  const [forced, setForced] = useState(0);
   const count = fold?.length ?? 0;
+  const limits: (number | undefined)[] = Array.isArray(foldBelow) ? foldBelow : (fold ?? []).map(() => foldBelow);
+  const key = String(foldBelow);
 
   useLayoutEffect(() => {
     const el = row.current;
     if (!el || count === 0) return;
     let width = el.clientWidth;
-    const below = (w: number) => foldBelow !== undefined && w < foldBelow;
-    setNarrow(below(width));
+    // The last fold whose width the bar is under, and all before it.
+    const under = (w: number) => limits.reduce<number>((n, l, i) => (l !== undefined && w < l ? i + 1 : n), 0);
+    setForced(under(width));
     const ro = new ResizeObserver(() => {
       if (el.clientWidth === width) return;
       width = el.clientWidth;
-      setNarrow(below(width));
+      setForced(under(width));
       setFolded(0);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [count, foldBelow]);
+  }, [count, key]);
 
   // While the row overflows, fold one more.
   useLayoutEffect(() => {
     const el = row.current;
-    if (!el || narrow || folded >= count) return;
-    if (el.scrollWidth > el.clientWidth) setFolded(folded + 1);
+    const now = Math.max(forced, folded);
+    if (!el || now >= count) return;
+    if (el.scrollWidth > el.clientWidth) setFolded(now + 1);
   });
 
-  const out = narrow ? count : Math.min(folded, count);
+  const out = Math.min(Math.max(forced, folded), count);
   const shown = fold?.slice(out) ?? [];
   const gone = fold?.slice(0, out) ?? [];
   const more = (e: MouseEvent) => openMenu(e, gone.map((f) => f.item), e.currentTarget as HTMLElement);

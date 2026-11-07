@@ -8843,6 +8843,15 @@ input.chat-search {
   flex-direction: column;
 }
 
+/* A chat head's name may be as long as someone chose, in a room as narrow
+   as a block or one with a thread beside it: it shrinks to its ellipsis
+   (the bar's own title only stops at 60%). */
+.chat-head > .hbar-title {
+  flex-shrink: 1;
+  /* ...but not to a few letters: below this the head folds a button. */
+  min-width: 8ch;
+}
+
 .chat-title-sigil {
   margin-right: 4px;
   color: var(--dim);

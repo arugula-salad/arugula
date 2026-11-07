@@ -19,6 +19,10 @@ import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
+/** The head's width under which Follow goes into ⋯ (Close stays). Measured:
+ * the title (52px), Follow (75), Close (25), the gaps and padding fit in
+ * 200px, and 300 leaves about 100px for the room's name beside them. */
+const THREAD_FOLD = 300;
 
 export function ThreadPanel({ store, room, parent, phone, focus, close }: { store: ChatStore; room: ChatRoom; parent: number; phone: boolean; focus?: number; close: () => void }) {
   useSubscribe((fn) => store.subscribe(fn));
@@ -124,7 +128,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         }
         title={<BarTitle class="chat-title">Thread</BarTitle>}
         where={<BarWhere>{label}</BarWhere>}
-        foldBelow={600}
+        foldBelow={THREAD_FOLD}
         fold={
           first?.thread
             ? [

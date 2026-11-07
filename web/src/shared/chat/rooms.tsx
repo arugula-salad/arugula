@@ -25,14 +25,14 @@ import { SavedView } from "./saved";
 import { RoomActivityView, RoomSearchView, SearchField } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
-import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
+import { AboutButton, editDescription, editTopic, PinsButton, pinsItem, TopicLine } from "./pins-ui";
 import { ThreadPanel } from "./thread-panel";
 import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
 import { browseChannels, ChatDialogs, LeaveButton, leaveItem, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
-import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
+import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
 import { BookmarkIcon, SearchIcon } from "./icons";
 import type { ChatSort } from "../proto";
@@ -40,6 +40,15 @@ import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
+
+/** The room head's width under which each of its folds goes into ⋯, in the
+ * order they go: Go to pane, Members, pins, star, bell. Measured: with a
+ * name of about 110px, and Details, the room's ⋯ and the agents chip's
+ * place in the row, Go to pane (84px) needs 480px, Members (63) 420, pins
+ * (42) 350, the star (24) 300 and the bell 270. A longer name or a topic
+ * takes room from these: the name shrinks to its ellipsis, and `Bar` folds
+ * one more while the row still overflows. */
+const ROOM_FOLD = [480, 420, 350, 300, 270];
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -589,6 +598,10 @@ function RoomView({
   // A thread open beside the room (#106): the whole screen on a phone. The
   // room's own `&msg=` is the room's unless it's a reply in that thread.
   const closeThread = () => nav.openRoom(room.id);
+  // What the head folds into ⋯, as menu rows; the menus they open hang
+  // from that ⋯.
+  const moreButton = () => document.querySelector<HTMLElement>(`[data-room-view="${room.id}"] [data-hbar-more]`);
+  const pins = pinsItem(room, nav, toast, moreButton);
   if (thread !== undefined && phone) {
     return (
       <div class="chat-main">
@@ -619,8 +632,21 @@ function RoomView({
               <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
             </BarWhere>
           }
-          foldBelow={600}
+          foldBelow={ROOM_FOLD}
           fold={[
+            ...(reachable
+              ? [
+                  {
+                    key: "go",
+                    node: (
+                      <button class="chat-go" data-chat-go onClick={go}>
+                        {room.kind === "pane" ? "Go to pane" : "Go to session"}
+                      </button>
+                    ),
+                    item: { label: room.kind === "pane" ? "Go to pane" : "Go to session", run: go },
+                  },
+                ]
+              : []),
             ...(!phone && people.length > 0
               ? [
                   {
@@ -637,39 +663,37 @@ function RoomView({
                   },
                 ]
               : []),
-            ...(reachable
-              ? [
-                  {
-                    key: "go",
-                    node: (
-                      <button class="chat-go" data-chat-go onClick={go}>
-                        {room.kind === "pane" ? "Go to pane" : "Go to session"}
-                      </button>
-                    ),
-                    item: { label: room.kind === "pane" ? "Go to pane" : "Go to session", run: go },
-                  },
-                ]
-              : []),
+            ...(pins ? [{ key: "pins", node: <PinsButton room={room} toast={toast} />, item: pins }] : []),
+            { key: "star", node: <RoomStarButton store={store} room={room} toast={toast} />, item: starItem(store, room, toast) },
+            {
+              key: "bell",
+              node: (
+                <button
+                  class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
+                  title={bellFor(room).title}
+                  aria-label={bellFor(room).title}
+                  aria-haspopup="menu"
+                  data-room-bell
+                  data-room-level={room.level}
+                  onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
+                >
+                  {bellFor(room).glyph}
+                </button>
+              ),
+              item: { label: bellFor(room).title, run: () => {
+                  const at = moreButton();
+                  if (at) openBell({ currentTarget: at, preventDefault() {} }, room, (l) => store.setLevel(room.id, l), toast);
+                },
+              },
+            },
           ]}
           actions={
             <>
-              <PinsButton room={room} toast={toast} />
               {/* On a computer the room's About is in Details (UI audit #169):
                   one ⓘ, not two. A phone has no Details. */}
               {phone && <AboutButton room={room} toast={toast} />}
               <AgentsChip room={room.id} />
-              <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
-              <button
-                class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
-                title={bellFor(room).title}
-                aria-label={bellFor(room).title}
-                aria-haspopup="menu"
-                data-room-bell
-                data-room-level={room.level}
-                onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
-              >
-                {bellFor(room).glyph}
-              </button>
+              <RoomOptionsButton store={store} room={room} toast={toast} more={leave ? [leave] : []} />
               {!phone && (
                 <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
                   ⓘ
