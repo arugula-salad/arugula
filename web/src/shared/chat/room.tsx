@@ -29,7 +29,7 @@ import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alert
 import "./saved-hooks";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
-import { closeMenu, MenuHost, type MenuItem } from "../ui/menu";
+import { closeMenu, MenuHost, pressedShut, type MenuItem } from "../ui/menu";
 import { hookFor, itemsOf, openMsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
 import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
@@ -37,7 +37,7 @@ import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
 import { MentionStatus } from "./mention-status";
-import { longPress, mayReact, ReactionChips, ReactMenu, ReactRow } from "./reactions-ui";
+import { longPress, mayReact, ReactionChips, ReactMenu, ReactPicker, ReactRow } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
@@ -569,9 +569,10 @@ export function RoomMessage({
       heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size={13} /> : null,
     [room.id, heard.join(" ")],
   );
-  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the menu a
-  // long-press opens (a sheet on a phone: the emoji row over the items).
-  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
+  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, the menu a
+  // long-press opens (a sheet on a phone: the emoji row over the items), or
+  // the picker that menu's "more…" opens in its place.
+  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | "picker" | null>(null);
   const msgRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const may = mayReact(room, m);
@@ -767,6 +768,7 @@ export function RoomMessage({
         </button>
       </div>
       {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
+      {panel === "picker" && may && <ReactPicker room={room} m={m} from={msgRef} close={close} setError={setError} />}
       {(panel === "menu" || panel === "sheet") && (
         <MenuHost
           key={panel}
@@ -774,7 +776,7 @@ export function RoomMessage({
             const at = panel === "menu" ? moreRef.current : msgRef.current;
             // The ⋯ lists the items; the long-press one the toolbar's too, under the emoji row.
             const list = panel === "menu" ? items : [...onToolbar, ...(onToolbar.length ? ["separator" as const] : []), ...items];
-            const head = panel === "sheet" && may ? <ReactRow room={room} m={m} close={closeMenu} setError={setError} /> : undefined;
+            const head = panel === "sheet" && may ? <ReactRow room={room} m={m} close={closeMenu} setError={setError} more={() => { closeMenu(); setPanel("picker"); }} /> : undefined;
             return !!at && openMsgMenu(list, at, { head, button: panel === "menu", onClose: close });
           }}
           close={close}
@@ -1079,7 +1081,10 @@ export function RoomCompose({
   // has lost focus by the pick, and its selection with it in some browsers),
   // then just after each pick.
   const at = useRef<{ from: number; to: number } | null>(null);
+  const emojiButton = useRef<HTMLButtonElement>(null);
   const openEmoji = () => {
+    // A press on the button just shut the picker: this click is the same tap.
+    if (pressedShut(emojiButton.current)) return;
     // The box blurred on the button's press and kept where it was (onBlur):
     // by the click, a rerender may have moved its caret to the end.
     const el = input.current;
@@ -1203,7 +1208,7 @@ export function RoomCompose({
           </button>
         </p>
       )}
-      {emoji && <EmojiPicker pick={insert} close={() => setEmoji(false)} />}
+      {emoji && <EmojiPicker from={emojiButton} pick={insert} close={() => setEmoji(false)} />}
       {emojis.length > 0 && (
         <ul class="mention-pick emoji-pick" role="listbox" aria-label="Emoji">
           {emojis.map((e, i) => (
@@ -1304,7 +1309,7 @@ export function RoomCompose({
           </svg>
         </button>)}
         <AttachButton add={files.add} />
-        <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={openEmoji}>
+        <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
             <circle cx="8" cy="8" r="6.2" />
             <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />

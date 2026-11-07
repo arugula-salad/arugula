@@ -716,6 +716,25 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: none;
 }
 
+/* A popover (shared/ui/menu.tsx's Popover): the menu's box around content
+   that isn't a list of items. Its content pads itself. */
+.menu.popover {
+  /* It may be drawn inside a bar, which sets nowrap, a dim color and a size. */
+  color: var(--fg);
+  font-size: var(--text-md);
+  text-align: left;
+  white-space: normal;
+}
+
+.menu.popover:not(.sheet) {
+  width: min(320px, calc(100vw - 16px));
+  padding: 0;
+}
+
+.menu.popover:focus {
+  outline: none;
+}
+
 .menu-item {
   text-align: left;
   padding: 6px 10px;
@@ -7832,24 +7851,12 @@ html[data-scheme="light"] .doc {
   align-items: center;
   gap: 5px;
   color: var(--dim);
-  font-size: var(--text-sm);
-  line-height: 18px;
 }
 
-.mention-line.offline,
-.mention-line.queued,
-.mention-line.chain,
-.mention-line.dropped {
-  color: var(--warn, var(--dim));
-}
-
-.mention-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
+/* The status chip wraps: a state can say a sentence. */
+.mention-line .chip {
+  white-space: normal;
+  text-align: left;
 }
 
 /* Reactions (#104): chips under a message, and the menu that adds one. */
@@ -7936,19 +7943,6 @@ html[data-scheme="light"] .doc {
   color: var(--dim);
 }
 
-/* The picker opens below the menu, in the message's column, or above it
-   when there's no room below (the newest message). */
-.react-menu .emoji-picker {
-  top: calc(100% + 4px);
-  right: 0;
-  bottom: auto;
-}
-
-.react-menu .emoji-picker.above {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
-
 @media (pointer: coarse) {
   .thread-msg {
     -webkit-touch-callout: none;
@@ -7978,13 +7972,6 @@ html[data-scheme="light"] .doc {
     height: 44px;
     font-size: 24px; /* off-scale: emoji glyph */
   }
-
-  /* Over the sheet, as the composer's is over its box. */
-  .react-menu .emoji-picker {
-    top: auto;
-    right: 0;
-    bottom: 0;
-  }
 }
 
 /* The same row at the top of the message menu a long-press opens (its
@@ -7999,13 +7986,6 @@ html[data-scheme="light"] .doc {
   border-radius: 0;
   background: none;
   box-shadow: none;
-}
-
-@media (max-width: 600px) {
-  .react-menu.react-row .emoji-picker {
-    position: fixed;
-    inset: auto 0 0;
-  }
 }
 
 .thread-quote {
@@ -12129,8 +12109,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 /* Whose agents reach a room (#122): one chip in its header, and a popover. */
-.agents-chip {
-  position: relative;
+.agents-slot {
   flex: none;
 }
 
@@ -12149,20 +12128,9 @@ html[data-workspace="new"] .thread-panel {
   display: none;
 }
 
+/* Its content, in the shared popover's box (shared/ui/menu.tsx). */
 .agents-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  width: 320px;
-  max-width: calc(100vw - 24px);
-  max-height: 60vh;
-  overflow-y: auto;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
   font-size: var(--text-md);
 }
 
@@ -12336,21 +12304,12 @@ html[data-workspace="new"] .thread-panel {
   line-height: 1;
 }
 
+/* Its content, in the shared popover's box (shared/ui/menu.tsx). */
 .emoji-picker {
-  position: absolute;
-  right: 12px;
-  bottom: calc(100% + 4px);
-  z-index: 3;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-width: calc(100vw - 24px);
   height: 340px;
   max-height: 60dvh;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
 }
 
 .emoji-search {
@@ -12411,7 +12370,7 @@ html[data-workspace="new"] .thread-panel {
 
 .emoji-grid button:hover,
 .emoji-grid button:focus-visible {
-  background: var(--raised);
+  background: var(--raised-hover);
 }
 
 .emoji-note {
@@ -12421,18 +12380,10 @@ html[data-workspace="new"] .thread-panel {
   font-size: var(--text-sm);
 }
 
-/* On a phone the picker is a sheet along the bottom of the screen. */
+/* On a phone the popover is a sheet along the bottom of the screen. */
 @media (max-width: 600px) {
   .emoji-picker {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    max-width: none;
     height: 45dvh;
-    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .emoji-grid button {

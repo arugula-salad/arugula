@@ -385,6 +385,15 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await room.locator("[data-emoji-picker] .emoji-search").fill("tada");
   await room.locator('[data-emoji-picker] [data-emoji="🎉"]').click();
   await expect(box).toHaveValue("a🎉b");
+  // The caret is just after what the picker put in. The picker takes the
+  // focus (its search box), Escape shuts it and the focus is back on its button.
+  await box.pressSequentially("x");
+  await expect(box).toHaveValue("a🎉xb");
+  await room.locator("[data-emoji-button]").click();
+  await expect(room.locator("[data-emoji-picker] .emoji-search")).toBeFocused();
+  await room.page().keyboard.press("Escape");
+  await expect(room.locator("[data-emoji-picker]")).toHaveCount(0);
+  await expect(room.locator("[data-emoji-button]")).toBeFocused();
   await box.fill(":joy: :+1:");
   await box.press("Enter");
   await expect(room.locator(".thread-msg").last()).toContainText("😂 👍");
@@ -401,6 +410,8 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await list.locator("[data-emoji-button]").click();
   const sheet = list.locator("[data-emoji-picker]");
   await expect(sheet).toBeVisible();
+  // This page hasn't loaded the emoji table yet: opening the picker loads it, and it draws.
+  await expect(sheet.locator("[data-emoji]").first()).toBeVisible({ timeout: 30_000 });
   // A sheet along the bottom: the phone's width, and no wider.
   expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
 });
