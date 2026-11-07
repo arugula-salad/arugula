@@ -108,19 +108,9 @@
   gap: 8px;
 }
 
-.page-more {
-  min-width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--raised-hover);
-  border-radius: var(--btn-radius);
-  background: var(--raised);
-  color: var(--fg);
-}
-
 /* A finger's size for the icon buttons. */
 @media (pointer: coarse) {
-  .page-tools :is(.page-more, button) {
+  .page-tools button {
     min-width: 40px;
     min-height: 40px;
   }

@@ -329,7 +329,7 @@ function NewDoc({ ps, done }: { ps: PlatformProject[]; done: () => void }) {
       <button type="submit" class="primary" data-doc-new disabled={!title.trim()}>
         Make a Doc
       </button>
-      <button type="button" onClick={done}>
+      <button type="button" class="secondary" onClick={done}>
         Cancel
       </button>
     </form>
@@ -373,7 +373,7 @@ function Preview({ row }: { row: Row }) {
       factsTip={`${row.mine ? "Yours, private" : p.name} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
       actions={
         <>
-          <button type="button" class="bar-btn on preview-bar-primary" data-open-doc onClick={() => go(to)}>
+          <button type="button" class="primary small" data-open-doc onClick={() => go(to)}>
             Open
           </button>
           <PreviewCopyLink data-doc-copy-link title="Copy link" copy={copyTo(new URL(to, location.href).href)} />

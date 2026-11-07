@@ -94,7 +94,7 @@ export function PageHeader({
                   {link}
                   {share}
                   {more && more.length > 0 && (
-                    <button type="button" class="page-more" aria-label="More" aria-haspopup="menu" data-page-more onClick={(e) => openMenu(e, more, e.currentTarget)}>
+                    <button type="button" class="bar-btn sq" aria-label="More" aria-haspopup="menu" data-page-more onClick={(e) => openMenu(e, more, e.currentTarget)}>
                       ⋯
                     </button>
                   )}

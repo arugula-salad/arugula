@@ -394,7 +394,7 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
       }
       actions={
         <>
-          <button class="bar-btn on preview-bar-primary" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
+          <button class="primary small" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
             {isOpen(doc) ? `Bring forward %${doc.open}` : "Open beside"}
           </button>
           {doc.platform && (
