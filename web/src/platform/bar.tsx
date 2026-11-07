@@ -244,7 +244,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           ref={accountButton}
           class="account-button platform-me"
           title={me.login ? `Signed in as ${me.login}` : "Signed in"}
-          aria-label={`Account: ${me.login || me.name}`}
           aria-haspopup="menu"
           aria-expanded={accountOpen}
           data-signed-in-as

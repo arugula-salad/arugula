@@ -425,6 +425,14 @@
   text-decoration: underline;
 }
 
+/* A Doc in a list of Docs sits in a line of text (its counts, its author),
+   so its link is told from the text by an underline, not by colour (axe's
+   link-in-text-block, #463). */
+.platform ul[data-docs] > .sw-row > a {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 .platform .sw-row:is(.sw-accent, .sw-warn)::before {
   content: "";
   position: absolute;

@@ -161,7 +161,7 @@ export function AccountButton({ client }: { client: Client | null }) {
         aria-haspopup="menu"
         aria-expanded={expanded}
         title={login ? "Your account" : "Settings"}
-        aria-label={login ? `Account: ${login}` : "Settings"}
+        aria-label={login ? undefined : "Settings"}
         data-account-menu
         onClick={open}
         onContextMenu={open}

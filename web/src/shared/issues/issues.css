@@ -198,6 +198,7 @@ details.issues-note > summary {
 }
 
 .issue-split > button:last-child {
+  min-width: 24px; /* its width follows the font's ▾ (23.8px on macOS), under axe's 24 */
   margin-left: -1px;
   padding: 0 var(--space-2);
   border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
