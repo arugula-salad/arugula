@@ -8568,6 +8568,13 @@
       "ChatReaction": {
         "description": "One emoji on a message, as the reader sees it.",
         "properties": {
+          "agents": {
+            "default": 0,
+            "description": "How many of `count` are agents' (#632); the rest are people's. An\nolder control leaves it out, and it reads as none.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "count": {
             "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
             "format": "uint32",

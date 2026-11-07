@@ -880,12 +880,13 @@ impl Shower {
             let at = match out.iter().position(|x| x.emoji == r.emoji) {
                 Some(i) => i,
                 None => {
-                    out.push(ChatReaction { emoji: r.emoji.clone(), count: 0, mine: false, who: vec![] });
+                    out.push(ChatReaction { emoji: r.emoji.clone(), count: 0, agents: 0, mine: false, who: vec![] });
                     out.len() - 1
                 }
             };
             let c = &mut out[at];
             c.count += 1;
+            c.agents += u32::from(!r.agent.is_empty());
             c.mine |= (r.account.as_str(), r.agent.as_str()) == (self.reader.0.as_str(), self.reader.1.as_str());
             if c.who.len() < wire::MAX_REACTORS_SHOWN {
                 c.who.push(ChatReactor {

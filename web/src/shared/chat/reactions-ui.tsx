@@ -8,8 +8,8 @@ import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { EmojiPicker } from "./emoji-picker";
 import { handled } from "./escape";
-import { ReactIcon } from "./icons";
-import { QUICK, tip } from "./reactions";
+import { MachineIcon, ReactIcon } from "./icons";
+import { peopleOf, QUICK, tip } from "./reactions";
 
 /** Whether `room` takes reactions on `m` (an archive's messages and a
  * read-only room's do not). */
@@ -42,22 +42,35 @@ export function ReactionChips({
   const may = mayReact(room, m);
   return (
     <div class="reactions" role="group" aria-label="Reactions">
-      {reactions.map((c) => (
-        <button
-          type="button"
-          key={c.emoji}
-          class={c.mine ? "reaction mine" : "reaction"}
-          title={tip(c, chat.me)}
-          aria-label={`${c.count} reacted with ${c.emoji}${c.mine ? ", including you" : ""}`}
-          aria-pressed={c.mine}
-          disabled={!may}
-          data-reaction={c.emoji}
-          onClick={() => toggle(room, m, c.emoji, setError)}
-        >
-          <span class="reaction-emoji">{c.emoji}</span>
-          <span class="reaction-count">{c.count}</span>
-        </button>
-      ))}
+      {reactions.map((c) => {
+        const agents = c.agents ?? 0;
+        const people = peopleOf(c);
+        return (
+          <button
+            type="button"
+            key={c.emoji}
+            class={c.mine ? "reaction mine" : "reaction"}
+            title={tip(c, chat.me)}
+            aria-label={`${people ? `${people} ${people === 1 ? "person" : "people"}` : ""}${people && agents ? " and " : ""}${agents ? `${agents} ${agents === 1 ? "agent" : "agents"}` : ""} reacted with ${c.emoji}${c.mine ? ", including you" : ""}`}
+            aria-pressed={c.mine}
+            disabled={!may}
+            data-reaction={c.emoji}
+            onClick={() => toggle(room, m, c.emoji, setError)}
+          >
+            <span class="reaction-emoji">{c.emoji}</span>
+            {people > 0 && <span class="reaction-count">{people}</span>}
+            {agents > 0 && (
+              <>
+                {people > 0 && <span class="reaction-sep" aria-hidden="true" />}
+                <span class="reaction-agents" data-reaction-agents={agents}>
+                  <MachineIcon size={12} />
+                  {agents}
+                </span>
+              </>
+            )}
+          </button>
+        );
+      })}
       {may && (
         <button type="button" class="reaction add" title="Add a reaction" aria-label="Add a reaction" data-react-button onClick={open}>
           <ReactIcon />

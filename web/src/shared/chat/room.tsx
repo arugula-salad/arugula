@@ -22,6 +22,7 @@ import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { AuthorName } from "./agent-name";
 import { TypingLine } from "./typing";
 import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
@@ -657,17 +658,7 @@ export function RoomMessage({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
-            {m.agent?.session && !said && (
-              <span class="thread-session" title={`The session that wrote it, on ${m.agent.machine_name || "its machine"}`}>
-                · {m.agent.session}
-              </span>
-            )}
-            {m.agent && (
-              <Chip tone="teal" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </Chip>
-            )}
+            {said ? <SaidHead ses={said} project={room.project} /> : <AuthorName m={m} open tag="span" />}
             {m.imported && (
               <Chip kind="tag" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported

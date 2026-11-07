@@ -10,7 +10,7 @@ import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
 import type { ChatSavedItem } from "../proto";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { AuthorAvatar } from "./room";
 import { ViewHead, when, whereOf } from "./find";
 import { BookmarkIcon } from "./icons";
@@ -48,7 +48,7 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
         <span class="chat-hit-body">
           <AuthorAvatar m={m} />
           <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-            <b>{authorLabel(m)}</b>
+            <AuthorName m={m} />
             {m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
           </span>
         </span>

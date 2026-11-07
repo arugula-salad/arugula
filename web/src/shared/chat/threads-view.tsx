@@ -10,7 +10,7 @@ import type { ChatThreadItem } from "../proto";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
 import { usePlatformApi } from "../platform-api";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { AuthorAvatar, roomLabel, roomSigil } from "./room";
 import { footer, repliesOf } from "./threads";
 import { iso, when } from "../time";
@@ -38,13 +38,13 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
         <span class="chat-hit-body">
           <AuthorAvatar m={m} />
           <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-            <b>{authorLabel(m)}</b>
+            <AuthorName m={m} />
             {m.deleted !== null ? <p class="thread-text dim">This message was deleted.</p> : m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
           </span>
         </span>
         {it.latest && (
           <span class="thread-row-latest">
-            <b>{authorLabel(it.latest)}</b> {it.latest.text || "…"}
+            <AuthorName m={it.latest} /> {it.latest.text || "…"}
           </span>
         )}
         {unread > 0 && (
