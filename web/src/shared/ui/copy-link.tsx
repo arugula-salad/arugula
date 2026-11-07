@@ -4,15 +4,9 @@
 // browser, a public link).
 
 import { useRef, useState } from "preact/hooks";
+import { LinkIcon } from "./icons";
 import { openMenu, type MenuItem } from "./menu";
 import "./copy-link.css";
-
-const LinkIcon = () => (
-  <svg class="copy-link-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
-    <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
-  </svg>
-);
 
 /**
  * - `link`: the team link a click copies. `null` while there isn't one

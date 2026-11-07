@@ -9,6 +9,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { IssueIcon, MergeIcon, PrIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
 import "./item-block.css";
 
@@ -61,42 +62,12 @@ export type ItemTab = {
   content: ComponentChildren;
 };
 
-const PrIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="6" cy="6" r="2.5" />
-    <circle cx="6" cy="18" r="2.5" />
-    <circle cx="18" cy="18" r="2.5" />
-    <path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-3m2-2.5L12 7l2 2.5" />
-  </svg>
-);
-const IssueIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-  </svg>
-);
-const MergeIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="6" cy="5" r="2.5" />
-    <circle cx="6" cy="19" r="2.5" />
-    <circle cx="18" cy="14" r="2.5" />
-    <path d="M6 7.5v9M18 11.5C18 8 12 9 7.5 6.5" />
-  </svg>
-);
-const SOURCE_PATH: Record<ItemSource["kind"], string> = {
-  github: "M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.100-.4 6.400-1.500 6.400-7A5.400 5.400 0 0 0 20 4.800 5.100 5.100 0 0 0 19.900 1S18.700.7 16 2.500a13.400 13.400 0 0 0-7 0C6.300.7 5.100 1 5.100 1A5.100 5.100 0 0 0 5 4.800a5.400 5.400 0 0 0-1.500 3.800c0 5.400 3.300 6.600 6.400 7A3.400 3.400 0 0 0 9 18.100V22",
-  gitlab: "M12 21 3 14l2.500-8 2.500 6h8l2.500-6L21 14z",
-  forgejo: "M7 4v6a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3V4M12 13v7",
-  arugula: "M12 3c5 0 9 4 9 9-4 0-9-1-9-9zM12 3C7 3 3 7 3 12c4 0 9-1 9-9zM12 21v-9",
-};
 const SOURCE_NAME: Record<ItemSource["kind"], string> = { github: "GitHub", gitlab: "GitLab", forgejo: "Forgejo", arugula: "Arugula" };
 
 function SourceIcon({ source }: { source: ItemSource }) {
   return (
     <span class="item-source" data-item-source={source.kind} data-live={source.live ?? undefined} title={source.title ?? SOURCE_NAME[source.kind]}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d={SOURCE_PATH[source.kind]} />
-      </svg>
+      <SourceGlyph kind={source.kind} />
       {source.live && <span class="item-live" data-item-live={source.live} />}
     </span>
   );

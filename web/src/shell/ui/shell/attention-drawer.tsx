@@ -23,7 +23,7 @@ import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
 import { editDiff } from "../term-ask";
-import { BellIcon } from "../../../shared/ui/bell";
+import { BellIcon } from "../../../shared/ui/icons";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";

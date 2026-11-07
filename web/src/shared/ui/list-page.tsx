@@ -19,7 +19,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
-import { Svg } from "./rail-icons";
+import { Svg } from "./icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */

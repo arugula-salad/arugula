@@ -11,7 +11,7 @@ import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { arrange, arrangeRefusal, goToPane, layoutRefusal, PRESETS, toggleFocus } from "../panes/layout";
 import { AddPaneDrawer, addPane, useAddPane } from "./add-pane";
 import { paneStatus, paneType } from "./pane-header";
-import { PlusIcon } from "./icons";
+import { FocusIcon, PlusIcon } from "../../../shared/ui/icons";
 
 export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   const ids = paneIds(tab);
@@ -91,7 +91,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         title={focusWhy ?? `${focused ? "Show every pane again" : "Fill the tab with the active pane"} (${keyHint("pane.focus")})`}
         onClick={() => toggleFocus(client, tab, undefined, refused)}
       >
-        <FocusIcon on={focused} />
+        <FocusIcon on={focused} size={13} />
         {focused ? "Restore" : "Focus"}
       </button>
       {note && (
@@ -144,8 +144,3 @@ function Thumb({ preset }: { preset: Preset }) {
   );
 }
 
-const FocusIcon = ({ on }: { on: boolean }) => (
-  <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    {on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
-  </svg>
-);

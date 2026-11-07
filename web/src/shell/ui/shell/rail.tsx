@@ -17,7 +17,7 @@ import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
 import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a

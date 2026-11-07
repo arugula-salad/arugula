@@ -23,7 +23,7 @@ import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
 import { LiveSwitch, liveItems } from "../../shared/live/switch";
-import { SearchIcon } from "./shell/icons";
+import { SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */

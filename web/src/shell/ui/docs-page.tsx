@@ -27,7 +27,7 @@ import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
-import { Svg } from "../../shared/ui/rail-icons";
+import { LinkIcon, Svg } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
@@ -35,7 +35,6 @@ import { directory } from "../hosts";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
-import { LinkIcon } from "./shell/icons";
 import { Chip, StateChip } from "../../shared/ui/state-chip";
 
 /** What the reader keeps of a Doc it has read, for the next time it is picked. */

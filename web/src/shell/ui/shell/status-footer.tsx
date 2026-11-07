@@ -15,7 +15,7 @@ import { keyHint } from "../keys";
 import { ActivityToggle } from "./activity";
 import { attentionItems, openAttention, useAttentionTick } from "./attention-drawer";
 import { connection } from "./context-header";
-import { BranchIcon } from "./icons";
+import { BranchIcon } from "../../../shared/ui/icons";
 
 export function StatusFooter({ client }: { client: Client }) {
   useAttentionTick(client);

@@ -10,7 +10,7 @@ import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
-import { BranchIcon, MoreIcon, NVIM_GLYPH } from "./icons";
+import { BranchIcon, FocusIcon, MoreIcon, NVIM_GLYPH } from "../../../shared/ui/icons";
 import { HintChip } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
 import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
@@ -183,7 +183,7 @@ export function PaneHeader({
             disabled={!!why}
             onClick={() => toggleFocus(client, tab, id)}
           >
-            <ExpandIcon on={focused} />
+            <FocusIcon on={focused} />
           </button>
           <button class="pane-header-button bar-btn sq" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
             <MoreIcon size={13} />
@@ -202,13 +202,6 @@ export function PaneHeader({
     </Bar>
   );
 }
-
-/** Two corners out (focus), or in (restore). */
-const ExpandIcon = ({ on }: { on: boolean }) => (
-  <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    {on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
-  </svg>
-);
 
 /** Type remains named for assistive technology and in the hover label.
  * Each block type draws its own (UI audit #177). */
