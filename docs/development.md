@@ -560,7 +560,7 @@ The first run's cut is refused and records the request on
 
 ```sh
 git fetch origin chant/lifecycle:chant/lifecycle
-npx @intentius/chant@0.124.67 approve policy-override release-<sha12> \
+npx @intentius/chant@0.124.69 approve policy-override release-<sha12> \
   --rule ci-green-daemon --reason "..." --actor github:lex00   # ci-green-app for the app
 ```
 
@@ -641,8 +641,8 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.61 ci last-green --lane daemon) # the daemon's
-sha=$(npx @intentius/chant@0.124.61 ci last-green --lane app)    # the app's
+sha=$(npx @intentius/chant@0.124.69 ci last-green --lane daemon) # the daemon's
+sha=$(npx @intentius/chant@0.124.69 ci last-green --lane app)    # the app's
 ```
 
 `scripts/release last-green [daemon|app|server]` answers the same from

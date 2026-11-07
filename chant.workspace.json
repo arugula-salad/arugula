@@ -1,7 +1,7 @@
 {
   "name": "arugula",
   "schema": 1,
-  "minReader": "0.124.61",
+  "minReader": "0.124.63",
   "members": [
     {
       "name": "daemon",

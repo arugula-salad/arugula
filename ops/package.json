@@ -8,7 +8,7 @@
     "build": "chant build src/fly/control --lexicon fly -o dist/control.fly.json && chant build src/fly/platform --lexicon fly -o dist/platform.fly.json && chant build src/fly/platform-dump --lexicon fly -o dist/platform-dump.fly.json"
   },
   "dependencies": {
-    "@intentius/chant": "0.124.68",
-    "@intentius/chant-lexicon-fly": "0.124.68"
+    "@intentius/chant": "0.124.69",
+    "@intentius/chant-lexicon-fly": "0.124.69"
   }
 }
