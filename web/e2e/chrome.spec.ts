@@ -40,7 +40,7 @@ test.describe("on a computer", () => {
     const beta = await session(page, "beta");
     await row(page, "beta").locator(".ws-session-main").click();
     await expect.poll(() => shownSession(page)).toBe(beta);
-    await expect(row(page, "beta")).toHaveAttribute("aria-selected", "true");
+    await expect(row(page, "beta").locator(".ws-session-main")).toHaveAttribute("aria-current", "true");
 
     // Back: the tab that was shown, not the session's first.
     const firstName = await page.evaluate((s) => window.__arugula.client.state!.sessions.find((x) => x.id === s)!.name, first);

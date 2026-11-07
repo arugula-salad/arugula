@@ -220,13 +220,13 @@ export function SessionSidebar({
           onKeyDown={onKey}
         />
       </label>
-      <div class="ws-session-list" id="ws-session-list" role="listbox" aria-label="Sessions">
+      <div class="ws-session-list" id="ws-session-list" aria-label="Sessions">
         {GROUPS.map((g) => {
           const rows = shown.filter((r) => r.group === g.id);
           if (!rows.length) return null;
           return (
             <Fragment key={g.id}>
-              <h3 class={`ws-group ${g.id}`} data-session-group={g.id}>
+              <h3 class={`ws-group ${g.id}`} id={`ws-group-${g.id}`} data-session-group={g.id}>
                 {g.id === "needs" ? (
                   // M111: what each one asks, in the attention drawer.
                   <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
@@ -240,6 +240,7 @@ export function SessionSidebar({
                   </>
                 )}
               </h3>
+              <div role="list" aria-labelledby={`ws-group-${g.id}`}>
               {rows.map((r) => (
                 <SessionRow
                   key={r.session.id}
@@ -252,6 +253,7 @@ export function SessionSidebar({
                   choose={choose}
                 />
               ))}
+              </div>
             </Fragment>
           );
         })}
@@ -311,8 +313,7 @@ function SessionRow({
     <div
       id={`ws-session-${s.id}`}
       class={`ws-session${current ? " current" : ""}${hi ? " hi" : ""}`}
-      role="option"
-      aria-selected={current}
+      role="listitem"
       data-session-id={s.id}
       data-attention={row.attention}
       onContextMenu={menu}
@@ -326,7 +327,7 @@ function SessionRow({
           }}
         />
       ) : (
-        <button class="ws-session-main" title={`${s.name}: ${row.tabs} tab${row.tabs === 1 ? "" : "s"}, ${row.panes} pane${row.panes === 1 ? "" : "s"}`} onClick={() => choose(s.id)}>
+        <button class="ws-session-main" aria-current={current ? "true" : undefined} title={`${s.name}: ${row.tabs} tab${row.tabs === 1 ? "" : "s"}, ${row.panes} pane${row.panes === 1 ? "" : "s"}`} onClick={() => choose(s.id)}>
           <span class="ws-session-line">
             <span class={`ws-dot ${row.attention}`} aria-hidden="true" />
             <span class="ws-session-name">{s.name}</span>

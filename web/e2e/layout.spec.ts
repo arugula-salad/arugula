@@ -151,7 +151,7 @@ test("tabs: × only on the shown tab, and closing asks first (#753)", async ({ p
   await expect.poll(() => tabsInSession(page)).toHaveLength(2);
   const t2 = (await tabsInSession(page))[1];
   // The new tab is shown: only it has a ×, even with the pointer over the other.
-  const close = (id: number) => page.locator(`[data-tab-id="${id}"] .tab-close`);
+  const close = (id: number) => page.locator(`.tabstrip:has(.tab.selected[data-tab-id="${id}"]) .tab-close`);
   await page.locator(`[data-tab-id="${t1}"]`).hover();
   await expect(close(t1)).toHaveCount(0);
   await expect(close(t2)).toHaveCount(1);

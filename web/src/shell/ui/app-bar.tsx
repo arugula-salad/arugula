@@ -116,15 +116,14 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
       // One label and title in every bar (UI audit #170); the panes' head
       // draws it as a search field.
       title={`Every command for this pane, tab and session (${keyHint("palette")})`}
-      // Its name is "Commands": the chord beside it is for the eye, and
-      // would otherwise make it a button named "…+Shift+P".
-      aria-label="Commands"
+      // No aria-label: its name is what it shows, "Commands" and the chord,
+      // so voice control's "click Commands" and a screen reader agree.
       aria-keyshortcuts={ariaKeys(keyHint("palette"))}
       onClick={() => openPalette(client)}
     >
       {search && <SearchIcon />}
       <span>Commands</span>
-      <kbd aria-hidden="true">{keyHint("palette")}</kbd>
+      <kbd>{keyHint("palette")}</kbd>
     </button>
   );
 }
