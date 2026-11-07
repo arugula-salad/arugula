@@ -492,3 +492,41 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
   assert.equal(initialsOf("bob-the_builder x"), "BT");
   assert.equal(initialsOf(""), "?");
 });
+
+// The Steps view (Arugula #763): a reorder keeps to its group's order, a link is an arrow the way its kind runs.
+import { linksOf, loadMode, nudge, phases, reorder, shown } from "../src/shared/boards/steps.ts";
+
+test("Steps is the default at 390 px and Lanes elsewhere, and a reorder names the whole group's order it read", () => {
+  assert.equal(loadMode(390), "steps");
+  assert.equal(loadMode(1280), "lanes");
+  // One group, a b c d e; the step is a, c, d (b and e are in other steps).
+  const group = ["a", "b", "c", "d", "e"];
+  const step = ["a", "c", "d"];
+  // d before a: the whole order is what was read, `before` is a.
+  assert.deepEqual(reorder(group, step, "d", "a"), { before: "a", seen: group });
+  // a to the end of its step goes before the next row of the group after the step's last, wherever that is.
+  assert.deepEqual(reorder(group, step, "a", null), { before: "e", seen: group });
+  // Where it already is, nothing is sent.
+  assert.equal(reorder(group, step, "c", "d"), null);
+  assert.equal(reorder(group, step, "d", null), null);
+  assert.deepEqual(nudge(group, step, "c", true), { before: "a", seen: group });
+  assert.deepEqual(nudge(group, step, "c", false), { before: "e", seen: group });
+  assert.equal(nudge(group, step, "a", true), null);
+  // Step 1 folds after 8.
+  assert.deepEqual(shown(1, [...Array(11).keys()], false), { rows: [...Array(8).keys()], more: 3 });
+  assert.equal(shown(2, [...Array(11).keys()], false).more, 0);
+});
+
+test("phases hold the open rows by step in the board's order and count the done ones; links run the way their kind does", () => {
+  const row = (id, lane, step, group, item, relations) => ({ id, lane, step, group, pointer: { kind: "issue", id: item }, relations });
+  const g = (id) => ({ id, title: id });
+  const rows = [row("r1", "next", 1, "g1", "iss_1"), row("r2", "next", 2, "g1", "iss_2"), row("r3", "done", undefined, "g1", "iss_3"), row("r4", "next", 1, undefined, "iss_4")];
+  const v = { groups: [g("g1")], zones: [{ rows }], order: ["r2", "r1", "r3", "r4"], sequence: ["r1", "r2", "r4"] };
+  const ps = phases(v);
+  assert.deepEqual(ps.map((p) => [p.group?.id ?? null, p.done, p.steps.map((s) => [s.step, s.rows.map((r) => r.id)])]), [["g1", 1, [[1, ["r1"]], [2, ["r2"]]]], [null, 0, [[1, ["r4"]]]]]);
+  const rel = (id, kind, direction, item) => ({ id, kind, direction, item });
+  const me = row("r1", "next", 1, "g1", "iss_1", [rel("a", "before", "out", "iss_2"), rel("b", "discovered_from", "out", "iss_4"), rel("c", "relates", "in", "iss_3")]);
+  const drawn = new Set(["r1", "r2", "r4"]);
+  // r3 is done and not drawn, so its link is left out; "discovered from" runs from where it was found.
+  assert.deepEqual(linksOf(me, [me, ...rows.slice(1)], drawn).map((l) => [l.kind, l.from, l.to]), [["before", "r1", "r2"], ["discovered_from", "r4", "r1"]]);
+});

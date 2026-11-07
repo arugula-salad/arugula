@@ -315,6 +315,13 @@ async fn groups_are_the_authors_to_set() {
     assert_eq!((st, order(&v)), (200, vec!["d1".into(), "loose".into(), "b1".into(), "b2".into()]), "{v}");
     let (_, v) = mv(&base, "a", &id, &b2, json!({ "before": b1 })).await;
     assert_eq!(order(&v), ["d1", "loose", "b2", "b1"], "within its group: {v}");
+    // A move that names the group's order it read is refused when it has changed, with the order now.
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "before": b2, "seen": [b1, b2] })).await;
+    assert_eq!((st, v["reason"].as_str(), v["rows"].clone()), (409, Some(super::STALE_ORDER), json!([b2, b1])), "{v}");
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "before": b2, "seen": [b2, b1] })).await;
+    assert_eq!((st, order(&v)), (200, vec!["d1".into(), "loose".into(), "b1".into(), "b2".into()]), "{v}");
+    let (_, v) = mv(&base, "a", &id, &b2, json!({ "before": b1, "seen": [b1, b2] })).await;
+    assert_eq!(order(&v), ["d1", "loose", "b2", "b1"], "{v}");
     let (_, v) = mv(&base, "a", &id, &d1, json!({ "zone": null })).await;
     assert_eq!(order(&v), ["loose", "b2", "b1", "d1"], "out of its group: {v}");
     assert!(on(&v, "d1").get("group").is_none(), "{v}");

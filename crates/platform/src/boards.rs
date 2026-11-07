@@ -99,6 +99,7 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 
 use crate::db::boards_docs as db_docs;
@@ -139,6 +140,46 @@ pub mod work;
 
 /// The reason a refusal gives for a write made on a stale rev.
 pub const STALE_REV: &str = "stale_rev";
+/// The reason a move gives when the group's rows are not in the order it read.
+pub const STALE_ORDER: &str = "stale_order";
+
+/// A move that wasn't made: refused as any change is, or its group's rows
+/// are in another order than the move read, which answers 409 `stale_order`
+/// with the rows as they are ([`wire::StaleOrder`]).
+pub enum Unmoved {
+    Refused(ApiError),
+    Order(Vec<String>),
+}
+
+impl From<ApiError> for Unmoved {
+    fn from(e: ApiError) -> Self {
+        Unmoved::Refused(e)
+    }
+}
+
+const ORDER_MOVED: &str = "someone moved these rows first: read the board again";
+
+impl From<Unmoved> for ApiError {
+    fn from(u: Unmoved) -> Self {
+        match u {
+            Unmoved::Refused(e) => e,
+            Unmoved::Order(_) => refusal(StatusCode::CONFLICT, STALE_ORDER, ORDER_MOVED),
+        }
+    }
+}
+
+impl IntoResponse for Unmoved {
+    fn into_response(self) -> Response {
+        match self {
+            Unmoved::Refused(e) => e.into_response(),
+            Unmoved::Order(rows) => (
+                StatusCode::CONFLICT,
+                Json(wire::StaleOrder { error: ORDER_MOVED.to_owned(), reason: STALE_ORDER.to_owned(), rows }),
+            )
+                .into_response(),
+        }
+    }
+}
 
 type J<T> = Result<Json<T>, ApiError>;
 
@@ -209,6 +250,7 @@ fn refused(r: Refused) -> ApiError {
         Refused::Stale { rev } => {
             refusal(StatusCode::CONFLICT, STALE_REV, &format!("this entry is at rev {rev} now: read the board again"))
         }
+        Refused::Order { .. } => refusal(StatusCode::CONFLICT, STALE_ORDER, ORDER_MOVED),
         Refused::Bad(why) => err(StatusCode::BAD_REQUEST, &why),
         Refused::Forbidden(why) => err(StatusCode::FORBIDDEN, &why),
         Refused::Conflict(why) => err(StatusCode::CONFLICT, &why),
@@ -1285,8 +1327,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     }
     let row_id = |i: &usize| stored.rows[*i].id.clone();
     let (sequence, chain) = (found.sequence.iter().map(row_id).collect(), found.chain.iter().map(row_id).collect());
+    let order = stored.rows.iter().map(|r| r.id.clone()).collect();
     let docs = docs::view(strip_only, &names, &named, &copies);
-    Ok(wire::BoardView { board, zones, groups, docs, ready, sequence, chain, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs, ready, sequence, chain, order, said: None })
 }
 
 /// For each of these items (the other ends of a board's edges) that a row
@@ -2034,10 +2077,10 @@ pub async fn move_entry(
     id: &str,
     entry: &str,
     m: &wire::MoveEntry,
-) -> Result<wire::BoardView, ApiError> {
+) -> Result<wire::BoardView, Unmoved> {
     let board = board_place(app, by, id, true).await?;
     if entry.starts_with("lane_") {
-        return Err(not_a_lane());
+        return Err(not_a_lane().into());
     }
     if id_ok(entry, "zon").is_err() {
         id_ok(entry, "row").map_err(|_| bad("expected an id that starts row_ or zon_"))?;
@@ -2045,10 +2088,18 @@ pub async fn move_entry(
     if let Some(Some(z)) = &m.zone {
         group_id_ok(z)?;
     }
-    let to = db::Move { zone: m.zone.as_ref().map(|z| z.as_deref()), before: m.before.as_deref(), rev: m.rev };
-    app.db.move_entry(id, entry, &to, now_ms())?.map_err(refused)?;
+    let to = db::Move {
+        zone: m.zone.as_ref().map(|z| z.as_deref()),
+        before: m.before.as_deref(),
+        rev: m.rev,
+        seen: m.seen.as_deref(),
+    };
+    match app.db.move_entry(id, entry, &to, now_ms()).map_err(ApiError::from)? {
+        Err(Refused::Order { rows }) => return Err(Unmoved::Order(rows)),
+        moved => moved.map_err(refused)?,
+    }
     changed(app, &board.project, id);
-    read(app, by.account, id).await
+    Ok(read(app, by.account, id).await?)
 }
 
 /// The lane `row` derives from its work now, as the board reads it before a
@@ -2263,13 +2314,14 @@ pub async fn put_route(
 }
 
 /// `POST /api/boards/{id}/entries/{entry}/move`: a row's group and place, or
-/// a group's place (owners and editors); a lane is refused, 400.
+/// a group's place (owners and editors); a lane is refused, 400. With
+/// `seen`, 409 `stale_order` when the group's rows have moved on.
 pub async fn move_route(
     State(app): State<Arc<Platform>>,
     s: Person,
     Path((id, entry)): Path<(String, String)>,
     Json(m): Json<wire::MoveEntry>,
-) -> J<wire::BoardView> {
+) -> Result<Json<wire::BoardView>, Unmoved> {
     Ok(Json(move_entry(&app, Actor::person(&s.account), &id, &entry, &m).await?))
 }
 

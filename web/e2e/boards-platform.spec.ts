@@ -83,12 +83,16 @@ test("with no Labs flag set, the bar has Boards and no Triage, and Not on a boar
   await t.start(["--platform-host", "app.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await alice.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   // Bob, a viewer.
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await bob.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await bob.goto(link);
   await bob.locator("[data-accept-invite]").click();
   await alice.evaluate(() => window.__arugula.control!.refresh());

@@ -1831,6 +1831,12 @@ pub struct BoardView {
     /// no row waits on another (#762).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chain: Vec<String>,
+    /// Every row (`row_…`) as the board stores them: by group, in the
+    /// groups' order, then by position inside each, those with no group
+    /// last. A move that names the order it read (`seen`) names a group's
+    /// rows from here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
     /// What a write did that the board alone doesn't say: a PR attached to
     /// the row of the issue it closes, an item that was there already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1881,6 +1887,13 @@ pub struct PutEntry {
 /// one. A group moves among groups:
 /// `before` is a group, `zone` is absent. A lane is never set (aru-125): a
 /// `zone` that is a lane is refused.
+///
+/// `seen` is the row ids of the group the row goes to, in the order the
+/// caller read them. A row's `rev` doesn't count moves, so this is what a
+/// move that mustn't overwrite someone else's checks: if the group's rows
+/// aren't those, in that order, nothing moves and the answer is 409
+/// `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+/// Absent, a move is made whatever the order.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveEntry"))]
@@ -1895,6 +1908,21 @@ pub struct MoveEntry {
     pub zone: Option<Option<String>>,
     #[serde(default)]
     pub before: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub seen: Option<Vec<String>>,
+}
+
+/// The body of a move refused as `stale_order`: the group's rows now, in
+/// order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardStaleOrder"))]
+pub struct StaleOrder {
+    pub error: String,
+    pub reason: String,
+    pub rows: Vec<String>,
 }
 
 /// A field that is there, `null` or not, is `Some`: so `null` and absent
@@ -2578,6 +2606,7 @@ mod tests {
             ready: vec![],
             sequence: vec![],
             chain: vec![],
+            order: vec![],
             said: None,
         }
     }
