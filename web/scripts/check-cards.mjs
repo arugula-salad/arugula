@@ -47,6 +47,7 @@ function strip(css) {
 
 /** The offending things in `css` (read from `file`, relative to src), with their lines. */
 export function offenders(css, file) {
+  file = file.replaceAll("\\", "/");
   const out = [];
   const text = strip(css);
   for (const rule of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -99,7 +100,7 @@ const WHY = {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const src = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "src");
   const bad = walk(src).flatMap((p) => {
-    const file = relative(src, p);
+    const file = relative(src, p).replaceAll("\\", "/");
     const text = readFileSync(p, "utf8");
     return p.endsWith(".css") ? offenders(text, file) : swarmOffenders(text, file);
   });

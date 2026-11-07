@@ -14,6 +14,11 @@ test("card.css may define -card classes", () => {
   assert.deepEqual(bad(".thing-card { padding: 4px; }", "shared/ui/card.css"), []);
 });
 
+test("a Windows path to card.css is exempt too, and reported with slashes", () => {
+  assert.deepEqual(bad(".thing-card { padding: 4px; }", "shared\\ui\\card.css"), []);
+  assert.equal(offenders(".thing-card { padding: 4px; }", "shared\\x.css")[0].file, "shared/x.css");
+});
+
 test("an allowed -card class, and classes that only contain the word, are fine", () => {
   assert.deepEqual(bad(".session-card { max-width: 560px; }"), []);
   assert.deepEqual(bad(".cardinal { color: red; }\n.card-title { color: red; }\n.cards-list { color: red; }"), []);
