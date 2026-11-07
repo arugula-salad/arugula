@@ -9,7 +9,7 @@ import type { ChatMessage, ChatRoom } from "../proto";
 import { escapeTaken, pressedShut } from "../ui/menu";
 import { EmojiPicker } from "./emoji-picker";
 import { handled } from "./escape";
-import { MachineIcon, ReactIcon } from "./icons";
+import { MachineIcon, ReactIcon } from "../ui/icons";
 import { peopleOf, QUICK, tip } from "./reactions";
 
 /** Whether `room` takes reactions on `m` (an archive's messages and a

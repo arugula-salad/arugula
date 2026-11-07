@@ -8,7 +8,7 @@ import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { presence } from "./presence";
 import { LiveFace } from "../live/face";
-import { MachineIcon } from "./icons";
+import { MachineIcon } from "../ui/icons";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {

@@ -13,7 +13,7 @@ import type { ChatSavedItem } from "../proto";
 import { AuthorName } from "./agent-name";
 import { AuthorAvatar } from "./room";
 import { ViewHead, when, whereOf } from "./find";
-import { BookmarkIcon } from "./icons";
+import { BookmarkIcon } from "../ui/icons";
 
 export const HOUR = 3_600_000;
 

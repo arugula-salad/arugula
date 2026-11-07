@@ -26,18 +26,10 @@ import { Modal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
-import { LinkIcon } from "./shell/icons";
+import { LinkIcon, ShareIcon } from "../../shared/ui/icons";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Count } from "../../shared/ui/state-chip";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
-
-const ShareIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-    <path d="M16 6l-4-4-4 4" />
-    <path d="M12 2v13" />
-  </svg>
-);
 
 /** What `doc_shares` said for a Doc that isn't shared. */
 interface Can {

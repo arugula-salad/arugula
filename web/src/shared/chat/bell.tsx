@@ -5,7 +5,7 @@
 
 import type { ComponentChild } from "preact";
 import type { ChatRoom } from "../proto.gen";
-import { BellIcon, BellOffIcon } from "../ui/bell";
+import { BellIcon, BellOffIcon } from "../ui/icons";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { LEVELS, levelLabel, loadNotify, notifyPrefs, parseSnooze, setNotify, snoozePresets, untilText } from "./notify";
 

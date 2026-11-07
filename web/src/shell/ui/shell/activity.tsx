@@ -23,7 +23,7 @@ import { useSubscribe } from "../../../shared/ui/hooks";
 import { openMenu } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
 import { closePlace, currentPlace } from "../places";
-import { MoreIcon } from "./icons";
+import { MoreIcon } from "../../../shared/ui/icons";
 import { markSeen, seen, seenReady, subscribeSeen, tipsOn } from "../../../shared/seen";
 
 // ---- what this device remembers

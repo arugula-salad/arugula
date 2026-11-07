@@ -5,7 +5,7 @@
 
 import type { ChatMentionStatus, ChatMessage, ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
-import { MachineIcon } from "./icons";
+import { MachineIcon } from "../ui/icons";
 import { Chip, type Tone } from "../ui/state-chip";
 
 /** A state's tone: working accent, read and answered ok, the ones that wait

@@ -49,7 +49,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon, ReactIcon, ThreadIcon } from "./icons";
+import { BookmarkIcon, MachineIcon, ReactIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";

@@ -73,6 +73,12 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  /* The icon scale (#691): beside text of 11 to 12px, 12 to 13px, 13 to 15px,
+     and the rail or a page header. `Svg` (shared/ui/icons.tsx) sets the size. */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
   /* The type scale (#687): seven sizes, each with its line-height. 11 is a
      caps label, a chip, an id or a time; 12 is meta and a button; 13 is
      what you read; 15 is a title; 19 is a section's h2 and a stat; 32 is a
@@ -230,6 +236,26 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .caret {
   color: var(--dim);
   font-size: var(--text-xs);
+}
+
+.icon-xs {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.icon-sm {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.icon-md {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+.icon-lg {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
 }
 
 .tabbar {
@@ -8704,7 +8730,7 @@ input.chat-search {
   border-bottom-color: var(--line);
 }
 
-/* Drawn icons (./chat/icons.tsx) sit on the text's line. */
+/* Drawn icons (shared/ui/icons.tsx) sit on the text's line. */
 .chat-sigil svg,
 .chat-section .chat-new svg {
   display: inline-block;

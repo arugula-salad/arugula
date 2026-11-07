@@ -15,7 +15,7 @@ import { AttentionBadge } from "../attention";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { escapeTaken } from "../../../shared/ui/menu";
 import { closeOverview, overviewRoute } from "../places";
-import { BranchIcon } from "./icons";
+import { BranchIcon } from "../../../shared/ui/icons";
 import { showSession, summarize } from "./session-sidebar";
 
 /** Whether `#overview` is up, kept current with the route. */

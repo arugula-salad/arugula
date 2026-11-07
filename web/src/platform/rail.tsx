@@ -10,7 +10,7 @@ import { chat } from "../shared/chat-store";
 import { chatUnread } from "../shared/chat/unread";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
-import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
+import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/icons";
 import { chatPath, sectionOf } from "./bar";
 import { activeProject, forgetActiveProject, go, pathOf, useRoute } from "./router";
 import { names } from "./links";

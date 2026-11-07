@@ -27,7 +27,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { PlusIcon } from "../ui/rail-icons";
+import { PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";

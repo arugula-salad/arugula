@@ -25,7 +25,7 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
-import { NvimIcon } from "../ui/shell/icons";
+import { NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { ariaKeys, keyHint, useBinding } from "../ui/keys";
 import { useWall } from "./wall";

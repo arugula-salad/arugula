@@ -18,7 +18,7 @@ import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "./icons";
+import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";

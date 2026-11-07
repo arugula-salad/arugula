@@ -11,7 +11,7 @@ import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { agentOwners, chipLabel } from "./agents";
 import { Popover, pressedShut } from "../ui/menu";
-import { MachineIcon } from "./icons";
+import { MachineIcon } from "../ui/icons";
 
 export function AgentsChip({ room }: { room: string }) {
   useSubscribe((fn) => chat.subscribe(fn));

@@ -21,7 +21,7 @@ import { useWorkspaceDir } from "../blocks";
 import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { showSession } from "./shell/session-sidebar";
-import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "./shell/icons";
+import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "../../shared/ui/icons";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
