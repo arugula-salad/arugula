@@ -210,47 +210,6 @@
   border-radius: 0;
 }
 
-/* A row's tone (a card's are in shared/ui/card.css), below the row's own rule so a tone class wins. */
-.platform .sw-row {
-  --c: var(--muted);
-  --ct: var(--subtle);
-}
-
-.platform .sw-accent {
-  --c: var(--accent);
-  --ct: var(--accent);
-}
-
-.platform .sw-ok {
-  --c: var(--ok);
-  --ct: var(--ok);
-}
-
-.platform .sw-warn {
-  --c: var(--warn);
-  --ct: var(--warn);
-}
-
-.platform .sw-danger {
-  --c: var(--danger);
-  --ct: var(--danger);
-}
-
-.platform .sw-info {
-  --c: var(--info);
-  --ct: var(--info);
-}
-
-.platform .sw-teal {
-  --c: var(--teal);
-  --ct: var(--teal);
-}
-
-.platform .sw-muted {
-  --c: var(--muted);
-  --ct: var(--subtle);
-}
-
 .platform .sw-page .platform-inbox-ref {
   font: 500 var(--text-sm)/1.3 var(--f-mono);
 }
@@ -279,38 +238,22 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A project's rooms: a list, not cards, with the bar only where there's
-   something unread. */
-.platform .sw-rows > li {
-  position: relative;
-  padding: 4px 0 4px 12px;
-}
-
-.platform .sw-row > a {
+/* A dense row's link (a project's rooms, runs, issues and Docs): plain until
+   hovered or focused. */
+.platform .card-dense > a {
   text-decoration: none;
 }
 
-.platform .sw-row > a:is(:hover, :focus-visible) {
+.platform .card-dense > a:is(:hover, :focus-visible) {
   text-decoration: underline;
 }
 
 /* A Doc in a list of Docs sits in a line of text (its counts, its author),
    so its link is told from the text by an underline, not by colour (axe's
    link-in-text-block, #463). */
-.platform ul[data-docs] > .sw-row > a {
+.platform ul[data-docs] > .card-dense > a {
   text-decoration: underline;
   text-underline-offset: 0.2em;
-}
-
-.platform .sw-row:is(.sw-accent, .sw-warn)::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
 }
 
 @media (max-width: 700px) {

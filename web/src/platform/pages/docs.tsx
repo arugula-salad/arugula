@@ -8,6 +8,7 @@
 // workspace makes them too, as itself. A write anywhere reaches an open
 // page live, through the Doc's thread (as a board's does).
 
+import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocView } from "../../shared/proto";
@@ -75,12 +76,12 @@ function useDocs(project: string): ProjectDoc[] | null {
 function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
   const who = nameOf(p);
   return (
-    <ul class="platform-list sw-rows" data-docs>
+    <ul class="platform-list card-list" data-docs>
       {list.map((d) => {
         const to = pathOf({ page: "doc", project: p.id, doc: d.id }, names);
         const copy = copyFrom(d);
         return (
-          <li key={d.id} class="sw-row">
+          <Card as="li" dense key={d.id}>
             <a href={to} data-doc-link={d.id} onClick={(e) => follow(e, to)}>
               {d.title}
             </a>
@@ -88,7 +89,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
               {" "}
               {d.written} of {d.sections} written · {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
             </span>
-          </li>
+          </Card>
         );
       })}
     </ul>
@@ -285,6 +286,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         row={(r) => {
           const s = sections.get(readKey(r.doc));
           return {
+            dense: true,
             title: <span data-doc-title>{r.doc.title}</span>,
             detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
             age: <Time at={r.doc.updated_at} title="Updated" />,

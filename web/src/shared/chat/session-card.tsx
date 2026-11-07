@@ -49,6 +49,7 @@
 // closed on its box, keeping its checkout and conversation. The card says
 // "parked", with no Open (its block is gone); a reply opens it again.
 
+import { Card } from "../ui/card";
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
 import { AskCard, type Ask } from "../ask";
@@ -664,11 +665,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   useEffect(() => void (view && onView?.(view)), [view]);
   if (!view || !c) {
     return (
-      <div class="session-card tone-muted" data-session-card={ses} data-session-state="loading">
-        <div class="session-card-body">
-          <span class="dim">{error ? `This session can't be read: ${error}` : "Reading the session…"}</span>
-        </div>
-      </div>
+      <Card class="session-card" tone="muted" data-session-card={ses} data-session-state="loading">
+        <span class="dim">{error ? `This session can't be read: ${error}` : "Reading the session…"}</span>
+      </Card>
     );
   }
   const quiet = isQuiet(c, now);
@@ -706,9 +705,12 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   // Not once its PR merged (M265): its thread is done.
   const mayTry = view.may && c.role === "thread" && c.tries.length === 0 && c.merged_at === null && c.state !== "failed" && c.state !== "stopped";
   return (
-    <div class={`session-card tone-${tone}${large ? " large" : ""}`} data-session-card={c.session} data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}>
+    <Card
+      class={`session-card${large ? " large" : ""}`}
+      tone={tone}
+      head={
       <Bar
-        class="session-card-bar"
+        sub
         lead={
           <StateChip tone={tone} data-session-label>
             {label}
@@ -732,223 +734,225 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           </time>
         }
       />
-      <div class="session-card-body">
-        <div class="session-card-where">
-          {c.repo && <span data-session-repo>{c.repo}</span>}
-          <span class="session-card-branch" data-session-branch>
-            {c.branch}
+      }
+      data-session-card={c.session}
+      data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}
+    >
+      <div class="session-card-where">
+        {c.repo && <span data-session-repo>{c.repo}</span>}
+        <span class="session-card-branch" data-session-branch>
+          {c.branch}
+        </span>
+        {c.work && <SessionWorkChip card={c} />}
+        {c.workspace_name && <span class="dim">on {c.workspace_name}</span>}
+        {c.harness !== "claude" || (c.ran && c.ran !== "claude") ? (
+          <span class="dim" data-session-harness>
+            · {harnessLabel(c.harness, c.ran)}
           </span>
-          {c.work && <SessionWorkChip card={c} />}
-          {c.workspace_name && <span class="dim">on {c.workspace_name}</span>}
-          {c.harness !== "claude" || (c.ran && c.ran !== "claude") ? (
-            <span class="dim" data-session-harness>
-              · {harnessLabel(c.harness, c.ran)}
-            </span>
-          ) : null}
-          {modelLabel(c) && (
-            <span
-              class="dim"
-              data-session-model
-              title={c.model ? (c.model_asked ? `Asked for ${c.model_asked}; its agent runs on ${c.model}` : `Its agent runs on ${c.model}`) : `Asked for ${c.model_asked}`}
-            >
-              · {modelLabel(c)}
-            </span>
-          )}
-        </div>
-        {c.parent_session && (
-          <p class="session-card-line dim" data-session-parent>
-            {review ? "A read-only review of what " : "One of three tries of "}
-            {parentPage ? <a href={parentPage}>{parentShort}</a> : parentShort}
-            {review ? " pushed: it pushes nothing, and its review is posted in the thread." : c.picked === c.session ? ": kept." : "."}
-          </p>
-        )}
-        {quiet || c.state === "unresponsive" ? (
-          <p class="session-card-line bad" data-session-quiet>
-            Its box hasn't said anything for {elapsed(now - (c.heard_at ?? c.updated_at))}: it may be down. It picks up where it was when it's back.
-          </p>
-        ) : c.state === "working" && c.last_tool ? (
-          <p class="session-card-line" data-session-tool>
-            Running <code>{c.last_tool}</code>
-          </p>
-        ) : c.state === "queued" ? (
-          <p class="session-card-line dim">Waiting for its box to take it.</p>
-        ) : parked ? (
-          <p class="session-card-line dim" data-session-parked>
-            Idle a while, so its agent was closed. Its work and conversation are kept: a reply opens it again.
-          </p>
         ) : null}
-        <MergedLine c={c} />
-        {c.last_error && (
-          <p class="session-card-line bad" data-session-error>
-            {c.last_error}
-          </p>
+        {modelLabel(c) && (
+          <span
+            class="dim"
+            data-session-model
+            title={c.model ? (c.model_asked ? `Asked for ${c.model_asked}; its agent runs on ${c.model}` : `Its agent runs on ${c.model}`) : `Asked for ${c.model_asked}`}
+          >
+            · {modelLabel(c)}
+          </span>
         )}
-        {reasonLine(c) && (
-          <p class={c.state === "queued" ? "session-card-line dim" : "session-card-line bad"} data-session-reason>
-            {reasonLine(c)}
-          </p>
-        )}
-        {idle && (
-          <p class="session-card-line dim" data-session-idle>
-            {idle[0].toUpperCase() + idle.slice(1)}.
-          </p>
-        )}
-        {c.needs_person ? (
-          <p class="session-card-line bad" data-session-ci="needs-person">
-            CI failed again after {c.ci_max} rounds: needs a person. Reply in the thread to take it on.
-          </p>
-        ) : c.ci_rounds > 0 ? (
-          <p class="session-card-line dim" data-session-ci={String(c.ci_rounds)}>
-            CI round {c.ci_rounds} of {c.ci_max}
-          </p>
-        ) : null}
-        {c.turn && (
-          <div class="session-card-turn" data-session-turn>
-            <span class={c.turn.pushed ? "ok" : "dim"}>{review ? "Read only" : c.turn.pushed ? "Pushed" : "Not pushed"}</span>
-            <span class="dim">
-              {" "}
-              · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
-              {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
-            </span>
-            {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
-            {c.turn.finish &&
-              (c.turn.finish.ok ? (
-                <p class="session-card-finish" data-session-finish="ok">
-                  finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
-                </p>
-              ) : (
-                <div class="session-card-finish" data-session-finish="failed">
-                  <p class="bad">
-                    finish failed: <code>{c.turn.finish.command}</code>
-                    {fixing && <span class="dim"> · the agent is fixing it</span>}
-                  </p>
-                  {c.turn.finish.output_tail && <pre data-session-finish-output>{lastLines(c.turn.finish.output_tail)}</pre>}
-                </div>
-              ))}
-          </div>
-        )}
-        <SessionAskForm c={c} may={view.may} busy={busy} act={(a) => void act("actions", a)} />
-        {c.cancelling && <p class="session-card-line dim">Cancelling the turn: waiting for its box.</p>}
-        {said && (
-          <p class="session-card-line bad" role="alert" data-session-said>
-            {said}
-          </p>
-        )}
-        {c.tries.length > 0 && c.role === "thread" && <TriesView c={c} may={view.may} busy={busy} pick={(ses) => void act("pick", { session: ses })} />}
-        {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
-        <div class="session-card-buttons">
-          {c.machine && block && !parked && (
-            <button
-              type="button"
-              class="secondary small"
-              title={
-                onControl
-                  ? `Its agent block, live on its box, on your machines (${onControl}). A browser is approved there once before it reaches them.`
-                  : "Its agent block, live on its box"
-              }
-              data-session-open
-              onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
-            >
-              {onControl ? "Open on your machines ↗" : "Open ↗"}
-            </button>
-          )}
-          {c.machine && port && (
-            <button
-              type="button"
-              class="secondary small"
-              title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on your machines`}
-              data-session-preview
-              onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
-            >
-              Preview ↗
-            </button>
-          )}
-          {review ? null : <DiffLink c={c} />}
-          {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
-            <a class="secondary small" href={c.pr} target="_blank" rel="noopener" data-session-pr>
-              PR ↗
-            </a>
-          ) : c.pushed && view.asked ? (
-            <button
-              type="button"
-              class="secondary small"
-              aria-pressed={drafting}
-              title={failed ? "Draft its PR, then send it as you: it has what was pushed, not the last turn, whose finish step failed" : "Draft its PR, then send it as you"}
-              data-session-pr
-              onClick={() => setDrafting((d) => !d)}
-            >
-              PR…
-            </button>
-          ) : (
-            <button
-              type="button"
-              class="secondary small"
-              disabled
-              title={
-                c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : failed ? "PR after its finish step passes and a turn pushes its branch" : "PR after a turn pushes its branch"
-              }
-              data-session-pr
-            >
-              PR
-            </button>
-          )}
-          {mayTry && (
-            <span class="session-try3" data-session-try3>
-              <button
-                type="button"
-                class="secondary small"
-                disabled={busy}
-                title="Run it two more ways at once, each in a slot of its own on its box, re-running its first prompt; then keep the one you like"
-                data-session-try-go
-                onClick={() => void act("try", { harnesses: ["claude", tryWith] })}
-              >
-                Try 3
-              </button>
-              <select class="field small" aria-label="The two more" title="The agents the two more run on" value={tryWith} disabled={busy} onChange={(e) => setTryWith(e.currentTarget.value)} data-session-try-with>
-                <option value="codex">+ Claude, Codex</option>
-                <option value="claude">+ Claude ×2</option>
-              </select>
-            </span>
-          )}
-          {c.moves.length > 0 && (c.state === "queued" || c.state === "done") && (
-            <select
-              class="field small"
-              aria-label="Move to…"
-              title="Move it to another of the project's workspaces with its repo: its next turn starts there, from the thread"
-              value=""
-              disabled={busy}
-              data-session-move
-              onChange={(e) => {
-                const workspace = e.currentTarget.value;
-                if (workspace) void act("move", { workspace });
-              }}
-            >
-              <option value="">Move to…</option>
-              {c.moves.map((p) => (
-                <option key={p.workspace} value={p.workspace}>
-                  {p.name}
-                  {p.awake ? "" : " (asleep)"}
-                  {p.busy ? ` · ${p.busy} going` : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          <span class="session-card-fill" />
-          {view.may && (c.state === "working" || c.state === "needs_input") && !c.cancelling && (
-            <button type="button" class="secondary small" disabled={busy} title="Cancel the turn under way: the session goes on" data-session-cancel onClick={() => void act("actions", { kind: "cancel" })}>
-              Cancel turn
-            </button>
-          )}
-          {view.may && c.state !== "failed" && c.state !== "stopped" && (
-            <button type="button" class="secondary small danger" disabled={busy} title="Stop the session: its box stops the agent" data-session-stop onClick={() => void act("stop")}>
-              Stop
-            </button>
-          )}
-        </div>
-        <div class="session-card-foot dim" data-session-started-by={c.started_by ? "" : undefined}>
-          {c.started_by ? `Started by ${c.started_by}` : `Asked by ${c.asker_name || "someone who left"}`}
-        </div>
       </div>
-    </div>
+      {c.parent_session && (
+        <p class="session-card-line dim" data-session-parent>
+          {review ? "A read-only review of what " : "One of three tries of "}
+          {parentPage ? <a href={parentPage}>{parentShort}</a> : parentShort}
+          {review ? " pushed: it pushes nothing, and its review is posted in the thread." : c.picked === c.session ? ": kept." : "."}
+        </p>
+      )}
+      {quiet || c.state === "unresponsive" ? (
+        <p class="session-card-line bad" data-session-quiet>
+          Its box hasn't said anything for {elapsed(now - (c.heard_at ?? c.updated_at))}: it may be down. It picks up where it was when it's back.
+        </p>
+      ) : c.state === "working" && c.last_tool ? (
+        <p class="session-card-line" data-session-tool>
+          Running <code>{c.last_tool}</code>
+        </p>
+      ) : c.state === "queued" ? (
+        <p class="session-card-line dim">Waiting for its box to take it.</p>
+      ) : parked ? (
+        <p class="session-card-line dim" data-session-parked>
+          Idle a while, so its agent was closed. Its work and conversation are kept: a reply opens it again.
+        </p>
+      ) : null}
+      <MergedLine c={c} />
+      {c.last_error && (
+        <p class="session-card-line bad" data-session-error>
+          {c.last_error}
+        </p>
+      )}
+      {reasonLine(c) && (
+        <p class={c.state === "queued" ? "session-card-line dim" : "session-card-line bad"} data-session-reason>
+          {reasonLine(c)}
+        </p>
+      )}
+      {idle && (
+        <p class="session-card-line dim" data-session-idle>
+          {idle[0].toUpperCase() + idle.slice(1)}.
+        </p>
+      )}
+      {c.needs_person ? (
+        <p class="session-card-line bad" data-session-ci="needs-person">
+          CI failed again after {c.ci_max} rounds: needs a person. Reply in the thread to take it on.
+        </p>
+      ) : c.ci_rounds > 0 ? (
+        <p class="session-card-line dim" data-session-ci={String(c.ci_rounds)}>
+          CI round {c.ci_rounds} of {c.ci_max}
+        </p>
+      ) : null}
+      {c.turn && (
+        <div class="session-card-turn" data-session-turn>
+          <span class={c.turn.pushed ? "ok" : "dim"}>{review ? "Read only" : c.turn.pushed ? "Pushed" : "Not pushed"}</span>
+          <span class="dim">
+            {" "}
+            · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
+            {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
+          </span>
+          {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
+          {c.turn.finish &&
+            (c.turn.finish.ok ? (
+              <p class="session-card-finish" data-session-finish="ok">
+                finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
+              </p>
+            ) : (
+              <div class="session-card-finish" data-session-finish="failed">
+                <p class="bad">
+                  finish failed: <code>{c.turn.finish.command}</code>
+                  {fixing && <span class="dim"> · the agent is fixing it</span>}
+                </p>
+                {c.turn.finish.output_tail && <pre data-session-finish-output>{lastLines(c.turn.finish.output_tail)}</pre>}
+              </div>
+            ))}
+        </div>
+      )}
+      <SessionAskForm c={c} may={view.may} busy={busy} act={(a) => void act("actions", a)} />
+      {c.cancelling && <p class="session-card-line dim">Cancelling the turn: waiting for its box.</p>}
+      {said && (
+        <p class="session-card-line bad" role="alert" data-session-said>
+          {said}
+        </p>
+      )}
+      {c.tries.length > 0 && c.role === "thread" && <TriesView c={c} may={view.may} busy={busy} pick={(ses) => void act("pick", { session: ses })} />}
+      {drafting && !c.pr && <PrEditor ses={c.session} onClose={() => setDrafting(false)} />}
+      <div class="session-card-buttons">
+        {c.machine && block && !parked && (
+          <button
+            type="button"
+            class="secondary small"
+            title={
+              onControl
+                ? `Its agent block, live on its box, on your machines (${onControl}). A browser is approved there once before it reaches them.`
+                : "Its agent block, live on its box"
+            }
+            data-session-open
+            onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
+          >
+            {onControl ? "Open on your machines ↗" : "Open ↗"}
+          </button>
+        )}
+        {c.machine && port && (
+          <button
+            type="button"
+            class="secondary small"
+            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on your machines`}
+            data-session-preview
+            onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
+          >
+            Preview ↗
+          </button>
+        )}
+        {review ? null : <DiffLink c={c} />}
+        {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
+          <a class="secondary small" href={c.pr} target="_blank" rel="noopener" data-session-pr>
+            PR ↗
+          </a>
+        ) : c.pushed && view.asked ? (
+          <button
+            type="button"
+            class="secondary small"
+            aria-pressed={drafting}
+            title={failed ? "Draft its PR, then send it as you: it has what was pushed, not the last turn, whose finish step failed" : "Draft its PR, then send it as you"}
+            data-session-pr
+            onClick={() => setDrafting((d) => !d)}
+          >
+            PR…
+          </button>
+        ) : (
+          <button
+            type="button"
+            class="secondary small"
+            disabled
+            title={
+              c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : failed ? "PR after its finish step passes and a turn pushes its branch" : "PR after a turn pushes its branch"
+            }
+            data-session-pr
+          >
+            PR
+          </button>
+        )}
+        {mayTry && (
+          <span class="session-try3" data-session-try3>
+            <button
+              type="button"
+              class="secondary small"
+              disabled={busy}
+              title="Run it two more ways at once, each in a slot of its own on its box, re-running its first prompt; then keep the one you like"
+              data-session-try-go
+              onClick={() => void act("try", { harnesses: ["claude", tryWith] })}
+            >
+              Try 3
+            </button>
+            <select class="field small" aria-label="The two more" title="The agents the two more run on" value={tryWith} disabled={busy} onChange={(e) => setTryWith(e.currentTarget.value)} data-session-try-with>
+              <option value="codex">+ Claude, Codex</option>
+              <option value="claude">+ Claude ×2</option>
+            </select>
+          </span>
+        )}
+        {c.moves.length > 0 && (c.state === "queued" || c.state === "done") && (
+          <select
+            class="field small"
+            aria-label="Move to…"
+            title="Move it to another of the project's workspaces with its repo: its next turn starts there, from the thread"
+            value=""
+            disabled={busy}
+            data-session-move
+            onChange={(e) => {
+              const workspace = e.currentTarget.value;
+              if (workspace) void act("move", { workspace });
+            }}
+          >
+            <option value="">Move to…</option>
+            {c.moves.map((p) => (
+              <option key={p.workspace} value={p.workspace}>
+                {p.name}
+                {p.awake ? "" : " (asleep)"}
+                {p.busy ? ` · ${p.busy} going` : ""}
+              </option>
+            ))}
+          </select>
+        )}
+        <span class="session-card-fill" />
+        {view.may && (c.state === "working" || c.state === "needs_input") && !c.cancelling && (
+          <button type="button" class="secondary small" disabled={busy} title="Cancel the turn under way: the session goes on" data-session-cancel onClick={() => void act("actions", { kind: "cancel" })}>
+            Cancel turn
+          </button>
+        )}
+        {view.may && c.state !== "failed" && c.state !== "stopped" && (
+          <button type="button" class="secondary small danger" disabled={busy} title="Stop the session: its box stops the agent" data-session-stop onClick={() => void act("stop")}>
+            Stop
+          </button>
+        )}
+      </div>
+      <div class="session-card-foot dim" data-session-started-by={c.started_by ? "" : undefined}>
+        {c.started_by ? `Started by ${c.started_by}` : `Asked by ${c.asker_name || "someone who left"}`}
+      </div>
+    </Card>
   );
 }

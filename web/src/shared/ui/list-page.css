@@ -158,6 +158,7 @@ button.list-count:hover {
 }
 
 .list-rows {
+  padding-top: 6px;
   outline: 0;
 }
 
@@ -205,63 +206,20 @@ button.list-count:hover {
   letter-spacing: 0;
 }
 
-/* The row. A bar only where it differs from its neighbours. */
-.list-row,
-.list-item {
-  --c: transparent;
-  position: relative;
-  padding: var(--space-2) var(--space-5);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+/* The row is a Card (shared/ui/card.css): a small box, its tone's bar, hover
+   and selection the card's. A Doc's is a dense one, on one line. */
+.list-row.card {
+  display: grid;
+  gap: 2px 14px;
+  margin: 0 var(--space-5) 6px;
 }
 
 .list-row {
-  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 14px;
   cursor: pointer;
   scroll-margin-top: 32px;
 }
 
-.list-row::before,
-.list-item::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
-}
-
-.list-row.live,
-.list-item.live {
-  --c: var(--accent);
-}
-
-.list-row.warn,
-.list-item.warn {
-  --c: var(--warn);
-}
-
-.list-row.bad,
-.list-item.bad {
-  --c: var(--danger);
-}
-
-.list-row:hover {
-  background: color-mix(in srgb, var(--raised) 45%, transparent);
-}
-
-.list-row[aria-selected="true"] {
-  background: var(--selected);
-  box-shadow: var(--selected-edge);
-}
-
-/* Selection owns the bar, whatever the row's tone; the tone comes back off it. */
-.list-row[aria-selected="true"]::before {
-  background: var(--accent);
-}
 .list-rows:focus-visible .list-row[aria-selected="true"] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -311,13 +269,14 @@ button.list-count:hover {
   white-space: nowrap;
 }
 
-/* A section's row: the same look, with its buttons at the right, or under
+/* A section's row, a Card too: with its buttons at the right, or under
    it when the pane is too narrow for both. */
-.list-item {
-  display: flex;
+.list-item.card {
+  flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
+  margin: 0 var(--space-5) 6px;
 }
 
 .list-item-text {

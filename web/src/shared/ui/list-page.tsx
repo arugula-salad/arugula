@@ -16,6 +16,7 @@
 // never the window's width: a page can be narrow on a wide screen. Too narrow
 // for both, the list stands alone and a row opens its preview in its place.
 
+import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
@@ -32,6 +33,9 @@ const HOVER_MS = 140;
 const KEYS_HOLD_MS = 400;
 
 export type ListTone = "live" | "bad" | "warn";
+
+/** The card tone a row's takes. */
+const ROW_TONES = { live: "accent", bad: "danger", warn: "warn" } as const;
 
 /** One count over the list. With `key`, it's a filter. */
 export interface ListCount {
@@ -64,6 +68,8 @@ export function ListCounts({ counts, on, pick }: { counts: ListCount[]; on: stri
 /** What a row says, in the places every list's row says it. */
 export interface ListRowParts {
   tone?: ListTone;
+  /** One line, as a Doc's row is: a small box with no second line. */
+  dense?: boolean;
   title: ComponentChildren;
   /** Beside the title: only what's unusual about it. */
   tags?: ComponentChildren;
@@ -283,12 +289,14 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     const key = keyOf(item);
     const r = row(item);
     return (
-      <div
+      <Card
         key={key}
         id={rowId(key)}
         role="option"
         aria-selected={key === selectedKey}
-        class={r.tone ? `list-row ${r.tone}` : "list-row"}
+        class="list-row"
+        tone={r.tone && ROW_TONES[r.tone]}
+        dense={r.dense}
         {...r.attrs}
         onClick={() => {
           setPicked(key);
@@ -305,7 +313,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         <span class="list-row-age">{r.age}</span>
         <div class="list-row-detail">{r.detail}</div>
         <span class="list-row-mark">{r.mark}</span>
-      </div>
+      </Card>
     );
   };
 
@@ -481,17 +489,17 @@ export function ListSection({ title, n, children, ...attrs }: { title: string; n
   );
 }
 
-/** A row of a `ListSection`: it looks like the list's, and it isn't a target,
+/** A row of a `ListSection`: a card like the list's, and it isn't a target,
  * so it can hold buttons. */
 export function ListItem({ tone, title, detail, actions, children, ...attrs }: { tone?: ListTone; title: ComponentChildren; detail?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
-    <div class={tone ? `list-item ${tone}` : "list-item"} {...attrs}>
+    <Card class="list-item" tone={tone && ROW_TONES[tone]} {...attrs}>
       <div class="list-item-text">
         <div class="list-item-title">{title}</div>
         {detail && <div class="list-item-detail">{detail}</div>}
         {children}
       </div>
       {actions && <div class="list-item-actions">{actions}</div>}
-    </div>
+    </Card>
   );
 }

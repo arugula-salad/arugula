@@ -63,9 +63,76 @@
   --ar-radius-sm: 6px;
   --ar-radius: 8px;
   --ar-radius-lg: 10px;
+  /* A card's sizes (style.css's --card-pad, --card-pad-dense, --card-gap and
+     --card-bar), and its corners, the app's --card-radius. */
+  --ar-card-pad: 10px 12px;
+  --ar-card-pad-dense: 6px 12px;
+  --ar-card-gap: 10px;
+  --ar-card-bar: 3px;
+  --ar-card-radius: var(--ar-radius);
   --ar-shadow: 0 12px 40px light-dark(rgb(0 0 0 / 0.21), rgb(0 0 0 / 0.6));
   --ar-backdrop: rgb(0 0 0 / 0.4);
 }
+
+/* A card (#698): the app's Card (shared/ui/card.css). A plain one is the
+   surface with a 1px edge, and hover lifts the edge. ar-card-tone with a
+   tone (accent, ok, warn, danger, info, teal, muted) adds a 3px bar and an
+   edge and fill from the tone: on a dark palette 45% and 7% of it, on a
+   light one the tone's hue at a light card's lightness (style.css's
+   --card-edge and --card-tint). ar-card-dense is one line. A grid of cards
+   is a grid with gap var(--ar-card-gap). */
+.ar-card {
+  --c: var(--ar-faint);
+  --ct: var(--ar-subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--ar-card-pad);
+  border: 1px solid var(--ar-border);
+  border-radius: var(--ar-card-radius);
+  background: var(--ar-surface);
+  color: var(--ar-text);
+  font: var(--ar-text-md)/1.35 var(--ar-font);
+}
+.ar-card:is(:hover, :focus-visible, :focus-within) { border-color: var(--ar-muted); }
+.ar-card-tone {
+  --ar-card-edge: light-dark(oklch(from var(--c) 0.8 min(calc(c * 0.7), 0.1) h), color-mix(in srgb, var(--c) 45%, var(--ar-border)));
+  --ar-card-tint: light-dark(oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h), color-mix(in srgb, var(--c) 7%, var(--ar-surface)));
+  padding-left: 14px;
+  border-color: var(--ar-card-edge);
+  background: var(--ar-card-tint);
+}
+.ar-card-tone::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: var(--ar-card-bar);
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+.ar-card-tone:is(:hover, :focus-visible, :focus-within) { border-color: color-mix(in srgb, var(--c) 80%, var(--ar-border)); }
+.ar-card-accent { --c: var(--ar-accent); --ct: var(--ar-accent); }
+.ar-card-ok { --c: var(--ar-ok); --ct: var(--ar-ok); }
+.ar-card-warn { --c: var(--ar-warn); --ct: var(--ar-warn); }
+.ar-card-danger { --c: var(--ar-danger); --ct: var(--ar-danger); }
+.ar-card-info { --c: var(--ar-info); --ct: var(--ar-info); }
+.ar-card-teal { --c: var(--ar-teal); --ct: var(--ar-teal); }
+.ar-card-muted { --c: var(--ar-faint); --ct: var(--ar-subtle); }
+.ar-card-dense {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--ar-space-2);
+  min-height: 32px;
+  padding: var(--ar-card-pad-dense);
+  border-radius: var(--ar-radius-sm);
+  white-space: nowrap;
+}
+.ar-card-dense.ar-card-tone { padding-left: 14px; }
 
 .ar-btn {
   box-sizing: border-box;

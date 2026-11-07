@@ -22,6 +22,7 @@ import { platformFetch, refusalOf } from "../maintenance";
 import type { ChatAsk, ChatMessage, ChatRoom, SessionAct, SessionView } from "../proto";
 import { Bar, BarWhere } from "../ui/bar";
 import { StateChip } from "../ui/state-chip";
+import { Card } from "../ui/card";
 import { ChoiceForm, SessionAskForm, useSession } from "./session-card";
 
 const enc = encodeURIComponent;
@@ -98,32 +99,37 @@ function RepoAsk({ room, m }: { room: ChatRoom; m: ChatMessage }) {
   }
   const who = a?.asker_name || "its asker";
   return (
-    <div class="session-card tone-warn session-ask" data-ask={m.seq} data-ask-state="open">
-      <Bar
-        class="session-card-bar"
-        lead={
-          <StateChip tone="warn" data-ask-label>
-            {a?.mine ? "asks you" : `asks ${who}`}
-          </StateChip>
-        }
-        where={<BarWhere>@arugula · which repo</BarWhere>}
-      />
-      <div class="session-card-body">
-        {a?.mine ? (
-          <ChoiceForm question={bare(a.question)} choices={a.choices} words={false} busy={busy} answer={(c) => void answer(c)} />
-        ) : (
-          <>
-            <p class="session-card-line session-ask-question">{bare(m.text)}</p>
-            <p class="dim">{a ? `Waiting for ${who} to choose.` : "Reading it…"}</p>
-          </>
-        )}
-        {said && (
-          <p class="session-card-line bad" role="alert" data-ask-said>
-            {said}
-          </p>
-        )}
-      </div>
-    </div>
+    <Card
+      class="session-card session-ask"
+      tone="warn"
+      head={
+        <Bar
+          sub
+          lead={
+            <StateChip tone="warn" data-ask-label>
+              {a?.mine ? "asks you" : `asks ${who}`}
+            </StateChip>
+          }
+          where={<BarWhere>@arugula · which repo</BarWhere>}
+        />
+      }
+      data-ask={m.seq}
+      data-ask-state="open"
+    >
+      {a?.mine ? (
+        <ChoiceForm question={bare(a.question)} choices={a.choices} words={false} busy={busy} answer={(c) => void answer(c)} />
+      ) : (
+        <>
+          <p class="session-card-line session-ask-question">{bare(m.text)}</p>
+          <p class="dim">{a ? `Waiting for ${who} to choose.` : "Reading it…"}</p>
+        </>
+      )}
+      {said && (
+        <p class="session-card-line bad" role="alert" data-ask-said>
+          {said}
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -162,28 +168,34 @@ function SessionAsk({ ses, m }: { ses: string; m: ChatMessage }) {
   };
   const permission = c.open?.ask === "permission";
   return (
-    <div class="session-card tone-warn session-ask" data-ask={m.seq} data-ask-state="open" data-ask-session={ses}>
-      <Bar
-        class="session-card-bar"
-        lead={
-          <StateChip tone="warn" data-ask-label>
-            {view.asked ? "asks you" : `asks ${c.asker_name || "its asker"}`}
-          </StateChip>
-        }
-        where={
-          <BarWhere>
-            @arugula · {permission ? "permission" : "question"} · {ses.replace(/^ses_/, "").slice(0, 8)}
-          </BarWhere>
-        }
-      />
-      <div class="session-card-body">
-        <SessionAskForm c={c} may={view.may} busy={busy} act={(a) => void act(a)} />
-        {said && (
-          <p class="session-card-line bad" role="alert" data-ask-said>
-            {said}
-          </p>
-        )}
-      </div>
-    </div>
+    <Card
+      class="session-card session-ask"
+      tone="warn"
+      head={
+        <Bar
+          sub
+          lead={
+            <StateChip tone="warn" data-ask-label>
+              {view.asked ? "asks you" : `asks ${c.asker_name || "its asker"}`}
+            </StateChip>
+          }
+          where={
+            <BarWhere>
+              @arugula · {permission ? "permission" : "question"} · {ses.replace(/^ses_/, "").slice(0, 8)}
+            </BarWhere>
+          }
+        />
+      }
+      data-ask={m.seq}
+      data-ask-state="open"
+      data-ask-session={ses}
+    >
+      <SessionAskForm c={c} may={view.may} busy={busy} act={(a) => void act(a)} />
+      {said && (
+        <p class="session-card-line bad" role="alert" data-ask-said>
+          {said}
+        </p>
+      )}
+    </Card>
   );
 }

@@ -2,23 +2,29 @@
    drawn only when it has something to say. Colour is the one scale: ok
    green, warn yellow, danger red, merged purple, muted grey. */
 
+/* The frame is a Card's (shared/ui/card.css): its edge, radius and surface,
+   a head (.item-head) and a body of sections. The sections keep a hairline
+   between them. */
 .item-block {
   --item-pad: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  background: var(--surface);
   color: var(--fg);
   font-size: var(--text-md);
 }
 
-.item-block > * {
+.item-block > .card-body {
+  gap: 0;
+  padding: 0;
+}
+
+.item-block > .card-body:not(:empty) {
+  border-top: 1px solid var(--line);
+}
+
+.item-block .card-body > * {
   padding: var(--space-2) var(--item-pad);
 }
 
-.item-block > * + * {
+.item-block .card-body > * + * {
   border-top: 1px solid var(--line);
 }
 
@@ -26,11 +32,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) var(--item-pad);
   background: var(--raised);
-}
-
-.item-block > .item-head {
-  border-radius: var(--btn-radius) var(--btn-radius) 0 0;
 }
 
 .item-kind {
@@ -115,7 +118,7 @@
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
-.item-block > .item-next {
+.item-block .card-body > .item-next {
   border-top-color: var(--c);
 }
 
