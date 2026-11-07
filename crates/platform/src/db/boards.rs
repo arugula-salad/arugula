@@ -1296,7 +1296,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT DISTINCT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                "SELECT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
                  WHERE e.kind = 'row' AND e.target_kind IN ('issue', 'forge_item') AND b.project_id = ?2
                    AND {}
                  ORDER BY b.closed_at IS NOT NULL, b.created_at, b.id",
