@@ -70,6 +70,8 @@ test("Alice links a project Doc to the board's strip, opens it, and takes it off
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { colorScheme: "dark", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await bob.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await bob.goto(link);
   await bob.locator("[data-accept-invite]").click();
   await alice.evaluate(() => window.__arugula.control!.refresh());

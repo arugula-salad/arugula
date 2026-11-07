@@ -48,6 +48,8 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
   await t.start(["--platform-host", "app.localhost"]);
   const app = t.base.replace("//127.0.0.1", "//app.localhost");
   const alice = await t.person(browser, "alice");
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await alice.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
