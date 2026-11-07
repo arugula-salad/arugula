@@ -189,7 +189,13 @@ every 15 minutes. It's generated: after changing `ci.green` or those
 workflows' job names, run the command its first line names (it also
 writes check.yml's and windows*.yml's triggers and concurrency). Its
 `--install` step gives git an author, without which the tick can't write
-its `_ci` records. A check run is matched by name, so no other workflow
+its `_ci` records. With `ci.green.notify` (native #774) the tick also
+posts `ci.red`, `ci.culprit`, `ci.stale` (after 6 hours with no green
+commit) and `ci.green` to this project's CI alerts in Arugula, at
+`ARUGULA_CI_NOTIFY_URL` and signed with `ARUGULA_CI_NOTIFY_KEY` (repository
+secrets, from the project's Settings → CI alerts), which open, comment on
+and close a native issue. A delivery that fails is a warning in the tick's
+output and is sent again by the next tick. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
