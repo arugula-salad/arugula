@@ -42,10 +42,11 @@ pub const MAX_LEDGER_FILE: u64 = 64 * 1024 * 1024;
 /// The most commits a plan may add to chant's ledger: chant makes two.
 pub const MAX_COMMITS: usize = 8;
 /// The chants whose gated stop writes exactly the layout [`PlanLedger::check`]
-/// knows, from their source: 0.124.64 to 0.124.69, inclusive. 0.124.69 changed
+/// knows, from their source: 0.124.64 to 0.124.70, inclusive. 0.124.69 changed
 /// only the bin launcher and input normalization (INTENTIUS/chant#4735,
-/// #4736), nothing a gated stop writes.
-pub const VERIFIED_CHANT: (&str, &str) = ("0.124.64", "0.124.69");
+/// #4736), and 0.124.70 only `ci verdict` and `ci.green.mergeQueue`
+/// (INTENTIUS/chant#4729), nothing a gated stop writes.
+pub const VERIFIED_CHANT: (&str, &str) = ("0.124.64", "0.124.70");
 /// The longest a pending fact may wait, from its time: an op's gate
 /// `timeout` (chant's default 48h).
 const MAX_EXPIRY_MS: u64 = 30 * 24 * 3600 * 1000;
@@ -696,8 +697,8 @@ mod tests {
 
     #[test]
     fn only_verified_chants() {
-        assert!(verified_chant("0.124.64") && verified_chant("0.124.66") && verified_chant("0.124.69"));
-        assert!(!verified_chant("0.124.63") && !verified_chant("0.124.70") && !verified_chant("0.125.0"));
+        assert!(verified_chant("0.124.64") && verified_chant("0.124.69") && verified_chant("0.124.70"));
+        assert!(!verified_chant("0.124.63") && !verified_chant("0.124.71") && !verified_chant("0.125.0"));
         assert!(!verified_chant("0.124") && !verified_chant("0.124.68.1") && !verified_chant("x"));
     }
 
@@ -907,10 +908,10 @@ mod tests {
     fn the_deploys_own_chant_member_and_environment_only() {
         let dir = scratch("own", true);
         chants(&dir);
-        let newer = Gate { chant: "0.124.70".into(), ..gate() };
+        let newer = Gate { chant: "0.124.71".into(), ..gate() };
         let why = checked(&dir, "newer", &newer, |w| w).2.unwrap_err();
         assert!(
-            why.starts_with("this chant isn't supported for planning yet") && why.contains("0.124.64 to 0.124.69"),
+            why.starts_with("this chant isn't supported for planning yet") && why.contains("0.124.64 to 0.124.70"),
             "{why}"
         );
         let resumes = Gate { checkpoint: Some(format!("jcs1-sha256:{}", "c".repeat(64))), ..gate() };

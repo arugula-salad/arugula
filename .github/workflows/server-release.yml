@@ -94,7 +94,7 @@ jobs:
               echo "::notice::$GITHUB_REF_NAME's commit isn't green on the server lane: releasing the lane's newest green commit"
             fi
           fi
-          [ -n "$c" ] || c=$(npx --yes @intentius/chant@0.124.69 ci last-green --lane server)
+          [ -n "$c" ] || c=$(npx --yes @intentius/chant@0.124.70 ci last-green --lane server)
           [[ $c =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$c isn't a full commit sha"; exit 1; }
           git checkout -q --detach "$c"
           [ -f ops/chant.config.ts ] || { echo "::error::$c has no ops/ member: it predates releasing control through chant (#1983)"; exit 1; }

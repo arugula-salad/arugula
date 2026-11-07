@@ -242,16 +242,20 @@ does that instead. A queued pull request is tested as a merge group:
 main, the pull requests queued ahead of it, and it. It merges only if
 the group passes.
 
-check.yml, windows.yml and windows-desktop.yml run on `merge_group`, and `chant
-ci workflow` keeps those triggers (chant#4644). A group runs what
-its diff against main reaches, and that diff holds whatever is queued
-ahead of it (`scripts/changed`), so a docs-only pull request behind a code
-one still runs everything. `queue-verdict.yml`'s `chant-verdict` job is the
-group's verdict: it passes once every phase `ci.green` requires passed on the
-group's commit, judged as the tick judges main, and a job that failed gets one
-re-run first (`scripts/queue-verdict`), so a flake doesn't throw a pull request
-out. `ci.green` doesn't set `mergeQueue`, since `chant ci workflow` would write
-chant's own verdict back, which fails at the first red job. On a pull request, binaries.yml's job of the same name stands in for
+`chant.workspace.json` sets `ci.green.mergeQueue` to `{ "retries": 1 }`
+(chant#4644, chant#4729), so `chant ci workflow` keeps `merge_group` on
+check.yml, windows.yml and windows-desktop.yml and writes
+`chant-merge-queue.yml`. A group runs what its diff against main reaches,
+and that diff holds whatever is queued ahead of it (`scripts/changed`), so
+a docs-only pull request behind a code one still runs everything.
+`chant-merge-queue.yml`'s `chant-verdict` job is the group's verdict:
+`chant ci verdict --wait` passes once every phase `ci.green` requires
+passed on the group's commit, judged as the tick judges main. A job that
+failed gets its workflow run re-run once first, so a flake doesn't throw a
+pull request out, and a 5xx, a 429 or a dropped request from GitHub's API
+makes it look again rather than fail. The job has `actions: write` for the
+re-run, and the verdict gives up after 115 minutes, inside the job's 120.
+On a pull request, binaries.yml's job of the same name stands in for
 it, once `binaries` and `quick` have passed. binaries.yml has no
 `merge_group` trigger, because its `chant-verdict`, skipped on a group,
 would count as passed. On a pull request that changes the desktop app,
@@ -280,7 +284,8 @@ on (`ALLGREEN`), so a pull request that really fails leaves at once and the grou
 behind it rebuild. With it off, GitHub kept a failed head in place until every group
 behind it had run and failed too, since each contains it, which stalled the queue
 for 20 minutes on its first night. A flake doesn't need it off:
-`scripts/queue-verdict` re-runs a failed job before the verdict. *Status check timeout* 60 minutes, which leaves room for a re-run. *Require status checks to pass*
+the verdict re-runs a failed job before it decides. *Status check timeout* 120
+minutes, the verdict job's own timeout, which leaves room for a re-run. *Require status checks to pass*
 requires `chant-verdict`, from GitHub Actions. The repository's *Allow
 auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
 requires are still running, which a pull request's own run usually is.
@@ -536,8 +541,8 @@ so the workflows name the release's own tag in `ARUGULA_RELEASE_TAG`, and
 the GitHub release stays `vX.Y.Z` or `app-vX.Y.Z`, where the downloads
 have always been; chant's own tag (`release/daemon-release/vX.Y.Z`) is
 made in the job's checkout and never pushed. The workflows pin chant
-0.124.67, which has lane cuts, the override, the marketplaces' OIDC and the
-tap's SSH key.
+0.124.70; lane cuts, the override, the marketplaces' OIDC and the tap's SSH
+key need 0.124.67 or newer.
 
 Since the publish stages the marketplaces before it reveals anything, a
 store that can't be signed in to (an Entra sign-in that fails, Open VSX no
@@ -560,7 +565,7 @@ The first run's cut is refused and records the request on
 
 ```sh
 git fetch origin chant/lifecycle:chant/lifecycle
-npx @intentius/chant@0.124.69 approve policy-override release-<sha12> \
+npx @intentius/chant@0.124.70 approve policy-override release-<sha12> \
   --rule ci-green-daemon --reason "..." --actor github:lex00   # ci-green-app for the app
 ```
 
@@ -641,8 +646,8 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.69 ci last-green --lane daemon) # the daemon's
-sha=$(npx @intentius/chant@0.124.69 ci last-green --lane app)    # the app's
+sha=$(npx @intentius/chant@0.124.70 ci last-green --lane daemon) # the daemon's
+sha=$(npx @intentius/chant@0.124.70 ci last-green --lane app)    # the app's
 ```
 
 `scripts/release last-green [daemon|app|server]` answers the same from
