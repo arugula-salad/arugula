@@ -217,6 +217,11 @@ test("Bob has it live, mentioned; the chip doesn't open for him", async () => {
   // Activity lists the mention after a reload, though he's read it.
   await platform(bob, "/chat/activity");
   await bob.reload();
+  // A view's head is the same bar (#760): the phone's 44px, one row.
+  const activityHead = bob.locator("[data-chat-activity-view] .chat-head");
+  await expect(activityHead).toBeVisible();
+  expect((await activityHead.boundingBox())!.height).toBe(44);
+  expect(await activityHead.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(bob.locator(`[data-chat-activity-view] [data-hit-room="${general}"]`)).toContainText("the mean test fails", { timeout: 15_000 });
 });
 
@@ -1018,6 +1023,17 @@ test("threads: Alice starts one, Bob answers from his phone, each sees it live; 
   // The reply is the thread's, not the room's; the parent says it has one.
   await expect(room.locator(".thread-msg", { hasText: "not me" })).toHaveCount(0);
   await expect(msg.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+  // The panel's head is a bar (#760): one 34px row, and under 600px Follow
+  // is in ⋯, not in the row.
+  const head = panel.locator(".chat-head");
+  expect((await head.boundingBox())!.width).toBeLessThan(600);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await expect(head.locator("[data-thread-follow]")).toHaveCount(0);
+  await head.locator("[data-hbar-more]").click();
+  await expect(aliceChat.getByRole("menuitem", { name: "Stop following" })).toBeVisible();
+  // (Escape would close the panel too.)
+  await head.locator(".hbar-title").click();
+  await expect(aliceChat.getByRole("menuitem", { name: "Stop following" })).toHaveCount(0);
 
   // Bob, on his phone, finds the footer and opens the thread: the whole screen.
   await platform(bob, "/chat");
@@ -1075,8 +1091,11 @@ test("threads: Alice starts one, Bob answers from his phone, each sees it live; 
 
   // Alice unfollows from the panel; deleting the parent leaves its tombstone
   // with the thread under it.
-  await panel.locator("[data-thread-follow]").click();
-  await expect(panel.locator("[data-thread-follow]")).toHaveText("Follow");
+  await panel.locator("[data-hbar-more]").click();
+  await aliceChat.getByRole("menuitem", { name: "Stop following" }).click();
+  await panel.locator("[data-hbar-more]").click();
+  await expect(aliceChat.getByRole("menuitem", { name: "Follow", exact: true })).toBeVisible();
+  await panel.locator(".hbar-title").click();
   // At this width the panel lies over the room's right side, where ⋯ is.
   await panel.locator("[data-thread-close]").click();
   await msg.hover();

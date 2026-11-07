@@ -13,6 +13,7 @@ import { usePlatformApi } from "../platform-api";
 import { authorLabel } from "./agents";
 import { AuthorAvatar, roomLabel, roomSigil } from "./room";
 import { footer, repliesOf } from "./threads";
+import { ViewHead } from "./find";
 import { iso, when } from "../time";
 import { Count } from "../ui/state-chip";
 
@@ -68,7 +69,6 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
 
 /** Followed threads over every room I read (`GET /api/chat/threads`). */
 export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean }) {
-  const { nav } = usePlatformApi();
   useSubscribe((fn) => store.subscribe(fn));
   useEffect(() => store.threads.watch(), []);
   const list = store.threads.list;
@@ -77,17 +77,12 @@ export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean
   const n = shown.length;
   return (
     <section class="chat-thread chat-view" aria-label="Threads" data-chat-threads-view>
-      <header class="chat-head chat-view-head">
-        {phone && (
-          <button class="chat-back" title="Every room" onClick={() => nav.openChat()}>
-            ‹
-          </button>
-        )}
-        <div class="chat-title">
-          <strong>Threads</strong>
-          <span>{list ? (n ? `${repliesOf(shown.reduce((k, it) => k + (it.parent.thread?.replies ?? 0), 0))} in ${n} ${n === 1 ? "thread" : "threads"} you follow` : "Threads you follow") : "Loading…"}</span>
-        </div>
-      </header>
+      <ViewHead
+        title="Threads"
+        sub={list ? (n ? `${repliesOf(shown.reduce((k, it) => k + (it.parent.thread?.replies ?? 0), 0))} in ${n} ${n === 1 ? "thread" : "threads"} you follow` : "Threads you follow") : "Loading…"}
+        phone={phone}
+        back="Every room"
+      />
       <div class="thread-list">
         {list && n === 0 && (
           <EmptyState title="No threads yet." why="When you reply in a thread, or someone replies to your message, it's here, with what's new in it." />

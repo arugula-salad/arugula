@@ -8843,10 +8843,6 @@ input.chat-search {
   flex-direction: column;
 }
 
-.chat-title strong {
-  font-size: var(--text-lg);
-}
-
 .chat-title-sigil {
   margin-right: 4px;
   color: var(--dim);
@@ -9070,90 +9066,6 @@ input.chat-search {
 .chat-thread .thread-offer {
   margin-left: 8px;
   margin-right: 8px;
-}
-
-/* The room's head and Details' are bars (shared/ui/bar.css, #686); the
-   views' (Activity, Threads, Saved, Search) and a thread's are still this. */
-.chat-head:not(.hbar) {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.chat-head > strong {
-  flex: 1;
-}
-
-.chat-title:not(.hbar-title) {
-  flex: 1;
-  /* The name truncates last: the buttons wrap under it first (below). */
-  min-width: min(8em, 100%);
-  display: flex;
-  flex-direction: column;
-}
-
-/* A room too narrow for its name and its buttons in one row (the Details
-   or a thread panel open beside it, a narrow window or block): the name
-   keeps the first row, the buttons take a row of their own under it, as
-   a phone's do. The room's width, not the window's (UI audit #156). */
-.chat-thread {
-  container: chat-room / inline-size;
-}
-
-.chat-thread > .chat-head:not(.hbar) > :not(.chat-title) {
-  flex: none;
-}
-
-@container chat-room (max-width: 600px) {
-  .chat-head:not(.hbar) {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-
-  .chat-head:not(.hbar) .chat-title {
-    flex: 1 1 100%;
-  }
-
-  /* Less the back button and the gap: a finger's 40px (UI audit #199). */
-  .chat-head:not(.hbar) .chat-back + .chat-title {
-    flex-basis: calc(100% - 56px);
-  }
-
-  .chat-head:not(.hbar) .chat-title + * {
-    margin-left: auto;
-  }
-}
-
-/* A phone's room header has more buttons than width (pins, about, star,
-   move, bell, leave): the back button and the room's name keep the first
-   row, and the buttons wrap onto a row of their own under it. */
-.chat.phone .chat-head:not(.hbar) {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.chat.phone .chat-head:not(.hbar) .chat-title {
-  flex: 1 1 calc(100% - 56px);
-}
-
-.chat.phone .chat-head:not(.hbar) > :not(.chat-back):not(.chat-title):first-of-type,
-.chat.phone .chat-head:not(.hbar) .chat-title + * {
-  margin-left: auto;
-}
-
-.chat-title strong,
-.chat-title span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-title:not(.hbar-title) span {
-  color: var(--dim);
-  font-size: var(--text-sm);
 }
 
 .chat-go {

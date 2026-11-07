@@ -13,6 +13,7 @@ import { useSubscribe } from "../ui/hooks";
 import { RoomCompose, RoomMessage, roomLabel, threadComposeRef, useRoomTokens } from "./room";
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
+import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { useStickToBottom } from "./stick";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 
@@ -98,6 +99,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const label = room.kind === "channel" ? `#${room.name}` : roomLabel(room, api);
   const newest = last ?? first?.seq;
   const agents = useThreadAgents(room.id, parent, newest);
+  const follow = () => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message));
   const toNewest = () => list.current?.scrollTo({ top: list.current.scrollHeight });
   return (
     <aside
@@ -111,33 +113,47 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         close();
       }}
     >
-      <header class="chat-head">
-        {phone && (
-          <button class="chat-back" title={`Back to ${label}`} aria-label={`Back to ${label}`} data-thread-back onClick={close}>
-            ‹
-          </button>
-        )}
-        <div class="chat-title">
-          <strong>Thread</strong>
-          <span>{label}</span>
-        </div>
-        {first?.thread && (
-          <button
-            class={following ? "chat-info bar-btn on thread-follow" : "chat-info bar-btn thread-follow"}
-            aria-pressed={following}
-            title={following ? "You follow this thread: you hear its replies. Stop following" : "Follow this thread: hear its replies"}
-            data-thread-follow
-            onClick={() => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message))}
-          >
-            {following ? "Following" : "Follow"}
-          </button>
-        )}
-        {!phone && (
-          <button class="thread-close" title="Close the thread" aria-label="Close the thread" data-thread-close onClick={close}>
-            ✕
-          </button>
-        )}
-      </header>
+      <Bar
+        class="chat-head"
+        lead={
+          phone ? (
+            <button class="chat-back" title={`Back to ${label}`} aria-label={`Back to ${label}`} data-thread-back onClick={close}>
+              ‹
+            </button>
+          ) : undefined
+        }
+        title={<BarTitle class="chat-title">Thread</BarTitle>}
+        where={<BarWhere>{label}</BarWhere>}
+        foldBelow={600}
+        fold={
+          first?.thread
+            ? [
+                {
+                  key: "follow",
+                  node: (
+                    <button
+                      class={following ? "chat-info bar-btn on thread-follow" : "chat-info bar-btn thread-follow"}
+                      aria-pressed={following}
+                      title={following ? "You follow this thread: you hear its replies. Stop following" : "Follow this thread: hear its replies"}
+                      data-thread-follow
+                      onClick={follow}
+                    >
+                      {following ? "Following" : "Follow"}
+                    </button>
+                  ),
+                  item: { label: following ? "Stop following" : "Follow", run: follow },
+                },
+              ]
+            : []
+        }
+        actions={
+          !phone ? (
+            <button class="thread-close" title="Close the thread" aria-label="Close the thread" data-thread-close onClick={close}>
+              ✕
+            </button>
+          ) : undefined
+        }
+      />
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <div class="thread-list thread-replies" ref={list} onScroll={onScroll}>
         {t === undefined && !error && <BlockLoading inline what="the thread" />}

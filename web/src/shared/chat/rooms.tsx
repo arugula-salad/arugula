@@ -426,19 +426,24 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         <MaintenanceNote />
         {view ?? (
           <>
-            <header class="chat-head">
-              {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
-              <strong>{scope?.name ?? "Chat"}</strong>
-              <button class="chat-search-open" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
-                <SearchIcon size={17} />
-              </button>
-              <button class="chat-search-open" title="Mark all as read, sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
-                ⋯
-              </button>
-              <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-                ✕
-              </button>
-            </header>
+            {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
+            <HeadBar
+              class="chat-head"
+              title={<BarTitle class="chat-title">{scope?.name ?? "Chat"}</BarTitle>}
+              actions={
+                <>
+                  <button class="chat-search-open bar-btn sq" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
+                    <SearchIcon size={17} />
+                  </button>
+                  <button class="chat-search-open bar-btn sq" title="Mark all as read, sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
+                    ⋯
+                  </button>
+                  <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
+                    ✕
+                  </button>
+                </>
+              }
+            />
             {list}
           </>
         )}
