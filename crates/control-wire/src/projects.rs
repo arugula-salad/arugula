@@ -804,8 +804,8 @@ impl std::fmt::Debug for CiAlertsKey {
 }
 
 /// What an issue or a comment CI wrote carries as its agent or `via` (native
-/// #774): `ci:` and the event's `source`, such as `ci:chant`. Only the CI
-/// endpoint writes one, always with no author, so it names no person and no
+/// #774): `ci:chant`, whatever the event's `source`. Only the CI endpoint
+/// writes one, always with no author, so it names no person and no
 /// machine's agent.
 pub const CI_VIA: &str = "ci:";
 

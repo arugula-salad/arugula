@@ -168,7 +168,10 @@ fn routes() -> Routes {
         .route("/github/webhook", post(forge::webhook))
         .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
         // CI alerts as native issues (native #774).
-        .route(arugula_control_wire::projects::CI_NOTIFY, post(crate::ci_alerts::notify))
+        .route(
+            arugula_control_wire::projects::CI_NOTIFY,
+            post(crate::ci_alerts::notify).layer(axum::extract::DefaultBodyLimit::max(crate::ci_alerts::BODY_MAX)),
+        )
         .route(
             arugula_control_wire::projects::PROJECT_CI_ALERTS,
             get(crate::ci_alerts::show).patch(crate::ci_alerts::settings),

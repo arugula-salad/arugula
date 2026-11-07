@@ -12,6 +12,7 @@ import type { CiAlerts, CiAlertsKey } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { ago } from "../../shared/time";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { CopyText } from "../../shared/ui/copy";
 import { Section } from "../../shared/ui/settings-section";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
@@ -29,27 +30,6 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const v = (await r.json().catch(() => ({}))) as { error?: string };
   if (!r.ok) throw new Error(v.error ?? `Request failed (${r.status})`);
   return v as T;
-}
-
-/** A value with a Copy button beside it. */
-function Copyable({ value, label, hook }: { value: string; label: string; hook: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () =>
-    void navigator.clipboard.writeText(value).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      },
-      () => {},
-    );
-  return (
-    <span class="plane-hook-url">
-      <code {...{ [hook]: "" }}>{value}</code>
-      <button type="button" class="secondary small" aria-label={`Copy ${label}`} onClick={copy}>
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </span>
-  );
 }
 
 export function CiAlertsSetting({ p }: { p: PlatformProject }) {
@@ -124,11 +104,11 @@ export function CiAlertsSetting({ p }: { p: PlatformProject }) {
       ) : (
         <div class="plane-hook" data-ci-alerts-hook>
           <span class="dim">URL</span>
-          <Copyable value={a.url} label="the CI alerts URL" hook="data-ci-alerts-url" />
+          <CopyText text={a.url} data-ci-alerts-url />
           {key ? (
             <>
               <span class="dim">Key, shown this once: set it as the secret chant reads now.</span>
-              <Copyable value={key} label="the CI alerts key" hook="data-ci-alerts-key" />
+              <CopyText text={key} data-ci-alerts-key />
             </>
           ) : (
             <span class="dim" data-ci-alerts-key-made>

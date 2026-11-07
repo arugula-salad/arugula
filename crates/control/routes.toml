@@ -1188,7 +1188,7 @@ path = "/ci/notify/{project}"  # wire::projects::CI_NOTIFY
 process = "platform"
 auth = "webhook"
 clients = ["chant"]
-note = "chant's CI events for a project (native #774), checked by the platform against the project's own sealed CI alerts key (`x-chant-signature`, HMAC-SHA256 over `<x-chant-timestamp>.<body>`, the timestamp within 5 minutes); a repeated event id is a no-op. They open, comment on and close the project's red-branch issue. The URL is shown in the project's settings and given to chant's tick as a secret."
+note = "chant's CI events for a project (native #774), checked by the platform against the project's own sealed CI alerts key (`x-chant-signature`, HMAC-SHA256 over `<x-chant-timestamp>.<body>`, the timestamp within 5 minutes); an unknown project, alerts off and a bad signature are the same 401. Bodies up to 64 KiB; limited per client address by the hub (`limit::CI_NOTIFY`) and per project by the platform. A repeated event id is a no-op. They open, comment on and close the project's red-branch issue. The URL is shown in the project's settings and given to chant's tick as a secret."
 
 [[route]]
 method = "POST"

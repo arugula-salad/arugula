@@ -507,6 +507,22 @@ impl Db {
     /// same transaction: the issue as it is now, and those events (none
     /// when nothing changed). `None`: there's no such issue.
     pub fn patch_issue(&self, id: &str, p: &Patch, by: Actor, at: u64) -> Result<Option<(Issue, Vec<Event>)>> {
+        self.patch_issue_and(id, p, by, at, |_| Ok(true))
+    }
+
+    /// [`Db::patch_issue`], and `and` in the same transaction when the
+    /// patch changes something: `false` rolls it back, and the answer is
+    /// the issue as it was with no events (as for a patch that changes
+    /// nothing). CI alerts close an issue and note their event in one
+    /// write (`ci_alerts`).
+    pub fn patch_issue_and(
+        &self,
+        id: &str,
+        p: &Patch,
+        by: Actor,
+        at: u64,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>) -> Result<bool>,
+    ) -> Result<Option<(Issue, Vec<Event>)>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let Some(old) = tx
@@ -588,6 +604,9 @@ impl Db {
             .into_iter()
             .map(|(kind, detail)| add_event(&tx, id, kind, by, at, detail))
             .collect::<Result<Vec<_>>>()?;
+        if !and(&tx)? {
+            return Ok(Some((old, vec![])));
+        }
         tx.commit()?;
         Ok(Some((new, events)))
     }

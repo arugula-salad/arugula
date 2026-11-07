@@ -101,6 +101,7 @@ impl PlatformPort for Platform {
                 self.chat.changed();
             }
             billing::sync_seats(self, team).await;
+            crate::ci_alerts::roster_changed(self, team).await;
             Ok(())
         })
     }

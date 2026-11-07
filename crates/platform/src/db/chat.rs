@@ -573,11 +573,26 @@ impl Db {
     /// Append a message: control numbers it, and its author has read it
     /// (unless an agent wrote it: its owner hasn't, M197). Its number.
     pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
+        Ok(self.add_chat_message_and(room, m, |_| Ok(true))?.expect("nothing refuses it"))
+    }
+
+    /// [`Db::add_chat_message`], and `and` in the same transaction: `false`
+    /// rolls it back and the answer is `None` (CI alerts note their event
+    /// with the comment it writes, `ci_alerts`).
+    pub fn add_chat_message_and(
+        &self,
+        room: &str,
+        m: &NewMessage,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>) -> Result<bool>,
+    ) -> Result<Option<i64>> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let seq = add_message_in(&tx, room, m, None)?;
+        if !and(&tx)? {
+            return Ok(None);
+        }
         tx.commit()?;
-        Ok(seq)
+        Ok(Some(seq))
     }
 
     /// A page of a room's messages, oldest first, and whether there are

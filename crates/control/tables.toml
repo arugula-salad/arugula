@@ -1033,7 +1033,7 @@ name = "ci_alerts"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A project with CI alerts on: whether its red issue assigns the people it mentions, who made its key and when, and when its last signed event arrived. The key is sealed in `project_secrets` (`ci_alerts/key`), never here."
+what = "A project's CI alerts, made with their first key: whether they're on (when the key in use was made, and who made it), whether a red issue assigns the people it mentions, and when the last signed event arrived. Turning them off clears the key's time and keeps the rest. The key is sealed in `project_secrets` (`ci_alerts/key`), never here."
 why_asleep = "chant's tick posts its events whether or not any machine is up."
 with_account = "partly"
 note = "A project that went with the account takes its row. Elsewhere the row stays and stops naming the account as who made the key."
@@ -1047,6 +1047,17 @@ holds = "metadata"
 what = "Whom a project's new red issue mentions (and assigns), in order: accounts."
 why_asleep = "They're told when an event arrives, with every machine asleep."
 with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_greens"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each branch's newest green CI alerts were told of in a project: the commit and when chant sent the event. A red, culprit or stale event sent before it changes nothing."
+why_asleep = "Events arrive with every machine asleep, and are put in order by it."
+with_account = "partly"
+note = "A project that went with the account takes its rows; others name no account."
 seen_by = ["litestream"]
 
 [[table]]

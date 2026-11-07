@@ -383,8 +383,9 @@ impl features::Chat for Hooks {
         issue: &'a str,
         via: &'a str,
         text: &'a str,
-    ) -> BoxFuture<'a, anyhow::Result<i64>> {
-        Box::pin(async move { chat::ci_comment(app, issue, via, text) })
+        mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async move { chat::ci_comment(app, issue, via, text, mark) })
     }
 
     fn grant_notice<'a>(
