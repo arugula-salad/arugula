@@ -1,25 +1,32 @@
-// The prototype kit (#699, shared/ui/runner.html): its colors are the
-// palettes' own, and it is opt-in. appearance.ts is read as text, not imported
-// (it reaches for the browser), so the test compares against the file itself.
-// Run with `node --test`.
+// The prototype kit (#699, shared/ui/runner.html): its colors are the ones the
+// page paints, `legible()` of Latte and of Slate (appearance.ts), and it is
+// opt-in. appearance.ts is imported as the page runs it: its imports leave off
+// `.ts`, so a hook adds it. Run with `node --test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
+import { fileURLToPath } from "node:url";
+
+registerHooks({
+  resolve(spec, ctx, next) {
+    if (spec.startsWith(".") && !/\.\w+$/.test(spec) && ctx.parentURL) {
+      const url = new URL(`${spec}.ts`, ctx.parentURL);
+      if (existsSync(fileURLToPath(url))) return { url: url.href, shortCircuit: true };
+    }
+    return next(spec, ctx);
+  },
+});
+const { PALETTES, legible, contrast } = await import("../src/shared/appearance.ts");
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const runner = read("../src/shared/ui/runner.html");
 const kit = runner.match(/<template id="arugula-kit"><style>([\s\S]*?)<\/style><\/template>/)?.[1];
 
-/** A palette's `ui: {...}` colors, by key, from appearance.ts's source. */
-function palette(id) {
-  const src = read("../src/shared/appearance.ts");
-  const at = src.indexOf(`id: "${id}"`);
-  assert.ok(at >= 0, `appearance.ts has no palette ${id}`);
-  const ui = src.slice(at).match(/ui: \{([\s\S]*?)\n    \}/)[1];
-  return Object.fromEntries([...ui.matchAll(/"?([\w-]+)"?: "(#[0-9a-fA-F]{6})"/g)].map((m) => [m[1], m[2]]));
-}
+/** What the page paints for a palette: `apply()` sets exactly `legible(p)`. */
+const painted = (id) => legible(PALETTES.find((p) => p.id === id));
 
-// Each kit color token and the palette key it takes its value from.
+// Each kit color token and the painted key it takes its value from.
 const TOKENS = {
   bg: "bg",
   surface: "surface",
@@ -32,28 +39,72 @@ const TOKENS = {
   border: "raised",
   accent: "accent",
   "on-accent": "on-color",
+  "on-color": "on-color",
   danger: "danger",
   ok: "ok",
   warn: "warn",
+  info: "info",
+  merged: "merged",
+  teal: "teal",
 };
 
-test("each kit color is Latte's in light and Slate's in dark, as appearance.ts has them", () => {
+// The tokens that are not a pair but the app's own mix of the pair above.
+const MIXED = {
+  "line-strong": "color-mix(in srgb, var(--ar-faint) 55%, var(--ar-surface))",
+  "on-fill": "color-mix(in srgb, var(--ar-accent) 18%, transparent)",
+};
+
+test("each kit color is what the page paints: Latte's legible() in light, Slate's in dark", () => {
   assert.ok(kit, "runner.html has the kit's template");
-  const latte = palette("latte");
-  const slate = palette("slate");
+  const latte = painted("latte");
+  const slate = painted("slate");
   for (const [name, key] of Object.entries(TOKENS)) {
     const m = kit.match(new RegExp(`--ar-${name}: light-dark\\((#[0-9a-f]{6}), (#[0-9a-f]{6})\\);`));
     assert.ok(m, `--ar-${name} is declared as light-dark(Latte, Slate)`);
-    assert.equal(m[1], latte[key], `--ar-${name} light is Latte's ${key}`);
-    assert.equal(m[2], slate[key], `--ar-${name} dark is Slate's ${key}`);
+    assert.equal(m[1], latte[key], `--ar-${name} light is Latte's painted ${key}`);
+    assert.equal(m[2], slate[key], `--ar-${name} dark is Slate's painted ${key}`);
+  }
+  for (const [name, value] of Object.entries(MIXED)) {
+    assert.equal(kit.match(new RegExp(`--ar-${name}: ([^;]*);`))?.[1], value, `--ar-${name} is the app's mix`);
   }
   // A new color token has to be named above, so it can't be copied by hand.
   const declared = [...kit.matchAll(/--ar-([\w-]+): light-dark\(#/g)].map((m) => m[1]);
   assert.deepEqual(declared.sort(), Object.keys(TOKENS).sort());
 });
 
+const channels = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const mix = (a, b, t) => `#${channels(a).map((v, i) => Math.round(v + (channels(b)[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+
+/** Each chip tone's text and edge tokens, from the kit's `.ar-chip-X` rules. */
+function tones() {
+  const out = {};
+  for (const m of kit.matchAll(/\.ar-chip-(\w+) \{ --c: var\(--ar-([\w-]+)\); --ct: var\(--ar-([\w-]+)\); \}/g)) {
+    out[m[1]] = { c: m[2], ct: m[3] };
+  }
+  return out;
+}
+
+test("each ar-chip tone reads at 4.5:1 on its own tint, in Latte and in Slate", () => {
+  // The chip's fill is 12% of its color over the surface; the text must read on that.
+  assert.match(kit, /\.ar-chip \{[^}]*background: color-mix\(in srgb, var\(--c\) 12%, var\(--ar-surface\)\);/);
+  const t = tones();
+  assert.deepEqual(Object.keys(t).sort(), ["accent", "danger", "info", "merged", "ok", "teal", "warn"]);
+  // The base chip, with no tone: faint edge, subtle text.
+  t.base = { c: "faint", ct: "subtle" };
+  for (const id of ["latte", "slate"]) {
+    const u = painted(id);
+    const key = (name) => u[TOKENS[name]];
+    for (const [tone, { c, ct }] of Object.entries(t)) {
+      const tint = mix(u.surface, key(c), 0.12);
+      const ratio = contrast(key(ct), tint);
+      if (process.env.KIT_RATIOS) console.log(`| ${tone} | ${id} | ${key(ct)} | ${tint} | ${ratio.toFixed(2)} |`);
+      assert.ok(ratio >= 4.5, `${id} ${tone}: ${key(ct)} on ${tint} is ${ratio.toFixed(2)}:1`);
+    }
+  }
+});
+
 test("the kit is opt-in: its rules are :root's tokens and ar- classes, no element selectors", () => {
-  const rules = [...kit.matchAll(/(?:^|\})\s*([^{}]+)\{/g)].map((m) => m[1].trim());
+  const rules = [...kit.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?:^|\})\s*([^{}]+)\{/g)].map((m) => m[1].trim());
   assert.ok(rules.length > 20);
   for (const sel of rules) {
     for (const part of sel.replace(/:is\([^)]*\)/g, "").split(",").map((s) => s.trim())) {
@@ -61,6 +112,18 @@ test("the kit is opt-in: its rules are :root's tokens and ar- classes, no elemen
       assert.ok(part === ":root" || part.startsWith(".ar-"), `${part} must start at an ar- class`);
     }
   }
+});
+
+test("the kit has the chip and button shapes, each on --ar- tokens only", () => {
+  for (const cls of ["ar-chip", "ar-chip-dot", "ar-tag", "ar-count", "ar-object", "ar-hint", "ar-bar-btn", "ar-seg"]) {
+    assert.match(kit, new RegExp(`\\.${cls}[ ,:{]`), `${cls} is declared`);
+  }
+  assert.match(kit, /\.ar-seg > button:is\(\.on, /);
+  assert.match(kit, /\.ar-bar-btn:is\(\.on, /);
+  // No bare app token (`var(--accent)`) and no literal color outside the token block.
+  const rules = kit.slice(kit.indexOf(".ar-btn {"));
+  assert.doesNotMatch(rules, /var\(--(?!ar-|c\b|ct\b)[\w-]+\)/);
+  assert.doesNotMatch(rules, /#[0-9a-fA-F]{3,8}\b/);
 });
 
 test("the runner writes the kit into the prototype's document, after the policy", () => {

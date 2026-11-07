@@ -8,7 +8,8 @@
      can start from them with nothing to import (the frame loads nothing). A
      template, so this page doesn't apply it. Colors are `light-dark(Latte,
      Slate)`: they follow the `color-scheme` the runner already sets and moves,
-     and `scripts/prototype-kit.test.mjs` checks each against appearance.ts. The
+     and `scripts/prototype-kit.test.mjs` checks each against what appearance.ts's
+     legible() paints. The
      type scale is style.css's four most-used sizes (12px 123 times, 11px 71,
      13px 35, 15px 13; #687 will settle the real one). Nothing here selects an
      element, so a prototype that uses no `ar-` class renders as it did. -->
@@ -19,15 +20,28 @@
   --ar-raised: light-dark(#ccd0da, #1a2230);
   --ar-raised-hover: light-dark(#bcc0cc, #243042);
   --ar-text: light-dark(#4c4f69, #d6dee9);
-  --ar-muted: light-dark(#6c6f85, #8b98ab);
-  --ar-subtle: light-dark(#5c5f77, #b4c0d0);
+  --ar-muted: light-dark(#56586a, #8b98ab);
+  --ar-subtle: light-dark(#56586f, #b4c0d0);
   --ar-faint: light-dark(#9ca0b0, #3a4658);
   --ar-border: light-dark(#ccd0da, #1a2230);
-  --ar-accent: light-dark(#8839ef, #56c8dc);
+  --ar-accent: light-dark(#702fc6, #56c8dc);
   --ar-on-accent: light-dark(#ffffff, #06090d);
-  --ar-danger: light-dark(#d20f39, #f2778a);
-  --ar-ok: light-dark(#40a02b, #5fd394);
-  --ar-warn: light-dark(#df8e1d, #f0b45a);
+  --ar-danger: light-dark(#b30d31, #f2778a);
+  --ar-ok: light-dark(#29661c, #5fd394);
+  --ar-warn: light-dark(#7d4f10, #f0b45a);
+  --ar-info: light-dark(#1851c4, #7aa7f0);
+  --ar-merged: light-dark(#6941b4, #b49cf2);
+  --ar-teal: light-dark(#106368, #5fd3c4);
+  /* Text on a solid color (a count on the accent or warn): the palette's
+     on-color, as --ar-on-accent is. */
+  --ar-on-color: light-dark(#ffffff, #06090d);
+  /* The chrome's frame and a border that has to show on a raised fill:
+     style.css's --line-strong, 55% of the palette's muted (--ar-faint) over
+     the surface. */
+  --ar-line-strong: color-mix(in srgb, var(--ar-faint) 55%, var(--ar-surface));
+  /* A selected button's tint: buttons.css's --on-fill, 18% of the accent.
+     Its text is the accent. */
+  --ar-on-fill: color-mix(in srgb, var(--ar-accent) 18%, transparent);
   --ar-text-xs: 11px;
   --ar-text-sm: 12px;
   --ar-text-md: 13px;
@@ -100,18 +114,199 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  padding: 1px 8px;
+  padding: 0 8px;
   border: 1px solid var(--c);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--c) 12%, transparent);
+  /* Over the surface, as the app's chip is: its tint is what its text must read on. */
+  background: color-mix(in srgb, var(--c) 12%, var(--ar-surface));
   color: var(--ct);
-  font: 600 var(--ar-text-sm)/1.3 var(--ar-mono);
+  font: 600 var(--ar-text-xs)/18px var(--ar-mono);
   white-space: nowrap;
+}
+.ar-chip-dot::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c);
 }
 .ar-chip-accent { --c: var(--ar-accent); --ct: var(--ar-accent); }
 .ar-chip-ok { --c: var(--ar-ok); --ct: var(--ar-ok); }
 .ar-chip-warn { --c: var(--ar-warn); --ct: var(--ar-warn); }
 .ar-chip-danger { --c: var(--ar-danger); --ct: var(--ar-danger); }
+.ar-chip-info { --c: var(--ar-info); --ct: var(--ar-info); }
+.ar-chip-teal { --c: var(--ar-teal); --ct: var(--ar-teal); }
+.ar-chip-merged { --c: var(--ar-merged); --ct: var(--ar-merged); }
+
+/* A label: a raised box with no edge and square corners (a chip is round). */
+.ar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--ar-raised);
+  color: var(--ar-subtle);
+  font: 500 var(--ar-text-xs)/18px var(--ar-font);
+  white-space: nowrap;
+}
+
+/* A count: neutral; ar-count-you is the accent, ar-count-mention is warn. */
+.ar-count {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ar-raised);
+  color: var(--ar-text);
+  font: 700 var(--ar-text-xs)/1 var(--ar-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ar-count-you { background: var(--ar-accent); color: var(--ar-on-color); }
+.ar-count-mention { background: var(--ar-warn); color: var(--ar-on-color); }
+
+/* A linked thing: its id in mono, then its title. */
+.ar-object {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--ar-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ar-text);
+  font: 500 var(--ar-text-sm)/1.4 var(--ar-font);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.ar-object > .ar-object-id {
+  flex: none;
+  font: 600 var(--ar-text-xs)/1.4 var(--ar-mono);
+}
+
+/* A hint about a pane: one line, its action and a dismiss. */
+.ar-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ar-accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ar-accent) 12%, var(--ar-surface));
+  color: var(--ar-text);
+  font: var(--ar-text-xs)/18px var(--ar-font);
+}
+.ar-hint > button {
+  height: 18px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ar-accent);
+  color: var(--ar-on-color);
+  font: 600 var(--ar-text-xs)/1 var(--ar-font);
+  cursor: pointer;
+}
+.ar-hint > button.ar-hint-dismiss {
+  padding: 0 4px;
+  background: none;
+  color: var(--ar-muted);
+}
+
+/* The bar button: the 24px ghost button of a bar. ar-bar-btn-sq is its icon. */
+.ar-bar-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 6px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--ar-radius-sm);
+  background: none;
+  color: var(--ar-subtle);
+  font: var(--ar-text-sm)/1 var(--ar-font);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ar-bar-btn-sq { width: 24px; padding: 0; }
+.ar-bar-btn:hover:not(:disabled),
+.ar-seg > button:hover:not(:disabled) {
+  background: var(--ar-raised);
+  color: var(--ar-text);
+}
+.ar-bar-btn:disabled,
+.ar-seg > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A choice of one among a few, as a group of buttons. */
+.ar-seg {
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--ar-text) 18%, transparent);
+  border-radius: var(--ar-radius-sm);
+  background: color-mix(in srgb, var(--ar-text) 6%, transparent);
+}
+.ar-seg > button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ar-subtle);
+  font: 500 var(--ar-text-md)/1 var(--ar-font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The one "on": a tint of the accent with accent text, on a bar button or a
+   segment. A segment's is laid over the page, not over its track, as
+   buttons.css does, so the accent keeps its contrast. */
+.ar-bar-btn:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]),
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: var(--ar-on-fill);
+  color: var(--ar-accent);
+}
+.ar-bar-btn:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled),
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-accent) 26%, transparent);
+  color: var(--ar-accent);
+}
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--ar-accent) 18%, var(--ar-bg));
+}
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-accent) 26%, var(--ar-bg));
+}
+.ar-bar-btn:focus-visible,
+.ar-seg > button:focus-visible {
+  outline: 2px solid var(--ar-accent);
+  outline-offset: 1px;
+}
 
 .ar-header {
   display: flex;
