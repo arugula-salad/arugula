@@ -28,7 +28,6 @@
 //!   for a run whose upload the platform refused: the log stays in the
 //!   pane, and the run goes on.
 
-#[cfg(unix)]
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -36,7 +35,6 @@ use std::{
 };
 
 use anyhow::{Context as _, Result};
-#[cfg(unix)]
 use arugula_control_wire::run_logs::MAX_ARTIFACT_BYTES;
 use arugula_control_wire::run_logs::{
     ARTIFACTS_DIR, CHUNK_BYTES, MAX_ARTIFACTS, MAX_CHUNK_BYTES, Upload, UploadGiven, Uploaded, WORK_UPLOAD,

@@ -117,6 +117,7 @@ impl PlanLedger {
         if let Some(parent) = dir.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("its ledger's directory: {e}"))?;
         }
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut b = std::fs::DirBuilder::new();
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
