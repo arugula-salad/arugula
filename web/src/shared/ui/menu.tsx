@@ -119,6 +119,19 @@ const layers: object[] = [];
 let pressShut: { el: HTMLElement; at: number } | null = null;
 const PRESS_SHUT_MS = 600;
 
+/** A menu's lines only between rows: a menu built from parts that can each
+ * be empty (the pane's, when a part has nothing for this pane) would
+ * otherwise draw two lines together, or one at an end. Submenus too. */
+export function tidy(items: MenuItem[]): MenuItem[] {
+  const out: MenuItem[] = [];
+  for (const it of items) {
+    if (it === "separator" && (out.length === 0 || out[out.length - 1] === "separator")) continue;
+    out.push(typeof it === "object" && "submenu" in it ? { ...it, submenu: tidy(it.submenu) } : it);
+  }
+  while (out[out.length - 1] === "separator") out.pop();
+  return out;
+}
+
 /** `opts.from`: the button that opens it (a ▾, a …): it gets
  * `aria-expanded`, the first item gets the keys, and the focus goes back
  * to it when the menu shuts. False when it stayed shut: the press on the
@@ -134,7 +147,7 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
   if (current) current.onClose?.();
   else opener = opts.from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   expanded(opts.from ?? null);
-  current = { ...opts, x: e.clientX, y: e.clientY, items, focus: true };
+  current = { ...opts, x: e.clientX, y: e.clientY, items: tidy(items), focus: true };
   changed();
   return true;
 }

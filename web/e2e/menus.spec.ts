@@ -70,8 +70,20 @@ test("a desktop menu is a dropdown under its button, closed by Escape", async ({
   await expect(menu).toBeVisible();
   await expect(menu).not.toHaveClass(/sheet/);
   await expect(page.locator("[data-menu-backdrop]")).toHaveCount(0);
-  // Every row has the lead column, so the labels line up.
-  await expect(menu.locator(".menu-lead")).toHaveCount(3);
+  // Every row has the lead column, so the labels line up: a submenu's row
+  // too, whose label once sat centred between its lead and its chevron.
+  await expect(menu.locator(".menu-lead")).toHaveCount(4);
+  const textLeft = (sel: string) =>
+    menu.locator(sel).evaluate((el) => {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, (n) => (n.textContent!.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP));
+      const r = document.createRange();
+      r.selectNodeContents(walk.nextNode()!);
+      return r.getBoundingClientRect().left;
+    });
+  expect(Math.abs((await textLeft(".menu-parent")) - (await textLeft('[data-item="rename"]')))).toBeLessThan(1);
+  // Two lines together become one, and none is left at the end.
+  await expect(menu.locator(".menu-sep")).toHaveCount(1);
+  expect(await menu.evaluate((m) => m.lastElementChild?.classList.contains("menu-sep"))).toBe(false);
   const button = (await page.locator('[data-open="menu"]').boundingBox())!;
   const box = (await menu.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(button.y + button.height);

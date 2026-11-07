@@ -877,8 +877,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* A submenu's rows, under their parent and indented. */
 .menu-parent {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+}
+
+/* The chevron at the end, the label where every row's is: with the icon
+   column (`.menu-lead`) a third child, space-between centred the label,
+   and a gap would push it past the other rows' text. */
+.menu-parent > .menu-chevron {
+  margin-left: auto;
+  padding-left: 16px;
 }
 
 .menu-chevron {

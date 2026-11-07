@@ -49,7 +49,17 @@ function Page() {
       run: () => setRan("rename"),
       attrs: { "data-item": "rename" },
     },
+    // Two lines together and one at the end, as a menu built from parts
+    // that can be empty draws them: the menu keeps one between rows.
     "separator",
+    "separator",
+    {
+      label: "Move",
+      submenu: [
+        { label: "Left", run: () => setRan("left"), attrs: { "data-item": "left" } },
+        { label: "Right", run: () => setRan("right"), attrs: { "data-item": "right" } },
+      ],
+    },
     {
       label: "Delete",
       icon: dot,
@@ -57,6 +67,7 @@ function Page() {
       run: () => setRan("delete"),
       attrs: { "data-item": "delete" },
     },
+    "separator",
   ];
   const facets: MenuItem[] = ["docs", "ui", "boards"].map((v) => ({
     label: v,
