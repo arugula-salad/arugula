@@ -66,6 +66,17 @@ test("panes", async ({ page }) => {
   });
 });
 
+// With the sidebar closed the header names the session instead, with its menu's caret (#457).
+test("panes, sessions sidebar closed", async ({ page }) => {
+  await prepare(page);
+  await everyWay(page, "panes-sidebar-closed", async (width) => {
+    await home(page);
+    if (width !== "desktop") return;
+    if (await page.locator("[data-session-sidebar]").count()) await page.locator(".ws-head [data-open-sessions]").click();
+    await expect(page.locator(".ws-crumb-caret")).toBeVisible();
+  });
+});
+
 test("swarm", async ({ page }) => {
   await prepare(page);
   await everyWay(page, "swarm", async () => {

@@ -56,12 +56,39 @@ export function TabStrip({
     el.dataset.overflow = start && end ? "both" : start ? "start" : end ? "end" : "";
     setOver(more);
   };
-  useLayoutEffect(edges);
+  // The shown tab's close button sits beside the tab list, not in it (a
+  // tab list holds only tabs): laid over the room the tab keeps for it.
+  const closeBtn = useRef<HTMLButtonElement>(null);
+  const shown = client.tab;
+  const closing = shown !== null && session.tabs.includes(shown) && client.role(session.id) !== "viewer" && !(renaming?.kind === "tab" && renaming.id === shown);
+  const placeClose = () => {
+    const btn = closeBtn.current;
+    const bar = strip.current;
+    const tab = bar?.querySelector<HTMLElement>(".tab.closable");
+    if (!btn || !bar || !tab) return;
+    const at = tab.getBoundingClientRect();
+    const box = bar.getBoundingClientRect();
+    const css = getComputedStyle(tab);
+    // Over the tab's 20px slot (::after), 24px wide so it can be hit.
+    const right = at.right - parseFloat(css.paddingRight) - parseFloat(css.borderRightWidth) - 20 - 2;
+    const host = (btn.offsetParent as HTMLElement | null)?.getBoundingClientRect() ?? box;
+    btn.style.left = `${right - host.left}px`;
+    btn.style.top = `${at.top + at.height / 2 - 12 - host.top}px`;
+    // Scrolled out of the list's sight, it goes with the tab.
+    btn.hidden = right < box.left || right + 24 > box.right;
+  };
+  useLayoutEffect(() => {
+    edges();
+    placeClose();
+  });
   // A window made narrower can hide tabs without a render.
   useLayoutEffect(() => {
     const el = strip.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(edges);
+    const ro = new ResizeObserver(() => {
+      edges();
+      placeClose();
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -82,7 +109,10 @@ export function TabStrip({
         class="tabbar"
         role="tablist"
         aria-label={`Tabs in ${session.name}`}
-        onScroll={edges}
+        onScroll={() => {
+          edges();
+          placeClose();
+        }}
         onWheel={(e) => {
           // A mouse wheel scrolls the tabs sideways.
           const el = e.currentTarget as HTMLElement;
@@ -103,6 +133,7 @@ export function TabStrip({
                 tab={t}
                 index={i}
                 selected={id === client.tab}
+                closable={id === shown && closing}
                 renaming={renaming?.kind === "tab" && renaming.id === id}
                 setRenaming={setRenaming}
               />
@@ -111,6 +142,11 @@ export function TabStrip({
         })}
         {marker === session.tabs.length && <div class="drop-marker" />}
       </div>
+      {closing && (
+        <button ref={closeBtn} class="tab-close" title="Close tab" aria-label={`Close tab ${tabLabel(client, client.tabView(shown)!)}`} onClick={() => confirmCloseTab(client, shown)}>
+          ×
+        </button>
+      )}
       {over && (
         <button class="tabs-all" title="Every tab in this session" aria-label={`All ${session.tabs.length} tabs`} aria-haspopup="menu" aria-expanded="false" data-tabs-all onClick={allTabs}>
           {session.tabs.length}
@@ -168,6 +204,7 @@ function TabItem({
   tab,
   index,
   selected,
+  closable,
   renaming,
   setRenaming,
 }: {
@@ -175,13 +212,14 @@ function TabItem({
   tab: TabView;
   index: number;
   selected: boolean;
+  closable: boolean;
   renaming: boolean;
   setRenaming: (r: Renaming) => void;
 }) {
   const label = tabLabel(client, tab);
   const machine = client.tabMachine(tab.id);
   const close = () => confirmCloseTab(client, tab.id);
-  // Closing and renaming are an editor's (a viewer's would be refused).
+  // Renaming is an editor's (a viewer's would be refused).
   const edits = client.role(client.sessionOfTab(tab.id) ?? null) !== "viewer";
   const ref = useRef<HTMLDivElement>(null);
   // The shown tab stays in sight when there are more than fit: tabs are as
@@ -214,7 +252,7 @@ function TabItem({
   return (
     <div
       ref={ref}
-      class={selected ? "tab selected" : "tab"}
+      class={closable ? "tab selected closable" : selected ? "tab selected" : "tab"}
       role="tab"
       aria-selected={selected}
       data-tab-index={index}
@@ -269,20 +307,6 @@ function TabItem({
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
       <ChatTabBadge client={client} panes={paneIds(tab)} />
-      {selected && edits && (
-        <button
-          class="tab-close"
-          title="Close tab"
-          aria-label={`Close tab ${label}`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            close();
-          }}
-        >
-          ×
-        </button>
-      )}
     </div>
   );
 }
