@@ -8,4 +8,4 @@
 #   scripts/chant ARGS...
 set -euo pipefail
 # shellcheck disable=SC2086
-exec ${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.68} "$@"
+exec ${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.69} "$@"
