@@ -540,7 +540,9 @@ fn allowed(path: &str, want: &Want) -> Option<Kind> {
         .then(|| Kind::Runs(env.to_owned()))
 }
 
-#[cfg(test)]
+// The fixtures build repositories through sh, and the plan ledger runs only
+// on a Linux box; Windows builds it but doesn't run these.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -918,7 +920,6 @@ mod tests {
     }
 
     /// A bundle larger than [`MAX_BUNDLE`], or a link, isn't taken.
-    #[cfg(unix)]
     #[tokio::test]
     async fn an_oversized_bundle_or_a_link_isnt_taken() {
         let dir = scratch("big", true);
