@@ -123,6 +123,8 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
     >
       {search && <SearchIcon />}
       <span>Commands</span>
+      {/* A space between them, so the name reads "Commands Ctrl+Shift+P". */}
+      {" "}
       <kbd>{keyHint("palette")}</kbd>
     </button>
   );

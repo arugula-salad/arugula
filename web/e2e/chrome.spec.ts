@@ -397,6 +397,8 @@ test.describe("accessibility", () => {
     await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
     await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
     await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\(Ctrl\+Shift\+P\)$/);
+    // Named by what it shows: the label, a space, the chord (#458).
+    await expect(page.getByRole("button", { name: /^Commands Ctrl\+Shift\+P$/ })).toBeVisible();
   });
 
   test("from the keyboard: out of the terminal by the palette, along the tabs, and back", async ({ page }) => {
