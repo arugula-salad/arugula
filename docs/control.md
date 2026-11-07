@@ -1228,7 +1228,7 @@ own (`<deploy>-plan`), which gets no `FLY_API_TOKEN`:
    exactly the keys chant writes there and values from the gate, run, commit
    and time (`origin` `cli`, `expiresAt` after the fact by at most 30 days).
    The gate must be one `chant_gates` names, from a chant whose layout is
-   verified (`VERIFIED_CHANT`, 0.124.64 to 0.124.68); another chant, a gate
+   verified (`VERIFIED_CHANT`, 0.124.64 to 0.124.69); another chant, a gate
    that resumes from a checkpoint, or a workspace layout other than those
    (nested, example groups, `.jsonc`) is refused as not supported for
    planning yet.
