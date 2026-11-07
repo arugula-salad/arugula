@@ -312,7 +312,7 @@ function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoar
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
   return (
-    <li class="board-card" data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
+    <li class={`board-card${drop && !closed ? " drop-target" : ""}`} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
       <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
         {b.title}
       </a>

@@ -27,6 +27,10 @@
   --selected: color-mix(in srgb, var(--accent) 14%, transparent);
   --selected-edge: inset 0 0 0 1px var(--accent);
   --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
+  /* A place to drop on (#696): the dashed edge and the tint, the same on
+     every target (see `.drop-target`). */
+  --drop-edge: var(--accent);
+  --drop-fill: color-mix(in srgb, var(--accent) 10%, transparent);
   /* The rest of the palette (appearance.ts sets them all for the one
      picked): status colors, and text on a colored fill. */
   --ok: #a6e3a1;
@@ -1070,6 +1074,16 @@ button.att {
   border-left-color: var(--accent);
   /* The 2px guide line is the bar's first 2px: 1px more makes it 3. */
   box-shadow: inset 1px 0 0 var(--accent), var(--selected-edge);
+}
+
+/* A drop target (#696). `.drop-target` marks a place a drag can land and
+   `.drop-over` is added while the pointer is over it. The edge is an
+   outline drawn inside the box and the tint a gradient over its own
+   background, so nothing moves or loses its fill when the drag arrives. */
+.drop-target.drop-over {
+  outline: 2px dashed var(--drop-edge);
+  outline-offset: -2px;
+  background-image: linear-gradient(var(--drop-fill), var(--drop-fill));
 }
 
 /* Pressed on the selected row keeps the selection: a deeper tint. */

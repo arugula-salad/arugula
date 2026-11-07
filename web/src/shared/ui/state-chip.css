@@ -199,11 +199,6 @@ button.chip-object:disabled {
   background: color-mix(in srgb, var(--accent) 22%, var(--surface));
 }
 
-.chip-object.drop-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-
 .chip-object.failed {
   border-color: var(--danger);
 }

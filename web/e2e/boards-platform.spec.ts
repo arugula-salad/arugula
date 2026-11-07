@@ -1131,10 +1131,14 @@ test("Not on a board: ＋, a multi-select, a drag and select-all each move the l
   const first = rows.first();
   await first.hover();
   await alice.mouse.down();
+  const cardBox = await bulk.boundingBox();
   await bulk.hover();
   await bulk.hover({ position: { x: 20, y: 12 } });
   await expect(bulk).toHaveClass(/drop-over/);
-  await expect(bulk).toHaveCSS("box-shadow", /rgb.* 0px 0px 0px 2px/);
+  // The one drop-target outline (#696): dashed, drawn inside, so the card doesn't move.
+  await expect(bulk).toHaveCSS("outline-style", "dashed");
+  await expect(bulk).toHaveCSS("outline-width", "2px");
+  expect(await bulk.boundingBox()).toEqual(cardBox);
   await alice.mouse.up();
   await expect(count).toHaveText(String(n0 - 6));
   await expect(progress).toContainText("0 of 6 done", { timeout: 15_000 });

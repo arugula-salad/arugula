@@ -598,11 +598,6 @@
   outline-offset: 2px;
 }
 
-.platform-section .board-card.drop-over {
-  box-shadow: 0 0 0 2px var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-}
-
 .board-card-line {
   margin: 2px 0 0;
   overflow: hidden;
@@ -896,14 +891,8 @@
   font-size: var(--text-md);
 }
 
-/* A card dragged to another lane (#494) or group (#664): the one under it takes it. */
-.board-zone.drop-over,
-.board-group.drop-over {
-  outline: 2px dashed var(--accent, currentColor);
-  outline-offset: 2px;
-  border-radius: var(--radius, 6px);
-}
-
+/* A card dragged to another lane (#494) or group (#664): the one under it takes it
+   (`.drop-target`, shared/style.css). */
 .board-card[draggable="true"] {
   cursor: grab;
 }
