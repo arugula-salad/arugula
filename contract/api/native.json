@@ -27,6 +27,10 @@
       "why": "Registered clients are configured on the web"
     },
     {
+      "match": "/ci-alerts(/|$)",
+      "why": "CI alerts are set up on the web, and their key is shown once there (native #774)"
+    },
+    {
       "match": "/agent-tokens",
       "why": "Agent tokens stay on the web"
     },

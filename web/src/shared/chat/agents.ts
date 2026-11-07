@@ -18,12 +18,20 @@ export function githubLogin(m: ChatMessage): string | null {
   return !m.author && m.via?.startsWith("github:") ? m.via.slice("github:".length) || "someone" : null;
 }
 
+/** What CI wrote (native #774): no author, `via` `ci:<source>`. Its
+ * name, "chant CI", or null for any other message. */
+export function ciName(m: ChatMessage): string | null {
+  return !m.author && m.via?.startsWith("ci:") && m.via.length > 3 ? `${m.via.slice(3)} CI` : null;
+}
+
 /** Who wrote a message, as it's shown: its author's name, or "<owner>'s
  * agent on <machine>" for one an agent wrote (M197), everywhere it shows. */
 export function authorLabel(m: ChatMessage): string {
   if (isSystemLine(m)) return "Arugula";
   const gh = githubLogin(m);
   if (gh) return gh;
+  const ci = ciName(m);
+  if (ci) return ci;
   // What an agent session said in its thread (Arugula #215): the session's.
   if (!m.author && m.via?.startsWith("said:ses_")) return `Agent session ${m.via.slice("said:ses_".length, "said:ses_".length + 8)}`;
   const name = m.author ? m.name || "someone" : "a deleted account";

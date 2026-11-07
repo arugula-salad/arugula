@@ -44,6 +44,7 @@ pub mod chat_pins;
 pub mod chat_reactions;
 mod chat_sidebar;
 pub mod chat_threads;
+pub mod ci_alerts;
 pub mod clients;
 pub mod content;
 pub mod deploy_approvals;

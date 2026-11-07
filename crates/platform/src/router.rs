@@ -167,6 +167,13 @@ fn routes() -> Routes {
         )
         .route("/github/webhook", post(forge::webhook))
         .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
+        // CI alerts as native issues (native #774).
+        .route(arugula_control_wire::projects::CI_NOTIFY, post(crate::ci_alerts::notify))
+        .route(
+            arugula_control_wire::projects::PROJECT_CI_ALERTS,
+            get(crate::ci_alerts::show).patch(crate::ci_alerts::settings),
+        )
+        .route(arugula_control_wire::projects::PROJECT_CI_ALERTS_KEY, post(crate::ci_alerts::make_key))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))

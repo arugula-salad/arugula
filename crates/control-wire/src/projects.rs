@@ -716,6 +716,105 @@ pub struct TrackerConnections {
     pub connections: Vec<TrackerConnection>,
 }
 
+/// `GET /api/projects/{project}/ci-alerts` ([`CiAlerts`], for its members)
+/// and `PATCH` ([`CiAlertsSettings`], an owner or editor): CI alerts as
+/// native issues (native #774).
+pub const PROJECT_CI_ALERTS: &str = "/api/projects/{project}/ci-alerts";
+
+/// `POST /api/projects/{project}/ci-alerts/key`: turn CI alerts on with a
+/// new key, or rotate it ([`CiAlertsKey`]). An owner or editor; the key is
+/// in this answer only.
+pub const PROJECT_CI_ALERTS_KEY: &str = "/api/projects/{project}/ci-alerts/key";
+
+/// `POST /ci/notify/{project}`: where chant's tick sends a project's
+/// `chant.notify/v1` events, signed with its key (native #774).
+pub const CI_NOTIFY: &str = "/ci/notify/{project}";
+
+/// A project's CI alerts (native #774): chant's signed CI events open,
+/// comment on and close a "main is red" native issue. Never the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlerts {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    /// On: a key is kept and events are taken.
+    pub on: bool,
+    /// The URL chant posts to: `ci.green.notify.webhook`'s variable.
+    pub url: String,
+    /// Who a new red issue mentions (accounts), in order.
+    pub people: Vec<String>,
+    /// They're assigned it as well.
+    pub assign: bool,
+    /// Who made the key in use (an account, empty once it's deleted), and
+    /// when. `None` while off.
+    pub key_made_by: Option<String>,
+    pub key_made_at: Option<u64>,
+    /// When the last signed event arrived.
+    pub last_event_at: Option<u64>,
+    /// Each branch's open red issue.
+    pub open: Vec<CiAlertOpen>,
+}
+
+/// A branch's open red issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertOpen {
+    pub branch: String,
+    /// The issue's id (`iss_`) and number.
+    pub issue: String,
+    pub number: u64,
+    pub opened_at: u64,
+}
+
+/// `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+/// assigns them, or `on: false` to turn alerts off (the key goes; the
+/// issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsSettings {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub on: Option<bool>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub people: Option<Vec<String>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub assign: Option<bool>,
+}
+
+/// The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+/// and the alerts as they are now. chant reads it from
+/// `ci.green.notify.key`'s variable.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsKey {
+    pub key: String,
+    pub alerts: CiAlerts,
+}
+
+impl std::fmt::Debug for CiAlertsKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CiAlertsKey").field("alerts", &self.alerts).finish_non_exhaustive()
+    }
+}
+
+/// What an issue or a comment CI wrote carries as its agent or `via` (native
+/// #774): `ci:` and the event's `source`, such as `ci:chant`. Only the CI
+/// endpoint writes one, always with no author, so it names no person and no
+/// machine's agent.
+pub const CI_VIA: &str = "ci:";
+
+/// The name a CI writer is shown by: `chant CI` for `ci:chant`. `None` for
+/// anything else.
+pub fn ci_name(via: &str) -> Option<String> {
+    via.strip_prefix(CI_VIA).filter(|s| !s.is_empty()).map(|s| format!("{s} CI"))
+}
+
 /// What an agent's write to a tracker does, per kind: `allow` sends it at
 /// once, `approve` keeps it for a person. An edit that is several kinds goes
 /// at once only if every one of them allows.

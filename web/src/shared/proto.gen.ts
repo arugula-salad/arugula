@@ -2002,6 +2002,68 @@ export type CheckState = "queued" | "running" | "success" | "failure" | "cancell
 export type Child = { weight: number, node: Node, };
 
 /**
+ * A branch's open red issue.
+ */
+export type CiAlertOpen = { branch: string, 
+/**
+ * The issue's id (`iss_`) and number.
+ */
+issue: string, number: number, opened_at: number, };
+
+/**
+ * A project's CI alerts (native #774): chant's signed CI events open,
+ * comment on and close a "main is red" native issue. Never the key.
+ */
+export type CiAlerts = { 
+/**
+ * The project's id (`personal` asked is answered with the real one).
+ */
+project: string, 
+/**
+ * On: a key is kept and events are taken.
+ */
+on: boolean, 
+/**
+ * The URL chant posts to: `ci.green.notify.webhook`'s variable.
+ */
+url: string, 
+/**
+ * Who a new red issue mentions (accounts), in order.
+ */
+people: Array<string>, 
+/**
+ * They're assigned it as well.
+ */
+assign: boolean, 
+/**
+ * Who made the key in use (an account, empty once it's deleted), and
+ * when. `None` while off.
+ */
+key_made_by: string | null, key_made_at: number | null, 
+/**
+ * When the last signed event arrived.
+ */
+last_event_at: number | null, 
+/**
+ * Each branch's open red issue.
+ */
+open: Array<CiAlertOpen>, };
+
+/**
+ * The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+ * and the alerts as they are now. chant reads it from
+ * `ci.green.notify.key`'s variable.
+ */
+export type CiAlertsKey = { key: string, alerts: CiAlerts, };
+
+/**
+ * `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+ * assigns them, or `on: false` to turn alerts off (the key goes; the
+ * issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+ */
+export type CiAlertsSettings = { on?: boolean, people?: Array<string>, assign?: boolean, };
+
+/**
  * Control messages from a client.
  */
 export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boolean, acks?: boolean, 

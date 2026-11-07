@@ -374,6 +374,20 @@ impl Db {
     /// number, and its timeline starts with `opened`. `None`: there's no
     /// such project.
     pub fn create_issue(&self, new: &NewIssue, by: Actor, at: u64) -> Result<Option<Issue>> {
+        self.create_issue_and(new, by, at, |_, _| Ok(true))
+    }
+
+    /// [`Db::create_issue`], and `and` in the same transaction once the
+    /// issue is there: `false` rolls it all back, and the answer is `None`
+    /// as for no such project (CI alerts' one open issue per branch,
+    /// `db::ci_alerts`).
+    pub fn create_issue_and(
+        &self,
+        new: &NewIssue,
+        by: Actor,
+        at: u64,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>, &Issue) -> Result<bool>,
+    ) -> Result<Option<Issue>> {
         let (mut labels, mut assignees) = (new.labels.to_vec(), new.assignees.to_vec());
         dedupe(&mut labels);
         dedupe(&mut assignees);
@@ -410,6 +424,9 @@ impl Db {
             issue_row,
         )?;
         add_event(&tx, &issue.id, EventKind::Opened, by, at, json!({}))?;
+        if !and(&tx, &issue)? {
+            return Ok(None);
+        }
         tx.commit()?;
         Ok(Some(issue))
     }

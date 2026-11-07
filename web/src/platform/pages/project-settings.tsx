@@ -16,7 +16,8 @@
 // (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
 // The repos are a table, a row each with its switch. After them, the Plane
-// projects connected to it (#356, ../settings/plane), with boards on.
+// projects connected to it (#356, ../settings/plane), with boards on, and
+// after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -42,6 +43,7 @@ import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
 import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
+import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { Access } from "../settings/access";
@@ -281,6 +283,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           {boards !== null && <PlaneConnections p={p} />}
           {boards !== null && <BoardSettings p={p} />}
           <IssueHomeSetting key={linked} p={p} />
+          <CiAlertsSetting p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
           <WorkspaceSize p={p} />

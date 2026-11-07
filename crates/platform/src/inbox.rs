@@ -143,6 +143,10 @@ fn notify(
 /// Who did it, as a push names them: a person, or "<owner>'s agent on
 /// <machine>" (an agent token's as a token's, UI audit #192).
 async fn actor_name(app: &Platform, by: Actor<'_>) -> anyhow::Result<String> {
+    // CI (native #774) is no account's: its own name.
+    if let Some(ci) = by.agent.and_then(arugula_control_wire::projects::ci_name) {
+        return Ok(ci);
+    }
     let me = chat::name_of(app, by.account).await?;
     Ok(match by.agent {
         Some(m) => {

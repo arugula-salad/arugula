@@ -64,6 +64,7 @@ impl PlatformPort for Platform {
                 db::projects::erase_account(&tx, deleted)?;
                 db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::issues::erase_account(&tx, deleted)?;
+                db::ci_alerts::erase_account(&tx, deleted)?;
                 db::boards::erase_account(&tx, deleted)?;
                 db::project_docs::erase_account(&tx, deleted)?;
                 // Before the runs go: their files in the run-log bucket.

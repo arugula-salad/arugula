@@ -1020,10 +1020,45 @@ name = "github_webhook_deliveries"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Kept 7 days, so a redelivery is recognised after a restart."
+what = "Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Plane's deliveries (`plane:<id>`) and chant's CI events (`ci:<project>:<event id>`, native #774) are kept here too. Kept 7 days, so a redelivery is recognised after a restart."
 why_asleep = "GitHub's webhooks arrive whether or not any machine is up."
 with_account = "none"
 seen_by = ["litestream", "github"]
+
+# ---- CI alerts as native issues (native #774): chant's signed CI events
+# open, comment on and close a project's red-branch issue
+
+[[table]]
+name = "ci_alerts"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project with CI alerts on: whether its red issue assigns the people it mentions, who made its key and when, and when its last signed event arrived. The key is sealed in `project_secrets` (`ci_alerts/key`), never here."
+why_asleep = "chant's tick posts its events whether or not any machine is up."
+with_account = "partly"
+note = "A project that went with the account takes its row. Elsewhere the row stays and stops naming the account as who made the key."
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_people"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Whom a project's new red issue mentions (and assigns), in order: accounts."
+why_asleep = "They're told when an event arrives, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_issues"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each red issue CI alerts opened for a project's branch: the issue's id, the commit it went red at, when it was opened and when a green commit (or a person) closed it. A unique index keeps one open row per branch, as the platform's machines take events side by side."
+why_asleep = "The next event comments on it or closes it, with every machine asleep."
+with_account = "partly"
+note = "A project that went with the account takes its rows; others name no account."
+seen_by = ["litestream"]
 
 [[table]]
 name = "github_installations"
@@ -1639,7 +1674,7 @@ name = "project_secrets"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. And a project's own secrets (`project/<NAME>`, M230), set by name by agents with no machine, each with who last set it and through which agent token."
+what = "A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. And a project's own secrets (`project/<NAME>`, M230), set by name by agents with no machine, each with who last set it and through which agent token. And its CI alerts key (`ci_alerts/key`, native #774), which checks chant's signed events."
 why_asleep = "Deploys run with every machine off."
 with_account = "partly"
 note = "A personal project's secrets go with it, and so do a disbanded team's; other teams' stay."

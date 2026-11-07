@@ -169,6 +169,10 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::TrackerHistory>();
     c.visit::<arugula_control_wire::projects::TrackerEvent>();
     c.visit::<arugula_control_wire::projects::TrackerPendingWrite>();
+    // CI alerts as native issues (native #774).
+    c.visit::<arugula_control_wire::projects::CiAlerts>();
+    c.visit::<arugula_control_wire::projects::CiAlertsSettings>();
+    c.visit::<arugula_control_wire::projects::CiAlertsKey>();
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
     c.visit::<arugula_control_wire::projects::ForgeContent>();

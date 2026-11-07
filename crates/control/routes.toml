@@ -59,7 +59,7 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github`, `stripe` and
-#   `plane` (their webhooks), `operator` (by hand), `product` (another product
+#   `plane` (their webhooks), `chant` (a chant tick's signed events), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
 #   (an agent with no machine, with an agent grant token, M230), `apple`
 #   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
@@ -1184,6 +1184,14 @@ note = "A Plane project's changes (Arugula #358), checked by the platform agains
 
 [[route]]
 method = "POST"
+path = "/ci/notify/{project}"  # wire::projects::CI_NOTIFY
+process = "platform"
+auth = "webhook"
+clients = ["chant"]
+note = "chant's CI events for a project (native #774), checked by the platform against the project's own sealed CI alerts key (`x-chant-signature`, HMAC-SHA256 over `<x-chant-timestamp>.<body>`, the timestamp within 5 minutes); a repeated event id is a no-op. They open, comment on and close the project's red-branch issue. The URL is shown in the project's settings and given to chant's tick as a secret."
+
+[[route]]
+method = "POST"
 path = "/api/daemon/github/token"
 process = "hub"
 auth = "daemon"
@@ -2062,6 +2070,30 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "A linked repo's settings (M166): content mirroring on (a member who maintains it on GitHub) or off (its content rows go at once)."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's CI alerts (native #774), for its members: whether they're on, their URL, whom a red issue mentions and the open red issues. Never the key."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Whom a project's red issue mentions or assigns, or CI alerts off, which removes the key (native #774): an owner or editor."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/ci-alerts/key"  # wire::projects::PROJECT_CI_ALERTS_KEY
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "CI alerts on with a new key, or the key rotated (native #774): an owner or editor. The key is sealed here and is in this answer only."
 
 [[route]]
 method = "GET"
