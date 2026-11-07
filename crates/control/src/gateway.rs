@@ -410,7 +410,23 @@ pub fn router(app: &Arc<App>) -> Router<Arc<App>> {
             r
         }
     };
-    routes.layer(axum::middleware::from_fn_with_state(app.clone(), crate::maintenance::refuse))
+    routes
+        .layer(axum::middleware::from_fn_with_state(app.clone(), ci_notify_limit))
+        .layer(axum::middleware::from_fn_with_state(app.clone(), crate::maintenance::refuse))
+}
+
+/// chant's CI events (`/ci/notify/{project}`, native #774), limited per
+/// client address before the platform sees them, in or out of process:
+/// only the hub knows the address (the TCP peer, or its trusted proxy
+/// header). The platform limits them per project itself.
+async fn ci_notify_limit(State(app): State<Arc<App>>, req: Request, next: axum::middleware::Next) -> Response {
+    if req.uri().path().starts_with("/ci/notify/")
+        && let Some(peer) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0)
+        && let Err(e) = app.limits.check(crate::limit::CI_NOTIFY, app.limits.client_ip(peer, req.headers()))
+    {
+        return e.into_response();
+    }
+    next.run(req).await
 }
 
 /// A body at most this big (by its `Content-Length`) is read before it's
@@ -734,5 +750,33 @@ mod tests {
         ] {
             assert!(!forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
         }
+    }
+
+    /// chant's CI events are limited per client address by the hub (native
+    /// #774): past the limit, a 429 before the platform; another address
+    /// still gets through (to the platform's own answer).
+    #[tokio::test]
+    async fn ci_events_are_limited_per_address() {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", l.local_addr().unwrap());
+        let app = App::for_tests(&base).start();
+        let svc = crate::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
+        let post = async || {
+            reqwest::Client::new()
+                .post(format!("{base}/ci/notify/prj_nothere"))
+                .body("{}")
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        };
+        assert_eq!(post().await, 401, "the platform's refusal");
+        let here = "127.0.0.1".parse().unwrap();
+        while app.limits.check(crate::limit::CI_NOTIFY, here).is_ok() {}
+        assert_eq!(post().await, 429, "this address sent its share");
+        let elsewhere = "203.0.113.9".parse().unwrap();
+        assert!(app.limits.check(crate::limit::CI_NOTIFY, elsewhere).is_ok(), "counted per address");
     }
 }

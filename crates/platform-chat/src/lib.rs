@@ -84,6 +84,8 @@ mod chat_threads_tests;
 #[cfg(test)]
 mod chat_wants_tests;
 #[cfg(test)]
+mod ci_alerts_tests;
+#[cfg(test)]
 mod forge_mentions_tests;
 #[cfg(test)]
 mod forge_viewer_tests;
@@ -373,6 +375,17 @@ impl features::Chat for Hooks {
         text: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<i64>> {
         Box::pin(async move { chat::github_comment(app, issue, login, text) })
+    }
+
+    fn ci_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        via: &'a str,
+        text: &'a str,
+        mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async move { chat::ci_comment(app, issue, via, text, mark) })
     }
 
     fn grant_notice<'a>(

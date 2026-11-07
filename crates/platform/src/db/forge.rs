@@ -199,6 +199,18 @@ impl Db {
         Ok(n == 1)
     }
 
+    /// [`Db::first_delivery`] in the caller's transaction: whether this is
+    /// the first time `delivery` is taken (CI alerts note their event with
+    /// its first write, `ci_alerts`).
+    pub fn first_delivery_in(c: &impl Sql, delivery: &str, event: &str, now: u64) -> anyhow::Result<bool> {
+        let n = c.execute(
+            "INSERT INTO github_webhook_deliveries (delivery, event, received_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (delivery) DO NOTHING",
+            params![delivery, event, now],
+        )?;
+        Ok(n == 1)
+    }
+
     /// The event a delivery was, if it was taken and is still kept.
     pub fn delivery_event(&self, delivery: &str) -> anyhow::Result<Option<String>> {
         self.c()

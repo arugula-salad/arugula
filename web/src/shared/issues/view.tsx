@@ -20,7 +20,7 @@
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { ChatRoom, DraftSent, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
-import { agentWhere } from "../agent-label";
+import { agentWhere, isCi } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
@@ -293,10 +293,16 @@ export function IssueView({
                 </>
               ) : null}
             </span>
-            {issue.agent && (
-              <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
-                Agent
+            {issue.agent && isCi(issue.agent) ? (
+              <Chip kind="tag" title="Opened by CI from its signed events, not by a person or an agent" data-issue-ci>
+                CI
               </Chip>
+            ) : (
+              issue.agent && (
+                <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
+                  Agent
+                </Chip>
+              )
             )}
             {issue.github && (
               <a

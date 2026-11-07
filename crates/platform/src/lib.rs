@@ -42,6 +42,7 @@ pub mod cache;
 pub mod chat;
 #[cfg(any(test, feature = "testing"))]
 pub mod chat_tests;
+pub mod ci_alerts;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]

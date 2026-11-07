@@ -240,7 +240,10 @@ pub fn token_label(name: &str) -> String {
 /// the token's (bare or as [`token_label`] names it). An agent session
 /// (`ses_…`, aru-115) acts as itself, so it is its name alone.
 pub fn agent_label(owner: &str, id: &str, name: &str) -> String {
-    if id.starts_with("ses_") {
+    if let Some(ci) = arugula_control_wire::projects::ci_name(id) {
+        // CI (native #774) acts as itself, with no owner either.
+        ci
+    } else if id.starts_with("ses_") {
         name.to_owned()
     } else if subject_kind(id) == "agent" {
         let label = token_label("");

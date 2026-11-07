@@ -17,7 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom, ChatThreadAgent, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "./agents";
+import { authorLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "./agents";
 import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
@@ -121,6 +121,8 @@ export function roomSigil(r: ChatRoom): string {
 export function AuthorAvatar({ m }: { m: ChatMessage }) {
   const gh = githubLogin(m);
   if (gh) return <MsgAvatar who={`github:${gh}`} name={gh} dot />;
+  const ci = ciName(m);
+  if (ci) return <MsgAvatar who={m.via ?? "ci:"} name={ci} dot />;
   return m.agent ? (
     <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} account={m.author || undefined} agent={m.agent.machine} dot />
   ) : (
@@ -676,7 +678,12 @@ export function RoomMessage({
                 on GitHub
               </Chip>
             )}
-            {m.via && !said && !githubLogin(m) && (
+            {ciName(m) && (
+              <Chip kind="tag" title="Written by CI from its signed events, not by a person or an agent" data-via="ci">
+                CI
+              </Chip>
+            )}
+            {m.via && !said && !githubLogin(m) && !ciName(m) && (
               <Chip kind="tag" title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`} data-via={m.via}>
                 via {answerVia(m, name)?.label ?? m.via}
               </Chip>

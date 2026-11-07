@@ -32,6 +32,13 @@ test("an agent session's issue is its own, with no owner (aru-115)", () => {
   assert.equal(whoLabel("", { machine: ses.machine, machine_name: "" }, nameOf), "Agent session 01234567", "named from its id");
 });
 
+test("CI's issue is its own, with no owner (native #774)", () => {
+  const ci = { machine: "ci:chant", machine_name: "chant CI" };
+  assert.equal(whoLabel("", ci, nameOf), "chant CI");
+  assert.equal(whoShort("", ci, nameOf), "chant CI");
+  assert.equal(whoLabel("", { machine: "ci:chant", machine_name: "" }, nameOf), "chant CI", "named from its id");
+});
+
 test("a list's row: who opened it, or who closed it and why (UI audit #163)", () => {
   const geek = { machine: "d1", machine_name: "geek" };
   assert.equal(whoShort("a1", geek, nameOf), "agent · geek");

@@ -823,7 +823,11 @@ impl Shower {
             seq: m.seq,
             at: m.at,
             author: m.author.clone(),
-            name: self.names.get(&m.author).cloned().unwrap_or_default(),
+            // What CI wrote (native #774): no author, its name from `via`.
+            name: match (&m.author, m.via.as_deref().and_then(arugula_control_wire::projects::ci_name)) {
+                (a, Some(ci)) if a.is_empty() => ci,
+                _ => self.names.get(&m.author).cloned().unwrap_or_default(),
+            },
             text: m.text.clone(),
             quote: m.quote.clone(),
             pane,
@@ -2098,6 +2102,47 @@ async fn open_object(app: &Platform, account: &str, target: &str) -> J<ChatRoom>
 /// yet: no author, `via` `github:<login>`, no mentions, nobody pushed. Cut
 /// to a message's size, saying so. The message's number.
 pub(crate) fn github_comment(app: &Platform, issue: &str, login: &str, text: &str) -> anyhow::Result<i64> {
+    object_comment(app, issue, &format!("github:{login}"), text, "\n\n… (cut short here: the rest is on GitHub)")
+}
+
+/// What CI said on a native issue (native #774, `ci_alerts`) into its
+/// thread, made if nobody has opened it yet: no author, `via` `ci:<source>`,
+/// no mentions, nobody pushed here (`ci_alerts` tells the people it names
+/// through the inbox). The message's number.
+/// With `mark` (a delivery and its event), the delivery is noted in the
+/// message's own transaction: `None` when it was noted already, and
+/// nothing is posted.
+pub(crate) fn ci_comment(
+    app: &Platform,
+    issue: &str,
+    via: &str,
+    text: &str,
+    mark: Option<(&str, &str)>,
+) -> anyhow::Result<Option<i64>> {
+    let now = now_ms();
+    object_comment_and(app, issue, via, text, "\n\n… (cut short here)", |tx| match mark {
+        Some((delivery, event)) => crate::db::Db::first_delivery_in(tx, delivery, event, now),
+        None => Ok(true),
+    })
+}
+
+/// A message with no author on the thread of `issue`, `via` what wrote it,
+/// made if nobody has opened it yet; cut to a message's size with `cut`
+/// after it.
+fn object_comment(app: &Platform, issue: &str, via: &str, text: &str, cut: &str) -> anyhow::Result<i64> {
+    Ok(object_comment_and(app, issue, via, text, cut, |_| Ok(true))?.expect("nothing refuses it"))
+}
+
+/// [`object_comment`], and `and` in the message's transaction: `false`
+/// posts nothing, and the answer is `None`.
+fn object_comment_and(
+    app: &Platform,
+    issue: &str,
+    via: &str,
+    text: &str,
+    cut: &str,
+    and: impl FnOnce(&crate::db::sql::Tx<'_, '_>) -> anyhow::Result<bool>,
+) -> anyhow::Result<Option<i64>> {
     let obj = objects::resolve(app, issue).map_err(|e| anyhow::anyhow!("{}", e.1))?;
     let scope = objects::project_scope(&obj.project);
     let room = match app.db.chat_room_on(&scope, issue)? {
@@ -2127,17 +2172,16 @@ pub(crate) fn github_comment(app: &Platform, issue: &str, login: &str, text: &st
             }
         }
     };
-    const CUT: &str = "\n\n… (cut short here: the rest is on GitHub)";
     let text = if text.len() > wire::MAX_TEXT {
-        let mut at = wire::MAX_TEXT - CUT.len();
+        let mut at = wire::MAX_TEXT - cut.len();
         while !text.is_char_boundary(at) {
             at -= 1;
         }
-        format!("{}{CUT}", &text[..at])
+        format!("{}{cut}", &text[..at])
     } else {
         text.to_owned()
     };
-    crate::sessions::review::post(app, &room, 0, "", &format!("github:{login}"), &text)
+    crate::sessions::review::post_and(app, &room, 0, "", via, &text, and)
 }
 
 /// `GET /api/chat/rooms/{id}`: the room, and who sees it.

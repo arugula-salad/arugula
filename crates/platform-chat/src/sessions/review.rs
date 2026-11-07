@@ -88,8 +88,22 @@ pub fn asks(text: &str) -> bool {
 /// mentions, and not through chat's post: nobody is pushed for it, and it
 /// never starts or prompts a session.
 pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: &str, text: &str) -> Result<i64> {
+    Ok(post_and(app, room, thread, author, via, text, |_| Ok(true))?.expect("nothing refuses it"))
+}
+
+/// [`post`], and `and` in the message's transaction: `false` posts
+/// nothing, and the answer is `None`.
+pub(crate) fn post_and(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    author: &str,
+    via: &str,
+    text: &str,
+    and: impl FnOnce(&crate::db::sql::Tx<'_, '_>) -> Result<bool>,
+) -> Result<Option<i64>> {
     let parent = (thread > 0).then_some(thread as i64);
-    let seq = app.db.add_chat_message(
+    let Some(seq) = app.db.add_chat_message_and(
         &room.id,
         &NewMessage {
             author,
@@ -105,13 +119,17 @@ pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: 
             also: false,
             agent_session: None,
         },
-    )?;
+        and,
+    )?
+    else {
+        return Ok(None);
+    };
     let ev = match parent {
         Some(parent) => ChatLive::Reply { room: room.id.clone(), parent, seq },
         None => ChatLive::Message { room: room.id.clone(), seq },
     };
     app.chat.publish(&app.db, ev, None);
-    Ok(seq)
+    Ok(Some(seq))
 }
 
 fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Result<i64> {

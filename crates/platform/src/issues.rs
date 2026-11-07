@@ -38,7 +38,11 @@ pub mod agent;
 use std::{collections::BTreeSet, sync::Arc};
 
 use arugula_control_common::{ApiError, err};
-use arugula_control_wire::{chat::ChatAgent, issues as wire};
+use arugula_control_wire::{
+    chat::ChatAgent,
+    issues as wire,
+    projects::{CI_VIA, ci_name},
+};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
@@ -88,7 +92,7 @@ impl Place {
     }
 
     /// Whether `account` is in the project: who may be assigned.
-    fn has(&self, account: &str) -> bool {
+    pub fn has(&self, account: &str) -> bool {
         match &self.team {
             Some(t) => t.role(account).is_some(),
             None => self.project.account.as_deref() == Some(account),
@@ -160,7 +164,8 @@ pub(crate) async fn issue_place(
 
 /// Machines' names for the agents among these, by id. An agent session
 /// (`ses_…`, aru-115) is named here, `Agent session <its first 8 hex>`, as
-/// chat names what one said.
+/// chat names what one said, and CI (`ci:<source>`, native #774) as
+/// `<source> CI`.
 async fn machine_names(
     app: &Platform,
     agents: impl Iterator<Item = &String>,
@@ -168,6 +173,9 @@ async fn machine_names(
     let (sessions, ids): (Vec<String>, Vec<String>) =
         agents.cloned().collect::<BTreeSet<_>>().into_iter().partition(|id| id.starts_with(SESSION));
     let mut out: Names = sessions.iter().map(|id| (id.clone(), session_name(id))).collect();
+    // What CI opened or closed (native #774) is named by its `ci:` id.
+    let (ci, ids): (Vec<String>, Vec<String>) = ids.into_iter().partition(|id| id.starts_with(CI_VIA));
+    out.extend(ci.into_iter().filter_map(|id| ci_name(&id).map(|n| (id, n))));
     if !ids.is_empty() {
         out.extend(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)));
     }

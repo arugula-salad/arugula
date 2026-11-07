@@ -271,6 +271,21 @@ pub trait Chat: Send + Sync + 'static {
     ) -> BoxFuture<'a, anyhow::Result<i64>> {
         Box::pin(async { anyhow::bail!("no chat here") })
     }
+    /// What CI said on a native issue (native #774, [`crate::ci_alerts`])
+    /// into its thread: no author, `via` `ci:chant`, nobody pushed here.
+    /// With `mark` (a delivery and its event) the delivery is noted in the
+    /// message's transaction, and `None` says it was noted already and
+    /// nothing was posted. The message's number.
+    fn ci_comment<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _issue: &'a str,
+        _via: &'a str,
+        _text: &'a str,
+        _mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async { anyhow::bail!("no chat here") })
+    }
     /// Before a grant of `power` over `scope` is given (#122): the rooms
     /// it lets agents into, and who reaches them now. `None` when it lets
     /// agents into none.

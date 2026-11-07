@@ -445,7 +445,7 @@ fn relations_keep_their_edges_and_take_before() {
     };
     c.execute_batch(&edge("rel_1", "blocks")).unwrap();
     assert!(c.execute_batch(&edge("rel_2", "before")).is_err(), "not before 0103");
-    assert_eq!(run(&mut c).unwrap().ran, [103, 104]);
+    assert_eq!(run(&mut c).unwrap().ran, [103, 104, 105]);
     assert_eq!(count(&c, "SELECT count(*) FROM work_relations"), 1);
     c.execute_batch(&edge("rel_2", "before")).unwrap();
     assert!(c.execute_batch(&edge("rel_3", "before")).is_err(), "one edge of a kind between two items");
@@ -469,7 +469,7 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
     .unwrap();
     assert_eq!(
         run(&mut c).unwrap().ran,
-        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104]
+        [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105]
     );
     c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
     let row = |id: &str| -> (String, String) {
