@@ -190,3 +190,36 @@ test("at a phone's width the name ellipsizes and the badge leaves the initials c
   expect(badge.x + badge.width).toBeLessThan(face.x + face.width / 2);
   await shot(chatPage, "message-phone", msg);
 });
+
+/** What `--teal` paints, as the browser resolves a colour: a probe given `var(--teal)`. */
+const teal = (page: Page) =>
+  page.evaluate(() => {
+    const probe = document.createElement("i");
+    probe.style.cssText = "color:var(--teal);background:var(--teal)";
+    document.body.append(probe);
+    const c = getComputedStyle(probe);
+    const out = { color: c.color, background: c.backgroundColor };
+    probe.remove();
+    return out;
+  });
+
+/** The name and the reaction's agent marks are painted `--teal` in Latte and Slate, as a link and as text. */
+for (const palette of ["latte", "default"]) {
+  test(`${palette}: the agent's name, link or text, and the chip's icon and divider are the palette's teal`, async () => {
+    test.setTimeout(90_000);
+    await alice.evaluate((p) => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: p, finish: "flat", corners: "soft" })), palette);
+    await reloaded();
+    if (palette === "latte") await expect(alice.locator("html")).toHaveAttribute("data-palette", "latte");
+    const block = alice.locator(`[data-chat-block="${chatBlock}"]`);
+    const want = await teal(alice);
+    const colour = (l: ReturnType<Page["locator"]>) => l.first().evaluate((n) => ({ color: getComputedStyle(n).color, background: getComputedStyle(n).backgroundColor }));
+    // The link (your own machine's agent), and the text (one you can't open).
+    expect((await colour(block.locator("button[data-agent-name]"))).color, "the name as a link").toBe(want.color);
+    expect((await colour(block.locator("span[data-agent-name]"))).color, "the name as text").toBe(want.color);
+    expect((await colour(block.locator(".reaction-agents"))).color, "the agents' count").toBe(want.color);
+    expect((await colour(block.locator(".reaction-sep"))).background, "the divider").toBe(want.background);
+    expect((await colour(block.locator(".avatar-badge"))).color, "the avatar's icon").toBe(want.color);
+    const dir = process.env.PROOF_DIR;
+    if (dir && palette === "latte") await block.locator('[data-agent-name]').first().locator("xpath=ancestor::*[@data-msg][1]").screenshot({ path: `${dir}/message-own-latte-teal.png` });
+  });
+}

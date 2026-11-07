@@ -41,7 +41,7 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
     // reach whose tab is gone says so.
     const gone = open && !!agent.session && !!api.machine(agent.machine);
     return (
-      <Tag class={open ? "thread-name agent-name" : "agent-name"} title={gone ? `${owner}. Its tab isn't open now` : owner} data-agent-name={handle}>
+      <Tag class={open ? "thread-name chat-agent-name" : "chat-agent-name"} title={gone ? `${owner}. Its tab isn't open now` : owner} data-agent-name={handle}>
         {handle}
       </Tag>
     );
@@ -49,7 +49,7 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
   return (
     <button
       type="button"
-      class="thread-name agent-name link"
+      class="thread-name chat-agent-name"
       title={target.up ? `${owner}. Open its pane` : `${owner}. ${agent.machine_name} is asleep`}
       data-agent-name={handle}
       data-opens="1"

@@ -12089,7 +12089,7 @@ html[data-workspace="new"] .thread-panel {
 /* An agent's message (M197): its owner's, named by its tab, `machine/tab`,
    in teal (#632); and the line a room shows when an agent grant reaches it.
    No rule down its left for now. */
-.agent-name {
+.chat-agent-name {
   color: var(--teal);
   min-width: 0;
   overflow: hidden;
@@ -12097,7 +12097,7 @@ html[data-workspace="new"] .thread-panel {
   white-space: nowrap;
 }
 
-button.agent-name {
+button.chat-agent-name {
   padding: 0;
   border: 0;
   background: none;
@@ -12106,7 +12106,7 @@ button.agent-name {
   cursor: pointer;
 }
 
-button.agent-name:hover {
+button.chat-agent-name:hover {
   text-decoration: underline;
 }
 
