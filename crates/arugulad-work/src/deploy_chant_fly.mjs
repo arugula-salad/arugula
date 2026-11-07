@@ -70,13 +70,7 @@
 // reports with the run's end, and the platform checks and keeps.
 
 import { spawnSync } from "node:child_process";
-import {
-  closeSync,
-  existsSync,
-  fstatSync,
-  writeFileSync,
-  writeSync,
-} from "node:fs";
+import { closeSync, existsSync, fstatSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
 // The result's pipe, written as fd 3 itself. Reopening it (/dev/fd/3) would
@@ -265,8 +259,60 @@ if (standIn && phase !== "plan") {
   git(["remote", "add", LEDGER_REMOTE, standIn]);
 }
 if (phase === "plan-fetch") {
+  // Where chant keeps this member's ledger on chant/lifecycle (chant's
+  // member-ledger.ts), read at the commit as data, for arugulad's check of
+  // what the plan adds there.
+  writeSync(resultFd, JSON.stringify(ledgerLayout()));
+  closeSync(resultFd);
   say(`fetched ${sha} from ${where}: nothing of it has run`);
   process.exit(0);
+}
+
+/**
+ * `{ledger_prefix}`: `""` with no workspace declaration between the chant
+ * member and the repository's root (the flat layout), or the root
+ * declaration's member that holds it (the deepest; the root member `.` is
+ * flat) as `_members/<name>/`. `{ledger_layout}`: why any other layout (a
+ * nested workspace, example groups, a `.jsonc` declaration, a repo member)
+ * isn't supported for planning yet.
+ */
+function ledgerLayout() {
+  const unsupported = (why) => ({
+    ledger_layout: `this repository's chant workspace isn't supported for planning yet: ${why}`,
+  });
+  const rel = chantDir.replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
+  if (rel.split("/").some((p) => p === ".." || p === "")) return unsupported(`chant_dir ${chantDir} isn't a plain path`);
+  const declared = (d) =>
+    ["chant.workspace.json", "chant.workspace.jsonc"].filter((f) => existsSync(join(src, d, f)));
+  const dirs = [];
+  for (let d = rel; ; d = d.includes("/") ? d.slice(0, d.lastIndexOf("/")) : ".") {
+    dirs.push(d);
+    if (d === ".") break;
+  }
+  const found = dirs.filter((d) => declared(d).length > 0);
+  if (found.length === 0) return { ledger_prefix: "" };
+  if (found.length > 1 || found[0] !== ".") return unsupported("a nested workspace declaration");
+  if (declared(".").join() !== "chant.workspace.json") return unsupported("a .jsonc declaration");
+  let decl;
+  try {
+    decl = JSON.parse(readFileSync(join(src, "chant.workspace.json"), "utf8"));
+  } catch {
+    return unsupported("its chant.workspace.json doesn't read as JSON");
+  }
+  const members = Array.isArray(decl?.members) ? decl.members : [];
+  if (members.some((m) => m?.kind === "examples")) return unsupported("example groups");
+  const inside = (path, dir) => dir === "." || path === dir || path.startsWith(`${dir}/`);
+  let best = null;
+  for (const m of members) {
+    if (m?.kind === "repo" || typeof m?.dir !== "string" || !inside(rel, m.dir.replace(/\/+$/, "") || ".")) continue;
+    const dir = m.dir.replace(/\/+$/, "") || ".";
+    if (!best || best.dir === "." || (dir !== "." && dir.length > best.dir.length)) best = { ...m, dir };
+  }
+  if (!best || best.dir === ".") return { ledger_prefix: "" };
+  if (best.kind === "workspace") return unsupported("a nested workspace member");
+  if (typeof best.name !== "string" || !/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(best.name))
+    return unsupported(`member ${JSON.stringify(best.name)}'s name`);
+  return { ledger_prefix: `_members/${best.name}/` };
 }
 
 // The token: a deploy token for one app that expires within 30 days, as

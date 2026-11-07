@@ -347,3 +347,16 @@ transcript is in `.state/window/transcript.txt`. Run it with its own
 
 The `ssh` profile's boxes never have Arugula built in: tests put it there
 over ssh from the client (`just static`), which is what `bare` guards.
+
+## A chant-fly plan's ledger across a box's users
+
+`testnet/hosted/plan-ledger-users.sh` runs what arugulad does after a
+chant-fly plan's step (#1985) on the hosted box's image, as its two users,
+with no control stack: `user` (arugulad's) can't open the run's home, and
+gets the bundle from `runner` through `crates/arugulad-work/src/run_file_read.sh`
+(only a regular file of runner's own, not a link, under the cap); a
+leftover of runner's that left its process group is found by `pgrep -u
+runner` and ended by `sudo -n -u runner kill -KILL -- -1`; runner can't read
+the environment of `user`'s process that holds the push's token; and git
+pushes with the token from its environment only. It needs Docker, and
+builds the image itself.

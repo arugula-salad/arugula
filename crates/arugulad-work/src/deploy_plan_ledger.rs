@@ -5,29 +5,35 @@
 //! bundle of what it added (`before..tip`). Once that step and everything
 //! it started are gone, this daemon, as its own user, in a directory of its
 //! own (0700) and with git reading no configuration but its own:
-//! - takes the bundle as data ([`PlanLedger::take_bundle`]): opened without
-//!   following a link, a regular file with one name that the run user owns,
-//!   at most [`MAX_BUNDLE`] bytes, copied without reading it into memory;
-//! - checks it ([`PlanLedger::check`]): its commits are a line on top of
-//!   `before`, origin's ledger as this daemon read it before the plan ran
-//!   ([`PlanLedger::fetch_before`]), or new from nothing when origin had
-//!   none; each commit only adds lines to the two files chant 0.124.68
-//!   writes when an op stops at a gate (`<prefix>_gates/<op>.jsonl` and
-//!   `<prefix><env>/runs__<op>.jsonl`); and what they add is this run's
-//!   pending fact for the gate the plan reported, which the environment's
-//!   `chant_gates` allows, and at most its run record;
+//! - takes the bundle as data ([`PlanLedger::take_bundle`]): handed over by
+//!   the run user, only a regular file with one name that it owns, not a
+//!   link, at most [`MAX_BUNDLE`] bytes, streamed (`crate::run_files`);
+//! - checks it ([`PlanLedger::check`]), git's fsck first: its commits are a
+//!   line on top of `before`, origin's ledger as this daemon read it before
+//!   the plan ran ([`PlanLedger::fetch_before`]), or new from nothing when
+//!   origin had none; each commit only appends whole lines to the two files
+//!   chant writes when an op stops at a gate, under this deploy's member's
+//!   prefix and environment (`<prefix>_gates/<op>.jsonl` and
+//!   `<prefix><env>/runs__<op>.jsonl`); and in all they add exactly this
+//!   run's pending fact for the gate the plan reported, which the
+//!   environment's `chant_gates` allows, and at most its run record, each
+//!   with only the keys and values chant writes there. That layout is chant
+//!   [`VERIFIED_CHANT`]'s, read in its source; a plan by any other chant is
+//!   refused as not supported yet;
 //! - only then is the token that writes asked for, and the ledger pushed
 //!   ([`PlanLedger::push`]), with the token in git's environment only (this
-//!   daemon's process, never a file or a command line).
+//!   daemon's process, never a file or a command line), and every copy of
+//!   it this daemon holds wiped after.
 
 use std::{
-    io::Read as _,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
 };
 
 use arugula_e2e::deploy::chant::Gate;
-use serde_json::Value;
+use serde_json::{Map, Value};
+
+use crate::RunAs;
 
 /// The largest bundle of chant's ledger a plan may leave: 32 MiB.
 pub const MAX_BUNDLE: u64 = 32 * 1024 * 1024;
@@ -35,11 +41,16 @@ pub const MAX_BUNDLE: u64 = 32 * 1024 * 1024;
 pub const MAX_LEDGER_FILE: u64 = 64 * 1024 * 1024;
 /// The most commits a plan may add to chant's ledger: chant makes two.
 pub const MAX_COMMITS: usize = 8;
+/// The chants whose gated stop writes exactly the layout [`PlanLedger::check`]
+/// knows, from their source: 0.124.64 to 0.124.68, inclusive.
+pub const VERIFIED_CHANT: (&str, &str) = ("0.124.64", "0.124.68");
+/// The longest a pending fact may wait, from its time: an op's gate
+/// `timeout` (chant's default 48h).
+const MAX_EXPIRY_MS: u64 = 30 * 24 * 3600 * 1000;
 /// chant's ledger branch.
 pub const LEDGER: &str = "refs/heads/chant/lifecycle";
 /// Where a fetched bundle's ledger is kept, beside origin's.
 const PLANNED: &str = "refs/heads/arugula/planned";
-
 /// The bundle the plan's step leaves in its home.
 pub const BUNDLE: &str = "ledger.bundle";
 
@@ -51,6 +62,12 @@ pub struct Want<'a> {
     pub gates_allowed: Option<&'a str>,
     /// The commit the deploy plans, which chant's facts name.
     pub source_ref: &'a str,
+    /// Where this deploy's chant member keeps its ledger: `""`, or
+    /// `_members/<member>/` (what the plan's fetch read at the commit).
+    pub prefix: &'a str,
+    /// The environment's `chant_env`: a run record goes under it, or under
+    /// `local` (an op with no `Env` label).
+    pub chant_env: &'a str,
 }
 
 /// Why a push didn't land.
@@ -73,6 +90,19 @@ impl std::fmt::Display for PushFailed {
     }
 }
 
+/// Whether chant `v` (`x.y.z`) is in [`VERIFIED_CHANT`].
+pub fn verified_chant(v: &str) -> bool {
+    let parse = |s: &str| -> Option<[u64; 3]> {
+        let mut it = s.split('.').map(|p| p.parse::<u64>().ok());
+        let out = [it.next()??, it.next()??, it.next()??];
+        it.next().is_none().then_some(out)
+    };
+    match (parse(v), parse(VERIFIED_CHANT.0), parse(VERIFIED_CHANT.1)) {
+        (Some(v), Some(lo), Some(hi)) => lo <= v && v <= hi,
+        _ => false,
+    }
+}
+
 /// A plan's ledger, in this daemon's own directory.
 #[derive(Clone)]
 pub struct PlanLedger {
@@ -92,18 +122,7 @@ impl PlanLedger {
         std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
         b.create(&dir).map_err(|e| format!("its ledger's directory: {e}"))?;
         let l = Self { dir };
-        let init = Command::new("git")
-            .env_clear()
-            .env("PATH", crate::RUN_PATH)
-            .env("HOME", &l.dir)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .args(["init", "-q", "--bare"])
-            .arg(l.repo())
-            .current_dir(&l.dir)
-            .stdin(Stdio::null())
-            .output()
-            .map_err(|e| format!("git: {e}"))?;
+        let init = l.git(&["init", "-q", "--bare"], None, false)?;
         if !init.status.success() {
             return Err(format!("git init: {}", String::from_utf8_lossy(&init.stderr).trim()));
         }
@@ -119,33 +138,53 @@ impl PlanLedger {
         self.dir.join("planned.bundle")
     }
 
-    /// git on its repository, reading no configuration but its own, with
-    /// `token` (when given) as GitHub's basic auth through its environment.
-    fn git(&self, token: Option<&str>) -> Command {
+    /// `git args` on its repository (`in_repo`; else the repository made),
+    /// reading no configuration but its own, with `token` (when given) as
+    /// GitHub's basic auth through its environment only. The header made
+    /// of it is wiped once git ends.
+    fn git(&self, args: &[&str], token: Option<&str>, in_repo: bool) -> Result<Output, String> {
         let mut c = Command::new("git");
         c.env_clear()
             .env("PATH", crate::RUN_PATH)
             .env("HOME", &self.dir)
             .env("LC_ALL", "C")
-            .env("GIT_DIR", self.repo())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
             .current_dir(&self.dir)
             .stdin(Stdio::null());
+        if in_repo {
+            c.env("GIT_DIR", self.repo());
+        } else {
+            c.arg("init").args(&args[1..]).arg(self.repo());
+        }
+        let mut header = None;
         if let Some(t) = token {
             use base64::Engine as _;
-            let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{t}"));
-            c.env("GIT_CONFIG_COUNT", "1")
-                .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
-                .env("GIT_CONFIG_VALUE_0", format!("AUTHORIZATION: basic {basic}"));
+            let mut pair = format!("x-access-token:{t}").into_bytes();
+            let basic = base64::engine::general_purpose::STANDARD.encode(&pair);
+            pair.iter_mut().for_each(|b| *b = 0);
+            let h = format!("AUTHORIZATION: basic {basic}");
+            super::wipe_bytes(basic.into_bytes());
+            c.env("GIT_CONFIG_COUNT", "1").env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader");
+            c.env("GIT_CONFIG_VALUE_0", &h);
+            header = Some(h);
         }
-        c
+        if in_repo {
+            c.args(args);
+        }
+        let out = c.output().map_err(|e| format!("git: {e}"));
+        // The command's own copy of its environment goes with it.
+        drop(c);
+        if let Some(h) = header {
+            super::wipe_bytes(h.into_bytes());
+        }
+        out
     }
 
     /// `git args`'s standard output, or why it failed.
     fn out(&self, args: &[&str]) -> Result<String, String> {
-        let o = self.git(None).args(args).output().map_err(|e| format!("git: {e}"))?;
+        let o = self.git(args, None, true)?;
         if !o.status.success() {
             return Err(format!("git {}: {}", args.join(" "), String::from_utf8_lossy(&o.stderr).trim()));
         }
@@ -155,63 +194,38 @@ impl PlanLedger {
     /// Origin's ledger, fetched here with `token` (one that reads): its
     /// tip, or `None` when origin has none. What the plan must add to.
     pub fn fetch_before(&self, origin: &str, token: Option<&str>) -> Result<Option<String>, String> {
-        let o = self.git(token).args(["ls-remote", "--", origin, LEDGER]).output().map_err(|e| format!("git: {e}"))?;
+        let o = self.git(&["ls-remote", "--", origin, LEDGER], token, true)?;
         if !o.status.success() {
             return Err(format!("reading origin's ledger: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
         if String::from_utf8_lossy(&o.stdout).trim().is_empty() {
             return Ok(None);
         }
-        let o = self
-            .git(token)
-            .args(["-c", "transfer.fsckObjects=true", "fetch", "-q", "--no-tags", "--", origin])
-            .arg(format!("+{LEDGER}:{LEDGER}"))
-            .output()
-            .map_err(|e| format!("git: {e}"))?;
+        let spec = format!("+{LEDGER}:{LEDGER}");
+        let o = self.git(&["fetch", "-q", "--no-tags", "--", origin, &spec], token, true)?;
         if !o.status.success() {
             return Err(format!("fetching origin's ledger: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
         Ok(Some(self.out(&["rev-parse", "--verify", LEDGER])?.trim().to_owned()))
     }
 
-    /// The bundle the plan left at `from`, copied here: opened without
-    /// following a link, a regular file with one name that `uid` owns, at
-    /// most [`MAX_BUNDLE`] bytes, streamed.
-    #[cfg(unix)]
-    pub fn take_bundle(&self, from: &Path, uid: u32) -> Result<(), String> {
-        use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
-        let refused = |why: &str| Err(format!("the plan's bundle of chant's ledger {why}: nothing is pushed"));
-        let Ok(mut f) = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
-            .open(from)
-        else {
-            return refused("isn't there, or is a link");
-        };
-        let Ok(m) = f.metadata() else { return refused("doesn't read") };
-        if !m.is_file() || m.uid() != uid || m.nlink() != 1 {
-            return refused("isn't a file of the run's own");
+    /// The bundle the plan left at `from`, handed over by the run user
+    /// (`crate::run_files`: a regular file with one name that it owns, not a
+    /// link) and kept here, at most [`MAX_BUNDLE`] bytes, streamed.
+    pub async fn take_bundle(&self, as_: Option<&RunAs>, from: &Path) -> Result<(), String> {
+        let mut opts = tokio::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        opts.mode(0o600);
+        let mut to = opts.open(self.bundle()).await.map_err(|e| format!("keeping the plan's bundle: {e}"))?;
+        match crate::run_files::copy_own(as_, from, MAX_BUNDLE, &mut to).await {
+            Ok(_) => Ok(()),
+            Err(crate::run_files::NotRead::TooLarge) => Err(format!(
+                "the plan's bundle of chant's ledger is larger than {} MiB: nothing is pushed",
+                MAX_BUNDLE >> 20
+            )),
+            Err(why) => Err(format!("the plan's bundle of chant's ledger {why}: nothing is pushed")),
         }
-        if m.len() > MAX_BUNDLE {
-            return refused(&format!("is larger than {} MiB", MAX_BUNDLE >> 20));
-        }
-        let mut to = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(self.bundle())
-            .map_err(|e| format!("keeping the plan's bundle: {e}"))?;
-        let copied = std::io::copy(&mut f.by_ref().take(MAX_BUNDLE + 1), &mut to)
-            .map_err(|e| format!("keeping the plan's bundle: {e}"))?;
-        if copied > MAX_BUNDLE {
-            return refused(&format!("is larger than {} MiB", MAX_BUNDLE >> 20));
-        }
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    pub fn take_bundle(&self, _: &Path, _: u32) -> Result<(), String> {
-        Err("a deploy's plan runs on a Linux box only".into())
     }
 
     /// The taken bundle, checked against `before` (origin's tip as fetched
@@ -219,6 +233,13 @@ impl PlanLedger {
     pub fn check(&self, before: Option<&str>, want: &Want) -> Result<String, String> {
         let refused = |why: String| Err(format!("chant's ledger from the plan {why}: nothing is pushed"));
         let g = want.gate;
+        if !verified_chant(&g.chant) {
+            return Err(format!(
+                "this chant isn't supported for planning yet: the plan ran chant {}, and Arugula checks the ledger \
+                 chant {} to {} writes at a gate. Pin one of those in the repository's package.json",
+                g.chant, VERIFIED_CHANT.0, VERIFIED_CHANT.1
+            ));
+        }
         if g.op != want.op {
             return refused(format!("is for op {}, not {}", g.op, want.op));
         }
@@ -227,18 +248,21 @@ impl PlanLedger {
         {
             return refused(format!("stops at gate {}, which the environment's chant_gates doesn't name", g.gate));
         }
+        if g.checkpoint.is_some() {
+            return Err(
+                "a gate that resumes from a checkpoint (chant#3947) isn't supported for planning yet: nothing is pushed"
+                    .into(),
+            );
+        }
         let bundle = self.bundle();
         let b = bundle.to_string_lossy();
-        if let Err(why) = self.out(&[
-            "-c",
-            "transfer.fsckObjects=true",
-            "fetch",
-            "-q",
-            "--no-tags",
-            &b,
-            &format!("+{LEDGER}:{PLANNED}"),
-        ]) {
+        let spec = format!("+{LEDGER}:{PLANNED}");
+        if let Err(why) = self.out(&["fetch", "-q", "--no-tags", &b, &spec]) {
             return refused(format!("doesn't read as a bundle of chant/lifecycle on top of origin's ({why})"));
+        }
+        // git's own check of every object, whatever its transfer checks did.
+        if let Err(why) = self.out(&["fsck", "--strict", "--no-dangling", "--no-progress"]) {
+            return refused(format!("doesn't pass git fsck ({why})"));
         }
         let tip = self.out(&["rev-parse", "--verify", PLANNED])?.trim().to_owned();
         // Its commits, oldest first, each with its parents: one line on top
@@ -269,11 +293,10 @@ impl PlanLedger {
             }
             prev = Some(c[0].to_owned());
         }
-        // What each commit changes: only chant's two gate files, under one
-        // prefix, each only added to.
-        let mut prefix: Option<String> = None;
+        // What each commit changes: only chant's two gate files, under this
+        // member's prefix and environment, each only added to, by whole lines.
         let mut gates_file = None;
-        let mut runs_file = None;
+        let mut runs_file: Option<(String, String)> = None;
         for c in &commits {
             let raw =
                 self.out(&["-c", "core.quotePath=false", "diff-tree", "-r", "--raw", "--no-renames", "--root", c[0]])?;
@@ -283,23 +306,31 @@ impl PlanLedger {
                 let [old_mode, new_mode, old_blob, new_blob, status] = f[..] else {
                     return refused(format!("changes {path} in a way it can't read"));
                 };
-                let Some((p, kind)) = allowed(path, want.op) else {
-                    return refused(format!("changes {path}, which chant doesn't write when an op stops at a gate"));
+                let Some(kind) = allowed(path, want) else {
+                    return refused(format!(
+                        "changes {path}, which chant doesn't write for this deploy when an op stops at a gate"
+                    ));
                 };
-                if prefix.get_or_insert_with(|| p.clone()) != &p {
-                    return refused("writes under two members' prefixes".into());
-                }
                 let added = status == "A" && old_mode == "000000";
                 let modified = status == "M" && old_mode == "100644";
                 if !(added || modified) || new_mode != "100644" {
                     return refused(format!("changes {path} other than by adding to a file"));
                 }
-                if modified && !self.blob(new_blob)?.starts_with(&self.blob(old_blob)?) {
-                    return refused(format!("rewrites {path}, which chant only appends to"));
+                let old = if modified { self.blob(old_blob)? } else { Vec::new() };
+                if appended(&old, &self.blob(new_blob)?).is_none() {
+                    return refused(format!("changes {path} other than by adding whole lines to its end"));
                 }
-                let slot = if kind == Kind::Gates { &mut gates_file } else { &mut runs_file };
-                if slot.get_or_insert_with(|| path.to_owned()) != path {
-                    return refused(format!("writes two run records' files ({path})"));
+                match kind {
+                    Kind::Gates => {
+                        if gates_file.get_or_insert_with(|| path.to_owned()) != path {
+                            return refused(format!("writes two gate files ({path})"));
+                        }
+                    }
+                    Kind::Runs(env) => {
+                        if runs_file.get_or_insert_with(|| (path.to_owned(), env.clone())).0 != path {
+                            return refused(format!("writes two run records' files ({path})"));
+                        }
+                    }
                 }
             }
         }
@@ -309,39 +340,18 @@ impl PlanLedger {
         let [pending] = added.as_slice() else {
             return refused(format!("adds {} lines to {gates}, not one pending fact", added.len()));
         };
-        let p: Value = serde_json::from_str(pending).unwrap_or_default();
-        let fact_ok = p["kind"] == "pending"
-            && p["op"] == want.op
-            && p["gate"] == g.gate.as_str()
-            && p["runId"] == g.run.as_str()
-            && p["planDigest"] == g.plan.as_str()
-            && p["gitSha"] == want.source_ref
-            && p["timestamp"] == g.recorded.as_str();
-        if !fact_ok {
-            return refused(format!(
-                "adds a line to {gates} that isn't the pending fact of run {} for gate {} with plan {}",
-                g.run, g.gate, g.plan
-            ));
+        if let Err(why) = pending_ok(pending, want) {
+            return refused(format!("adds to {gates} a pending fact that {why}"));
         }
-        if let Some(runs) = runs_file {
+        if let Some((runs, env)) = runs_file {
             let added = self.added(before, &tip, &runs)?;
             let ok = match added.as_slice() {
-                [] => true,
-                [line] => {
-                    let r: Value = serde_json::from_str(line).unwrap_or_default();
-                    r["id"] == g.run.as_str()
-                        && r["op"] == want.op
-                        && r["status"] == "gated"
-                        && r["gitSha"] == want.source_ref
-                        && r["gate"]["name"] == g.gate.as_str()
-                }
-                _ => false,
+                [] => Ok(()),
+                [line] => run_record_ok(line, want, &env),
+                _ => Err(format!("is {} lines, not one record", added.len())),
             };
-            if !ok {
-                return refused(format!(
-                    "adds to {runs} something other than run {}'s record, gated at {}",
-                    g.run, g.gate
-                ));
+            if let Err(why) = ok {
+                return refused(format!("adds to {runs} a run record that {why}"));
             }
         }
         Ok(tip)
@@ -356,19 +366,17 @@ impl PlanLedger {
                 MAX_LEDGER_FILE >> 20
             ));
         }
-        let o = self.git(None).args(["cat-file", "blob", id]).output().map_err(|e| format!("git: {e}"))?;
+        let o = self.git(&["cat-file", "blob", id], None, true)?;
         if !o.status.success() {
             return Err(format!("reading chant's ledger: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
         Ok(o.stdout)
     }
 
-    /// The lines `tip` adds to `path` after `before` (whose copy, if any,
-    /// the check found it starts with).
+    /// The lines `tip` adds to `path` after `before`.
     fn added(&self, before: Option<&str>, tip: &str, path: &str) -> Result<Vec<String>, String> {
         let id = |rev: &str| -> Result<Option<String>, String> {
-            let o = self.git(None).args(["rev-parse", "-q", "--verify", &format!("{rev}:{path}")]).output();
-            let o = o.map_err(|e| format!("git: {e}"))?;
+            let o = self.git(&["rev-parse", "-q", "--verify", &format!("{rev}:{path}")], None, true)?;
             Ok(o.status.success().then(|| String::from_utf8_lossy(&o.stdout).trim().to_owned()))
         };
         let old = match before.map(id).transpose()?.flatten() {
@@ -379,21 +387,17 @@ impl PlanLedger {
             Some(b) => self.blob(&b)?,
             None => Vec::new(),
         };
-        let Some(rest) = new.strip_prefix(old.as_slice()) else {
-            return Err(format!("chant's ledger from the plan rewrites {path}: nothing is pushed"));
-        };
-        Ok(String::from_utf8_lossy(rest).lines().filter(|l| !l.is_empty()).map(str::to_owned).collect())
+        appended(&old, &new).ok_or_else(|| format!("chant's ledger from the plan rewrites {path}: nothing is pushed"))
     }
 
     /// Push `tip` as origin's ledger, with `token` (one that writes), only
     /// while origin's is still `before` (none: still none).
     pub fn push(&self, origin: &str, tip: &str, before: Option<&str>, token: Option<&str>) -> Result<(), PushFailed> {
         let lease = format!("--force-with-lease={LEDGER}:{}", before.unwrap_or(""));
+        let refspec = format!("{tip}:{LEDGER}");
         let o = self
-            .git(token)
-            .args(["push", "--porcelain", "--no-verify", &lease, "--", origin, &format!("{tip}:{LEDGER}")])
-            .output()
-            .map_err(|e| PushFailed::Other(format!("git: {e}")))?;
+            .git(&["push", "--porcelain", "--no-verify", &lease, "--", origin, &refspec], token, true)
+            .map_err(PushFailed::Other)?;
         if o.status.success() {
             return Ok(());
         }
@@ -409,37 +413,130 @@ impl PlanLedger {
     }
 }
 
-/// Which of chant's gate files `path` is, for `op`: its member prefix
-/// (`""` or `_members/<member>/` per level) and which.
+/// The whole lines `new` adds to the end of `old`: `None` unless `old` is
+/// empty or ends with a newline, `new` starts with it, and what follows is
+/// lines that each end with one.
+fn appended(old: &[u8], new: &[u8]) -> Option<Vec<String>> {
+    if !(old.is_empty() || old.ends_with(b"\n")) {
+        return None;
+    }
+    let rest = new.strip_prefix(old)?;
+    if !(rest.is_empty() || rest.ends_with(b"\n")) {
+        return None;
+    }
+    let text = std::str::from_utf8(rest).ok()?;
+    Some(text.split_terminator('\n').map(str::to_owned).collect())
+}
+
+/// The keys of `o`, each checked by `check` against what it must be; any key
+/// it doesn't know is refused.
+fn exact(o: &Map<String, Value>, check: impl Fn(&str, &Value) -> Option<bool>) -> Result<(), String> {
+    for (k, v) in o {
+        match check(k, v) {
+            Some(true) => {}
+            Some(false) => return Err(format!("has {k} {v}, not this run's")),
+            None => return Err(format!("carries {k}, which chant doesn't write at a gate on a box")),
+        }
+    }
+    Ok(())
+}
+
+/// The pending fact, exactly as chant writes it when this run stops at the
+/// gate: its keys, each one's value from the gate, run, commit and time,
+/// and chant's own defaults for the rest.
+fn pending_ok(line: &str, want: &Want) -> Result<(), String> {
+    let g = want.gate;
+    let p: Value = serde_json::from_str(line).map_err(|_| "doesn't read as JSON".to_owned())?;
+    let o = p.as_object().ok_or("isn't an object")?;
+    for k in ["version", "kind", "op", "gate", "runId", "gitSha", "timestamp", "expiresAt", "planDigest", "origin"] {
+        if !o.contains_key(k) {
+            return Err(format!("has no {k}"));
+        }
+    }
+    if g.environment.is_some() && !o.contains_key("environment") {
+        return Err("has no environment, which the gate names".into());
+    }
+    let at = arugula_e2e::deploy::chant::timestamp_ms(&g.recorded);
+    exact(o, |k, v| {
+        Some(match k {
+            "version" => v == 1,
+            "kind" => v == "pending",
+            "op" => v == want.op,
+            "gate" => v == g.gate.as_str(),
+            "runId" => v == g.run.as_str(),
+            "gitSha" => v == want.source_ref,
+            "timestamp" => v == g.recorded.as_str(),
+            "planDigest" => v == g.plan.as_str(),
+            // chant's own origin on a box, with no MCP or ACP channel.
+            "origin" => v == "cli",
+            // From the op's gate `timeout`: after the fact, and not for long.
+            "expiresAt" => {
+                let end = v.as_str().and_then(arugula_e2e::deploy::chant::timestamp_ms);
+                matches!((at, end), (Some(a), Some(e)) if e > a && e - a <= MAX_EXPIRY_MS)
+            }
+            // Only ever narrows who may approve.
+            "neverOverMcp" => v == true,
+            // The gate's own description, as the op declares it.
+            "description" => v.as_str().is_some_and(|d| d.len() <= 1024 && !d.chars().any(char::is_control)),
+            "environment" => g.environment.as_deref().is_some_and(|e| v == e),
+            _ => return None,
+        })
+    })
+}
+
+/// The run record chant writes beside it, for this run gated at the gate,
+/// under environment `env`.
+fn run_record_ok(line: &str, want: &Want, env: &str) -> Result<(), String> {
+    let g = want.gate;
+    let r: Value = serde_json::from_str(line).map_err(|_| "doesn't read as JSON".to_owned())?;
+    let o = r.as_object().ok_or("isn't an object")?;
+    for k in ["version", "id", "op", "env", "started", "ended", "status", "labels", "outcomes", "phases", "gate"] {
+        if !o.contains_key(k) {
+            return Err(format!("has no {k}"));
+        }
+    }
+    let time = |v: &Value| v.as_str().and_then(arugula_e2e::deploy::chant::timestamp_ms).is_some();
+    exact(o, |k, v| {
+        Some(match k {
+            "version" => v == 1,
+            "id" => v == g.run.as_str(),
+            "op" => v == want.op,
+            "env" => v == env,
+            "status" => v == "gated",
+            "gitSha" => v == want.source_ref,
+            "started" | "ended" => time(v),
+            "gate" => *v == serde_json::json!({ "name": g.gate, "since": g.recorded }),
+            "labels" => {
+                v.as_object().is_some_and(|l| l.values().all(Value::is_string) && l.get("Env").is_none_or(|e| e == env))
+            }
+            "outcomes" => v.is_object(),
+            "phases" => v.is_array(),
+            _ => return None,
+        })
+    })
+}
+
+/// Which of chant's gate files `path` is, for `want`'s deploy: under its
+/// member's prefix exactly, the op's gate ledger, or its run records under
+/// `chant_env` or `local`. No part of it starts with a dot.
 #[derive(Debug, PartialEq, Eq)]
 enum Kind {
     Gates,
-    Runs,
+    Runs(String),
 }
 
-fn allowed(path: &str, op: &str) -> Option<(String, Kind)> {
-    let word = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
-    let mut parts: Vec<&str> = path.split('/').collect();
-    let file = parts.pop()?;
-    let mut prefix = String::new();
-    let mut i = 0;
-    // `_members/<member>/` per level, with something after it.
-    while i + 2 < parts.len() && parts[i] == "_members" {
-        let m = parts[i + 1];
-        if !word(m) {
-            return None;
-        }
-        prefix.push_str(&format!("_members/{m}/"));
-        i += 2;
+fn allowed(path: &str, want: &Want) -> Option<Kind> {
+    if path.split('/').any(|p| p.is_empty() || p.starts_with('.')) {
+        return None;
     }
-    let rest = &parts[i..];
-    match rest {
-        ["_gates"] if file == format!("{op}.jsonl") => Some((prefix, Kind::Gates)),
-        [env] if word(env) && *env != "_gates" && *env != "_members" && file == format!("runs__{op}.jsonl") => {
-            Some((prefix, Kind::Runs))
-        }
-        _ => None,
+    let rest = path.strip_prefix(want.prefix)?;
+    if rest == format!("_gates/{}.jsonl", want.op) {
+        return Some(Kind::Gates);
     }
+    let (env, file) = rest.split_once('/')?;
+    let envs = [want.chant_env, "local"];
+    (file == format!("runs__{}.jsonl", want.op) && envs.contains(&env) && !env.is_empty())
+        .then(|| Kind::Runs(env.to_owned()))
 }
 
 #[cfg(test)]
@@ -478,24 +575,30 @@ mod tests {
         }
     }
 
-    /// chant 0.124.68's lines for `gate()`, as a gated stop writes them.
-    fn pending() -> String {
+    /// chant 0.124.68's pending fact for `gate()`, as a gated stop on a box
+    /// writes it (the keys of the one it wrote on a scratch repository).
+    fn pending() -> Value {
         let g = gate();
         serde_json::json!({
             "description": "Approve deploying this commit", "expiresAt": "2026-11-07T23:27:30.435Z", "gate": g.gate,
             "gitSha": SHA, "kind": "pending", "neverOverMcp": true, "op": "release", "origin": "cli",
             "planDigest": g.plan, "runId": g.run, "timestamp": g.recorded, "version": 1,
         })
-        .to_string()
     }
 
-    fn run_record() -> String {
+    /// Its run record.
+    fn run_record() -> Value {
         let g = gate();
         serde_json::json!({
-            "env": "local", "gate": { "name": g.gate, "since": g.recorded }, "gitSha": SHA, "id": g.run,
-            "op": "release", "status": "gated", "version": 1,
+            "ended": "2026-11-06T23:27:30.752Z", "env": "local", "gate": { "name": g.gate, "since": g.recorded },
+            "gitSha": SHA, "id": g.run, "labels": {}, "op": "release", "outcomes": {},
+            "phases": [{ "name": "Plan", "status": "ok", "steps": [] }], "started": "2026-11-06T23:27:30.197Z",
+            "status": "gated", "version": 1,
         })
-        .to_string()
+    }
+
+    fn want(g: &Gate) -> Want<'_> {
+        Want { op: "release", gate: g, gates_allowed: None, source_ref: SHA, prefix: "", chant_env: "github" }
     }
 
     /// A scratch: an origin (`origin.git`, with a ledger of its own when
@@ -524,26 +627,73 @@ mod tests {
         sh(&dir.join("work"), &format!("{script} && git add -A && git commit -q -m plan"));
     }
 
+    /// Append `line` to `path` as one commit.
+    fn append(dir: &Path, path: &str, line: &Value) {
+        let parent = Path::new(path).parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let mk = if parent.is_empty() { String::new() } else { format!("mkdir -p {parent} && ") };
+        commit(dir, &format!("{mk}printf '%s\\n' '{line}' >> {path}"));
+    }
+
     /// The gated stop's two commits, as chant makes them.
     fn chants(dir: &Path) {
-        commit(dir, &format!("mkdir -p _gates && echo '{}' >> _gates/release.jsonl", pending()));
-        commit(dir, &format!("mkdir -p local && echo '{}' >> local/runs__release.jsonl", run_record()));
+        append(dir, "_gates/release.jsonl", &pending());
+        append(dir, "local/runs__release.jsonl", &run_record());
     }
 
     /// Bundle the plan's commits as the plan step does, take it, and check
-    /// it: the tip, or why not.
-    fn checked(dir: &Path, name: &str, gates: Option<&str>) -> (PlanLedger, Option<String>, Result<String, String>) {
+    /// it against `want(g)` as `how` changes it: the tip, or why not.
+    fn checked(
+        dir: &Path,
+        name: &str,
+        g: &Gate,
+        how: impl Fn(Want) -> Want,
+    ) -> (PlanLedger, Option<String>, Result<String, String>) {
         let l = PlanLedger::new(dir.join(format!("daemon-{name}"))).unwrap();
         let origin = dir.join("origin.git");
         let before = l.fetch_before(origin.to_str().unwrap(), None).unwrap();
         let since = before.as_ref().map(|b| format!(" ^{b}")).unwrap_or_default();
         sh(&dir.join("work"), &format!("git bundle create -q ../{name}.bundle refs/heads/chant/lifecycle{since}"));
-        let uid = nix::unistd::getuid().as_raw();
-        let g = gate();
-        let want = Want { op: "release", gate: &g, gates_allowed: gates, source_ref: SHA };
-        let r =
-            l.take_bundle(&dir.join(format!("{name}.bundle")), uid).and_then(|()| l.check(before.as_deref(), &want));
+        let w = how(want(g));
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let taken = rt.block_on(l.take_bundle(None, &dir.join(format!("{name}.bundle"))));
+        let r = taken.and_then(|()| l.check(before.as_deref(), &w));
         (l, before, r)
+    }
+
+    #[test]
+    fn chants_gate_files_only() {
+        let g = gate();
+        let flat = want(&g);
+        assert_eq!(allowed("_gates/release.jsonl", &flat), Some(Kind::Gates));
+        assert_eq!(allowed("local/runs__release.jsonl", &flat), Some(Kind::Runs("local".into())));
+        assert_eq!(allowed("github/runs__release.jsonl", &flat), Some(Kind::Runs("github".into())));
+        let member = Want { prefix: "_members/api/", ..want(&g) };
+        assert_eq!(allowed("_members/api/_gates/release.jsonl", &member), Some(Kind::Gates));
+        assert_eq!(allowed("_members/api/local/runs__release.jsonl", &member), Some(Kind::Runs("local".into())));
+        for (no, w) in [
+            ("_members/other/_gates/release.jsonl", &member),
+            ("_gates/release.jsonl", &member),
+            ("_members/api/_gates/release.jsonl", &flat),
+            ("staging/runs__release.jsonl", &flat),
+            ("_gates/other.jsonl", &flat),
+            ("_gates/release/applied.jsonl", &flat),
+            ("_gates/release/checkpoints/x.json", &flat),
+            (".github/workflows/x.yml", &flat),
+            ("github/releases.jsonl", &flat),
+            ("./_gates/release.jsonl", &flat),
+            (".local/runs__release.jsonl", &flat),
+            ("_gates//release.jsonl", &flat),
+            ("release.jsonl", &flat),
+        ] {
+            assert_eq!(allowed(no, w), None, "{no}");
+        }
+    }
+
+    #[test]
+    fn only_verified_chants() {
+        assert!(verified_chant("0.124.64") && verified_chant("0.124.66") && verified_chant("0.124.68"));
+        assert!(!verified_chant("0.124.63") && !verified_chant("0.124.69") && !verified_chant("0.125.0"));
+        assert!(!verified_chant("0.124") && !verified_chant("0.124.68.1") && !verified_chant("x"));
     }
 
     /// What chant writes when an op stops at a gate goes through, on top of
@@ -553,7 +703,8 @@ mod tests {
         for ledger in [true, false] {
             let dir = scratch(&format!("ok-{ledger}"), ledger);
             chants(&dir);
-            let (l, before, r) = checked(&dir, "ok", Some("approve-release,ship"));
+            let (l, before, r) =
+                checked(&dir, "ok", &gate(), |w| Want { gates_allowed: Some("approve-release,ship"), ..w });
             let tip = r.unwrap();
             assert_eq!(before.is_some(), ledger);
             let origin = dir.join("origin.git");
@@ -566,14 +717,19 @@ mod tests {
     #[test]
     fn anything_else_is_refused() {
         type Make = fn(&Path);
-        let cases: [(&str, bool, Make, Option<&str>, &str); 9] = [
+        fn with(k: &str, v: Value) -> Value {
+            let mut p = pending();
+            p[k] = v;
+            p
+        }
+        let cases: Vec<(&str, bool, Make, Option<&str>, &str)> = vec![
             // Another op's fact rewritten, or this op's old lines.
             (
                 "other-op",
                 true,
                 |d| {
                     chants(d);
-                    commit(d, "echo '{\"kind\":\"resolution\",\"op\":\"other\"}' >> _gates/other.jsonl");
+                    append(d, "_gates/other.jsonl", &serde_json::json!({ "kind": "resolution", "op": "other" }));
                 },
                 None,
                 "changes _gates/other.jsonl",
@@ -581,13 +737,12 @@ mod tests {
             (
                 "rewrite",
                 true,
-                |d| {
-                    commit(d, &format!("echo '{}' > _gates/release.jsonl", pending()));
-                },
+                |d| commit(d, &format!("printf '%s\\n' '{}' > _gates/release.jsonl", pending())),
                 None,
-                "rewrites _gates/release.jsonl",
+                "other than by adding whole lines",
             ),
-            // A path chant doesn't write at a gate: a workflow.
+            // A path chant doesn't write at a gate: a workflow, on top of
+            // origin's ledger or when origin has none.
             (
                 "workflow",
                 true,
@@ -598,7 +753,6 @@ mod tests {
                 None,
                 "changes .github/workflows/x.yml",
             ),
-            // When origin has none, only chant's paths.
             (
                 "orphan-workflow",
                 false,
@@ -626,33 +780,96 @@ mod tests {
             ),
             // A gate the environment doesn't allow.
             ("gate", true, chants, Some("ship"), "chant_gates doesn't name"),
-            // Another run's fact, or two.
+            // Another run's fact too.
             (
                 "two-facts",
                 true,
                 |d| {
                     chants(d);
-                    commit(
-                        d,
-                        &format!("echo '{}' >> _gates/release.jsonl", pending().replace("local-1794", "local-9994")),
-                    );
+                    append(d, "_gates/release.jsonl", &with("runId", "local-9".into()));
                 },
                 None,
                 "adds 2 lines",
             ),
-            // A file that's a link, or a mode chant never writes.
+            // An executable mode.
             (
-                "link",
+                "mode",
                 true,
                 |d| {
                     chants(d);
-                    commit(
-                        d,
-                        "ln -s /etc/passwd local/runs__release.jsonl.tmp && rm local/runs__release.jsonl.tmp && chmod +x _gates/release.jsonl",
-                    );
+                    commit(d, "chmod +x _gates/release.jsonl");
                 },
                 None,
                 "other than by adding to a file",
+            ),
+            // Not whole lines: a line with no newline.
+            (
+                "no-newline",
+                true,
+                |d| commit(d, &format!("printf '%s' '{}' >> _gates/release.jsonl", pending())),
+                None,
+                "other than by adding whole lines",
+            ),
+            // A key chant doesn't write at a gate on a box, or one of
+            // chant's own values the plan picked.
+            (
+                "extra-key",
+                true,
+                |d| append(d, "_gates/release.jsonl", &with("approval", serde_json::json!({ "quorum": 0 }))),
+                None,
+                "carries approval",
+            ),
+            (
+                "origin",
+                true,
+                |d| append(d, "_gates/release.jsonl", &with("origin", "mcp".into())),
+                None,
+                "has origin \"mcp\"",
+            ),
+            (
+                "never-over-mcp",
+                true,
+                |d| append(d, "_gates/release.jsonl", &with("neverOverMcp", false.into())),
+                None,
+                "has neverOverMcp false",
+            ),
+            (
+                "expires",
+                true,
+                |d| append(d, "_gates/release.jsonl", &with("expiresAt", "2099-01-01T00:00:00.000Z".into())),
+                None,
+                "has expiresAt",
+            ),
+            (
+                "plan",
+                true,
+                |d| append(d, "_gates/release.jsonl", &with("planDigest", "sha256:00".into())),
+                None,
+                "has planDigest",
+            ),
+            // Its run record: another status, or another environment than
+            // the deploy's or `local`.
+            (
+                "run-record",
+                true,
+                |d| {
+                    append(d, "_gates/release.jsonl", &pending());
+                    let mut r = run_record();
+                    r["status"] = "ok".into();
+                    append(d, "local/runs__release.jsonl", &r);
+                },
+                None,
+                "has status \"ok\"",
+            ),
+            (
+                "other-env",
+                true,
+                |d| {
+                    append(d, "_gates/release.jsonl", &pending());
+                    append(d, "staging/runs__release.jsonl", &run_record());
+                },
+                None,
+                "changes staging/runs__release.jsonl",
             ),
             // A merge.
             (
@@ -672,23 +889,44 @@ mod tests {
         for (name, ledger, make, gates, says) in cases {
             let dir = scratch(name, ledger);
             make(&dir);
-            let (_, _, r) = checked(&dir, name, gates);
+            let (_, _, r) = checked(&dir, name, &gate(), |w| Want { gates_allowed: gates, ..w });
             let why = r.expect_err(name);
             assert!(why.contains(says) && why.ends_with("nothing is pushed"), "{name}: {why}");
         }
     }
 
-    /// A bundle larger than [`MAX_BUNDLE`], or a link, isn't taken.
+    /// A gate from a chant whose layout isn't verified, one that resumes, a
+    /// member's ledger that isn't this deploy's, or a gate's environment the
+    /// fact doesn't name: refused, saying which.
     #[test]
-    fn an_oversized_bundle_or_a_link_isnt_taken() {
+    fn the_deploys_own_chant_member_and_environment_only() {
+        let dir = scratch("own", true);
+        chants(&dir);
+        let newer = Gate { chant: "0.124.69".into(), ..gate() };
+        let why = checked(&dir, "newer", &newer, |w| w).2.unwrap_err();
+        assert!(
+            why.starts_with("this chant isn't supported for planning yet") && why.contains("0.124.64 to 0.124.68"),
+            "{why}"
+        );
+        let resumes = Gate { checkpoint: Some(format!("jcs1-sha256:{}", "c".repeat(64))), ..gate() };
+        assert!(checked(&dir, "resumes", &resumes, |w| w).2.unwrap_err().contains("resumes from a checkpoint"));
+        let why = checked(&dir, "member", &gate(), |w| Want { prefix: "_members/api/", ..w }).2.unwrap_err();
+        assert!(why.contains("changes _gates/release.jsonl"), "{why}");
+        let named = Gate { environment: Some("prod".into()), ..gate() };
+        assert!(checked(&dir, "env", &named, |w| w).2.unwrap_err().contains("has no environment"));
+    }
+
+    /// A bundle larger than [`MAX_BUNDLE`], or a link, isn't taken.
+    #[tokio::test]
+    async fn an_oversized_bundle_or_a_link_isnt_taken() {
         let dir = scratch("big", true);
         let l = PlanLedger::new(dir.join("daemon")).unwrap();
-        let uid = nix::unistd::getuid().as_raw();
         std::fs::File::create(dir.join("big.bundle")).unwrap().set_len(MAX_BUNDLE + 1).unwrap();
-        let why = l.take_bundle(&dir.join("big.bundle"), uid).unwrap_err();
+        let why = l.take_bundle(None, &dir.join("big.bundle")).await.unwrap_err();
         assert!(why.contains("larger than 32 MiB"), "{why}");
+        let l = PlanLedger::new(dir.join("daemon")).unwrap();
         std::os::unix::fs::symlink(dir.join("origin.git/HEAD"), dir.join("link.bundle")).unwrap();
-        let why = l.take_bundle(&dir.join("link.bundle"), uid).unwrap_err();
+        let why = l.take_bundle(None, &dir.join("link.bundle")).await.unwrap_err();
         assert!(why.contains("is a link"), "{why}");
     }
 
@@ -698,7 +936,7 @@ mod tests {
     fn a_ledger_that_moved_says_so() {
         let dir = scratch("moved", true);
         chants(&dir);
-        let (l, before, r) = checked(&dir, "moved", None);
+        let (l, before, r) = checked(&dir, "moved", &gate(), |w| w);
         let tip = r.unwrap();
         sh(
             &dir,
@@ -709,33 +947,5 @@ mod tests {
         let e = l.push(origin.to_str().unwrap(), &tip, before.as_deref(), None).unwrap_err();
         assert_eq!(e, PushFailed::Moved);
         assert!(e.to_string().contains("moved since this deploy was planned: plan it again"), "{e}");
-    }
-
-    #[test]
-    fn chants_gate_files_only() {
-        assert_eq!(allowed("_gates/release.jsonl", "release"), Some((String::new(), Kind::Gates)));
-        assert_eq!(allowed("local/runs__release.jsonl", "release"), Some((String::new(), Kind::Runs)));
-        assert_eq!(
-            allowed("_members/api/_members/db/_gates/release.jsonl", "release"),
-            Some(("_members/api/_members/db/".into(), Kind::Gates))
-        );
-        assert_eq!(
-            allowed("_members/api/prod/runs__release.jsonl", "release"),
-            Some(("_members/api/".into(), Kind::Runs))
-        );
-        for no in [
-            "_gates/other.jsonl",
-            "_gates/release/applied.jsonl",
-            "_gates/release/requests/x.json",
-            ".github/workflows/x.yml",
-            "github/releases.jsonl",
-            "_members/_gates/release.jsonl",
-            "_members/a b/_gates/release.jsonl",
-            "_gates/runs__release.jsonl",
-            "a/b/runs__release.jsonl",
-            "release.jsonl",
-        ] {
-            assert_eq!(allowed(no, "release"), None, "{no}");
-        }
     }
 }

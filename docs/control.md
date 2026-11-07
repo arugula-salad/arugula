@@ -1212,14 +1212,26 @@ own (`<deploy>-plan`), which gets no `FLY_API_TOKEN`:
 3. The box kills everything the run user runs, and `pgrep -u` must find
    nothing; else the plan fails here, before any token that writes exists.
 4. The daemon, as its own user, in a directory of its own, takes the bundle
-   as data (no link, the run user's own file, at most 32 MiB, streamed) and
-   checks it with git reading no configuration but its own: its commits are
-   one line on top of `before` (or new from nothing when origin had none);
-   each only appends to the two files chant 0.124.68 writes when an op stops
-   at a gate, `<prefix>_gates/<op>.jsonl` and `<prefix><env>/runs__<op>.jsonl`
-   (`<prefix>` empty or `_members/<member>/` per level); and in all they add
-   one line, this run's pending fact for the reported gate, plan and commit,
-   and at most its run record. The gate must be one `chant_gates` names.
+   as data. The run's home is the run user's (0700), so the run user hands
+   it over (`sudo -n -u <run user>`, `crates/arugulad-work/src/run_file_read.sh`):
+   only a regular file with one name that it owns, not a link, at most 32
+   MiB, streamed. The daemon checks it with git reading no configuration but
+   its own, `git fsck --strict` first. Its commits are one line on top of
+   `before` (or new from nothing when origin had none). Each only appends
+   whole lines to the two files chant writes when an op stops at a gate,
+   under this deploy's member's prefix (`_members/<member>/` when the
+   repository's root `chant.workspace.json` makes `chant_dir` a member's,
+   read at the commit by `plan-fetch`; else none) and environment
+   (`chant_env`, or `local` for an op with no `Env` label):
+   `<prefix>_gates/<op>.jsonl` and `<prefix><env>/runs__<op>.jsonl`. In all
+   they add this run's pending fact and at most its run record, each with
+   exactly the keys chant writes there and values from the gate, run, commit
+   and time (`origin` `cli`, `expiresAt` after the fact by at most 30 days).
+   The gate must be one `chant_gates` names, from a chant whose layout is
+   verified (`VERIFIED_CHANT`, 0.124.64 to 0.124.68); another chant, a gate
+   that resumes from a checkpoint, or a workspace layout other than those
+   (nested, example groups, `.jsonc`) is refused as not supported for
+   planning yet.
 5. Only then does it ask for a `GITHUB_TOKEN` minted for the run that writes
    its contents, and pushes `chant/lifecycle` itself, the token in its own
    git's environment only, leased on `before`. A ledger that moved since says

@@ -148,10 +148,12 @@ pub fn gate_of(settings: &arugula_e2e::drivers::Settings, result: &Value) -> Res
             arugula_e2e::deploy::chant::FLOOR
         ));
     }
-    if settings.get(CHANT_OP) != Some(&g.op) {
+    // An empty setting is an unset one, as the driver and the box read it.
+    let setting = |k: &str| settings.get(k).map(String::as_str).filter(|v| !v.is_empty());
+    if setting(CHANT_OP).unwrap_or("release") != g.op {
         return Err(format!("chant stopped at another op's gate ({} {})", g.op, g.gate));
     }
-    if let Some(allowed) = settings.get(CHANT_GATES)
+    if let Some(allowed) = setting(CHANT_GATES)
         && !allowed.split(',').any(|a| a == g.gate)
     {
         return Err(format!("chant stopped at gate {}, which the environment's chant_gates doesn't name", g.gate));

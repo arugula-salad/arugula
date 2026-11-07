@@ -112,6 +112,7 @@ use crate::{
 
 pub mod agent_run;
 mod deploy;
+mod run_files;
 mod run_logs;
 pub mod sessions;
 

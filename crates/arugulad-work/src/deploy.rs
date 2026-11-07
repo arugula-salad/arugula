@@ -1109,7 +1109,15 @@ where
     let tokens = tokens_of(&given);
     let token = github_token(&given);
     let (l, o) = (ledger.clone(), origin.to_owned());
-    let before = blocking(move || l.fetch_before(&o, token.as_deref())).await.and_then(|r| r);
+    let before = blocking(move || {
+        let r = l.fetch_before(&o, token.as_deref());
+        if let Some(t) = token {
+            wipe_bytes(t.into_bytes());
+        }
+        r
+    })
+    .await
+    .and_then(|r| r);
     let before = match before {
         Ok(b) => b,
         Err(why) => {
@@ -1126,10 +1134,19 @@ where
     let extra = [("DEPLOY_LEDGER_BEFORE", before.clone().unwrap_or_default())];
     let fetched = step(run, d, Phase::PlanFetch, &extra, argv, as_, dir, given, out).await;
     revoke_tokens(tokens).await;
-    let (code, _) = fetched?;
+    let (code, fetch_said) = fetched?;
     if code != 0 {
         return Ok((code, Vec::new()));
     }
+    // Where this deploy's chant member keeps its ledger, as the fetch read
+    // it at the commit (its workspace declaration, if any): data, read
+    // before anything of the commit's ran.
+    let fetch_said = result_of(&fetch_said).unwrap_or_default();
+    let prefix = match (fetch_said["ledger_prefix"].as_str(), fetch_said["ledger_layout"].as_str()) {
+        (Some(p), _) if p.is_empty() || (p.starts_with("_members/") && p.ends_with('/')) => p.to_owned(),
+        (_, Some(why)) => return Err(printable(why)),
+        _ => return Err("the plan's fetch didn't say where chant's ledger is for this member".into()),
+    };
     // 2. The commit's code, with no token.
     let (code, said) = step(run, d, Phase::Plan, &extra, argv, as_, dir, Vec::new(), out).await?;
     // 3. Nothing of the run user's left.
@@ -1141,15 +1158,23 @@ where
         .and_then(|r| serde_json::from_value(r.get("chant_gate")?.clone()).ok())
         .ok_or_else(|| "its plan named no chant gate: nothing is pushed".to_owned())?;
     // 4. Its ledger, taken as data and checked, then pushed from here.
-    let Some(uid) = run_uid(as_) else { return Err("the run user's id doesn't read".into()) };
-    let (l, from) = (ledger.clone(), work_dir(run, as_, dir).join(plan_ledger::BUNDLE));
-    let op = d.settings.get(arugula_e2e::drivers::CHANT_OP).cloned().unwrap_or_else(|| "release".into());
-    let gates_allowed = d.settings.get(arugula_e2e::drivers::CHANT_GATES).cloned();
-    let (g, source_ref, b) = (gate.clone(), d.operation.source_ref.clone(), before.clone());
+    // Handed over by the run user: this daemon can't open the run's home.
+    ledger.take_bundle(as_, &work_dir(run, as_, dir).join(plan_ledger::BUNDLE)).await?;
+    // An empty setting is an unset one, as the driver reads it.
+    let setting = |k: &str| d.settings.get(k).filter(|v| !v.is_empty()).cloned();
+    let op = setting(arugula_e2e::drivers::CHANT_OP).unwrap_or_else(|| "release".into());
+    let gates_allowed = setting(arugula_e2e::drivers::CHANT_GATES);
+    let chant_env = setting(arugula_e2e::drivers::CHANT_ENV).unwrap_or_default();
+    let (l, g, source_ref, b) = (ledger.clone(), gate.clone(), d.operation.source_ref.clone(), before.clone());
     let tip = blocking(move || {
-        l.take_bundle(&from, uid)?;
-        let want =
-            plan_ledger::Want { op: &op, gate: &g, gates_allowed: gates_allowed.as_deref(), source_ref: &source_ref };
+        let want = plan_ledger::Want {
+            op: &op,
+            gate: &g,
+            gates_allowed: gates_allowed.as_deref(),
+            source_ref: &source_ref,
+            prefix: &prefix,
+            chant_env: &chant_env,
+        };
         l.check(b.as_deref(), &want)
     })
     .await
@@ -1168,7 +1193,14 @@ where
     let token = github_token(&given);
     wipe(given);
     let (l, o) = (ledger.clone(), origin.to_owned());
-    let pushed = blocking(move || l.push(&o, &tip, before.as_deref(), token.as_deref())).await;
+    let pushed = blocking(move || {
+        let r = l.push(&o, &tip, before.as_deref(), token.as_deref());
+        if let Some(t) = token {
+            wipe_bytes(t.into_bytes());
+        }
+        r
+    })
+    .await;
     revoke_tokens(tokens).await;
     match pushed? {
         Ok(()) => {
@@ -1179,21 +1211,6 @@ where
     }
 }
 
-/// The uid that owns what the run leaves: the run user's, or (tests only)
-/// this daemon's.
-#[cfg(unix)]
-fn run_uid(as_: Option<&RunAs>) -> Option<u32> {
-    match as_ {
-        Some(a) => nix::unistd::User::from_name(&a.user).ok().flatten().map(|u| u.uid.as_raw()),
-        None => Some(nix::unistd::getuid().as_raw()),
-    }
-}
-
-#[cfg(not(unix))]
-fn run_uid(_: Option<&RunAs>) -> Option<u32> {
-    None
-}
-
 /// Nothing of the run user's runs any more (#1985 review): everything it
 /// runs killed, the kill checked, and `pgrep -u` finding nothing, over a
 /// second at most. `Err` names what's left. With no run user (tests),
@@ -1202,17 +1219,18 @@ pub async fn none_left(as_: Option<&RunAs>) -> Result<(), String> {
     let Some(a) = as_ else { return Ok(()) };
     let mut left = String::new();
     for _ in 0..20 {
+        // `--`: procps' kill reads a bare `-1` after a signal as it likes,
+        // and exits 1 whatever it did; this way it exits 0 when it ran.
         let killed = tokio::process::Command::new("sudo")
-            .args(["-n", "-u", &a.user, "--", "kill", "-KILL", "-1"])
+            .args(["-n", "-u", &a.user, "--", "kill", "-KILL", "--", "-1"])
             .stdin(Stdio::null())
             .output()
             .await
             .map_err(|e| format!("killing what the plan left: {e}"))?;
-        // `kill -1` says 1 when it found nothing to kill; sudo's own
-        // refusals say `sudo:`.
-        if !killed.status.success() && String::from_utf8_lossy(&killed.stderr).starts_with("sudo:") {
+        if !killed.status.success() {
             return Err(format!(
-                "what the plan left couldn't be killed: {}",
+                "what the plan left couldn't be killed (kill exited {}): {}",
+                killed.status.code().unwrap_or(-1),
                 printable(String::from_utf8_lossy(&killed.stderr).trim())
             ));
         }
@@ -1784,12 +1802,13 @@ mod tests {
         });
         let pending = serde_json::json!({
             "kind": "pending", "op": "release", "gate": "ship", "gitSha": sha, "planDigest": gate["plan"],
-            "runId": "local-1", "timestamp": gate["recorded"], "version": 1,
+            "runId": "local-1", "timestamp": gate["recorded"], "version": 1, "origin": "cli",
+            "expiresAt": "2026-11-08T23:27:30.435Z",
         });
         let script = format!(
             r#"export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 case "$DEPLOY_PHASE" in
-plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; echo fetched;;
+plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; printf '{{"ledger_prefix":""}}' >&3; echo fetched;;
 plan) env > "$HOME/plan-env"; [ -z "$GITHUB_TOKEN" ] || exit 12
   if [ -e "$HOME/../survive" ]; then perl -e 'use POSIX; setsid(); exec "sleep", "30"' </dev/null >/dev/null 2>&1 3>&- & else (exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & fi
   echo $! > "$HOME/left"

@@ -141,8 +141,10 @@ device-keys board, Arugula native #382 to #390).
   the commit is fetched with a token that only reads, the op runs with no
   token, and only once nothing it ran is left does the box's daemon check
   what chant added to its ledger (one line of commits on top of origin's,
-  appending only this run's pending fact and run record to chant's two gate
-  files, at a gate `chant_gates` allows), ask for the token that writes,
+  appending only this run's pending fact and run record, each exactly as
+  chant writes them, to chant's two gate files under this deploy's member
+  and environment, at a gate `chant_gates` allows, from a chant whose layout
+  was verified), ask for the token that writes,
   and push the ledger itself. So "the plan run gets a short-lived GitHub
   token" means the daemon holds it, for that push only. The
   owner's passkey then signs chant's own gate statement for that plan (what

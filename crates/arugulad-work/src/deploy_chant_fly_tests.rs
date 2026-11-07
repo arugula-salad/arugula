@@ -71,6 +71,8 @@ git remote get-url "$remote" >/dev/null 2>&1 || { echo "CHANT_LIFECYCLE_REMOTE n
 export LC_ALL=C
 B=refs/heads/chant/lifecycle
 now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
+# chant's default gate timeout (48h) after $1.
+expires() { node -e 'process.stdout.write(new Date(Date.parse(process.argv[1]) + 48 * 3600e3).toISOString())' "$1"; }
 reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url "$remote")" != "$FAKE_ORIGIN" ]; }
 ledger() {
   local had err
@@ -126,7 +128,7 @@ case "$1 $2" in
       if [ -e "$FAKE_DIR/no-plan" ]; then pd=; hint="chant approve $op $gate"
       else pd="\"planDigest\":\"$plan\","; hint="chant approve $op $gate --plan $plan"; fi
       [ -e "$FAKE_DIR/other-hint" ] && hint="chant approve $op $gate --plan sha256:$(printf '%064d' 0)"
-      append _gates/$op.jsonl "{\"description\":\"Approve deploying this commit to acme-web\",\"expiresAt\":\"$t\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"kind\":\"pending\",\"neverOverMcp\":true,\"op\":\"$op\",\"origin\":\"cli\",$pd\"runId\":\"$id\",\"timestamp\":\"$t\",\"version\":1}"
+      append _gates/$op.jsonl "{\"description\":\"Approve deploying this commit to acme-web\",\"expiresAt\":\"$(expires "$t")\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"kind\":\"pending\",\"neverOverMcp\":true,\"op\":\"$op\",\"origin\":\"cli\",$pd\"runId\":\"$id\",\"timestamp\":\"$t\",\"version\":1}"
       push
       echo "{\"version\":1,\"id\":\"$id\",\"op\":\"$op\",\"env\":\"local\",\"started\":\"$t\",\"ended\":\"$t\",\"status\":\"gated\",\"labels\":{},\"outcomes\":{},\"phases\":[{\"name\":\"Plan\",\"status\":\"ok\",\"steps\":[{\"fn\":\"shellCmd\",\"status\":\"ok\",\"durationMs\":23}],\"durationMs\":23},{\"name\":\"Approve\",\"status\":\"skipped\",\"steps\":[{\"fn\":\"gate:$gate\",\"status\":\"skipped\",\"durationMs\":118}],\"durationMs\":119}],\"gate\":{\"name\":\"$gate\",\"since\":\"$t\"},\"gitSha\":\"$sha\",\"approve\":\"$hint\"}"
       exit 3
@@ -403,14 +405,23 @@ impl Rig {
         // Then arugulad takes its ledger as data, checks it, and pushes it.
         let s: serde_json::Value = serde_json::from_str(settings).unwrap();
         let gate: Gate = serde_json::from_value(plan.result.as_ref().unwrap()["chant_gate"].clone()).unwrap();
-        let want = Want {
-            op: s["chant_op"].as_str().unwrap_or("release"),
-            gate: &gate,
-            gates_allowed: s["chant_gates"].as_str(),
-            source_ref: &self.sha,
+        let set = |k: &str| s[k].as_str().filter(|v| !v.is_empty());
+        let prefix = fetch.result.as_ref().and_then(|r| r["ledger_prefix"].as_str().map(str::to_owned));
+        let Some(prefix) = prefix else {
+            let why = fetch.result.as_ref().map(|r| r["ledger_layout"].to_string()).unwrap_or_default();
+            return Ran { code: 4, out: format!("{out}{why}\n"), result: plan.result };
         };
-        let uid = nix::unistd::getuid().as_raw();
-        let checked = ledger.take_bundle(&home.join(BUNDLE), uid).and_then(|()| ledger.check(before.as_deref(), &want));
+        let want = Want {
+            op: set("chant_op").unwrap_or("release"),
+            gate: &gate,
+            gates_allowed: set("chant_gates"),
+            source_ref: &self.sha,
+            prefix: &prefix,
+            chant_env: set("chant_env").unwrap_or_default(),
+        };
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let taken = rt.block_on(ledger.take_bundle(None, &home.join(BUNDLE)));
+        let checked = taken.and_then(|()| ledger.check(before.as_deref(), &want));
         let pushed = checked
             .and_then(|tip| ledger.push(origin, &tip, before.as_deref(), Some(GH_WRITE)).map_err(|e| e.to_string()));
         match pushed {
@@ -603,6 +614,43 @@ fn chant_fly_pushes_its_plan_where_the_op_cant_reach_the_token() {
     let tip = r.origin("git rev-parse refs/heads/chant/lifecycle");
     assert!(r.origin(&format!("git show {tip}:_gates/release.jsonl")).contains(gate["plan"].as_str().unwrap()));
     assert!(!ran.out.contains(GH) && !ran.out.contains(GH_WRITE), "{}", ran.out);
+}
+
+/// #1985 review: chant's ledger is checked under this deploy's member's
+/// prefix, read at the commit by the plan's fetch. A member of the root
+/// declaration writes under `_members/<name>/`, so a flat write (the fake
+/// chant's) is refused and nothing is pushed; a nested workspace isn't
+/// supported for planning yet.
+#[test]
+fn chant_fly_checks_the_ledger_under_its_members_prefix() {
+    needs_node!();
+    for (name, files, says) in [
+        (
+            "chant-fly-member",
+            vec![("chant.workspace.json", r#"{"members":[{"name":"ops","dir":"ops","kind":"app"}]}"#)],
+            "changes _gates/release.jsonl",
+        ),
+        (
+            "chant-fly-nested",
+            vec![("chant.workspace.json", r#"{"members":[]}"#), ("ops/chant.workspace.json", r#"{"members":[]}"#)],
+            "isn't supported for planning yet: a nested workspace declaration",
+        ),
+    ] {
+        let mut r = rig(name);
+        let repo = r.dir.join("repo");
+        for (f, text) in files {
+            std::fs::write(repo.join(f), text).unwrap();
+        }
+        sh(
+            &repo,
+            "git add -A && git -c user.name=t -c user.email=t@t commit -q -m ws && git push -q ../origin/acme/app.git main",
+        );
+        r.sha = sh(&repo, "git rev-parse HEAD");
+        let ran = r.plan(SETTINGS, &[]);
+        assert_eq!(ran.code, 4, "{}", ran.out);
+        assert!(ran.out.contains(says), "{name}: {}", ran.out);
+        assert!(r.origin("git rev-parse -q --verify refs/heads/chant/lifecycle || true").is_empty(), "nothing pushed");
+    }
 }
 
 /// #1985 review: the box checks the approval's gate against `chant_gates`
