@@ -135,17 +135,43 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The title gives way first: its shrink outweighs the agent's by a thousand. */
 .step-title {
-  flex: 1 1 auto;
+  flex: 1 1000 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The agent gives way after the title does: its label ends in an ellipsis and its state stays; its facts go first. */
 .step-agent {
-  flex: none;
+  flex: 0 1 auto;
   display: inline-flex;
-  max-width: 45%;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.step-agent > .chip-object {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0; /* the bar is the touch target: a phone's 32px chip would be clipped by it */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.step-agent .board-ptr {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-agent > .board-fact {
+  flex: 0 10 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .step-said {
