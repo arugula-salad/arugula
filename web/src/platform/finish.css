@@ -76,6 +76,19 @@ html[data-finish="aqua"] .run-start {
   box-shadow: 0 1px 3px #0003, 0 0 0 1px #0001;
 }
 
+/* A Card (#698) takes the finish too: its shadow always, its surface when it has no tone's tint to show. */
+html[data-finish="aqua"] .card {
+  box-shadow: 0 1px 3px #0003, 0 0 0 1px #0001;
+}
+
+html[data-finish="aqua"] .card:not(.card-tone) {
+  background: linear-gradient(#fff2, #fff0 30px), var(--surface);
+}
+
+html[data-finish="aqua"] .card[aria-current="true"] {
+  box-shadow: var(--selected-edge), 0 1px 3px #0003, 0 0 0 1px #0001;
+}
+
 html[data-finish="aqua"] .chat-switcher,
 html[data-finish="aqua"] .platform-toast {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
@@ -118,6 +131,19 @@ html[data-finish="brushed"] .deploy-form,
 html[data-finish="brushed"] .run-start {
   background: linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
   box-shadow: inset 0 1px 0 #fff3, 0 1px 2px #0004;
+}
+
+/* A Card (#698) takes the finish too: its shadow always, its surface when it has no tone's tint to show. */
+html[data-finish="brushed"] .card {
+  box-shadow: inset 0 1px 0 #fff3, 0 1px 2px #0004;
+}
+
+html[data-finish="brushed"] .card:not(.card-tone) {
+  background: linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
+}
+
+html[data-finish="brushed"] .card[aria-current="true"] {
+  box-shadow: var(--selected-edge), inset 0 1px 0 #fff3, 0 1px 2px #0004;
 }
 
 html[data-finish="brushed"] .chat-switcher,
@@ -178,6 +204,19 @@ html[data-finish="glass"] .deploy-form,
 html[data-finish="glass"] .run-start {
   background: color-mix(in srgb, var(--surface) 62%, transparent);
   box-shadow: inset 0 1px 0 #fff2;
+}
+
+/* A Card (#698) takes the finish too: its shadow always, its surface when it has no tone's tint to show. */
+html[data-finish="glass"] .card {
+  box-shadow: inset 0 1px 0 #fff2;
+}
+
+html[data-finish="glass"] .card:not(.card-tone) {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+html[data-finish="glass"] .card[aria-current="true"] {
+  box-shadow: var(--selected-edge), inset 0 1px 0 #fff2;
 }
 
 /* Mostly opaque: the switcher sits on its backdrop's blur, which bounds

@@ -221,8 +221,8 @@ a.card {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* A card that arrives, in a list of them. */
-  :is(.card-grid, .card-list) .card-tone {
+  /* A card that arrives, in a list of them, on the platform's pages (the shell's board block has never animated its rows). */
+  .platform :is(.card-grid, .card-list) .card-tone {
     animation: card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
   }
 }
