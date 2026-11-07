@@ -84,37 +84,46 @@ export function toggleGroup(store: ChatStore, key: string, toast: Toast) {
   void store.editSidebar((s) => collapse(s, key, !s.collapsed.includes(key))).catch(refused(toast));
 }
 
-/** The room header's star, and a button for the room's menu (where the
- * phone moves a room: it has no drag), with `more` at its foot. */
-export function RoomStar({ store, room, toast, more = [] }: { store: ChatStore; room: ChatRoom; toast: Toast; more?: MenuItem[] }) {
+/** The room header's star (and, in ⋯ when the bar has no room, `starItem`). */
+export function RoomStarButton({ store, room, toast }: { store: ChatStore; room: ChatRoom; toast: Toast }) {
   const on = placeOf(store.sidebar, room.id) === STARRED;
   return (
-    <>
-      <button
-        class={on ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"}
-        title={on ? "Starred: it's at the top of your sidebar. Unstar" : "Star: keep it at the top of your sidebar"}
-        aria-label={on ? "Unstar this room" : "Star this room"}
-        aria-pressed={on}
-        data-room-star
-        onClick={() => void store.editSidebar((s) => star(s, room.id, !on)).catch(refused(toast))}
-      >
-        {on ? "★" : "☆"}
-      </button>
-      {/* The room's menu: its place in the sidebar, and leaving it (UI
-          audit #169), so a misclick near the bell can't leave. */}
-      <button
-        class="chat-info bar-btn sq"
-        title={more.length ? "Move to a section of your sidebar, or leave" : "Move to a section of your sidebar"}
-        aria-label="Room options"
-        aria-haspopup="menu"
-        data-room-move
-        onClick={(e) => {
-          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openRoomMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, room, toast, more);
-        }}
-      >
-        ⋯
-      </button>
-    </>
+    <button
+      class={on ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"}
+      title={on ? "Starred: it's at the top of your sidebar. Unstar" : "Star: keep it at the top of your sidebar"}
+      aria-label={on ? "Unstar this room" : "Star this room"}
+      aria-pressed={on}
+      data-room-star
+      onClick={() => void store.editSidebar((s) => star(s, room.id, !on)).catch(refused(toast))}
+    >
+      {on ? "★" : "☆"}
+    </button>
+  );
+}
+
+/** The star as a menu row, for a bar too narrow for the button. */
+export function starItem(store: ChatStore, room: ChatRoom, toast: Toast): MenuItem {
+  const on = placeOf(store.sidebar, room.id) === STARRED;
+  return { label: on ? "Unstar" : "Star", hint: "A starred room is at the top of your sidebar", run: () => void store.editSidebar((s) => star(s, room.id, !on)).catch(refused(toast)) };
+}
+
+/** A button for the room's menu: its place in the sidebar (the phone moves
+ * a room here: it has no drag), and leaving it (UI audit #169), so a
+ * misclick near the bell can't leave. `more` is at its foot. */
+export function RoomOptionsButton({ store, room, toast, more = [] }: { store: ChatStore; room: ChatRoom; toast: Toast; more?: MenuItem[] }) {
+  return (
+    <button
+      class="chat-info bar-btn sq"
+      title={more.length ? "Move to a section of your sidebar, or leave" : "Move to a section of your sidebar"}
+      aria-label="Room options"
+      aria-haspopup="menu"
+      data-room-move
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openRoomMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, room, toast, more);
+      }}
+    >
+      ⋯
+    </button>
   );
 }

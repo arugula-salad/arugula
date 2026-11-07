@@ -13,6 +13,7 @@ import { authorLabel } from "./agents";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { handled } from "./escape";
+import { Bar, BarTitle, BarWhere } from "../ui/bar";
 
 export function when(at: number): string {
   const d = new Date(at);
@@ -23,20 +24,21 @@ export function when(at: number): string {
 
 /** A view's head: its name (the platform page sets it as a page's, UI
  * audit #157), and a line about what's in it. */
-export function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
+export function ViewHead({ title, sub, phone, back = "Every thread" }: { title: string; sub?: string; phone: boolean; back?: string }) {
   const { nav } = usePlatformApi();
   return (
-    <header class="chat-head chat-view-head">
-      {phone && (
-        <button class="chat-back" title="Every thread" onClick={() => nav.openChat()}>
-          ‹
-        </button>
-      )}
-      <div class="chat-title">
-        <strong>{title}</strong>
-        {sub && <span>{sub}</span>}
-      </div>
-    </header>
+    <Bar
+      class="chat-head chat-view-head"
+      lead={
+        phone ? (
+          <button class="chat-back" title={back} aria-label={back} onClick={() => nav.openChat()}>
+            ‹
+          </button>
+        ) : undefined
+      }
+      title={<BarTitle class="chat-title">{title}</BarTitle>}
+      where={sub ? <BarWhere>{sub}</BarWhere> : undefined}
+    />
   );
 }
 

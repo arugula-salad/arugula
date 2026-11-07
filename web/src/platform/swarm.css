@@ -175,17 +175,6 @@
   margin-left: 0;
 }
 
-/* Chat, on the platform page (UI audit #157): denser than a page inside
-   its rooms, but in the same faces. A view's name (Activity, Threads,
-   Saved, Search, and Chat on a phone) is set as a page's; a room's name, which
-   someone chose, is the bar's title (#686). */
-.chat-view-head .chat-title strong,
-.chat.phone > .chat-head > strong {
-  font: 800 var(--text-xl)/1 var(--f-display);
-  letter-spacing: var(--track-display);
-  text-transform: uppercase;
-}
-
 /* The counts over a list, as the swarm's bar counts its panes. */
 .platform .sw-stats {
   display: flex;
