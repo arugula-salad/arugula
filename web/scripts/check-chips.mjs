@@ -13,25 +13,9 @@ import { fileURLToPath } from "node:url";
 const HOME = "shared/ui/state-chip.css";
 const SHARED = new Set(["chip-tag"]);
 
-/** Classes that predate the rule and are not in #730's table of the 21: each
- * is a chip of its own, to move onto a shape in a follow-up. Don't add one;
- * the list only gets shorter. */
-export const ALLOWED = new Set([
-  "avatar-badge", // an agent's mark on an avatar
-  "chat-pane-chip", // a pane named in a message
-  "control-badge", // control's trust UI labels
-  "forge-chip", // dead: no TSX uses it (with .forge-chips and .forge-check)
-  "hooks-chip", // the agent hooks offer
-  "hosted-chip", // "Cloud workspace", on a hosted workspace's page
-  "item-avatar-badge", // an item block's avatar corner
-  "palette-badge", // the palette's "on"
-  "pane-badge", // a pane's attention
-  "reply-tag", // a thread's reply mark
-  "term-chip", // the terminal's toast
-  "thread-badge", // the thread button's count
-  "unused-badge", // a device's "unused"
-  "update-chip", // the update button
-]);
+/** Classes that predate the rule and haven't moved onto a shape yet. None are
+ * left; don't add one. */
+export const ALLOWED = new Set([]);
 
 const CLASS = /\.([A-Za-z][\w-]*-(?:chip|tag|badge))(?![\w-])/g;
 

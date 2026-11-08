@@ -877,19 +877,6 @@ html[data-corners="square"] .platform-section {
   font-size: var(--text-md);
 }
 
-/* "Hosted · operator can read" as a chip, dim, before what it means (UI
-   audit #184). */
-.hosted-chip {
-  display: inline-block;
-  margin-right: 4px;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  color: var(--dim);
-  font: 600 var(--text-xs)/1.4 var(--f-mono);
-  white-space: nowrap;
-}
-
 .hosted-rebuild > p,
 .hosted-none > p {
   margin: 0;

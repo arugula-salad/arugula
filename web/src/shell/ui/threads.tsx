@@ -15,6 +15,7 @@ import { RoomBody, roomLabel } from "../../shared/chat/room";
 import { usePlatformApi } from "../../shared/platform-api";
 import { platformOrigin } from "../platform-links";
 import { BubbleIcon, CloseIcon, ExpandIcon, IconButton } from "../../shared/ui/icons";
+import { Count } from "../../shared/ui/state-chip";
 
 export interface Quote {
   pane: PaneId;
@@ -86,8 +87,9 @@ export function ThreadBadge({ client, pane }: { client: Client; pane: PaneId }) 
   const u = chatStore()!.paneUnread(machine, pane);
   if (!u.room) return null;
   return (
-    <button
-      class={`thread-badge${u.unread ? " unread" : ""}${u.mention ? " mention" : ""}`}
+    <Count
+      for={u.mention ? "mention" : u.unread ? "you" : undefined}
+      class="pane-thread"
       title={u.unread ? `${u.unread} new in this pane's thread` : "This pane's thread"}
       data-room-badge={u.room.id}
       onPointerDown={(e) => e.stopPropagation()}
@@ -95,7 +97,7 @@ export function ThreadBadge({ client, pane }: { client: Client; pane: PaneId }) 
     >
       <BubbleIcon />
       {u.unread ? <span>{u.mention ? `@ ${u.unread}` : u.unread}</span> : null}
-    </button>
+    </Count>
   );
 }
 

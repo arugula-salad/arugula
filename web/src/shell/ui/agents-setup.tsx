@@ -156,7 +156,7 @@ const putAway = new Set<PaneId>();
  * spoken from it: only the owner's own daemon can set it up, and only
  * while its settings lack the hooks (a Claude started before them needs a
  * restart, which Set up can't do). */
-export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
+export function HooksOffer({ client, id }: { client: Client; id: PaneId }) {
   const info = client.info(id);
   const mine = !client.e2e && !client.state?.roles;
   const wants = mine && !!info?.unhooked && info.attention === "needs_input" && !putAway.has(id);
@@ -181,7 +181,7 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
     setSaid({ ok: o.ok, text: o.ok ? `${o.said} Start Claude again here to use them.` : o.said });
   };
   return (
-    <div class="hooks-chip" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
+    <div class="hooks-offer" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
       <span>{said ? said.text : "Its questions could be cards here and on your phone."}</span>
       {!said && (
         <button class="primary" disabled={busy} onClick={() => void setUp()} data-hooks-chip-setup>

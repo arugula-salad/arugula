@@ -217,7 +217,7 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-open-pr]")).toBeVisible();
     for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
-    await expect(page.locator(".session-unread, .thread-badge")).toHaveCount(0);
+    await expect(page.locator(".session-unread, [data-room-badge]")).toHaveCount(0);
   });
 });
 
@@ -238,7 +238,7 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
   expect(await page.evaluate(() => (["vms", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
+  await expect(page.locator("[data-room-badge], .session-unread")).toHaveCount(0);
   await noLabsItems(page, pane);
 });
 
@@ -286,7 +286,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   // Chat is control's (M125), on its platform page (M155): a machine on its
   // own has none, and offers none, even with the flag.
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator(".thread-badge")).toHaveCount(0);
+  await expect(page.locator("[data-room-badge]")).toHaveCount(0);
   await open(page);
   await ready(page, pane);
   // Now the Labs chunk was fetched, since this machine has them.

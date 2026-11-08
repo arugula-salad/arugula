@@ -37,6 +37,7 @@ import { needsYou } from "../../shared/needs-you";
 import { ago } from "../../shared/time";
 import { getFleet } from "./hosts";
 import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -633,7 +634,7 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
               {c.label}
               {/* A switch that's on: a badge after it, not a dot glued
                   to its first word (UI audit #176). */}
-              {c.checked && <span class="palette-badge">on</span>}
+              {c.checked && <Chip kind="tag" tone="accent" class="palette-on">on</Chip>}
             </span>
             {c.detail && <span class="palette-detail">{c.detail}</span>}
             <span class="palette-group">{kindOf(c)}</span></span>

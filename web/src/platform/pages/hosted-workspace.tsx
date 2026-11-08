@@ -22,7 +22,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { Markdown } from "../../shared/ui/markdown";
 import { usePlatformApi } from "../../shared/platform-api";
 import { PageHeader } from "../../shared/ui/page-header";
-import { StateChip } from "../../shared/ui/state-chip";
+import { Chip, StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
@@ -433,7 +433,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             </p>
             {/* A chip, and what it means as a sentence (UI audit #184). */}
             <p class="hosted-label">
-              <span class="hosted-chip">{HOSTED_LABEL}</span> {HOSTED_MEANS[0].toUpperCase() + HOSTED_MEANS.slice(1)}
+              <Chip kind="tag" class="chip-gap">{HOSTED_LABEL}</Chip> {HOSTED_MEANS[0].toUpperCase() + HOSTED_MEANS.slice(1)}
             </p>
           </>
         }

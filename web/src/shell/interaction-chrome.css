@@ -27,7 +27,7 @@
 /* Sans, as the rows under it (UI audit #176); 16px on a phone (style.css), where less zooms the page. */
 .palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-family: inherit; font-size: var(--text-lg); box-shadow: none; }
 .palette.phone .palette-search .picker-filter { font-size: var(--t-field); }
-.palette-badge { margin-left: 6px; padding: 0 6px; border-radius: var(--chip-radius); background: var(--accent); color: var(--on-color); font-size: var(--text-xs); font-weight: 600; vertical-align: 1px; }
+.palette-on { margin-left: 6px; vertical-align: 1px; }
 .palette-results-heading { display: flex; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; color: var(--dim); font-size: var(--text-xs); }
 .palette .picker-list { padding: 4px 10px 12px; }
 .palette-row { min-height: 58px; padding: 10px; gap: 12px; box-sizing: border-box; border: 1px solid transparent; border-radius: var(--field-radius); }

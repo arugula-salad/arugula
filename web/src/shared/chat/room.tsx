@@ -854,7 +854,7 @@ function PaneChip({ pane, quote }: { pane: NonNullable<ChatMessage["pane"]>; quo
   const asleep = pane.opens && !machineUp(api, pane.machine);
   const from = (
     <span class="thread-quote-from">
-      <span class="chat-pane-chip" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
+      <span class="chat-pane-ref" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
         ↳ {where}
       </span>
       {!pane.opens && <span class="dim"> · not a pane you can open</span>}

@@ -84,7 +84,7 @@ export function UpdateChip({ client }: { client: Client }) {
   };
   return (
     <div class="update">
-      <button class="update-chip" title={`Arugula ${latest} is out (this is ${status.current})`} data-update-chip onClick={() => setOpen(!open)}>
+      <button class="update-button" title={`Arugula ${latest} is out (this is ${status.current})`} data-update-chip onClick={() => setOpen(!open)}>
         Update {latest}
       </button>
       {open && (

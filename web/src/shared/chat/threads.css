@@ -58,7 +58,7 @@
   opacity: 1;
 }
 
-.reply-tag {
+.reply-link {
   display: block;
   margin-bottom: 2px;
   padding: 0;
@@ -66,7 +66,7 @@
   font-size: var(--text-sm);
 }
 
-.reply-tag:hover {
+.reply-link:hover {
   color: var(--accent);
   text-decoration: underline;
 }

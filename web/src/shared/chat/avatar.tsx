@@ -94,7 +94,7 @@ export function MsgAvatar({
     <span class={agent ? "avatar-wrap by-agent" : "avatar-wrap"}>
       {face}
       {agent && (
-        <span class="avatar-badge" title="An agent" aria-hidden="true">
+        <span class="avatar-mark" data-agent-mark title="An agent" aria-hidden="true">
           <MachineIcon size="xs" />
         </span>
       )}
