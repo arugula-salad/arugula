@@ -238,6 +238,17 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: var(--text-xs);
 }
 
+/* A chevron beside text sits on the text's line, as the glyph did. */
+.caret .icon,
+.pt-caret .icon,
+.chat-caret .icon,
+.menu-chevron .icon,
+.fold .icon,
+.host-caret .icon,
+.thread-agents-sum .icon {
+  vertical-align: -2px;
+}
+
 .icon-xs {
   width: var(--icon-xs);
   height: var(--icon-xs);

@@ -7,6 +7,7 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
+import { ChevronIcon } from "./icons";
 
 export type MenuItem =
   | {
@@ -612,7 +613,7 @@ export function MenuLayer() {
                 {lead && <span class="menu-lead" aria-hidden="true" />}
                 {item.label}
                 <span class="menu-chevron" aria-hidden="true">
-                  {sub === i ? "▾" : "▸"}
+                  <ChevronIcon open={sub === i} />
                 </span>
               </button>
               {sub === i && (

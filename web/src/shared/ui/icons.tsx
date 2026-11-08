@@ -353,6 +353,13 @@ export const ChevronIcon = ({ dir = "down", open, size = "xs" }: { dir?: "down" 
   );
 };
 
+/** The ▾ after a menu button's label, dim. */
+export const Caret = ({ dir = "down" }: { dir?: "down" | "up" | "right" }) => (
+  <span class="caret" aria-hidden="true">
+    <ChevronIcon dir={dir} />
+  </span>
+);
+
 export const CheckIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d="M20 6 9 17l-5-5" />

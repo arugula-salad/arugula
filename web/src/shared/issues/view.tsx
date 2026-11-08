@@ -35,6 +35,7 @@ import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
 import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
+import { ChevronIcon } from "../ui/icons";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -275,7 +276,7 @@ export function IssueView({
                     Close issue
                   </button>
                   <button class="secondary small" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
-                    ▾
+                    <ChevronIcon />
                   </button>
                 </span>
               ))}

@@ -4,7 +4,7 @@
 // browser, a public link).
 
 import { useRef, useState } from "preact/hooks";
-import { LinkIcon } from "./icons";
+import { ChevronIcon, LinkIcon } from "./icons";
 import { openMenu, type MenuItem } from "./menu";
 import "./copy-link.css";
 
@@ -46,7 +46,7 @@ export function CopyLinkButton({ link, menu, onClick }: { link: string | null; m
       </button>
       {menu && menu.length > 0 && (
         <button type="button" data-copy-link-more aria-label="More ways to share" aria-haspopup="menu" onClick={(e) => openMenu(e, menu, e.currentTarget)}>
-          ▾
+          <ChevronIcon />
         </button>
       )}
     </span>

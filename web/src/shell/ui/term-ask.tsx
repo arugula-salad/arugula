@@ -19,6 +19,7 @@ import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-edit
 import { AskCard, type Answered, type Ask } from "../../shared/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
 import { Avatar } from "./people";
+import { Caret } from "../../shared/ui/icons";
 
 export { answeredLine, clock } from "./answer-card";
 
@@ -184,7 +185,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
               )
             }
           >
-            Diffs here ▾
+            Diffs here <Caret />
           </button>
         )}
         <button class="link" title="Look at the terminal; the edit stays open" onClick={() => setHidden(true)}>

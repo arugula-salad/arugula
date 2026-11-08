@@ -23,7 +23,7 @@ import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
 import { LiveSwitch, liveItems } from "../../shared/live/switch";
-import { SearchIcon } from "../../shared/ui/icons";
+import { Caret, SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -171,7 +171,7 @@ export function AccountButton({ client }: { client: Client | null }) {
           {login ? login.slice(0, 1).toUpperCase() : "⚙"}
           {login && <AccountPicture />}
         </span>
-        {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
+        {login && <span class="account-login" data-signed-in-as>{login}</span>} <Caret />
       </button>
     </>
   );

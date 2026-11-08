@@ -29,6 +29,7 @@ import { issueTone } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
+import { Caret } from "../../shared/ui/icons";
 
 /** Who's in a project: its team's roster, or its one person. */
 export function membersOf(p: PlatformProject): { account: string; name: string }[] {
@@ -184,7 +185,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
         actions={
           <>
             <button class="secondary issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
-              Export <span class="caret">▾</span>
+              Export <Caret />
             </button>
             {mayWrite(p) && <NewIssueButton p={p} home={home} />}
           </>
@@ -203,10 +204,10 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
         </div>
         <input type="search" class="issues-search" placeholder="Search issues" aria-label="Search issues" value={typed} data-issues-search onInput={(e) => search(e.currentTarget.value)} />
         <button class="secondary" aria-pressed={!!filter.label} data-issues-label onClick={labelMenu}>
-          {filter.label ? `Label: ${filter.label}` : "Label"} <span class="caret">▾</span>
+          {filter.label ? `Label: ${filter.label}` : "Label"} <Caret />
         </button>
         <button class="secondary" aria-pressed={!!filter.assignee} data-issues-assignee onClick={assigneeMenu}>
-          {filter.assignee ? `Assignee: ${nameOf(filter.assignee) ?? "someone"}` : "Assignee"} <span class="caret">▾</span>
+          {filter.assignee ? `Assignee: ${nameOf(filter.assignee) ?? "someone"}` : "Assignee"} <Caret />
         </button>
         {narrowed && (
           <button class="link" data-issues-clear onClick={clear}>
@@ -332,7 +333,7 @@ function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHom
     return (
       <button class={cls} title={title} aria-label={title} data-issue-new-github onClick={(e) => menuAt(e, [{ header: "New issue on" }, ...home.repos.map((r) => ({ label: `${r} ↗`, run: () => void open(githubNewIssue(r), "_blank", "noopener") }))])}>
         {label}
-        <span class="caret"> ▾</span>
+        <Caret />
       </button>
     );
   }

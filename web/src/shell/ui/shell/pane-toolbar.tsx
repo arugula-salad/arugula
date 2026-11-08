@@ -11,7 +11,7 @@ import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { arrange, arrangeRefusal, goToPane, layoutRefusal, PRESETS, toggleFocus } from "../panes/layout";
 import { AddPaneDrawer, addPane, useAddPane } from "./add-pane";
 import { paneStatus, paneType } from "./pane-header";
-import { FocusIcon, PlusIcon } from "../../../shared/ui/icons";
+import { ChevronIcon, FocusIcon, PlusIcon } from "../../../shared/ui/icons";
 
 export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   const ids = paneIds(tab);
@@ -58,7 +58,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
       <button class="pt-count bar-btn" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
         <strong>{count}</strong> {count === 1 ? "pane" : "panes"}
         <span class="pt-caret" aria-hidden="true">
-          ▾
+          <ChevronIcon />
         </span>
       </button>
       <span class="pt-sep" aria-hidden="true" />

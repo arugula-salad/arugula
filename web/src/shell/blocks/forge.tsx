@@ -31,6 +31,7 @@ import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
 import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { Caret } from "../../shared/ui/icons";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -779,7 +780,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                 <>
                   {canComment && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
                   {canComment && !asked && <button class="secondary small" onClick={() => void review("comment")}>Review</button>}
-                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} hold={s.hold?.reason} /> : <button class="secondary small" data-merge-anyway={s.hold ? "" : undefined} onClick={() => void merge()}>{s.hold ? "Merge anyway…" : "Merge ▾"}</button>)}
+                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} hold={s.hold?.reason} /> : <button class="secondary small" data-merge-anyway={s.hold ? "" : undefined} onClick={() => void merge()}>{s.hold ? "Merge anyway…" : <>Merge <Caret /></>}</button>)}
                   {mayOwn && (
                     <button class="secondary small" data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
                       Diff
@@ -923,7 +924,7 @@ function nextStep(
           <ConfirmMerge style={on.confirming} go={on.confirmMerge} />
         ) : (
           <button class="primary small" data-merge disabled={busy !== null} onClick={() => void on.merge()}>
-            Merge ▾
+            Merge <Caret />
           </button>
         )
       ),

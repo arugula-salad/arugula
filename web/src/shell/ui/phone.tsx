@@ -35,6 +35,7 @@ import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 import { Chip } from "../../shared/ui/state-chip";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -232,7 +233,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 return (
                   <div key={s.id} class={here ? "sheet-card sheet-session here" : "sheet-card sheet-session"}>
                     <button class="sheet-session-head" aria-expanded={open} data-session={s.id} onClick={() => fold(s.id)}>
-                      <span class="fold">{open ? "▾" : "▸"}</span>
+                      <span class="fold"><ChevronIcon open={open} /></span>
                       <span class="name">{s.name}</span>
                       <span class="sheet-count">
                         {s.tabs.length} tab{s.tabs.length === 1 ? "" : "s"}

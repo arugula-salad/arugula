@@ -18,7 +18,7 @@ import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
+import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
@@ -459,7 +459,7 @@ export function SessionButton({
         {unread.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
       </button>
       <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title={hint ? `Switch sessions, ${hint}` : "Switch sessions"} data-crumb-menu onClick={sessionMenu}>
-        <span class="caret" aria-hidden="true">▾</span>
+        <Caret />
       </button>
     </span>
   );

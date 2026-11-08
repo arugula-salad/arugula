@@ -27,7 +27,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { PlusIcon } from "../ui/icons";
+import { ChevronIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
@@ -426,6 +426,7 @@ export function BoardPanel({
               titleData="board-group-title"
               title={
                 <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
+                  <ChevronIcon open={!folded} />
                   {title}
                   {folded && ` · ${rows}`}
                 </button>
@@ -842,6 +843,7 @@ function Lane({
       <header class="board-zone-head">
         <h2>
           <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={fold.key} onClick={fold.toggle}>
+            <ChevronIcon open={!fold.folded} />
             {z.title}
           </button>
         </h2>

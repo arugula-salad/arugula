@@ -34,7 +34,7 @@ import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
-import { BookmarkIcon, SearchIcon } from "../ui/icons";
+import { BookmarkIcon, ChevronIcon, SearchIcon } from "../ui/icons";
 import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
@@ -348,7 +348,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             <h2 class="chat-section chat-channels-head">
               <button aria-expanded={!shut} onClick={() => toggle(g.key)} title={shut ? "Show them" : "Hide them"}>
                 <span class="chat-caret" aria-hidden="true">
-                  {shut ? "▸" : "▾"}
+                  <ChevronIcon open={!shut} />
                 </span>
                 {g.title}
                 {shut && unread > 0 && <Count for="you" class="count-after">{unread}</Count>}

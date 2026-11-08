@@ -22,6 +22,7 @@ import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
 import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { Bar } from "../../shared/ui/bar";
+import { Caret } from "../../shared/ui/icons";
 
 export interface AppState {
   app: string;
@@ -166,7 +167,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
             )
           }
         >
-          Records ▾
+          Records <Caret />
         </button>
         <OpenOutside href={s.box_url} />
       </Bar>

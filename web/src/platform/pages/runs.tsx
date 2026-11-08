@@ -42,6 +42,7 @@ import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type Run
 import { runTone, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
+import { Caret } from "../../shared/ui/icons";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -201,13 +202,13 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
       <div class="issues-tools">
         <button class="secondary" aria-pressed={!!filter.state} data-runs-state onClick={stateMenu}>
-          {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <span class="caret">▾</span>
+          {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <Caret />
         </button>
         <button class="secondary" aria-pressed={!!filter.trigger} data-runs-trigger onClick={triggerMenu}>
-          {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <span class="caret">▾</span>
+          {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <Caret />
         </button>
         <button class="secondary" aria-pressed={!!filter.spec} data-runs-spec onClick={specMenu}>
-          {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <span class="caret">▾</span>
+          {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <Caret />
         </button>
         {narrowed && (
           <button class="link" data-runs-clear onClick={() => to({})}>
