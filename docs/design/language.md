@@ -8,9 +8,7 @@ is `web/src/platform/pages/design.tsx`.
 
 Status: decided (#660, from the #685 inventory and its nine picks, Aaron,
 2026-11-05). Read this before you build or restyle a page, a pane, a dialog
-or a list. Where a piece says *(being built: #N)*, the rule is decided and
-the shared component isn't there yet: build to the rule, and don't invent a
-third look.
+or a list. Every piece here is built: use it, and don't invent a third look.
 
 The rule behind all of it: **use the shared piece; if it doesn't fit, change
 the piece, not your page.** The code is `web/src/shared/` (`ui/` for the
