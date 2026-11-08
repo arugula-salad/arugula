@@ -395,7 +395,7 @@ export function BoardPanel({
         />
       )}
       {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
-        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} chip={(a) => <AttachmentChip a={a} platform={platform} />} />
+        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} />
       )}
       {mode === "lanes" && sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;
@@ -1256,6 +1256,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
   const evidence = r.attachments.filter((a) => a.role === "proof");
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
+  const marks = marksOf(r);
   return (
     <SideSheet title={title} close={close} class="board-drawer" root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
       <div class="board-line board-drawer-lane">
@@ -1310,6 +1311,25 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           </a>
         )}
       </div>
+      {(marks.stalled || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
+        <div class="board-line" data-board-drawer-marks>
+          {r.marks?.some((m) => m.kind === "cycle") && (
+            <StateChip tone="warn" data-board-mark="cycle" title="This row and others wait on each other, so they share a step">
+              cycle
+            </StateChip>
+          )}
+          {marks.stalled && (
+            <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+              {marks.stalled.words}
+            </StateChip>
+          )}
+          {marks.blocked.map((m, i) => (
+            <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ?? "You can't read the item that blocks this one"}>
+              {m.words}
+            </StateChip>
+          ))}
+        </div>
+      )}
       {r.note && <p class="dim">{r.note}</p>}
       {((r.live?.labels?.length ?? 0) > 0 || (r.live?.assignees?.length ?? 0) > 0) && (
         <div class="board-line board-drawer-tags" data-board-drawer-tags>
