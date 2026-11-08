@@ -7363,8 +7363,9 @@ html[data-scheme="light"] .doc {
 
 /* ---- threads (M61): the people's conversation beside a pane or session */
 
-/* A pane's thread button, a count (shared/ui/state-chip) over its corner. */
-.pane-thread {
+/* A pane's thread button, a count (shared/ui/state-chip) over its corner.
+   `.count.pane-thread`, to win over a touch button's `position: relative`. */
+.count.pane-thread {
   position: absolute;
   z-index: 5;
   top: 6px;
@@ -7373,9 +7374,9 @@ html[data-scheme="light"] .doc {
   opacity: 0.7;
 }
 
-.pane-thread:hover,
-.pane-thread.count-you,
-.pane-thread.count-mention {
+.count.pane-thread:hover,
+.count.pane-thread.count-you,
+.count.pane-thread.count-mention {
   opacity: 1;
 }
 
