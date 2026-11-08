@@ -28,7 +28,7 @@ sizes, each with its line-height, and nothing between them:
 | 12 | meta, secondary lines, buttons | UI | 16 |
 | 13 | body: row titles (600), messages, form text | UI | 18; prose 1.45 |
 | 15 | a title: dialogs, side sheets, empty states, a room on the phone; body on touch | UI | 20 |
-| 19 | a section h2; stat numbers (mono) | display 700, caps, 0.01em | 1.05 |
+| 19 | a section h2; stat numbers (mono) | display 700, as written, 0.02em | 1.05 |
 | 32 | a page h1 (`PageHeader`) | display 800, caps, 0.01em | 0.95 |
 | 38 | the Doc's own title | display 800, sentence case | 1.02 |
 

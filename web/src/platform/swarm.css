@@ -121,8 +121,7 @@
 .platform .sw-page h2 {
   margin: 24px 0 10px;
   font: 700 var(--text-xl)/1.05 var(--f-display);
-  letter-spacing: var(--track-display);
-  text-transform: uppercase;
+  letter-spacing: var(--track-section);
 }
 
 .platform .sw-page h2 > .dim {

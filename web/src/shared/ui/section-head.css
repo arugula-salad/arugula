@@ -15,8 +15,7 @@
 .section-head h2 {
   margin: 0;
   font: 700 var(--text-xl)/1.05 var(--f-display);
-  letter-spacing: var(--track-display);
-  text-transform: uppercase;
+  letter-spacing: var(--track-section);
   overflow-wrap: anywhere;
 }
 
