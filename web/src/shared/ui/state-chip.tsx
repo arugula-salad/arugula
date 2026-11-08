@@ -65,6 +65,7 @@ export function Count({
   class: cls,
   title,
   onClick,
+  onPointerDown,
   children,
   ...attrs
 }: {
@@ -72,15 +73,16 @@ export function Count({
   class?: string;
   title?: string;
   onClick?: (e: MouseEvent) => void;
+  onPointerDown?: (e: PointerEvent) => void;
   children: ComponentChildren;
 } & Data) {
   const c = `count${who ? ` count-${who}` : ""}${cls ? ` ${cls}` : ""}`;
   return onClick ? (
-    <button type="button" class={c} title={title} onClick={onClick} {...attrs}>
+    <button type="button" class={c} title={title} onClick={onClick} onPointerDown={onPointerDown} {...attrs}>
       {children}
     </button>
   ) : (
-    <span class={c} title={title} {...attrs}>
+    <span class={c} title={title} onPointerDown={onPointerDown} {...attrs}>
       {children}
     </span>
   );

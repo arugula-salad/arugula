@@ -78,7 +78,7 @@ function Avatar({ role, name, badge, ring, dim, title }: { role: "reviewer" | "a
   return (
     <span class="item-avatar" data-item-avatar={role} data-name={name} data-ring={ring ? "asked" : undefined} data-dim={dim ? "" : undefined} title={title}>
       {name.charAt(0).toUpperCase()}
-      {badge && <span class={`item-avatar-badge item-avatar-${badge}`}>{badge === "ok" ? <CheckIcon size="xs" /> : badge === "danger" ? <CloseIcon size="xs" /> : "•"}</span>}
+      {badge && <span class={`avatar-mark item-avatar-${badge}`}>{badge === "ok" ? <CheckIcon size="xs" /> : badge === "danger" ? <CloseIcon size="xs" /> : "•"}</span>}
     </span>
   );
 }

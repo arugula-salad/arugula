@@ -538,7 +538,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 /* An upload into the pane (M70): its progress, then what became of it. */
-.term-chip {
+.term-toast {
   position: absolute;
   z-index: 5;
   top: 8px;
@@ -554,11 +554,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: var(--text-md);
 }
 
-.term-chip.error {
+.term-toast.error {
   color: var(--danger);
 }
 
-.term-chip button:not(.link) {
+.term-toast button:not(.link) {
   white-space: nowrap;
 }
 
@@ -1467,28 +1467,16 @@ button.att {
   }
 }
 
-.pane-badge {
+/* A pane's attention over its terminal: a state chip (shared/ui/state-chip),
+   placed top and centre. */
+.pane-attention {
   position: absolute;
   z-index: 5;
   top: 6px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 2px 10px;
-  border-radius: var(--chip-radius);
-  font-size: var(--text-xs);
-  font-weight: 600;
   pointer-events: none;
   box-shadow: var(--shadow-sm);
-}
-
-.pane-badge.needs_input {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.pane-badge.done {
-  background: var(--ok);
-  color: var(--on-color);
 }
 
 .needs-you h2 {
@@ -3527,12 +3515,6 @@ button.att {
   opacity: 0.7;
 }
 
-.unused-badge {
-  background: none;
-  color: var(--dim);
-  border: 1px solid var(--line-strong);
-}
-
 .control-unused {
   margin: 4px 0;
 }
@@ -3699,12 +3681,9 @@ button.att {
   font-weight: 400;
 }
 
-.control-badge {
+/* A tag (shared/ui/state-chip) beside a name in the trust UI. */
+.control-label {
   margin-left: 6px;
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  font-size: var(--text-xs);
-  background: var(--raised);
 }
 
 /* Deleting an account (#173): type its login to confirm. */
@@ -5606,40 +5585,6 @@ button.diff-why-run {
   gap: 8px;
 }
 
-.forge-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.forge-chips .forge-check.none,
-.forge-chips .forge-chip:not(.good, .bad, .wait) {
-  color: var(--dim);
-}
-
-.forge-chips .forge-check.failure,
-.forge-chips .forge-check.success {
-  border-color: transparent;
-}
-
-.forge-chip.good {
-  color: var(--ok);
-}
-
-.forge-chip.bad {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
-}
-
-.forge-chip.wait {
-  color: var(--warn);
-}
-
-.forge-chips .forge-check.running,
-.forge-chips .forge-check.queued {
-  color: var(--warn);
-}
-
 /* The description takes the block; the side column opens up at 720px. */
 .forge-cols {
   display: grid;
@@ -6358,16 +6303,6 @@ html[data-scheme="light"] .doc {
 .forge-dot.running,
 .forge-dot.queued {
   background: var(--warn);
-}
-
-.forge-check.failure {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
-.forge-check.success {
-  background: var(--ok);
-  color: var(--on-color);
 }
 
 .forge-draft {
@@ -7280,7 +7215,7 @@ html[data-scheme="light"] .doc {
   margin-right: 6px;
 }
 
-.update-chip {
+.update-button {
   padding: 2px 8px;
   border: 1px solid var(--accent);
   border-radius: var(--chip-radius);
@@ -7289,7 +7224,7 @@ html[data-scheme="light"] .doc {
   white-space: nowrap;
 }
 
-.update-chip:hover {
+.update-button:hover {
   background: var(--raised);
 }
 
@@ -7428,36 +7363,21 @@ html[data-scheme="light"] .doc {
 
 /* ---- threads (M61): the people's conversation beside a pane or session */
 
-.thread-badge {
+/* A pane's thread button, a count (shared/ui/state-chip) over its corner.
+   `.count.pane-thread`, to win over a touch button's `position: relative`. */
+.count.pane-thread {
   position: absolute;
   z-index: 5;
   top: 6px;
   left: 6px;
-  display: flex;
-  align-items: center;
   gap: 4px;
-  padding: 2px 6px;
-  border-radius: var(--chip-radius);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--dim);
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
   opacity: 0.7;
 }
 
-.thread-badge:hover {
+.count.pane-thread:hover,
+.count.pane-thread.count-you,
+.count.pane-thread.count-mention {
   opacity: 1;
-  color: var(--fg);
-}
-
-.thread-badge.unread {
-  opacity: 1;
-  color: var(--on-color);
-  background: var(--accent);
-}
-
-.thread-badge.mention {
-  background: var(--warn);
 }
 
 .thread-panel {
@@ -8210,7 +8130,7 @@ button.thread-quote:hover {
   cursor: default;
 }
 
-.chat-pane-chip {
+.chat-pane-ref {
   font-family: var(--f-mono);
 }
 
@@ -9316,7 +9236,7 @@ input.chat-search {
 }
 
 /* A terminal Claude whose hooks aren't heard: its questions could be cards. */
-.hooks-chip {
+.hooks-offer {
   position: absolute;
   z-index: 6;
   top: 8px;
@@ -9332,12 +9252,12 @@ input.chat-search {
   font-size: var(--text-sm);
 }
 
-.hooks-chip button {
+.hooks-offer button {
   flex-shrink: 0;
   padding: 3px 10px;
 }
 
-.hooks-chip button.link {
+.hooks-offer button.link {
   background: none;
   color: var(--dim);
   padding: 3px 6px;
@@ -9355,19 +9275,19 @@ input.chat-search {
 }
 
 /* Or the plugin: its lines under the chip's, the whole width. */
-.hooks-chip:has(.claude-plugin) {
+.hooks-offer:has(.claude-plugin) {
   flex-wrap: wrap;
   padding-bottom: 8px;
 }
 
-.hooks-chip .claude-plugin {
+.hooks-offer .claude-plugin {
   flex-basis: 100%;
   display: grid;
   gap: 4px;
   padding-right: 8px;
 }
 
-.hooks-chip .claude-plugin p {
+.hooks-offer .claude-plugin p {
   margin: 0;
   color: var(--dim);
 }
@@ -12089,7 +12009,7 @@ html[data-workspace="new"] .thread-panel {
 
 /* A pane with a header says there what it wants (needs you, done, failed):
    no pill over its terminal's first lines as well. */
-.grid.with-headers .pane-badge {
+.grid.with-headers .pane-attention {
   display: none;
 }
 
@@ -12621,23 +12541,29 @@ button.chat-agent-name:hover {
   border-radius: 50%;
 }
 
-.avatar-badge {
+/* A mark on an avatar's corner: round, drawn over the avatar. The chat's
+   agent mark and an item block's reviewer state both take it (item-block.css
+   sets the item's). */
+.avatar-mark {
   position: absolute;
-  left: -4px;
-  bottom: -4px;
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
   box-sizing: border-box;
   border-radius: 50%;
-  border: 1.5px solid var(--teal);
-  background: var(--bg);
-  color: var(--teal);
   line-height: 1;
 }
 
-.chat-sigil.chat-dm-pic .avatar-badge {
+.avatar-wrap > .avatar-mark {
+  left: -4px;
+  bottom: -4px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--teal);
+  background: var(--bg);
+  color: var(--teal);
+}
+
+.chat-sigil.chat-dm-pic .avatar-mark {
   display: none;
 }
 

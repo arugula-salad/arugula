@@ -11,13 +11,13 @@ import { startDrag } from "../drag";
 import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
 import { PaneMarks } from "../people";
-import { HooksChip } from "../agents-setup";
+import { HooksOffer } from "../agents-setup";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
 import { px } from "./geometry";
-import { Chip } from "../../../shared/ui/state-chip";
+import { Chip, StateChip } from "../../../shared/ui/state-chip";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
 const parking = document.createElement("div");
@@ -156,13 +156,13 @@ export function PaneSlot({
       <PaneMarks client={client} pane={id} />
       <ThreadBadge client={client} pane={id} />
       {!active && (info?.attention === "needs_input" || info?.attention === "done") && (
-        <div class={`pane-badge ${info.attention}`} title={info.reason?.headline}>
+        <StateChip tone={info.attention === "done" ? "ok" : "accent"} class="pane-attention" title={info.reason?.headline} data-pane-attention={info.attention}>
           {info.reason?.kind === "failed" ? "failed" : info.reason?.kind === "exited" ? "exited" : info.attention === "done" ? "done" : "needs you"}
-        </div>
+        </StateChip>
       )}
       {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
-      {info?.unhooked && !info.ask && <HooksChip client={client} id={id} />}
+      {info?.unhooked && !info.ask && <HooksOffer client={client} id={id} />}
       {waiting && (
         <button
           class="start-pane"

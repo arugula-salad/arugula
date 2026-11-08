@@ -238,23 +238,19 @@
   opacity: 0.5;
 }
 
-.item-avatar-badge {
-  position: absolute;
+/* Its state mark, an .avatar-mark (style.css) on the corner. */
+.item-avatar > .avatar-mark {
   right: -5px;
   top: -5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 11px;
   height: 11px;
-  border-radius: 50%;
   background: var(--c);
   color: var(--on-color);
-  font-size: 8px; /* off-scale: avatar badge */
+  font-size: 8px; /* off-scale: avatar mark */
 }
 
-.item-avatar-badge .icon {
-  width: 8px; /* off-scale: a tick or cross in the 11px badge */
+.item-avatar > .avatar-mark .icon {
+  width: 8px; /* off-scale: a tick or cross in the 11px mark */
   height: 8px;
 }
 

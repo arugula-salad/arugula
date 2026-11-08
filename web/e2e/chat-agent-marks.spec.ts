@@ -114,7 +114,7 @@ test("an agent on your machine: icon on the avatar, machine/tab in teal, a click
   await expect(mine).toBeVisible({ timeout: 20_000 });
 
   // The avatar's mark, not an AGENT badge or a "· session" span.
-  await expect(mine.locator(".avatar-badge .machine-icon")).toBeVisible();
+  await expect(mine.locator("[data-agent-mark] .machine-icon")).toBeVisible();
   await expect(mine.locator(".chip, .thread-session")).toHaveCount(0);
   const name = mine.locator("[data-agent-name]");
   await expect(name).toHaveText("alices/views");
@@ -186,7 +186,7 @@ test("at a phone's width the name ellipsizes and the badge leaves the initials c
   expect(await name.evaluate((n) => n.scrollWidth > n.clientWidth), "and is cut with an ellipsis").toBe(true);
   // The badge sits on the avatar's corner, short of its middle where the letters are.
   const face = (await msg.locator(".msg-avatar").boundingBox())!;
-  const badge = (await msg.locator(".avatar-badge").boundingBox())!;
+  const badge = (await msg.locator("[data-agent-mark]").boundingBox())!;
   expect(badge.x + badge.width).toBeLessThan(face.x + face.width / 2);
   await shot(chatPage, "message-phone", msg);
 });
@@ -218,7 +218,7 @@ for (const palette of ["latte", "default"]) {
     expect((await colour(block.locator("span[data-agent-name]"))).color, "the name as text").toBe(want.color);
     expect((await colour(block.locator(".reaction-agents"))).color, "the agents' count").toBe(want.color);
     expect((await colour(block.locator(".reaction-sep"))).background, "the divider").toBe(want.background);
-    expect((await colour(block.locator(".avatar-badge"))).color, "the avatar's icon").toBe(want.color);
+    expect((await colour(block.locator("[data-agent-mark]"))).color, "the avatar's icon").toBe(want.color);
     const dir = process.env.PROOF_DIR;
     if (dir && palette === "latte") await block.locator('[data-agent-name]').first().locator("xpath=ancestor::*[@data-msg][1]").screenshot({ path: `${dir}/message-own-latte-teal.png` });
   });

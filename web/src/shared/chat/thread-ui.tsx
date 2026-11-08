@@ -79,7 +79,7 @@ export function ReplyTag({ room, m, inThread }: { room: ChatRoom; m: ChatMessage
     ) : null;
   }
   return (
-    <button type="button" class="reply-tag" data-reply-tag onClick={() => nav.openRoom(room.id, m.seq, m.parent)}>
+    <button type="button" class="reply-link" data-reply-tag onClick={() => nav.openRoom(room.id, m.seq, m.parent)}>
       <ThreadIcon size="xs" /> Replied in a thread
     </button>
   );
