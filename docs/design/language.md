@@ -219,7 +219,14 @@ pane menu all use it.
   column. ✓ (`multi`) is "several, and the menu stays open"; ● (`checked`,
   `current`) is "one of".
 - A work-item picker stays a combobox (it takes pasted ids) and draws its list
-  as the menu. A filter row for a menu of 13 rows or more is not built yet.
+  as the menu.
+- A menu of 13 choosable rows or more starts with a filter row
+  (`.menu-filter`): typing narrows the rows by label, ↑ ↓ and Enter work over
+  what is left (Enter takes the first), Escape clears the text and the next
+  one closes. It has the focus on open on a desktop, and not on a touch sheet,
+  so the keyboard stays down. A menu under 13 rows has none.
+- A menu hangs under its button, left edges together, and right edges together
+  when that would run it off the window, rather than pushed against its edge.
 - At ≤600px it is a bottom sheet on `--backdrop` (z 90, over a side sheet at
   85 and under a dialog at 95), with 44px rows at 15px; a tap on the backdrop
   closes the menu alone. A coarse pointer wider than that keeps the dropdown at

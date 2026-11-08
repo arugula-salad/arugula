@@ -24,7 +24,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import * as iconModule from "../../shared/ui/icons";
 import { CloseIcon, IconButton, LinkIcon, PaneTypeIcon, PlusIcon, SearchIcon } from "../../shared/ui/icons";
 import { ListPage, ListPreview } from "../../shared/ui/list-page";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { menuBelow, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
 import { SectionHead } from "../../shared/ui/section-head";
@@ -574,12 +574,26 @@ function Menus() {
     "separator",
     { label: "Close pane", danger: true, run: noop },
   ];
+  const labels: MenuItem[] = ["design-system", "spike", "enhancement", "docs", "bug", "chat", "boards", "phone", "platform", "docs-site", "good first issue", "needs-design", "release", "a11y"].map((label) => ({
+    label,
+    detail: String(label.length),
+    checked: false,
+    multi: true,
+    run: noop,
+  }));
   return (
+    <>
     <Sample label="a menu with a submenu, a separator, a facet and a danger item: Escape closes it">
       <button type="button" class="secondary" aria-haspopup="menu" data-design-open="menu" onClick={(e) => openMenu(e, items, e.currentTarget)}>
         Open the menu
       </button>
     </Sample>
+    <Sample label="13 rows or more: the menu starts with a filter row; typing narrows the rows, Escape clears it, then closes">
+      <button type="button" class="secondary" aria-haspopup="menu" data-design-open="long-menu" onClick={(e) => openMenu(menuBelow(e.currentTarget), labels, { from: e.currentTarget, label: "Labels" })}>
+        Open a long menu
+      </button>
+    </Sample>
+    </>
   );
 }
 

@@ -10,6 +10,7 @@ import "../src/shared/style.css";
 import "../src/shared/buttons.css";
 import { Svg } from "../src/shared/ui/icons";
 import {
+  MenuHost,
   MenuLayer,
   menuBelow,
   openMenu,
@@ -17,6 +18,7 @@ import {
   pressedShut,
   type MenuItem,
 } from "../src/shared/ui/menu";
+import { EmojiPicker } from "../src/shared/chat/emoji-picker";
 import { SideSheet } from "../src/shared/ui/side-sheet";
 
 const dot = (
@@ -32,6 +34,12 @@ function Page() {
   const [pop, setPop] = useState(false);
   const popButton = useRef<HTMLButtonElement>(null);
   const [under, setUnder] = useState(0);
+  const [emoji, setEmoji] = useState(false);
+  const emojiButton = useRef<HTMLButtonElement>(null);
+  const [boardFacet, setBoardFacet] = useState(false);
+  const boardButton = useRef<HTMLButtonElement>(null);
+  const longButton = useRef<HTMLButtonElement>(null);
+  const bottomButton = useRef<HTMLButtonElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const facetButton = useRef<HTMLButtonElement>(null);
   const inSheet = useRef<HTMLButtonElement>(null);
@@ -78,6 +86,20 @@ function Page() {
       setFacet((f) => (f.includes(v) ? f.filter((x) => x !== v) : [...f, v])),
     attrs: { "data-facet-value": v },
   }));
+  // Thirteen rows or more: the menu has a filter row.
+  const labels: MenuItem[] = [
+    "design-system", "spike", "enhancement", "docs", "bug", "chat", "boards",
+    "phone", "platform", "docs-site", "good first issue", "needs-design",
+    "release", "a11y", "ui",
+  ].map((v) => ({
+    label: v,
+    detail: "2",
+    checked: facet.includes(v),
+    multi: true,
+    run: () =>
+      setFacet((f) => (f.includes(v) ? f.filter((x) => x !== v) : [...f, v])),
+    attrs: { "data-facet-value": v },
+  }));
   const at =
     (
       b: { current: HTMLButtonElement | null },
@@ -110,6 +132,69 @@ function Page() {
         onClick={at(facetButton, facets, "Label")}
       >
         Label{facet.length > 0 && ` · ${facet.length}`}
+      </button>
+      <button
+        type="button"
+        class="secondary"
+        ref={longButton}
+        data-open="long"
+        onClick={at(longButton, labels, "Labels")}
+      >
+        Labels
+      </button>
+      {/* As a board draws it: a container (which holds fixed boxes), the
+          button at its right end, and the menu drawn inside it. */}
+      <div
+        data-fixture-board
+        style="container-type:inline-size;display:flex;justify-content:flex-end;margin-top:12px"
+      >
+        <button
+          type="button"
+          class="secondary"
+          ref={boardButton}
+          data-open="board-facet"
+          aria-haspopup="menu"
+          onClick={() => setBoardFacet(true)}
+        >
+          Person
+        </button>
+        {boardFacet && (
+          <MenuHost
+            show={() =>
+              !!boardButton.current &&
+              openMenu(menuBelow(boardButton.current), facets, {
+                from: boardButton.current,
+                label: "Person",
+                attrs: { "data-menu-name": "Person" },
+                onClose: () => setBoardFacet(false),
+              })
+            }
+            close={() => setBoardFacet(false)}
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        class="secondary"
+        ref={emojiButton}
+        data-open="emoji"
+        aria-haspopup="dialog"
+        onClick={() => pressedShut(emojiButton.current) || setEmoji(!emoji)}
+      >
+        Emoji
+      </button>
+      {emoji && (
+        <EmojiPicker from={emojiButton} pick={() => setEmoji(false)} close={() => setEmoji(false)} />
+      )}
+      <button
+        type="button"
+        class="secondary"
+        ref={bottomButton}
+        data-open="bottom"
+        style="position:fixed;right:24px;bottom:12px"
+        onClick={at(bottomButton, labels, "Labels at the foot")}
+      >
+        Foot
       </button>
       <button
         type="button"
