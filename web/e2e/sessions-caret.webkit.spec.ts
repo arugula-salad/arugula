@@ -67,7 +67,8 @@ test("the caret is the panes' only, and Panes brings the sidebar back", async ({
   await expect(page.locator("[data-open-sessions]")).toHaveCount(0);
   await page.locator(".ws-rail [data-open-panes]").click();
   await expect(sidebar).toHaveCount(0);
-  await expect(caret).toHaveText("›");
+  await expect(caret).toHaveAttribute("aria-expanded", "false");
+  await expect(caret.locator("svg")).toHaveCount(1);
   await caret.click();
   await expect(sidebar).toBeVisible();
 });
