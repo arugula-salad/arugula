@@ -556,6 +556,33 @@ test.describe("the owner's menus", () => {
     await expect(bar.locator("[data-copy-link-more]")).toHaveCount(0);
     await expect(bar.locator("[data-doc-bar-shared]")).toHaveCount(0);
 
+    // The third action, Open in browser, is off with no link, and says why.
+    const outside = bar.locator("[data-doc-open-browser]");
+    await expect(outside).toBeDisabled();
+    await expect(outside).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    await expect(outside).toHaveAttribute("aria-label", "Open in browser");
+
+    // At the bar's right edge, in a full-width pane and in a 320px one with a long title (Arugula #782).
+    // (The bar keeps its padding clear of the pane's grip; the buttons end there.)
+    const flush = async () => {
+      const edge = async (sel: string) => (await bar.locator(sel).boundingBox())!;
+      const b = (await bar.boundingBox())!;
+      const pad = await bar.evaluate((el) => parseFloat(getComputedStyle(el).paddingRight));
+      const last = await edge("[data-doc-open-browser]");
+      const gap = b.x + b.width - pad - (last.x + last.width);
+      expect(gap, "Open in browser ends the bar").toBeLessThanOrEqual(8);
+      expect(gap, "without running under the grip").toBeGreaterThanOrEqual(-1);
+      expect((await edge("[data-doc-bar-link]")).x, "the three buttons are together, not mid-bar").toBeGreaterThan(b.x + b.width / 2);
+    };
+    await flush();
+    await bar.evaluate((el) => {
+      (el as HTMLElement).style.width = "320px";
+      el.querySelector(".review-path b")!.textContent = "A very long Doc title that has to be cut short to leave room for the three buttons at the right";
+    });
+    await flush();
+    await expect(bar.locator("[data-doc-bar-link]")).toBeVisible();
+    await bar.evaluate((el) => (el as HTMLElement).style.removeProperty("width"));
+
     // Unshared with no copy on the platform, Copy link is off and says why;
     // the Share dialog opens from Share, and none makes a link.
     await expect(link).toBeDisabled();
@@ -612,6 +639,8 @@ test.describe("the owner's menus", () => {
     // The copy goes older: a dot on Share, and the dialog says so.
     await fill(r.post, d, "s3", `Bar older ${MARK}`);
     await expect(share).toHaveAttribute("data-older", "");
+    await expect(share).toHaveAttribute("title", "Update the shared copy: it's older than this Doc");
+    await expect(share).toHaveAttribute("aria-label", "Update the shared copy: it's older than this Doc");
     await share.click();
     await expect(dialog.locator("[data-doc-bar-older]")).toHaveText("Shared copy is older · Update");
     await shot("bar-dialog-shared-older");

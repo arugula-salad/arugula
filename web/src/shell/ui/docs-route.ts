@@ -22,19 +22,25 @@ export function closeDocsPage() {
 
 /** Show a Doc from the library in this session (one that is open already
  * comes forward), and leave the Docs page for it. With `split` a new block
- * opens beside that pane. The reason it didn't open, or null. */
-export async function openDoc(client: Client, id: string, split?: PaneId): Promise<string | null> {
+ * opens beside that pane. The block, or the reason it didn't open. */
+export async function openDocPane(client: Client, id: string, split?: PaneId): Promise<{ pane: PaneId } | { why: string }> {
   try {
     const body = { id, session: client.session?.toString() ?? null, split } satisfies DocOpenRequest;
     const res = await client.request(OPS["doc.open"].method, opPath("doc.open"), body);
     const v = await res.json<Partial<DocOpened> & { error?: string }>().catch(() => null);
-    if (!res.ok || typeof v?.pane !== "number") return v?.error ?? `HTTP ${res.status}`;
+    if (!res.ok || typeof v?.pane !== "number") return { why: v?.error ?? `HTTP ${res.status}` };
     if (docsRoute()) closeDocsPage();
     client.showWhenKnown(v.pane);
-    return null;
+    return { pane: v.pane };
   } catch (e) {
-    return (e as Error).message;
+    return { why: (e as Error).message };
   }
+}
+
+/** The same, for a caller that wants only the reason it didn't open, or null. */
+export async function openDoc(client: Client, id: string, split?: PaneId): Promise<string | null> {
+  const r = await openDocPane(client, id, split);
+  return "why" in r ? r.why : null;
 }
 
 /** "Doc…": one of this machine's Docs, beside `from`, or brought forward
