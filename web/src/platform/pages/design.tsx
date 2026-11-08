@@ -83,7 +83,7 @@ const TYPE_JOB: Record<string, string> = {
   sm: "meta, secondary lines, buttons",
   md: "body: row titles, messages, form text",
   lg: "a title: dialogs, side sheets, empty states",
-  xl: "a section h2, stat numbers",
+  xl: "a section h2 (as written, not caps), stat numbers",
   "2xl": "a page h1",
   doc: "the Doc's own title",
 };

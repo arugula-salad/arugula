@@ -104,8 +104,10 @@
      under 16px. */
   --t-body: var(--text-md);
   --t-field: var(--text-md);
-  /* Letter-spacing is three values: none, a display face's, a caps label's. */
+  /* Letter-spacing is four values: none, a display face's in caps, a section
+     h2's in the case it was written in, a caps label's. */
   --track-display: 0.01em;
+  --track-section: 0.02em;
   --track-caps: 0.08em;
   --bar-h: env(titlebar-area-height, 36px);
   --app-height: 100dvh;
