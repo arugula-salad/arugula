@@ -146,6 +146,21 @@ test("the kit's type scale is style.css's: the same sizes and line-heights", () 
   }
 });
 
+test("the kit's icon sizes are style.css's, and ar-icon draws as the app's icons do", () => {
+  const style = read("../src/shared/style.css");
+  for (const step of ["xs", "sm", "md", "lg"]) {
+    const app = style.match(new RegExp(`--icon-${step}: ([\\d.]+px);`))?.[1];
+    assert.ok(app, `style.css declares --icon-${step}`);
+    assert.equal(kit.match(new RegExp(`--ar-icon-${step}: ([\\d.]+px);`))?.[1], app, `--ar-icon-${step} is ${app}`);
+    assert.match(kit, new RegExp(`\\.ar-icon-${step} \\{ width: var\\(--ar-icon-${step}\\);`), `.ar-icon-${step} is sized by its token`);
+  }
+  const icon = kit.match(/\.ar-icon \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(icon, /stroke: currentColor;/);
+  assert.match(icon, /stroke-width: 1\.7;/);
+  assert.match(icon, /fill: none;/);
+  assert.match(kit, /\.ar-icon-xs \{[^}]*stroke-width: 2;/);
+});
+
 test("the kit's dialog sits under style.css's backdrop and has its title size", () => {
   const style = read("../src/shared/style.css");
   const app = style.match(/--backdrop: (rgb\([^)]*\));/)?.[1];
