@@ -61,7 +61,7 @@ function FlagSource({ f }: { f: FlagInfo }) {
           ? "Set for your team"
           : null;
   return text ? (
-    <span class="hint flag-source" data-flag-source={f.source}>
+    <span class="dim flag-source" data-flag-source={f.source}>
       {text}
     </span>
   ) : null;
@@ -98,12 +98,12 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   return (
     <Modal close={close} label="Developer settings" class="rules developer">
         <h2>Developer settings</h2>
-        <p class="hint">
+        <p class="dim">
           Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
           switches. What you set here wins over what's set for your account or team.
         </p>
         {error && <p class="error">{error}</p>}
-        {flags?.some((f) => f.built === false) && <p class="hint">This daemon was built without Labs: the switches turn nothing on.</p>}
+        {flags?.some((f) => f.built === false) && <p class="dim">This daemon was built without Labs: the switches turn nothing on.</p>}
         <ul class="rules-list">
           {(flags ?? []).map((f) => (
             <li key={f.name}>
@@ -111,10 +111,10 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
                 <input type="checkbox" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
                 <span>
                   <b>{f.title || f.name}</b>
-                  <span class="hint">{f.about}</span>
+                  <span class="dim">{f.about}</span>
                   <FlagSource f={f} />
                   {f.local_only ? (
-                    <span class="hint flag-source" data-flag-local-only>
+                    <span class="dim flag-source" data-flag-local-only>
                       Only this machine sets it, never your account or team
                     </span>
                   ) : null}
