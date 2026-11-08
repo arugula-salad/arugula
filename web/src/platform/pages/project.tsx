@@ -8,6 +8,7 @@
 // (Discovery 5): Link a repo, Make an environment, Start a run, Create a
 // cloud workspace, Turn on chat or Ask an owner.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
@@ -22,7 +23,7 @@ import { runs, type RunView } from "../runs";
 import { STATES, runTitle } from "../runs-text";
 import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
-import { roomTone, runTone, toneClass } from "../swarm";
+import { roomTone, rowTone, runTone } from "../swarm";
 import { HostedWorkspaceList, NewWorkspaceButton, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { whyNoStart } from "./runs";
 import { platformFetch } from "../../shared/maintenance";
@@ -73,18 +74,18 @@ export function ProjectHome({ id }: { id: string }) {
           {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
           {chat.on && rooms.length === 0 && <EmptyLine>No channels yet.</EmptyLine>}
-          <ul class="platform-list sw-rows" data-project-rooms>
+          <ul class="platform-list card-list" data-project-rooms>
             {rooms
               .sort((a, b) => Number(a.kind === "dm") - Number(b.kind === "dm") || a.name.localeCompare(b.name))
               .map((r) => {
                 const to = roomPath(r.id);
                 return (
-                  <li key={r.id} class={`sw-row ${toneClass(roomTone(r.unread, r.mentions))}`}>
+                  <Card as="li" dense key={r.id} tone={rowTone(roomTone(r.unread, r.mentions))}>
                     <a href={to} data-project-room={r.id} onClick={(e) => follow(e, to)}>
                       {r.kind === "channel" ? `# ${r.name}` : `@ ${r.with?.name ?? "someone who left"}`}
                       {r.unread > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count>}
                     </a>
-                  </li>
+                  </Card>
                 );
               })}
           </ul>
@@ -194,11 +195,11 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     </a>
   );
   const rows = (list: string[], data: string) => (
-    <ul class="platform-list sw-rows" {...{ [`data-${data}`]: "" }}>
+    <ul class="platform-list card-list" {...{ [`data-${data}`]: "" }}>
       {list.map((n) => (
-        <li key={n} class="sw-row">
+        <Card as="li" dense key={n}>
           <span class="sw-mono">{n}</span>
-        </li>
+        </Card>
       ))}
     </ul>
   );
@@ -289,18 +290,18 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
             }
           />
         ))}
-      <ul class="platform-list sw-rows" data-project-runs>
+      <ul class="platform-list card-list" data-project-runs>
         {list.map((r) => {
           const to = pathOf({ page: "run", project: p.id, run: r.id }, names);
           return (
-            <li key={r.id} class={`sw-row ${toneClass(runTone(r.state))}`} data-project-run={r.id}>
+            <Card as="li" dense key={r.id} tone={rowTone(runTone(r.state))} data-project-run={r.id}>
               <a href={to} onClick={(e) => follow(e, to)}>
                 {runTitle(r.op, null, r.deploy)}
               </a>{" "}
               <span class="dim sw-mono">
                 {STATES[r.state] ?? r.state} · <Time at={r.created_at} long />
               </span>
-            </li>
+            </Card>
           );
         })}
       </ul>

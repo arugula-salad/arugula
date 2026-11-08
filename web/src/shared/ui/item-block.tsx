@@ -11,6 +11,7 @@ import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { IssueIcon, MergeIcon, PrIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
+import { Card } from "./card";
 import "./item-block.css";
 
 export type ItemKind = "pr" | "issue";
@@ -248,28 +249,35 @@ export function ItemBlock({
   const hasBody = body !== undefined && body !== null && body !== false && body !== "" && !(Array.isArray(body) && body.length === 0);
   const { tone, word } = STATE[state];
   return (
-    <section class="item-block" data-item-block={kind} data-item-state={state}>
-      <header class="item-head" data-item-head>
-        <span class="item-kind" title={kind === "pr" ? "Pull request" : "Issue"}>
-          {kind === "pr" ? <PrIcon /> : <IssueIcon />}
-        </span>
-        <span class="item-number">#{number}</span>
-        <span class="item-title">{title}</span>
-        <StateChip tone={tone} data-item-pill>
-          {word}
-        </StateChip>
-        {source && <SourceIcon source={source} />}
-        {onRefresh && (
-          <button type="button" class="item-icon-btn" data-item-refresh title={refreshTitle ?? "Refresh"} aria-label="Refresh" onClick={onRefresh}>
-            ↻
-          </button>
-        )}
-        {href && (
-          <a class="item-icon-btn" data-item-open href={href} target="_blank" rel="noreferrer" title="Open in the browser" aria-label="Open in the browser">
-            ↗
-          </a>
-        )}
-      </header>
+    <Card
+      as="section"
+      class="item-block"
+      head={
+          <header class="item-head" data-item-head>
+            <span class="item-kind" title={kind === "pr" ? "Pull request" : "Issue"}>
+              {kind === "pr" ? <PrIcon /> : <IssueIcon />}
+            </span>
+            <span class="item-number">#{number}</span>
+            <span class="item-title">{title}</span>
+            <StateChip tone={tone} data-item-pill>
+              {word}
+            </StateChip>
+            {source && <SourceIcon source={source} />}
+            {onRefresh && (
+              <button type="button" class="item-icon-btn" data-item-refresh title={refreshTitle ?? "Refresh"} aria-label="Refresh" onClick={onRefresh}>
+                ↻
+              </button>
+            )}
+            {href && (
+              <a class="item-icon-btn" data-item-open href={href} target="_blank" rel="noreferrer" title="Open in the browser" aria-label="Open in the browser">
+                ↗
+              </a>
+            )}
+          </header>
+      }
+      data-item-block={kind}
+      data-item-state={state}
+    >
       {next && (
         <div class={`item-next item-next-${next.tone}`} data-item-next={next.tone}>
           <span class="item-next-icon" aria-hidden="true">
@@ -314,6 +322,6 @@ export function ItemBlock({
           {footer}
         </footer>
       )}
-    </section>
+    </Card>
   );
 }

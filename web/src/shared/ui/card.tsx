@@ -33,7 +33,7 @@ export function Card({
   children,
   ...attrs
 }: {
-  as?: "div" | "li" | "a" | "article";
+  as?: "div" | "li" | "a" | "article" | "section";
   tone?: Tone | null;
   dense?: boolean;
   head?: ComponentChildren;

@@ -6,7 +6,7 @@
    (--card-edge, --card-tint), where Latte's differ. Every size is a token
    there (--card-pad, --card-pad-dense, --card-gap, --card-bar,
    --card-radius). A card's own state, set by the page that draws it:
-   [aria-current="true"] is the one whose drawer is open, .seen is one that
+   [aria-current="true"] (or a listbox's [aria-selected="true"]) is the one whose drawer is open, .seen is one that
    has been dealt with and is plain again, and .drop-over (shared/style.css's
    `.drop-target.drop-over`) is a drag over it. */
 
@@ -102,6 +102,13 @@ a.card {
   padding-left: 14px;
 }
 
+/* What a one-line card holds gives way before the box does. */
+.card-dense > :is(a, .dim) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* One that has been dealt with: plain again, its bar faint. */
 .card.seen {
   border-color: var(--line);
@@ -123,12 +130,12 @@ a.card {
 }
 
 /* The selected card (#756): the tint, the accent bar and a 1px accent edge, whatever the tone. */
-.card[aria-current="true"] {
+.card:is([aria-current="true"], [aria-selected="true"]) {
   background-image: linear-gradient(var(--selected), var(--selected));
   box-shadow: var(--selected-edge);
 }
 
-.card[aria-current="true"]::before {
+.card:is([aria-current="true"], [aria-selected="true"])::before {
   background: var(--accent);
 }
 

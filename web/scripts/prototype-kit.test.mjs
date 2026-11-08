@@ -121,7 +121,7 @@ test("the kit has the chip and button shapes, each on --ar- tokens only", () => 
   assert.match(kit, /\.ar-seg > button:is\(\.on, /);
   assert.match(kit, /\.ar-bar-btn:is\(\.on, /);
   // No bare app token (`var(--accent)`) and no literal color outside the token block.
-  const rules = kit.slice(kit.indexOf(".ar-btn {"));
+  const rules = kit.slice(Math.min(kit.indexOf(".ar-btn {"), kit.indexOf(".ar-card {")));
   assert.doesNotMatch(rules, /var\(--(?!ar-|c\b|ct\b)[\w-]+\)/);
   assert.doesNotMatch(rules, /#[0-9a-fA-F]{3,8}\b/);
 });
@@ -155,4 +155,39 @@ test("the kit's dialog sits under style.css's backdrop and has its title size", 
   assert.match(title, /font-size: var\(--ar-text-lg\);/);
   assert.match(title, /font-weight: 600;/);
   assert.match(kit, /\.ar-dialog > \.ar-dialog-buttons \{[^}]*justify-content: flex-end;/);
+});
+
+test("the kit's card is the app's: its sizes, its tones and Latte's tint", () => {
+  const style = read("../src/shared/style.css");
+  for (const [app, ar] of [["card-pad", "card-pad"], ["card-pad-dense", "card-pad-dense"], ["card-gap", "card-gap"], ["card-bar", "card-bar"]]) {
+    const v = style.match(new RegExp(`--${app}: ([^;]+);`))?.[1];
+    assert.ok(v, `style.css declares --${app}`);
+    assert.equal(kit.match(new RegExp(`--ar-${ar}: ([^;]+);`))?.[1], v, `--ar-${ar} is ${v}`);
+  }
+  assert.equal(kit.match(/--ar-card-radius: ([^;]+);/)?.[1], "var(--ar-radius)");
+  for (const cls of ["ar-card", "ar-card-tone", "ar-card-dense"]) assert.match(kit, new RegExp(`\\.${cls}[ ,:{]`), `${cls} is declared`);
+  // The same seven tones as the app's card, each naming a kit color.
+  const tones = [...kit.matchAll(/\.ar-card-(\w+) \{ --c: var\(--ar-([\w-]+)\); --ct: var\(--ar-([\w-]+)\); \}/g)].map((m) => m[1]);
+  assert.deepEqual(tones.sort(), ["accent", "danger", "info", "muted", "ok", "teal", "warn"]);
+  // The tint is style.css's: the oklch numbers of Latte, the mix of a dark palette.
+  const all = (src, name) => [...src.matchAll(new RegExp(`--(?:ar-)?card-${name}: ([^;]+);`, "g"))].map((m) => m[1]).join(" | ");
+  const oklch = (v) => v.match(/oklch\(from var\(--c\) .*? h\)/)?.[0];
+  for (const [name, mixed] of [["edge", "color-mix(in srgb, var(--c) 45%, var(--ar-border))"], ["tint", "color-mix(in srgb, var(--c) 7%, var(--ar-surface))"]]) {
+    const latte = oklch(all(style, name));
+    assert.ok(latte, `style.css has Latte's ${name}`);
+    assert.ok(all(kit, name).includes(latte), `the kit's --ar-card-${name} has Latte's ${latte}`);
+    assert.ok(all(kit, name).includes(mixed), `and a dark palette's mix`);
+  }
+});
+
+test("each ar-card tone reads at 4.5:1 on its dark tint (7% of the tone over the surface)", () => {
+  const u = painted("slate");
+  const key = (name) => u[TOKENS[name]];
+  for (const m of kit.matchAll(/\.ar-card-(\w+) \{ --c: var\(--ar-([\w-]+)\); --ct: var\(--ar-([\w-]+)\); \}/g)) {
+    const tint = mix(u.surface, key(m[2]), 0.07);
+    const body = contrast(key("text"), tint);
+    const title = contrast(key(m[3]), tint);
+    assert.ok(body >= 4.5, `slate ${m[1]}: body text on ${tint} is ${body.toFixed(2)}:1`);
+    assert.ok(title >= 4.5, `slate ${m[1]}: ${key(m[3])} on ${tint} is ${title.toFixed(2)}:1`);
+  }
 });

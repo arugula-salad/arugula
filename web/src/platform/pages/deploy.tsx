@@ -44,7 +44,7 @@ import { controlOrigin, session } from "../session";
 import { names } from "../links";
 import { follow, followRow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
-import { deployTone, toneClass } from "../swarm";
+import { deployTone } from "../swarm";
 import { cardToneClass } from "../../shared/ui/card";
 import { where } from "../where";
 import { noteWaitingDeploys } from "../inbox-count";
@@ -584,7 +584,7 @@ export function DeployRow({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   const at = lastMoved(d);
   return (
-    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
+    <tr class="deploy-row" data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
       <td>
         <DeployState state={d.state} />
       </td>

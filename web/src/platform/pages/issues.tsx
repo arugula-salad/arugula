@@ -583,16 +583,16 @@ export function ProjectIssues({ p }: { p: PlatformProject }) {
       {list?.length === 0 && <EmptyState where="page" title="No open issues." why="An issue is a bug, a follow-up or a ticket for later. Agents open them too." />}
       {/* Rows, as the home's rooms are (UI audit #162): a title and its
           number, no underline until hovered. */}
-      <ul class="platform-list sw-rows" data-project-issues>
+      <ul class="platform-list card-list" data-project-issues>
         {list?.map((i) => {
           const to = pathOf({ page: "issue", project: p.id, issue: i.id }, names);
           return (
-            <li key={i.id} class="sw-row">
+            <Card as="li" dense key={i.id}>
               <a href={to} data-project-issue={i.number} onClick={(e) => follow(e, to)}>
                 {i.title}
               </a>{" "}
               <span class="dim sw-mono">#{i.number}</span>
-            </li>
+            </Card>
           );
         })}
       </ul>

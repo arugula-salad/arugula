@@ -248,6 +248,7 @@ function Page({ client }: { client: Client }) {
         status={status && <div class="list-status">{status}</div>}
         row={(r) => ({
           tone: isOpen(r) ? "live" : undefined,
+          dense: true,
           title: <span data-doc-title>{r.title}</span>,
           tags: (
             <>
