@@ -8,6 +8,7 @@
 
 import type { ComponentChildren } from "preact";
 import "./section-head.css";
+import { ChevronIcon } from "./icons";
 
 export function SectionHead({
   title,
@@ -43,7 +44,7 @@ export function SectionHead({
       {action}
       {all && (
         <a class="sw-all" href={all} aria-label={`All ${name}`} onClick={onAll} {...hook}>
-          All ›
+          All <ChevronIcon dir="right" />
         </a>
       )}
     </div>

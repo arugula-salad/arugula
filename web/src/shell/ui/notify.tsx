@@ -25,7 +25,7 @@ import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStan
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
-import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { CloseIcon, DotIcon, IconButton } from "../../shared/ui/icons";
 
 let push: PushState = "unsupported";
 /** What control pushes the account about; null off control, or not yet asked. */
@@ -259,7 +259,7 @@ export function NotifySection({ client, session }: { client: Client; session: nu
           typeof item === "object" &&
           "run" in item && (
             <button key={item.label} class="sheet-item sheet-toggle" aria-pressed={!!item.checked} onClick={item.run}>
-              <span class="sheet-check">{item.checked ? "●" : "○"}</span> {item.label}
+              <span class="sheet-check"><DotIcon on={!!item.checked} /></span> {item.label}
             </button>
           ),
       )}

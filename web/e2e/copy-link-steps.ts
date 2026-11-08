@@ -1,11 +1,11 @@
 // The Copy link button (#411) on a board's page and a project Doc's page: one
-// click copies the page's team link and says "Copied ✓" in place. Alice owns
+// click copies the page's team link and says "Copied" in place. Alice owns
 // team Acme, with chat on; her board and Doc are
 // made through the platform's API. A local control (team-fixture.ts,
 // `--platform-host app.localhost`), as boards-platform.spec.ts. Chrome reads
 // the link back from the clipboard; WebKit can't read it in a test, so
 // there the button's `data-link` (what it copies) stands in, and it says
-// "Copied ✓" only once the write succeeded.
+// "Copied" only once the write succeeded.
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
@@ -38,7 +38,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     await expect(alice.locator(ready)).toBeVisible({ timeout: 15_000 });
   }
 
-  /** One click on Copy link: "Copied ✓" in place, and the link it copied. */
+  /** One click on Copy link: "Copied" in place, and the link it copied. */
   async function copyLink(expected: string, shot: string) {
     const button = alice.locator("[data-copy-link]");
     const main = button.locator("[data-copy-link-main]");
@@ -48,7 +48,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     await expect(main).toContainText("Copy link");
     if (shots) await alice.screenshot({ path: `test-results/copy-link-${shot}.png` });
     await main.click();
-    await expect(main).toContainText("Copied ✓");
+    await expect(main).toContainText("Copied");
     if (shots) await alice.screenshot({ path: `test-results/copy-link-${shot}-copied.png` });
     if (clipboard) expect(await alice.evaluate(() => navigator.clipboard.readText())).toBe(expected);
     // And back to "Copy link" a moment later.

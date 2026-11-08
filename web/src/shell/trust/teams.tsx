@@ -348,6 +348,7 @@ function TeamSection({
                 <span>
                   {t.names?.[c.account] ?? c.name} <span class="dim">· version {c.version}</span>
                   <span class="control-device-label">
+                    {/* lint-icons: text — an arrow between two fingerprints */}
                     <span class="fingerprint-inline">{fingerprint(c.from)}</span> → <span class="fingerprint-inline">{fingerprint(c.to)}</span>
                   </span>
                 </span>

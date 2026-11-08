@@ -141,7 +141,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
               </header>
               {row.context && (
                 <p class="ws-ov-context" title={row.context}>
-                  {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
+                  {row.context.startsWith("Multiple") ? null : <BranchIcon size="xs" />}
                   <span class="ws-ellipsis">{row.context}</span>
                 </p>
               )}

@@ -98,7 +98,7 @@ export function SavedView({ phone }: { phone: boolean }) {
             title="Nothing saved."
             why={
               <>
-                Save a message with <BookmarkIcon size={12} /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
+                Save a message with <BookmarkIcon size="xs" /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
               </>
             }
           />

@@ -64,7 +64,7 @@ export function ReactionChips({
               <>
                 {people > 0 && <span class="reaction-sep" aria-hidden="true" />}
                 <span class="reaction-agents" data-reaction-agents={agents}>
-                  <MachineIcon size={12} />
+                  <MachineIcon size="xs" />
                   {agents}
                 </span>
               </>

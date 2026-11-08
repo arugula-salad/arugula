@@ -19,6 +19,7 @@ import { WaitingWrites } from "./tracker-writes";
 import { TRIAGE_NONE, addedWords, boxState, itemHref, rangeKeys, sourceLabel, targets } from "./triage-text";
 import { addUntriaged, countUntriaged, keyOf, pointerOf, readUntriaged, type Chosen, type UntriagedPage } from "./untriaged";
 import { ObjectChip, Chip } from "../../shared/ui/state-chip";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 /** The open issues on no board, `null` while they load, for each of `projects` (read in parallel); one that can't be read counts none. */
 export function useUntriaged(projects: readonly string[]): Map<string, number> | null {
@@ -317,7 +318,7 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
           Not on a board{page && <span class="untri-n" data-triage-count>{total.toLocaleString()}</span>}
         </h2>
         <a class="sw-all" href={allLink} data-triage-all onClick={(e) => follow(e, allLink)}>
-          All issues ›
+          All issues <ChevronIcon dir="right" />
         </a>
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}

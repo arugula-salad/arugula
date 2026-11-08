@@ -201,7 +201,7 @@ export function SessionSidebar({
         )}
       </div>
       <label class="ws-search">
-        <SearchIcon size={14} />
+        <SearchIcon size="sm" />
         <input
           ref={search}
           type="search"
@@ -337,7 +337,7 @@ function SessionRow({
                 <TabsIcon /> {row.tabs}
               </span>
               <span title={`${row.panes} pane${row.panes === 1 ? "" : "s"}`}>
-                <PanesIcon size={12} /> {row.panes}
+                <PanesIcon size="xs" /> {row.panes}
               </span>
             </span>
           </span>
@@ -347,7 +347,7 @@ function SessionRow({
                 // "Multiple repos" is words, not a repo · branch: not set in
                 // mono (UI audit #171).
                 <span class={row.context.startsWith("Multiple") ? "ws-session-context words" : "ws-session-context"}>
-                  {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
+                  {row.context.startsWith("Multiple") ? null : <BranchIcon size="xs" />}
                   <span class="ws-ellipsis" title={row.context}>
                     {row.context}
                   </span>

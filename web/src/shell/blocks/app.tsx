@@ -22,7 +22,7 @@ import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
 import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { Bar } from "../../shared/ui/bar";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 export interface AppState {
   app: string;
@@ -146,9 +146,9 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
   return (
     <div class="browser app-block" data-app={s.app}>
       <Bar sub class="browser-bar">
-        <button title="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
-          ↻
-        </button>
+        <IconButton label="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
+          <ReloadIcon size="sm" />
+        </IconButton>
         <span class="app-name" title={s.box_url}>
           {name}
         </span>

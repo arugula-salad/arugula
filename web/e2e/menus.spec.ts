@@ -229,7 +229,7 @@ test("a facet's ticks stay open, and the count changes", async ({ page }) => {
   await docs.click();
   await expect(menu).toBeVisible();
   await expect(docs).toHaveAttribute("aria-checked", "true");
-  await expect(docs.locator(".menu-lead")).toHaveText("✓");
+  await expect(docs.locator(".menu-lead svg")).toHaveCount(1);
   await expect(button).toContainText("· 1");
   await menu.locator('[data-facet-value="ui"]').check();
   await expect(button).toContainText("· 2");

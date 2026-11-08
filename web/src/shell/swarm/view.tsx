@@ -655,7 +655,7 @@ export function SwarmView({
           <div class="ph">
             {(byKey(peek.key)?.info.app === "nvim" || byKey(peek.key)?.info.editor?.app === "nvim") && (
               <span class="swarm-peek-app" data-swarm-nvim role="img" aria-label="nvim" title="nvim">
-                <NvimIcon size={12} />
+                <NvimIcon size="xs" />
               </span>
             )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>

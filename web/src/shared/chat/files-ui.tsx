@@ -11,7 +11,7 @@ import { kindText, MAX_FILES, pastedName, sizeText, tooBig, type Pending } from 
 import { upload } from "./files-upload";
 import { Modal } from "../ui/modal";
 import { ObjectChip } from "../ui/state-chip";
-import { CloseIcon, IconButton } from "../ui/icons";
+import { AttachIcon, CloseIcon, DownloadIcon, IconButton } from "../ui/icons";
 
 // ---- the composer's side
 
@@ -112,9 +112,7 @@ export function AttachButton({ add }: { add: (files: File[]) => void }) {
         }}
       />
       <button type="button" class="compose-tool bar-btn sq" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
-        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M13.2 7.6l-5 5a3.2 3.2 0 0 1-4.5-4.5l5.3-5.3a2.1 2.1 0 0 1 3 3L6.6 11a1 1 0 0 1-1.5-1.5l4.7-4.7" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <AttachIcon />
       </button>
     </>
   );
@@ -215,9 +213,7 @@ function FileCard({ f }: { f: ChatFile }) {
         </span>
       </span>
       <a class="msg-file-get" href={`${f.url}?download=1`} download={f.name} title="Download" aria-label={`Download ${f.name}`} data-file-download>
-        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13.5h10" />
-        </svg>
+        <DownloadIcon />
       </a>
     </div>
   );

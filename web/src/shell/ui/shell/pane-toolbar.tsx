@@ -91,7 +91,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         title={focusWhy ?? `${focused ? "Show every pane again" : "Fill the tab with the active pane"} (${keyHint("pane.focus")})`}
         onClick={() => toggleFocus(client, tab, undefined, refused)}
       >
-        <FocusIcon on={focused} size={13} />
+        <FocusIcon on={focused} size="xs" />
         {focused ? "Restore" : "Focus"}
       </button>
       {note && (
@@ -109,7 +109,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
           title={layoutRefusal(client, tab) ?? `Add a pane beside the active one (${keyHint("pane.add")})`}
           onClick={() => addPane.toggle()}
         >
-          <PlusIcon size={14} />
+          <PlusIcon size="sm" />
           Pane
           {keyHint("pane.add") && <kbd>{keyHint("pane.add")}</kbd>}
         </button>

@@ -9154,6 +9154,7 @@ input.chat-search {
 
 .chat-back {
   flex: none;
+  min-height: 24px;
   padding: 0 8px;
   font-size: var(--text-xl);
   line-height: 1;

@@ -5,7 +5,7 @@
 
 import type { ChatMentionStatus, ChatMessage, ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
-import { MachineIcon } from "../ui/icons";
+import { ChevronIcon, MachineIcon } from "../ui/icons";
 import { Chip, type Tone } from "../ui/state-chip";
 
 /** A state's tone: working accent, read and answered ok, the ones that wait
@@ -84,10 +84,10 @@ export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
     <div class="mention-status" role="group" aria-label="Agent mentions">
       {lines.map((s) => (
         <div key={s.machine} class={`mention-line ${s.state}`} data-mention-status={s.state} data-machine={s.machine} title={s.reply ? `Reply ${s.reply}` : undefined}>
-          <MachineIcon size={12} />
+          <MachineIcon size="xs" />
           {s.state === "answered" ? (
             <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, undefined, m.parent ?? m.seq)}>
-              {mentionStatusText(s)} ›
+              {mentionStatusText(s)} <ChevronIcon dir="right" />
             </Chip>
           ) : (
             <Chip tone={mentionTone(s.state)} dot>

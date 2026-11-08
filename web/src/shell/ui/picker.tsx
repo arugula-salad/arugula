@@ -15,6 +15,7 @@ import { fuzzy } from "../../shared/fuzzy";
 import { isWorkspace, openWorkspace } from "../blocks/open-labs";
 import { Chip } from "../../shared/ui/state-chip";
 import { Modal } from "../../shared/ui/modal";
+import { ArrowIcon, ChevronIcon } from "../../shared/ui/icons";
 
 /** `choose`: the picker only picks (+ Pane's directory, M110). */
 let open: { client: Client; pane: PaneId; phone: boolean; choose?: (path: string) => void } | null = null;
@@ -265,7 +266,7 @@ function Picker({ client, pane, phone, close, choose }: { client: Client; pane: 
             data-path={r.path}
             onClick={() => void go(r.path)}
           >
-            {r.recent ? <span class="picker-icon">↺</span> : <span class="picker-icon">{r.up ? "↑" : "▸"}</span>}
+            {r.recent ? <span class="picker-icon">↺</span> : <span class="picker-icon">{r.up ? <ArrowIcon dir="up" size="xs" /> : <ChevronIcon dir="right" />}</span>}
             <span class="picker-label">{r.recent ? r.path : r.label}</span>
           </li>
         ))}

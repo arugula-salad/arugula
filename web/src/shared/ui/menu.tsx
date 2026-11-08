@@ -7,7 +7,7 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
-import { CheckIcon, ChevronIcon, ExternalIcon } from "./icons";
+import { CheckIcon, ChevronIcon, DotIcon, ExternalIcon } from "./icons";
 
 export type MenuItem =
   | {
@@ -43,7 +43,7 @@ export type MenuItem =
       icon?: ComponentChildren;
       /** With `checked`: one of several that can be ticked together. Its mark
        * is a tick, it is a `menuitemcheckbox`, and choosing it ticks it in place
-       * and leaves the menu open. (A plain `checked` is a ● and one of.) */
+       * and leaves the menu open. (A plain `checked` is a dot and one of.) */
       multi?: boolean;
       /** Shown in the row's place for a beat after it runs ("Copied"), then
        * the menu shuts. */
@@ -508,7 +508,7 @@ export function MenuLayer() {
     if ("submenu" in item) return null;
     const key = `${inSub ? `${sub}.` : ""}${i}`;
     const on = item.multi ? (ticks[key] ?? !!item.checked) : item.checked;
-    const mark = item.multi ? (on ? <CheckIcon size="sm" /> : "") : item.checked || item.current ? "●" : "";
+    const mark = item.multi ? (on ? <CheckIcon size="sm" /> : "") : item.checked || item.current ? <DotIcon /> : "";
     const marked = item.checked !== undefined || item.current !== undefined;
     const saying = done === key;
     return (

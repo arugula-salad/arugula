@@ -14,7 +14,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { RoomBody, roomLabel } from "../../shared/chat/room";
 import { usePlatformApi } from "../../shared/platform-api";
 import { platformOrigin } from "../platform-links";
-import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { BubbleIcon, CloseIcon, ExpandIcon, IconButton } from "../../shared/ui/icons";
 
 export interface Quote {
   pane: PaneId;
@@ -93,20 +93,9 @@ export function ThreadBadge({ client, pane }: { client: Client; pane: PaneId }) 
       onPointerDown={(e) => e.stopPropagation()}
       onClick={() => openThread(client, { pane })}
     >
-      <Bubble />
+      <BubbleIcon />
       {u.unread ? <span>{u.mention ? `@ ${u.unread}` : u.unread}</span> : null}
     </button>
-  );
-}
-
-function Bubble() {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-      <path
-        d="M3 2.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-3 2.5V11.5H3A1.5 1.5 0 0 1 1.5 10V4A1.5 1.5 0 0 1 3 2.5z"
-        fill="currentColor"
-      />
-    </svg>
   );
 }
 
@@ -184,17 +173,12 @@ export function RoomDrawer({ phone, client }: { phone: boolean; client?: Client 
         )}
         {/* Chat's page is the platform page's (M153). */}
         {platformOrigin() && (
-          <button
-            class="thread-close"
-            title="Open it on the chat page"
-            aria-label="Open in chat"
-            onClick={() => {
+          <IconButton label="Open in chat" title="Open it on the chat page" class="thread-close" onClick={() => {
               closeRoomDrawer();
               api.nav.openRoom(room.id);
-            }}
-          >
-            ⤢
-          </button>
+            }}>
+            <ExpandIcon size="sm" />
+          </IconButton>
         )}
         <IconButton label="Close the thread" title="Close (Esc)" class="thread-close" onClick={closeRoomDrawer}>
           <CloseIcon size="sm" />

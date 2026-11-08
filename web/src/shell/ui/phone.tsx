@@ -50,7 +50,7 @@ export function PhoneHeader({ client }: { client: Client }) {
           {client.state?.panes.some(needsYou) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
-              <span class="crumb">{session.name}</span> ›{" "}
+              <span class="crumb">{session.name}</span> <ChevronIcon dir="right" />{" "}
               {tab && client.tabMachine(tab.id) && <Chip kind="tag" class="chip-gap">VM</Chip>}
               <span class="crumb">{tab ? tabLabel(client, tab) : ""}</span>
             </>

@@ -55,7 +55,7 @@ async function seeCallouts(page: Page, doc: number) {
   await expect(block.locator("[data-section=s1] blockquote")).toHaveText("A plain quote stays a quote.");
   const tiles = block.locator("[data-section=s2] .doc-stat");
   await expect(tiles).toHaveCount(3);
-  await expect(tiles.nth(0)).toContainText("Sessions1,284↑ +12%");
+  await expect(tiles.nth(0)).toContainText("Sessions1,284 +12%");
   await expect(tiles.nth(1).locator("[data-tone]")).toHaveAttribute("data-tone", "down");
   await expect(tiles.nth(1).locator("[role=img]")).toHaveAttribute("aria-label", "down");
   await expect(tiles.nth(2).locator("[data-tone]")).toHaveCount(0);

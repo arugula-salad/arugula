@@ -19,6 +19,7 @@ import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
@@ -287,9 +288,9 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
           </select>
         )}
         {can && (
-          <button title="Read it again" aria-label="Read it again" onClick={() => call("refresh")}>
-            ↻
-          </button>
+          <IconButton label="Read it again" onClick={() => call("refresh")}>
+            <ReloadIcon size="sm" />
+          </IconButton>
         )}
       </Bar>
       <div class="review-body">
@@ -314,6 +315,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                     {LETTER[f.status]}
                   </span>
                   <span class="diff-path">
+                    {/* lint-icons: text — a rename's arrow, between the old name and the new */}
                     {f.old && <span class="dim">{f.old} → </span>}
                     <span class="dim">{f.path.slice(0, slash + 1)}</span>
                     {f.path.slice(slash + 1)}

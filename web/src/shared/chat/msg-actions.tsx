@@ -54,7 +54,7 @@ export function itemsOf(
 ): MenuItem[] {
   const out: MenuItem[] = [];
   if (o.quote) out.push({ label: "Quote in reply", icon: <QuoteIcon />, run: o.quote, attrs: { "data-msg-reply": "" } });
-  out.push({ label: "Copy link", icon: <LinkIcon size={16} />, run: o.copy, done: "Copied", attrs: { "data-msg-link": "" } });
+  out.push({ label: "Copy link", icon: <LinkIcon size="md" />, run: o.copy, done: "Copied", attrs: { "data-msg-link": "" } });
   const unread = hookFor("unread", c);
   if (unread) out.push({ label: unread.label?.(c) ?? "Mark unread", icon: <UnreadIcon />, run: () => unread.run(c), attrs: { "data-msg-unread": "" } });
   const hour = hookFor("remindHour", c);

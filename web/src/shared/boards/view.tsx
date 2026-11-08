@@ -27,7 +27,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ChevronIcon, CloseIcon, ExternalIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
@@ -387,7 +387,7 @@ export function BoardPanel({
           action={
             write && (
               <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-                <PlusIcon size={13} />
+                <PlusIcon size="xs" />
                 Add row
               </button>
             )
@@ -462,23 +462,23 @@ export function BoardPanel({
         <p class="board-foot">
           {allRows.length > 0 && (
             <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               Add row
             </button>
           )}
           {write && (
             <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               Add a group
             </button>
           )}
           <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
-            <PlusIcon size={13} />
+            <PlusIcon size="xs" />
             New issue
           </button>
           {plane.map((c) => (
             <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               New issue in Plane ({c.identifier})
             </button>
           ))}
@@ -672,7 +672,7 @@ function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: A
       ))}
       {write && !picking && (
         <button type="button" class="secondary small" data-board-doc-add onClick={() => setPicking(true)}>
-          <PlusIcon size={13} />
+          <PlusIcon size="xs" />
           Doc
         </button>
       )}
@@ -1295,9 +1295,9 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           {([true, false] as const).map((up) => {
             const m = nudge(steps.place!.group, steps.place!.step, r.id, up);
             return (
-              <button key={String(up)} type="button" class="secondary small" disabled={!m} aria-label={up ? "Move up in its step" : "Move down in its step"} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
-                {up ? "↑" : "↓"}
-              </button>
+              <IconButton key={String(up)} label={up ? "Move up in its step" : "Move down in its step"} class="secondary small" disabled={!m} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
+                <ArrowIcon dir={up ? "up" : "down"} size="xs" />
+              </IconButton>
             );
           })}
         </div>
@@ -1418,7 +1418,7 @@ function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; projec
         ))}
         {write && !picking && (
           <button type="button" class="secondary small" data-board-drawer-doc-add onClick={() => setPicking(true)}>
-            <PlusIcon size={13} />
+            <PlusIcon size="xs" />
             Doc
           </button>
         )}

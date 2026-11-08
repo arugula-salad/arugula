@@ -20,7 +20,7 @@ import {
 import { SideSheet } from "../src/shared/ui/side-sheet";
 
 const dot = (
-  <Svg size={16}>
+  <Svg size="md">
     <circle cx="12" cy="12" r="6" />
   </Svg>
 );

@@ -399,7 +399,7 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           </button>
           {doc.platform && (
             <button class="bar-btn sq" data-doc-platform-link={doc.platform.link} aria-label="On the platform" title="On the platform: its read-only copy, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
-              <Svg size={14}>
+              <Svg size="sm">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <path d="M15 3h6v6" />
                 <path d="M10 14L21 3" />

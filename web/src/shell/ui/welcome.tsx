@@ -50,7 +50,7 @@ import { desktopApp } from "../../shared/desktop";
 import { countView } from "../../shared/telemetry";
 import { EditInNvim } from "./edit-in-nvim";
 import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
-import { CheckIcon, CloseIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
+import { CheckIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
 
 const DOCS = "https://docs.arugula.io";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
@@ -384,7 +384,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
 
       <footer class="start-foot">
         <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
-          ‹ Back
+          <ChevronIcon dir="left" /> Back
         </button>
         <span class="start-hint">Always in Settings: Getting started</span>
         {last ? (
@@ -393,7 +393,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
           </button>
         ) : (
           <button class="primary" onClick={() => go(step + 1)} data-start-next>
-            {step === 0 ? "Set it up ›" : done[id] ? "Next ›" : "Skip for now ›"}
+            {step === 0 ? "Set it up" : done[id] ? "Next" : "Skip for now"} <ChevronIcon dir="right" />
           </button>
         )}
       </footer>
@@ -450,7 +450,9 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           </div>
         </li>
         <li>
-          <span class="start-glyph">✎</span>
+          <span class="start-glyph">
+            <EditIcon size="md" />
+          </span>
           <div>
             <h3>Edit in nvim</h3>
             <EditInNvim />
@@ -1085,7 +1087,7 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
           {todo.map(([id, , no]) => (
             <Check key={id} state="todo">
               <button class="link" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
-                {no} ›
+                {no} <ChevronIcon dir="right" />
               </button>
             </Check>
           ))}

@@ -25,26 +25,26 @@ test("the caret shows and hides the sessions sidebar, and stays when it's closed
   await expect(caret).toHaveAttribute("aria-controls", "ws-session-sidebar");
   await expect(caret).toHaveAttribute("aria-expanded", "true");
   await expect(caret).toHaveAttribute("aria-label", "Hide sessions sidebar");
-  await expect(caret).toHaveText("‹");
+  await expect(caret.locator("svg")).toHaveCount(1);
   const menu = page.locator(".ws-head .host-button, .ws-head .ws-host-name").first();
   const [c, m] = await Promise.all([caret.boundingBox(), menu.boundingBox()]);
   expect(c!.x + c!.width).toBeLessThanOrEqual(m!.x);
   expect(Math.abs(c!.y + c!.height / 2 - (m!.y + m!.height / 2))).toBeLessThan(4);
 
-  // Hidden: the caret stays, as ›.
+  // Hidden: the caret stays, pointing the other way.
   await caret.click();
   await expect(sidebar).toHaveCount(0);
   await expect(caret).toBeVisible();
   await expect(caret).toHaveAttribute("aria-expanded", "false");
   await expect(caret).toHaveAttribute("aria-label", "Show sessions sidebar");
-  await expect(caret).toHaveText("›");
+  await expect(caret.locator("svg")).toHaveCount(1);
   const [c2, m2] = await Promise.all([caret.boundingBox(), menu.boundingBox()]);
   expect(c2!.x + c2!.width).toBeLessThanOrEqual(m2!.x);
 
   // And back.
   await caret.click();
   await expect(sidebar).toBeVisible();
-  await expect(caret).toHaveText("‹");
+  await expect(caret).toHaveAttribute("aria-expanded", "true");
 });
 
 test("the caret is the panes' only, and Panes brings the sidebar back", async ({ page }) => {

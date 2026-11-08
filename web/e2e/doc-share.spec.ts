@@ -404,7 +404,7 @@ test.describe("the owner's menus", () => {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
 
     await button.click();
-    await expect(button).toContainText("Copied ✓");
+    await expect(button).toContainText("Copied");
     await expect(button).toHaveAttribute("title", /only you can open it until it's shared/);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
     await expect(page.locator("[data-doc-share-dialog]")).toHaveCount(0);
@@ -446,7 +446,7 @@ test.describe("the owner's menus", () => {
     const button = page.locator(`[data-doc-bar="${again}"] [data-doc-bar-link]`);
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
     await button.click();
-    await expect(button).toContainText("Copied ✓");
+    await expect(button).toContainText("Copied");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
     expect(url).not.toContain("/p/");
     await expect(button).toHaveAttribute("title", "Copy link");
@@ -596,7 +596,7 @@ test.describe("the owner's menus", () => {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
         await expect.poll(() => page.evaluate((id) => JSON.stringify(window.__arugula.client.blocks.get(id)?.state), d)).toContain('"shared":{');
     await link.click();
-    await expect(link).toContainText("Copied ✓");
+    await expect(link).toContainText("Copied");
     await shot("bar-shared-copied");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
     await expect(dialog).toHaveCount(0);

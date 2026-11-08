@@ -20,7 +20,7 @@ import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
 import { LiveFace, accountOf } from "../../shared/live/face";
-import { CheckIcon } from "../../shared/ui/icons";
+import { CheckIcon, EditIcon } from "../../shared/ui/icons";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -114,7 +114,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         ) : null}
         {driving ? (
           <span class="pane-driver" data-you-drive title="You have control: your typing reaches it">
-            ✎ you drive
+            <EditIcon size="xs" /> you drive
           </span>
         ) : null}
         {focused.map((p) => (
@@ -125,7 +125,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         {driver ? (
           <>
             <span class="pane-driver" data-driver={driver.who} title={`${driver.name} is driving: only their typing reaches it`}>
-              ✎ {driver.name.split("@")[0]}
+              <EditIcon size="xs" /> {driver.name.split("@")[0]}
             </span>
             {/* You may type here, but they have control: say how to get it (#551). */}
             {!pair && client.mayType(pane) ? (
@@ -136,7 +136,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
           </>
         ) : pair ? (
           <span class="pane-driver" title="Pair mode: everyone types">
-            ✎ pair
+            <EditIcon size="xs" /> pair
           </span>
         ) : null}
       </div>

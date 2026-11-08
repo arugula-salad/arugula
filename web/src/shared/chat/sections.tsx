@@ -7,7 +7,7 @@ import type { ChatStore } from "../chat-store";
 import type { ChatRoom, ChatSort } from "../proto";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { addSection, collapse, place, placeOf, removeSection, renameSection, setSort, sortOf, star, STARRED } from "./sidebar";
-import { IconButton, MoreIcon } from "../ui/icons";
+import { IconButton, MoreIcon, StarIcon } from "../ui/icons";
 
 type Toast = (text: string) => void;
 type At = { clientX: number; clientY: number; preventDefault(): void };
@@ -97,7 +97,7 @@ export function RoomStarButton({ store, room, toast }: { store: ChatStore; room:
       data-room-star
       onClick={() => void store.editSidebar((s) => star(s, room.id, !on)).catch(refused(toast))}
     >
-      {on ? "★" : "☆"}
+      <StarIcon on={on} />
     </button>
   );
 }

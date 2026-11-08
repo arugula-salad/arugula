@@ -14,6 +14,7 @@ import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 type Server =
   | { is: "stopped" }
@@ -66,9 +67,9 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   const own = !throughControl(client, s.site_key) && /^https?:\/\//.test(s.src) ? s.src : null;
   const bar = (
     <Bar sub class="browser-bar editor-bar">
-      <button title="Reload" aria-label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
-        ↻
-      </button>
+      <IconButton label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
+        <ReloadIcon size="sm" />
+      </IconButton>
       {s.machine && (
         <Chip kind="tag" tone="info" class="chip-gap" title={`On ${s.machine}, a throwaway VM`}>
           VM

@@ -10,7 +10,7 @@ import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
-import { BranchIcon, FocusIcon, MoreIcon, NVIM_GLYPH } from "../../../shared/ui/icons";
+import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/ui/icons";
 import { HintChip } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
 import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
@@ -186,14 +186,14 @@ export function PaneHeader({
             <FocusIcon on={focused} />
           </button>
           <button class="pane-header-button bar-btn sq" data-pane-more={id} aria-label="Pane menu" title="Pane menu" onClick={more}>
-            <MoreIcon size={13} />
+            <MoreIcon size="xs" />
           </button>
         </>
       }
     >
       {branch && (
         <span class="pane-header-branch" title={`Branch ${branch}`}>
-          <BranchIcon size={11} />
+          <BranchIcon size="xs" />
           {branch}
         </span>
       )}
@@ -203,33 +203,3 @@ export function PaneHeader({
   );
 }
 
-/** Type remains named for assistive technology and in the hover label.
- * Each block type draws its own (UI audit #177). */
-const GLYPHS: Record<string, string> = {
-  terminal: "M4 6l6 6-6 6M12 18h8",
-  remote: "M3 4h18v12H3zM7 8l3 2-3 2M12 12h4M8 20h8M12 16v4",
-  agent: "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4",
-  chat: "M4 5h16v11H9l-5 4z",
-  team_chat: "M3 4h12v9H7l-4 3zM18 8h3v11l-3-3h-7v-3",
-  editor: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
-  // nvim's mark: two uprights and the diagonal between them.
-  nvim: NVIM_GLYPH,
-  file: "M6 3h8l4 4v14H6zM14 3v5h4M10.5 12l-2 2.5 2 2.5M13.5 12l2 2.5-2 2.5",
-  doc: "M5 3h14v18H5zM8 7h8M8 11h8M8 15h5",
-  diff: "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6",
-  browser: "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1",
-  pr: "M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4M6 7v10M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17V9a3 3 0 0 0-3-3h-4M13 4l-2 2 2 2",
-  issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
-  "native-issue": "M4 4h16v16H4zM12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
-  workspace: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
-  app: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM16.5 13v7M13 16.5h7",
-  invite: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M19 8v6M16 11h6",
-  agents: "M3 10h8v8H3zM13 10h8v8h-8zM7 10V6M17 10V6M6 14h.5M8.5 14h.5M16 14h.5M18.5 14h.5",
-  // Two people: who's around (a People block).
-  people: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.5a2.75 2.75 0 0 1 0 5.5M17.5 14.7c2.1.5 3.5 2.5 3.5 5.3",
-};
-
-function PaneTypeIcon({ type }: { type: string }) {
-  const path = GLYPHS[type] ?? GLYPHS.terminal;
-  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-pane-glyph={type}><path d={path} /></svg>;
-}

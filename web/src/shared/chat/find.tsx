@@ -14,6 +14,7 @@ import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { handled } from "./escape";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
+import { ChevronIcon, IconButton } from "../ui/icons";
 
 export function when(at: number): string {
   const d = new Date(at);
@@ -31,9 +32,9 @@ export function ViewHead({ title, sub, phone, back = "Every thread" }: { title: 
       class="chat-head chat-view-head"
       lead={
         phone ? (
-          <button class="chat-back" title={back} aria-label={back} onClick={() => nav.openChat()}>
-            ‹
-          </button>
+          <IconButton label={back} class="chat-back" onClick={() => nav.openChat()}>
+            <ChevronIcon dir="left" size="md" />
+          </IconButton>
         ) : undefined
       }
       title={<BarTitle class="chat-title">{title}</BarTitle>}

@@ -572,7 +572,7 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
     // The dialog is the box itself, its input a combobox over the list (UI
     // audit #176).
     <Modal bare close={close} label="Command palette" returnFocus={() => !ran.current} class={phone ? "picker palette phone" : "picker palette"} root={{ onKeyDown: onKey }}>
-      <div class="palette-search"><SearchIcon size={20} /><input
+      <div class="palette-search"><SearchIcon size="lg" /><input
         ref={input}
         class="picker-filter"
         placeholder={output ? "Search the output of every pane" : "Type a command, a tab or a pane"}

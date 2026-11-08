@@ -19,6 +19,7 @@ import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
 import { Chip, StateChip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { ReloadIcon } from "../../shared/ui/icons";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
@@ -377,7 +378,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
         )}
         {mayOpen && (
           <button title="Read it again" aria-label="Read it again" disabled={s.loading} onClick={refresh}>
-            {s.loading ? "…" : "↻"}
+            {s.loading ? "…" : <ReloadIcon size="sm" />}
           </button>
         )}
         {!s.error && (

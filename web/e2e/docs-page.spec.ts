@@ -275,7 +275,7 @@ test.describe("the list", () => {
     const on = (await preview(page, "Short note")).locator("[data-doc-copy-link]");
     await expect(on).toBeEnabled();
     await on.click();
-    await expect(on).toHaveText("Copied ✓");
+    await expect(on).toHaveText("Copied");
     await expect(on).toHaveAttribute("title", /only you can open it until it's shared/);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
     expect(made, "nothing is asked of control and no link is made").toEqual([]);

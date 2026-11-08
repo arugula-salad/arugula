@@ -7,6 +7,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../shared/maintenance";
 import type { SessionStats } from "../shared/proto";
+import { ArrowIcon } from "../shared/ui/icons";
 
 /** "40 s", "14 min", "3 h", "2 days". */
 export function took(ms: number): string {
@@ -42,11 +43,11 @@ export function SessionNumbers({ project }: { project: string }) {
       <div class="session-stat-row">
         {cell(s.sessions, s.sessions === 1 ? "session" : "sessions", "sessions")}
         <span class="session-stat-to" aria-hidden="true">
-          →
+          <ArrowIcon dir="right" size="xs" />
         </span>
         {cell(s.prs_opened, s.prs_opened === 1 ? "PR opened" : "PRs opened", "opened")}
         <span class="session-stat-to" aria-hidden="true">
-          →
+          <ArrowIcon dir="right" size="xs" />
         </span>
         {cell(s.prs_merged, "merged", "merged")}
       </div>

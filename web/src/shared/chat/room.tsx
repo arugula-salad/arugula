@@ -49,7 +49,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, ReactIcon, ThreadIcon } from "../ui/icons";
+import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
@@ -499,7 +499,7 @@ export function RoomBody({
         {!atBottom && (
           <div class="jump-newest">
             <button type="button" data-jump-newest onClick={toNewest}>
-              {unseen > 0 ? `↓ ${unseen} new ${unseen === 1 ? "message" : "messages"}` : "↓ Jump to newest"}
+              <ArrowIcon dir="down" size="xs" /> {unseen > 0 ? `${unseen} new ${unseen === 1 ? "message" : "messages"}` : "Jump to newest"}
             </button>
           </div>
         )}
@@ -574,7 +574,7 @@ export function RoomMessage({
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
   const machineIcon = useCallback(
     (word: string) =>
-      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size={13} /> : null,
+      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size="xs" /> : null,
     [room.id, heard.join(" ")],
   );
   // Which of its pop-ups is open: the emoji menu, the ⋯ menu, the menu a
@@ -604,7 +604,7 @@ export function RoomMessage({
   const onToolbar: MenuItem[] = [
     ...(thread ? [{ label: "Reply in thread", icon: <ThreadIcon />, run: () => thread.run(ctx), attrs: { "data-msg-thread": "" } }] : []),
     ...(save
-      ? [{ label: save.label?.(ctx) ?? "Save for later", icon: <BookmarkIcon on={save.on?.(ctx)} size={16} />, run: () => save.run(ctx), attrs: { "data-msg-save": "", ...(save.on === undefined ? {} : { "aria-pressed": !!save.on(ctx) }) } }]
+      ? [{ label: save.label?.(ctx) ?? "Save for later", icon: <BookmarkIcon on={save.on?.(ctx)} size="md" />, run: () => save.run(ctx), attrs: { "data-msg-save": "", ...(save.on === undefined ? {} : { "aria-pressed": !!save.on(ctx) }) } }]
       : []),
   ];
   if (isSystemLine(m)) {
@@ -744,9 +744,9 @@ export function RoomMessage({
           </>
         )}
         {thread && (
-          <button class="bar-btn sq" title="Reply in thread" aria-label="Reply in thread" data-msg-thread onClick={() => thread.run(ctx)}>
-            ↩
-          </button>
+          <IconButton label="Reply in thread" class="bar-btn sq" data-msg-thread onClick={() => thread.run(ctx)}>
+            <ThreadIcon />
+          </IconButton>
         )}
         {save && (
           <button
@@ -1183,7 +1183,7 @@ export function RoomCompose({
                   <span class="mention-session-gap" aria-hidden="true" />
                 ) : (
                   <span class="avatar-wrap mention-machine-icon">
-                    <MachineIcon size={18} />
+                    <MachineIcon size="lg" />
                     <MachineDot machine={p.machine} />
                   </span>
                 )
@@ -1301,23 +1301,14 @@ export function RoomCompose({
           }}
         />
         {canQuote && (<button type="button" class="compose-tool bar-btn sq" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-            <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <QuotePaneIcon />
         </button>)}
         <AttachButton add={files.add} />
         <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <circle cx="8" cy="8" r="6.2" />
-            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
-            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
-          </svg>
+          <ReactIcon size="md" />
         </button>
         <button class="compose-send primary" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-          </svg>
+          <SendIcon />
         </button>
       </div>
       {thread && (

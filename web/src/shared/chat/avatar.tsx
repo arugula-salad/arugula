@@ -95,7 +95,7 @@ export function MsgAvatar({
       {face}
       {agent && (
         <span class="avatar-badge" title="An agent" aria-hidden="true">
-          <MachineIcon size={10} />
+          <MachineIcon size="xs" />
         </span>
       )}
       {dot && <Dot account={agent ? undefined : account} machine={agent} />}
