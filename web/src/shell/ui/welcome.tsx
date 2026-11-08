@@ -50,6 +50,7 @@ import { desktopApp } from "../../shared/desktop";
 import { countView } from "../../shared/telemetry";
 import { EditInNvim } from "./edit-in-nvim";
 import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
+import { CheckIcon, CloseIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
 
 const DOCS = "https://docs.arugula.io";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
@@ -337,9 +338,9 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
         <div class="start-brand">
           Arugula <span>setup</span>
         </div>
-        <button class="start-x" aria-label="Close" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" class="start-x" onClick={close}>
+          <CloseIcon size="md" />
+        </IconButton>
       </header>
 
       <ol class="start-rail" aria-label="Steps">
@@ -507,7 +508,7 @@ function Said({ outcome }: { outcome: Outcome | null }) {
       )}
       {outcome.link && (
         <a class="secondary" href={outcome.link.url} target="_blank" rel="noreferrer" data-start-link>
-          {outcome.link.label} ↗
+          {outcome.link.label} <ExternalIcon size="xs" />
         </a>
       )}
     </div>
@@ -713,7 +714,7 @@ function Cloud({
             <Check state="done">
               <span data-start-joined>Joined{team ? ` to the team ${team}` : " to your account"}</span> ·{" "}
               <a href={joined} target="_blank" rel="noreferrer">
-                open the cloud ↗
+                open the cloud <ExternalIcon size="xs" />
               </a>
             </Check>
           </ul>
@@ -749,7 +750,7 @@ function Cloud({
           <div class="start-kicker">Approve this code on a device you use</div>
           <WholeCode code={c.pending.code} />
           <a class="primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
-            Approve in Arugula cloud ↗
+            Approve in Arugula cloud <ExternalIcon size="xs" />
           </a>
           <p class="start-dim">
             <span class="start-pulse" /> Waiting for the approval. Open the link (or type the whole code) on a browser or phone you already use with
@@ -767,7 +768,7 @@ function Cloud({
           {c.elsewhere.code && <WholeCode code={c.elsewhere.code} />}
           {c.elsewhere.approve && (
             <a class="primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
-              Approve in Arugula cloud ↗
+              Approve in Arugula cloud <ExternalIcon size="xs" />
             </a>
           )}
           <p class="start-dim">One join at a time: approve this one, or stop it where it runs and try again here.</p>
@@ -959,7 +960,7 @@ function Together({ joined, client, close }: { joined: string; client: Client | 
           </button>
         ) : (
           <a class="secondary" href={joined} target="_blank" rel="noreferrer" title="Teams are in the cloud's account menu" data-start-make-team>
-            Make a team ↗
+            Make a team <ExternalIcon size="xs" />
           </a>
         )}
         {client && owner && session !== null && (
@@ -1069,7 +1070,9 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
                   t.run();
                 }}
               >
-                {isDone && <span class="start-try-mark" aria-label="done">✓ </span>}
+                {isDone && <span class="start-try-mark" aria-label="done">
+                    <CheckIcon size="xs" />{" "}
+                  </span>}
                 {t.label}
               </button>
               <span class="start-dim">{t.refusal ?? t.what}</span>

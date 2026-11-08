@@ -249,14 +249,23 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   vertical-align: -2px;
 }
 
+/* An icon-only button's icon is a box, not a glyph on the text's baseline: it
+   fills the button's line, so the button is its padding and the icon. */
+.icon-btn > .icon:only-child {
+  display: block;
+  margin-inline: auto;
+}
+
 .icon-xs {
   width: var(--icon-xs);
   height: var(--icon-xs);
+  vertical-align: -2px; /* beside text of its size, as the glyph was */
 }
 
 .icon-sm {
   width: var(--icon-sm);
   height: var(--icon-sm);
+  vertical-align: -3px;
 }
 
 .icon-md {
@@ -7492,6 +7501,7 @@ html[data-scheme="light"] .doc {
 }
 
 .thread-close {
+  min-height: 24px;
   padding: 4px 8px;
   border-radius: var(--btn-radius);
   color: var(--dim);

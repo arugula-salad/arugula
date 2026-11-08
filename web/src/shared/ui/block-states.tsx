@@ -6,6 +6,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { ExternalIcon } from "./icons";
 // Its styles come in through shared/style.css (an @import there), not from
 // here: the Doc renderer imports this too, and a CSS chunk of its own would be
 // shared by the app and the share page (doc-link.spec).
@@ -165,7 +166,7 @@ export function BlockLoading({ what, inline, ...data }: { what: string; inline?:
 export function OpenOutside({ href, ...data }: { href: string; [attr: `data-${string}`]: unknown }) {
   return (
     <a class="block-open" href={href} target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open in a new tab" {...data}>
-      ↗
+      <ExternalIcon size="xs" />
     </a>
   );
 }

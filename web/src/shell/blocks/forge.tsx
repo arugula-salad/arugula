@@ -31,7 +31,7 @@ import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
 import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -391,7 +391,7 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
             <>
               {" "}
               <a class="dim" href={x.url} target="_blank" rel="noopener">
-                ↗
+                <ExternalIcon size="xs" />
               </a>
             </>
           )}
@@ -627,7 +627,7 @@ function Drafts({ s }: { s: ForgeState }) {
                   <>
                     {" "}
                     <a href={d.url} target="_blank" rel="noopener">
-                      ↗
+                      <ExternalIcon size="xs" />
                     </a>
                   </>
                 )}
@@ -870,7 +870,7 @@ function nextStep(
           )}
           {s.rerun?.url && (
             <a class="secondary small" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
-              Open run ↗
+              Open run <ExternalIcon size="xs" />
             </a>
           )}
         </>

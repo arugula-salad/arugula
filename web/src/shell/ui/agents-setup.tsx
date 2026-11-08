@@ -23,6 +23,7 @@ import type { PaneId } from "../../shared/proto";
 import { adapterReady, type Adapter } from "./adapter";
 import { openGettingStarted } from "./welcome";
 import { ClaudePlugin } from "./claude-plugin";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 const SAID_KEY = "arugula.agents-nudge";
 
@@ -197,10 +198,9 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
           Getting started…
         </button>
       )}
-      <button
+      <IconButton
+        label="Hide"
         class="link"
-        aria-label="Hide"
-        title="Hide"
         onClick={() => {
           putAway.add(id);
           setSaid(null);
@@ -208,8 +208,8 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
         }}
         data-hooks-chip-hide
       >
-        ✕
-      </button>
+        <CloseIcon size="sm" />
+      </IconButton>
       {plugin && !said && <ClaudePlugin lead="Claude Code's plugin brings the hooks and Arugula's tools. In Claude Code, then start it again here:" />}
     </div>
   );

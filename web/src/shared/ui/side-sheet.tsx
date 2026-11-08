@@ -12,6 +12,7 @@
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { useModal } from "./modal";
 import "./side-sheet.css";
+import { CloseIcon, IconButton } from "./icons";
 
 type Attrs = Record<string, string | boolean>;
 
@@ -58,9 +59,9 @@ export function SideSheet({
             </h2>
             {subtitle && <p class="side-sheet-sub">{subtitle}</p>}
           </div>
-          <button type="button" class="bar-btn sq" aria-label="Close" title="Close" onClick={close} {...closeAttrs}>
-            ×
-          </button>
+          <IconButton label="Close" class="bar-btn sq" onClick={close} {...closeAttrs}>
+            <CloseIcon size="sm" />
+          </IconButton>
         </header>
         <div class="side-sheet-body">{children}</div>
         {foot && <footer class="side-sheet-foot">{foot}</footer>}

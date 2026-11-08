@@ -11,7 +11,7 @@
 // (https://lucide.dev, ISC licence; some derive from Feather, MIT; both
 // notices are in THIRD_PARTY.md), copied in and drawn at this file's stroke.
 
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, JSX } from "preact";
 
 export type IconSize = "xs" | "sm" | "md" | "lg";
 const PX: Record<IconSize, number> = { xs: 12, sm: 14, md: 16, lg: 18 };
@@ -352,6 +352,15 @@ export const ChevronIcon = ({ dir = "down", open, size = "xs" }: { dir?: "down" 
     </Svg>
   );
 };
+
+/** A button that is only an icon. `label` is required and is both its `aria-label` and its
+ * `title` (the hover tip), so the next one can't miss either; `title` says more on hover where
+ * the tip is longer than the name. */
+export const IconButton = ({ label, title, children, type = "button", class: extra, ...rest }: { label: string; title?: string } & Omit<JSX.IntrinsicElements["button"], "title" | "aria-label" | "label">) => (
+  <button type={type} {...rest} class={extra ? `icon-btn ${extra}` : "icon-btn"} aria-label={label} title={title ?? label}>
+    {children}
+  </button>
+);
 
 /** The ▾ after a menu button's label, dim. */
 export const Caret = ({ dir = "down" }: { dir?: "down" | "up" | "right" }) => (

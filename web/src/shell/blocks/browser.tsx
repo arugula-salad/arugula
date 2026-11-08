@@ -12,6 +12,7 @@ import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-state
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -173,7 +174,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           why="It doesn't allow being shown inside another page."
           action={
             <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
-              Open in a new tab ↗
+              Open in a new tab <ExternalIcon size="xs" />
             </a>
           }
         />

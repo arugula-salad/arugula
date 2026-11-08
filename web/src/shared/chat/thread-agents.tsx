@@ -12,7 +12,7 @@ import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatT
 import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
 import { Chip, ObjectChip } from "../ui/state-chip";
-import { ChevronIcon } from "../ui/icons";
+import { CheckIcon, ChevronIcon } from "../ui/icons";
 
 /** How often an open thread asks again. */
 const EVERY_MS = 15_000;
@@ -172,7 +172,9 @@ export function SeenMarks({ agents, m }: { agents: ChatThreadAgent[]; m: ChatMes
   return (
     <div class="thread-seen" title="How far each agent has read" data-thread-seen>
       {here.map((a) => (
-        <span key={`${a.id}/${a.name}`}>{agentName(a)}</span>
+        <span key={`${a.id}/${a.name}`}>
+          <CheckIcon size="xs" /> {agentName(a)}
+        </span>
       ))}
     </div>
   );

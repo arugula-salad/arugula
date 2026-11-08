@@ -7,7 +7,7 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useModal } from "./modal";
-import { ChevronIcon } from "./icons";
+import { CheckIcon, ChevronIcon, ExternalIcon } from "./icons";
 
 export type MenuItem =
   | {
@@ -42,12 +42,14 @@ export type MenuItem =
        * every row keeps it, so the labels line up. */
       icon?: ComponentChildren;
       /** With `checked`: one of several that can be ticked together. Its mark
-       * is a ✓, it is a `menuitemcheckbox`, and choosing it ticks it in place
+       * is a tick, it is a `menuitemcheckbox`, and choosing it ticks it in place
        * and leaves the menu open. (A plain `checked` is a ● and one of.) */
       multi?: boolean;
       /** Shown in the row's place for a beat after it runs ("Copied"), then
        * the menu shuts. */
       done?: string;
+      /** It opens elsewhere (the browser, GitHub): an ↗ icon follows its label. */
+      external?: boolean;
       /** Attributes for the row, such as a `data-` hook for the specs. */
       attrs?: Attrs;
     }
@@ -506,7 +508,7 @@ export function MenuLayer() {
     if ("submenu" in item) return null;
     const key = `${inSub ? `${sub}.` : ""}${i}`;
     const on = item.multi ? (ticks[key] ?? !!item.checked) : item.checked;
-    const mark = item.multi ? (on ? "✓" : "") : item.checked || item.current ? "●" : "";
+    const mark = item.multi ? (on ? <CheckIcon size="sm" /> : "") : item.checked || item.current ? "●" : "";
     const marked = item.checked !== undefined || item.current !== undefined;
     const saying = done === key;
     return (
@@ -550,6 +552,12 @@ export function MenuLayer() {
           </span>
         )}
         {saying ? item.done : item.confirm && armed?.label === item.label ? item.confirm : item.label}
+        {item.external && !saying && (
+          <>
+            {" "}
+            <ExternalIcon size="xs" />
+          </>
+        )}
         {item.detail && !saying && (
           <>
             {" "}

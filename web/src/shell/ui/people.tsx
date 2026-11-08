@@ -20,6 +20,7 @@ import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
 import { LiveFace, accountOf } from "../../shared/live/face";
+import { CheckIcon } from "../../shared/ui/icons";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -500,7 +501,7 @@ export function ShareDialog({ client }: { client: Client }) {
                     {verified(g) ? (
                       <span class="share-verified" title="You verified their key" aria-label="verified" data-verified>
                         {" "}
-                        ✓
+                        <CheckIcon size="xs" />
                       </span>
                     ) : null}
                   </span>

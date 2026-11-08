@@ -35,7 +35,7 @@ import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
 import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
-import { ChevronIcon } from "../ui/icons";
+import { CheckIcon, ChevronIcon, EditIcon, ExternalIcon } from "../ui/icons";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -314,7 +314,7 @@ export function IssueView({
                 title="It was opened on GitHub: new comments here go there, and theirs come here"
                 data-issue-github
               >
-                Lives on GitHub as {issue.github.repo}#{issue.github.number} ↗
+                Lives on GitHub as {issue.github.repo}#{issue.github.number} <ExternalIcon size="xs" />
               </a>
             )}
           </div>
@@ -466,7 +466,7 @@ function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameO
   return (
     <div class={`issue-event ${e.kind}`} data-issue-event={e.kind} data-agent={e.agent?.machine}>
       <span class="issue-event-mark" aria-hidden="true">
-        {e.kind === "closed" ? "✓" : e.kind === "reopened" ? "↺" : e.kind.includes("label") ? "◆" : e.kind.includes("assign") ? "●" : "✎"}
+        {e.kind === "closed" ? <CheckIcon size="xs" /> : e.kind === "reopened" ? "↺" : e.kind.includes("label") ? "◆" : e.kind.includes("assign") ? "●" : <EditIcon size="xs" />}
       </span>
       <span>
         <b>{whoLabel(e.actor, e.agent, nameOf)}</b> {line}{" "}

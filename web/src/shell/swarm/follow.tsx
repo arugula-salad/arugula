@@ -15,7 +15,7 @@ import type { ActRequest, ActResponse, FollowMsg, OpenRequest, OpenResponse } fr
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { CodeView } from "./code";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
 
 /** What an editor is called. */
 export function appName(app: string | undefined): string {
@@ -138,9 +138,9 @@ export function FollowView({ fleet, pkey, close, back }: { fleet: Fleet; pkey: s
               Ask Claude <Caret />
             </button>
           )}
-          <button class="secondary small" data-follow-close title="Stop following" onClick={close}>
-            ✕
-          </button>
+          <IconButton label="Stop following" class="secondary small" data-follow-close onClick={close}>
+            <CloseIcon size="sm" />
+          </IconButton>
         </div>
       </header>
       {paused && <div class="follow-note paused">Paused{ed?.debug?.line ? ` at line ${ed.debug.line}` : ""}{ed?.debug?.reason ? ` (${ed.debug.reason})` : ""}</div>}

@@ -11,6 +11,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { Modal } from "../../shared/ui/modal";
 import { HintChip as Hint_ } from "../../shared/ui/state-chip";
 import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type ModalButton, type Place } from "../hints";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 /** Watches the shown machine for facts; once, in the workspace. */
 export function HintsWatch({ client }: { client: Client }) {
@@ -152,9 +153,9 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
         </>
       }
     >
-      <button class="modal-close" data-hint-dismiss aria-label="Close this tip" title="Close" onClick={() => dismiss(never)}>
-        ×
-      </button>
+      <IconButton label="Close this tip" title="Close" class="modal-close" data-hint-dismiss onClick={() => dismiss(never)}>
+        <CloseIcon size="md" />
+      </IconButton>
       <div ref={scroll} class="pane-tip-scroll">
         <div class="pane-tip-inner">
           <h2>{hint.copy(fact)}</h2>

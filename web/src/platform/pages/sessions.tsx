@@ -28,7 +28,7 @@ import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { ListLoading } from "./issues";
 import { Missing } from "./project";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, CloseIcon } from "../../shared/ui/icons";
 
 async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
   const qs = waveQuery(f);
@@ -260,7 +260,7 @@ function TrackerFilter({
         onClick={() => to({ ...filter, tracker: undefined })}
       >
         Tracker #{filter.tracker}
-        {tracker ? ` ${tracker.title}` : ""} ✕
+        {tracker ? ` ${tracker.title}` : ""} <CloseIcon size="xs" />
       </button>
     );
   return (

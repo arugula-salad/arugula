@@ -13,6 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Modal } from "../../shared/ui/modal";
 import { directory } from "../hosts";
 import { openPlatform, platformOrigin } from "../platform-links";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A grant, as `GET /api/grants` lists it. */
 export interface Grant {
@@ -154,7 +155,7 @@ function AgentGrants({ close }: { close: () => void }) {
               openPlatform("/settings#agents");
             }}
           >
-            Change them in Settings ↗
+            Change them in Settings <ExternalIcon size="xs" />
           </button>
         )}
         <button class="primary" type="button" onClick={close}>

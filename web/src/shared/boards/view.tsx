@@ -27,7 +27,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ChevronIcon, PlusIcon } from "../ui/icons";
+import { ChevronIcon, CloseIcon, ExternalIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
@@ -440,9 +440,9 @@ export function BoardPanel({
                     </span>
                   )}
                   {s.group && write && (
-                    <button type="button" class="bar-btn sq board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
-                      ⋯
-                    </button>
+                    <IconButton label={`Group actions: ${s.group.title}`} class="bar-btn sq board-more" data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                      <MoreIcon size="sm" />
+                    </IconButton>
                   )}
                 </>
               }
@@ -1108,9 +1108,9 @@ function Row({
                 </span>
               )}
             </div>
-            <button type="button" class="bar-btn sq board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
-              ⋯
-            </button>
+            <IconButton label="Row actions" class="bar-btn sq board-more" data-board-row-menu onClick={more}>
+              <MoreIcon size="sm" />
+            </IconButton>
           </div>
           <div class="board-line board-sub dim">
             {label && <span class="board-ptr" data-board-ptr>{label}</span>}
@@ -1306,7 +1306,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
         {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
-            {pointerLabel(r.pointer, r.live)} ↗
+            {pointerLabel(r.pointer, r.live)} <ExternalIcon size="xs" />
           </a>
         )}
       </div>
@@ -1458,9 +1458,9 @@ function Relations({ r, project, others, write, act, id }: { r: BoardRow; projec
           <span>{relationLine(x)}</span>
           {x.source !== "person" && x.source !== "agent" && <span class="dim"> · from {x.source === "plane" ? "Plane" : "GitHub"}</span>}
           {x.removable && (
-            <button type="button" class="bar-btn sq board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
-              ×
-            </button>
+            <IconButton label="Remove relation" class="bar-btn sq board-more" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
+              <CloseIcon size="xs" />
+            </IconButton>
           )}
         </div>
       ))}

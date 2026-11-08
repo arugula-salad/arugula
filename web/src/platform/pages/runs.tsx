@@ -42,7 +42,7 @@ import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type Run
 import { runTone, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -809,7 +809,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
             <dd data-run-chant-ledger>
               {httpsOnly(run.chant_ledger) ? (
                 <a href={run.chant_ledger} target="_blank" rel="noopener noreferrer">
-                  The release's entry ↗
+                  The release's entry <ExternalIcon size="xs" />
                 </a>
               ) : (
                 <code>{run.chant_ledger}</code>
@@ -848,7 +848,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <>
             It's running in a pane on its machine.{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              Watch pane %{run.pane} on your machines ↗
+              Watch pane %{run.pane} on your machines <ExternalIcon size="xs" />
             </a>
             <span class="dim"> This page doesn't show machines; that one shows the pane end to end.</span>
           </>
@@ -858,7 +858,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <span class="dim">
             It ended. It ran in pane %{run.pane}, which may still be open{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              on your machines ↗
+              on your machines <ExternalIcon size="xs" />
             </a>
             .
           </span>

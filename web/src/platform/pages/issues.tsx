@@ -29,7 +29,7 @@ import { issueTone } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
-import { Caret } from "../../shared/ui/icons";
+import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 /** Who's in a project: its team's roster, or its one person. */
 export function membersOf(p: PlatformProject): { account: string; name: string }[] {
@@ -320,7 +320,16 @@ function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHom
   if (!home) return null;
   // The project home's is a small button beside its heading (UI audit #162).
   const cls = small ? "secondary small" : "primary issues-new";
-  const label = home.home === "github" ? `${small ? "+ " : ""}New issue on GitHub ↗` : small ? "+ New issue" : "New issue";
+  const label =
+    home.home === "github" ? (
+      <>
+        {small ? "+ " : ""}New issue on GitHub <ExternalIcon size="xs" />
+      </>
+    ) : small ? (
+      "+ New issue"
+    ) : (
+      "New issue"
+    );
   const title = home.home === "github" ? "New issue, on GitHub" : "New issue";
   if (home.home === "github" && home.repos.length === 1) {
     return (
@@ -331,7 +340,7 @@ function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHom
   }
   if (home.home === "github" && home.repos.length > 1) {
     return (
-      <button class={cls} title={title} aria-label={title} data-issue-new-github onClick={(e) => menuAt(e, [{ header: "New issue on" }, ...home.repos.map((r) => ({ label: `${r} ↗`, run: () => void open(githubNewIssue(r), "_blank", "noopener") }))])}>
+      <button class={cls} title={title} aria-label={title} data-issue-new-github onClick={(e) => menuAt(e, [{ header: "New issue on" }, ...home.repos.map((r) => ({ label: r, external: true, run: () => void open(githubNewIssue(r), "_blank", "noopener") }))])}>
         {label}
         <Caret />
       </button>
@@ -470,7 +479,7 @@ function NewIssue({ p }: { p: PlatformProject }) {
           {home.repos.map((r) => (
             <li key={r}>
               <a href={githubNewIssue(r)} target="_blank" rel="noopener" data-issue-new-github={r}>
-                New issue on {r} ↗
+                New issue on {r} <ExternalIcon size="xs" />
               </a>
             </li>
           ))}

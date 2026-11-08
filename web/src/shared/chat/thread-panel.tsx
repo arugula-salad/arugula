@@ -16,6 +16,7 @@ import { newFrom, repliesOf } from "./threads";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { useStickToBottom } from "./stick";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
+import { CloseIcon, IconButton } from "../ui/icons";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
@@ -152,9 +153,9 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         }
         actions={
           !phone ? (
-            <button class="thread-close" title="Close the thread" aria-label="Close the thread" data-thread-close onClick={close}>
-              ✕
-            </button>
+            <IconButton label="Close the thread" class="thread-close" data-thread-close onClick={close}>
+              <CloseIcon size="sm" />
+            </IconButton>
           ) : undefined
         }
       />

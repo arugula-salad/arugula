@@ -35,7 +35,7 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
   if (!s) body = <BlockLoading what="the board" />;
-  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser ↗", run: () => window.open(link, "_blank", "noopener") }]} />;
+  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser", external: true, run: () => window.open(link, "_blank", "noopener") }]} />;
   else
     body = (
       <EmptyState

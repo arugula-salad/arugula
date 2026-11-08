@@ -20,7 +20,7 @@ import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
-import { Svg } from "./icons";
+import { CheckIcon, Svg } from "./icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -465,7 +465,7 @@ export function PreviewCopyLink({ copy, title, done, disabled, ...attrs }: { cop
   return (
     <button type="button" class="bar-btn sq preview-bar-link" data-copied={copied ? "" : undefined} disabled={disabled} title={copied && done ? done : title} aria-label="Copy link" onClick={() => void click()} {...attrs}>
       {copied ? (
-        <span class="preview-bar-copied">Copied ✓</span>
+        <span class="preview-bar-copied">Copied <CheckIcon size="xs" /></span>
       ) : (
         <Svg size={14}>
           <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />

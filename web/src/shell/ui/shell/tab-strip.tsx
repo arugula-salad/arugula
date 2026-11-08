@@ -26,7 +26,7 @@ import { RenameInput, type Renaming } from "./rename-input";
 import { HOSTED_LABEL } from "../../../shared/hosted";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { Chip } from "../../../shared/ui/state-chip";
-import { Caret, ChevronIcon } from "../../../shared/ui/icons";
+import { Caret, ChevronIcon, CloseIcon, IconButton } from "../../../shared/ui/icons";
 
 /** The tab bar of a session. */
 export function TabStrip({
@@ -144,9 +144,9 @@ export function TabStrip({
         {marker === session.tabs.length && <div class="drop-marker" />}
       </div>
       {closing && (
-        <button ref={closeBtn} class="tab-close" title="Close tab" aria-label={`Close tab ${tabLabel(client, client.tabView(shown)!)}`} onClick={() => confirmCloseTab(client, shown)}>
-          ×
-        </button>
+        <IconButton label={`Close tab ${tabLabel(client, client.tabView(shown)!)}`} title="Close tab" ref={closeBtn} class="tab-close" onClick={() => confirmCloseTab(client, shown)}>
+          <CloseIcon size="xs" />
+        </IconButton>
       )}
       {over && (
         <button class="tabs-all" title="Every tab in this session" aria-label={`All ${session.tabs.length} tabs`} aria-haspopup="menu" aria-expanded="false" data-tabs-all onClick={allTabs}>

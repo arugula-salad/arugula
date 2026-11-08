@@ -25,6 +25,7 @@ import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStan
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 let push: PushState = "unsupported";
 /** What control pushes the account about; null off control, or not yet asked. */
@@ -330,9 +331,9 @@ export function InstallHint() {
       ) : (
         <span>{HOME_SCREEN} (Share › Add to Home Screen), and open it from there.</span>
       )}
-      <button class="install-hint-close" aria-label="Dismiss" onClick={dismiss}>
-        ×
-      </button>
+      <IconButton label="Dismiss" class="install-hint-close" onClick={dismiss}>
+        <CloseIcon size="md" />
+      </IconButton>
     </div>
   );
 }

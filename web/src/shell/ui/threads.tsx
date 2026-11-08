@@ -14,6 +14,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { RoomBody, roomLabel } from "../../shared/chat/room";
 import { usePlatformApi } from "../../shared/platform-api";
 import { platformOrigin } from "../platform-links";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export interface Quote {
   pane: PaneId;
@@ -195,9 +196,9 @@ export function RoomDrawer({ phone, client }: { phone: boolean; client?: Client 
             ⤢
           </button>
         )}
-        <button class="thread-close" title="Close (Esc)" aria-label="Close the thread" onClick={closeRoomDrawer}>
-          ✕
-        </button>
+        <IconButton label="Close the thread" title="Close (Esc)" class="thread-close" onClick={closeRoomDrawer}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </header>
       <RoomBody key={room.id} room={room} phone={phone} quote={drawer.quote} name={title} />
     </aside>

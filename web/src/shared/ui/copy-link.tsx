@@ -4,7 +4,7 @@
 // browser, a public link).
 
 import { useRef, useState } from "preact/hooks";
-import { ChevronIcon, LinkIcon } from "./icons";
+import { CheckIcon, ChevronIcon, LinkIcon } from "./icons";
 import { openMenu, type MenuItem } from "./menu";
 import "./copy-link.css";
 
@@ -38,7 +38,7 @@ export function CopyLinkButton({ link, menu, onClick }: { link: string | null; m
   return (
     <span class="copy-link" data-copy-link data-link={link ?? undefined} data-copied={copied ?? undefined}>
       <button type="button" data-copy-link-main title="Copy link" onClick={() => void click()}>
-        {copied === "ok" ? "Copied ✓" : copied === "no" ? "Couldn't copy" : (
+        {copied === "ok" ? <>Copied <CheckIcon size="xs" /></> : copied === "no" ? "Couldn't copy" : (
           <>
             <LinkIcon /> Copy link
           </>

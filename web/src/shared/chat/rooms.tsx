@@ -34,7 +34,7 @@ import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
-import { BookmarkIcon, ChevronIcon, SearchIcon } from "../ui/icons";
+import { BookmarkIcon, ChevronIcon, CloseIcon, IconButton, MoreIcon, SearchIcon } from "../ui/icons";
 import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
@@ -358,18 +358,18 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
                   <SearchIcon size={13} />
                 </button>
               )}
-              <button
-                class="chat-new chat-group-menu"
+              <IconButton
+                label={`Options for ${g.title}`}
                 title={`Sort${g.custom ? ", rename" : ""}`}
-                aria-label={`Options for ${g.title}`}
+                class="chat-new chat-group-menu"
                 data-group-menu={g.key}
                 onClick={(e) => {
                   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   openGroupMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, { key: g.key, custom: !!g.custom, title: g.title, fallback: g.sort }, api.toast);
                 }}
               >
-                ⋯
-              </button>
+                <MoreIcon size="sm" />
+              </IconButton>
               {g.make && (
                 <button class="chat-new" title={g.make.aria} aria-label={g.make.aria} data-room-new={g.key} onClick={g.make.run}>
                   {g.make.label}
@@ -444,12 +444,12 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
                   <button class="chat-search-open bar-btn sq" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
                     <SearchIcon size={17} />
                   </button>
-                  <button class="chat-search-open bar-btn sq" title="Mark all as read, sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
-                    ⋯
-                  </button>
-                  <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-                    ✕
-                  </button>
+                  <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-search-open bar-btn sq" data-chat-options onClick={workspaceMenu}>
+                    <MoreIcon size="sm" />
+                  </IconButton>
+                  <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
+                    <CloseIcon size="sm" />
+                  </IconButton>
                 </>
               }
             />
@@ -495,9 +495,9 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             onContextMenu={workspaceMenu}
             title={<BarTitle class="chat-side-name" title={head}>{head}</BarTitle>}
             actions={
-              <button class="chat-new chat-workspace bar-btn sq" title="Mark all as read, sections, unread only" aria-label="Chat options" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
-                ⋯
-              </button>
+              <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-new chat-workspace bar-btn sq" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
+                    <MoreIcon size="sm" />
+                  </IconButton>
             }
           />
           {list}
@@ -700,9 +700,9 @@ function RoomView({
                 </button>
               )}
               {phone && !pinned && (
-                <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-                  ✕
-                </button>
+                <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
+                  <CloseIcon size="sm" />
+                </IconButton>
               )}
             </>
           }
@@ -730,9 +730,9 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
         class="chat-head"
         title={<BarTitle>Details</BarTitle>}
         actions={
-          <button class="thread-close" title="Close" aria-label="Close" onClick={close}>
-            ✕
-          </button>
+          <IconButton label="Close" class="thread-close" onClick={close}>
+            <CloseIcon size="sm" />
+          </IconButton>
         }
       />
       <div class="chat-details-body">

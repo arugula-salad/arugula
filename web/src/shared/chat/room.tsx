@@ -49,7 +49,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon, ReactIcon, ThreadIcon } from "../ui/icons";
+import { BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, ReactIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
@@ -761,9 +761,9 @@ export function RoomMessage({
             <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
-        <button class="bar-btn sq" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more ref={moreRef} onClick={() => setPanel(panel === "menu" ? null : "menu")}>
-          ⋯
-        </button>
+        <IconButton label="More actions" class="bar-btn sq" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more ref={moreRef} onClick={() => setPanel(panel === "menu" ? null : "menu")}>
+          <MoreIcon size="sm" />
+        </IconButton>
       </div>
       {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
       {panel === "picker" && may && <ReactPicker room={room} m={m} from={msgRef} close={close} setError={setError} />}
@@ -1234,9 +1234,9 @@ export function RoomCompose({
               ↳ %{quote.pane} on {machineName(api, quote.machine, "a machine")}
             </span>
             <pre>{quote.text}</pre>
-            <button type="button" title="Don't quote it" aria-label="Don't quote it" onClick={() => setQuote(undefined)}>
-              ✕
-            </button>
+            <IconButton label="Don't quote it" onClick={() => setQuote(undefined)}>
+              <CloseIcon size="sm" />
+            </IconButton>
           </div>
         )}
         <AttachChips items={files.items} remove={files.remove} />

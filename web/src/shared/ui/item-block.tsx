@@ -9,7 +9,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { IssueIcon, MergeIcon, PrIcon, SourceGlyph } from "./icons";
+import { CheckIcon, CloseIcon, ExternalIcon, IconButton, IssueIcon, MergeIcon, PrIcon, ReloadIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
 import { Card } from "./card";
 import "./item-block.css";
@@ -78,7 +78,7 @@ function Avatar({ role, name, badge, ring, dim, title }: { role: "reviewer" | "a
   return (
     <span class="item-avatar" data-item-avatar={role} data-name={name} data-ring={ring ? "asked" : undefined} data-dim={dim ? "" : undefined} title={title}>
       {name.charAt(0).toUpperCase()}
-      {badge && <span class={`item-avatar-badge item-avatar-${badge}`}>{badge === "ok" ? "✓" : badge === "danger" ? "✕" : "•"}</span>}
+      {badge && <span class={`item-avatar-badge item-avatar-${badge}`}>{badge === "ok" ? <CheckIcon size="xs" /> : badge === "danger" ? <CloseIcon size="xs" /> : "•"}</span>}
     </span>
   );
 }
@@ -100,7 +100,7 @@ function Fact({ fact }: { fact: ItemFact }) {
         <span class="item-fact" data-item-fact="checks">
           {ok > 0 && (
             <span class="item-ok" title={`${ok} passed`}>
-              ✓ {ok}
+              <CheckIcon size="xs" /> {ok}
             </span>
           )}
           {pending > 0 && (
@@ -110,7 +110,7 @@ function Fact({ fact }: { fact: ItemFact }) {
           )}
           {failed > 0 && (
             <span class="item-danger" title={`${failed} failed`}>
-              ✕ {failed}
+              <CloseIcon size="xs" /> {failed}
             </span>
           )}
         </span>
@@ -178,7 +178,7 @@ function Fact({ fact }: { fact: ItemFact }) {
   }
 }
 
-const STRIP_ICON = { warn: "●", danger: "✕", ok: "✓", info: "○" } as const;
+const STRIP_ICON = { warn: "●", danger: <CloseIcon size="xs" />, ok: <CheckIcon size="xs" />, info: "○" } as const;
 
 /** The body, folded to a few lines. More shows only when something is
  * folded away. */
@@ -264,13 +264,13 @@ export function ItemBlock({
             </StateChip>
             {source && <SourceIcon source={source} />}
             {onRefresh && (
-              <button type="button" class="item-icon-btn" data-item-refresh title={refreshTitle ?? "Refresh"} aria-label="Refresh" onClick={onRefresh}>
-                ↻
-              </button>
+              <IconButton label="Refresh" title={refreshTitle ?? "Refresh"} class="item-icon-btn" data-item-refresh onClick={onRefresh}>
+                <ReloadIcon size="sm" />
+              </IconButton>
             )}
             {href && (
               <a class="item-icon-btn" data-item-open href={href} target="_blank" rel="noreferrer" title="Open in the browser" aria-label="Open in the browser">
-                ↗
+                <ExternalIcon size="xs" />
               </a>
             )}
           </header>

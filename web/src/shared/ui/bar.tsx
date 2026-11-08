@@ -15,6 +15,7 @@ import { Fragment, type ComponentChildren, type JSX } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { openMenu, type MenuItem } from "./menu";
 import "./bar.css";
+import { IconButton, MoreIcon } from "./icons";
 
 export interface BarFold {
   key: string;
@@ -111,9 +112,9 @@ export function Bar({
       ))}
       {actions}
       {gone.length > 0 && (
-        <button type="button" class="bar-btn sq hbar-more" aria-label="More" title="More" aria-haspopup="menu" data-hbar-more onClick={more}>
-          ⋯
-        </button>
+        <IconButton label="More" class="bar-btn sq hbar-more" aria-haspopup="menu" data-hbar-more onClick={more}>
+          <MoreIcon size="sm" />
+        </IconButton>
       )}
     </div>
   );

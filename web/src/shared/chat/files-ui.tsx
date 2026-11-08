@@ -11,6 +11,7 @@ import { kindText, MAX_FILES, pastedName, sizeText, tooBig, type Pending } from 
 import { upload } from "./files-upload";
 import { Modal } from "../ui/modal";
 import { ObjectChip } from "../ui/state-chip";
+import { CloseIcon, IconButton } from "../ui/icons";
 
 // ---- the composer's side
 
@@ -239,9 +240,9 @@ function Viewer({ f, close }: { f: ChatFile; close: () => void }) {
         <a href={`${f.url}?download=1`} download={f.name}>
           Download
         </a>
-        <button type="button" aria-label="Close" data-viewer-close onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" data-viewer-close onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
     </Modal>
   );
