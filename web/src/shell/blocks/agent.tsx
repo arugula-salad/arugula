@@ -26,6 +26,7 @@ import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export interface Tool {
   type: "tool";
@@ -456,9 +457,9 @@ function Attached({ file, remove }: { file: File; remove: () => void }) {
   return (
     <span class="agent-attached-file" title={file.name}>
       {url ? <img src={url} alt={file.name} /> : <span class="agent-attached-name">{file.name || "file"}</span>}
-      <button type="button" aria-label={`Remove ${file.name || "file"}`} onClick={remove}>
-        ×
-      </button>
+      <IconButton label={`Remove ${file.name || "file"}`} onClick={remove}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </span>
   );
 }

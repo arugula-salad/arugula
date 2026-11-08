@@ -21,6 +21,7 @@ import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { ReloadIcon } from "../../shared/ui/icons";
 
 interface Card {
   name: string;
@@ -140,8 +141,8 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           {total} on {s.catalog.machines.length} machine{s.catalog.machines.length === 1 ? "" : "s"}
         </span>
         <span class="dim">{s.loading ? "asking…" : <Time at={s.catalog.refreshed_ms} title="Asked" />}</span>
-        <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
-          {busy === "refresh" ? "…" : "↻"}
+        <button title="Ask every machine for its agents again" aria-label="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
+          {busy === "refresh" ? "…" : <ReloadIcon size="sm" />}
         </button>
       </Bar>
       {s.error && (

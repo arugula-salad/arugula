@@ -21,6 +21,7 @@ import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
+import { Caret } from "../shared/ui/icons";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
@@ -162,7 +163,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         aria-expanded={switcherOpen}
         onClick={pick}
       >
-        <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
+        <span class="platform-project-name">{projectName}</span> <Caret />
       </button>
       <nav class="places" aria-label="Places">
         {/* All projects is a scope like a project (Arugula #636): these are its places. */}
@@ -253,7 +254,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
             <AccountPicture />
           </span>
-          <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
+          <span class="account-login">{me.login || me.name}</span> <Caret />
         </button>
       )}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}

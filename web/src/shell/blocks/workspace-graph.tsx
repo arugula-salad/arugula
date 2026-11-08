@@ -9,6 +9,7 @@ import type { PaneId } from "../../shared/proto";
 import { BlockError, BlockLoading } from "./block-states";
 import type { WorkspaceState } from "./workspace";
 import { Bar } from "../../shared/ui/bar";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export type GraphStatus =
   | { is: "off" }
@@ -97,9 +98,9 @@ export function Graph({ client, id, s, member, close, picked }: {
             <option value="none">Nothing</option>
           </select>
         </label>
-        <button title="Close the graph" aria-label="Close the graph" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close the graph" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </Bar>
       {g.is === "running" && loaded.current ? (
         // Its own origin, the block's site, never the app's.

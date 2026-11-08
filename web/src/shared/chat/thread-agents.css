@@ -237,9 +237,9 @@
   font: 500 var(--text-xs)/1.6 var(--f-mono);
 }
 
-.thread-seen span::before {
-  content: "✓ ";
+.thread-seen span .icon {
   color: var(--accent);
+  vertical-align: -2px;
 }
 
 /* Who a message wakes (#647), above the composer. */

@@ -23,7 +23,7 @@ import { useSubscribe } from "../../../shared/ui/hooks";
 import { openMenu } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
 import { closePlace, currentPlace } from "../places";
-import { MoreIcon } from "../../../shared/ui/icons";
+import { ChevronIcon, MoreIcon, PulseIcon } from "../../../shared/ui/icons";
 import { markSeen, seen, seenReady, subscribeSeen, tipsOn } from "../../../shared/seen";
 
 // ---- what this device remembers
@@ -493,7 +493,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
           title={p.open ? "Collapse the activity drawer" : "Open the activity drawer"}
           onClick={() => setActivityOpen(!p.open)}
         >
-          <Chevron open={p.open} />
+          <ChevronIcon dir={p.open ? "down" : "up"} />
           Activity
         </button>
         <div class="ws-activity-filters" role="group" aria-label="Show">
@@ -543,7 +543,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
           </>
         )}
         <button class="ws-activity-more" data-activity-more aria-label="Activity menu" title="Activity: clear this view, collapse" onClick={more}>
-          <MoreIcon size={15} />
+          <MoreIcon size="sm" />
         </button>
       </header>
       {p.open && (
@@ -641,12 +641,6 @@ function Row({ client, it, session, onClick }: { client: Client; it: Item; sessi
   );
 }
 
-const Chevron = ({ open }: { open: boolean }) => (
-  <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-    <path d={open ? "M6 9l6 6 6-6" : "M6 15l6-6 6 6"} stroke-linecap="round" stroke-linejoin="round" />
-  </svg>
-);
-
 /** The drawer's top edge: drag it taller or shorter. The panes above keep
  * at least a few rows; the height is kept when you let go. */
 function Resize() {
@@ -708,9 +702,7 @@ export function ActivityToggle({ client }: { client: Client }) {
       title={p.open ? "Collapse the activity drawer" : "Open the activity drawer"}
       onClick={() => setActivityOpen(!p.open)}
     >
-      <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-        <path d="M3 12h4l3-8 4 16 3-8h4" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <PulseIcon />
       Activity
     </button>
   );

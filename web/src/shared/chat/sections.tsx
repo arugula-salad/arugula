@@ -7,6 +7,7 @@ import type { ChatStore } from "../chat-store";
 import type { ChatRoom, ChatSort } from "../proto";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { addSection, collapse, place, placeOf, removeSection, renameSection, setSort, sortOf, star, STARRED } from "./sidebar";
+import { IconButton, MoreIcon, StarIcon } from "../ui/icons";
 
 type Toast = (text: string) => void;
 type At = { clientX: number; clientY: number; preventDefault(): void };
@@ -96,7 +97,7 @@ export function RoomStarButton({ store, room, toast }: { store: ChatStore; room:
       data-room-star
       onClick={() => void store.editSidebar((s) => star(s, room.id, !on)).catch(refused(toast))}
     >
-      {on ? "★" : "☆"}
+      <StarIcon on={on} />
     </button>
   );
 }
@@ -112,10 +113,10 @@ export function starItem(store: ChatStore, room: ChatRoom, toast: Toast): MenuIt
  * misclick near the bell can't leave. `more` is at its foot. */
 export function RoomOptionsButton({ store, room, toast, more = [] }: { store: ChatStore; room: ChatRoom; toast: Toast; more?: MenuItem[] }) {
   return (
-    <button
-      class="chat-info bar-btn sq"
+    <IconButton
+      label="Room options"
       title={more.length ? "Move to a section of your sidebar, or leave" : "Move to a section of your sidebar"}
-      aria-label="Room options"
+      class="chat-info bar-btn sq"
       aria-haspopup="menu"
       data-room-move
       onClick={(e) => {
@@ -123,7 +124,7 @@ export function RoomOptionsButton({ store, room, toast, more = [] }: { store: Ch
         openRoomMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, room, toast, more);
       }}
     >
-      ⋯
-    </button>
+      <MoreIcon size="sm" />
+    </IconButton>
   );
 }

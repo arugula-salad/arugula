@@ -171,7 +171,7 @@ test("the card goes queued, working, needs input, and Bob answers it", async () 
   await expect(a).toHaveAttribute("data-session-state", "working", { timeout: 15_000 });
   await expect(a.locator("[data-session-tool]")).toContainText("Bash");
   // #1595: on the platform page, Open says it goes to your machines.
-  await expect(a.locator("[data-session-open]")).toHaveText("Open on your machines ↗");
+  await expect(a.locator("[data-session-open]")).toHaveText("Open on your machines");
   await expect(a.locator("[data-session-open]")).toHaveAttribute("title", /on your machines \(.+\)\. A browser is approved/);
 
   // It asks; Bob, an editor, sees the question on his page and answers.

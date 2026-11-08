@@ -11,14 +11,14 @@
 // (https://lucide.dev, ISC licence; some derive from Feather, MIT; both
 // notices are in THIRD_PARTY.md), copied in and drawn at this file's stroke.
 
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, JSX } from "preact";
 
 export type IconSize = "xs" | "sm" | "md" | "lg";
 const PX: Record<IconSize, number> = { xs: 12, sm: 14, md: 16, lg: 18 };
 
-export const Svg = ({ children, size = 18, class: extra }: { children?: ComponentChildren; size?: IconSize | number; class?: string }) => {
-  const px = typeof size === "number" ? size : PX[size];
-  const named = typeof size === "number" ? "" : ` icon-${size}`;
+export const Svg = ({ children, size = "lg", class: extra, ...rest }: { children?: ComponentChildren; size?: IconSize; class?: string } & Omit<JSX.IntrinsicElements["svg"], "size" | "class" | "children" | "width" | "height">) => {
+  const px = PX[size];
+  const named = ` icon-${size}`;
   return (
     <svg
       class={`icon${named}${extra ? ` ${extra}` : ""}`}
@@ -31,13 +31,14 @@ export const Svg = ({ children, size = 18, class: extra }: { children?: Componen
       stroke-linecap="round"
       stroke-linejoin="round"
       aria-hidden="true"
+      {...rest}
     >
       {children}
     </svg>
   );
 };
 
-type Sized = { size?: IconSize | number };
+type Sized = { size?: IconSize };
 
 /** Arugula's own mark (public/icon.svg): a prompt and a cursor. */
 export const Mark = () => (
@@ -57,7 +58,7 @@ export const SessionsIcon = () => (
   </Svg>
 );
 
-export const PanesIcon = ({ size = 18 }: Sized) => (
+export const PanesIcon = ({ size = "lg" }: Sized) => (
   <Svg size={size}>
     <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
     <path d="M12 4.5v15M12 12h8.5" />
@@ -123,7 +124,7 @@ export const ProjectsIcon = () => (
   </Svg>
 );
 
-export const PlusIcon = ({ size = 15 }: Sized) => (
+export const PlusIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d="M12 5v14M5 12h14" />
   </Svg>
@@ -131,7 +132,7 @@ export const PlusIcon = ({ size = 15 }: Sized) => (
 
 // The workspace's (M108).
 
-export const LinkIcon = ({ size = 14 }: Sized) => (
+export const LinkIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
     <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
@@ -141,7 +142,7 @@ export const LinkIcon = ({ size = 14 }: Sized) => (
 /** One magnifier for the workspace and chat: the workspace's drew a little
  * smaller than chat's, so this sits between them (no more than a pixel off
  * either at the sizes they use). */
-export const SearchIcon = ({ size = 15 }: Sized) => (
+export const SearchIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <circle cx="10.5" cy="10.5" r="6.5" />
     <path d="M15.1 15.1 20.5 20.5" />
@@ -149,7 +150,7 @@ export const SearchIcon = ({ size = 15 }: Sized) => (
 );
 
 /** Three dots, which draw as a fill and ignore the stroke. */
-export const MoreIcon = ({ size = 15 }: Sized) => (
+export const MoreIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <circle cx="6" cy="12" r="0.8" />
     <circle cx="12" cy="12" r="0.8" />
@@ -157,7 +158,7 @@ export const MoreIcon = ({ size = 15 }: Sized) => (
   </Svg>
 );
 
-export const BranchIcon = ({ size = 13 }: Sized) => (
+export const BranchIcon = ({ size = "xs" }: Sized) => (
   <Svg size={size}>
     <circle cx="7" cy="6" r="2" />
     <circle cx="7" cy="18" r="2" />
@@ -166,7 +167,7 @@ export const BranchIcon = ({ size = 13 }: Sized) => (
   </Svg>
 );
 
-export const TabsIcon = ({ size = 12 }: Sized) => (
+export const TabsIcon = ({ size = "xs" }: Sized) => (
   <Svg size={size}>
     <rect x="4" y="6" width="16" height="13" rx="2" />
     <path d="M4 10h16M9 6v4" />
@@ -176,9 +177,9 @@ export const TabsIcon = ({ size = 12 }: Sized) => (
 /** nvim's mark (#1734): two uprights and the diagonal between them, as
  * a stroke. The pane header draws it for an nvim editor block, and the
  * swarm's preview beside an nvim's file. */
-export const NVIM_GLYPH = "M6 20V5l12 14V4M6 5l-2 2M18 19l2-2";
+const NVIM_GLYPH = "M6 20V5l12 14V4M6 5l-2 2M18 19l2-2";
 
-export const NvimIcon = ({ size = 14 }: Sized) => (
+export const NvimIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d={NVIM_GLYPH} />
   </Svg>
@@ -186,10 +187,10 @@ export const NvimIcon = ({ size = 14 }: Sized) => (
 
 /** Two corners out (focus), or in (restore). */
 export const FocusIcon = ({ on, size }: { on: boolean } & Sized) => (
-  <Svg size={size ?? 12}>{on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}</Svg>
+  <Svg size={size ?? "xs"}>{on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}</Svg>
 );
 
-export const ShareIcon = ({ size = 14 }: Sized) => (
+export const ShareIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
     <path d="M16 6l-4-4-4 4" />
@@ -198,7 +199,7 @@ export const ShareIcon = ({ size = 14 }: Sized) => (
 );
 
 /** The live switch's camera. */
-export const CameraIcon = ({ size = 18 }: Sized) => (
+export const CameraIcon = ({ size = "lg" }: Sized) => (
   <Svg size={size}>
     <rect x="3" y="6.5" width="12.5" height="11" rx="2" />
     <path d="M15.5 10.5l5-3v9l-5-3z" />
@@ -207,7 +208,7 @@ export const CameraIcon = ({ size = 18 }: Sized) => (
 
 // A PR's and an issue's block (item-block).
 
-export const PrIcon = ({ size = 16 }: Sized) => (
+export const PrIcon = ({ size = "md" }: Sized) => (
   <Svg size={size}>
     <circle cx="6" cy="6" r="2.5" />
     <circle cx="6" cy="18" r="2.5" />
@@ -216,14 +217,14 @@ export const PrIcon = ({ size = 16 }: Sized) => (
   </Svg>
 );
 
-export const IssueIcon = ({ size = 16 }: Sized) => (
+export const IssueIcon = ({ size = "md" }: Sized) => (
   <Svg size={size}>
     <circle cx="12" cy="12" r="9" />
     <circle cx="12" cy="12" r="1.5" fill="currentColor" />
   </Svg>
 );
 
-export const MergeIcon = ({ size = 13 }: Sized) => (
+export const MergeIcon = ({ size = "xs" }: Sized) => (
   <Svg size={size}>
     <circle cx="6" cy="5" r="2.5" />
     <circle cx="6" cy="19" r="2.5" />
@@ -240,7 +241,7 @@ const FORGE_PATH = {
 };
 
 /** Where an item lives: its forge's mark, or Arugula's own. */
-export const SourceGlyph = ({ kind, size = 16 }: { kind: keyof typeof FORGE_PATH } & Sized) => (
+export const SourceGlyph = ({ kind, size = "md" }: { kind: keyof typeof FORGE_PATH } & Sized) => (
   <Svg size={size}>
     <path d={FORGE_PATH[kind]} />
   </Svg>
@@ -249,7 +250,7 @@ export const SourceGlyph = ({ kind, size = 16 }: { kind: keyof typeof FORGE_PATH
 // The bell: the header's Needs you, and a chat room's notifications. One
 // outline in the text's colour, so it reads the same everywhere.
 
-const Bell = ({ size, children }: { size: number; children?: ComponentChildren }) => (
+const Bell = ({ size, children }: { size: IconSize; children?: ComponentChildren }) => (
   <Svg size={size}>
     <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
     <path d="M10 20.5a2 2 0 0 0 4 0" />
@@ -257,10 +258,10 @@ const Bell = ({ size, children }: { size: number; children?: ComponentChildren }
   </Svg>
 );
 
-export const BellIcon = ({ size = 18 }: { size?: number }) => <Bell size={size} />;
+export const BellIcon = ({ size = "lg" }: Sized) => <Bell size={size} />;
 
 /** The bell, struck through: notifications off. */
-export const BellOffIcon = ({ size = 18 }: { size?: number }) => (
+export const BellOffIcon = ({ size = "lg" }: Sized) => (
   <Bell size={size}>
     <path d="M4 4l16 16" />
   </Bell>
@@ -270,7 +271,7 @@ export const BellOffIcon = ({ size = 18 }: { size?: number }) => (
 // else or as nothing at 13px. They were drawn on a 16 grid at 1.4; these are
 // the same shapes at 1.5 times the coordinates on the 24 grid, at 1.7.
 
-export function BookmarkIcon({ on, size = 14 }: { on?: boolean } & Sized) {
+export function BookmarkIcon({ on, size = "sm" }: { on?: boolean } & Sized) {
   return (
     <Svg size={size}>
       <path d="M6 3.75h12v16.5l-6-4.5-6 4.5z" fill={on ? "currentColor" : "none"} />
@@ -280,7 +281,7 @@ export function BookmarkIcon({ on, size = 14 }: { on?: boolean } & Sized) {
 
 /** Add a reaction: a smiley, on the hover bar and the reaction row (#501; ☺
  * read as `@` at text size). */
-export function ReactIcon({ size = 14 }: Sized) {
+export function ReactIcon({ size = "sm" }: Sized) {
   return (
     <Svg size={size}>
       <circle cx="12" cy="12" r="9.3" />
@@ -292,7 +293,7 @@ export function ReactIcon({ size = 14 }: Sized) {
 
 /** A machine's agent (#428): beside the machine in the `@` picker and in a
  * message that mentions it, and on the room's agents chip. */
-export function MachineIcon({ size = 15 }: Sized) {
+export function MachineIcon({ size = "sm" }: Sized) {
   return (
     <Svg size={size} class="machine-icon">
       <rect x="4.5" y="8.25" width="15" height="10.5" rx="3" />
@@ -305,7 +306,7 @@ export function MachineIcon({ size = 15 }: Sized) {
 
 /** What the message menu's rows carry (#757): sized by the menu's lead
  * column, in place of the emoji they were. */
-const Row = ({ children }: { children: ComponentChildren }) => <Svg size={16}>{children}</Svg>;
+const Row = ({ children }: { children: ComponentChildren }) => <Svg size="md">{children}</Svg>;
 
 export const QuoteIcon = () => (
   <Row>
@@ -333,10 +334,10 @@ export const PinIcon = () => (
   </Row>
 );
 
-export const ThreadIcon = () => (
-  <Row>
+export const ThreadIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
     <path d="M9.75 5.25 4.5 10.5l5.25 5.25M4.5 10.5h9a6 6 0 0 1 6 6v2.25" />
-  </Row>
+  </Svg>
 );
 
 // The rest are Lucide's. Sizes are for the steps that use them: a caret or a
@@ -344,14 +345,30 @@ export const ThreadIcon = () => (
 
 /** A caret or a fold's arrow. `open` is for a fold: down while open, right
  * while closed. */
-export const ChevronIcon = ({ dir = "down", open, size = "xs" }: { dir?: "down" | "right" | "up"; open?: boolean } & Sized) => {
+export const ChevronIcon = ({ dir = "down", open, size = "xs" }: { dir?: "down" | "right" | "up" | "left"; open?: boolean } & Sized) => {
   const d = open === undefined ? dir : open ? "down" : "right";
   return (
     <Svg size={size}>
-      <path d={d === "down" ? "m6 9 6 6 6-6" : d === "right" ? "m9 18 6-6-6-6" : "m18 15-6-6-6 6"} />
+      <path d={d === "down" ? "m6 9 6 6 6-6" : d === "right" ? "m9 18 6-6-6-6" : d === "left" ? "m15 18-6-6 6-6" : "m18 15-6-6-6 6"} />
     </Svg>
   );
 };
+
+/** A button that is only an icon. `label` is required and is both its `aria-label` and its
+ * `title` (the hover tip), so the next one can't miss either; `title` says more on hover where
+ * the tip is longer than the name. */
+export const IconButton = ({ label, title, children, type = "button", class: extra, ...rest }: { label: string; title?: string } & Omit<JSX.IntrinsicElements["button"], "title" | "aria-label" | "label">) => (
+  <button type={type} {...rest} class={extra ? `icon-btn ${extra}` : "icon-btn"} aria-label={label} title={title ?? label}>
+    {children}
+  </button>
+);
+
+/** The ▾ after a menu button's label, dim. */
+export const Caret = ({ dir = "down" }: { dir?: "down" | "up" | "right" }) => (
+  <span class="caret" aria-hidden="true">
+    <ChevronIcon dir={dir} />
+  </span>
+);
 
 export const CheckIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
@@ -399,16 +416,23 @@ export const CopyIcon = ({ size = "sm" }: Sized) => (
 );
 
 /** A pencil. The message menu's Edit is this one. */
-export const EditIcon = ({ size = 16 }: Sized) => (
+export const EditIcon = ({ size = "md" }: Sized) => (
   <Svg size={size}>
     <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
     <path d="m15 5 4 4" />
   </Svg>
 );
 
-export const StarIcon = ({ size = "sm" }: Sized) => (
+export const StarIcon = ({ on, size = "sm" }: { on?: boolean } & Sized) => (
   <Svg size={size}>
-    <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
+    <path fill={on ? "currentColor" : "none"} d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
+  </Svg>
+);
+
+/** A choice's mark: a dot while it's the one, a ring while it isn't (● ○). */
+export const DotIcon = ({ on = true, size = "sm" }: { on?: boolean } & Sized) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="4" fill={on ? "currentColor" : "none"} />
   </Svg>
 );
 
@@ -426,7 +450,7 @@ export const BackIcon = ({ size = "sm" }: Sized) => (
   </Svg>
 );
 
-export const TrashIcon = ({ size = 16 }: Sized) => (
+export const TrashIcon = ({ size = "md" }: Sized) => (
   <Svg size={size}>
     <path d="M10 11v6" />
     <path d="M14 11v6" />
@@ -445,5 +469,118 @@ export const ArrowIcon = ({ dir = "right", size = "sm" }: { dir?: "up" | "down" 
     ) : (
       <path d="M5 12h14m-7-7 7 7-7 7" />
     )}
+  </Svg>
+);
+
+// What chat's composer, Docs' callouts, the add-pane menu and the pane header draw. The callouts,
+// the composer's and the bubble were on a 16 grid; they're the same shapes at 1.5 times the coordinates.
+
+export type Alert = "note" | "tip" | "important" | "warning" | "caution";
+const ALERT_ICON: Record<Alert, string[]> = {
+  note: ["M12 2.625a9.375 9.375 0 1 0 0 18.75a9.375 9.375 0 1 0 0 -18.75", "M12 10.875v6", "M12 7.125v0.015"],
+  tip: ["M8.25 15.75a6.375 6.375 0 1 1 7.5 0c-0.9 0.675 -1.125 1.5 -1.125 2.625h-5.25c0 -1.125 -0.225 -1.95 -1.125 -2.625", "M9.75 21.375h4.5"],
+  important: ["M3 4.875c0 -1.05 0.825 -1.875 1.875 -1.875h14.25c1.05 0 1.875 0.825 1.875 1.875v10.5c0 1.05 -0.825 1.875 -1.875 1.875H10.5l-4.5 3.75v-3.75h-1.125C3.825 17.25 3 16.425 3 15.375z", "M12 6.75v4.5", "M12 14.25v0.015"],
+  warning: ["M10.695 3.75a1.5 1.5 0 0 1 2.61 0l8.25 14.625a1.5 1.5 0 0 1 -1.305 2.25h-16.5a1.5 1.5 0 0 1 -1.305 -2.25z", "M12 9v4.875", "M12 17.25v0.015"],
+  caution: ["M8.1 2.625h7.8l5.475 5.475v7.8l-5.475 5.475H8.1l-5.475 -5.475V8.1z", "M12 7.125v5.625", "M12 16.125v0.015"],
+};
+
+/** A Doc callout's glyph, stroked in its tone. */
+export const CalloutIcon = ({ alert }: { alert: Alert }) => (
+  <Svg size="md" class="md-callout-icon">
+    {ALERT_ICON[alert].map((d) => (
+      <path key={d} d={d} />
+    ))}
+  </Svg>
+);
+
+/** Quote lines from a pane: a pane with a prompt in it. */
+export const QuotePaneIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <rect x="2.25" y="3.75" width="19.5" height="16.5" rx="2.25" />
+    <path d="M6 9l3 3-3 3M12 15h6" />
+  </Svg>
+);
+
+export const SendIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <path d="M3 3.75l18 8.25-18 8.25 2.7-8.25L3 3.75zm2.7 8.25h6.3" />
+  </Svg>
+);
+
+export const AttachIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <path d="M19.8 11.4l-7.5 7.5a4.8 4.8 0 0 1 -6.75 -6.75l7.95 -7.95a3.15 3.15 0 0 1 4.5 4.5L9.9 16.5a1.5 1.5 0 0 1 -2.25 -2.25l7.05 -7.05" />
+  </Svg>
+);
+
+export const DownloadIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <path d="M12 3v12M6.75 10.5L12 15.75 17.25 10.5M4.5 20.25h15" />
+  </Svg>
+);
+
+/** A speech bubble, filled: a room's mark on a card. */
+export const BubbleIcon = ({ size = "xs" }: Sized) => (
+  <Svg size={size}>
+    <path d="M4.5 3.75h15a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1 -2.25 2.25H10.5l-4.5 3.75V17.25H4.5A2.25 2.25 0 0 1 2.25 15V6A2.25 2.25 0 0 1 4.5 3.75z" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** The activity drawer's pulse. */
+export const PulseIcon = ({ size = "xs" }: Sized) => (
+  <Svg size={size}>
+    <path d="M3 12h4l3-8 4 16 3-8h4" />
+  </Svg>
+);
+
+/** What a block of each type draws in its pane's header (UI audit #177). */
+const PANE_GLYPH: Record<string, string> = {
+  terminal: "M4 6l6 6-6 6M12 18h8",
+  remote: "M3 4h18v12H3zM7 8l3 2-3 2M12 12h4M8 20h8M12 16v4",
+  agent: "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4",
+  chat: "M4 5h16v11H9l-5 4z",
+  team_chat: "M3 4h12v9H7l-4 3zM18 8h3v11l-3-3h-7v-3",
+  editor: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
+  // nvim's mark: two uprights and the diagonal between them.
+  nvim: NVIM_GLYPH,
+  file: "M6 3h8l4 4v14H6zM14 3v5h4M10.5 12l-2 2.5 2 2.5M13.5 12l2 2.5-2 2.5",
+  doc: "M5 3h14v18H5zM8 7h8M8 11h8M8 15h5",
+  diff: "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6",
+  browser: "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1",
+  pr: "M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4M6 7v10M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 17V9a3 3 0 0 0-3-3h-4M13 4l-2 2 2 2",
+  issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
+  "native-issue": "M4 4h16v16H4zM12 10.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3",
+  workspace: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+  app: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM16.5 13v7M13 16.5h7",
+  invite: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M19 8v6M16 11h6",
+  agents: "M3 10h8v8H3zM13 10h8v8h-8zM7 10V6M17 10V6M6 14h.5M8.5 14h.5M16 14h.5M18.5 14h.5",
+  // Two people: who's around (a People block).
+  people: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.5a2.75 2.75 0 0 1 0 5.5M17.5 14.7c2.1.5 3.5 2.5 3.5 5.3",
+};
+
+export const PaneTypeIcon = ({ type }: { type: string }) => (
+  <Svg size="sm" data-pane-glyph={type}>
+    <path d={PANE_GLYPH[type] ?? PANE_GLYPH.terminal} />
+  </Svg>
+);
+
+export type Kind = "shell" | "agent" | "chat" | "editor" | "changes" | "port" | "pr" | "issue" | "web" | "conversation";
+const KIND_PATH: Record<Kind, string> = {
+  shell: "M4 4h16v16H4z M7 9l3 3-3 3 M13 16h4",
+  agent: "M5 8h14v12H5z M12 8V4 M9 4h6 M8 12h1 M15 12h1 M9 16h6",
+  chat: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
+  editor: "M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6",
+  changes: "M7 7v10 M9 5h7v12 M7 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M16 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4",
+  port: "M3 12h18 M12 3c-6 6-6 12 0 18 M12 3c6 6 6 12 0 18 M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18",
+  pr: "M6 7v10 M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17V9a3 3 0 0 0-3-3h-4 M13 4l-2 2 2 2",
+  issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 8v5 M12 16v.5",
+  web: "M3 5h18v14H3z M3 9h18 M6 7h.5 M8.5 7h.5",
+  conversation: "M4 4h12v9H8l-4 3z M10 16v1h6l4 3v-9h-4",
+};
+
+/** The add-pane menu's tile for each kind (its size is the tile's, in CSS). */
+export const KindIcon = ({ kind }: { kind: Kind }) => (
+  <Svg size="lg" class="add-pane-kind-icon">
+    <path d={KIND_PATH[kind]} />
   </Svg>
 );

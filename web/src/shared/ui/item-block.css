@@ -253,6 +253,11 @@
   font-size: 8px; /* off-scale: avatar badge */
 }
 
+.item-avatar-badge .icon {
+  width: 8px; /* off-scale: a tick or cross in the 11px badge */
+  height: 8px;
+}
+
 .item-avatar-ok {
   --c: var(--ok);
 }

@@ -8,6 +8,7 @@
 
 import type { ComponentChildren } from "preact";
 import "./state-chip.css";
+import { CloseIcon, IconButton } from "./icons";
 
 /** A chip's tone, by the palette color it takes (as a card's bar does,
  * platform/swarm.css). */
@@ -133,9 +134,9 @@ export function ObjectChip({
       {children}
       {fact && <span class={`chip-object-fact chip-${fact.tone ?? "muted"}`}>{fact.text}</span>}
       {onRemove && (
-        <button type="button" class="chip-object-x" data-chip-remove aria-label={removeLabel ?? "Remove"} title={removeLabel ?? "Remove"} onClick={onRemove} {...removeAttrs}>
-          ✕
-        </button>
+        <IconButton label={removeLabel ?? "Remove"} class="chip-object-x" data-chip-remove onClick={onRemove} {...removeAttrs}>
+          <CloseIcon size="xs" />
+        </IconButton>
       )}
     </>
   );
@@ -185,9 +186,9 @@ export function HintChip({
           {action}
         </button>
       )}
-      <button class="hint-dismiss" data-hint-dismiss aria-label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" onClick={onDismiss}>
-        ×
-      </button>
+      <IconButton label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" class="hint-dismiss" data-hint-dismiss onClick={onDismiss}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </span>
   );
 }

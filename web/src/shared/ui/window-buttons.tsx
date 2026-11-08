@@ -17,6 +17,7 @@ export function WindowButtons() {
         □
       </button>
       <button title="Close window" aria-label="Close window" class="close" data-window="close" onClick={() => void w.close()}>
+        {/* lint-icons: text — the window controls are the OS's own marks: –, □ and × */}
         ×
       </button>
     </div>

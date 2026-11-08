@@ -25,7 +25,7 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
-import { NvimIcon } from "../../shared/ui/icons";
+import { CloseIcon, IconButton, NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { ariaKeys, keyHint, useBinding } from "../ui/keys";
 import { useWall } from "./wall";
@@ -476,7 +476,7 @@ export function SwarmView({
             <div class="swarm-board" data-swarm-board={board}>
               <b>Board: {read.view?.board.title ?? "…"}</b>
               <button data-swarm-all title="Every pane again" onClick={closeSwarmBoard}>
-                ✕ All panes
+                <CloseIcon size="xs" /> All panes
               </button>
             </div>
           )}
@@ -655,7 +655,7 @@ export function SwarmView({
           <div class="ph">
             {(byKey(peek.key)?.info.app === "nvim" || byKey(peek.key)?.info.editor?.app === "nvim") && (
               <span class="swarm-peek-app" data-swarm-nvim role="img" aria-label="nvim" title="nvim">
-                <NvimIcon size={12} />
+                <NvimIcon size="xs" />
               </span>
             )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
@@ -1072,9 +1072,9 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
     <div class="swarm-card in t-answered" data-answered={d.answered.id} data-panes={p.key} style={{ "--c": "rgb(124,134,152)" }}>
       <div class="ch">
         <b class="answered-by">{answeredLine(d.answered)}</b>
-        <button class="link swarm-close" title="Close" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" class="link swarm-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
       <div class="cm">
         %{p.id} · {p.host}

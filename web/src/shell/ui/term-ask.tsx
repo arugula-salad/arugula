@@ -19,6 +19,7 @@ import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-edit
 import { AskCard, type Answered, type Ask } from "../../shared/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
 import { Avatar } from "./people";
+import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export { answeredLine, clock } from "./answer-card";
 
@@ -184,7 +185,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
               )
             }
           >
-            Diffs here ▾
+            Diffs here <Caret />
           </button>
         )}
         <button class="link" title="Look at the terminal; the edit stays open" onClick={() => setHidden(true)}>
@@ -248,16 +249,16 @@ export function TermAnswered({ client, id, answered }: { client: Client; id: Pan
     <div class="pane-answered" onPointerDown={(e) => e.stopPropagation()} data-answered={answered.id}>
       <div class="pane-ask-bar">
         <span class="answered-by">{answeredLine(answered)}</span>
-        <button
+        <IconButton
+          label="Close"
           class="link"
-          title="Close"
           onClick={() => {
             closedAnswers.add(key);
             rerender((n) => n + 1);
           }}
         >
-          ✕
-        </button>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
       <div class="answered-what">{answered.headline}</div>
       {can && (

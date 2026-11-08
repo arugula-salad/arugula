@@ -12,6 +12,7 @@ import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-state
 import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { ExternalIcon, IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -139,9 +140,9 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
         <button title="Back" aria-label="Back" disabled={s.back.length === 0} onClick={() => call("back")}>
           ←
         </button>
-        <button title="Reload" aria-label="Reload" onClick={() => call("reload")}>
-          ↻
-        </button>
+        <IconButton label="Reload" onClick={() => call("reload")}>
+          <ReloadIcon size="sm" />
+        </IconButton>
         {port && s.machine && (
           <Chip kind="tag" tone="info" class="chip-gap" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
             VM
@@ -173,7 +174,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           why="It doesn't allow being shown inside another page."
           action={
             <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
-              Open in a new tab ↗
+              Open in a new tab <ExternalIcon size="xs" />
             </a>
           }
         />

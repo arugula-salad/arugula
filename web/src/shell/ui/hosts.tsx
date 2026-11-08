@@ -13,6 +13,7 @@ import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { SWARM_ABOUT, openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
+import { Caret, ChevronIcon } from "../../shared/ui/icons";
 
 function seen(name: string): string {
   const h = directory.find(name);
@@ -222,7 +223,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
           {directory.path}
         </span>
       ) : null}{" "}
-      <span class="caret">▾</span>
+      <Caret />
     </button>
   );
 }
@@ -369,7 +370,7 @@ export function HostSection({ close }: { close: () => void }) {
           <h3 class="host-group">
             <button class="host-fold" aria-expanded={cloudNow} data-cloud-fold onClick={() => setCloudOpen(!cloudNow)}>
               <span class="host-caret" aria-hidden="true">
-                {cloudNow ? "▾" : "▸"}
+                <ChevronIcon open={cloudNow} />
               </span>
               {CLOUD}
               <span class="host-count">{cloudShown.length}</span>

@@ -61,6 +61,7 @@ import { DiffLink, MergedLine, mergedOf } from "./session-done";
 import { workChip } from "../boards/text";
 import { Bar, BarWhere } from "../ui/bar";
 import { ObjectChip, Chip, StateChip } from "../ui/state-chip";
+import { CheckIcon, ExternalIcon } from "../ui/icons";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -602,7 +603,7 @@ function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy:
                 <p class="session-try-finish" data-session-try-finish={t.turn.finish.ok ? "ok" : "failed"}>
                   {t.turn.finish.ok ? (
                     <>
-                      finish: <span class="ok">✓</span>
+                      finish: <span class="ok"><CheckIcon size="xs" /></span>
                     </>
                   ) : (
                     <span class="bad">finish failed</span>
@@ -620,7 +621,7 @@ function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy:
                 )}
                 {diff && (
                   <a href={diff} target="_blank" rel="noopener" title={`What it pushed, against the repo's default branch, on GitHub`} data-session-try-diff>
-                    diff ↗
+                    diff <ExternalIcon size="xs" />
                   </a>
                 )}
                 <span class="session-card-fill" />
@@ -819,7 +820,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.turn.finish &&
             (c.turn.finish.ok ? (
               <p class="session-card-finish" data-session-finish="ok">
-                finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
+                finish: <span class="ok"><CheckIcon size="xs" /></span> <code>{c.turn.finish.command}</code>
               </p>
             ) : (
               <div class="session-card-finish" data-session-finish="failed">
@@ -854,7 +855,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             data-session-open
             onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
           >
-            {onControl ? "Open on your machines ↗" : "Open ↗"}
+            {onControl ? "Open on your machines" : "Open"} <ExternalIcon size="xs" />
           </button>
         )}
         {c.machine && port && (
@@ -865,13 +866,13 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             data-session-preview
             onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
           >
-            Preview ↗
+            Preview <ExternalIcon size="xs" />
           </button>
         )}
         {review ? null : <DiffLink c={c} />}
         {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
           <a class="secondary small" href={c.pr} target="_blank" rel="noopener" data-session-pr>
-            PR ↗
+            PR <ExternalIcon size="xs" />
           </a>
         ) : c.pushed && view.asked ? (
           <button

@@ -27,7 +27,7 @@ import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
-import { LinkIcon, Svg } from "../../shared/ui/icons";
+import { IconButton, LinkIcon, MoreIcon, Svg } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
@@ -399,7 +399,7 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           </button>
           {doc.platform && (
             <button class="bar-btn sq" data-doc-platform-link={doc.platform.link} aria-label="On the platform" title="On the platform: its read-only copy, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
-              <Svg size={14}>
+              <Svg size="sm">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <path d="M15 3h6v6" />
                 <path d="M10 14L21 3" />
@@ -407,10 +407,10 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
             </button>
           )}
           <PreviewCopyLink data-doc-copy-link disabled={none} title={none ? NO_LINK : "Copy link"} done={doc.platform && !doc.shared ? `Copied: ${ONLY_YOU}` : "Copied"} copy={copyLink} />
-          <button
-            class="bar-btn sq"
-            aria-label={`More for ${doc.title}`}
+          <IconButton
+            label={`More for ${doc.title}`}
             title="More"
+            class="bar-btn sq"
             aria-haspopup="menu"
             data-doc-more
             disabled={busy}
@@ -419,8 +419,8 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
               openMenu({ clientX: b.left, clientY: b.bottom + 4, preventDefault: () => e.preventDefault() }, [{ label: "Delete…", danger: true, hint: "Delete it for good", run: ask }], e.currentTarget as HTMLElement);
             }}
           >
-            ⋯
-          </button>
+            <MoreIcon size="sm" />
+          </IconButton>
         </>
       }
       aside={

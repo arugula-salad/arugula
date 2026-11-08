@@ -21,6 +21,7 @@ import type { PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 import { sessionSlug } from "../shared/chat/agents";
 import { cleanTitle } from "../shared/titles";
+import { CloseIcon, IconButton } from "../shared/ui/icons";
 
 const made = new WeakMap<Client, PlatformApi>();
 
@@ -137,9 +138,9 @@ export function QuotePicker({ close, take }: { close: () => void; take: (q: Pane
     <div class="chat-quote-pick" role="dialog" aria-label="Quote a pane" data-quote-picker>
       <header>
         <strong>{picked ? `%${picked.id} on ${picked.host}` : "Quote a pane"}</strong>
-        <button type="button" class="thread-close" title="Close" aria-label="Close the pane picker" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close the pane picker" title="Close" class="thread-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </header>
       {!picked && (
         <ul>

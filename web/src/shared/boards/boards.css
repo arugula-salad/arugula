@@ -722,7 +722,7 @@
   margin-top: 6px;
 }
 
-/* A group's or lane's heading as a button (#480): it looks as the heading did, with a chevron that turns when the rows under it are folded away. */
+/* A group's or lane's heading as a button (#480): it looks as the heading did, with a chevron (a `ChevronIcon` in the button) that turns when the rows under it are folded away. */
 .board-fold {
   display: inline-flex;
   align-items: baseline;
@@ -741,17 +741,10 @@
   overflow-wrap: anywhere;
 }
 
-.board-fold::before {
-  content: "▾";
-  content: "▾" / "";
+.board-fold > .icon {
   flex: none;
-  font-size: var(--text-xs);
+  align-self: center;
   opacity: 0.6;
-}
-
-.board-fold[aria-expanded="false"]::before {
-  content: "▸";
-  content: "▸" / "";
 }
 
 .board-fold:focus-visible {

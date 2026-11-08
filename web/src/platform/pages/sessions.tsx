@@ -28,6 +28,7 @@ import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { ListLoading } from "./issues";
 import { Missing } from "./project";
+import { Caret, CloseIcon } from "../../shared/ui/icons";
 
 async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
   const qs = waveQuery(f);
@@ -174,7 +175,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           onClick={labelMenu}
         >
           {filter.label ? `Label: ${filter.label}` : "Label"}{" "}
-          <span class="caret">▾</span>
+          <Caret />
         </button>
         <TrackerFilter filter={filter} to={to} tracker={w?.tracker ?? null} />
         <button
@@ -184,7 +185,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           onClick={askerMenu}
         >
           {filter.asker ? `Asked by ${askerName}` : "Asked by"}{" "}
-          <span class="caret">▾</span>
+          <Caret />
         </button>
         <label class="issues-filter">
           <input
@@ -259,7 +260,7 @@ function TrackerFilter({
         onClick={() => to({ ...filter, tracker: undefined })}
       >
         Tracker #{filter.tracker}
-        {tracker ? ` ${tracker.title}` : ""} ✕
+        {tracker ? ` ${tracker.title}` : ""} <CloseIcon size="xs" />
       </button>
     );
   return (

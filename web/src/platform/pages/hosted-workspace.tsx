@@ -34,6 +34,7 @@ import { Time } from "../../shared/ui/time";
 import { SIZES, sizeOf, type Size } from "../settings/workspace-size";
 import { mayWrite } from "./issues";
 import { InferenceKeys, Previews, Secrets, WorkspaceActions, type Spec } from "./hosted-manage";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -410,7 +411,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             <WorkspaceActions p={p} w={w} changed={(v) => v && setW({ ...w, ...v })} />
             {w.machine && w.state === "ready" && (
               <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
-                + Agent ↗
+                + Agent <ExternalIcon size="xs" />
               </button>
             )}
           </>
@@ -457,7 +458,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
               Its terminals and agent blocks are live on your machines page, and everyone in the project sees the same ones.{" "}
               {ready ? (
                 <a href={machineHref(w.machine)} target="_blank" rel="noopener" data-hosted-open>
-                  Open them ↗
+                  Open them <ExternalIcon size="xs" />
                 </a>
               ) : (
                 <span class="dim" data-hosted-open-later>

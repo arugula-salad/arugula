@@ -188,15 +188,15 @@ details.issues-note > summary {
   display: flex;
 }
 
-/* Close issue and its ▾, one split button of the set's (buttons.css). */
+/* Close issue and its chevron, one split button of the set's (buttons.css). */
 .issue-split > button:first-child {
   border-radius: var(--btn-radius) 0 0 var(--btn-radius);
 }
 
 .issue-split > button:last-child {
-  min-width: 24px; /* its width follows the font's ▾ (23.8px on macOS), under axe's 24 */
+  min-width: 24px; /* axe's target size; the chevron is 12px */
   margin-left: -1px;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-1);
   border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 

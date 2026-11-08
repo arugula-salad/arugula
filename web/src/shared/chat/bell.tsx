@@ -57,5 +57,5 @@ export function bellFor(room: ChatRoom): { glyph: ComponentChild; title: string;
   const how = levelLabel(room.level);
   if (paused()) return { glyph: "🌙", title: `Notifications are paused. This room: ${how}`, quiet: true };
   const off = room.level === "nothing";
-  return { glyph: off ? <BellOffIcon size={16} /> : <BellIcon size={16} />, title: `Notifications: ${how}`, quiet: off };
+  return { glyph: off ? <BellOffIcon size="md" /> : <BellIcon size="md" />, title: `Notifications: ${how}`, quiet: off };
 }

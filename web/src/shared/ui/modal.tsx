@@ -16,6 +16,7 @@
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { escapeTaken } from "./menu";
+import { CloseIcon, IconButton } from "./icons";
 
 interface Open {
   el: () => HTMLElement | null;
@@ -200,9 +201,9 @@ export function useModal(
  * crash reports: UI audit #158). */
 export function CloseX({ close }: { close: () => void }) {
   return (
-    <button type="button" class="modal-close" aria-label="Close dialog" title="Close" onClick={close}>
-      ×
-    </button>
+    <IconButton label="Close dialog" title="Close" class="modal-close" onClick={close}>
+      <CloseIcon size="md" />
+    </IconButton>
   );
 }
 

@@ -51,7 +51,7 @@ export function StatusFooter({ client }: { client: Client }) {
       </span>
       {(repo || branch) && (
         <span class="ws-foot-repo" title="The focused pane's repository">
-          <BranchIcon size={12} />
+          <BranchIcon size="xs" />
           {[repo, branch].filter(Boolean).join(" · ")}
         </span>
       )}

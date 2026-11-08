@@ -15,6 +15,7 @@ import { platformFetch, refusalOf } from "../maintenance";
 import { Time } from "../ui/time";
 import "../boards/bar.css";
 import { epicLine } from "../boards/text";
+import { CloseIcon } from "../ui/icons";
 
 export type Tone = "open" | "done" | "bad" | "wait" | "off";
 
@@ -136,7 +137,7 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
             call("POST", `/api/chat/rooms/${enc(room)}/messages/${seq}/previews`, { hidden: true }).catch(() => setRemoved(false));
           }}
         >
-          ✕ Remove preview
+          <CloseIcon size="xs" /> Remove preview
         </button>
       )}
     </div>

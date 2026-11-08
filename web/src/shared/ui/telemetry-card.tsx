@@ -1,3 +1,4 @@
+import { CloseIcon, IconButton } from "./icons";
 // The question about usage counts (the telemetry track): a card in the
 // corner, not a dialog (#690), so nothing waits on it: no backdrop, no focus
 // trap, and the page under it stays usable. Its title and footer are the
@@ -23,9 +24,9 @@ export function TelemetryCard({
 }) {
   return (
     <section class="telemetry-card" role="region" aria-label="Help improve Arugula?" data-telemetry-card>
-      <button class="modal-close" aria-label="Not now" title="Not now" onClick={later}>
-        ×
-      </button>
+      <IconButton label="Not now" class="modal-close" onClick={later}>
+        <CloseIcon size="md" />
+      </IconButton>
       <h2>Help improve Arugula?</h2>
       <p>{about}</p>
       {preview !== undefined && <TelemetryPreview preview={preview} />}

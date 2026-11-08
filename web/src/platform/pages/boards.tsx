@@ -27,6 +27,7 @@ import { roleIn } from "../settings/environments";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
 import { NotOnBoard, dropOn, useTriage, useUntriaged, type Triage } from "./triage";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 /** The reads in flight, by project: the bar, the project's home and a page
  * all ask for the same list at once, and share the one request. */
@@ -158,7 +159,7 @@ export function AllBoardsPage() {
                     </a>
                   )}
                   <a class="sw-all" href={all} onClick={(e) => follow(e, all)} data-all-boards-project-link>
-                    All boards ›
+                    All boards <ChevronIcon dir="right" />
                   </a>
                 </>
               }

@@ -60,6 +60,10 @@
   --ar-space-2: 8px;
   --ar-space-3: 12px;
   --ar-space-4: 16px;
+  --ar-icon-xs: 12px;
+  --ar-icon-sm: 14px;
+  --ar-icon-md: 16px;
+  --ar-icon-lg: 18px;
   --ar-radius-sm: 6px;
   --ar-radius: 8px;
   --ar-radius-lg: 10px;
@@ -133,6 +137,24 @@
   white-space: nowrap;
 }
 .ar-card-dense.ar-card-tone { padding-left: 14px; }
+
+/* An icon: an <svg viewBox="0 0 24 24"> with paths, as the app draws them (shared/ui/icons.tsx):
+   strokes in the text's color, 1.7 wide, 2 at xs. */
+.ar-icon {
+  flex: none;
+  width: var(--ar-icon-sm);
+  height: var(--ar-icon-sm);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+}
+.ar-icon-xs { width: var(--ar-icon-xs); height: var(--ar-icon-xs); stroke-width: 2; vertical-align: -2px; }
+.ar-icon-sm { width: var(--ar-icon-sm); height: var(--ar-icon-sm); }
+.ar-icon-md { width: var(--ar-icon-md); height: var(--ar-icon-md); }
+.ar-icon-lg { width: var(--ar-icon-lg); height: var(--ar-icon-lg); }
 
 .ar-btn {
   box-sizing: border-box;

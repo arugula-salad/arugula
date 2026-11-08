@@ -27,7 +27,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { PlusIcon } from "../ui/icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
@@ -387,7 +387,7 @@ export function BoardPanel({
           action={
             write && (
               <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-                <PlusIcon size={13} />
+                <PlusIcon size="xs" />
                 Add row
               </button>
             )
@@ -426,6 +426,7 @@ export function BoardPanel({
               titleData="board-group-title"
               title={
                 <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
+                  <ChevronIcon open={!folded} />
                   {title}
                   {folded && ` · ${rows}`}
                 </button>
@@ -439,9 +440,9 @@ export function BoardPanel({
                     </span>
                   )}
                   {s.group && write && (
-                    <button type="button" class="bar-btn sq board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
-                      ⋯
-                    </button>
+                    <IconButton label={`Group actions: ${s.group.title}`} class="bar-btn sq board-more" data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                      <MoreIcon size="sm" />
+                    </IconButton>
                   )}
                 </>
               }
@@ -461,23 +462,23 @@ export function BoardPanel({
         <p class="board-foot">
           {allRows.length > 0 && (
             <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               Add row
             </button>
           )}
           {write && (
             <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               Add a group
             </button>
           )}
           <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
-            <PlusIcon size={13} />
+            <PlusIcon size="xs" />
             New issue
           </button>
           {plane.map((c) => (
             <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
-              <PlusIcon size={13} />
+              <PlusIcon size="xs" />
               New issue in Plane ({c.identifier})
             </button>
           ))}
@@ -671,7 +672,7 @@ function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: A
       ))}
       {write && !picking && (
         <button type="button" class="secondary small" data-board-doc-add onClick={() => setPicking(true)}>
-          <PlusIcon size={13} />
+          <PlusIcon size="xs" />
           Doc
         </button>
       )}
@@ -842,6 +843,7 @@ function Lane({
       <header class="board-zone-head">
         <h2>
           <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={fold.key} onClick={fold.toggle}>
+            <ChevronIcon open={!fold.folded} />
             {z.title}
           </button>
         </h2>
@@ -1106,9 +1108,9 @@ function Row({
                 </span>
               )}
             </div>
-            <button type="button" class="bar-btn sq board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
-              ⋯
-            </button>
+            <IconButton label="Row actions" class="bar-btn sq board-more" data-board-row-menu onClick={more}>
+              <MoreIcon size="sm" />
+            </IconButton>
           </div>
           <div class="board-line board-sub dim">
             {label && <span class="board-ptr" data-board-ptr>{label}</span>}
@@ -1293,9 +1295,9 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           {([true, false] as const).map((up) => {
             const m = nudge(steps.place!.group, steps.place!.step, r.id, up);
             return (
-              <button key={String(up)} type="button" class="secondary small" disabled={!m} aria-label={up ? "Move up in its step" : "Move down in its step"} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
-                {up ? "↑" : "↓"}
-              </button>
+              <IconButton key={String(up)} label={up ? "Move up in its step" : "Move down in its step"} class="secondary small" disabled={!m} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
+                <ArrowIcon dir={up ? "up" : "down"} size="xs" />
+              </IconButton>
             );
           })}
         </div>
@@ -1304,7 +1306,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
         {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
-            {pointerLabel(r.pointer, r.live)} ↗
+            {pointerLabel(r.pointer, r.live)} <ExternalIcon size="xs" />
           </a>
         )}
       </div>
@@ -1416,7 +1418,7 @@ function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; projec
         ))}
         {write && !picking && (
           <button type="button" class="secondary small" data-board-drawer-doc-add onClick={() => setPicking(true)}>
-            <PlusIcon size={13} />
+            <PlusIcon size="xs" />
             Doc
           </button>
         )}
@@ -1456,9 +1458,9 @@ function Relations({ r, project, others, write, act, id }: { r: BoardRow; projec
           <span>{relationLine(x)}</span>
           {x.source !== "person" && x.source !== "agent" && <span class="dim"> · from {x.source === "plane" ? "Plane" : "GitHub"}</span>}
           {x.removable && (
-            <button type="button" class="bar-btn sq board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
-              ×
-            </button>
+            <IconButton label="Remove relation" class="bar-btn sq board-more" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
+              <CloseIcon size="xs" />
+            </IconButton>
           )}
         </div>
       ))}

@@ -22,6 +22,7 @@ import { checkPrototype, prototypeInfo } from "./embeds";
 import { ProtoScope, useBridge } from "./prototype-bridge";
 import { escapeFrom, htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
+import { CloseIcon, ExpandIcon } from "./icons";
 
 /** The frame's whole sandbox: scripts, and nothing that would give it a way out. */
 export const SANDBOX = "allow-scripts";
@@ -182,7 +183,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
             title={full ? "Close (Esc)" : "Full window"}
             onClick={() => setFull(!full)}
           >
-            {full ? "✕" : "⤢ Full window"}
+            {full ? <CloseIcon size="xs" /> : <><ExpandIcon size="xs" /> Full window</>}
           </button>
         )}
         <span class="doc-prototype-label" data-prototype-label>

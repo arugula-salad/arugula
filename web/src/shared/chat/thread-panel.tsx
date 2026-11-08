@@ -16,6 +16,7 @@ import { newFrom, repliesOf } from "./threads";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { useStickToBottom } from "./stick";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
+import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
@@ -121,9 +122,9 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         class="chat-head"
         lead={
           phone ? (
-            <button class="chat-back" title={`Back to ${label}`} aria-label={`Back to ${label}`} data-thread-back onClick={close}>
-              ‹
-            </button>
+            <IconButton label={`Back to ${label}`} class="chat-back" data-thread-back onClick={close}>
+              <ChevronIcon dir="left" size="md" />
+            </IconButton>
           ) : undefined
         }
         title={<BarTitle class="chat-title">Thread</BarTitle>}
@@ -152,9 +153,9 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         }
         actions={
           !phone ? (
-            <button class="thread-close" title="Close the thread" aria-label="Close the thread" data-thread-close onClick={close}>
-              ✕
-            </button>
+            <IconButton label="Close the thread" class="thread-close" data-thread-close onClick={close}>
+              <CloseIcon size="sm" />
+            </IconButton>
           ) : undefined
         }
       />
@@ -206,7 +207,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         {!atBottom && (
           <div class="jump-newest">
             <button type="button" data-jump-newest onClick={toNewest}>
-              ↓ Jump to newest
+              <ArrowIcon dir="down" size="xs" /> Jump to newest
             </button>
           </div>
         )}

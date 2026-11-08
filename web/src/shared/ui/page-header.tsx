@@ -18,6 +18,7 @@
 import type { ComponentChildren } from "preact";
 import { openMenu, type MenuItem } from "./menu";
 import "./page-header.css";
+import { ChevronIcon, IconButton, MoreIcon } from "./icons";
 
 export interface BackLink {
   href: string;
@@ -76,7 +77,7 @@ export function PageHeader({
     <header class={cls ? `page-head ${cls}` : "page-head"} data-page-head>
       {link1 ? (
         <a class="page-back" href={link1.href} onClick={link1.onClick} {...hook}>
-          <span aria-hidden="true">‹ </span>
+          <ChevronIcon dir="left" />{" "}
           {link1.label}
         </a>
       ) : (
@@ -94,9 +95,9 @@ export function PageHeader({
                   {link}
                   {share}
                   {more && more.length > 0 && (
-                    <button type="button" class="secondary sq small" title="More" aria-label="More" aria-haspopup="menu" data-page-more onClick={(e) => openMenu(e, more, e.currentTarget)}>
-                      ⋯
-                    </button>
+                    <IconButton label="More" class="secondary sq small" aria-haspopup="menu" data-page-more onClick={(e) => openMenu(e, more, e.currentTarget)}>
+                      <MoreIcon size="sm" />
+                    </IconButton>
                   )}
                 </span>
               )}
