@@ -12,7 +12,7 @@
 // runs it.
 
 import { expect, test, type Page } from "@playwright/test";
-import { attacker, prototype, prototypeRan } from "./doc-steps";
+import { attacker, measure, prototype, prototypeRan } from "./doc-steps";
 import { closeContexts } from "./helpers";
 import { localToken } from "./local-token";
 import { daemonPort } from "./ports";
@@ -94,6 +94,24 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   await expect(goals.locator(".doc-body strong")).toHaveText("0.64");
   await expect(goals.locator(".chart-box svg")).toBeVisible();
   await expect(page.locator("[data-doc-progress]")).toHaveText("1 of 1 sections written");
+});
+
+test("the Doc's column and the lines above it widen with the page (Arugula #783)", async () => {
+  await alice.goto(`${app}${docPath}`);
+  const page = alice.locator("[data-doc-page]");
+  await expect(page.locator(".doc-title")).toHaveText("Release plan");
+  const width = (sel: string) => alice.evaluate((s) => document.querySelector(s)!.getBoundingClientRect().width, sel);
+  const was = alice.viewportSize()!;
+  try {
+    await alice.setViewportSize({ width: 900, height: 900 });
+    expect(await measure(alice, "[data-doc-page]")).toBe(68);
+    expect(Math.abs((await width('.project-doc-head')) - (await width('.doc-page'))), 'the head is the column wide').toBeLessThan(1);
+    await alice.setViewportSize({ width: 1600, height: 900 });
+    expect(await measure(alice, "[data-doc-page]")).toBe(88);
+    expect(Math.abs((await width('.project-doc-head')) - (await width('.doc-page'))), 'the head is the column wide').toBeLessThan(1);
+  } finally {
+    await alice.setViewportSize(was);
+  }
 });
 
 test("a viewer reads it on a phone, with no form, and has the next section live", async () => {
