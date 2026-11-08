@@ -284,6 +284,33 @@ test.describe("the list", () => {
     await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
   });
 
+  test("the preview's three actions: Copy link, Share and Open in browser, between Open beside and ⋯ (Arugula #782)", async ({ page }) => {
+    await seed(page);
+    const link = onPlatform(await docId("Short note"));
+    await page.reload();
+    await goToDocs(page);
+    const p = await preview(page, "Short note");
+    const bar = p.locator(".list-preview-bar");
+    await expect(bar.locator("button")).toHaveCount(5);
+    const order = await bar.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
+    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share…", "Open in browser", "More for Short note"]);
+
+    // Open in browser opens what Copy link copies, in a new tab.
+    await page.context().route(link, (route) => route.fulfill({ body: "the copy" }));
+    const popup = page.waitForEvent("popup");
+    await bar.locator("[data-doc-open-browser]").click();
+    expect((await popup).url()).toBe(link);
+
+    // With no link it's off and says why.
+    const none = (await preview(page, "Long plan")).locator("[data-doc-open-browser]");
+    await expect(none).toBeDisabled();
+    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+
+    // Share is a block's: the Doc opens beside, then the share dialog.
+    await (await preview(page, "Short note")).locator("button[aria-label='Share…']").click();
+    await expect(page.locator("[data-doc-share-dialog]")).toBeVisible();
+  });
+
   test("the preview has exactly one title, and a bar of the house's buttons over it (Arugula #659)", async ({ page }) => {
     await seed(page);
     await page.reload();
@@ -322,7 +349,7 @@ test.describe("the list", () => {
     await page.keyboard.type("short");
     await expect(page.locator("[data-doc]")).toHaveCount(1);
     const p = await preview(page, "Short note");
-    await p.getByRole("button", { name: "Open" }).click();
+    await p.locator("[data-open-doc]").click();
     await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
   });
 

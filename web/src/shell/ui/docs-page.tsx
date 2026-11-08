@@ -22,17 +22,18 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
-import { NO_LINK, ONLY_YOU } from "./doc-share";
+import { shareDoc } from "./doc-share";
+import { DocActions, openTab } from "./doc-actions";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
+import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
-import { IconButton, LinkIcon, MoreIcon, Svg } from "../../shared/ui/icons";
+import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
 import { directory } from "../hosts";
-import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
+import { closeDocsPage, docsRoute, openDoc, openDocPane } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
 import { Chip, StateChip } from "../../shared/ui/state-chip";
@@ -138,6 +139,15 @@ function Page({ client }: { client: Client }) {
     setBusy(true);
     const why = await openDoc(client, r.id);
     if (why) setError(why);
+    setBusy(false);
+  };
+
+  // Share is a block's: it opens the Doc beside first, then its dialog.
+  const share = async (r: DocRow) => {
+    setBusy(true);
+    const opened = await openDocPane(client, r.id);
+    if ("why" in opened) setError(opened.why);
+    else shareDoc(client, opened.pane);
     setBusy(false);
   };
 
@@ -273,7 +283,7 @@ function Page({ client }: { client: Client }) {
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
-        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} ask={() => setDeleting(r)} fail={setError} />}
+        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => void share(r)} ask={() => setDeleting(r)} fail={setError} />}
       />
       {deleting && (
         <ConfirmRemove title={`Delete “${deleting.title}”?`} label="Delete" cancel={() => setDeleting(null)} go={() => void remove(deleting)}>
@@ -286,7 +296,7 @@ function Page({ client }: { client: Client }) {
 }
 
 /** The selected Doc: what it is, the page's one primary button, and the Doc itself, read in place. */
-function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; ask: () => void; fail: (why: string) => void }) {
+function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; share: () => void; ask: () => void; fail: (why: string) => void }) {
   const kept = useMemo(() => {
     let r = reads.get(doc.id);
     if (!r) reads.set(doc.id, (r = { state: null, images: new Map() }));
@@ -350,9 +360,10 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
 
   const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
-  // At once (Arugula #708): the public link it has (anyone can open it), else
-  // its copy on the platform (only its owner can).
-  const copyLink = async (): Promise<boolean> => {
+  // The one link Copy link copies and Open in browser opens (Arugula #708):
+  // the public link it has (anyone can open it), else its copy on the
+  // platform (only its owner can). Null, with the reason said, if it fails.
+  const linkOf = async (): Promise<string | null> => {
     try {
       let url = doc.shared?.link ? undefined : doc.platform?.link;
       if (!url) {
@@ -361,12 +372,22 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
         if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
         url = v.url;
       }
+      return url;
+    } catch (e) {
+      fail((e as Error).message);
+      return null;
+    }
+  };
+  const copyLink = async (): Promise<"ok" | "private" | false> => {
+    const url = await linkOf();
+    if (!url) return false;
+    try {
       await navigator.clipboard.writeText(url);
-      return true;
     } catch (e) {
       fail((e as Error).message);
       return false;
     }
+    return doc.platform && !doc.shared ? "private" : "ok";
   };
 
   const words = wordsOf(doc);
@@ -397,16 +418,13 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
           <button class="primary small" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
             {isOpen(doc) ? `Bring forward %${doc.open}` : "Open beside"}
           </button>
-          {doc.platform && (
-            <button class="bar-btn sq" data-doc-platform-link={doc.platform.link} aria-label="On the platform" title="On the platform: its read-only copy, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
-              <Svg size="sm">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <path d="M15 3h6v6" />
-                <path d="M10 14L21 3" />
-              </Svg>
-            </button>
-          )}
-          <PreviewCopyLink data-doc-copy-link disabled={none} title={none ? NO_LINK : "Copy link"} done={doc.platform && !doc.shared ? `Copied: ${ONLY_YOU}` : "Copied"} copy={copyLink} />
+          <DocActions
+            none={none}
+            copy={copyLink}
+            open={() => void linkOf().then((url) => url && openTab(url))}
+            share={share}
+            hooks={{ copy: { "data-doc-copy-link": "" }, open: { "data-doc-platform-link": doc.platform?.link } }}
+          />
           <IconButton
             label={`More for ${doc.title}`}
             title="More"
