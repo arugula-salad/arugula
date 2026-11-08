@@ -1,0 +1,276 @@
+/* The design reference (pages/design.tsx, #693): only its layout. Every piece
+   on the page is drawn by its own shared stylesheet; nothing here restyles one. */
+
+.design-page {
+  padding: var(--space-4);
+  /* A page of samples reads in a column, however wide the window. */
+  display: block;
+}
+
+.design-page > * {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+
+.design-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin-block: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.design-nav a {
+  color: var(--info);
+}
+
+.design-section {
+  margin-block: var(--space-6);
+  /* A jump to #chips lands under the head, not on its edge. */
+  scroll-margin-top: var(--space-4);
+}
+
+.design-use {
+  margin: var(--space-2) 0 0;
+  color: var(--fg);
+  font-size: var(--t-body);
+  line-height: var(--lh-md);
+}
+
+.design-from {
+  margin: var(--space-1) 0 var(--space-4);
+  color: var(--dim);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+
+.design-from code,
+.design-token {
+  font-family: var(--f-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+
+.design-sample {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+}
+
+.design-label {
+  margin-bottom: var(--space-2);
+  color: var(--dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.design-show {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* What fills a row (a header, a list, a grid of cards) takes all of it. */
+.design-show > :is(.design-box, .design-list, .design-pane, .card-grid, .card-list, .empty-state, .block-error, .empty-line) {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+/* A bar or a header is drawn on the page's own surface, in a frame to show where it ends. */
+.design-box {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.design-narrow {
+  max-width: 300px;
+}
+
+/* ---- type */
+
+.design-type {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.design-type-row {
+  display: grid;
+  grid-template-columns: 7rem 3.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.design-type-sample {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.design-type-job {
+  grid-column: 3;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+/* ---- colour and tokens */
+
+.design-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.design-swatch {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.design-swatch-fill {
+  display: block;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--tag-radius);
+}
+
+.design-swatch-value {
+  color: var(--dim);
+  font-family: var(--f-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+/* ---- rows */
+
+.design-list {
+  display: flex;
+  height: 340px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.design-list-head {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+}
+
+/* ---- icons */
+
+.design-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.design-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--tag-radius);
+}
+
+.design-icon-bad {
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.design-size {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+/* ---- states */
+
+.design-pane {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 240px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* ---- spacing and shadows */
+
+.design-scale {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.design-scale-row {
+  display: grid;
+  grid-template-columns: 7rem 3rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.design-scale-row .design-space-bar {
+  grid-column: 3;
+  grid-row: 1;
+  height: var(--space-3);
+  background: var(--accent);
+}
+
+.design-scale-row .design-swatch-value {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.design-corner,
+.design-shadow {
+  display: grid;
+  gap: var(--space-1);
+  align-content: center;
+  width: 120px;
+  height: 72px;
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  box-sizing: border-box;
+}
+
+.design-shadow {
+  border-color: var(--line);
+}
+
+@media (max-width: 600px) {
+  .design-page {
+    padding: var(--space-2);
+  }
+
+  .design-type-row {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+
+  .design-type-sample,
+  .design-type-job {
+    grid-column: 1 / -1;
+  }
+
+  .design-scale-row {
+    grid-template-columns: 5.5rem 2.5rem minmax(0, 1fr);
+  }
+
+  .design-list {
+    height: 420px;
+  }
+}

@@ -45,9 +45,10 @@ function remember() {
       // without storage, Projects lands on the list
     }
   }
-  // Chat and account settings are the rail's own places, not the projects'.
+  // Chat and account settings are the rail's own places, not the projects';
+  // the design reference is no place to come back to.
   const { page } = route;
-  if (page === "chat" || page === "dm" || page === "settings") return;
+  if (page === "chat" || page === "dm" || page === "settings" || page === "design") return;
   try {
     localStorage.setItem(LAST, location.pathname + location.search);
   } catch {

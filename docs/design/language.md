@@ -1,5 +1,11 @@
 # Design language
 
+**See it:** [`/design`](https://app.arugula.io/design) in the platform app is
+the living reference. It draws every piece below with the real components, in
+Slate and Latte, one section for each of the sections here. Check new UI
+against it (the command palette has it as *Go to Design reference*); its code
+is `web/src/platform/pages/design.tsx`.
+
 Status: decided (#660, from the #685 inventory and its nine picks, Aaron,
 2026-11-05). Read this before you build or restyle a page, a pane, a dialog
 or a list. Where a piece says *(being built: #N)*, the rule is decided and
@@ -14,8 +20,9 @@ should paint what the app paints.
 
 ## Type
 
-*(being built: #687.)* Seven sizes, each with its line-height, and nothing
-between them:
+*(Built: #687. The sizes are the `--text-*` tokens in `shared/style.css`, and
+`scripts/check-type.mjs` fails a stylesheet that sets a size off them.)* Seven
+sizes, each with its line-height, and nothing between them:
 
 | size | job | face | line |
 |---|---|---|---|
@@ -120,8 +127,9 @@ Two, and nothing else.
 - **The bar** is a pane's, a block's or a column's: 34px, 13/500 title, 24px
   ghost buttons, 1px rule under it. `PaneHeader`
   (`shell/ui/shell/pane-header.tsx`). A block's own bar sits under it at the
-  same 34 and the same buttons. Chat's room header is a bar. *(being built:
-  #686 part 2, a shared `Bar`.)*
+  same 34 and the same buttons. Chat's room header is a bar. *(Built: #686.
+  `Bar`, with `BarTitle` and `BarWhere`, is `shared/ui/bar.tsx`, and
+  `PaneHeader` draws through it.)*
 - **The page header** is a place you go to: `PageHeader`
   (`shared/ui/page-header.tsx`). A back link, a 32px display title, a state
   chip, up to two labelled actions, a sub line and stats, then a 1px rule.
@@ -182,10 +190,10 @@ Don't add a `*-chip`, `*-tag` or `*-badge` rule outside the shared chip file.
 
 ## Dialogs, side sheets and the backdrop
 
-*(being built: #690. Built: `Modal`, `ConfirmRemove`, `SideSheet`
-(`shared/ui/side-sheet.tsx`), `--backdrop`, Boards' row drawer, Appearance,
-Sandboxes and the Doc share dialogs. Still hand-rolled: the rest of the
-`role="dialog"` list in #690, and Add a pane and Needs you as sheets.)*
+*(Built: #690. `Modal`, `ConfirmRemove`, `SideSheet`
+(`shared/ui/side-sheet.tsx`) and `--backdrop`; Boards' row drawer, Add a pane
+and Needs you are the side sheet, and the last hand-rolled dialogs and pickers
+use `Modal`.)*
 
 - **The dialog** is `Modal` / `.prompt` (`shared/ui/modal.tsx`): a 15/600
   title, a body, a right-aligned button row, Cancel first and the action last.
