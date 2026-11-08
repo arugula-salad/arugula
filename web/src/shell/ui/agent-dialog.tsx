@@ -163,7 +163,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
       }}
     >
       <div class="agent-body">
-        <p class="hint">
+        <p class="dim">
           Or{" "}
           <button
             type="button"
@@ -199,7 +199,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           </label>
         )}
         {vm && kind === "claude" && (
-          <p class="hint">Claude Code in a VM uses the token in ~/.config/arugula/claude-oauth-token (from `claude setup-token`).</p>
+          <p class="dim">Claude Code in a VM uses the token in ~/.config/arugula/claude-oauth-token (from `claude setup-token`).</p>
         )}
         {adapter && (
           <AdapterHelp
@@ -239,7 +239,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             </datalist>
           </label>
           <label>
-            MCP servers <span class="hint">NAME=COMMAND, one a line</span>
+            MCP servers <span class="dim">NAME=COMMAND, one a line</span>
             <textarea
               name="mcp"
               rows={2}
@@ -254,7 +254,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             </p>
           )}
           <label>
-            Allow without asking <span class="hint">tools, as "always" on a card</span>
+            Allow without asking <span class="dim">tools, as "always" on a card</span>
             <input name="allow" value={allow} placeholder="Read, Edit, Bash" onInput={(e) => setAllow(e.currentTarget.value)} />
           </label>
           {kind === "claude" && (

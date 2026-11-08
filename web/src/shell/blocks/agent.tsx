@@ -384,7 +384,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
           <label>
             Allow {p.tool}
             <input name="prefix" value={prefix} placeholder="any" onInput={(e) => setPrefix(e.currentTarget.value)} />
-            <span class="hint">{prefix.trim() ? "commands starting with this" : "anything"}</span>
+            <span class="dim">{prefix.trim() ? "commands starting with this" : "anything"}</span>
           </label>
           <label>
             <select name="scope" value={scope} onChange={(e) => setScope(e.currentTarget.value as "cwd" | "everywhere")}>
@@ -400,7 +400,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
               Cancel
             </button>
           </div>
-          <p class="hint">On this machine; forget it from Settings, Permission rules…</p>
+          <p class="dim">On this machine; forget it from Settings, Permission rules…</p>
         </form>
       )}
     </div>

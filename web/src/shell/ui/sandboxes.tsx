@@ -104,7 +104,7 @@ function Sandboxes({ close }: { close: () => void }) {
       }
     >
         {list && (
-          <p class="hint">
+          <p class="dim">
             <b>Shell</b>: no daemon there, so it's disposable. While nothing follows it, {list.provider.name} keeps only{" "}
             {size(list.provider.exec_replay)} of its output, and it ends when its pane closes.
           </p>

@@ -275,12 +275,12 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
   );
   const linkBody = (
     <>
-      <p class="hint">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
+      <p class="dim">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
       {shared && (
         <>
-          {url ? <CopyText text={url} share data-doc-link-url /> : <p class="hint">Loading the link…</p>}
+          {url ? <CopyText text={url} share data-doc-link-url /> : <p class="dim">Loading the link…</p>}
           {s?.shared && (
-            <p class="hint" data-doc-bar-shared title={when(s.shared.updated)}>
+            <p class="dim" data-doc-bar-shared title={when(s.shared.updated)}>
               Shared; the link shows it as it was {ago(s.shared.updated, Date.now(), "long")}.
             </p>
           )}

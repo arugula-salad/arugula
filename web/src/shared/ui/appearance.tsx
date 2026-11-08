@@ -61,7 +61,7 @@ function AppearanceDialog({ close }: { close: () => void }) {
         </>
       }
     >
-        <p class="hint">On this device. The terminals follow the palette.</p>
+        <p class="dim">On this device. The terminals follow the palette.</p>
         <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
           <strong>Use the Slate look</strong>
           <span>Near-black Slate, cyan focus, soft pane corners</span>
@@ -132,7 +132,7 @@ function AppearanceDialog({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
-        <p class="hint">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
+        <p class="dim">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
     </Modal>
   );
 }

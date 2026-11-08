@@ -2215,7 +2215,7 @@ button.att {
   font: var(--text-sm) var(--f-mono);
 }
 
-.agent-perm-standing .hint {
+.agent-perm-standing :is(p, span).dim {
   margin: 0;
   color: var(--dim);
   font-size: var(--text-sm);
@@ -2223,7 +2223,7 @@ button.att {
 
 /* #166: the standing rules dialog. */
 
-.rules .hint {
+.rules :is(p, span).dim {
   margin: 0;
   color: var(--dim);
   font-size: var(--text-sm);
@@ -2277,7 +2277,7 @@ button.att {
   align-items: baseline;
 }
 
-.access-row-head .hint {
+.access-row-head :is(p, span).dim {
   font-size: var(--text-sm);
 }
 
@@ -2497,7 +2497,7 @@ button.att {
   font-weight: normal;
 }
 
-.agent-dialog .hint {
+.agent-dialog :is(p, span).dim {
   margin: 0;
   color: var(--dim);
   font-size: var(--text-sm);
@@ -2573,7 +2573,7 @@ button.att {
   margin: 0;
 }
 
-.sandboxes .hint {
+.sandboxes :is(p, span).dim {
   margin: 0;
   color: var(--dim);
   font-size: var(--text-sm);
@@ -9539,7 +9539,7 @@ input.chat-search {
   color: var(--dim);
 }
 
-.appearance .hint {
+.appearance :is(p, span).dim {
   margin: 0;
   color: var(--dim);
 }
