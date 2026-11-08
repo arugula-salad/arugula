@@ -5712,45 +5712,45 @@ html[data-scheme="light"] .doc {
    container, so the property is set on what's inside: the page, and on the
    platform the lines around it (docs.css's .project-doc is a `doc` container
    too). Those are 13px type to the Doc's 15px, and a `ch` is the element's
-   own, so they read --doc-lead-measure, the same width in their size, border-box
+   own, so they read --lead-measure, the same width in their size, border-box
    (the page's padding is outside its measure). */
 .doc-page {
-  --doc-measure: calc(68ch + 32px);
+  --measure: calc(68ch + 32px);
 }
 
 .project-doc-head,
 .project-doc-copy,
 .project-doc-form {
-  --doc-lead-measure: calc(68ch * 15 / 13 + 64px);
+  --lead-measure: calc(68ch * 15 / 13 + 64px);
 }
 
 @container doc (inline-size >= 1100px) {
   .doc-page {
-    --doc-measure: calc(88ch + 32px);
+    --measure: calc(88ch + 32px);
   }
 
   .project-doc-head,
   .project-doc-copy,
   .project-doc-form {
-    --doc-lead-measure: calc(88ch * 15 / 13 + 64px);
+    --lead-measure: calc(88ch * 15 / 13 + 64px);
   }
 }
 
 @container doc (inline-size >= 1500px) {
   .doc-page {
-    --doc-measure: calc(100ch + 32px);
+    --measure: calc(100ch + 32px);
   }
 
   .project-doc-head,
   .project-doc-copy,
   .project-doc-form {
-    --doc-lead-measure: calc(100ch * 15 / 13 + 64px);
+    --lead-measure: calc(100ch * 15 / 13 + 64px);
   }
 }
 
 /* The measure: about 68 characters of body text, and a 16px gutter. */
 .doc-page {
-  max-width: var(--doc-measure);
+  max-width: var(--measure);
   margin: 0 auto;
   padding: 36px 16px 64px;
 }

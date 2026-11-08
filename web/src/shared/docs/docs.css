@@ -24,7 +24,7 @@
 }
 
 .project-doc-head {
-  max-width: var(--doc-lead-measure);
+  max-width: var(--lead-measure);
   width: 100%;
   margin: 0 auto;
   padding: 0 16px;
@@ -38,7 +38,7 @@
 
 /* A copy of a machine's Doc (#678): read-only here, and said so above it. */
 .project-doc-copy {
-  max-width: var(--doc-lead-measure);
+  max-width: var(--lead-measure);
   width: 100%;
   margin: 0 auto 8px;
   padding: 0 16px;
@@ -50,7 +50,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-width: var(--doc-lead-measure);
+  max-width: var(--lead-measure);
   min-width: 0;
   margin-top: 14px;
 }
