@@ -5700,6 +5700,8 @@ button.diff-why-run {
   --c2: var(--doc-pepper);
   --c3: var(--doc-sky);
   --c4: var(--doc-plum);
+  container-type: inline-size;
+  container-name: doc;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -5713,9 +5715,50 @@ html[data-scheme="light"] .doc {
   color-scheme: light;
 }
 
+/* The measure scales with the width of the Doc's container, not the window,
+   because a Doc sits in a pane (#783). A query can't restyle its own
+   container, so the property is set on what's inside: the page, and on the
+   platform the lines around it (docs.css's .project-doc is a `doc` container
+   too). Those are 13px type to the Doc's 15px, and a `ch` is the element's
+   own, so they read --lead-measure, the same width in their size, border-box
+   (the page's padding is outside its measure). */
+.doc-page {
+  --measure: calc(68ch + 32px);
+}
+
+.project-doc-head,
+.project-doc-copy,
+.project-doc-form {
+  --lead-measure: calc(68ch * 15 / 13 + 64px);
+}
+
+@container doc (inline-size >= 1100px) {
+  .doc-page {
+    --measure: calc(88ch + 32px);
+  }
+
+  .project-doc-head,
+  .project-doc-copy,
+  .project-doc-form {
+    --lead-measure: calc(88ch * 15 / 13 + 64px);
+  }
+}
+
+@container doc (inline-size >= 1500px) {
+  .doc-page {
+    --measure: calc(100ch + 32px);
+  }
+
+  .project-doc-head,
+  .project-doc-copy,
+  .project-doc-form {
+    --lead-measure: calc(100ch * 15 / 13 + 64px);
+  }
+}
+
 /* The measure: about 68 characters of body text, and a 16px gutter. */
 .doc-page {
-  max-width: calc(68ch + 32px);
+  max-width: var(--measure);
   margin: 0 auto;
   padding: 36px 16px 64px;
 }

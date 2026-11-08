@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { hex } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { attacker, newDoc, png, putAsset, fill, prototype, prototypeRan, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, newDoc, png, putAsset, fill, measure, prototype, prototypeRan, seeEmbeds, type Post } from "./doc-steps";
 import { DOMAIN, prototypeInViewer, rig, share, visitor, type Rig } from "./doc-share-rig";
 import { closeContexts, menu, reset, panes, paneEl } from "./helpers";
 import { pixel7 } from "./phones";
@@ -163,6 +163,17 @@ for (const mode of [DOMAIN, null] as const) {
     }
 
     // #254: callouts and stat tiles, through the link, light and dark.
+    test("the link's column is 68 characters wide at 900px, 88 at 1200px and 100 at 1600px (Arugula #783)", async ({ browser }) => {
+      const url = await share(r, await doc(r));
+      for (const [width, chars] of [[900, 68], [1200, 88], [1600, 100]] as const) {
+        const v = await visitor(browser, { viewport: { width, height: 900 } });
+        await v.page.goto(url);
+        await expect(v.page.locator(".doc-title")).toBeVisible();
+        expect(await measure(v.page), `${width}px`).toBe(chars);
+        await v.ctx.close();
+      }
+    });
+
     test("the link draws callouts and stat tiles in either scheme", async ({ browser }) => {
       const d = await doc(r);
       await fill(r.post, d, "s3", `> [!TIP]\n> Share it.\n\n> [!CAUTION]\n> Not the key.\n\n${example("stats.md")}`);

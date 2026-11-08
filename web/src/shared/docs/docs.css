@@ -8,6 +8,11 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  /* A Doc's page is as wide as the frame, not the section's usual 880px
+     column: the Doc centres its own measure (#783), and the container it is
+     measured in is this, so the wider tiers can be reached. */
+  padding-inline: 24px;
+  container: doc / inline-size;
 }
 
 /* The block fills its pane; on the page it's as tall as what it says, a
@@ -19,7 +24,7 @@
 }
 
 .project-doc-head {
-  max-width: 760px;
+  max-width: var(--lead-measure);
   width: 100%;
   margin: 0 auto;
   padding: 0 16px;
@@ -33,7 +38,7 @@
 
 /* A copy of a machine's Doc (#678): read-only here, and said so above it. */
 .project-doc-copy {
-  max-width: 760px;
+  max-width: var(--lead-measure);
   width: 100%;
   margin: 0 auto 8px;
   padding: 0 16px;
@@ -45,7 +50,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-width: 760px;
+  max-width: var(--lead-measure);
   min-width: 0;
   margin-top: 14px;
 }

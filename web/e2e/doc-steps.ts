@@ -449,3 +449,18 @@ export const plainPrototype = () => `\`\`\`prototype height=200 Plain
 <html><body><p id="p">Plain</p><button id="b">Go</button></body></html>
 \`\`\`
 `;
+
+/** The Doc column's measure (#783), in characters: `.doc-page`'s computed
+ * `max-width`, less its 32px of gutter, over the width of one `ch` in it. */
+export async function measure(page: Page, within = "") {
+  return page.evaluate(async (scope) => {
+    await document.fonts.ready;
+    const el = document.querySelector(`${scope} .doc-page`.trim())!;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100ch";
+    el.append(probe);
+    const ch = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+    return Math.round(((parseFloat(getComputedStyle(el).maxWidth) - 32) / ch) * 10) / 10;
+  }, within);
+}

@@ -25,7 +25,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { houseColours } from "../src/shared/appearance";
 import { hex, type Scheme } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, watchAssetCalls, widths } from "./doc-steps";
+import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, measure, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, watchAssetCalls, widths } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset, tabsInSession } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
@@ -109,6 +109,25 @@ test("a Doc is a block beside the pane, with its title for a name", async ({ pag
   await expect
     .poll(() => page.evaluate((d) => window.__arugula.client.state!.panes.find((p) => p.id === d)?.type, doc))
     .toBe("doc");
+});
+
+test("the column widens with the pane's width, not the window's (Arugula #783)", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  const made = await post(page)("/api/blocks", { type: "doc", config: { title: "Notes" }, split: term, local: true });
+  await expect(page.locator(`[data-doc-block="${made.block!}"] .doc-page`)).toBeVisible();
+  // The pane keeps its width as the window grows, so the test sets the pane's
+  // own: 456px is what it is, 1200px a wide one, and 1600px a wider.
+  const at = async (width: number) => {
+    await page.evaluate(
+      ([d, w]) => document.querySelector<HTMLElement>(`[data-doc-block="${d}"]`)!.closest<HTMLElement>("[data-pane]")!.style.setProperty("width", `${w}px`, "important"),
+      [made.block!, width] as const,
+    );
+    return measure(page, `[data-doc-block="${made.block!}"]`);
+  };
+  expect(await at(456)).toBe(68);
+  expect(await at(1200)).toBe(88);
+  expect(await at(1600)).toBe(100);
 });
 
 test.describe("on a Pixel 7", () => {
