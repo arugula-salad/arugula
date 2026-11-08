@@ -10,6 +10,7 @@
 // editors, studio apps) keep their keys: the chord works once focus is
 // back on the page.
 
+import { openPlatform, platformOrigin } from "../platform-links";
 import { openSettings } from "./settings-route";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
@@ -368,6 +369,8 @@ function places(client: Client, phone: boolean): Command[] {
   }
   if (!client.state?.roles) go("docs", "Go to Docs", openDocsPage);
   if (!phone) go("settings", "Go to Settings", () => openSettings());
+  // The design reference (#693) is on the platform page, so only where there is one.
+  if (platformOrigin()) go("design", "Go to Design reference", () => openPlatform("/design"), "every shared piece of the UI");
   return out;
 }
 
