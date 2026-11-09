@@ -285,15 +285,11 @@ export function IssueView({
         sub={
           <div class="issue-meta">
             <StateTag i={issue} />
-            <span>
-              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this <Time at={issue.created_at} long />
-              {issue.state === "closed" && issue.closed_at ? (
-                <>
-                  {" "}
-                  · closed <Time at={issue.closed_at} long />
-                </>
-              ) : null}
-            </span>
+            {issue.state === "closed" && issue.closed_at ? (
+              <span>
+                closed <Time at={issue.closed_at} long />
+              </span>
+            ) : null}
             {issue.agent && isCi(issue.agent) ? (
               <Chip kind="tag" title="Opened by CI from its signed events, not by a person or an agent" data-issue-ci>
                 CI
@@ -365,14 +361,12 @@ export function IssueView({
                 <div class="issue-text">
                   <Markdown text={issue.body} refs={null} />
                 </div>
-              ) : (
-                <p class="dim">No description.</p>
-              )}
+              ) : null}
             </div>
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet.", why: "Everyone in the project reads them. Write @name to notify someone." }} />
+              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet" }} />
             ) : (
               <>
                 {between.map((b) => (
@@ -509,9 +503,7 @@ function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIs
             <LabelChip key={l} label={l} />
           ))}
         </div>
-      ) : (
-        <p class="dim">None</p>
-      )}
+      ) : null}
     </section>
   );
 }

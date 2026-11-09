@@ -98,7 +98,7 @@ test("a signed red opens an issue by chant CI, and a signed green closes it", as
   await expect(view.locator("[data-issue-title]")).toHaveText(`main is red at ${RED.slice(0, 12)}`);
   await expect(view.locator("[data-issue-state]")).toHaveText("Open");
   await expect(view.locator("[data-issue-ci]")).toHaveText("CI");
-  await expect(view.locator(".issue-who").first()).toHaveText("chant CI");
+  await expect(view.locator("[data-issue-body] .thread-name")).toHaveText("chant CI");
   await expect(view.locator("[data-issue-body]")).toContainText("Phase test: test-2 (failure)");
 
   // Green: a comment by chant CI, and closed.
