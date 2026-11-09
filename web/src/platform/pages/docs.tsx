@@ -87,7 +87,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
             </a>
             <span class="dim project-doc-row">
               {" "}
-              {d.written} of {d.sections} written · {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
+              {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
             </span>
           </Card>
         );
