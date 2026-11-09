@@ -1055,6 +1055,32 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 0 8px;
 }
 
+/* #815: where a swipe lands. Each dot is a fixed size, so the row never
+   shifts as the active one moves. */
+.pane-pos {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.pane-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.pane-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  opacity: 0.4;
+}
+
+.pane-dots i.on {
+  opacity: 1;
+  background: var(--fg);
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
