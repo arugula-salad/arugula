@@ -57,12 +57,9 @@ export function ProjectHome({ id }: { id: string }) {
         title={p.name}
         named
         sub={
-          <>
-            <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
-              Project settings
-            </a>
-            <span> · linked repos, environments</span>
-          </>
+          <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
+            Project settings
+          </a>
         }
       />
       {/* A project of one has no members beside it: its lists take the
@@ -243,8 +240,8 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
 
 /** What a linked repo is for, in one sentence (here and in the settings). */
 export const REPOS_MEAN = "A linked GitHub repo brings its pull requests and issues into the project, and its pushes and events can start runs.";
-/** What an environment is for, in one sentence (here and in the settings). */
-export const ENVIRONMENTS_MEAN = "An environment is where the project deploys to (production, staging): the driver that applies a deploy, its settings and its secrets.";
+/** What an environment is for, in one line (here and in the settings). */
+export const ENVIRONMENTS_MEAN = "Where the project deploys: production, staging.";
 
 /** The project's last three runs (UI audit #162), so its home covers each
  * of the bar's places: rows, as its rooms and issues are, each with its
@@ -325,13 +322,13 @@ function Members({ p }: { p: PlatformProject }) {
           </li>
         ))}
       </ul>
-      <p class="dim">
-        Team {t.name}. {t.role === "owner" ? "Add people, change roles and take people out" : "See who's in it"} on{" "}
-        <a href={controlOrigin()} data-manage-team>
-          your machines page
-        </a>
-        , under your account's Teams: a change to the team is signed by one of your devices there.
-      </p>
+      {t.role === "owner" && (
+        <p>
+          <a href={controlOrigin()} data-manage-team>
+            Manage team
+          </a>
+        </p>
+      )}
     </aside>
   );
 }
