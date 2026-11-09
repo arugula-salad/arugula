@@ -187,7 +187,7 @@ esac
 RELEASE
 cat >"$tmp/gh" <<'GH'
 #!/usr/bin/env bash
-echo "${FAKE_GOING:-0}"
+echo "${FAKE_GOING:-0} ${FAKE_STARTED:-}"
 GH
 mkdir "$tmp/bin"
 mv "$tmp/gh" "$tmp/bin/gh"
@@ -209,6 +209,10 @@ train "off by default: stays" 0 0 "isn't on"
 export ARUGULA_RELEASE_TRAIN=on
 FAKE_GOING=1 train "a release going: stays" 0 0 "already going"
 FAKE_GREEN='' train "nothing green: stays" 0 0 "no commit has"
+recent=$(node -e 'console.log(new Date(Date.now() - 30 * 60000).toISOString())')
+FAKE_STARTED=$recent train "a release 30m ago: waits for the gap" 0 0 "waits for 120m"
+FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=20 FAKE_GREEN='' train "past a shorter gap: goes on" 0 0 "no commit has"
+FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=0 FAKE_GREEN='' train "a manual run: no gap" 0 0 "no commit has"
 git tag -f v1.2.9 "$main" >/dev/null
 git push -q -f origin --tags
 train "already released: stays" 0 0 "nothing new"
