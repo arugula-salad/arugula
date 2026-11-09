@@ -1,0 +1,85 @@
+{
+  "env": {
+    "ARUGULA_CONTROL_APPLE_TEAM_ID": "HNDPMQPF22",
+    "ARUGULA_CONTROL_BLOCK_DOMAIN": "arugula.run",
+    "ARUGULA_CONTROL_DB": "/data/control.db",
+    "ARUGULA_CONTROL_LISTEN": "0.0.0.0:7690",
+    "ARUGULA_CONTROL_PROXY_HEADER": "Fly-Client-IP",
+    "ARUGULA_CONTROL_URL": "https://control.arugula.io",
+    "ARUGULA_PREVIEW_DOMAIN": "arugula.site",
+    "ARUGULA_RELAY_MAX_TOTAL": "5000",
+    "FLY_PROCESS_GROUP": "app",
+    "OTEL_RESOURCE_ATTRIBUTES": "chant.workspace=arugula,chant.member=ops,chant.decl=control,service.version=sha256%3Ad931ca1d1ba064a669866b70f284d784ac97f0da82a9eca387e4278859b474fb,vcs.ref.head.revision=98240c6f8cb1a713a1d17db4b0329fd202cf6c7d",
+    "OTEL_SERVICE_NAME": "illogical-control",
+    "PRIMARY_REGION": "ewr",
+    "APP_REVISION": "98240c6f8cb1a713a1d17db4b0329fd202cf6c7d"
+  },
+  "guest": {
+    "cpu_kind": "shared",
+    "cpus": 1,
+    "memory_mb": 1024
+  },
+  "image": "registry.fly.io/illogical-control@sha256:d931ca1d1ba064a669866b70f284d784ac97f0da82a9eca387e4278859b474fb",
+  "metadata": {
+    "fly_process_group": "app",
+    "managed-by": "chant",
+    "chant-release-digest": "sha256:d931ca1d1ba064a669866b70f284d784ac97f0da82a9eca387e4278859b474fb",
+    "chant-release-git-sha": "98240c6f8cb1a713a1d17db4b0329fd202cf6c7d",
+    "chant-release-previous-digest": "sha256:163ed11e04f1f5ca71755dd2c93b4c0a4ec4f6ae0a77b4b5a7b6f169dcc3dd84"
+  },
+  "mounts": [
+    {
+      "name": "control_data",
+      "path": "/data",
+      "volume": "control_data"
+    }
+  ],
+  "restart": {
+    "max_retries": 10,
+    "policy": "on-failure"
+  },
+  "services": [
+    {
+      "autostart": true,
+      "autostop": false,
+      "checks": [
+        {
+          "grace_period": "10s",
+          "interval": "30s",
+          "method": "GET",
+          "path": "/control.json",
+          "timeout": "5s",
+          "type": "http"
+        }
+      ],
+      "concurrency": {
+        "hard_limit": 8000,
+        "soft_limit": 6000,
+        "type": "connections"
+      },
+      "internal_port": 7690,
+      "min_machines_running": 1,
+      "ports": [
+        {
+          "force_https": true,
+          "handlers": [
+            "http"
+          ],
+          "port": 80
+        },
+        {
+          "handlers": [
+            "http",
+            "tls"
+          ],
+          "port": 443
+        }
+      ],
+      "protocol": "tcp"
+    }
+  ],
+  "stop_config": {
+    "signal": "SIGTERM",
+    "timeout": "15s"
+  }
+}
