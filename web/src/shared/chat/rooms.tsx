@@ -545,7 +545,7 @@ function RoomMissing({ pinned }: { pinned?: boolean }) {
 function topicOf(r: ChatRoom, api: PlatformApi): string {
   switch (r.kind) {
     case "channel":
-      return [r.private ? "private" : "", r.topic, teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
+      return [r.private ? "private" : "", r.topic, r.archived ? "archived" : ""].filter(Boolean).join(" · ");
     case "dm":
       return `${r.others.length > 1 ? "Group message" : "Direct message"} · ${teamName(api, r.team)}`;
     case "pane":

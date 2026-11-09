@@ -103,7 +103,6 @@ function Detail({ a }: { a: ChatThreadAgent }) {
           </button>
         </p>
       )}
-      <p>Arugula shows its state, and its work item and tool name if its owner shares them. Never its output, tool arguments or paths.</p>
     </div>
   );
 }
@@ -115,7 +114,6 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
   const key = (a: ChatThreadAgent) => `${a.id}/${a.name}`;
   const shown = agents.find((a) => key(a) === open);
   const toggle = (a: ChatThreadAgent) => setOpen(open === key(a) ? null : key(a));
-  const where = (a: ChatThreadAgent) => `${a.hosted ? "hosted" : `${a.owner_name || "a teammate"}'s`} · ${a.machine_name}`;
   if (agents.length === 1) {
     const a = agents[0];
     const line = readLine(a, newest);
@@ -150,7 +148,6 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
                   {a.lead && <span class="thread-agent-lead">LEAD</span>}
                   <span class="thread-agent-state">{STATE[a.state]}</span>
                 </div>
-                <div class="thread-agent-where">{where(a)}</div>
                 <Now a={a} />
                 {line && <div class={a.waiting ? "thread-agent-read waits" : "thread-agent-read"}>{line}</div>}
               </button>

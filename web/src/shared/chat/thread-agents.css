@@ -2,7 +2,7 @@
    several, in the session card's look. Each channel says one fact:
 
    bar, border, state word  what it's doing
-   name, where              which session, whose, on which machine
+   name                     which session
    mono line                its work item and last tool, when its owner shares them
    last line                what's waiting for it, or that it has read everything
 
@@ -94,7 +94,6 @@
   text-transform: uppercase;
 }
 
-.thread-agent-where,
 .thread-agent-now {
   color: var(--dim);
   font: 500 var(--text-sm)/1.5 var(--f-mono);
