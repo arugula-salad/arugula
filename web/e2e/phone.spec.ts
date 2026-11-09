@@ -35,10 +35,10 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
 
   // Ctrl from the key bar, then "c", interrupts a running command.
   await type(page, shown, "sleep 100\n");
-  await page.getByRole("button", { name: "Control" }).click();
-  await expect(page.getByRole("button", { name: "Control" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Ctrl" }).click();
+  await expect(page.getByRole("button", { name: "Ctrl" })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.type("c");
-  await expect(page.getByRole("button", { name: "Control" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Ctrl" })).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.type("echo back-$((8+1))\n");
   await expect.poll(() => text(page, shown)).toContain("back-9");
   // Drawn on screen, not just in the terminal's buffer.

@@ -470,9 +470,9 @@ function AccountSection({ close }: { close: () => void }) {
 }
 
 const KEYS: { label: string; text?: string; icon?: ComponentChildren; bytes?: string; app?: string; mod?: "ctrl" | "alt" }[] = [
-  { label: "Escape", text: "Esc", bytes: "\x1b" },
+  { label: "Esc", text: "Esc", bytes: "\x1b" },
   { label: "Tab", text: "Tab", bytes: "\t" },
-  { label: "Control", text: "Ctrl", mod: "ctrl" },
+  { label: "Ctrl", text: "Ctrl", mod: "ctrl" },
   { label: "Alt", text: "Alt", mod: "alt" },
   { label: "Left", icon: <ArrowIcon dir="left" size="lg" />, bytes: "\x1b[D", app: "\x1bOD" },
   { label: "Up", icon: <ArrowIcon dir="up" size="lg" />, bytes: "\x1b[A", app: "\x1bOA" },
@@ -494,7 +494,9 @@ export function KeyBar({ client }: { client: Client }) {
         return (
           <button
             key={k.label}
-            aria-label={k.label}
+            // A word key is named by its word (a label that differs fails axe's
+            // label-content-name-mismatch); a drawn one by its label.
+            aria-label={k.icon ? k.label : undefined}
             class={on ? "key on" : "key"}
             aria-pressed={k.mod ? on : undefined}
             // Keep focus (and the on-screen keyboard) on the terminal.
