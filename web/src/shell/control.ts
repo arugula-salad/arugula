@@ -2530,6 +2530,15 @@ export class ControlSession {
     await this.refresh();
   }
 
+  /** Rename a machine (Arugula #500): its owner's, or its team's owners'.
+   * Only the display name changes, and `@old` keeps reaching it. Control
+   * refuses a name another of the owner's (or the team's) machines has. */
+  async renameDaemon(daemon: string, name: string): Promise<string> {
+    const r = await api<{ name: string }>(`/api/daemons/${daemon}/name`, { name });
+    await this.refresh();
+    return r.name;
+  }
+
   /** Turn a daemon's join down: it stops waiting. */
   /** M48: a desktop app asking to sign in as this account (`#app=`):
    * where it asked from, and whether that's this browser's network. An

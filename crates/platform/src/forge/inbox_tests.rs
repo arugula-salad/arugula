@@ -364,3 +364,69 @@ async fn your_own_issue_given_to_you() {
     inbox::recompute(&app, 88, &[2], false).await.unwrap();
     assert_eq!(rows(&app), ["alice fi_a2 mentioned", "bob fi_a2 assigned"]);
 }
+
+/// A GitHub hiccup while asking whether bob may read the repo (its 502)
+/// isn't a no: his entry stays, seen and done, gets no push, and isn't
+/// kept as an answer, so the next recompute asks again. A clear no takes
+/// it.
+#[tokio::test]
+async fn a_hiccup_keeps_what_was_seen_and_done() {
+    let (hub, gh, app, _) = setup().await;
+    exec(&app, "UPDATE forge_items SET reviewers = '[\"bob-gh\"]', updated_at = ?1", params![now_ms()]);
+    inbox::recompute(&app, 77, &[1], false).await.unwrap();
+    assert_eq!(rows(&app), ["bob fi_a1 review_requested"]);
+    exec(&app, "UPDATE inbox_items SET seen_at = 5, done_at = 6", params![]);
+    let marks = |app: &Platform| -> (Option<u64>, Option<u64>) {
+        app.db
+            .c()
+            .query_row("SELECT seen_at, done_at FROM inbox_items", params![], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+    };
+
+    gh.lock().unwrap().permission_fails = Some(502);
+    app.db.drop_access(AccessScope::Person, "1002").unwrap();
+    let asked = gh.lock().unwrap().asked;
+    inbox::recompute(&app, 77, &[1], false).await.unwrap();
+    assert_eq!(rows(&app), ["bob fi_a1 review_requested"], "kept through the hiccup");
+    assert_eq!(marks(&app), (Some(5), Some(6)));
+    inbox::recompute(&app, 77, &[1], false).await.unwrap();
+    assert!(gh.lock().unwrap().asked >= asked + 2, "an unclear answer isn't kept");
+    assert_eq!(hub.pushes().len(), 1, "no push again");
+
+    gh.lock().unwrap().permission_fails = None;
+    gh.lock().unwrap().roles.remove(&("acme/app".to_owned(), "bob-gh".to_owned()));
+    inbox::recompute(&app, 77, &[1], false).await.unwrap();
+    assert!(rows(&app).is_empty(), "a clear no takes it: {:?}", rows(&app));
+}
+
+/// Each way GitHub fails to answer whether bob may read a repo (its
+/// installation lookup or the token's mint failing, a 403 or 429 on his
+/// permission, a garbled 200) is unsure, never a clear no; GitHub's 404 for
+/// him is one.
+#[tokio::test]
+async fn githubs_failures_are_unsure_not_no() {
+    let (_hub, gh, app, _) = setup().await;
+    gh.lock().unwrap().installed.insert("acme/fresh".into(), (9, 500, "acme".into()));
+    let bob = GithubUser { id: 1002, login: "bob-gh".into() };
+    let ask = || async {
+        let caller = crate::forge::Caller::of(&app, "bob");
+        app.github.as_ref().unwrap().may_said(&caller, &bob, "acme/fresh").await.unwrap_err()
+    };
+    type Set = fn(&mut super::links_tests::Gh);
+    let fails: [(&str, Set); 5] = [
+        ("installation lookup", |g| g.installation_fails = Some(500)),
+        ("token mint", |g| g.mint_fails = Some(500)),
+        ("403", |g| g.permission_fails = Some(403)),
+        ("429", |g| g.permission_fails = Some(429)),
+        ("garbled 200", |g| g.permission_garbled = true),
+    ];
+    for (what, set) in fails {
+        set(&mut gh.lock().unwrap());
+        let r = ask().await;
+        assert!(!r.clear, "{what}: {r:?}");
+        let mut g = gh.lock().unwrap();
+        (g.installation_fails, g.mint_fails, g.permission_fails, g.permission_garbled) = (None, None, None, false);
+    }
+    let r = ask().await;
+    assert!(r.clear, "not a collaborator: {r:?}");
+}

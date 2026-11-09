@@ -1,0 +1,154 @@
+//! Links between a project's items, from agents (Arugula #761): `link` says
+//! which work comes before which (or blocks, relates to, duplicates or was
+//! found from another), and takes a link off.
+//!
+//! - **Through the owner's grants.** One machine-signed route on the
+//!   platform (`/api/daemon/projects/{project}/relations/batch`), which asks
+//!   this machine's `issues.write` grant over the project and never goes
+//!   past its owner's role. No board is needed: the platform resolves
+//!   `#N`, `owner/repo#N`, `IDENT-N` and `iss_`/`fi_` ids itself.
+//! - **Each link on its own.** One that is refused (a cycle, an item that
+//!   isn't the project's, a link a person made) leaves the rest to land.
+//! - **Which project** is the issues' rule: `project`, else the one this
+//!   clone's GitHub repo is linked to, else the owner's personal project.
+
+use arugula_control_wire::boards::{
+    LINKS_MAX, LinkBatch, LinkEnds, LinkOutcome, LinksDone, RelationKind, agent_project_relations_batch,
+};
+use reqwest::Method;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::Value;
+
+use crate::mcp::tools::{Call, Out, done};
+
+pub(crate) const TOOL: &str = "link";
+
+pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LinkArgs {
+    /// Links to add.
+    #[serde(default)]
+    pub add: Vec<LinkArg>,
+    /// Links to take off: the same from, to and kind as when added.
+    #[serde(default)]
+    pub remove: Vec<LinkArg>,
+    /// The project's id (prj_…) or personal. Default: the current project.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LinkArg {
+    /// The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
+    pub from: String,
+    /// The second item, written the same way. `from` is `kind` it.
+    pub to: String,
+    /// before (from comes first), blocks (from must be closed before to can
+    /// start), relates, duplicate_of or discovered_from. Default before.
+    #[serde(default)]
+    pub kind: LinkKind,
+}
+
+#[derive(Deserialize, JsonSchema, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    #[default]
+    Before,
+    Blocks,
+    Relates,
+    DuplicateOf,
+    DiscoveredFrom,
+}
+
+impl From<LinkKind> for RelationKind {
+    fn from(k: LinkKind) -> Self {
+        match k {
+            LinkKind::Before => RelationKind::Before,
+            LinkKind::Blocks => RelationKind::Blocks,
+            LinkKind::Relates => RelationKind::Relates,
+            LinkKind::DuplicateOf => RelationKind::DuplicateOf,
+            LinkKind::DiscoveredFrom => RelationKind::DiscoveredFrom,
+        }
+    }
+}
+
+fn ends(l: LinkArg) -> LinkEnds {
+    LinkEnds { from: l.from, to: l.to, kind: l.kind.into() }
+}
+
+/// `link`.
+pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
+    c.owners_own(TOOL).await?;
+    let n = a.add.len() + a.remove.len();
+    if n == 0 {
+        return Err("link needs add or remove".into());
+    }
+    if n > LINKS_MAX {
+        return Err(format!("at most {LINKS_MAX} links in one call; you gave {n}"));
+    }
+    let chosen = c.chosen_project(a.project.as_deref()).await?;
+    let words = |l: &LinkArg| {
+        format!("{} {} {}", l.from.trim(), RelationKind::from(l.kind).as_str().replace('_', " "), l.to.trim())
+    };
+    let said: Vec<String> = a.add.iter().chain(&a.remove).map(words).collect();
+    let batch =
+        LinkBatch { add: a.add.into_iter().map(ends).collect(), remove: a.remove.into_iter().map(ends).collect() };
+    let body = serde_json::to_value(batch).map_err(|e| e.to_string())?;
+    let v = c.issues_call(Method::POST, &agent_project_relations_batch(&chosen.id), Some(body)).await?;
+    let got: LinksDone =
+        serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
+    Ok(answer(&said, &got))
+}
+
+/// One line for each link, then the count.
+fn answer(said: &[String], got: &LinksDone) -> Value {
+    let mut lines = vec![];
+    let mut count = std::collections::BTreeMap::<&str, usize>::new();
+    for (words, r) in said.iter().zip(got.add.iter().chain(&got.remove)) {
+        let what = match r.outcome {
+            LinkOutcome::Added => "added",
+            LinkOutcome::AlreadyThere => "already there",
+            LinkOutcome::Removed => "removed",
+            LinkOutcome::NotThere => "not there",
+            LinkOutcome::Refused => "refused",
+        };
+        *count.entry(what).or_default() += 1;
+        lines.push(match &r.why {
+            Some(why) => format!("{what}: {words} ({why})"),
+            None => format!("{what}: {words}"),
+        });
+    }
+    let total = count.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(", ");
+    lines.push(format!("{} link(s): {total}.", said.len()));
+    done(lines.join("\n"), got).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arugula_control_wire::boards::LinkResult;
+
+    /// A link with no kind is `before`; the answer is a line for each, then the count.
+    #[test]
+    fn link_defaults_to_before_and_answers_a_line_each() {
+        let a: LinkArgs = serde_json::from_value(serde_json::json!({
+            "add": [{ "from": "#1", "to": "#2" }, { "from": "#2", "to": "#1" }],
+            "remove": [{ "from": "#3", "to": "#4", "kind": "blocks" }]
+        }))
+        .unwrap();
+        assert!(matches!(a.add[0].kind, LinkKind::Before) && matches!(a.remove[0].kind, LinkKind::Blocks));
+        let r = |outcome, why: Option<&str>| LinkResult { outcome, why: why.map(Into::into) };
+        let got = LinksDone {
+            add: vec![r(LinkOutcome::Added, None), r(LinkOutcome::Refused, Some("that would make a cycle"))],
+            remove: vec![r(LinkOutcome::NotThere, None)],
+        };
+        let said = ["#1 before #2".to_owned(), "#2 before #1".to_owned(), "#3 blocks #4".to_owned()];
+        let v = answer(&said, &got);
+        assert_eq!(
+            v["summary"],
+            "added: #1 before #2\nrefused: #2 before #1 (that would make a cycle)\nnot there: #3 blocks #4\n3 link(s): 1 added, 1 not there, 1 refused."
+        );
+    }
+}

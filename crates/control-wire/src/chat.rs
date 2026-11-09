@@ -213,6 +213,13 @@ pub struct ChatRoomAgent {
     /// the room's detail fills it.
     #[serde(default)]
     pub sessions: Vec<String>,
+    /// The handles its machine went by before it was renamed (#500): `@old`
+    /// still reaches it, unless another machine here is called that now.
+    /// Never sent: control resolves a mention with it, and the picker lists
+    /// the current name alone.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub aliases: Vec<String>,
 }
 
 /// The agent that wrote a message (M197): the machine whose grant it acted
@@ -466,6 +473,10 @@ pub struct ChatReaction {
     pub emoji: String,
     /// All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
     pub count: u32,
+    /// How many of `count` are agents' (#632); the rest are people's. An
+    /// older control leaves it out, and it reads as none.
+    #[serde(default)]
+    pub agents: u32,
     /// The reader has: a person's own reaction, or for an agent reading,
     /// its own (never the owner's, nor the agent's for the owner).
     pub mine: bool,
@@ -1027,9 +1038,14 @@ pub struct ChatThreadAgents {
 #[serde(rename_all = "snake_case")]
 pub enum ChatThreadAgentState {
     Working,
+    /// Between turns, ready for the next prompt.
     Idle,
     NeedsYou,
     Offline,
+    /// A hosted session that failed.
+    Failed,
+    /// A hosted session that was stopped.
+    Stopped,
     /// Its machine answered without saying: an older daemon, a session it
     /// doesn't show, or one that has ended.
     Unknown,
@@ -1514,13 +1530,40 @@ fn shown() -> bool {
 }
 
 /// What a daemon says of a thread's readers: for each pane or session it
-/// names, the whole list, which replaces the last one control had. Those it
-/// doesn't name keep theirs (a pane that closed keeps its readers).
+/// names, the whole list, which replaces the last one control had.
+///
+/// `held`, on the last post of a send: every pane and session the machine
+/// still has a list for (open, or closed and still remembered, read by
+/// those who read it when it closed and still may). Control empties the list
+/// of every other target it has for the machine, so only the machine's
+/// owner reads those threads. Without it (older daemons) the targets not
+/// named keep their lists.
+///
+/// `seq`: the post's place in the machine's order, higher for each post it
+/// makes. Control ignores what a post says of a target whose list came in
+/// a post with a higher one, so a post that arrives late can't undo a newer
+/// one. Without it (older daemons) every post counts as it comes. At most
+/// `i64::MAX`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReaders {
     #[serde(default)]
     pub targets: Vec<ChatReaderList>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<ChatTargetsHeld>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+/// The panes and sessions a machine has reader lists for, by id: see
+/// [`ChatReaders`]. At most [`MAX_HELD`] of each.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ChatTargetsHeld {
+    #[serde(default)]
+    pub panes: Vec<String>,
+    #[serde(default)]
+    pub sessions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1546,11 +1589,17 @@ pub struct ChatReader {
     pub watching: bool,
 }
 
-/// How many lists control kept.
+/// How many lists control was sent, and the highest post number it holds
+/// for the machine ([`ChatReaders::seq`]). Higher than the post's own: some
+/// of what it said was ignored as older, so the machine numbers its posts
+/// above this and sends every list again (its clock went back). Older
+/// controls leave it out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 /// A daemon says how far the session got with a mention it delivered
@@ -1602,6 +1651,8 @@ pub struct PutMentionState {
 /// The most lists in one [`ChatReaders`], and readers in one list.
 pub const MAX_READER_TARGETS: usize = 500;
 pub const MAX_READERS: usize = 500;
+/// The most panes, and sessions, in one [`ChatTargetsHeld`].
+pub const MAX_HELD: usize = 20_000;
 
 // ---------------------------------------------------------------- agents
 
@@ -1712,7 +1763,7 @@ pub struct AgentReach {
 }
 
 /// The sessions of a machine in a room that an agent may mention (`GET`,
-/// [`AgentSessionsQuery`], answered [`AgentMachineSessions`], #577).
+/// [`MachineAgentsQuery`], answered [`MachineAgents`], #577).
 /// `machine` is its name as in `@machine`. Refused unless the asking
 /// machine reads `room` and `machine` hears it.
 pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
@@ -1728,7 +1779,7 @@ pub fn agent_thread_agents(room: &str, seq: i64) -> String {
 /// [`agent_machine_sessions`]' query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentSessionsQuery {
+pub struct MachineAgentsQuery {
     /// The asking session's name, so a machine asked about itself leaves it
     /// out (#575).
     #[serde(default)]
@@ -1738,7 +1789,7 @@ pub struct AgentSessionsQuery {
 /// A machine's sessions an agent may mention in a room (#577).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentMachineSessions {
+pub struct MachineAgents {
     pub machine_name: String,
     /// The machine isn't on control's relay now, or didn't answer.
     #[serde(default)]
@@ -1746,7 +1797,7 @@ pub struct AgentMachineSessions {
     /// False when its owner shows no session names.
     pub shared: bool,
     /// Newest active first, at most 20.
-    pub sessions: Vec<crate::forge::MachineSession>,
+    pub sessions: Vec<crate::forge::MachineAgent>,
 }
 
 /// The replies to this machine's agents' posts that no session has read yet

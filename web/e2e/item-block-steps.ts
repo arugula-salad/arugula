@@ -77,7 +77,7 @@ export function itemBlockSpecs(tag: string) {
     expect(text).toBe(bg);
     const facts = b.locator("[data-item-facts]");
     await expect(facts.locator("[data-item-fact='branch']")).toHaveText("land/rail-and-ux → main");
-    await expect(facts.locator("[data-item-fact='checks']")).toHaveText(/✓ 29\s*● 1\s*✕ 1/);
+    await expect(facts.locator("[data-item-fact='checks']")).toHaveText(/29\s*● 1\s*1/);
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='jake']")).toHaveAttribute("title", "jake approved");
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='alec']")).toHaveAttribute("data-ring", "asked");
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='jake']")).not.toHaveAttribute("data-ring", /.*/);

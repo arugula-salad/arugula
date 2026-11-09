@@ -60,6 +60,8 @@ mod chat_files_tests;
 #[cfg(test)]
 mod chat_grant_ask_tests;
 #[cfg(test)]
+mod chat_machine_rename_tests;
+#[cfg(test)]
 mod chat_mention_redeliver_tests;
 #[cfg(test)]
 mod chat_mention_status_tests;
@@ -81,6 +83,8 @@ mod chat_tests;
 mod chat_threads_tests;
 #[cfg(test)]
 mod chat_wants_tests;
+#[cfg(test)]
+mod ci_alerts_tests;
 #[cfg(test)]
 mod forge_mentions_tests;
 #[cfg(test)]
@@ -319,7 +323,7 @@ impl features::Chat for Hooks {
     fn after_rebuild<'a>(
         &'a self,
         app: &'a Platform,
-        s: &'a db::sessions::Session,
+        s: &'a db::sessions::AgentSession,
     ) -> BoxFuture<'a, anyhow::Result<features::Rebuilt>> {
         Box::pin(sessions::hydrate::after_rebuild(app, s))
     }
@@ -371,6 +375,17 @@ impl features::Chat for Hooks {
         text: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<i64>> {
         Box::pin(async move { chat::github_comment(app, issue, login, text) })
+    }
+
+    fn ci_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        via: &'a str,
+        text: &'a str,
+        mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async move { chat::ci_comment(app, issue, via, text, mark) })
     }
 
     fn grant_notice<'a>(

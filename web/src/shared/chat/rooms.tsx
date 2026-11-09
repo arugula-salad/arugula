@@ -9,6 +9,7 @@
 // Routes: `#chat` (the newest unread room, or the newest), `#chat=<room>`
 // and `#chat=<room>&msg=<n>`, `#chat=activity`, `#chat=search/<words>`.
 
+import { EmptyState } from "../ui/block-states";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
 import { bold, counted, listedInChat } from "./unread";
@@ -16,6 +17,7 @@ import { bellFor, openBell } from "./bell";
 import { loadNotify, subscribeNotify } from "./notify";
 import type { ChatRoom } from "../proto";
 import { MaintenanceNote } from "../ui/maintenance-note";
+import { Modal } from "../ui/modal";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
@@ -23,20 +25,30 @@ import { SavedView } from "./saved";
 import { RoomActivityView, RoomSearchView, SearchField } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
-import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
+import { AboutButton, editDescription, editTopic, PinsButton, pinsItem, TopicLine } from "./pins-ui";
 import { ThreadPanel } from "./thread-panel";
 import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
 import { browseChannels, ChatDialogs, LeaveButton, leaveItem, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
-import { handled } from "./escape";
 import { AgentsChip } from "./agents-chip";
-import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
+import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
-import { BookmarkIcon, SearchIcon } from "./icons";
+import { BookmarkIcon, ChevronIcon, CloseIcon, IconButton, MoreIcon, SearchIcon, ThreadIcon } from "../ui/icons";
 import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
+import { Count } from "../ui/state-chip";
+import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
+
+/** The room head's width under which each of its folds goes into ⋯, in the
+ * order they go: Go to pane, Members, pins, star, bell. Measured: with a
+ * name of about 110px, and Details, the room's ⋯ and the agents chip's
+ * place in the row, Go to pane (84px) needs 480px, Members (63) 420, pins
+ * (42) 350, the star (24) 300 and the bell 270. A longer name or a topic
+ * takes room from these: the name shrinks to its ellipsis, and `Bar` folds
+ * one more while the row still overflows. */
+const ROOM_FOLD = [480, 420, 350, 300, 270];
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -279,7 +291,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             🌙
           </span>
         )}
-        {n > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.mentions ? `@${n}` : n}</span>}
+        {n > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.mentions ? `@${n}` : n}</Count>}
       </a>
     );
   };
@@ -290,24 +302,26 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         <button class={`chat-row chat-activity${route.view === "activity" ? " selected" : ""}${mentions ? " unread" : ""}`} data-chat-activity onClick={() => nav.openChatView("activity")}>
           <span class="chat-sigil">@</span>
           <span class="chat-label">Activity</span>
-          {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
+          {mentions > 0 && <Count for="mention" class="count-after">{mentions}</Count>}
         </button>
         <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
           {/* A bookmark: ★ is Starred's (UI audit #169). */}
           <span class="chat-sigil">
-            <BookmarkIcon size={12} />
+            <BookmarkIcon size="xs" />
           </span>
           <span class="chat-label">Saved</span>
-          {savedTodo > 0 && <span class="chat-count">{savedTodo}</span>}
+          {savedTodo > 0 && <Count class="count-after">{savedTodo}</Count>}
         </button>
         <button
           class={`chat-row chat-activity${route.view === "threads" ? " selected" : ""}${store.threadsUnread.n ? " unread" : ""}`}
           data-chat-threads
           onClick={() => nav.openChatView("threads")}
         >
-          <span class="chat-sigil">↩</span>
+          <span class="chat-sigil">
+            <ThreadIcon size="sm" />
+          </span>
           <span class="chat-label">Threads</span>
-          {store.threadsUnread.n > 0 && <span class={store.threadsUnread.mentions ? "chat-count mention" : "chat-count"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</span>}
+          {store.threadsUnread.n > 0 && <Count for={store.threadsUnread.mentions ? "mention" : "you"} class="count-after">{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</Count>}
         </button>
       </div>
       {groups.length === 0 && (
@@ -336,28 +350,28 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             <h2 class="chat-section chat-channels-head">
               <button aria-expanded={!shut} onClick={() => toggle(g.key)} title={shut ? "Show them" : "Hide them"}>
                 <span class="chat-caret" aria-hidden="true">
-                  {shut ? "▸" : "▾"}
+                  <ChevronIcon open={!shut} />
                 </span>
                 {g.title}
-                {shut && unread > 0 && <span class="chat-count">{unread}</span>}
+                {shut && unread > 0 && <Count for="you" class="count-after">{unread}</Count>}
               </button>
               {g.browse && (
                 <button class="chat-new" title="Browse channels" aria-label="Browse channels" data-room-browse={g.key} onClick={g.browse}>
-                  <SearchIcon size={13} />
+                  <SearchIcon size="xs" />
                 </button>
               )}
-              <button
-                class="chat-new chat-group-menu"
+              <IconButton
+                label={`Options for ${g.title}`}
                 title={`Sort${g.custom ? ", rename" : ""}`}
-                aria-label={`Options for ${g.title}`}
+                class="chat-new chat-group-menu"
                 data-group-menu={g.key}
                 onClick={(e) => {
                   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   openGroupMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, store, { key: g.key, custom: !!g.custom, title: g.title, fallback: g.sort }, api.toast);
                 }}
               >
-                ⋯
-              </button>
+                <MoreIcon size="sm" />
+              </IconButton>
               {g.make && (
                 <button class="chat-new" title={g.make.aria} aria-label={g.make.aria} data-room-new={g.key} onClick={g.make.run}>
                   {g.make.label}
@@ -423,19 +437,24 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         <MaintenanceNote />
         {view ?? (
           <>
-            <header class="chat-head">
-              {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
-              <strong>{scope?.name ?? "Chat"}</strong>
-              <button class="chat-search-open" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
-                <SearchIcon size={17} />
-              </button>
-              <button class="chat-search-open" title="Mark all as read, sections, unread only" aria-label="Chat options" data-chat-options onClick={workspaceMenu}>
-                ⋯
-              </button>
-              <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-                ✕
-              </button>
-            </header>
+            {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
+            <HeadBar
+              class="chat-head"
+              title={<BarTitle class="chat-title">{scope?.name ?? "Chat"}</BarTitle>}
+              actions={
+                <>
+                  <button class="chat-search-open bar-btn sq" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
+                    <SearchIcon size="md" />
+                  </button>
+                  <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-search-open bar-btn sq" data-chat-options onClick={workspaceMenu}>
+                    <MoreIcon size="sm" />
+                  </IconButton>
+                  <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
+                    <CloseIcon size="sm" />
+                  </IconButton>
+                </>
+              }
+            />
             {list}
           </>
         )}
@@ -473,20 +492,26 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
         <aside class="chat-side">
-          <header class="chat-side-head" onContextMenu={workspaceMenu}>
-            <strong class="chat-side-name" title={head}>
-              {head}
-            </strong>
-            <button class="chat-new chat-workspace" title="Mark all as read, sections, unread only" aria-label="Chat options" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
-              ⋯
-            </button>
-          </header>
+          <HeadBar
+            class="chat-side-head"
+            onContextMenu={workspaceMenu}
+            title={<BarTitle class="chat-side-name" title={head}>{head}</BarTitle>}
+            actions={
+              <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-new chat-workspace bar-btn sq" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
+                    <MoreIcon size="sm" />
+                  </IconButton>
+            }
+          />
           {list}
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
         {view ?? (
-          <div class="chat-thread chat-empty">
-            {scope && scope.team === null ? "No threads yet. A pane's or a session's thread shows here once someone writes on it." : "No rooms yet. Make a channel, or write to someone in your team."}
+          <div class="chat-thread">
+            {scope && scope.team === null ? (
+              <EmptyState title="No rooms yet." why="A pane's or a session's room shows here once someone writes in it." />
+            ) : (
+              <EmptyState title="No rooms yet." why="Make a channel, or write to someone in your team." />
+            )}
           </div>
         )}
       </div>
@@ -500,15 +525,18 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
 function RoomMissing({ pinned }: { pinned?: boolean }) {
   const { nav } = usePlatformApi();
   return (
-    <div class="chat-thread chat-empty" data-room-missing>
-      <p>That room isn't one you can read (or it's gone).</p>
-      {!pinned && (
-        <p>
-          <button class="link" data-room-missing-back onClick={() => nav.openChat()}>
-            Back to your rooms
-          </button>
-        </p>
-      )}
+    <div class="chat-thread" data-room-missing>
+      <EmptyState
+        title="That room isn't one you can read."
+        why="It may be gone."
+        action={
+          !pinned && (
+            <button class="secondary" data-room-missing-back onClick={() => nav.openChat()}>
+              Back to your rooms
+            </button>
+          )
+        }
+      />
     </div>
   );
 }
@@ -517,7 +545,7 @@ function RoomMissing({ pinned }: { pinned?: boolean }) {
 function topicOf(r: ChatRoom, api: PlatformApi): string {
   switch (r.kind) {
     case "channel":
-      return [r.private ? "private" : "", r.topic, teamName(api, r.team), r.archived ? "archived" : ""].filter(Boolean).join(" · ");
+      return [r.private ? "private" : "", r.topic, r.archived ? "archived" : ""].filter(Boolean).join(" · ");
     case "dm":
       return `${r.others.length > 1 ? "Group message" : "Direct message"} · ${teamName(api, r.team)}`;
     case "pane":
@@ -572,6 +600,10 @@ function RoomView({
   // A thread open beside the room (#106): the whole screen on a phone. The
   // room's own `&msg=` is the room's unless it's a reply in that thread.
   const closeThread = () => nav.openRoom(room.id);
+  // What the head folds into ⋯, as menu rows; the menus they open hang
+  // from that ⋯.
+  const moreButton = () => document.querySelector<HTMLElement>(`[data-room-view="${room.id}"] [data-hbar-more]`);
+  const pins = pinsItem(room, nav, toast, moreButton);
   if (thread !== undefined && phone) {
     return (
       <div class="chat-main">
@@ -582,60 +614,101 @@ function RoomView({
   return (
     <div class="chat-main">
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
-        <header class="chat-head">
-          {phone && !pinned && (
-            <button class="chat-back" title="Every room" aria-label="Every room" onClick={() => nav.openChat()}>
-              ‹
-            </button>
-          )}
-          <div class="chat-title">
-            <strong>
+        <HeadBar
+          class="chat-head"
+          lead={
+            phone && !pinned ? (
+              <IconButton label="Every room" class="chat-back" onClick={() => nav.openChat()}>
+                    <ChevronIcon dir="left" size="md" />
+                  </IconButton>
+            ) : undefined
+          }
+          title={
+            <BarTitle class="chat-title">
               <span class="chat-title-sigil">{roomSigil(room)}</span>
               {label}
-            </strong>
-            <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
-          </div>
-          <PinsButton room={room} toast={toast} />
-          {/* On a computer the room's About is in Details (UI audit #169):
-              one ⓘ, not two. A phone has no Details. */}
-          {phone && <AboutButton room={room} toast={toast} />}
-          {!phone && people.length > 0 && (
-            <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
-              {people.slice(0, 3).map((p) => (
-                <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
-              ))}
-              <span>{people.length}</span>
-            </button>
-          )}
-          {reachable && (
-            <button class="chat-go" data-chat-go onClick={go}>
-              {room.kind === "pane" ? "Go to pane" : "Go to session"}
-            </button>
-          )}
-          <AgentsChip room={room.id} />
-          <RoomStar store={store} room={room} toast={toast} more={leave ? [leave] : []} />
-          <button
-            class={`chat-info chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
-            title={bellFor(room).title}
-            aria-label={bellFor(room).title}
-            aria-haspopup="menu"
-            data-room-bell
-            data-room-level={room.level}
-            onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
-          >
-            {bellFor(room).glyph}
-          </button>
-          {!phone && (
-            <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
-              ⓘ
-            </button>
-          )}
-          {phone && !pinned && (
-            <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
-              ✕
-            </button>
-          )}
-        </header>
+            </BarTitle>
+          }
+          where={
+            <BarWhere class="chat-topic-line">
+              <TopicLine room={room} fallback={topicOf(room, api)} toast={toast} />
+            </BarWhere>
+          }
+          foldBelow={ROOM_FOLD}
+          fold={[
+            ...(reachable
+              ? [
+                  {
+                    key: "go",
+                    node: (
+                      <button class="chat-go" data-chat-go onClick={go}>
+                        {room.kind === "pane" ? "Go to pane" : "Go to session"}
+                      </button>
+                    ),
+                    item: { label: room.kind === "pane" ? "Go to pane" : "Go to session", run: go },
+                  },
+                ]
+              : []),
+            ...(!phone && people.length > 0
+              ? [
+                  {
+                    key: "members",
+                    node: (
+                      <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
+                        {people.slice(0, 3).map((p) => (
+                          <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
+                        ))}
+                        <span>{people.length}</span>
+                      </button>
+                    ),
+                    item: { label: `Members (${people.length})`, run: () => !details && toggleDetails() },
+                  },
+                ]
+              : []),
+            ...(pins ? [{ key: "pins", node: <PinsButton room={room} toast={toast} />, item: pins }] : []),
+            { key: "star", node: <RoomStarButton store={store} room={room} toast={toast} />, item: starItem(store, room, toast) },
+            {
+              key: "bell",
+              node: (
+                <button
+                  class={`chat-info bar-btn sq chat-bell${room.level === "all" ? "" : " on"}${bellFor(room).quiet ? " quiet" : ""}`}
+                  title={bellFor(room).title}
+                  aria-label={bellFor(room).title}
+                  aria-haspopup="menu"
+                  data-room-bell
+                  data-room-level={room.level}
+                  onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
+                >
+                  {bellFor(room).glyph}
+                </button>
+              ),
+              item: { label: bellFor(room).title, run: () => {
+                  const at = moreButton();
+                  if (at) openBell({ currentTarget: at, preventDefault() {} }, room, (l) => store.setLevel(room.id, l), toast);
+                },
+              },
+            },
+          ]}
+          actions={
+            <>
+              {/* On a computer the room's About is in Details (UI audit #169):
+                  one ⓘ, not two. A phone has no Details. */}
+              {phone && <AboutButton room={room} toast={toast} />}
+              <AgentsChip room={room.id} />
+              <RoomOptionsButton store={store} room={room} toast={toast} more={leave ? [leave] : []} />
+              {!phone && (
+                <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
+                  ⓘ
+                </button>
+              )}
+              {phone && !pinned && (
+                <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
+                  <CloseIcon size="sm" />
+                </IconButton>
+              )}
+            </>
+          }
+        />
         <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip />
       </section>
       {thread !== undefined ? (
@@ -655,12 +728,15 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
   const owner = room.kind === "channel" && teams(api).find((t) => t.team === room.team)?.role === "owner";
   return (
     <aside class="chat-details" aria-label="Details" data-chat-details-panel>
-      <header class="chat-head">
-        <strong>Details</strong>
-        <button class="thread-close" title="Close" onClick={close}>
-          ✕
-        </button>
-      </header>
+      <HeadBar
+        class="chat-head"
+        title={<BarTitle>Details</BarTitle>}
+        actions={
+          <IconButton label="Close" class="thread-close" onClick={close}>
+            <CloseIcon size="sm" />
+          </IconButton>
+        }
+      />
       <div class="chat-details-body">
         {(room.kind === "pane" || room.kind === "session") && (
           <p class="chat-none">
@@ -729,52 +805,47 @@ function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean
     if (r) api.nav.openRoom(r.id);
   };
   return (
-    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="chat-switcher" role="dialog" aria-label="Jump to a room" data-chat-switcher>
-        <input
-          ref={input}
-          placeholder="Jump to…"
-          value={q}
-          onInput={(e) => {
-            setQ((e.target as HTMLInputElement).value);
-            setPick(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              handled(e);
-              close();
-            } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    <Modal bare close={close} label="Jump to a room" class="picker palette chat-switcher" root={{ "data-chat-switcher": "" }}>
+      <input
+        ref={input}
+        placeholder="Jump to…"
+        value={q}
+        onInput={(e) => {
+          setQ((e.target as HTMLInputElement).value);
+          setPick(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            go(list[pick]);
+          }
+        }}
+      />
+      <ul role="listbox">
+        {list.map((r, i) => (
+          <li
+            key={r.id}
+            role="option"
+            aria-selected={i === pick}
+            class={`${i === pick ? "picked" : ""}${r.unread ? " unread" : ""}`}
+            onMouseDown={(e) => {
               e.preventDefault();
-              if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
-            } else if (e.key === "Enter") {
-              e.preventDefault();
-              go(list[pick]);
-            }
-          }}
-        />
-        <ul role="listbox">
-          {list.map((r, i) => (
-            <li
-              key={r.id}
-              role="option"
-              aria-selected={i === pick}
-              class={`${i === pick ? "picked" : ""}${r.unread ? " unread" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                go(r);
-              }}
-            >
-              <span class="chat-sigil">{roomSigil(r)}</span>
-              <span class="chat-label">{roomLabel(r, api)}</span>
-              {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
-              {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
-              {r.unread ? <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span> : null}
-            </li>
-          ))}
-          {list.length === 0 && <li class="chat-none">No room matches.</li>}
-        </ul>
-      </div>
-    </div>
+              go(r);
+            }}
+          >
+            <span class="chat-sigil">{roomSigil(r)}</span>
+            <span class="chat-label">{roomLabel(r, api)}</span>
+            {r.kind === "channel" && r.topic && <span class="chat-switcher-host">{r.topic}</span>}
+            {r.machine_name && <span class="chat-switcher-host">{machineName(api, r.machine, r.machine_name)}</span>}
+            {r.unread ? <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count> : null}
+          </li>
+        ))}
+        {list.length === 0 && <li class="chat-none">No room matches.</li>}
+      </ul>
+    </Modal>
   );
 }
 

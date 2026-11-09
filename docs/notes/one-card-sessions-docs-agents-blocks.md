@@ -1,0 +1,13 @@
+---
+section: Changed
+title: One card for sessions, Docs, agents and issue and PR blocks
+line: The session card, the Docs list, the agents page and issue and PR blocks use the same card; Docs and agents lists are small boxes now.
+headline: no
+---
+An agent session's card is a card with its state's bar, edge and tint, and its
+header in the card. The Docs lists (the machine's, the project's and
+everyone's), the Recipes and Team lists on the agents page, and a project
+page's short lists of channels, issues, Docs and runs are small boxed rows
+that lift their edge on hover, not hairlines. An issue or pull request block
+is the same card with its sections divided by hairlines. A check now keeps
+a second card look from coming back.

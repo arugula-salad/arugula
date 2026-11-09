@@ -26,7 +26,7 @@ How an integration reaches the mux, since the mux can't reach it:
   Browsers, agents, editors, forges and the rest are the binary's; the mux
   only asks the registry to make one.
 - **Traits.** What the mux calls out to is a trait in `src/mux/outside.rs`
-  (`Notify`, `People`, `AgentSessions`, `PaneGone`, `Usage`, `Followups`),
+  (`Notify`, `People`, `Conversations`, `PaneGone`, `Usage`, `Followups`),
   plus `Provider` for machines, all held in `Config`. The binary implements
   them. `Followups` is how a follow-up the binary tagged (a teammate's
   mention, say) is told of: the mux queues it for a pane with its opaque

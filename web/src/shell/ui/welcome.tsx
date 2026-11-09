@@ -28,8 +28,8 @@
 import { opPath } from "../ops";
 import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { dialogUp, subscribeDialogs, useModal } from "../../shared/ui/modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal, dialogUp, subscribeDialogs } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
@@ -50,6 +50,7 @@ import { desktopApp } from "../../shared/desktop";
 import { countView } from "../../shared/telemetry";
 import { EditInNvim } from "./edit-in-nvim";
 import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
+import { CheckIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
 
 const DOCS = "https://docs.arugula.io";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
@@ -245,9 +246,6 @@ function stepFor(section?: Section): number {
 }
 
 function GettingStarted({ client, section, close }: { client: Client | null; section?: Section; close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [step, setStep] = useState(stepFor(section));
   const [host, setHost] = useState<HostSays | null>(null);
   const [setup, setSetup] = useState<Setup | null>(null);
@@ -321,84 +319,85 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   const name = host?.name ?? (directory.current || "this machine");
 
   return (
-    <div class="prompt-backdrop start-backdrop" role="dialog" aria-modal="true" aria-label="Getting started" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div
-        ref={ref}
-        class="start"
-        data-getting-started
-        data-step={id}
-        onKeyDown={(e) => {
+    <Modal
+      bare
+      close={close}
+      label="Getting started"
+      class="start"
+      root={{
+        "data-getting-started": "",
+        "data-step": id,
+        onKeyDown: (e: KeyboardEvent) => {
           if ((e.target as HTMLElement).closest("input, textarea")) return;
           if (e.key === "ArrowRight") go(step + 1);
           if (e.key === "ArrowLeft") go(step - 1);
-        }}
-        tabIndex={-1}
-      >
-        <header class="start-head">
-          <div class="start-brand">
-            Arugula <span>setup</span>
-          </div>
-          <button class="start-x" aria-label="Close" onClick={close}>
-            ✕
-          </button>
-        </header>
-
-        <ol class="start-rail" aria-label="Steps">
-          {STEPS.map((s, i) => (
-            <li key={s.id}>
-              <button
-                class={`start-seg${i === step ? " now" : ""}${done[s.id] && s.id !== "welcome" ? " done" : ""}`}
-                aria-current={i === step ? "step" : undefined}
-                onClick={() => go(i)}
-                data-start-seg={s.id}
-              >
-                <b>{String(i + 1).padStart(2, "0")}</b> <span>{s.label}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
-
-        <div class="start-body">
-          <div class="start-kicker" data-start-progress>
-            Step {step + 1} / {STEPS.length} · {STEPS[step].label}
-          </div>
-          {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
-          {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
-          {id === "cloud" && (
-            <Cloud
-              name={name}
-              client={client}
-              setup={setup}
-              early={early}
-              host={host}
-              manual={manual}
-              refresh={refresh}
-              setSetup={setSetup}
-              onConfirmed={() => setConfirmed(true)}
-              close={close}
-            />
-          )}
-          {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
-          {id === "try" && <Try client={client} done={done} go={go} close={close} />}
+        },
+      }}
+    >
+      <header class="start-head">
+        <div class="start-brand">
+          Arugula <span>setup</span>
         </div>
+        <IconButton label="Close" class="start-x" onClick={close}>
+          <CloseIcon size="md" />
+        </IconButton>
+      </header>
 
-        <footer class="start-foot">
-          <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
-            ‹ Back
-          </button>
-          <span class="start-hint">Always in Settings: Getting started</span>
-          {last ? (
-            <button class="primary" onClick={close}>
-              Done
+      <ol class="start-rail" aria-label="Steps">
+        {STEPS.map((s, i) => (
+          <li key={s.id}>
+            <button
+              class={`start-seg${i === step ? " now" : ""}${done[s.id] && s.id !== "welcome" ? " done" : ""}`}
+              aria-current={i === step ? "step" : undefined}
+              onClick={() => go(i)}
+              data-start-seg={s.id}
+            >
+              <b>{String(i + 1).padStart(2, "0")}</b> <span>{s.label}</span>
             </button>
-          ) : (
-            <button class="primary" onClick={() => go(step + 1)} data-start-next>
-              {step === 0 ? "Set it up ›" : done[id] ? "Next ›" : "Skip for now ›"}
-            </button>
-          )}
-        </footer>
+          </li>
+        ))}
+      </ol>
+
+      <div class="start-body">
+        <div class="start-kicker" data-start-progress>
+          Step {step + 1} / {STEPS.length} · {STEPS[step].label}
+        </div>
+        {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
+        {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
+        {id === "cloud" && (
+          <Cloud
+            name={name}
+            client={client}
+            setup={setup}
+            early={early}
+            host={host}
+            manual={manual}
+            refresh={refresh}
+            setSetup={setSetup}
+            onConfirmed={() => setConfirmed(true)}
+            close={close}
+          />
+        )}
+        {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
+        {id === "try" && <Try client={client} done={done} go={go} close={close} />}
       </div>
-    </div>
+
+      <footer class="start-foot">
+        <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
+          <ChevronIcon dir="left" /> Back
+        </button>
+        <span class="start-hint">Always in Settings: Getting started</span>
+        {last ? (
+          <button class="primary" onClick={close}>
+            Done
+          </button>
+        ) : (
+          <button class="primary" onClick={() => go(step + 1)} data-start-next>
+            {step === 0 ? "Set it up" : done[id] ? "Next" : "Skip for now"} <ChevronIcon dir="right" />
+          </button>
+        )}
+      </footer>
+    </Modal>
   );
 }
 
@@ -451,7 +450,9 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           </div>
         </li>
         <li>
-          <span class="start-glyph">✎</span>
+          <span class="start-glyph">
+            <EditIcon size="md" />
+          </span>
           <div>
             <h3>Edit in nvim</h3>
             <EditInNvim />
@@ -509,7 +510,7 @@ function Said({ outcome }: { outcome: Outcome | null }) {
       )}
       {outcome.link && (
         <a class="secondary" href={outcome.link.url} target="_blank" rel="noreferrer" data-start-link>
-          {outcome.link.label} ↗
+          {outcome.link.label} <ExternalIcon size="xs" />
         </a>
       )}
     </div>
@@ -715,7 +716,7 @@ function Cloud({
             <Check state="done">
               <span data-start-joined>Joined{team ? ` to the team ${team}` : " to your account"}</span> ·{" "}
               <a href={joined} target="_blank" rel="noreferrer">
-                open the cloud ↗
+                open the cloud <ExternalIcon size="xs" />
               </a>
             </Check>
           </ul>
@@ -751,7 +752,7 @@ function Cloud({
           <div class="start-kicker">Approve this code on a device you use</div>
           <WholeCode code={c.pending.code} />
           <a class="primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
-            Approve in Arugula cloud ↗
+            Approve in Arugula cloud <ExternalIcon size="xs" />
           </a>
           <p class="start-dim">
             <span class="start-pulse" /> Waiting for the approval. Open the link (or type the whole code) on a browser or phone you already use with
@@ -769,7 +770,7 @@ function Cloud({
           {c.elsewhere.code && <WholeCode code={c.elsewhere.code} />}
           {c.elsewhere.approve && (
             <a class="primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
-              Approve in Arugula cloud ↗
+              Approve in Arugula cloud <ExternalIcon size="xs" />
             </a>
           )}
           <p class="start-dim">One join at a time: approve this one, or stop it where it runs and try again here.</p>
@@ -961,7 +962,7 @@ function Together({ joined, client, close }: { joined: string; client: Client | 
           </button>
         ) : (
           <a class="secondary" href={joined} target="_blank" rel="noreferrer" title="Teams are in the cloud's account menu" data-start-make-team>
-            Make a team ↗
+            Make a team <ExternalIcon size="xs" />
           </a>
         )}
         {client && owner && session !== null && (
@@ -1071,7 +1072,9 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
                   t.run();
                 }}
               >
-                {isDone && <span class="start-try-mark" aria-label="done">✓ </span>}
+                {isDone && <span class="start-try-mark" aria-label="done">
+                    <CheckIcon size="xs" />{" "}
+                  </span>}
                 {t.label}
               </button>
               <span class="start-dim">{t.refusal ?? t.what}</span>
@@ -1084,7 +1087,7 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
           {todo.map(([id, , no]) => (
             <Check key={id} state="todo">
               <button class="link" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
-                {no} ›
+                {no} <ChevronIcon dir="right" />
               </button>
             </Check>
           ))}

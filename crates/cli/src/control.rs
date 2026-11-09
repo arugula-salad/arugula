@@ -102,7 +102,9 @@ impl Saved {
 
 /// This CLI, enrolled.
 pub struct Enrolled {
-    url: String,
+    /// The control it's logged in to (Arugula #681: `arugula access` asks
+    /// it for a machine's powers only when the machine is joined there).
+    pub(crate) url: String,
     cert: Cert,
     trust: Trust,
     pins: BTreeMap<String, String>,
@@ -131,6 +133,31 @@ impl Enrolled {
 
     fn url(&self) -> anyhow::Result<Url> {
         Url::parse(&self.url)
+    }
+
+    /// A CLI enrolled at `url` with a fresh key, for a command's test
+    /// against a server of the test's own.
+    #[cfg(test)]
+    pub(crate) fn for_tests(url: String) -> Self {
+        let keys = DeviceKeys::generate();
+        Self {
+            url,
+            cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
+            trust: Trust { account: "a".into(), root: String::new() },
+            pins: BTreeMap::new(),
+            closed: Default::default(),
+            keys,
+        }
+    }
+
+    /// Control's URL, as this CLI logged in to it.
+    pub fn control_url(&self) -> &str {
+        &self.url
+    }
+
+    /// The account this CLI is logged in as.
+    pub fn account(&self) -> &str {
+        &self.trust.account
     }
 
     /// A request to control, signed with this CLI's key. It waits out a

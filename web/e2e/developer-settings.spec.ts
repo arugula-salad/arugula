@@ -29,13 +29,13 @@ test.afterAll(closeContexts);
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-developer-"));
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
-  writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
+  writeFileSync(join(state, "loam-key"), "loam_e2e-key");
   daemon = spawn(
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", state, "--shell", "bash --norc --noprofile", "--no-manager-env"],
       ...["--owner", OWNER, "--tailscale-socket", "/nonexistent/tailscaled.sock"],
-      ...["--wisp-url", "http://127.0.0.1:9", "--wisp-token-file", join(state, "wisp-token")],
+      ...["--loam-url", "http://127.0.0.1:9", "--loam-key-file", join(state, "loam-key")],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
     { stdio: "ignore" },

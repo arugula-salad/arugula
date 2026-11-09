@@ -11,6 +11,7 @@ import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
+import { slugIn } from "./paths";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -26,6 +27,7 @@ import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
+import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
@@ -40,6 +42,12 @@ import { titleOf } from "./titles";
 import { barProject, where } from "./where";
 
 export function PlatformPage() {
+  // The design reference needs no one signed in and no project, so nothing of
+  // the session is loaded for it (#693).
+  return useRoute().page === "design" ? <DesignPage /> : <Routed />;
+}
+
+function Routed() {
   useSubscribe((fn) => session.subscribe(fn));
   const r = useRoute();
   useEffect(() => void session.load(), []);
@@ -207,10 +215,13 @@ function useTitle(r: Route) {
 }
 
 /** Put the address's slugs right once the names are known: only the ids
- * are read, so an old slug lands, and the bar shows the current one. A
+ * are read, so an old slug lands, and the bar shows the current one. An id
+ * whose name isn't known yet (a Doc's, until it's read) keeps the slug it
+ * has, so loading a page doesn't take it off the address and put it back. A
  * room of another project's goes to its own (UI audit #169). */
 function useSlug(r: Route) {
-  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, names));
+  const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
+  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, known));
   useEffect(() => {
     if (want && want !== location.pathname + location.search && session.state === "ready") go(want, true);
   }, [want, session.state]);

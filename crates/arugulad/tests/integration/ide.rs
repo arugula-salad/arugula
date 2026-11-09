@@ -41,15 +41,7 @@ fn setup(tag: &str) -> Setup {
     let locks = std::env::temp_dir().join(format!("ilg-ide-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&locks);
     let d = Daemon::child_env(
-        &[
-            "--keep-panes",
-            "--wisp-token-file",
-            "/nonexistent",
-            "--owner",
-            OWNER,
-            "--tailscale-socket",
-            "/nonexistent/sock",
-        ],
+        &["--keep-panes", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
         &[("ARUGULA_CLAUDE_IDE_DIR", locks.to_str().unwrap()), ("ARUGULA_KEEP_GRACE_MS", "20000")],
     );
     Setup { d, locks }

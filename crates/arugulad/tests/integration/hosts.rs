@@ -222,71 +222,6 @@ fn tailnet_requests_need_the_owner() {
     }
 }
 
-/// #17: a pane that runs on another daemon, with its place in the home
-/// daemon's layout. The home daemon keeps only `{host, pane}`; the pane is
-/// the other daemon's own, in a session named after the home daemon.
-#[test]
-fn a_remote_pane_runs_there_and_has_its_place_here() {
-    let home = start("home", &[]);
-    let other = start("other", &[]);
-    stdout(&cli(&home, &["hosts", "add", "other", &other.url()]));
-    let first = serde_json::from_str::<Value>(&stdout(&cli(&home, &["--json", "ls"]))).unwrap()[0]["id"].clone();
-
-    // A tab here, running there.
-    let made: Value =
-        serde_json::from_str(&stdout(&cli(&home, &["--host", "other", "--json", "run", "--home", "--cwd", "/tmp"])))
-            .unwrap();
-    let (block, pane) = (made["block"].as_u64().unwrap(), made["pane"].as_u64().unwrap());
-    assert_eq!(made["host"], "other");
-    let here: Value = serde_json::from_str(&stdout(&cli(&home, &["--json", "ls"]))).unwrap();
-    let b = here.as_array().unwrap().iter().find(|p| p["id"] == block).expect("the block is here");
-    assert_eq!(b["type"], "remote");
-    let there: Value = serde_json::from_str(&stdout(&cli(&other, &["--json", "ls"]))).unwrap();
-    let p = there.as_array().unwrap().iter().find(|p| p["id"] == pane).expect("the pane is there");
-    assert_eq!(p["type"], "terminal");
-    assert_eq!(p["session_name"], "home", "{p}");
-    // A new session there holds just that pane, not a shell beside it.
-    let in_session = there.as_array().unwrap().iter().filter(|p| p["session_name"] == "home").count();
-    assert_eq!(in_session, 1, "{there}");
-    let d: Value = serde_json::from_str(&stdout(&cli(&home, &["--json", "describe", &format!("%{block}")]))).unwrap();
-    assert_eq!(d["state"], json!({"host": "other", "pane": pane}), "{d}");
-
-    // Beside a pane here too; a second one joins the same session there.
-    let made: Value = serde_json::from_str(&stdout(&cli(
-        &home,
-        &["--host", "other", "--json", "run", "--home", "--split", &format!("%{first}"), "--", "echo beside; exec cat"],
-    )))
-    .unwrap();
-    let pane2 = made["pane"].as_u64().unwrap();
-    let there: Value = serde_json::from_str(&stdout(&cli(&other, &["--json", "ls"]))).unwrap();
-    assert_eq!(there.as_array().unwrap().iter().filter(|p| p["session_name"] == "home").count(), 2);
-    let tail = || stdout(&cli(&other, &["tail", &format!("%{pane2}"), "--text"]));
-    wait_for("its output there", || tail().contains("beside"));
-
-    // Only hosts in the list, and never this daemon itself.
-    for (host, why) in [("nope", "no host nope"), ("home", "is this daemon")] {
-        let body = json!({"type": "remote", "config": {"host": host, "pane": 1}});
-        let (status, _, body) = home.http("POST", "/api/blocks", &[], Some(body));
-        assert_eq!(status, 400);
-        assert!(body.contains(why), "{body}");
-    }
-
-    // The daemon closes only its place: the pane is still there.
-    let (status, _, _) = home.http("POST", &format!("/api/panes/{block}/close"), &[], None);
-    assert_eq!(status, 200);
-    let ids = |d: &Daemon| -> Vec<Value> {
-        let v: Value = serde_json::from_str(&stdout(&cli(d, &["--json", "ls"]))).unwrap();
-        v.as_array().unwrap().iter().map(|p| p["id"].clone()).collect()
-    };
-    assert!(!ids(&home).contains(&json!(block)));
-    assert!(ids(&other).contains(&json!(pane)));
-    // The CLI closes both, as the web client does.
-    let block2 = ids(&home).into_iter().find(|id| *id != first).unwrap();
-    stdout(&cli(&home, &["close", &format!("%{block2}")]));
-    assert!(!ids(&home).contains(&block2));
-    wait_for("the pane there to close", || !ids(&other).contains(&json!(pane2)));
-}
-
 /// What a stranger doesn't get follows the flags in the state dir's
 /// `flags.json`, one to a feature: `GET /api/host` says so, with Labs
 /// (and studio and VMs, where set up) each following its own, and
@@ -299,7 +234,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // A Managoat login is set up here, to show it's no feature now.
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("FOUNTAIN_API_KEY", "fk_test")
@@ -375,7 +310,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
 fn the_flags_are_the_owners() {
     let d = arugulad!("hosts")
         .args(["--name", "plain", "--owner", "me@example.com"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -402,7 +337,7 @@ fn the_flags_are_the_owners() {
 fn the_files_hosts_and_setup_routes_are_the_owners() {
     let d = arugulad!("hosts")
         .args(["--name", "plain", "--owner", "me@example.com"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -463,7 +398,7 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
 fn a_build_without_labs_ignores_the_labs_file() {
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("FOUNTAIN_API_KEY", "fk_test")
@@ -483,7 +418,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
 fn a_build_without_labs_answers_guest_invites_with_501() {
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -539,7 +474,7 @@ fn both_helps_follow_the_same_labs_file() {
     // only parses.
     assert!(!listed(&cli_off, "managoat") && !listed(&cli_off, "fountain"), "{cli_off}");
     assert!(!d_off.contains("--managoat-account-stream"), "{d_off}");
-    for f in ["--studio-file", "--wisp-url"] {
+    for f in ["--studio-file", "--loam-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
     }
 
@@ -556,7 +491,7 @@ fn both_helps_follow_the_same_labs_file() {
     let by_env = help(daemon(), &[], Some(&state));
     let by_flag = help(daemon(), &["--state-dir", state.to_str().unwrap()], None);
     let flag_without = help(daemon(), &["--state-dir", elsewhere.to_str().unwrap()], Some(&state));
-    for f in ["--studio-file", "--wisp-url"] {
+    for f in ["--studio-file", "--loam-url"] {
         assert!(by_env.contains(f), "{f} isn't in `arugulad --help` with labs (environment)");
         assert!(by_flag.contains(f), "{f} isn't in `arugulad --help` with labs (--state-dir)");
         assert!(!flag_without.contains(f), "{f}: the flag's directory has no labs, whatever the environment's does");

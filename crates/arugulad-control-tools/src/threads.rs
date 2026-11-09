@@ -39,8 +39,8 @@ use crate::{control::CloudRefused, mux::Api};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadThreadArgs {
-    /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// box's id (iss_…, fi_…, hw_…) for its thread. Not needed with
+    /// The room's id (list kind threads), or an issue's, PR's or Cloud
+    /// workspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with
     /// `replies`.
     #[serde(default)]
     pub room: String,
@@ -76,8 +76,8 @@ pub struct ReadThreadArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct PostThreadArgs {
-    /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// box's id (iss_…, fi_…, hw_…) to comment on it.
+    /// The room's id (list kind threads), or an issue's, PR's or Cloud
+    /// workspace's id (iss_…, fi_…, hw_…) to comment on it.
     pub room: String,
     /// The message, in markdown; @login mentions a person there. Not
     /// needed to react.

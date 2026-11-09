@@ -350,14 +350,7 @@ fn deleting_a_shared_doc_with_control_down_refuses_and_keeps_everything() {
 /// links following; a second start changes nothing.
 #[test]
 fn the_start_up_migration_moves_open_closed_and_shared_docs_once() {
-    let mut d = Daemon::child_with(&[
-        "--owner",
-        "me@example.com",
-        "--tailscale-socket",
-        "/nonexistent/sock",
-        "--wisp-token-file",
-        "/nonexistent",
-    ]);
+    let mut d = Daemon::child_with(&["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"]);
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let make = |d: &Daemon, title: &str| -> (u64, String) {
         let block = d

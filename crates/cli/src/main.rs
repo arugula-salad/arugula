@@ -344,11 +344,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who may watch or drive a session on this machine.
+    /// Who can reach this machine, and as what.
     ///
-    /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
-    /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
-    /// control).
+    /// `access` shows it: the owner, the team's people by their role, each
+    /// session's shares, links, ssh guests and trust, each saying whose word
+    /// it is (this machine's, or the team's roster), then its agents' powers
+    /// on Arugula cloud. `access grant SESSION WHO ROLE` shares a session,
+    /// `access revoke SESSION WHO` ends that, `access log` lists every grant
+    /// and revoke. WHO is a tailnet login (or `account:ID` from control).
     Access {
         #[command(subcommand)]
         cmd: Option<cmd::access::AccessCmd>,
@@ -399,10 +402,19 @@ enum Command {
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
     /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
-    /// (the default) lists them. Needs `arugula login`.
+    /// (the default) lists them, and `ls --project X` is a project's Access
+    /// view: who can do what there. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
+    },
+    /// A machine's name on Arugula control.
+    ///
+    /// `rename` changes what the machines list, chat and `@machine` mentions
+    /// call it. Needs `arugula login`.
+    Machine {
+        #[command(subcommand)]
+        cmd: cmd::machine::MachineCmd,
     },
     /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
     ///
@@ -421,10 +433,10 @@ enum Command {
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
     /// lists them (and how each one's setup goes), `open` wakes one and
     /// says its machine, `edit` changes its spec, `secret` sets what it
-    /// clones with and takes as env, `rebuild` makes its box again from its
-    /// spec (asking the box for unpushed work first), `delete` takes it and
-    /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// clones with and takes as env, `rebuild` makes its machine again from
+    /// its spec (asking the machine for unpushed work first), `delete` takes
+    /// it and its machine away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never on the machine; Anthropic's may be a
     /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).
@@ -467,6 +479,17 @@ enum Command {
     Deploys {
         #[command(subcommand)]
         cmd: cmd::deploys::DeploysCmd,
+    },
+    /// What chant needs from Arugula.
+    ///
+    /// `trust-entry` prints your passkeys as entries for chant's
+    /// `.chant/trust.json` (`passkeys`), as `arugula:<account>`: a chant-fly
+    /// deploy's approval is your passkey's signature over chant's gate
+    /// statement, which chant counts only for a passkey listed there. It
+    /// only prints. Needs `arugula login`.
+    Chant {
+        #[command(subcommand)]
+        cmd: cmd::chant::ChantCmd,
     },
     /// A project's linked GitHub repos on Arugula control.
     ///
@@ -648,13 +671,14 @@ const GROUPS: &[(&str, &[&str])] = &[
             "login",
             "logout",
             "grants",
+            "machine",
             "agent-tokens",
             "telemetry",
             "machines",
             "sandboxes",
         ],
     ),
-    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "chant", "project", "draft", "forge", "studio"]),
     ("Setup", &["install", "setup", "hooks", "mcp"]),
 ];
 
@@ -830,6 +854,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Machine { cmd } = cli.cmd {
+        return cmd::machine::run(cmd, cli.json);
+    }
     if let Command::AgentTokens { cmd } = cli.cmd {
         return cmd::agent_tokens::run(cmd, cli.json);
     }
@@ -841,6 +868,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     }
     if let Command::Deploys { cmd } = cli.cmd {
         return cmd::deploys::run(cmd, cli.json);
+    }
+    if let Command::Chant { cmd } = cli.cmd {
+        return cmd::chant::run(cmd, cli.json);
     }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
@@ -934,9 +964,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         r.prepare()?;
     }
     let json_out = cli.json;
-    // `run --home`: the local daemon too, and the host's name in its list.
-    let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name };
+    let ctx = cmd::Ctx { sock, json_out };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),
@@ -962,10 +990,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::Machine { .. }
         | Command::AgentTokens { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }
+        | Command::Chant { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

@@ -62,7 +62,7 @@ impl Daemon {
         let mut b = arugulad!("editors")
             .state_dir(dir.join("state"))
             .block_listen()
-            .no_wisp()
+            .no_provider()
             .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"])
             .arg("--code-server")
             .arg(fake)

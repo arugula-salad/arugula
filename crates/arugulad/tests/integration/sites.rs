@@ -32,7 +32,7 @@ fn free_port() -> u16 {
 }
 
 fn start() -> Daemon {
-    arugulad!("sites").block_listen().no_wisp().start()
+    arugulad!("sites").block_listen().no_provider().start()
 }
 
 /// The event stream, collected as it comes.

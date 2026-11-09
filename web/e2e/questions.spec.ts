@@ -62,9 +62,11 @@ test.describe("desktop", () => {
     const block = paneEl(page, id);
     const card = block.getByRole("dialog", { name: "Which colour do you prefer?" });
     await expect(card).toBeVisible();
-    await expect(block.locator(".agent-status")).toHaveText("Needs you");
+    await expect(block.locator(".agent-status")).toHaveCount(0);
     await expect(card.locator(".ask-message")).toHaveText("Please answer the following questions.");
-    await expect(card.locator(".ask-header")).toHaveText(["Colour", "Fruit", "Pet"]);
+    await expect(card.locator(".ask-header")).toHaveCount(0);
+    await expect(block.locator(".agent-tool")).toHaveCount(0);
+    await expect(card.locator(".ask-text").first()).toHaveAttribute("title", "Colour");
     const submit = card.getByRole("button", { name: "Submit" });
     await expect(submit).toBeDisabled();
 

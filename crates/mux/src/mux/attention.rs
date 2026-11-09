@@ -529,8 +529,8 @@ impl Daemon {
         let block = self.blocks.get(&pane).map(|b| b.kind());
         match block {
             None if !self.panes.contains_key(&pane) => return Err(format!("no pane %{pane}")),
-            Some(BlockType::Agent | BlockType::Chat | BlockType::Remote) => {
-                return Err(format!("%{pane} is an agent, chat or remote block: it asks through its own methods"));
+            Some(BlockType::Agent | BlockType::Chat) => {
+                return Err(format!("%{pane} is an agent or chat block: it asks through its own methods"));
             }
             _ => {}
         }
@@ -738,7 +738,7 @@ impl Daemon {
         info!(pane, agent, session = id, "agent conversation");
         // Its hooks speak while it runs.
         m.session =
-            Some(crate::store::AgentSession { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
+            Some(crate::store::PaneConversation { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
         // A pane running Claude Code resumes it, unless someone said
         // otherwise.
         if !m.policy_set && m.policy == Policy::Shell {

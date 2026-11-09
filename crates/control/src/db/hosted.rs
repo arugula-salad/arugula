@@ -505,6 +505,18 @@ impl Db {
         Ok(())
     }
 
+    /// A bare live hosted machine `id`, `workspace`'s box, for tests that
+    /// need only its row.
+    #[cfg(test)]
+    pub(crate) fn put_bare_hosted(&self, id: &str, workspace: &str) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT INTO hosted_machines (id, project, owner, workspace, delegation, cert, created)
+             VALUES (?1, 'prj_1', 'account:a', ?2, 'dlg', '{}', 1)",
+            params![id, workspace],
+        )?;
+        Ok(())
+    }
+
     /// A row as an older control left it, with direct URLs in it.
     #[cfg(test)]
     pub(crate) fn put_hosted_urls(&self, id: &str, urls: &[String]) -> anyhow::Result<()> {
@@ -513,11 +525,22 @@ impl Db {
         Ok(())
     }
 
-    /// Remove a hosted machine: whether it was live.
+    /// Remove a hosted machine (its owner did): whether it was live. The
+    /// platform is told in the same transaction's `untold_hosted_removals`
+    /// row, until it answers ([`Db::told_hosted_removal`]).
     pub fn remove_hosted(&self, id: &str, now: u64) -> anyhow::Result<bool> {
         let mut c = self.c();
         let tx = c.transaction()?;
+        let workspace: Option<String> = tx
+            .query_row("SELECT workspace FROM hosted_machines WHERE id = ?1 AND removed IS NULL", params![id], |r| {
+                r.get(0)
+            })
+            .optional()?;
         let gone = remove_where(&tx, "id = ?1", id, now)?;
+        if let Some(workspace) = workspace {
+            let r = super::platform::HostedRemoval { machine: id.to_owned(), workspace };
+            super::platform::untold_removal(&tx, &r, now)?;
+        }
         tx.commit()?;
         Ok(!gone.is_empty())
     }
@@ -540,9 +563,29 @@ pub(super) fn erase(tx: &Transaction, account: &str, disband: &[String]) -> rusq
     let mut owners = vec![format!("account:{account}")];
     owners.extend(disband.iter().map(|t| format!("team:{t}")));
     let mut ids = Vec::new();
+    // Each live machine that goes, to tell the platform of
+    // (`untold_hosted_removals`, Arugula #744): it fails the workspace
+    // only on the hub's word. A team's project that stays keeps its
+    // workspaces, whose machines went with the delegation this account
+    // signed; a workspace the platform erases with the account is one it
+    // no longer has, and the notice changes nothing there.
+    let mut live = |q: &str, arg: &str| -> rusqlite::Result<()> {
+        let mut q = tx.prepare(q)?;
+        let rows = q.query_map(params![arg], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<u64>>(2)?))
+        })?;
+        for row in rows {
+            let (id, workspace, removed) = row?;
+            if removed.is_none() {
+                let r = super::platform::HostedRemoval { machine: id.clone(), workspace };
+                super::platform::untold_removal(tx, &r, arugula_e2e::now_ms())?;
+            }
+            ids.push(id);
+        }
+        Ok(())
+    };
     for o in &owners {
-        let mut q = tx.prepare("SELECT id FROM hosted_machines WHERE owner = ?1")?;
-        ids.extend(q.query_map(params![o], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
+        live("SELECT id, workspace, removed FROM hosted_machines WHERE owner = ?1", o)?;
         for sql in [
             "DELETE FROM hosted_machines WHERE owner = ?1",
             "DELETE FROM hosted_enrollments WHERE owner = ?1",
@@ -554,10 +597,7 @@ pub(super) fn erase(tx: &Transaction, account: &str, disband: &[String]) -> rusq
     // Machines it delegated elsewhere go with the delegation: clients
     // would refuse them anyway, its signer gone.
     let signed = "SELECT id FROM project_delegations WHERE by_account = ?1";
-    {
-        let mut q = tx.prepare(&format!("SELECT id FROM hosted_machines WHERE delegation IN ({signed})"))?;
-        ids.extend(q.query_map(params![account], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
-    }
+    live(&format!("SELECT id, workspace, removed FROM hosted_machines WHERE delegation IN ({signed})"), account)?;
     tx.execute(&format!("DELETE FROM hosted_machines WHERE delegation IN ({signed})"), params![account])?;
     tx.execute(&format!("DELETE FROM hosted_enrollments WHERE delegation IN ({signed})"), params![account])?;
     tx.execute("DELETE FROM project_delegations WHERE by_account = ?1", params![account])?;

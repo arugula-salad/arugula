@@ -104,7 +104,7 @@ async fn rig_with(listen: bool, block_domain: Option<&'static str>) -> Rig {
     root.sign_with(&device);
     let d = arugulad!("blockchan");
     let d = if listen { d.block_listen() } else { d };
-    let mut d = d.no_wisp().no_tailscale().args(["--direct-url", "http://127.0.0.1:0"]).wait_secs(30).start();
+    let mut d = d.no_provider().no_tailscale().args(["--direct-url", "http://127.0.0.1:0"]).wait_secs(30).start();
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&daemon, "a1", Kind::Daemon, "test");
     cert.sign_with(&device);

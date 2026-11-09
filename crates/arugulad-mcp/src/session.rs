@@ -67,6 +67,10 @@ use crate::mcp::{
 };
 use crate::server::App;
 
+/// Said in place of an issue's comments when chat is off for the asker.
+const COMMENTS_IN_CHAT: &str =
+    "its comments are in chat, which is off for the person who asked you, so they aren't shown";
+
 const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits.";
 
 #[derive(Deserialize, JsonSchema)]
@@ -265,7 +269,7 @@ impl Server {
             return done(summary, json!({ "issues": issues, "more": list.more, "text": text }));
         };
         let number = number(issue)?;
-        let SessionIssuesGiven::Shown { issue, events, comments, more_comments } =
+        let SessionIssuesGiven::Shown { issue, events, comments, more_comments, comments_in_chat } =
             self.ask(session, SessionIssuesOp::Show { number }).await?
         else {
             return Err("control answered something else".into());
@@ -273,17 +277,27 @@ impl Server {
         let (issue, events, comments) = (json!(issue), json!(events), json!(comments));
         let events_v = events.as_array().cloned().unwrap_or_default();
         let comments_v = comments.as_array().cloned().unwrap_or_default();
-        let text = crate::mcp::issues::text(&issue, &events_v, &comments_v);
-        let summary = format!(
-            "Native issue {}: {} event(s), {} comment(s){}",
-            crate::mcp::issues::line(&issue),
-            events_v.len(),
-            comments_v.len(),
-            if more_comments { " (the newest)" } else { "" }
-        );
+        let mut text = crate::mcp::issues::text(&issue, &events_v, &comments_v);
+        let summary = if comments_in_chat {
+            text.push_str(&format!("\n{COMMENTS_IN_CHAT}\n"));
+            format!(
+                "Native issue {}: {} event(s); {COMMENTS_IN_CHAT}",
+                crate::mcp::issues::line(&issue),
+                events_v.len()
+            )
+        } else {
+            format!(
+                "Native issue {}: {} event(s), {} comment(s){}",
+                crate::mcp::issues::line(&issue),
+                events_v.len(),
+                comments_v.len(),
+                if more_comments { " (the newest)" } else { "" }
+            )
+        };
         done(
             summary,
-            json!({ "issue": issue, "events": events, "comments": comments, "more_comments": more_comments, "text": text }),
+            json!({ "issue": issue, "events": events, "comments": comments, "more_comments": more_comments,
+                    "comments_in_chat": comments_in_chat, "text": text }),
         )
     }
 

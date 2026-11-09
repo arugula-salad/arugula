@@ -187,6 +187,7 @@ impl Event<'_> {
 /// deploy <dep id>          (kind deploy, M219)
 /// driver <driver name>     (kind deploy)
 /// apply <deploy op hash>   (kind deploy)
+/// plan <deploy op hash>    (kind deploy: its plan, #1985, instead of apply)
 /// ```
 ///
 /// A deploy's run (M219) applies one approved deploy with its
@@ -194,6 +195,10 @@ impl Event<'_> {
 /// only which deploy, which driver, and the hash of the deploy's operation
 /// (`arugula deploy op v1`) its owner's approval signs. The machine runs
 /// its own copy of the driver, and only with that approval.
+///
+/// A chant→Fly deploy's plan (#1985) is a run of the same kind on a box of
+/// its own, before anyone approves: `plan` in place of `apply`. Its driver
+/// runs chant's plan with no Fly token, and nothing applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Op {
     pub argv: Vec<String>,
@@ -212,6 +217,8 @@ pub struct DeployApply {
     pub driver: String,
     /// The deploy's operation hash, hex: what its approval signs.
     pub op: String,
+    /// Its plan run (#1985), not its apply.
+    pub plan: bool,
 }
 
 /// One word for an op's line: printable, with no space.
@@ -253,7 +260,8 @@ impl Op {
             op.push_str(&format!("text {}\nagent {}\n", b64(i), self.agent.as_deref().unwrap_or("-")));
         }
         if let Some(d) = &self.deploy {
-            op.push_str(&format!("deploy {}\ndriver {}\napply {}\n", d.deploy, d.driver, d.op));
+            let what = if d.plan { "plan" } else { "apply" };
+            op.push_str(&format!("deploy {}\ndriver {}\n{what} {}\n", d.deploy, d.driver, d.op));
         }
         op
     }
@@ -277,10 +285,20 @@ impl Op {
                 (_, "agent") if value != "-" => out.agent = Some(value.to_owned()),
                 (_, "agent") => {}
                 (_, "deploy") => {
-                    out.deploy = Some(DeployApply { deploy: value.into(), driver: String::new(), op: String::new() })
+                    out.deploy = Some(DeployApply {
+                        deploy: value.into(),
+                        driver: String::new(),
+                        op: String::new(),
+                        plan: false,
+                    })
                 }
                 (_, "driver") => out.deploy.as_mut()?.driver = value.into(),
                 (_, "apply") => out.deploy.as_mut()?.op = value.into(),
+                (_, "plan") => {
+                    let d = out.deploy.as_mut()?;
+                    d.op = value.into();
+                    d.plan = true;
+                }
                 _ => return None,
             }
         }
@@ -339,7 +357,7 @@ mod tests {
     /// else besides.
     #[test]
     fn a_deploys_apply_reads_back_only_as_written() {
-        let d = DeployApply { deploy: "dep_1".into(), driver: "fake".into(), op: "ab".repeat(32) };
+        let d = DeployApply { deploy: "dep_1".into(), driver: "fake".into(), op: "ab".repeat(32), plan: false };
         let op = Op { deploy: Some(d.clone()), ..Op::default() };
         let bytes = op.encode("d1");
         assert_eq!(
@@ -361,6 +379,14 @@ mod tests {
         ] {
             assert_eq!(Op::decode(&bad), None, "{bad:?}");
         }
+        // #1985: its plan run says plan where an apply says apply, and is
+        // never read as the apply.
+        let plan = Op { deploy: Some(DeployApply { plan: true, ..d.clone() }), ..Op::default() };
+        let plan_bytes = plan.encode("d1");
+        assert_eq!(plan_bytes, bytes.replace("\napply ", "\nplan "));
+        assert_eq!(Op::decode(&plan_bytes), Some(("d1".into(), plan.clone())));
+        assert_ne!(Op::decode(&plan_bytes).unwrap().1, op);
+        assert_eq!(Op::decode(&format!("{bytes}plan {}\n", "ab".repeat(32))), None, "both");
     }
 
     #[test]

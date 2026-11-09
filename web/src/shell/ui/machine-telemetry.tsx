@@ -202,9 +202,9 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
   return (
     <Modal close={close} label="Usage and crash reports" class="rules machine-telemetry">
         <h2>Usage and crash reports</h2>
-        <p class="hint">{ABOUT}</p>
+        <p class="dim">{ABOUT}</p>
         {error && <p class="error">{error}</p>}
-        {kept && <p class="hint">{kept}</p>}
+        {kept && <p class="dim">{kept}</p>}
         {t && (
           <>
             <label class="machine-telemetry-switch">

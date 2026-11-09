@@ -1,11 +1,11 @@
-// M7: the directory picker, on a desktop and a phone, for a local tab, a
-// VM tab (its directories, through the provider) and a second daemon as
-// another host (M4a). New sessions and machines have generated names.
-// The VM parts need wispd and its token on this host; elsewhere they skip.
+// M7: the directory picker, on a desktop and a phone, for a local tab and
+// a second daemon as another host (M4a). New sessions have generated
+// names. (The picker on a VM tab, through the provider, ran against wispd
+// and went with the Sprites adapter.)
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { menuItem, paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
@@ -15,14 +15,6 @@ import { labs } from "./labs";
 
 let homeUrl = "";
 let otherUrl = "";
-const WISP = process.env.ARUGULA_WISP_URL ?? "http://127.0.0.1:7788";
-const token = (() => {
-  try {
-    return readFileSync(process.env.ARUGULA_WISP_TOKEN_FILE ?? `${homedir()}/.local/share/wisp/token`, "utf8").trim();
-  } catch {
-    return "";
-  }
-})();
 
 const states: string[] = [];
 const daemons = new Map<string, ChildProcess>();
@@ -59,9 +51,6 @@ async function startDaemon(name: string, extra: string[] = []) {
   throw new Error(`daemon ${name} did not start`);
 }
 
-const wisp = (method: string, path: string) =>
-  fetch(`${WISP}/v1/sprites${path}`, { method, headers: { Authorization: `Bearer ${token}` } });
-
 test.beforeAll(async () => {
   // Resolved, as the shell's pwd is (macOS's temp dir is behind a symlink).
   root = realpathSync(mkdtempSync(join(tmpdir(), "ilg-m7-dirs-")));
@@ -78,20 +67,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   for (const d of daemons.values()) d.kill("SIGKILL");
-  // Machines a failed test left behind (this daemon's only).
-  for (const state of states) {
-    let id = "";
-    try {
-      id = readFileSync(join(state, "daemon-id"), "utf8").trim();
-    } catch {
-      // never made one
-    }
-    if (id && token) {
-      const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
-      for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
-    }
-    rmSync(state, { recursive: true, force: true });
-  }
+  for (const state of states) rmSync(state, { recursive: true, force: true });
   if (root) rmSync(root, { recursive: true, force: true });
 });
 
@@ -266,58 +242,5 @@ test.describe("phone", () => {
     const made = await next(page, () => page.getByRole("button", { name: "New pane here" }).click());
     await expect.poll(() => cwd(page, made)).toBe(join(root, "alpha/delta"));
     await expect.poll(() => activePane(page)).toBe(made);
-  });
-
-  test("on a VM tab: browse the VM, new pane here, a shell in that directory", async ({ page }) => {
-    test.skip(!token, "no wisp token on this host");
-    test.setTimeout(120_000);
-    await onHost(page, "home");
-    const vm = await next(page, async () => {
-      await sheet(page);
-      await page.getByRole("button", { name: "New VM tab" }).click();
-    });
-    await expect.poll(() => cwd(page, vm), { timeout: 60_000 }).toBe("/home/sprite");
-    // The machine has a generated name of its own; the sprite keeps its id.
-    const m = await page.evaluate((p) => window.__arugula.client.machine(p)!, vm);
-    expect(m.name).toMatch(/^[a-z]+ [a-z]+$/);
-    expect(m.sprite).toMatch(/^arugula-eph-/);
-    await type(page, vm, "mkdir -p ~/m7/inner ~/m7/other && echo made-$((6*7))\n");
-    await expect.poll(() => text(page, vm)).toContain("made-42");
-
-    await sheet(page);
-    await page.getByRole("button", { name: "Go to directory" }).click();
-    await expect(page.locator(".picker.phone")).toBeVisible();
-    await expect(page.locator(".picker-where")).toContainText(m.name!);
-    await expect.poll(() => pickerPath(page), { timeout: 20_000 }).toBe("/home/sprite");
-    // Hidden directories after the rest; m7 is there.
-    await row(page, "/home/sprite/m7").click();
-    await expect.poll(() => pickerPath(page)).toBe("/home/sprite/m7");
-    await row(page, "/home/sprite/m7/inner").click();
-    await expect.poll(() => pickerPath(page)).toBe("/home/sprite/m7/inner");
-    // A VM's directories are only in its tab.
-    await expect(page.getByRole("button", { name: "New tab here" })).toBeDisabled();
-    const made = await next(page, () => page.getByRole("button", { name: "New pane here" }).click());
-    // On the same machine, in that directory.
-    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.host, made)).toBe(m.id);
-    await expect.poll(() => cwd(page, made), { timeout: 30_000 }).toBe("/home/sprite/m7/inner");
-    await type(page, made, "pwd; hostname\n");
-    await expect.poll(() => text(page, made)).toContain("/home/sprite/m7/inner");
-    expect(await text(page, made)).toContain(m.sprite);
-
-    // cd there, on the VM's first pane.
-    await page.evaluate((p) => window.__arugula.client.setActive(p), vm);
-    await sheet(page);
-    await page.getByRole("button", { name: "Go to directory" }).click();
-    await expect.poll(() => pickerPath(page), { timeout: 20_000 }).toBe("/home/sprite");
-    await row(page, "/home/sprite/m7").click();
-    await row(page, "/home/sprite/m7/other").click();
-    await page.getByRole("button", { name: "cd there" }).click();
-    await expect(page.locator(".picker")).toHaveCount(0);
-    await expect.poll(() => cwd(page, vm), { timeout: 20_000 }).toBe("/home/sprite/m7/other");
-
-    // Close the tab: its machine goes.
-    const tab = await page.evaluate((p) => window.__arugula.client.tabOfPane(p)!.id, vm);
-    await page.evaluate((t) => window.__arugula.client.intent({ op: "close_tab", tab: t }), tab);
-    await expect.poll(async () => (await wisp("GET", `/${m.sprite}`)).status, { timeout: 30_000 }).toBe(404);
   });
 });

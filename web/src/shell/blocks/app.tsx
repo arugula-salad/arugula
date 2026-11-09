@@ -20,7 +20,9 @@ import type { Client } from "../client";
 import { gateKey, type Gate, type PaneId } from "../../shared/proto";
 import { openMenu } from "../../shared/ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
-import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
+import { Bar } from "../../shared/ui/bar";
+import { Caret, IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 export interface AppState {
   app: string;
@@ -143,10 +145,10 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
   const name = s.title ?? s.app;
   return (
     <div class="browser app-block" data-app={s.app}>
-      <div class="browser-bar">
-        <button title="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
-          ↻
-        </button>
+      <Bar sub class="browser-bar">
+        <IconButton label="Enter again (a fresh way in from the studio)" disabled={!owner} onClick={() => setWant((w) => ({ n: w.n + 1 }))}>
+          <ReloadIcon size="sm" />
+        </IconButton>
         <span class="app-name" title={s.box_url}>
           {name}
         </span>
@@ -165,10 +167,10 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
             )
           }
         >
-          Records ▾
+          Records <Caret />
         </button>
         <OpenOutside href={s.box_url} />
-      </div>
+      </Bar>
       {s.gates.length > 0 && (
         <div class="app-gates" data-app-gates>
           {s.gates.map((g) => (
@@ -189,10 +191,10 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         </div>
       )}
       {!owner ? (
-        <BlockEmpty>
-          <p>{name} is a studio app of this machine's owner.</p>
-          <p>Only they can open it here; its questions still come to you if you may answer them.</p>
-        </BlockEmpty>
+        <EmptyState
+          title={`${name} is the owner's app.`}
+          why="Only they can open it here; its questions still come to you if you may answer them."
+        />
       ) : error ? (
         <BlockError title={`Couldn't get into ${name}`} detail={error} retry={() => setWant((w) => ({ n: w.n + 1 }))} />
       ) : (

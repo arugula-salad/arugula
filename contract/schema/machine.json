@@ -1,0 +1,19 @@
+{
+  "$defs": {
+    "MachineRename": {
+      "additionalProperties": false,
+      "description": "`POST /api/daemons/{id}/name`: a new name for a machine.",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::machine"
+}

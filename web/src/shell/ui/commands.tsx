@@ -10,9 +10,11 @@ import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { machineHandle } from "../../shared/chat/agents";
+import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
+import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
@@ -21,11 +23,13 @@ import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
 import { openAgentGrants } from "./agent-grants";
+import { openAccess } from "./access";
 import { directory } from "../hosts";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { keyHint } from "./keys";
+import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
@@ -35,6 +39,7 @@ import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from 
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
+import { type Tone } from "../../shared/ui/state-chip";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -42,9 +47,6 @@ import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, u
 export function paneItems(client: Client, id: PaneId, phone: boolean, workspace: string | null): MenuItem[] {
   const info = client.info(id);
   const entry = client.panes.get(id);
-  // #17: a shell on another host, beside this pane.
-  const elsewhere = (): MenuItem[] =>
-    remoteHosts().map((h) => ({ label: `Split right on ${h}`, run: () => void newRemote(client, h, { split: id }) }));
   const moveToTab: MenuItem = {
     label: "Move to new tab",
     disabled: (client.tabOfPane(id) && paneIds(client.tabOfPane(id)!).length < 2) ?? true,
@@ -63,21 +65,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
       ...threadItems(client, id),
     ];
-
-  if (info?.type === "remote") {
-    // Its terminal is its host's: here, only where it is.
-    const at = client.blocks.get(id)?.state as { host: string; pane: PaneId } | null;
-    return [
-      ...(at ? [{ header: `%${at.pane} on ${at.host}` } as MenuItem] : []),
-      ...focus,
-      { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
-      { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
-      ...elsewhere(),
-      "separator",
-      moveToTab,
-      closePane,
-    ];
-  }
 
   const tabId = client.tabOfPane(id)?.id;
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
@@ -112,7 +99,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   };
   const openBeside: MenuItem[] = [
     ...(client.has("vms") ? [{ label: "New VM pane on the right", run: () => void client.newVm({ split: id }) } as MenuItem] : []),
-    ...elsewhere(),
     {
       label: "Open a web page…",
       run: async () => {
@@ -136,6 +122,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it.
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A Doc of this machine's, beside it (#703).
+    ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
@@ -248,7 +236,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
       : []),
     ...machineItems(client, tab),
     "separator",
-    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => client.intent({ op: "close_tab", tab: tab.id }) },
+    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => confirmCloseTab(client, tab.id) },
   ];
 }
 
@@ -267,8 +255,6 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { session }) } as MenuItem] : []),
-    // #17: a tab here whose shell runs on another host.
-    ...remoteHosts().map((h): MenuItem => ({ label: `New tab on ${h}`, run: () => void newRemote(client, h, { session }) })),
   ];
 }
 
@@ -290,7 +276,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
-    // VMs and sandboxes need wisp (#180).
+    // VMs and sandboxes need a sandbox provider (#180).
     ...(client.has("vms")
       ? [
           { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
@@ -458,8 +444,6 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "nvim.help-card": (client, { pane, section }) => openHelpCard(client, Number(pane), section === undefined ? undefined : String(section)),
   "nvim.help": (client, { pane, help }) => void openHelp(client, Number(pane), String(help)),
   "nvim.docs": () => void window.open(NVIM_DOCS, "_blank", "noopener"),
-  /** A shell on another host, split right of the pane (#17). */
-  "remote.split": (client, { pane, host }) => void newRemote(client, String(host), { split: Number(pane) }),
   /** Sign-in and account, where Add a passkey is. */
   "control.passkeys": () => openPanel("account")(),
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
@@ -480,17 +464,22 @@ function under(selector: string) {
   return { clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} };
 }
 
-/** The shown machine's settings: its standing permission rules (#166), its
- * usage and crash reports (M103) and its Labs flags (#665), the owner's.
- * In the machine menu. Developer settings are there whether or not the
- * machine has a `flags.json` yet: the dialog is how a flag gets turned on. */
+/** The shown machine's settings: who can reach it (Arugula #681), its
+ * standing permission rules (#166), its usage and crash reports (M103) and
+ * its Labs flags (#665), the owner's. In the machine menu. Developer
+ * settings are there whether or not the machine has a `flags.json` yet: the
+ * dialog is how a flag gets turned on. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
+    { label: "Access…", hint: "Who can reach this machine, and as what", run: () => openAccess(client) },
     { label: "Permission rules…", run: () => openRules(client) },
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Arugula #500: its name on control, on control's page, where the shown
+    // machine has an id; control refuses anyone but its owner (or its team's).
+    ...renameItems(client),
     // Discovery 10: what its agents may do on control (`arugula grants`),
     // once it's joined (or the page is control's).
     ...(directory.control || directory.joined ? [{ label: "Agents' grants…", run: openAgentGrants }] : []),
@@ -505,9 +494,42 @@ export function machineSettingsItems(client: Client): MenuItem[] {
   ];
 }
 
+/** *Rename…* on the shown machine (Arugula #500): the name the machines list,
+ * the switcher, chat and `@machine` call it. Only through control, which
+ * holds the name; the old one keeps working in mentions. */
+function renameItems(client: Client): MenuItem[] {
+  const host = directory.control ? directory.find(directory.current) : undefined;
+  const session = getControlSession();
+  if (!host?.id || !session) return [];
+  const id = host.id;
+  return [
+    {
+      label: "Rename machine…",
+      hint: "Its name in the machines list, in chat and in @mentions; the old name keeps working",
+      run: () => {
+        void (async () => {
+          const name = await askText(`Rename ${host.name}`, host.name, "a short name, like mini");
+          if (name === null || name.trim() === host.name) return;
+          try {
+            const now = await session.renameDaemon(id, name);
+            client.toast(`Renamed to ${now}. @${machineHandle(now)} reaches it; so does its old name.`);
+          } catch (e) {
+            client.toast((e as Error).message);
+          }
+        })();
+      },
+    },
+  ];
+}
+
 /** "idle" when nothing in the tab runs on its machine any more. */
 export function machineState(client: Client, m: Machine): string {
   return m.state === "running" && client.panesOn(m.id).length === 0 ? "idle" : m.state;
+}
+
+/** A machine state's tone on a tag: starting warns, gone is danger, idle is quiet. */
+export function machineTone(state: string): Tone {
+  return state === "starting" ? "warn" : state === "gone" ? "danger" : state === "idle" ? "muted" : "info";
 }
 
 /** The tab's machine: how it is, a new pane on it, reset. */

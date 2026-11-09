@@ -89,11 +89,21 @@ pub enum JobKind {
     Session,
     /// A merged PR's move of a Plane item to Done (#437).
     PlaneDone,
+    /// A chant→Fly deploy's plan (#1985): its box and its plan run, before
+    /// anyone approves it. Its id is `plan:<deploy>`.
+    DeployPlan,
 }
 
 impl JobKind {
-    pub const ALL: [JobKind; 6] =
-        [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule, JobKind::Session, JobKind::PlaneDone];
+    pub const ALL: [JobKind; 7] = [
+        JobKind::Workspace,
+        JobKind::Run,
+        JobKind::Deploy,
+        JobKind::Schedule,
+        JobKind::Session,
+        JobKind::PlaneDone,
+        JobKind::DeployPlan,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -103,6 +113,7 @@ impl JobKind {
             JobKind::Schedule => "schedule",
             JobKind::Session => "session",
             JobKind::PlaneDone => "plane_done",
+            JobKind::DeployPlan => "deploy_plan",
         }
     }
 
@@ -675,6 +686,21 @@ fn end_work_in(tx: &impl Sql, id: &str, kind: JobKind, why: &str, now: u64) -> R
                 let detail = serde_json::json!({ "reason": why }).to_string();
                 let _ = move_session_in(tx, id, &Move::Control { from, to: State::Failed, at: now, detail: &detail })?;
             }
+        }
+        JobKind::DeployPlan => {
+            // Its run fails, the plan ends saying why, and its box goes.
+            let Some(deploy) = super::deploy_plans::deploy_of_job(id) else { return Ok(()) };
+            let run: Option<Option<String>> = tx
+                .query_row("SELECT run_id FROM deploy_plans WHERE deploy_id = ?1", params![deploy], |r| r.get(0))
+                .optional()?;
+            if let Some(r) = run.flatten() {
+                fail_run(&r)?;
+            }
+            tx.execute(
+                "UPDATE deploy_plans SET failed = ?2, ended_at = ?3 WHERE deploy_id = ?1 AND ended_at IS NULL",
+                params![deploy, format!("its plan's job gave up: {why}"), now],
+            )?;
+            super::hosted::ask_delete_deploy_box_in(tx, &super::deploy_plans::box_name(deploy), now)?;
         }
         JobKind::Workspace | JobKind::Schedule | JobKind::PlaneDone => {}
     }

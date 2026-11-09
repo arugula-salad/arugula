@@ -51,14 +51,17 @@ use futures_util::{FutureExt, SinkExt, StreamExt, future::BoxFuture};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::mpsc,
+};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{self, Message, client::IntoClientRequest, handshake::client::Request},
 };
 use tracing::{info, warn};
 
-use super::sprites::{bridge, rfc3339_ms};
 use crate::pane::Spawn;
 use crate::provider::{
     Begin, Caps, Cold, Conn, Exec, ExecEvent, ExecInput, ExecSink, PATIENCE, Pipe, PipeBegin, PipeEvent, Provider,
@@ -803,6 +806,79 @@ async fn send_input(ws: &mut Ws, d: &[u8]) {
     f.push(0u8);
     f.extend_from_slice(d);
     let _ = ws.send(Message::Binary(f.into())).await;
+}
+
+/// `2026-10-01T12:34:56.789Z` as milliseconds since the epoch (UTC only,
+/// which is what loam sends).
+fn rfc3339_ms(s: &str) -> Option<u64> {
+    let b = s.as_bytes();
+    if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || !s.ends_with('Z') {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    let (y, mo, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
+    let (h, mi, sec) = (n(11..13)?, n(14..16)?, n(17..19)?);
+    let frac = s[19..s.len() - 1].strip_prefix('.').unwrap_or("");
+    let ms = format!("{frac:0<3}").get(..3)?.parse::<i64>().ok()?;
+    // Days from the civil date (Howard Hinnant's algorithm).
+    let y = if mo <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (mo + if mo > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(((days * 24 + h) * 60 + mi) * 60 * 1000 + sec * 1000 + ms).ok()
+}
+
+/// A connected WebSocket whose binary frames carry one TCP connection, as a
+/// byte stream: one end of a pipe is handed back, and a task moves bytes
+/// between the other end and the socket. The pipe's buffer is the
+/// backpressure.
+fn bridge<S>(ws: WebSocketStream<S>) -> Conn
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let (ours, theirs) = tokio::io::duplex(64 * 1024);
+    crate::task::spawn(async move {
+        let (mut from_us, mut to_us) = tokio::io::split(theirs);
+        let (mut sink, mut stream) = ws.split();
+        let up = async {
+            let mut buf = vec![0u8; 32 * 1024];
+            loop {
+                match from_us.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if sink.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            let _ = sink.close().await;
+        };
+        let down = async {
+            while let Some(m) = stream.next().await {
+                match m {
+                    Ok(Message::Binary(b)) => {
+                        if to_us.write_all(&b).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Message::Close(_)) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+            let _ = to_us.shutdown().await;
+        };
+        tokio::pin!(up, down);
+        tokio::select! {
+            // We're done sending: let the answer finish, briefly.
+            _ = &mut up => { let _ = tokio::time::timeout(Duration::from_secs(5), down).await; }
+            // The port closed: so does our end.
+            _ = &mut down => {}
+        }
+    });
+    Box::new(ours)
 }
 
 /// A VM pane's terminal: attached while it's in use, let go while it's
@@ -1648,6 +1724,14 @@ mod tests {
         // The key never shows in debug output, and the caps say what loam does.
         assert!(!format!("{lo:?}").contains("\"k\""));
         assert_eq!((lo.name(), lo.caps().exec_replay, lo.caps().cold), ("loam", 1 << 20, Cold::Restore));
+    }
+
+    #[test]
+    fn times_are_loams() {
+        assert_eq!(rfc3339_ms("1970-01-01T00:00:01Z"), Some(1000));
+        assert_eq!(rfc3339_ms("2026-10-01T12:00:00.5Z"), Some(1_790_856_000_500));
+        assert_eq!(rfc3339_ms("2000-03-01T00:00:00.123456789Z"), Some(951_868_800_123));
+        assert_eq!(rfc3339_ms("garbage"), None);
     }
 
     #[test]

@@ -80,6 +80,20 @@ test("setup: #general, and a team-chat block beside a terminal", async () => {
 /** The key the picker opens on, for the OS the browser runs on. */
 const PICKER_KEY = process.platform === "darwin" ? "Meta+U" : "Control+U";
 
+/** The key, and the picker it opens. Listening for `filechooser` is what asks
+ * the browser to intercept pickers, and Playwright doesn't wait for that. The
+ * request goes to the page's main thread, and a key takes another way there
+ * and can overtake it: the picker opens with nothing intercepting it, the
+ * event never comes. A click waits long enough; a key press doesn't. An evaluate
+ * goes the request's way, so its answer means the page has had the request. */
+async function pressForPicker(page: Page) {
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser", { timeout: 10_000 }),
+    page.evaluate(() => 0).then(() => page.keyboard.press(PICKER_KEY)),
+  ]);
+  return chooser;
+}
+
 test("the key in the platform page's composer opens its file picker", async () => {
   test.setTimeout(60_000);
   const room = aliceChat.locator("[data-chat-control] [data-room-view]");
@@ -88,7 +102,7 @@ test("the key in the platform page's composer opens its file picker", async () =
   // The tooltip says the shortcut.
   await expect(room.locator("[data-attach-button]")).toHaveAttribute("title", process.platform === "darwin" ? "Attach files (⌘U)" : "Attach files (Ctrl+U)");
   await box.focus();
-  const [chooser] = await Promise.all([aliceChat.waitForEvent("filechooser", { timeout: 10_000 }), aliceChat.keyboard.press(PICKER_KEY)]);
+  const chooser = await pressForPicker(aliceChat);
   expect(chooser.isMultiple()).toBe(true);
 });
 
@@ -99,7 +113,7 @@ test("the key in the team-chat block's composer opens its file picker", async ()
   await view.locator(`[data-chat-room="${general}"]`).click();
   const box = view.locator("[data-room-view]").getByRole("textbox", { name: "Message #general" });
   await box.focus();
-  const [chooser] = await Promise.all([alice.waitForEvent("filechooser", { timeout: 10_000 }), alice.keyboard.press(PICKER_KEY)]);
+  const chooser = await pressForPicker(alice);
   expect(chooser.isMultiple()).toBe(true);
 });
 

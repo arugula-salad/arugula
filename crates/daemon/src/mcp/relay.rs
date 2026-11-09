@@ -1,4 +1,4 @@
-//! MCP for agent blocks in a VM (#59). A wisp guest can't reach any host
+//! MCP for agent blocks in a VM (#59). A sandbox's guest can't reach any host
 //! address (S14), so the daemon reaches in instead: it opens a non-TTY exec
 //! in the VM running `guest_relay.py`, which listens on a Unix socket there
 //! and carries each connection over the exec's stdin and stdout. Each

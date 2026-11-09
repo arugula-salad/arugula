@@ -12,7 +12,6 @@ import { repoMoved } from "./changes";
 import { conversationHere } from "./conversations";
 import { docOpen } from "./docs";
 import { editorStarted } from "./editor";
-import { otherHost } from "./hosts";
 import { printedLink } from "./links";
 import { commandMarked } from "./marks";
 import { passkeyWanted } from "./passkeys";
@@ -146,14 +145,6 @@ export const HINTS: Hint[] = [
     fact: editorStarted,
     copy: () => "Open the editor beside it",
     action: { label: "Open in editor", command: "editor.open" },
-  },
-  {
-    // Another machine in the host menu.
-    id: "remote-split",
-    place: "chip",
-    fact: otherHost,
-    copy: () => "Split a shell on that machine into this tab",
-    action: { label: (f) => `Split right on ${f.args.host}`, command: "remote.split" },
   },
   {
     // A new nvim process in a pane: one key tip, every start, after the

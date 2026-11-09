@@ -6,7 +6,7 @@
 
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl, home } from "./team-fixture";
+import { TeamControl, home, opened } from "./team-fixture";
 
 export function mentionChipsTests(what: string, context: { serviceWorkers?: "block" } = {}) {
   const t = new TeamControl(what);
@@ -53,7 +53,7 @@ export function mentionChipsTests(what: string, context: { serviceWorkers?: "blo
     await expect.poll(() => alice.evaluate(() => window.__arugula.chat.on), { timeout: 15_000 }).toBe(true);
     // Control's page has `window.__arugula`; the platform page below doesn't.
     const members = [await account("bob"), await account("carol")];
-    await alice.goto(`${app}/chat`);
+    alice = await opened(alice, `${app}/chat`);
     await alice.locator(`[data-room-new="${team}/channels"]`).click();
     await alice.locator("[data-new-channel-name]").fill("general");
     await alice.locator("[data-new-channel-name]").press("Enter");
@@ -73,9 +73,10 @@ export function mentionChipsTests(what: string, context: { serviceWorkers?: "blo
     await box.fill("@bob and @ghost please look");
     await box.press("Enter");
     for (const [who, page] of [["alice", alice], ["bob", bob], ["carol", carol]] as const) {
-      await page.bringToFront();
-      await page.goto(`${app}/chat/${general}`);
-      const msg = page.locator(".thread-msg", { hasText: "please look" });
+      // A page of its own: an open page can't go to the platform page's origin on Linux WebKit (#402).
+      const view = await opened(page, `${app}/chat/${general}`);
+      await view.bringToFront();
+      const msg = view.locator(".thread-msg", { hasText: "please look" });
       await expect(msg, who).toBeVisible({ timeout: 20_000 });
       // The mention of Bob reached him: no dashed chip, whoever looks.
       await expect(msg.locator(".mention-missed", { hasText: "@bob" }), who).toHaveCount(0);
@@ -84,6 +85,7 @@ export function mentionChipsTests(what: string, context: { serviceWorkers?: "blo
       await expect(msg.locator(".mention.me", { hasText: "@bob" }), who).toHaveCount(who === "bob" ? 1 : 0);
       // @ghost is in no one's room: dashed for everyone.
       await expect(msg.locator(".mention-missed", { hasText: "@ghost" }), who).toHaveCount(1);
+      await view.close();
     }
   });
 }

@@ -83,12 +83,12 @@ pub async fn call(
         let Json(made) = drafts::create(State(app.clone()), d, Json(new.clone())).await?;
         return answer(&op, v, made);
     }
-    let viewer = Viewer::of(&app, &d.account).await?;
+    let mut viewer = Viewer::of(&app, &d.account).await?;
     let st = || State(app.clone());
     match &op {
         Op::PrGet(r) | Op::IssueGet(r) => {
             let kind = if matches!(op, Op::PrGet(_)) { "pr" } else { "issue" };
-            let id = item_id(&app, &viewer, r, Some(kind)).await?;
+            let id = item_id(&app, &mut viewer, r, Some(kind)).await?;
             let Json(item) = items::get(st(), viewer.clone(), Path(id.clone())).await?;
             let Json(events) = items::events(st(), viewer.clone(), Path(id.clone())).await?;
             let Json(drafts) = drafts::item(st(), viewer, Path(id), Query(DraftsQuery::default())).await?;
@@ -96,25 +96,26 @@ pub async fn call(
         }
         Op::TrackerGet(r) => {
             let project = r.project.as_deref().unwrap_or("personal");
-            let item = items::plane_get(&app, &viewer, project, &r.key, r.number).await?;
+            let item = items::plane_get(&app, &mut viewer, project, &r.key, r.number).await?;
             let note = "A Plane item's body and comments aren't mirrored: open its url in Plane to read them.";
             answer(&op, v, wire::ItemView { item, events: vec![], drafts: vec![], note: Some(note.to_owned()) })
         }
         Op::TrackerFields(q) => {
             let project = q.project.as_deref().unwrap_or("personal");
             let fields =
-                items::tracker_fields(&app, &viewer, project, q.tracker.as_deref(), q.connection.as_deref()).await?;
+                items::tracker_fields(&app, &mut viewer, project, q.tracker.as_deref(), q.connection.as_deref())
+                    .await?;
             answer(&op, v, fields)
         }
         Op::ChecksGet(r) => {
-            let id = item_id(&app, &viewer, r, None).await?;
+            let id = item_id(&app, &mut viewer, r, None).await?;
             let Json(checks) = items::checks(st(), viewer, Path(id)).await?;
             answer(&op, v, checks)
         }
         Op::ItemList(q) => {
             let project = match (&q.project, &q.repo) {
                 (Some(p), _) => p.clone(),
-                (None, Some(repo)) => readable_link(&app, &viewer, repo).await?.0.project_id,
+                (None, Some(repo)) => readable_link(&app, &mut viewer, repo).await?.0.project_id,
                 (None, None) => "personal".into(),
             };
             let query = ItemsQuery {
@@ -141,7 +142,7 @@ pub async fn call(
             };
             let project = match (&q.project, &q.repo) {
                 (Some(p), _) => Some(p.clone()),
-                (None, Some(repo)) => Some(readable_link(&app, &viewer, repo).await?.0.project_id),
+                (None, Some(repo)) => Some(readable_link(&app, &mut viewer, repo).await?.0.project_id),
                 (None, None) => None,
             };
             let Json(listed) = match project {
@@ -158,7 +159,7 @@ pub async fn call(
         }
         Op::InboxMark(m) => {
             let at = wire::ItemRef { repo: m.repo.clone(), number: m.number };
-            let id = item_id(&app, &viewer, &at, None).await?;
+            let id = item_id(&app, &mut viewer, &at, None).await?;
             let b = arugula_control_wire::projects::InboxMark { reason: m.reason.clone(), seen: m.seen, done: m.done };
             answer(&op, v, inbox::mark_for(&app, &d.account, id, &b).await?)
         }
@@ -231,7 +232,7 @@ async fn sends(app: &Arc<Platform>, d: Drafter, op: &Op) -> Result<wire::Sent, A
 }
 
 /// A linked repo the viewer may read, by name, and the check that says so.
-async fn readable_link(app: &Platform, v: &Viewer, repo: &str) -> Result<(LinkedRepo, viewer::Readable), ApiError> {
+async fn readable_link(app: &Platform, v: &mut Viewer, repo: &str) -> Result<(LinkedRepo, viewer::Readable), ApiError> {
     let name = repo.trim();
     if !super::good_repo(name) {
         return Err(err(StatusCode::BAD_REQUEST, "repo: OWNER/NAME"));
@@ -246,7 +247,7 @@ async fn readable_link(app: &Platform, v: &Viewer, repo: &str) -> Result<(Linked
 
 /// The mirror's id for `OWNER/NAME#N`, when the viewer may read it (and
 /// it's a `kind`, when one is asked).
-async fn item_id(app: &Platform, v: &Viewer, r: &wire::ItemRef, kind: Option<&str>) -> Result<String, ApiError> {
+async fn item_id(app: &Platform, v: &mut Viewer, r: &wire::ItemRef, kind: Option<&str>) -> Result<String, ApiError> {
     let (link, readable) = readable_link(app, v, &r.repo).await?;
     let f = ItemFilter { number: Some(r.number), limit: 1, ..Default::default() };
     let at = format!("{}#{}", link.full_name, r.number);

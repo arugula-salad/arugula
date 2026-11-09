@@ -450,13 +450,17 @@ async fn object_cards(
                 if let Some((_, project, _)) = app.db.hosted_places(&[id.as_str()])?.into_iter().next()
                     && let Some(w) = app.db.hosted_any(&project, id)?
                 {
+                    // Named only while they're in the project, as the
+                    // workspace routes name them.
+                    let who =
+                        crate::hosted::routes::Members::or_nobody(app, &project).await.named(w.created_by.clone());
                     seen.push(Seen {
                         url: url.clone(),
                         project,
                         what: "workspace",
                         title: w.name.clone(),
                         state: workspace_state(&w.state),
-                        who: w.created_by.clone(),
+                        who,
                         at: w.created_at,
                         private: None,
                     });

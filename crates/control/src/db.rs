@@ -25,6 +25,7 @@ mod tables;
 
 use std::{path::Path, sync::Mutex};
 
+use arugula_control_wire::machine;
 use arugula_e2e::{Cert, Kind, Revocation};
 use arugula_platform_api::hub::ChangeKind;
 use changes::changed;
@@ -332,6 +333,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("daemons", "moved")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN moved TEXT")?;
     }
+    // #500: the handles a renamed machine went by (a JSON list).
+    if !has("daemons", "aliases")? {
+        conn.execute_batch("ALTER TABLE daemons ADD COLUMN aliases TEXT")?;
+    }
     if !has("daemons", "features")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN features TEXT")?;
     }
@@ -487,8 +492,31 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute("UPDATE OR IGNORE labs_flags SET name = ?2 WHERE name = ?1", params![old, new])?;
         conn.execute("DELETE FROM labs_flags WHERE name = ?1", params![old])?;
     }
+    // Doc copies took the account's own `chat` before they had a word of
+    // their own (native #673): an account with its own chat on then has
+    // said yes. Once, marked in `settings`, so an account that sets its own
+    // chat later isn't taken to have; insert-or-ignore, so an answer an
+    // account gave stays.
+    // The grant before the mark: a stop between them only repeats the
+    // grant, which is insert-or-ignore.
+    let done: bool =
+        conn.query_row("SELECT EXISTS (SELECT 1 FROM settings WHERE k = ?1)", params![DOC_COPIES_CARRIED], |r| {
+            r.get(0)
+        })?;
+    if !done {
+        conn.execute(
+            "INSERT OR IGNORE INTO labs_flags (owner, name, turned_on)
+             SELECT owner, ?1, 1 FROM labs_flags WHERE name = 'chat' AND turned_on = 1 AND owner LIKE 'account:%'",
+            params![arugula_control_wire::DOC_COPIES],
+        )?;
+        conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
+    }
     Ok(())
 }
+
+/// In `settings`: the accounts with their own chat on were given the word
+/// for Doc copies (native #673).
+const DOC_COPIES_CARRIED: &str = "doc-copies-carried-over";
 
 /// Before share answers were kept, every account a daemon listed was
 /// routed to: those already listed count as accepted, so nothing shared
@@ -567,6 +595,19 @@ pub struct Erase<'a> {
     /// stay, for checking those signatures only, while they last.
     pub retain_for: &'a [String],
 }
+
+/// How [`Db::rename_daemon`] went.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Renamed {
+    Done,
+    /// No such machine.
+    Gone,
+    /// Another machine of its owner or team is called that; its name.
+    Taken(String),
+}
+
+/// The most old names a machine keeps.
+const MAX_ALIASES: usize = 20;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DaemonRow {
@@ -1951,6 +1992,97 @@ impl Db {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// A machine renamed (#500): the display name only. Its old handle
+    /// stays as an alias, so `@old` still reaches it; the new one is refused
+    /// when another machine of its owner, or of its team, goes by it now.
+    pub fn rename_daemon(&self, id: &str, name: &str) -> anyhow::Result<Renamed> {
+        // The accounts that share a team with its owner: a team's room
+        // reaches their personal machines too, so a word one of them goes by
+        // now is taken (before the lock: `teams_of` takes it).
+        let mut mates: Vec<String> = vec![];
+        if let Some(owner) = self.daemon_account(id)? {
+            for body in self.teams_of(&owner)? {
+                let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                mates.extend(
+                    v["members"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|m| m["account"].as_str().map(str::to_owned)),
+                );
+            }
+            mates.sort();
+            mates.dedup();
+        }
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let Some((account, was, aliases)) = tx
+            .query_row("SELECT account, name, COALESCE(aliases, '[]') FROM daemons WHERE id = ?1", params![id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
+            .optional()?
+        else {
+            return Ok(Renamed::Gone);
+        };
+        let team: Option<String> = tx.query_row("SELECT team FROM daemons WHERE id = ?1", params![id], |r| r.get(0))?;
+        let (new, old) = (machine::handle(name), machine::handle(&was));
+        // Its owner's machines, and its team's, whoever owns them.
+        let mut q = tx.prepare(
+            "SELECT id, name, COALESCE(aliases, '[]') FROM daemons
+             WHERE id != ?1 AND (account = ?2 OR (?3 IS NOT NULL AND team = ?3))",
+        )?;
+        let others: Vec<(String, String, String)> = q
+            .query_map(params![id, account, team], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        drop(q);
+        if let Some((_, taken, _)) = others.iter().find(|(_, n, _)| machine::handle(n) == new) {
+            return Ok(Renamed::Taken(taken.clone()));
+        }
+        // Or a teammate's machine, personal or not: current names only.
+        let mut q = tx.prepare("SELECT name FROM daemons WHERE account = ?1 AND id != ?2")?;
+        for mate in mates.iter().filter(|m| **m != account) {
+            let theirs: Vec<String> = q.query_map(params![mate, id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            if let Some(taken) = theirs.into_iter().find(|n| machine::handle(n) == new) {
+                return Ok(Renamed::Taken(taken));
+            }
+        }
+        drop(q);
+        let mut mine: Vec<String> = serde_json::from_str(&aliases).unwrap_or_default();
+        mine.retain(|a| *a != new);
+        if !old.is_empty() && old != new && !mine.contains(&old) {
+            mine.push(old.clone());
+        }
+        let skip = mine.len().saturating_sub(MAX_ALIASES);
+        mine.drain(..skip);
+        // The newest holder of a word has it: no other machine of the same
+        // owner or team keeps it as an old name.
+        for (other, _, theirs) in &others {
+            let mut list: Vec<String> = serde_json::from_str(theirs).unwrap_or_default();
+            let before = list.len();
+            list.retain(|a| !mine.contains(a));
+            if list.len() != before {
+                tx.execute(
+                    "UPDATE daemons SET aliases = ?2 WHERE id = ?1",
+                    params![other, serde_json::to_string(&list)?],
+                )?;
+            }
+        }
+        tx.execute(
+            "UPDATE daemons SET name = ?2, aliases = ?3 WHERE id = ?1",
+            params![id, name, serde_json::to_string(&mine)?],
+        )?;
+        changed(&tx, ChangeKind::DaemonJoined, id)?;
+        tx.commit()?;
+        Ok(Renamed::Done)
+    }
+
+    /// The handles a machine went by before it was renamed (#500).
+    pub fn daemon_aliases(&self, id: &str) -> anyhow::Result<Vec<String>> {
+        let raw: Option<Option<String>> =
+            self.c().query_row("SELECT aliases FROM daemons WHERE id = ?1", params![id], |r| r.get(0)).optional()?;
+        Ok(raw.flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default())
+    }
+
     pub fn daemon_account(&self, id: &str) -> anyhow::Result<Option<String>> {
         Ok(self.c().query_row("SELECT account FROM daemons WHERE id = ?1", params![id], |r| r.get(0)).optional()?)
     }
@@ -3216,10 +3348,50 @@ mod tests {
                 )
                 .unwrap();
         }
+        // As at the first start after the word came in.
+        db.conn().execute("DELETE FROM settings WHERE k = ?1", params![DOC_COPIES_CARRIED]).unwrap();
         migrate(&db.conn()).unwrap();
         let flags = |o: &str| db.labs_flags(o).unwrap().into_iter().collect::<Vec<_>>();
-        assert_eq!(flags("account:a"), [("chat".into(), true), ("sandbox-providers".into(), true)]);
+        assert_eq!(
+            flags("account:a"),
+            [("chat".into(), true), ("doc-copies".into(), true), ("sandbox-providers".into(), true)]
+        );
         assert_eq!(flags("team:t"), [("additional-forges".into(), false)]);
+    }
+
+    /// Native #673: an account with its own chat on when Doc copies got a
+    /// word of their own has said yes to them, so its copies don't stop;
+    /// an account's own answer stays, a team's chat counts for nothing, and
+    /// it happens once: an account that sets its own chat later, and a
+    /// start after, give no word.
+    #[test]
+    fn an_accounts_own_chat_carries_over_to_doc_copies() {
+        let db = Db::memory();
+        for (owner, name, on) in [
+            ("account:a", "chat", true),
+            ("account:b", "chat", true),
+            ("account:b", "doc-copies", false),
+            ("account:c", "chat", false),
+            ("team:t", "chat", true),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)",
+                    params![owner, name, on],
+                )
+                .unwrap();
+        }
+        db.conn().execute("DELETE FROM settings WHERE k = ?1", params![DOC_COPIES_CARRIED]).unwrap();
+        let copies = |o: &str| db.labs_flags(o).unwrap().get("doc-copies").copied();
+        migrate(&db.conn()).unwrap();
+        assert_eq!(copies("account:a"), Some(true), "its own chat was on");
+        assert_eq!(copies("account:b"), Some(false), "its own answer stays");
+        assert_eq!(copies("account:c"), None);
+        assert_eq!(copies("team:t"), None, "a team has no say");
+        // Later: d sets its own chat, and control starts again.
+        db.set_labs_flag("account:d", "chat", Some(true)).unwrap();
+        migrate(&db.conn()).unwrap();
+        assert_eq!(copies("account:d"), None, "once, not at every start");
     }
 
     /// #102: a GitHub account goes by its login, a passkey one by the name

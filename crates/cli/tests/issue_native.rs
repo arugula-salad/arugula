@@ -89,8 +89,9 @@ fn serve(st: &Mutex<State>, mut s: TcpStream) {
         return json(&mut s, 500, json!({ "error": "something went wrong" }));
     }
     let chat_off = st.chat_off;
-    if chat_off && (seg.get(1) == Some(&"projects") && seg.len() > 3 || seg.get(1) == Some(&"issues")) {
-        return json(&mut s, 403, json!({ "error": "native issues come with chat", "reason": "chat_off" }));
+    // Chat off refuses chat's routes alone: issues follow the project (Arugula #746).
+    if chat_off && seg.get(1) == Some(&"chat") {
+        return json(&mut s, 403, json!({ "error": "chat isn't on for you", "reason": "chat_off" }));
     }
     match (method.as_str(), seg.as_slice()) {
         // A linked repo's GitHub issues (step 4's M169): one, on the repo asked.
@@ -487,13 +488,15 @@ fn the_issue_home_decides() {
     rig.ok(&["issue", "new", "-t", "Native anyway", "--native"]);
     assert!(rig.ok(&["issue", "show", "#1", "--native"]).contains("Native anyway"));
 
-    // Chat off: what only the platform has says so; the rest is GitHub's,
-    // as before.
+    // Chat off: issues are as they were (Arugula #746); only their
+    // comments, chat's thread, aren't there.
     rig.state.lock().unwrap().chat_off = true;
-    assert!(rig.fails(false, &["issue", "list", "--native"]).contains("turn it on in control"));
-    assert!(rig.fails(false, &["issue", "export", "--project", "personal"]).contains("turn it on in control"));
-    assert!(rig.fails(false, &["issue", "list"]).contains("turn it on in control"));
-    assert!(rig.fails(false, &["issue", "new", "-t", "x"]).contains("can't reach arugulad"));
+    assert!(rig.ok(&["issue", "list", "--native"]).contains("Native anyway"));
+    let shown = rig.ok(&["issue", "show", "#1", "--native"]);
+    assert!(shown.contains("Native anyway") && shown.contains("comments are in chat, which is off"), "{shown}");
+    let v: Value = serde_json::from_str(&rig.ok(&["--json", "issue", "show", "#1", "--native"])).unwrap();
+    assert_eq!((&v["comments"], &v["comments_in_chat"]), (&json!([]), &json!(true)), "{v}");
+    assert!(rig.fails(false, &["issue", "comment", "#1", "x", "--native"]).contains("chat isn't on"));
 }
 
 /// In a GitHub clone, the current project is the one linking its repo; a

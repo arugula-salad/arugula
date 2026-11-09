@@ -54,7 +54,7 @@ test("dropped by control: a banner, the host menu's line, and Join again", async
   // Join again: Getting started's cloud step, which joins the same control again.
   await banner.locator("[data-control-rejoin]").click();
   const start = page.getByRole("dialog", { name: "Getting started" });
-  await expect(start.locator("[data-getting-started]")).toHaveAttribute("data-step", "cloud");
+  await expect(start).toHaveAttribute("data-step", "cloud");
   await expect(start.locator("[data-start-dropped]")).toContainText("Arugula cloud dropped it");
   await expect(start.locator("[data-start-connect]")).toHaveText("Join control.arugula.io again");
   await expect(start.locator("[data-start-joined]")).toBeHidden();
@@ -96,7 +96,7 @@ test("in the app, a drop opens the join itself, once, leading with the machine (
   await standing(page, dropped);
   await reset(page);
   const start = page.getByRole("dialog", { name: "Getting started" });
-  await expect(start.locator("[data-getting-started]")).toHaveAttribute("data-step", "cloud");
+  await expect(start).toHaveAttribute("data-step", "cloud");
   await expect(start.locator("[data-start-cloud-title]")).toContainText("back in your account or team");
   // One approval, of the machine's code, on a device the person uses.
   await expect(start.locator("[data-start-join-how]")).toContainText("that one approval joins it");

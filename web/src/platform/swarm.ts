@@ -13,8 +13,8 @@ export type { Tone };
 /** A run's, a deploy's and an issue's, as their chips take them. */
 export { deployTone, issueTone, runTone } from "../shared/tones";
 
-/** The class that gives a card its tone. */
-export const toneClass = (t: Tone | null) => (t ? `sw-${t}` : "");
+/** A dense row's tone: a bar only where something wants the reader (accent, warn), as a list of rooms or runs has always had. */
+export const rowTone = (t: Tone | null): Tone | undefined => (t === "accent" || t === "warn" ? t : undefined);
 
 /** A project: the reader's role in it. Their own project, theirs alone,
  * is muted, so its bar isn't a team owner's (UI audit #162); it has no
@@ -53,7 +53,7 @@ const REASON: Record<string, Tone> = {
 export const reasonTone = (reason: string): Tone => REASON[reason] ?? "muted";
 
 /** A chat room: a mention, unread messages, or nothing to say (the same
- * colors as its count's, `.chat-count`). */
+ * colors as its count's, `.count`). */
 export function roomTone(unread: number, mentions: number): Tone | null {
   if (unread > 0 && mentions > 0) return "warn";
   return unread > 0 ? "accent" : null;

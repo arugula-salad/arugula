@@ -502,8 +502,8 @@ const mix = (a: string, b: string, t: number) => {
 
 /** `color`, moved toward `toward` only as far as it takes to read at 4.5:1
  * on every one of `on`. */
-function legibleOn(color: string, on: string[], toward: string): string {
-  const ok = (c: string) => on.every((b) => contrast(c, b) >= 4.5);
+function legibleOn(color: string, on: string[], toward: string, also?: (c: string) => boolean): string {
+  const ok = (c: string) => on.every((b) => contrast(c, b) >= 4.5) && (also?.(c) ?? true);
   if (ok(color)) return color;
   let lo = 0;
   let hi = 1;
@@ -519,9 +519,17 @@ function legibleOn(color: string, on: string[], toward: string): string {
  * the status colors. */
 const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "peach", "teal", "pink", "merged"] as const;
 
+/** The "on" fill (buttons.css's --on-fill, 18% of the accent): `accent` over
+ * `base`. */
+export const onFill = (accent: string, base: string) => mix(base, accent, 0.18);
+
+/** The selected row's tint (style.css's --selected, 14% of the accent over
+ * nothing): `accent` over `base`. */
+export const selectedFill = (accent: string, base: string) => mix(base, accent, 0.14);
+
 /** The palette's UI colors as the page uses them (M113): a word in any of
  * them reads at WCAG AA (4.5:1) on the backgrounds it sits on (bg, surface
- * and raised, the hovered and picked rows'). Each palette keeps its
+ * and raised, the hovered and picked rows', and the selected row's tint). Each palette keeps its
  * colors where they already do; one that doesn't is moved toward white
  * (on a dark palette) or black (on a light one) as little as it takes. A primary button's label likewise reads on the accent. */
 export function legible(p: Palette): Ui {
@@ -530,10 +538,76 @@ export function legible(p: Palette): Ui {
   const end = p.light ? "#000000" : "#ffffff";
   // Toward black or white, so a color keeps its hue (amber stays amber,
   // only darker or lighter).
-  for (const k of TEXT) u[k] = legibleOn(u[k], on, end);
+  for (const k of TEXT) {
+    // The accent is also the "on" text (--on-fill's), so it reads on its own
+    // tint over the page and over a card: block bars and popovers sit on
+    // surface.
+    const onTint = (c: string) => [u.bg, u.surface].every((b) => contrast(c, onFill(c, b)) >= 4.5);
+    u[k] = legibleOn(u[k], on, end, k === "accent" ? onTint : undefined);
+  }
+  // A word on the selected row's tint (--selected, #756) too, over the page and
+  // over a sidebar. The accent is final by now, so the tint is.
+  const picked = [u.bg, u.surface].map((b) => selectedFill(u.accent, b));
+  for (const k of TEXT) if (k !== "accent") u[k] = legibleOn(u[k], [...on, ...picked], end);
   const label = [u["on-color"], "#000000", "#ffffff"].sort((a, b) => contrast(b, u.accent) - contrast(a, u.accent));
   if (contrast(u["on-color"], u.accent) < 4.5) u["on-color"] = label[0];
   return u;
+}
+
+// ---- the house pair (#729): what Docs wear
+
+export type Scheme = "light" | "dark";
+
+/** The palette a Doc wears in each scheme, whatever palette the viewer
+ * picked: a shared Doc then reads the same for everyone, and the named hues
+ * are checked against two papers, not nine. */
+const HOUSE: Record<Scheme, string> = { dark: "slate", light: "latte" };
+
+/** A Doc's reading text, stronger than the palette's `fg`: Slate's own bright
+ * white (its terminal set's) and a deeper Latte text. */
+const HOUSE_INK: Record<Scheme, string> = { dark: "#eef3f8", light: "#2b2d3d" };
+
+/** The six named hues and the palette color each is (leaf is the palette's
+ * ok, and so on), in a chart's order. */
+const HUE_OF = { leaf: "ok", pepper: "peach", sky: "info", plum: "merged", sun: "warn", stone: "dim" } as const;
+
+const palettes = (id: string) => PALETTES.find((p) => p.id === id)!;
+
+/** The house pair's colors as `legible()` paints them, for a scheme: a Doc's
+ * tokens without the `--doc-` (`paper`, `ink-soft`, `leaf-soft`…), which
+ * apply() and the share viewer set, and shared/docs/colours.json holds. */
+export function houseColours(scheme: Scheme): Record<string, string> {
+  const u = legible(palettes(HOUSE[scheme]));
+  const out: Record<string, string> = {
+    paper: u.bg,
+    sunken: u.surface,
+    tint: u.raised,
+    ink: HOUSE_INK[scheme],
+    "ink-soft": u.subtle,
+    "ink-faint": u.dim,
+    // style.css's --line-strong, which `:root` works out from the picked
+    // palette, here from the house one.
+    line: mix(u.surface, u.muted, 0.55),
+    "line-quiet": mix(u.bg, mix(u.surface, u.muted, 0.55), 0.5),
+    rule: mix(u.surface, u.muted, 0.55),
+    // A Doc's links are info; accent means live (a fresh fill), as
+    // everywhere (language.md).
+    link: u.info,
+    live: u.accent,
+    // What a drawing sits on in either scheme: the light house's paper.
+    drawing: legible(palettes(HOUSE.light)).bg,
+  };
+  for (const [hue, key] of Object.entries(HUE_OF)) {
+    out[hue] = u[key];
+    out[`${hue}-soft`] = mix(u.bg, u[key], 0.2);
+  }
+  return out;
+}
+
+/** The scheme's house pair as `--doc-*` custom properties on the root: a
+ * Doc's tokens. apply() sets them with the palette's. */
+function applyHouse(scheme: Scheme, root: HTMLElement) {
+  for (const [k, v] of Object.entries(houseColours(scheme))) root.style.setProperty(`--doc-${k}`, v);
 }
 
 /** Puts the appearance on the document: the palette as custom properties
@@ -543,6 +617,7 @@ export function apply() {
   const p = palette();
   const root = document.documentElement;
   for (const [k, v] of Object.entries(legible(p))) root.style.setProperty(`--${k}`, v);
+  applyHouse(p.light ? "light" : "dark", root);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.finish = current.finish;

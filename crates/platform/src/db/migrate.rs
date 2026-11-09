@@ -666,6 +666,66 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0095_chat_grant_never.sql"),
         additive: true,
     },
+    Migration {
+        version: 96,
+        name: "grants_revoked_by",
+        sql: include_str!("../../migrations/sqlite/0096_grants_revoked_by.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 97,
+        name: "block_state_sends_again",
+        sql: include_str!("../../migrations/sqlite/0097_block_state_sends_again.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 98,
+        name: "hosted_removed_machines",
+        sql: include_str!("../../migrations/sqlite/0098_hosted_removed_machines.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 99,
+        name: "chat_readers_seq",
+        sql: include_str!("../../migrations/sqlite/0099_chat_readers_seq.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 100,
+        name: "forge_full_pass",
+        sql: include_str!("../../migrations/sqlite/0100_forge_full_pass.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/sqlite/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
+        name: "project_doc_made_from",
+        sql: include_str!("../../migrations/sqlite/0102_project_doc_made_from.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 103,
+        name: "work_relations_before",
+        sql: include_str!("../../migrations/sqlite/0103_work_relations_before.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 104,
+        name: "deploy_plans",
+        sql: include_str!("../../migrations/sqlite/0104_deploy_plans.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 105,
+        name: "ci_alerts",
+        sql: include_str!("../../migrations/sqlite/0105_ci_alerts.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -1240,6 +1300,66 @@ const POSTGRES: &[Migration] = &[
         version: 95,
         name: "chat_grant_never",
         sql: include_str!("../../migrations/postgres/0095_chat_grant_never.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 96,
+        name: "grants_revoked_by",
+        sql: include_str!("../../migrations/postgres/0096_grants_revoked_by.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 97,
+        name: "block_state_sends_again",
+        sql: include_str!("../../migrations/postgres/0097_block_state_sends_again.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 98,
+        name: "hosted_removed_machines",
+        sql: include_str!("../../migrations/postgres/0098_hosted_removed_machines.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 99,
+        name: "chat_readers_seq",
+        sql: include_str!("../../migrations/postgres/0099_chat_readers_seq.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 100,
+        name: "forge_full_pass",
+        sql: include_str!("../../migrations/postgres/0100_forge_full_pass.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 101,
+        name: "issues_github",
+        sql: include_str!("../../migrations/postgres/0101_issues_github.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 102,
+        name: "project_doc_made_from",
+        sql: include_str!("../../migrations/postgres/0102_project_doc_made_from.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 103,
+        name: "work_relations_before",
+        sql: include_str!("../../migrations/postgres/0103_work_relations_before.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 104,
+        name: "deploy_plans",
+        sql: include_str!("../../migrations/postgres/0104_deploy_plans.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 105,
+        name: "ci_alerts",
+        sql: include_str!("../../migrations/postgres/0105_ci_alerts.sql"),
         additive: true,
     },
 ];

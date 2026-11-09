@@ -9,6 +9,11 @@
 //!   status: three 304s when nothing moved. Reviews and the timeline are
 //!   read only when the caller asks ([`Github::rest`]), and those are
 //!   conditional too.
+//! - **The one use of GraphQL: a merge queue.** [`Github::merge`] asks it
+//!   whether the branch has a queue before anything else, because REST can
+//!   neither say nor enqueue, and merges for anyone who may bypass the
+//!   ruleset. With a queue the pull request goes in it: "queued to merge",
+//!   not merged, until a later read says so.
 //! - **Rerun:** a failed check run from Actions names its workflow run;
 //!   [`Github::rerun_failed`] posts `actions/runs/ID/rerun-failed-jobs` for
 //!   each.
@@ -27,7 +32,7 @@ use arugula_proto::forge::{RateLimit, ReviewEvent};
 use serde_json::{Value, json};
 
 use crate::{
-    Error, Polled, Sent,
+    Error, Polled, QUEUED, Sent,
     model::{Check, Event, Item, Linked, Me, Review, Reviewer},
     parse::{checks, events, fingerprint, issue_item, item, linked, me, reviews},
     redact,
@@ -57,6 +62,12 @@ fn merge_method(style: Option<&str>) -> Result<&'static str, String> {
         "rebase" => Ok("rebase"),
         s => Err(format!("GitHub merges by merge, squash or rebase, not {s}")),
     }
+}
+
+/// GitHub's GraphQL endpoint for a REST `api`: `https://api.github.com/graphql`,
+/// or `https://HOST/api/graphql` beside Enterprise's `/api/v3`.
+fn graphql_url(api: &str) -> String {
+    format!("{}/graphql", api.strip_suffix("/v3").unwrap_or(api))
 }
 
 /// A `Link` header's URL for `rel` (`last`, `next`).
@@ -102,6 +113,16 @@ pub struct EtagCache(Arc<Mutex<HashMap<String, Cached>>>);
 
 /// More URLs than this: start again.
 const CACHED: usize = 2000;
+
+/// What an error says when GitHub answered a read with a success the client
+/// couldn't read or parse: [`unreadable`] finds it.
+pub const UNREADABLE: &str = "GitHub's answer didn't read as JSON";
+
+/// Whether `e` is a success GitHub sent that couldn't be read or parsed:
+/// it says nothing about what was asked for.
+pub fn unreadable(e: &Error) -> bool {
+    matches!(e, Error::Http(m) if m.contains(UNREADABLE))
+}
 
 #[derive(Default)]
 struct Limits {
@@ -266,7 +287,16 @@ impl<T: TokenSource> Github<T> {
                 return Err(Error::Http(format!("{}: 304 for nothing asked", redact(&url))));
             }
             let link = headers.get("link").and_then(|v| v.to_str().ok()).map(str::to_owned);
-            let text = res.text().await.unwrap_or_default();
+            let text = match res.text().await {
+                Ok(t) => t,
+                // A read's success whose body didn't arrive says nothing. A
+                // write's went through whatever its body: never an error, so
+                // nothing tries it again.
+                Err(e) if get && status.is_success() => {
+                    return Err(Error::Http(format!("{}: {UNREADABLE}: {}", redact(&url), short(&e))));
+                }
+                Err(_) => String::new(),
+            };
             if !status.is_success() {
                 let said = serde_json::from_str::<Value>(&text)
                     .ok()
@@ -292,9 +322,20 @@ impl<T: TokenSource> Github<T> {
                     c => Error::Http(format!("{c} {said}")),
                 });
             }
-            let v =
-                if text.trim().is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or(Value::Null) };
-            if get && let Some(e) = headers.get("etag").and_then(|v| v.to_str().ok()) {
+            // An empty body is `null` (a write's 204), and never kept for a
+            // 304 to hand back. A read's that isn't JSON is an error, never
+            // `null`, so no caller takes it for an answer; a write's is
+            // `null`, since the write went through.
+            let v = match serde_json::from_str::<Value>(&text) {
+                _ if text.trim().is_empty() => Value::Null,
+                Ok(v) => v,
+                Err(_) if get => return Err(Error::Http(format!("{}: {UNREADABLE}", redact(&url)))),
+                Err(_) => Value::Null,
+            };
+            if get
+                && !v.is_null()
+                && let Some(e) = headers.get("etag").and_then(|v| v.to_str().ok())
+            {
                 let mut c = self.cache.0.lock().unwrap();
                 if c.len() >= CACHED {
                     c.clear();
@@ -308,6 +349,18 @@ impl<T: TokenSource> Github<T> {
 
     async fn get(&self, repo: &str, path: &str) -> Result<Value, Error> {
         Ok(self.send(reqwest::Method::GET, repo, path, None).await?.0)
+    }
+
+    /// One GraphQL request about `repo` (with a write's token): its `data`.
+    /// GitHub says no with a 200 and `errors`.
+    async fn graphql(&self, repo: &str, query: &str, variables: Value) -> Result<Value, Error> {
+        let body = json!({ "query": query, "variables": variables });
+        let (v, _) = self.send(reqwest::Method::POST, repo, &graphql_url(&self.api), Some(&body)).await?;
+        if let Some(errors) = v["errors"].as_array().filter(|e| !e.is_empty()) {
+            let said: Vec<&str> = errors.iter().filter_map(|e| e["message"].as_str()).collect();
+            return Err(Error::Http(said.join("; ")));
+        }
+        Ok(v["data"].clone())
     }
 
     /// A list that's oldest first: the newest `keep` of it (its last page,
@@ -528,8 +581,44 @@ impl<T: TokenSource> Github<T> {
     }
 
     /// Merge a pull request: `merge` (the default), `squash` or `rebase`.
+    ///
+    /// A branch with a merge queue is asked about first and never merged
+    /// over REST: GitHub answers that with a real merge for anyone who may
+    /// bypass the ruleset, skipping the queue. So it goes in the queue, has
+    /// not merged when this returns, and the queue's rules pick the method.
+    /// If the branch can't be read, nothing is sent, for the same reason.
     pub async fn merge(&self, repo: &str, number: u64, style: Option<&str>) -> Result<Sent, Error> {
+        const READ: &str = "query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) { id isInMergeQueue isMergeQueueEnabled }
+            }
+        }";
+        const ENQUEUE: &str = "mutation($id: ID!) {
+            enqueuePullRequest(input: { pullRequestId: $id }) { mergeQueueEntry { id } }
+        }";
         let how = merge_method(style).map_err(Error::Http)?;
+        let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
+        let vars = json!({ "owner": owner, "name": name, "number": number });
+        let data = self.graphql(repo, READ, vars).await.map_err(|e| match e {
+            Error::Login(_) => e,
+            e => Error::Http(format!("not merged: reading the branch's merge queue failed: {e}")),
+        })?;
+        let pr = &data["repository"]["pullRequest"];
+        let (Some(id), Some(in_queue), Some(has_queue)) =
+            (pr["id"].as_str(), pr["isInMergeQueue"].as_bool(), pr["isMergeQueueEnabled"].as_bool())
+        else {
+            return Err(Error::Http("not merged: GitHub didn't say whether the branch has a merge queue".into()));
+        };
+        if in_queue {
+            return Ok(Sent { url: None, said: format!("already {QUEUED}") });
+        }
+        if has_queue {
+            let done = self.graphql(repo, ENQUEUE, json!({ "id": id })).await?;
+            if done["enqueuePullRequest"]["mergeQueueEntry"].is_null() {
+                return Err(Error::Http("GitHub didn't put it in the merge queue".into()));
+            }
+            return Ok(Sent { url: None, said: QUEUED.into() });
+        }
         let path = format!("repos/{repo}/pulls/{number}/merge");
         self.send(reqwest::Method::PUT, repo, &path, Some(&json!({ "merge_method": how }))).await?;
         Ok(Sent { url: None, said: format!("merged ({how})") })
@@ -600,6 +689,8 @@ mod tests {
         assert_eq!(merge_method(None), Ok("merge"));
         assert_eq!(merge_method(Some("squash")), Ok("squash"));
         assert!(merge_method(Some("fast-forward-only")).is_err());
+        assert_eq!(graphql_url("https://api.github.com"), "https://api.github.com/graphql");
+        assert_eq!(graphql_url("https://ghe.example/api/v3"), "https://ghe.example/api/graphql");
         let link = r#"<https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=2>; rel="next", <https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=4>; rel="last""#;
         let last = link_last(link).unwrap();
         assert_eq!(page_of(&last), Some(4));

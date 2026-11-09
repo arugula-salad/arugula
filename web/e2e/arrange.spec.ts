@@ -145,6 +145,31 @@ test("+ Pane says where before it opens a shell, then gives it the keys", async 
   await expect.poll(() => text(page, made)).toMatch(/\n\/tmp\s*\n/);
 });
 
+test("+ Pane says the active pane's directory as it changes, until one is chosen", async ({ page }) => {
+  await newWorkspace(page);
+  const first = await active(page);
+  const cd = async (dir: string) => {
+    await page.evaluate(([p, line]) => window.__arugula.client.input(p, new TextEncoder().encode(line)), [first, `cd ${dir}\n`] as const);
+    await expect.poll(() => page.evaluate((p) => window.__arugula.client.cwd(p), first)).toBe(dir);
+  };
+  await cd("/usr");
+  await page.locator("[data-add-pane]").click();
+  const drawer = page.locator("[data-add-pane-drawer]");
+  const destination = drawer.locator("[data-add-pane-destination]");
+  await expect(destination).toContainText("in /usr,");
+
+  // The pane moves on with the drawer open: the drawer says so.
+  await cd("/tmp");
+  await expect(destination).toContainText("in /tmp,");
+
+  // Once a directory is chosen, it's that one, wherever the pane goes.
+  await drawer.locator(".add-pane-choose").click();
+  await page.locator("[data-picker-choose]").click();
+  await expect(page.locator("[data-picker-choose]")).toHaveCount(0);
+  await cd("/usr");
+  await expect(destination).toContainText("in /tmp,");
+});
+
 test("Add Pane previews the selected split and keeps its actions reachable in a short window", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 600 });
   await newWorkspace(page);
@@ -174,7 +199,8 @@ test("Add Pane previews the selected split and keeps its actions reachable in a 
   expect(b.x).toBe(a.x);
   const bounds = (await drawer.boundingBox())!;
   const action = (await drawer.locator("[data-add-pane-create]").boundingBox())!;
-  expect(bounds.y).toBeGreaterThanOrEqual(44);
+  // A side sheet (#690): the window's full height, over the header too.
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(600);
   expect(action.y + action.height).toBeLessThanOrEqual(bounds.y + bounds.height);
   await page.keyboard.press("Escape");
@@ -204,8 +230,14 @@ test("+ Pane opens a web page, and hands a pull request, an issue or a conversat
   await expect.poll(() => panes(page)).toHaveLength(2);
   const made = (await panes(page)).find((p) => p !== first)!;
   expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, made)).toBe("browser");
-  const rects = Object.fromEntries((await tab(page)).layout.panes);
-  expect(rects[made].y).toBeGreaterThan(rects[first].y);
+  // A block opens beside the active pane, and only then is moved below it:
+  // two panes, with the new one still at the top, comes first.
+  await expect
+    .poll(async () => {
+      const rects = Object.fromEntries((await tab(page)).layout.panes);
+      return rects[made].y - rects[first].y;
+    })
+    .toBeGreaterThan(0);
 
   // The rest ask which, as Open beside's items do: Next… opens that.
   for (const [kind, dialog] of [

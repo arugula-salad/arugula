@@ -50,7 +50,9 @@ use std::{
 
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
-    work::{FinishResult, FinishStep, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, Work},
+    work::{
+        AgentSessionWork, FinishResult, FinishStep, SessionAction, SessionDetail, SessionPrompt, SessionReport, Work,
+    },
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -73,7 +75,7 @@ const WORKSPACE: &str = "hw_1";
 /// A session as the platform has it.
 #[derive(Clone)]
 struct Ses {
-    work: SessionWork,
+    work: AgentSessionWork,
     /// Stopped by a person: no longer listed, and its reports refused.
     stopped: bool,
 }
@@ -202,7 +204,7 @@ impl Fake {
         model: Option<&str>,
         repo: &str,
     ) {
-        let work = SessionWork {
+        let work = AgentSessionWork {
             session: id.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),
@@ -685,7 +687,7 @@ fn rig_with(tag: &str, more: &[(&str, &str)]) -> Rig {
         b = b.env(k, v);
     }
     let d = b
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .state_dir(&state)
         .args(["--hosted"])
@@ -900,13 +902,16 @@ fn a_hosted_machine_runs_sessions() {
     );
     assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
 
-    // Three sessions on the box (a is done, b and c work): a fourth waits,
-    // until one is stopped.
+    // Three sessions on the box hold its slots, working or done with their
+    // agents up: a fourth waits, until one is stopped. b's and c's first
+    // turns are short and needn't overlap, so what's waited for is that each
+    // took a slot, not that both are working at one moment.
     let (b, c, e) = (ses('b'), ses('c'), ses('e'));
-    f.start(&b, "one", prompt(10, "acct1", "slow"));
+    f.start(&b, "one", prompt(10, "acct1", "hello"));
     // c on the model its ask named (Arugula #215).
-    f.start_on(&c, "two", prompt(11, "acct1", "slow"), None, None, false, Some("haiku"));
-    wait(&marks, &f, "b and c working", || f.state(&b) == "working" && f.state(&c) == "working");
+    f.start_on(&c, "two", prompt(11, "acct1", "hello"), None, None, false, Some("haiku"));
+    let took_a_slot = |s: &str| f.of(s).iter().any(|(r, _)| r.to == "working");
+    wait(&marks, &f, "b and c on the box", || took_a_slot(&b) && took_a_slot(&c));
     wait(&marks, &f, "c says its model", || f.of(&c).iter().any(|(_, d)| d.model.is_some()));
     let said: Vec<String> = f.of(&c).into_iter().filter_map(|(_, d)| d.model).collect();
     assert_eq!(said, ["Haiku 4.5"], "the one asked for, by its name");
@@ -1487,7 +1492,10 @@ fn a_parked_session_reopens_on_a_reply() {
         kept.iter().any(|t| t["block"] == first && t["text"].as_str().is_some_and(|x| x.contains("remember plum"))),
         "its transcript: {kept:#?}"
     );
-    let log = std::fs::read_to_string(marks.join("arugulad.log")).unwrap();
+    // The park says so only after its block has closed.
+    let log = || std::fs::read_to_string(marks.join("arugulad.log")).unwrap_or_default();
+    wait(&marks, &f, "the park's log line", || log().contains("parked a session"));
+    let log = log();
     let archived = log.find("its transcript archived").expect("archived");
     let closed = log.find("parked a session").expect("parked");
     assert!(archived < closed, "archived before its block closed");

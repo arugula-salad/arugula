@@ -58,25 +58,15 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
   other: "not run",
 };
 
-/** The classes a live tag takes: the forge blocks' state colours, and
- * `waits` and `bad` for checks and runs. */
-export function liveClass(s: BoardLiveState): string {
-  if (s === "checks_running" || s === "running") return "waits";
-  if (s === "checks_failed" || s === "run_failed") return "bad";
-  if (s === "succeeded") return "forge-state merged";
-  if (s === "other") return "";
-  return `forge-state ${s}`;
-}
-
 /** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
  * row that isn't Done, for a note, which has nothing to prove, and for a
  * cancelled one, whose `cancelled` mark says it instead. */
-export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string } | null {
+export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string; title: string } | null {
   if (r.lane !== "done" || !counted(r)) return null;
   if (r.marks?.some((m) => m.kind === "cancelled")) return null;
   const p: BoardProof | undefined = r.proof;
-  if (!p) return { proven: false, words: "not proven yet" };
-  return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
+  if (!p) return { proven: false, words: "no proof", title: "not proven yet" };
+  return { proven: true, words: "Proof", title: p.by === "ci" ? "proven by CI" : "proven" };
 }
 
 /** The lanes in the order every board stacks them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. Four across, the board's CSS reads them Next, Doing, Review, Done instead, to match the progress bar; the DOM keeps this order. */
@@ -155,6 +145,7 @@ export function readyCount(v: Pick<BoardView, "ready">): number {
 /** The kinds a person may relate by, with their words from the first item's side and the second's. */
 export const RELATION_KINDS: { kind: RelationKind; out: string; in: string }[] = [
   { kind: "blocks", out: "Blocks", in: "Blocked by" },
+  { kind: "before", out: "Before", in: "After" },
   { kind: "relates", out: "Relates to", in: "Relates to" },
   { kind: "duplicate_of", out: "Duplicate of", in: "Duplicated by" },
   { kind: "discovered_from", out: "Discovered from", in: "Led to" },
@@ -180,11 +171,6 @@ export const BLOCK_LABEL: Record<BoardBlockWord, string> = {
   idle: "idle",
   closed: "closed",
 };
-
-/** The class a block's state tag takes: `waits` when it wants someone. */
-export function blockClass(w: BoardBlockWord): string {
-  return w === "needs_input" ? "waits" : "";
-}
 
 /** The facts of a block worth saying beside its chip: its branch, pushed state and uncommitted files once it has stopped working (idle or closed), where they say what is left to do. While it works or waits, the state is all. */
 export function settledFacts(b: BoardBlockState): string[] {
@@ -245,7 +231,8 @@ export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: str
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
   const label = pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
-  if (a.block) return { label: a.block.title?.trim() || label, state: BLOCK_LABEL[a.block.state] };
+  // "working" is what the Doing lane already says; the other states stay.
+  if (a.block) return { label: a.block.title?.trim() || label, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state] };
   if (a.live) return { label, state: liveWord(a.live) };
   return { label, state: null };
 }
@@ -294,17 +281,19 @@ export function firstLine(text: string): string {
  * `pct` is done's share for its bar, and `segments` the bar's parts in order (a lane with no rows has none). */
 export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven" | "review" | "doing">): {
   words: string;
+  /** Just the done share, for a board's bar and card; `words` is the rest too, for the bar's label. */
+  short: string;
   pct: number;
   segments: { lane: "done" | "review" | "doing"; pct: number }[];
 } {
-  if (!p.total) return { words: "No work yet", pct: 0, segments: [] };
+  if (!p.total) return { words: "No work yet", short: "No work yet", pct: 0, segments: [] };
   const share = (n: number) => Math.round((n / p.total) * 100);
   const proven = p.done ? `, ${p.proven} proven` : "";
   const words = [`${p.done} of ${p.total} done${proven}`, p.review ? `${p.review} in review` : "", p.doing ? `${p.doing} doing` : ""];
   const segments = (["done", "review", "doing"] as const)
     .filter((lane) => p[lane] > 0)
     .map((lane) => ({ lane, pct: share(p[lane]) }));
-  return { words: words.filter(Boolean).join(" · "), pct: share(p.done), segments };
+  return { words: words.filter(Boolean).join(" · "), short: `${p.done} of ${p.total} done`, pct: share(p.done), segments };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
@@ -419,9 +408,11 @@ export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
 
 /** What a Doc's chip says after its title: `3/5` sections written for a project Doc, `on <machine>` for a machine's, nothing for a Doc that is gone. */
 export function docWords(d: { pointer: BoardPointer; sections?: number; written?: number; missing?: boolean; machine_name?: string }): string {
-  if (d.pointer.kind === "machine_doc") return `on ${d.machine_name || "a machine"}`;
-  if (d.missing || !d.sections) return "";
-  return `${d.written ?? 0}/${d.sections}`;
+  if (d.missing) return "";
+  const counts = d.sections ? `${d.written ?? 0}/${d.sections}` : "";
+  // A machine Doc has counts once the machine copied it up (native #673).
+  if (d.pointer.kind === "machine_doc") return `${counts ? `${counts} ` : ""}on ${d.machine_name || "a machine"}`;
+  return counts;
 }
 
 /** Where a board lists a Doc, for the Doc's page: `Docs strip`, `2 rows`, or both. */

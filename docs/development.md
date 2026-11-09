@@ -242,15 +242,20 @@ does that instead. A queued pull request is tested as a merge group:
 main, the pull requests queued ahead of it, and it. It merges only if
 the group passes.
 
-`chant.workspace.json` sets `ci.green.mergeQueue` (chant#4644), so `chant
-ci workflow` puts `merge_group` on check.yml, windows.yml and
-windows-desktop.yml and writes `chant-merge-queue.yml`. A group runs what
-its diff against main reaches, and that diff holds whatever is queued
-ahead of it (`scripts/changed`), so a docs-only pull request behind a code
-one still runs everything. `chant-merge-queue.yml`'s `chant-verdict` job is
-the group's verdict: `chant ci verdict --wait` passes once every phase
-`ci.green` requires passed on the group's commit, judged as the tick judges
-main. On a pull request, binaries.yml's job of the same name stands in for
+`chant.workspace.json` sets `ci.green.mergeQueue` to `{ "retries": 1 }`
+(chant#4644, chant#4729), so `chant ci workflow` keeps `merge_group` on
+check.yml, windows.yml and windows-desktop.yml and writes
+`chant-merge-queue.yml`. A group runs what its diff against main reaches,
+and that diff holds whatever is queued ahead of it (`scripts/changed`), so
+a docs-only pull request behind a code one still runs everything.
+`chant-merge-queue.yml`'s `chant-verdict` job is the group's verdict:
+`chant ci verdict --wait` passes once every phase `ci.green` requires
+passed on the group's commit, judged as the tick judges main. A job that
+failed gets its workflow run re-run once first, so a flake doesn't throw a
+pull request out, and a 5xx, a 429 or a dropped request from GitHub's API
+makes it look again rather than fail. The job has `actions: write` for the
+re-run, and the verdict gives up after 115 minutes, inside the job's 120.
+On a pull request, binaries.yml's job of the same name stands in for
 it, once `binaries` and `quick` have passed. binaries.yml has no
 `merge_group` trigger, because its `chant-verdict`, skipped on a group,
 would count as passed. On a pull request that changes the desktop app,
@@ -274,10 +279,13 @@ saves them and runs what groups skip by path.
 *Require merge queue* with squash; *Build concurrency* 3, since GitHub builds
 each queued pull request apart, so this caps throughput, and each build takes
 a Mac (there are three) and about 20 of the plan's 60 hosted jobs; *Maximum
-group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
-(`HEADGREEN`), since a later group contains the ones ahead and its pass clears
-them, so a flake rarely ejects anyone while a real break still fails every
-later group; *Status check timeout* 45 minutes. *Require status checks to pass*
+group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests*
+on (`ALLGREEN`), so a pull request that really fails leaves at once and the groups
+behind it rebuild. With it off, GitHub kept a failed head in place until every group
+behind it had run and failed too, since each contains it, which stalled the queue
+for 20 minutes on its first night. A flake doesn't need it off:
+the verdict re-runs a failed job before it decides. *Status check timeout* 120
+minutes, the verdict job's own timeout, which leaves room for a re-run. *Require status checks to pass*
 requires `chant-verdict`, from GitHub Actions. The repository's *Allow
 auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
 requires are still running, which a pull request's own run usually is.
@@ -383,13 +391,23 @@ before the tag, however fast main moves, and merges landing meanwhile change
 nothing: the pick is fixed when you name it. After the tag, a commit adds the
 notes and the client fixtures to main.
 
+`release-train.yml` does this on its own every 4 hours (`scripts/release-train`,
+#724), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
+commit with the daemon's green tag goes out as a patch, with notes built from what
+its pull requests added to `docs/notes/` (`scripts/release-notes.mjs`), if they added
+any. Its rare jobs run first, and a failure holds the release while merges go on. A
+manual run of the workflow sends one now. Daemons don't install on their own: people
+get a notice with an Update now button. The steps below are for a minor or a major
+version, or when you want different notes.
+
 1. `just release --dry-run` names the commit (the newest on main that passed
    CI, below), the next version, the PRs since the last release and the
    command to release it with, which names that commit. If main has newer
    commits that aren't green yet, it lists those too: they aren't in this
    release. Without a named commit a release stops on them (#1679): wait for
    them, or pass `--older`.
-2. Write the notes against that list, in a file anywhere. They end with a
+2. Write the notes against that list, in a file anywhere, or start from what the
+   pull requests said: `node scripts/release-notes.mjs LAST_TAG COMMIT X.Y.Z`. They end with a
    headline section, a ```` ```whats-new ```` block of a few items (each a
    feature id, a title, one line, and maybe a **Try it** command or route and
    who it `needs`): the web client's What's new panel shows them after the
@@ -458,18 +476,14 @@ notes and the client fixtures to main.
    and a store that refuses the upload is a warning that holds back
    neither the other store nor the release: bump
    `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one.
-   Its `platform` job deploys control's platform (`arugula-platform`) from
-   the tag's x86_64 static build, once that app exists (the
-   `FLY_PLATFORM_API_TOKEN` secret; without it the job deploys nothing and
-   succeeds), then its `control` job deploys the hosted control's hub, with
-   no approval step, and fails unless control then answers and runs the
-   tag's image (the `FLY_API_TOKEN` secret; [control-ops.md](control-ops.md#deploys),
-   [The platform](control-ops.md#the-platform)). The hub holds every
-   relayed terminal, so it deploys only when something it's built from
-   changed since the release it runs (`scripts/ci-hub-changed`); otherwise
-   the job's summary says `hub unchanged since vX: not deployed` and the
-   hub stays on vX. The repository variable `ARUGULA_HUB_DEPLOY=always`
-   deploys it anyway (set it, re-run the job, unset it). Its `template` job
+   It doesn't deploy the hosted control: the same tag starts
+   server-release.yml, which releases its platform and then its hub through
+   chant from the server lane's green commit, with no approval step
+   (`just server-release` for another commit or a re-run;
+   [control-ops.md](control-ops.md#deploys)). The hub holds every relayed
+   terminal, so it deploys only when something it's built from changed
+   since the release production runs it from; a version number alone
+   doesn't count. Its `template` job
    builds a hosted workspace's E2B templates, one per size:
    `arugula-workspace:vX.Y.Z` and `arugula-workspace-large:vX.Y.Z`,
    from the same build (the `E2B_API_KEY` secret;
@@ -527,8 +541,8 @@ so the workflows name the release's own tag in `ARUGULA_RELEASE_TAG`, and
 the GitHub release stays `vX.Y.Z` or `app-vX.Y.Z`, where the downloads
 have always been; chant's own tag (`release/daemon-release/vX.Y.Z`) is
 made in the job's checkout and never pushed. The workflows pin chant
-0.124.67, which has lane cuts, the override, the marketplaces' OIDC and the
-tap's SSH key.
+0.124.70; lane cuts, the override, the marketplaces' OIDC and the tap's SSH
+key need 0.124.67 or newer.
 
 Since the publish stages the marketplaces before it reveals anything, a
 store that can't be signed in to (an Entra sign-in that fails, Open VSX no
@@ -551,7 +565,7 @@ The first run's cut is refused and records the request on
 
 ```sh
 git fetch origin chant/lifecycle:chant/lifecycle
-npx @intentius/chant@0.124.67 approve policy-override release-<sha12> \
+npx @intentius/chant@0.124.70 approve policy-override release-<sha12> \
   --rule ci-green-daemon --reason "..." --actor github:lex00   # ci-green-app for the app
 ```
 
@@ -632,8 +646,8 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.61 ci last-green --lane daemon) # the daemon's
-sha=$(npx @intentius/chant@0.124.61 ci last-green --lane app)    # the app's
+sha=$(npx @intentius/chant@0.124.70 ci last-green --lane daemon) # the daemon's
+sha=$(npx @intentius/chant@0.124.70 ci last-green --lane app)    # the app's
 ```
 
 `scripts/release last-green [daemon|app|server]` answers the same from
@@ -837,16 +851,18 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   cleared a moment later when the `printf` that sent it finished.
 - **Unix socket paths max out at ~108 bytes.** Long state directories get a
   socket in `$XDG_RUNTIME_DIR` instead, recorded in `state/sock.path`.
-- **wisp already had the fix for its replay.** The M3b spike found that
-  reattaching resends the whole session and planned to ask for a `since=`
-  parameter, but wisp's `output_offset` (not one of the names the spike
-  tried) does exactly that. Each VM pane keeps its session id and how many
-  bytes it has logged in `exec.json`, and reattaches from there.
+- **Reattach from a byte offset.** The M3b spike found that reattaching
+  resends the whole session and planned to ask for a `since=` parameter,
+  but the provider already took an output offset (wisp's `output_offset`,
+  not one of the names the spike tried; loam's `offset`). Each VM pane
+  keeps its session id and how many bytes it has logged in `exec.json`,
+  and reattaches from there.
 - **bash expands `ENV`, command substitution included,** so a VM's shell
   gets the integration with nothing installed: the script travels in an
   environment variable and `ENV='$(…)'` writes it to a temporary file.
-- **`kill?signal=HUP` ends a VM shell at once;** wisp's default TERM waits
-  10s, because an interactive bash ignores it.
+- **A hang-up sends HUP, not TERM, to a VM shell:** an interactive bash
+  ignores TERM (the Sprites adapter, since removed, waited 10s on it);
+  with HUP the shell ends at once.
 - **A tab's title follows its active pane,** so grabbing a pane to drag it
   can resize its tab under the pointer. The tests aim after the pane is
   active, and anything that measures the tab bar mid-drag should too.
@@ -855,7 +871,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   127.0.0.1, with any Host header the sender likes, so "loopback means
   local" would let in anyone the ACL lets reach the sandbox. The daemon asks
   tailscaled's WhoIs about every peer there (it knows forwarded
-  connections); a second daemon in a sprite with another owner refused geek
+  connections); a second daemon in a sandbox with another owner refused geek
   even with a forged loopback Host and serve header.
 - **serve sends no identity for tagged nodes** (or Funnel). A request for
   the tailnet name without `Tailscale-User-Login` used to pass as local;
@@ -888,20 +904,10 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   subcommand's own `--host` loses to the global one the same way, so
   `open` and `agent` take `--machine mN`, like `edit` (#61); a `--host
   mN` there that isn't in the host list says so.
-- **"Cold" can be had on demand.** wisp turns a suspended sprite cold
-  after `--warm-ttl` (1h) by dropping its memory snapshot, which makes the
-  next wake a real boot. Its web UI's operator endpoints do the same at
-  once (`POST /ui/api/sprites/NAME/suspend`, then `/cool`, with a session
-  from `/ui/login`), which is how the removed `resident.spec.ts` tested a
-  cold wake. Suspending syncs the guest's disks first, so a daemon's log
-  and checkpoints in the sandbox are there after the reboot.
 - **A TUI on the main screen leaves the cursor mid-screen.** Claude Code
   draws in place and doesn't use the alternate screen, so after a restore
   the marker landed on top of it; it now goes below the last row with
   text.
-- **Sprites lists are paged** (50 at a time); wisp here holds more than
-  that.
-
 - **A program's exit can overtake its last output.** A pane's reader and
   its wait for the exit are separate threads, so a quick `arugula run`
   could end its command before its output arrived, and `capture

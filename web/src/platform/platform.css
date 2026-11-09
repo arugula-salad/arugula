@@ -159,6 +159,14 @@ html[data-native-tabs] .platform {
   margin-top: 8px;
 }
 
+/* The boards pages are wider than the reading column (#704): their cards fit
+   three or four to a row in 1100px, its 24px sides included. */
+@media (min-width: 701px) {
+  .platform-section:is([data-boards-page], [data-all-boards-page]) {
+    padding-inline: max(24px, calc((100% - 1052px) / 2));
+  }
+}
+
 /* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
    panel inset as a page's section is, not drawn over the window as the
    shell's chat is. A phone's chat keeps the whole screen. */
@@ -194,48 +202,21 @@ html[data-corners="square"] .platform-section {
 
 .platform-section h2 {
   margin: 20px 0 8px;
-  font-size: 14px;
+  font-size: var(--text-lg);
 }
 
 .platform-section a {
   color: var(--accent);
 }
 
-.platform-cards,
 .platform-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.platform-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.platform-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  color: var(--fg) !important;
-  text-decoration: none;
-}
-
-.platform-card:hover {
-  border-color: var(--accent);
-}
-
-.platform-list li {
+.platform-list:not(.card-grid, .card-list) li {
   padding: 4px 0;
-}
-
-.platform-list .chat-count {
-  margin-left: 6px;
 }
 
 .platform-columns {
@@ -258,7 +239,7 @@ html[data-corners="square"] .platform-section {
 .platform-members .msg-avatar {
   --msg-gutter: 24px;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 10px; /* off-scale: avatar initials */
 }
 
 /* Commands and ids in the page's mono, not the browser's (UI audit #162). */
@@ -374,6 +355,9 @@ html[data-corners="square"] .platform-section {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
+}
+
+.platform-inbox-list li:not(.card) {
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
@@ -499,7 +483,7 @@ html[data-corners="square"] .platform-section {
 .agent-token-calls {
   margin: 4px 0 8px;
   padding-left: 16px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-token-calls .agent-call-refused,
@@ -508,11 +492,12 @@ html[data-corners="square"] .platform-section {
 }
 
 .agent-token-warning,
+.agent-grants-note,
 .deploy-form .control-warning {
   margin: 0;
   padding: 6px 10px;
   border-left: 3px solid var(--warn);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-token-made code {
@@ -522,12 +507,12 @@ html[data-corners="square"] .platform-section {
 /* A deploy's card (M218): where it goes and its state, what it deploys,
    the plan's digest (short, to copy), the operation an approval signs, and Approve
    and Deny, which open on control's page. */
-.deploy-cards {
-  display: grid;
-  gap: 12px;
+/* A toned deploy card is a Card laid out as a block, as it always was. */
+.deploy-card.card {
+  display: block;
 }
 
-.deploy-card {
+.deploy-card:not(.card) {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
@@ -548,7 +533,7 @@ html[data-corners="square"] .platform-section {
    accent, underlined on hover. */
 .platform .sw-page .deploy-card h2 {
   margin: 0;
-  font: 700 19px/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--f-display);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -581,7 +566,7 @@ html[data-corners="square"] .platform-section {
 .deploy-digest {
   overflow-wrap: anywhere;
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .deploy-op summary {
@@ -595,7 +580,7 @@ html[data-corners="square"] .platform-section {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--text-sm);
   background: var(--bg);
   border-radius: var(--field-radius);
 }
@@ -622,7 +607,7 @@ html[data-corners="square"] .platform-section {
 .deploy-why {
   flex-basis: 100%;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* The phone width every column here folds at (UI audit #167, #186). */
@@ -677,7 +662,7 @@ html[data-corners="square"] .platform-section {
 
 .run-id {
   flex: none;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .run-start {
@@ -707,7 +692,7 @@ html[data-corners="square"] .platform-section {
 .run-start .run-command {
   flex: 1;
   min-width: 160px;
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .run-specs h2 {
@@ -741,7 +726,7 @@ html[data-corners="square"] .platform-section {
   align-items: baseline;
   gap: 8px;
   margin-top: 2px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-spec-md {
@@ -776,8 +761,8 @@ html[data-corners="square"] .platform-section {
 .run-spec-op,
 .run-command-line,
 .run-hash {
-  font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -791,12 +776,12 @@ html[data-corners="square"] .platform-section {
   list-style: none;
   margin: 4px 0 0;
   padding: 0 0 0 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-add-trigger {
   margin: 4px 0 0 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .run-facts {
@@ -818,7 +803,7 @@ html[data-corners="square"] .platform-section {
 .run-op summary {
   cursor: pointer;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .run-op pre,
@@ -829,8 +814,8 @@ html[data-corners="square"] .platform-section {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -889,20 +874,7 @@ html[data-corners="square"] .platform-section {
 .hosted-label {
   margin: 0;
   color: var(--dim);
-  font-size: 13px;
-}
-
-/* "Hosted · operator can read" as a chip, dim, before what it means (UI
-   audit #184). */
-.hosted-chip {
-  display: inline-block;
-  margin-right: 4px;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  color: var(--dim);
-  font: 600 11px/1.4 var(--f-mono);
-  white-space: nowrap;
+  font-size: var(--text-md);
 }
 
 .hosted-rebuild > p,
@@ -928,19 +900,6 @@ html[data-corners="square"] .platform-section {
 .hosted-new-sizes legend {
   margin-bottom: 4px;
   padding: 0;
-}
-
-/* An empty section's next step (Discovery 5): what it's for in a line,
-   then its button. */
-.platform-empty {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-  margin: 6px 0 14px;
-}
-
-.platform-empty > p {
-  margin: 0;
 }
 
 .platform .copy-text > .control-cmd {
@@ -1009,7 +968,7 @@ html[data-corners="square"] .platform-section {
 /* A transcript's own headings are its text's, not the page's sections. */
 .platform .sw-page .hosted-transcript :is(h1, h2, h3, h4) {
   margin: 14px 0 6px;
-  font: 600 15px/1.3 var(--f-ui);
+  font: 600 var(--text-lg)/1.3 var(--f-ui);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1026,7 +985,7 @@ html[data-corners="square"] .platform-section {
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--surface);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an
@@ -1046,7 +1005,7 @@ html[data-corners="square"] .platform-section {
 
 .deploy-form h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .deploy-form label {
@@ -1074,11 +1033,11 @@ html[data-corners="square"] .platform-section {
 }
 
 .deploy-form .deploy-commit {
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .deploy-about {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .deploy-secret-names {
@@ -1099,7 +1058,7 @@ html[data-corners="square"] .platform-section {
   gap: 4px;
   margin-right: 6px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1120,10 +1079,6 @@ html[data-corners="square"] .platform-section {
   color: var(--dim);
 }
 
-.frame-place .chat-count {
-  margin-left: var(--space-1);
-}
-
 /* A project's agent sessions in numbers (M265). */
 .session-stats {
   margin-top: 12px;
@@ -1131,7 +1086,7 @@ html[data-corners="square"] .platform-section {
 
 .session-stats h3 {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--subtle);
   font-weight: 600;
 }
@@ -1154,12 +1109,12 @@ html[data-corners="square"] .platform-section {
 }
 
 .session-stat b {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-variant-numeric: tabular-nums;
 }
 
 .session-stat span {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -1185,7 +1140,7 @@ html[data-corners="square"] .platform-section {
 
 .platform .sw-page .boards-untriaged .sw-section-head .sw-all {
   color: var(--accent);
-  font: 500 12px/1.3 var(--f-ui);
+  font: 500 var(--text-sm)/1.3 var(--f-ui);
   text-transform: none;
 }
 
@@ -1226,7 +1181,7 @@ html[data-corners="square"] .platform-section {
   padding: 1px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--fg);
 }
 
@@ -1261,7 +1216,7 @@ html[data-corners="square"] .platform-section {
   padding: 6px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -1350,18 +1305,9 @@ span.untri-title {
   flex: 1;
 }
 
-.untri-tag {
-  padding: 0 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  color: var(--dim);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .untri-age {
   min-width: 26px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: right;
   white-space: nowrap;
 }
@@ -1374,18 +1320,13 @@ span.untri-title {
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--dim);
-  font-size: 17px;
+  font-size: 17px; /* off-scale: glyph */
   line-height: 1;
 }
 
 .untri-add:is(:hover, :focus-visible) {
   border-color: var(--line);
   color: var(--accent);
-}
-
-.untri-empty {
-  padding: 14px;
-  text-align: center;
 }
 
 /* The selection's bar at the foot of the screen, and the boards that drop
@@ -1402,7 +1343,7 @@ span.untri-title {
   border-radius: 10px;
   background: var(--fg);
   color: var(--bg);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 25%);
+  box-shadow: var(--shadow-md);
   transform: translateX(-50%);
 }
 
@@ -1433,7 +1374,7 @@ span.untri-title {
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+  box-shadow: var(--shadow-md);
   transform: translateY(-110%);
   visibility: hidden;
   transition: transform 0.15s;
@@ -1446,21 +1387,8 @@ span.untri-title {
 
 .untri-dock-label {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
-}
-
-.untri-chip {
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  white-space: nowrap;
-}
-
-.untri-chip.drop-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .boards-tabs {
@@ -1498,7 +1426,7 @@ span.untri-title {
   }
 
   .boards-untriaged .sw-section-head h2,
-  .untri-tag {
+  .chip.untri-label {
     display: none;
   }
 

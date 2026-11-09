@@ -56,7 +56,10 @@ export function loadEmoji(): Promise<EmojiTable> {
 /** The table once it's loaded; asking for it (`want`) starts the load. */
 export function useEmoji(want: boolean): EmojiTable | null {
   const [, again] = useState(0);
+  const had = !!ready;
   useEffect(() => {
+    // It loaded between this render and now: draw again.
+    if (ready && !had && want) again((n) => n + 1);
     if (ready || !want) return;
     const f = () => again((n) => n + 1);
     waiting.add(f);

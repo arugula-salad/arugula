@@ -346,7 +346,7 @@ pub struct SessionCard {
     /// The issue it was started on, with the first board that has a row for
     /// it (#372).
     #[serde(default)]
-    pub work: Option<SessionWork>,
+    pub work: Option<SessionIssueLink>,
 }
 
 /// The issue a session was started on, as its header's chip shows it:
@@ -354,7 +354,7 @@ pub struct SessionCard {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct SessionWork {
+pub struct SessionIssueLink {
     /// The issue (`iss_…`) and its number.
     pub issue: String,
     pub number: u64,

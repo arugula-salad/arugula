@@ -52,7 +52,6 @@ pub struct App {
     /// Claude Code's IDE (M28), if on.
     pub ide: Option<Arc<dyn crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
-    /// Dial-out hosts connected to us (M4c).
     /// Read-only share links.
     pub shares: Arc<crate::share::Shares>,
     /// Enrollment in Arugula control: trusted devices, the relay.

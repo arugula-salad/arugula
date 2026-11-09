@@ -8,7 +8,8 @@ Start at `src/lib.rs`. Then:
 
 - `src/client.rs`: `Github`, a client for one API base. Conditional GETs
   with ETags (`EtagCache`), GitHub's rate limits, the timeline's last page,
-  and the writes (comment, review, merge, rerun, a new issue).
+  and the writes (comment, review, merge, rerun, a new issue). A merge on
+  a branch with a merge queue is enqueued over GraphQL, and says so.
 - `src/token.rs`: `TokenSource`, where `Github` gets a token for a
   repository and a `Purpose` (read or write). The daemon's is the person's
   `gh` login (`crates/arugulad-forge/src/github.rs`). The platform's will be an

@@ -87,7 +87,7 @@ test.describe("desktop", () => {
 
     // Picking it again goes to the block.
     await menu(page, paneEl(page, term), "Claude Code conversations…");
-    await expect(picker(page).locator(`[data-conversation="${id}"] .host-tag`)).toHaveText(`%${block}`);
+    await expect(picker(page).locator(`[data-conversation="${id}"] .chip-tag`)).toHaveText(`%${block}`);
     await picker(page).locator(`[data-conversation="${id}"]`).click();
     await expect(picker(page)).toBeHidden();
     expect(await panes(page)).toEqual([term, block]);
@@ -157,7 +157,7 @@ test.describe("phone", () => {
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
     const dialog = picker(page);
-    await expect(dialog.locator(".picker.phone")).toBeVisible();
+    await expect(dialog).toHaveClass(/\bphone\b/);
     await dialog.locator(`[data-conversation="${id}"]`).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => agentBlock(page)).not.toBeNull();

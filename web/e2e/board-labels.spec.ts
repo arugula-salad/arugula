@@ -48,6 +48,8 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
   await t.start(["--platform-host", "app.localhost"]);
   const app = t.base.replace("//127.0.0.1", "//app.localhost");
   const alice = await t.person(browser, "alice");
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await alice.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
@@ -99,7 +101,10 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
     await alice.locator('[data-board-facet-value="ui"]').uncheck();
     await alice.locator('[data-board-facet-value="boards"]').check();
     await expect(alice.locator("[data-board-row]")).toHaveCount(3, { message: "any label of the menu: docs or boards" });
-    await alice.locator('[data-board-facet-button="label"]').click();
+    // The menu shuts with its button on a desktop, with a tap on its backdrop on a phone, where it is a sheet over the page.
+    if (name === "narrow") await alice.locator("[data-menu-backdrop]").click({ position: { x: 5, y: 5 } });
+    else await alice.locator('[data-board-facet-button="label"]').click();
+    await expect(alice.locator('[data-board-facet-menu="label"], [data-board-facet-value="docs"]')).toHaveCount(0);
     await alice.locator('[data-board-facet-button="person"]').click();
     await alice.locator('[data-board-facet-value="bob"]').check();
     await expect(alice.locator("[data-board-row]")).toHaveCount(2, { message: "across menus every one holds: (docs or boards) and bob" });

@@ -13,11 +13,6 @@
   border-radius: 10px;
 }
 
-/* The preview's header has the title. */
-.docs-reader .doc-title {
-  display: none;
-}
-
 /* The list's text rules (.list-preview-words p) are for plain paragraphs. */
 .docs-reader .doc-meta {
   max-width: none;

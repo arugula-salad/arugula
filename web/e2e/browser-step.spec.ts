@@ -91,7 +91,7 @@ test("the app: Link opens GitHub in the browser, and coming back links the repo"
   await p.locator("[data-link-repo]").fill("acme/site");
   await p.getByRole("button", { name: "Link", exact: true }).click();
   const step = p.locator("[data-browser-step]");
-  await expect(step.locator("[data-browser-step-open]")).toHaveText("Install the GitHub App ↗");
+  await expect(step.locator("[data-browser-step-open]")).toHaveText("Install the GitHub App");
   await expect(step.locator("[data-browser-step-open]")).toHaveAttribute("title", "Opens in your browser");
   expect(await opened(p)).toEqual([]);
   await expect(p).toHaveURL(new RegExp(`${project}.*/settings`));
@@ -165,7 +165,7 @@ test("the app: Upgrade opens checkout in the browser, and the new plan shows whe
   const open = p.locator("[data-browser-step-open]");
   // The address is fetched before the click, so the open is a plain click's.
   await expect(open).toBeEnabled();
-  await expect(open).toHaveText("Continue to checkout ↗");
+  await expect(open).toHaveText("Continue to checkout");
   expect(state.checkouts).toBe(1);
   await open.click();
   expect(await opened(p)).toEqual([[CHECKOUT, "_blank", "noopener"]]);

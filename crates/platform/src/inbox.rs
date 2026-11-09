@@ -17,8 +17,8 @@
 //! Nobody gets one for what they did themselves (an agent's is its
 //! owner's). A mention names only those who see the object: chat's
 //! audience for a thread (its project's members, past M165's check on a
-//! private repo's item), and a native issue's project's members with chat
-//! on for its body. Mentions of a machine's agents (M198's `machine:<id>`)
+//! private repo's item), and a native issue's project's members for its
+//! body, whatever their chat setting (Arugula #746). Mentions of a machine's agents (M198's `machine:<id>`)
 //! are never entries or pushes: agents read them over MCP.
 //!
 //! **Entries are made when it happens,** not worked out from rows as the
@@ -48,8 +48,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::{
-    Platform,
-    chat::{self, chat_on},
+    Platform, chat,
     db::{
         chat::Room,
         inbox::{InboxFilter, NativeRow},
@@ -144,6 +143,10 @@ fn notify(
 /// Who did it, as a push names them: a person, or "<owner>'s agent on
 /// <machine>" (an agent token's as a token's, UI audit #192).
 async fn actor_name(app: &Platform, by: Actor<'_>) -> anyhow::Result<String> {
+    // CI (native #774) is no account's: its own name.
+    if let Some(ci) = by.agent.and_then(arugula_control_wire::projects::ci_name) {
+        return Ok(ci);
+    }
     let me = chat::name_of(app, by.account).await?;
     Ok(match by.agent {
         Some(m) => {
@@ -160,18 +163,13 @@ fn issue_what(app: &Platform, issue: &db::Issue) -> anyhow::Result<String> {
     Ok(format!("{project}#{}", issue.number))
 }
 
-/// Whom a native issue's text mentions: its project's members with chat on
-/// (who may read it), named by an `@`, but not `by`.
+/// Whom a native issue's text mentions: its project's members (who may read
+/// it), named by an `@`, but not `by`.
 async fn issue_mentions(app: &Platform, project: &str, text: &str, by: &str) -> anyhow::Result<Vec<String>> {
     if !text.contains('@') {
         return Ok(vec![]);
     }
-    let mut audience = Vec::new();
-    for a in members(app, project).await? {
-        if chat_on(app, &a).await? {
-            audience.push(a);
-        }
-    }
+    let audience = members(app, project).await?;
     Ok(chat::mentions(app, text, &audience, by).await?.0)
 }
 
@@ -210,13 +208,8 @@ async fn issue_changed_or_opened(
     for gone in was.iter().filter(|a| !issue.assignees.contains(a)) {
         app.db.drop_inbox(gone, &issue.id, ASSIGNED)?;
     }
-    // Newly assigned, with chat (and so native issues) on, as mentions are.
-    let mut assigned: Vec<&String> = Vec::new();
-    for a in issue.assignees.iter().filter(|a| !was.contains(a) && *a != by.account) {
-        if chat_on(app, a).await? {
-            assigned.push(a);
-        }
-    }
+    // Newly assigned.
+    let assigned: Vec<&String> = issue.assignees.iter().filter(|a| !was.contains(a) && *a != by.account).collect();
     // Those the body names now and didn't before.
     let mentioned = match old {
         Some(o) if o.body == issue.body => vec![],
@@ -343,7 +336,21 @@ async fn run_failed_or(app: &Platform, run: &Run) -> anyhow::Result<()> {
     if to.is_empty() {
         return Ok(());
     }
-    let why = run.exit_code.map_or_else(|| "failed".to_owned(), |c| format!("failed (exit {c})"));
+    // Why, in words, when its failing said (control's reasons, and a
+    // box's); else its exit code.
+    let said = app
+        .db
+        .run_events(&run.id)?
+        .into_iter()
+        .rev()
+        .find(|e| e.to == crate::db::runs::State::Failed)
+        .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.detail).ok())
+        .and_then(|d| d["reason"].as_str().and_then(crate::work::reason_words).map(str::to_owned));
+    let why = match (said, run.exit_code) {
+        (Some(w), _) => format!("failed: {w}"),
+        (None, Some(c)) => format!("failed (exit {c})"),
+        (None, None) => "failed".to_owned(),
+    };
     let mine = |a: &String| starter.as_ref() == Some(a);
     let to = to
         .into_iter()

@@ -56,7 +56,6 @@ fn a_tool_call_takes_a_waiting_mention_into_the_running_turn() {
     let mut d = arugulad!("mentiontool")
         .env("CLAUDE_CONFIG_DIR", &cfg)
         .args(["--owner", "owner@example.com", "--tailscale-socket", "/nonexistent/sock"])
-        .args(["--wisp-token-file", "/nonexistent"])
         .wait_secs(30)
         .start();
     d.stop();

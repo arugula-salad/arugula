@@ -10,9 +10,8 @@
 # Never `fly ips allocate-v4` or a public `allocate-v6`: with a public
 # address the same service would be on the internet (the platform still
 # answers nothing without the hub's signed principal, but it must not be
-# reachable at all). Deploys pass --no-public-ips, and
-# scripts/ci-platform-deploy refuses to deploy while the app has any public
-# address. Before the private IPv6 exists, the hub reaches it at
+# reachable at all). A hotfix's fly deploy passes --no-public-ips, and a
+# release's plan (ops/src/fly/platform) declares no address. Before the private IPv6 exists, the hub reaches it at
 # arugula-platform.internal:7700 (6PN, straight to a machine), as it did
 # before M144; the switch is a hub secret in M145's window
 # (docs/control-ops.md). The platform reaches the hub's internal API at
@@ -26,8 +25,9 @@
 # LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY, which only the
 # nightly dump's machine uses now (R2, docs/control-ops.md "The nightly
 # dump"): on Postgres the platform runs no Litestream, and its image (Arugula #72)
-# carries none. Each release tag deploys it before the hub (release.yml's `platform` job), once
-# FLY_PLATFORM_API_TOKEN is set; `just platform-deploy` is for hotfixes.
+# carries none. Releases go through chant, before the hub (`just
+# server-release`, #1983), whose plan, ops/src/fly/platform, declares the
+# same Machines: change both together. `just platform-deploy` is for hotfixes.
 #
 # Postgres only (M145; Arugula #72 dropped the volume): two machines, `fly scale
 # count 2`, with no volume and no /data. They share the database, take
@@ -36,9 +36,8 @@
 # SQLite stays the platform's default where you run your own, but not
 # here: with no volume a file would be lost on the next restart, so
 # ARUGULA_PLATFORM_REQUIRE_POSTGRES ([env]) makes the platform refuse to
-# start without ARUGULA_PLATFORM_DATABASE_URL, and ci-platform-deploy
-# refuses to deploy without the secret (docs/control-ops.md "Two platform
-# machines").
+# start without ARUGULA_PLATFORM_DATABASE_URL (docs/control-ops.md "Two
+# platform machines").
 # A deploy replaces one machine at a time ([deploy]), each waiting for its
 # health check, which answers 503 while the machine can't reach its
 # database; a stopping machine hands its Cloud jobs back before it goes.
@@ -97,7 +96,7 @@ kill_timeout = "25s"
     hard_limit = 5000
 
   # The proxy sends calls only to machines passing it; fly deploy waits for
-  # it, and scripts/ci-platform-deploy checks it passes. /platform.json
+  # it. /platform.json
   # answers 503 while the machine can't reach its database.
   [[services.http_checks]]
     method = "get"

@@ -10,7 +10,7 @@ import { Time } from "../../shared/ui/time";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
 import { fingerprint, type Cert } from "../e2e/cert.ts";
 import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
-import { Mark } from "../ui/shell/icons";
+import { Mark } from "../../shared/ui/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
 import { ResetOffer } from "./reset";

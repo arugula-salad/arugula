@@ -157,6 +157,9 @@ test("the form takes the preview's place, stays while the pointer crosses rows, 
   await expect(form.locator("input[name=name]")).toHaveValue("alpha");
   await form.locator("[data-cancel-recipe]").click();
   await expect(form).toHaveCount(0);
+  // With the form gone, resting on a row previews it: this list still hovers (Arugula #657).
+  await p.locator("[data-recipe=beta]").hover();
+  await expect(p.locator("[data-list-preview] h2")).toHaveText("beta");
 
   // Search and the offered count narrow it; the keys move through it.
   await page.keyboard.press("/");

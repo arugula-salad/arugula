@@ -260,7 +260,10 @@ test("a run that fails is in the inbox, and opens there; a phone reads it", asyn
   const entry = alice.locator(`[data-inbox-group="run_failed"] [data-inbox-entry="${started}"]`);
   await expect(entry).toContainText("Acme ·");
   await expect(entry).toContainText(`sh -c echo hi && exit 2`);
-  await expect(entry).toContainText("Run · Failed · started by alice");
+  // The heading says it is a run and that it failed; the card keeps who, and the words for a reader of the page.
+  await expect(entry).toContainText("started by alice");
+  await expect(entry).not.toContainText("Failed");
+  await expect(entry).toHaveAttribute("aria-label", /^Run, Failed: /);
   await entry.locator("a").click();
   await expect(alice).toHaveURL(new RegExp(`/runs/${started}$`));
   // The thread kept what was said.

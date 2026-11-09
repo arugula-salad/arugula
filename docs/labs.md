@@ -123,8 +123,7 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   `run --vm/--vm-tab/--image/--sandbox`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
 - **Daemon (`arugulad --help`):**
-  `--studio-file`, `--wisp-url`,
-  `--wisp-token-file`, `--loam-url`,
+  `--studio-file`, `--loam-url`,
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
@@ -154,16 +153,15 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 
 One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`),
 behind `sandbox-providers` like the rest of the feature: with the flag off
-the daemon opens no adapter and asks nothing of a provider, whatever token
-or key is on disk, and turning the flag on or off works on the running
-daemon.
+the daemon opens no adapter and asks nothing of a provider, whatever key
+is on disk, and turning the flag on or off works on the running daemon.
+The provider is loam; without `--loam-url` VM panes are off. (The Sprites
+adapter, for a wispd on the machine or Fly's sprites, was the first and
+was removed with the older machine model: a wisp token left on disk is
+never read, and the log says so at startup.)
 
-- **A Sprites API** (`crates/arugulad-labs/src/sprites.rs`): a wispd
-  (`--wisp-url`, default `http://127.0.0.1:7788`, token in
-  `--wisp-token-file`, default `~/.local/share/wisp/token`) or Fly's
-  sprites. The default.
-- **loam** (`crates/arugulad-labs/src/loam.rs`), when `--loam-url` (or
-  `LOAM_API_URL`) is given, e.g. `https://api.loam.inevitable.fyi`. Its
+- **loam** (`crates/arugulad-labs/src/loam.rs`), named by `--loam-url` (or
+  `LOAM_API_URL`), e.g. `https://api.loam.inevitable.fyi`. Its
   project key (`loam_…`, from the loam operator) is read from
   `--loam-key-file` (`ARUGULA_LOAM_KEY_FILE`), default
   `~/.config/arugula/loam-key`: one line, mode 0600, beside the other

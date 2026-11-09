@@ -5,9 +5,10 @@
 // (../../shared/issues/view), the way a Cloud workspace block once drew
 // control's views: the view reads through `IssueApiContext`.
 //
-// - On control's page, signed in, with chat on (issues come with it), the
-//   view reads and writes as the person looking, through control, as the
-//   platform page does: its thread, the timeline and every change, live.
+// - On control's page, signed in, the view reads and writes as the person
+//   looking, through control, as the platform page does: the timeline and
+//   every change, and its thread and live changes while chat is on for
+//   them.
 //   Nobody needs an agent grant to see their own issue.
 // - Otherwise (a machine's own page, or someone the project doesn't
 //   have), the machine's owner sees what the daemon read for them, read
@@ -126,14 +127,11 @@ type Reader = { as: "me"; place: IssuePlace } | { as: "block" } | null;
 function useReader(s: NativeIssueState, project: string | null | undefined): Reader {
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
-  useSubscribe((fn) => chat.subscribe(fn));
   const [reader, setReader] = useState<Reader>(null);
   const signedIn = session?.phase === "ready";
-  const on = chat.on;
   const id = s.pin.global_id;
   useEffect(() => {
-    if (!signedIn || on === false) return setReader({ as: "block" });
-    if (on === null) return;
+    if (!signedIn) return setReader({ as: "block" });
     let live = true;
     (async () => {
       // Its project: the daemon's word to the owner, else the person's
@@ -142,7 +140,7 @@ function useReader(s: NativeIssueState, project: string | null | undefined): Rea
       if (live) setReader(place ? { as: "me", place } : { as: "block" });
     })().catch(() => live && setReader({ as: "block" }));
     return () => void (live = false);
-  }, [signedIn, on, id, project]);
+  }, [signedIn, id, project]);
   return reader;
 }
 
