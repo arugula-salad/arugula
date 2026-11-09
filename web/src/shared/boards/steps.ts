@@ -35,14 +35,56 @@ export function saveMode(mode: BoardMode): void {
   }
 }
 
+/** The title column's width, kept in this browser. */
+const TITLE_KEY = "arugula.board.steps.title";
+
+/** The title column's width when the viewer hasn't set one, and the least and most it takes (the most is a share of the chart's width). */
+export const TITLE_DEFAULT = { desktop: 260, phone: 150 };
+export const TITLE_MIN = { desktop: 160, phone: 120 };
+export const TITLE_MAX_SHARE = 0.6;
+
+/** The width the viewer set, else null. Storage that refuses, or holds something else, reads as none. */
+export function loadTitle(): number | null {
+  try {
+    const v = Number(localStorage.getItem(TITLE_KEY));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the width (null: forget it, so the default holds again). */
+export function saveTitle(width: number | null): void {
+  try {
+    if (width === null) localStorage.removeItem(TITLE_KEY);
+    else localStorage.setItem(TITLE_KEY, String(Math.round(width)));
+  } catch {
+    // Not kept; the width holds for this page.
+  }
+}
+
+/** The least and most the title column may be in a chart `chart` pixels wide (0: not measured yet, so no most). */
+export function titleRange(chart: number, phone: boolean): [number, number] {
+  const min = phone ? TITLE_MIN.phone : TITLE_MIN.desktop;
+  return [min, chart > 0 ? Math.max(min, Math.floor(chart * TITLE_MAX_SHARE)) : Number.POSITIVE_INFINITY];
+}
+
+/** `width` held to the range. */
+export function clampTitle(width: number, chart: number, phone: boolean): number {
+  const [min, max] = titleRange(chart, phone);
+  return Math.min(max, Math.max(min, Math.round(width)));
+}
+
 /** What a reorder refused as stale says on the moved row. */
 export const MOVED_FIRST = "moved first by someone else";
 
 /** A phase: a group (none: the rows with no group) with its open rows by step and the count of its done rows. */
 export interface Phase {
   group: BoardGroup | null;
-  /** Done rows, counted and not drawn. */
+  /** The count of done rows. */
   done: number;
+  /** The done rows, in the order the board holds them: drawn in the chart's ✓ column, and only counted on a phone. */
+  finished: BoardRow[];
   /** Open rows by step, in the order the board holds them inside each. */
   steps: { step: number; rows: BoardRow[] }[];
 }
@@ -84,6 +126,7 @@ export function phases(v: Pick<BoardView, "groups" | "zones" | "order" | "sequen
     out.push({
       group: g,
       done: mine.length - open.length,
+      finished: mine.filter((r) => r.lane === "done").sort((a, b) => at(a) - at(b)),
       steps: [...byStep.entries()].sort((a, b) => a[0] - b[0]).map(([step, rows]) => ({ step, rows })),
     });
   }

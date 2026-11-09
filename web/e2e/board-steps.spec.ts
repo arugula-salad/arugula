@@ -1,4 +1,4 @@
-// A board's Steps view (Arugula #763). Alice owns team Acme, with a board of
+// A board's Steps view (Arugula #763, #786): the sequence chart. Alice owns team Acme, with a board of
 // two phases: "Phase A" holds Design (link: before Build, relates, duplicate,
 // discovered), nine fillers beside it in step 1 (so step 1 folds after 8), and
 // Build (step 2, which blocks Ship); "Phase B" holds Ship (step 3) and the
@@ -24,7 +24,7 @@ test.afterAll(async ({ browser }) => {
   t.stop();
 });
 
-const SHOTS = `${process.env.TMPDIR ?? "/tmp"}/763-shots`;
+const SHOTS = "test-results/786-shots";
 
 async function shot(p: Page, name: string) {
   mkdirSync(SHOTS, { recursive: true });
@@ -56,11 +56,29 @@ const FILLERS = Array.from({ length: 9 }, (_, i) => `Filler ${i + 1}`);
 /** The block an agent on Design reports; the board is read with it in place of a daemon's report (a spec can't sign as a machine). */
 let agent: { state: string } = { state: "working" };
 
+/** A row's line. */
 const bar = (p: Page, title: string) => p.locator(`[data-step-row="${rowOf[title]}"]`);
 
-/** The ids of step 1 of Phase A in the order drawn. */
+/** The ids of the lines of a phase's step, in the order drawn. */
 const column = (p: Page, phase: string, step: number) =>
-  p.locator(`[data-steps-phase="${phase}"] [data-steps-col="${step}"] [data-step-row]`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.stepRow!));
+  p.locator(`[data-steps-phase="${phase}"] [data-step-row][data-step="${step}"]`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.stepRow!));
+
+const grip = (p: Page) => p.locator("[data-steps-grip]");
+const gripWidth = async (p: Page) => Number(await grip(p).getAttribute("aria-valuenow"));
+
+/** The width of each column of the header (✓, then the steps), and the title column's. */
+const columns = (p: Page) => p.locator("[data-steps-col]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
+
+/** Drag the handle by `dx` pixels with the mouse. */
+async function pull(p: Page, dx: number) {
+  const b = (await grip(p).boundingBox())!;
+  const [x, y] = [b.x + b.width / 2, b.y + 40];
+  await p.mouse.move(x, y);
+  await p.mouse.down();
+  await p.mouse.move(x + dx / 2, y, { steps: 5 });
+  await p.mouse.move(x + dx, y, { steps: 5 });
+  await p.mouse.up();
+}
 
 /** Each drawn arrow's ends against the boxes of the bars it joins, in the chart's own coordinates. */
 async function ends(p: Page) {
@@ -68,8 +86,8 @@ async function ends(p: Page) {
     const chart = document.querySelector("[data-steps]")!;
     const base = chart.getBoundingClientRect();
     const box = (id: string) => {
-      const r = chart.querySelector(`[data-step-row="${id}"]`)!.getBoundingClientRect();
-      return { left: r.left - base.left + chart.scrollLeft, right: r.right - base.left + chart.scrollLeft, cy: (r.top + r.bottom) / 2 - base.top + chart.scrollTop };
+      const r = chart.querySelector(`[data-step-bar="${id}"]`)!.getBoundingClientRect();
+      return { left: r.left - base.left, right: r.right - base.left, cy: (r.top + r.bottom) / 2 - base.top };
     };
     return [...chart.querySelectorAll<SVGPathElement>("path[data-link-kind]")].map((el) => {
       const g = el.parentElement as unknown as SVGGElement;
@@ -144,6 +162,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
     const r = await route.fetch();
     const j = await r.json();
     const design = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf["Design"]);
+    if (design) design.marks = [{ kind: "stalled", since: Date.now() - 3 * 3_600_000 }, { kind: "blocked_by", number: 5, title: "Pick a name" }];
     if (design) design.attachments = [{ id: "att_0000000000000000000000000000aa01", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "640" }, block: { state: agent.state, title: "API lane", branch: "feat/api", head: "abc1234", pushed: false, uncommitted: 1 } }];
     // A long title with an agent whose own title is long too; and a phase whose only row is done.
     const long = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf[LONG]);
@@ -163,19 +182,27 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   // Phases and steps: Phase A's step 1 shows eight of ten behind "+2 more"; Build is step 2 and Ship step 3.
   await expect(alice.locator('[data-steps-phase] h2')).toHaveText(["Phase A", "Phase B", "Phase C"]);
   expect(await column(alice, phaseA, 1)).toHaveLength(8);
+  // A line carries the glyph, the number and the title, and no agent or marks.
+  await expect(bar(alice, "Design").locator("[data-step-agent], [data-board-mark]")).toHaveCount(0);
   await expect(alice.locator(`[data-steps-more="${phaseA}"]`)).toHaveText("+2 more");
   await expect(bar(alice, "Build")).toHaveAttribute("data-step", "2");
   await expect(bar(alice, "Ship")).toHaveAttribute("data-step", "3");
 
-  // The agent is live on Design's bar: working, then asking, with no reload.
-  await expect(bar(alice, "Design").locator('[data-board-block="working"]')).toBeVisible();
+  // The agent is live in Design's drawer, with its marks: working, then asking, with no reload.
+  await bar(alice, "Design").click();
+  const drawer = alice.locator(`[data-board-drawer="${rowOf["Design"]}"]`);
+  await expect(drawer.locator('[data-board-block="working"]')).toBeVisible();
+  await expect(drawer.locator('[data-board-mark="stalled"]')).toHaveText("stalled 3h");
+  await expect(drawer.locator('[data-board-mark="blocked_by"]')).toHaveText("blocked by #5");
   await alice.evaluate(() => ((window as any).__kept = 1));
   agent = { state: "needs_input" };
   const designRev = (await api(alice, "GET", `/api/boards/${board}`)).body!.zones.flatMap((z: any) => z.rows).find((x: any) => x.id === rowOf["Design"]).rev;
   // The platform tells the board's readers when a block's state changes (put_block_state); a spec can't sign as a machine, so a write on the row stands in for that tell.
   expect((await api(alice, "PUT", `/api/boards/${board}/entries`, { id: rowOf["Design"], rev: designRev, note: "asking" })).status).toBe(200);
-  await expect(bar(alice, "Design").locator('[data-board-block="needs_input"]')).toBeVisible();
+  await expect(drawer.locator('[data-board-block="needs_input"]')).toBeVisible();
   expect(await alice.evaluate(() => (window as any).__kept)).toBe(1);
+  await alice.locator("[data-board-drawer-close]").click();
+  await alice.mouse.move(2, 2);
 
   // No arrows until a row is hovered; then its links, one look to a kind, each end on a bar.
   await expect(alice.locator("path[data-link-kind]")).toHaveCount(0);
@@ -263,8 +290,11 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await expect(phone.locator("[data-steps]")).toBeVisible();
   await expect(phone.locator('[data-board-view="steps"]')).toHaveAttribute("aria-pressed", "true");
   await expect(phone.locator("[data-board-zone]")).toHaveCount(0);
-  // Steps stack as sections: a column per step that has rows.
-  await expect(phone.locator(`[data-steps-phase="${phaseA}"] [data-steps-col]`)).toHaveCount(2);
+  // One chart: ✓ and three steps, with the title column at the phone's default; a phase's done rows are counted, not drawn.
+  await expect(phone.locator("[data-steps-col]")).toHaveCount(4);
+  expect(await gripWidth(phone)).toBe(150);
+  await expect(phone.locator('[data-step-row][data-lane="done"]')).toHaveCount(0);
+  await expect(phone.locator("[data-steps-done]")).toHaveText("1 done");
   expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   // A tap draws the row's arrows; another tap opens its drawer.
@@ -273,6 +303,18 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await bar(phone, "Design").click();
   await onTheBars(phone, ["before", "relates", "duplicate_of", "discovered_from"]);
   await shot(phone, "390-links");
+  // The held row stays held while the title column is widened by keys, and its arrows follow the bars (no box the chart watches changes size).
+  await grip(phone).focus();
+  await phone.mouse.move(2, 2);
+  for (let i = 0; i < 2; i++) await phone.keyboard.press("ArrowRight");
+  expect(await gripWidth(phone)).toBe(182);
+  await onTheBars(phone, ["before", "relates", "duplicate_of", "discovered_from"]);
+  await shot(phone, "390-links-widened");
+  // A double-click puts it back, and the arrows follow again.
+  await grip(phone).dblclick();
+  expect(await gripWidth(phone)).toBe(150);
+  expect(await phone.evaluate(() => localStorage.getItem("arugula.board.steps.title"))).toBeNull();
+  await onTheBars(phone, ["before", "relates", "duplicate_of", "discovered_from"]);
   await bar(phone, "Design").click();
   await expect(phone.locator(`[data-board-drawer="${rowOf["Design"]}"]`)).toBeVisible();
   // The drawer lists its links by kind, in words.
@@ -295,47 +337,165 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await expect(phone.locator("[data-board-zone]").first()).toBeVisible();
 });
 
-/** The right edge of the bar, of its agent, and of the furthest thing inside the agent (the chip and the facts after it): none is clipped. */
-async function chipInBar(p: Page) {
-  return bar(p, LONG).evaluate((bar) => {
-    const agent = bar.querySelector("[data-step-agent]")!;
-    return {
-      bar: bar.getBoundingClientRect().right,
-      agent: agent.getBoundingClientRect().right,
-      inside: Math.max(...[...agent.querySelectorAll("*")].map((e) => e.getBoundingClientRect().right)),
-    };
-  });
+/** The right edge of a line, and of the furthest thing inside it (its title cell's parts, its bar): none crosses it. */
+async function insideLine(p: Page, title: string) {
+  return bar(p, title).evaluate((line) => ({
+    line: line.getBoundingClientRect().right,
+    inside: Math.max(...[...line.querySelectorAll("*")].map((e) => e.getBoundingClientRect().right)),
+  }));
 }
 
-test("a row's agent chip stays inside its bar and looks like the lanes' chip, and a phase with nothing open has no steps", async () => {
+test("a line carries only its glyph, number and title, and nothing crosses its right edge; a phase with nothing open has only done lines", async () => {
   test.setTimeout(240_000);
   const page = alice;
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${app}/p/${project}/boards/${board}`);
     await page.locator('[data-board-view="steps"]').click();
-    await expect(bar(page, LONG).locator("[data-step-agent]")).toBeVisible();
-    const { bar: right, agent, inside } = await chipInBar(page);
-    expect(agent, `${width}px: the agent's right edge ${agent} against the bar's ${right}`).toBeLessThanOrEqual(right);
-    expect(inside, `${width}px: the chip's right edge ${inside} against the agent's ${agent}`).toBeLessThanOrEqual(agent + 0.5);
-    // The title gave way, and the chip still shows its state.
+    await expect(bar(page, LONG)).toBeVisible();
+    for (const title of [LONG, "Design", "Build"]) {
+      const { line, inside } = await insideLine(page, title);
+      expect(inside, `${width}px, ${title}: ${inside} against the line's ${line}`).toBeLessThanOrEqual(line + 0.5);
+    }
+    // The long title gave way with an ellipsis, and its line has no agent chip.
     expect(await bar(page, LONG).locator("[data-step-title]").evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
-    await shot(page, `${width}-chip`);
+    await expect(page.locator("[data-step-agent]")).toHaveCount(0);
+    await shot(page, `${width}-lines`);
   }
 
-  // The chip is drawn the same here and on a lane card.
+  // The agent on the long row is in its drawer.
   await page.setViewportSize({ width: 1280, height: 900 });
-  const look = (loc: ReturnType<Page["locator"]>) => loc.evaluate((e) => ({ family: getComputedStyle(e).fontFamily, size: getComputedStyle(e).fontSize, decoration: getComputedStyle(e).textDecorationLine }));
-  const steps = await look(bar(page, "Design").locator("[data-step-agent] a.board-ptr"));
-  await page.locator('[data-board-view="lanes"]').click();
-  await expect(page.locator("[data-board-zone]").first()).toBeVisible();
-  const lanes = await look(page.locator(`[data-board-row="${rowOf["Design"]}"] [data-board-attachment] a.board-ptr`));
-  expect(steps).toEqual(lanes);
-  await page.locator('[data-board-view="steps"]').click();
+  await bar(page, LONG).click();
+  const drawer = page.locator(`[data-board-drawer="${rowOf[LONG]}"]`);
+  await expect(drawer.locator("[data-board-drawer-attachments] [data-board-block]")).toBeVisible();
+  await page.locator("[data-board-drawer-close]").click();
 
-  // Phase C has one row, done: its head says so, and no step is drawn under it.
-  const c = page.locator('[data-steps-phase]', { has: page.locator("h2", { hasText: "Phase C" }) });
+  // Phase C has one row, done: its head says so. On a phone no line is drawn under it; on a desktop its line has the bar in ✓.
+  await page.setViewportSize({ width: 390, height: 900 });
+  const c = page.locator("[data-steps-phase]", { has: page.locator("h2", { hasText: "Phase C" }) });
   await expect(c.locator("[data-steps-done]")).toHaveText("1 done");
-  await expect(c.locator(".steps-col")).toHaveCount(0);
-  await expect(page.locator(`[data-steps-phase="${phaseA}"] .steps-col`).first()).toBeVisible();
+  await expect(c.locator("[data-step-row]")).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(c.locator("[data-step-row]")).toHaveCount(1);
+  await expect(c.locator("[data-step-bar]")).toHaveAttribute("data-bar", "done");
+});
+
+test("at 1280 px each open row's bar is in its step's column and a done row's is in ✓", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  await page.locator(`[data-steps-more="${phaseA}"]`).click();
+  const found = await page.evaluate(() => {
+    const cols = [...document.querySelectorAll<HTMLElement>("[data-steps-col]")].map((e) => e.getBoundingClientRect());
+    return [...document.querySelectorAll<HTMLElement>("[data-step-row]")].map((line) => {
+      const bar = line.querySelector("[data-step-bar]")!.getBoundingClientRect();
+      const col = cols[Number(line.dataset.step)];
+      return { id: line.dataset.stepRow!, lane: line.dataset.lane!, step: Number(line.dataset.step), left: bar.left - col.left, right: col.right - bar.right, top: bar.top, bottom: bar.bottom, line: line.getBoundingClientRect() };
+    });
+  });
+  // Every bar fills its column, inset 3px.
+  expect(found.length).toBeGreaterThan(12);
+  for (const f of found) {
+    expect(f.left, `${f.id}: left inset`).toBeCloseTo(3, 0);
+    expect(f.right, `${f.id}: right inset`).toBeCloseTo(3, 0);
+    expect(f.top).toBeGreaterThanOrEqual(f.line.top);
+    expect(f.bottom).toBeLessThanOrEqual(f.line.bottom);
+  }
+  const by = (title: string) => found.find((f) => f.id === rowOf[title])!;
+  expect([by("Design").step, by("Build").step, by("Ship").step]).toEqual([1, 2, 3]);
+  // The done row is in ✓ (column 0), and only a done row is.
+  expect(by("Already shipped")).toMatchObject({ lane: "done", step: 0 });
+  expect(found.filter((f) => f.step === 0).map((f) => f.lane)).toEqual(["done"]);
+  expect(found.filter((f) => f.lane !== "done").every((f) => f.step >= 1)).toBe(true);
+  await expect(page.locator('[data-step-bar][data-bar="done"]')).toHaveCount(1);
+  // The longest open chain is ringed.
+  const chain = ((await api(page, "GET", `/api/boards/${board}`)).body!.chain ?? []) as string[];
+  for (const id of chain) await expect(page.locator(`[data-step-bar="${id}"]`)).toHaveAttribute("data-crit", "");
+  await shot(page, "1280-chart");
+});
+
+test("dragging the title column's handle by 200 px narrows every step column equally and the width is kept; keys, the clamp and a double-click", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.title"));
+  await page.reload();
+  await expect(grip(page)).toHaveAttribute("role", "separator");
+  await expect(grip(page)).toHaveAttribute("aria-orientation", "vertical");
+  expect(await gripWidth(page)).toBe(260);
+
+  const before = await columns(page);
+  expect(before).toHaveLength(4);
+  await pull(page, 200);
+  expect(await gripWidth(page)).toBe(460);
+  const after = await columns(page);
+  // The four columns share the rest evenly: each is a quarter of the 200 px narrower, and they stay equal.
+  for (let i = 0; i < after.length; i++) expect(Math.abs(before[i] - after[i] - 200 / after.length), `column ${i}`).toBeLessThanOrEqual(1);
+  expect(Math.max(...after) - Math.min(...after)).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.title"))).toBe("460");
+  // The arrows follow the bars after a resize, with a row hovered.
+  await bar(page, "Build").hover();
+  await onTheBars(page, ["before", "blocks"]);
+  await shot(page, "1280-resized-links");
+  await page.mouse.move(2, 2);
+
+  // It is still there after a reload.
+  await page.reload();
+  await expect(grip(page)).toBeVisible();
+  expect(await gripWidth(page)).toBe(460);
+  expect(Math.round((await page.locator(".steps-lab").first().boundingBox())!.width)).toBe(460);
+
+  // The most it takes is 60% of the chart, the least 160 px.
+  const chartWidth = await page.locator("[data-steps-chart]").evaluate((e) => e.clientWidth);
+  await pull(page, 2000);
+  expect(await gripWidth(page)).toBe(Math.floor(chartWidth * 0.6));
+  expect(Number(await grip(page).getAttribute("aria-valuemax"))).toBe(Math.floor(chartWidth * 0.6));
+  await pull(page, -3000);
+  expect(await gripWidth(page)).toBe(160);
+  expect(Number(await grip(page).getAttribute("aria-valuemin"))).toBe(160);
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.title"))).toBe("160");
+
+  // A double-click puts it back, and the browser forgets the width.
+  await grip(page).dblclick();
+  expect(await gripWidth(page)).toBe(260);
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.title"))).toBeNull();
+});
+
+test("the handle is moved by the arrow keys, 16 px a press", async () => {
+  test.setTimeout(120_000);
+  const page = alice;
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.title"));
+  await page.reload();
+  await expect(grip(page)).toBeVisible();
+  await grip(page).focus();
+  expect(await gripWidth(page)).toBe(260);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+  expect(await gripWidth(page)).toBe(308);
+  await page.keyboard.press("ArrowLeft");
+  expect(await gripWidth(page)).toBe(292);
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.title"))).toBe("292");
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.title"));
+});
+
+test("at 390 px the page doesn't scroll sideways, with the title column at its widest too", async () => {
+  test.setTimeout(120_000);
+  const page = alice;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  expect(await fits()).toBe(true);
+  await grip(page).focus();
+  for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowRight");
+  expect(await gripWidth(page)).toBe(Number(await grip(page).getAttribute("aria-valuemax")));
+  expect(await fits()).toBe(true);
+  for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowLeft");
+  expect(await gripWidth(page)).toBe(120);
+  expect(await fits()).toBe(true);
+  await shot(page, "390-narrowest");
+  await grip(page).dblclick();
 });
