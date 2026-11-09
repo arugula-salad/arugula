@@ -20,10 +20,11 @@ import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
-import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup } from "../../shared/ui/list-page";
+import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup, type ListTicked } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { moveDocsToTeam, type MoveResult } from "../../shared/docs/move-docs";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
@@ -129,26 +130,30 @@ interface Row {
 /** The projects' Docs, each with the project it's in; `null` while they load. A
  * project that can't be read has none. Read again when the tab comes back
  * or a listed Doc's thread says it changed. */
-function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<string, ProjectDocSection[]> } {
+function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<string, ProjectDocSection[]>; reload: () => void } {
   const [lists, setLists] = useState<Map<string, ProjectDoc[]> | null>(null);
   const [, bump] = useState(0);
+  const [again, setAgain] = useState(0);
   const key = ps.map((p) => p.id).join(",");
+  const had = useRef("");
   useEffect(() => {
     let live = true;
-    setLists(null);
-    const again = () =>
+    // Read again (after a move) shows what's there while it does; other projects, the loading.
+    if (had.current !== key) setLists(null);
+    had.current = key;
+    const fetched = () =>
       Promise.all(ps.map((p) => projectDocs.list(p.id).then((l): [string, ProjectDoc[]] => [p.id, l.docs], (): [string, ProjectDoc[]] => [p.id, []]))).then((all) => {
         if (!live) return;
         setLists(new Map(all));
       });
-    void again();
-    const back = () => document.visibilityState === "visible" && void again();
+    void fetched();
+    const back = () => document.visibilityState === "visible" && void fetched();
     document.addEventListener("visibilitychange", back);
     return () => {
       live = false;
       document.removeEventListener("visibilitychange", back);
     };
-  }, [key]);
+  }, [key, again]);
   // Each Doc is read whole, a few at a time, for its headings and shape.
   useEffect(() => {
     if (!lists) return;
@@ -171,7 +176,7 @@ function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<str
   const rows = lists
     ? ps.flatMap((p) => (lists.get(p.id) ?? []).map((doc) => ({ doc, p, mine: !p.team })))
     : null;
-  return { rows, sections: read };
+  return { rows, sections: read, reload: () => setAgain((n) => n + 1) };
 }
 
 export function DocsPage({ project }: { project?: string }) {
@@ -213,7 +218,7 @@ function saveFilter(f: DocFilter) {
 }
 
 function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean }) {
-  const { rows, sections } = useRows(ps);
+  const { rows, sections, reload } = useRows(ps);
   const [filter, setFilter] = useState<DocFilter>(savedFilter);
   const [query, setQuery] = useState("");
   const [making, setMaking] = useState(false);
@@ -225,6 +230,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
       (!q || r.doc.title.toLowerCase().includes(q) || (sections.get(readKey(r.doc)) ?? []).some((s) => s.heading.toLowerCase().includes(q))),
   );
   const writable = ps.filter(mayWrite);
+  const teams = writable.filter((p) => p.team);
   const counts: ListCount[] = [
     ...(narrowed ? [{ key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" }] : []),
     ...(narrowed ? [] : [{ key: "team", n: all.filter((r) => !r.mine).length, label: "Team" }, { key: "mine", n: all.filter((r) => r.mine).length, label: "Mine" }]),
@@ -278,6 +284,9 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         setQuery={setQuery}
         groups={groupsOf(shown, narrowed, ps.length === 1)}
         keyOf={(r) => r.doc.id}
+        // Mine's Docs can be put in a team; Team's are already there. Leaving Mine forgets the ticks.
+        selectable={!narrowed && filter === "mine" && teams.length > 0}
+        selection={(ticked) => <ShareBar ticked={ticked} teams={teams} reload={reload} />}
         previewOn="click"
         onOpen={(r) => go(docPath(r))}
         status={status && <div class="list-status">{status}</div>}
@@ -285,6 +294,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
           const s = sections.get(readKey(r.doc));
           return {
             dense: true,
+            name: r.doc.title,
             title: <span data-doc-title>{r.doc.title}</span>,
             detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
             age: <Time at={r.doc.updated_at} title="Updated" />,
@@ -294,6 +304,83 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         }}
         preview={(r) => <Preview key={r.doc.id} row={r} />}
       />
+    </div>
+  );
+}
+
+/** The bar over Mine's rows while any is ticked: put them in a team, and what became of each. */
+function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: PlatformProject[]; reload: () => void }) {
+  const [team, setTeam] = useState(teams[0]?.id ?? "");
+  const [run, setRun] = useState<{ done: number; of: number } | null>(null);
+  const [results, setResults] = useState<{ team: PlatformProject; list: MoveResult[] } | null>(null);
+  const to = teams.find((t) => t.id === team) ?? teams[0];
+  const n = ticked.items.length;
+  const go = async () => {
+    if (run) return;
+    const docs = ticked.items.map((r) => r.doc);
+    const from = ticked.items[0].p.id;
+    setResults(null);
+    setRun({ done: 0, of: docs.length });
+    const list = await moveDocsToTeam(from, to.id, docs, (_, done, of) => setRun({ done, of }));
+    setRun(null);
+    setResults({ team: to, list });
+    ticked.clear();
+    reload();
+  };
+  if (!run && !results && n === 0) return null;
+  return (
+    <div class="docs-share-bar" data-docs-share-bar>
+      {run ? (
+        <span data-docs-share-progress role="status">
+          Sharing {run.done} of {run.of}…
+        </span>
+      ) : (
+        n > 0 && (
+          <>
+            <b data-docs-selected>{n} selected</b>
+            {teams.length > 1 && (
+              <select value={to.id} aria-label="Share with which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" class="primary small" data-docs-share onClick={() => void go()}>
+              {teams.length === 1 ? `Share with ${to.name}` : "Share with…"}
+            </button>
+            <button type="button" class="link" data-docs-clear onClick={ticked.clear}>
+              Clear
+            </button>
+          </>
+        )
+      )}
+      {results && !run && (
+        <ul class="docs-share-results" data-docs-share-results>
+          {results.list.map((r) => {
+            const link = r.teamDoc && pathOf({ page: "doc", project: results.team.id, doc: r.teamDoc }, names);
+            return (
+              <li key={r.id} data-move-result={r.outcome}>
+                <span class="docs-share-title">{r.title}</span>
+                {r.outcome === "refused" ? (
+                  <span class="dim">Refused: {r.why}</span>
+                ) : (
+                  <a href={link!} data-move-link onClick={(e) => follow(e, link!)}>
+                    {r.outcome === "made" ? "Made" : `Already in ${results.team.name}`}
+                  </a>
+                )}
+                {r.noPictures && <span class="dim"> · pictures stay in Mine</span>}
+              </li>
+            );
+          })}
+          <li>
+            <button type="button" class="link" data-docs-share-done onClick={() => setResults(null)}>
+              Done
+            </button>
+          </li>
+        </ul>
+      )}
     </div>
   );
 }

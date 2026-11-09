@@ -34,6 +34,20 @@ let docPath = "";
 let team = "";
 /** The team Doc Alice made from /docs, for the compatibility check. */
 let roadmapPath = "";
+/** Alice's machine geek's daemon, once it has joined. */
+let geek = "";
+
+/** A POST to geek's daemon, as its owner. */
+async function geekPost(path: string, body: unknown) {
+  const r = await fetch(geek + path, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${localToken}` },
+    body: JSON.stringify(body),
+  });
+  const text = await r.text();
+  expect(r.ok, `${path}: ${text}`).toBe(true);
+  return JSON.parse(text) as { block?: number };
+}
 
 async function platform(p: Page, path = "/") {
   await p.goto(`${app}${path}`);
@@ -294,16 +308,8 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await alice.evaluate(() => window.__arugula.control!.setLabsFlag("doc-copies", true));
   const state = await t.addMachine(alice, "geek");
   const base = `http://127.0.0.1:${await daemonPort(state)}`;
-  const post = async (path: string, body: unknown) => {
-    const r = await fetch(base + path, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${localToken}` },
-      body: JSON.stringify(body),
-    });
-    const text = await r.text();
-    expect(r.ok, `${path}: ${text}`).toBe(true);
-    return JSON.parse(text) as { block?: number };
-  };
+  geek = base;
+  const post = geekPost;
   const made = await post("/api/blocks", { type: "doc", config: { title: "Geek's plan" }, local: true });
   await post(`/api/blocks/${made.block}/call/doc_outline`, { title: "Geek's plan", sections: [{ id: "s1", heading: "Goals", intent: "what ships" }] });
   await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "From **geek**." });
@@ -426,6 +432,126 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await expect.poll(async () => (await copies()).length, { timeout: 60_000, intervals: [2000] }).toBe(0);
 });
 
+// Arugula #818: three of Mine's Docs are put in Acme in one step. Two are
+// copies of geek's Docs, one of which Acme already has; the third was
+// written here. Each says what became of it, and Team grows by the two that
+// were made. Shift-click ranges follow the rows as shown, and leaving Mine
+// forgets what was ticked.
+test("Mine's Docs are shared into the team together, each with its outcome (Arugula #818)", async () => {
+  test.setTimeout(180_000);
+  const copy = async (title: string) => {
+    const made = await geekPost("/api/blocks", { type: "doc", config: { title }, local: true });
+    await geekPost(`/api/blocks/${made.block}/call/doc_outline`, { title, sections: [{ id: "s1", heading: "Goals", intent: "what ships" }] });
+    await geekPost(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: `${title} says **hello**.` });
+  };
+  await copy("Bulk one");
+  await copy("Bulk two");
+  const row = (title: string) => alice.locator("[data-list-rows] [data-doc]", { hasText: title });
+  const mine = alice.locator("[data-list-count=mine]");
+  await platform(alice, "/docs");
+  await mine.click();
+  await expect
+    .poll(
+      async () => {
+        await alice.reload();
+        await expect(alice.locator("[data-docs-loading]")).toHaveCount(0, { timeout: 15_000 });
+        return (await row("Bulk one").count()) + (await row("Bulk two").count());
+      },
+      { timeout: 60_000, intervals: [2000] },
+    )
+    .toBe(2);
+
+  // "Bulk two" is in Acme already: shared from its page first.
+  await row("Bulk two").click();
+  await alice.locator("[data-list-preview] [data-open-doc]").click();
+  await alice.locator("[data-doc-share-with]").click();
+  const acme = alice.locator("[data-share-with-dialog] [data-share-with-project]", { hasText: "Acme" });
+  await acme.locator("[data-share-with-go]").click();
+  await expect(acme.locator("[data-share-with-made]")).toContainText("Made", { timeout: 15_000 });
+  await platform(alice, "/docs");
+  await expect(mine).toHaveAttribute("aria-pressed", "true");
+  await expect(row("Bulk two")).toHaveCount(1, { timeout: 15_000 });
+  const team = alice.locator("[data-list-count=team] b");
+  const teamWas = Number(await team.textContent());
+
+  // Ticking: a box on hover, shift-click for the range as it's shown (the
+  // search narrows it), a group's box for all of it, Space and Esc.
+  const boxes = alice.locator("[data-list-rows] [data-doc] [data-list-check]");
+  const all = await alice.locator("[data-list-rows] [data-doc]").count();
+  expect(all).toBeGreaterThanOrEqual(4);
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+  await alice.mouse.move(2, 2);
+  // (The row the keys are on shows its box; the others wait for the pointer.)
+  await expect(boxes.nth(1)).toHaveCSS("opacity", "0");
+  // Shift-click ticks everything between, the rows in between included.
+  await boxes.nth(0).click();
+  await boxes.nth(2).click({ modifiers: ["Shift"] });
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("3 selected");
+  await expect(alice.locator("[data-list-rows] [data-list-check]:checked")).toHaveCount(3);
+  await alice.locator("[data-docs-clear]").click();
+  await alice.locator("[data-list-search]").fill("Bulk");
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveCount(2);
+  await boxes.nth(0).click();
+  await boxes.nth(1).click({ modifiers: ["Shift"] });
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("2 selected");
+  // A box that's ticked shows with the pointer elsewhere.
+  await alice.mouse.move(2, 2);
+  await expect(boxes.nth(1)).toHaveCSS("opacity", "1");
+  // A search that hides a ticked row drops it: it can't be acted on unseen.
+  await alice.locator("[data-list-search]").fill("Bulk one");
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("1 selected");
+  await alice.locator("[data-list-search]").fill("");
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("1 selected");
+  await alice.locator("[data-docs-clear]").click();
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+  // The group's box ticks every row in Mine; the keys clear it.
+  await alice.locator("[data-list-group-check]").click();
+  await expect(alice.locator("[data-docs-selected]")).toHaveText(`${all} selected`);
+  await alice.locator("[data-list-rows]").focus();
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+  // Space ticks the row the keys are on.
+  await alice.keyboard.press("Space");
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("1 selected");
+  await alice.keyboard.press("Escape");
+
+  // Switching to Team forgets what was ticked, so it can't be acted on unseen.
+  await boxes.first().click();
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("1 selected");
+  await alice.locator("[data-list-count=team]").click();
+  await expect(alice.locator("[data-list-rows] [data-list-check]")).toHaveCount(0);
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+  await mine.click();
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+
+  // Three: both copies, and Private notes (written here).
+  for (const title of ["Bulk one", "Bulk two", "Private notes"]) await row(title).locator("[data-list-check]").check();
+  await expect(alice.locator("[data-docs-selected]")).toHaveText("3 selected");
+  await shot(alice, "docs-share-bar.png");
+  // One team to write in: the button names it.
+  await expect(alice.locator("[data-docs-share]")).toHaveText("Share with Acme");
+  await alice.locator("[data-docs-share]").click();
+  const results = alice.locator("[data-docs-share-results]");
+  await expect(results).toBeVisible({ timeout: 30_000 });
+  await expect(results.locator("[data-move-result]")).toHaveCount(3);
+  await expect(results.locator("[data-move-result]", { hasText: "Bulk one" })).toHaveAttribute("data-move-result", "made");
+  await expect(results.locator("[data-move-result]", { hasText: "Bulk two" })).toHaveAttribute("data-move-result", "there");
+  await expect(results.locator("[data-move-result]", { hasText: "Bulk two" }).locator("[data-move-link]")).toHaveText("Already in Acme");
+  await expect(results.locator("[data-move-result]", { hasText: "Private notes" })).toHaveAttribute("data-move-result", "made");
+  await expect(results.locator("[data-move-result]", { hasText: "Private notes" })).not.toContainText("pictures stay");
+  await shot(alice, "docs-share-results.png");
+  // The selection cleared, the originals stay in Mine, and Team grew by two.
+  await expect(alice.locator("[data-docs-selected]")).toHaveCount(0);
+  await expect(alice.locator("[data-list-rows] [data-list-check]:checked")).toHaveCount(0);
+  await expect(row("Private notes")).toHaveCount(1);
+  await expect(team).toHaveText(String(teamWas + 2), { timeout: 15_000 });
+  // A made Doc's link opens the team's Doc.
+  await results.locator("[data-move-result]", { hasText: "Bulk one" }).locator("[data-move-link]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}/);
+  await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText("Bulk one", { timeout: 15_000 });
+  await expect(alice.locator("[data-doc-page]")).toHaveAttribute("data-writer", "true");
+});
+
 // Control serves its newest page to older platforms and daemons: a Doc
 // view from before #678 has no `machine_name` (and one from before #418 no
 // `machine`). The page fills them in where it loads the view, so a Doc
@@ -465,16 +591,8 @@ test("someone in no team sees their machine's copies on /docs", async ({ browser
   await carol.evaluate(() => window.__arugula.control!.setLabsFlag("doc-copies", true));
   const state = await t.addMachine(carol, "carolbox");
   const base = `http://127.0.0.1:${await daemonPort(state)}`;
-  const post = async (path: string, body: unknown) => {
-    const r = await fetch(base + path, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${localToken}` },
-      body: JSON.stringify(body),
-    });
-    const text = await r.text();
-    expect(r.ok, `${path}: ${text}`).toBe(true);
-    return JSON.parse(text) as { block?: number };
-  };
+  geek = base;
+  const post = geekPost;
   const made = await post("/api/blocks", { type: "doc", config: { title: "Carol's notes" }, local: true });
   await post(`/api/blocks/${made.block}/call/doc_outline`, { title: "Carol's notes", sections: [{ id: "s1", heading: "One", intent: "" }] });
   await post(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: "From **carolbox**." });
