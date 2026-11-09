@@ -886,10 +886,11 @@ test("a card's title opens the drawer with the item's body, its comments and the
   await platform(alice, managed);
   const card = row(alice, SHIPPED);
   await expect(card).toHaveClass(/\bcard-accent\b/, { timeout: 15_000 });
-  // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
+  // One chip per agent: its title, and its state unless it is working (the Doing lane says that; the chip's title keeps it). Its branch and the rest come only when it has stopped, dim beside the chip.
   const working = card.locator('[data-board-block="working"]');
-  await expect(working).toHaveText(/^Lexer lane\s*working$/);
-  await expect(card.getByText("working", { exact: true })).toHaveCount(1);
+  await expect(working).toHaveText("Lexer lane");
+  await expect(working).toHaveAttribute("title", "working");
+  await expect(card.getByText("working", { exact: true })).toHaveCount(0);
   await expect(card).not.toContainText("640");
   await expect(card).not.toContainText("641");
   await expect(card.locator('[data-board-block="idle"]')).toHaveText(/^agent\s*idle$/);
