@@ -2,7 +2,7 @@
 // first (`GET /api/projects/{project}/deploys`, a page at a time), each
 // row opening its own page (./deploy). Its bar has a place for it
 // (Discovery 5): before, the only way in was Project settings ›
-// Environments › Deploy…. With none yet it says what a deploy is and offers
+// Environments › Deploy…. With none yet it says what a deploy is in a line and offers
 // the next step: Deploy… where there's an environment and the reader plans,
 // else Make an environment for an owner, else who does.
 
@@ -27,8 +27,7 @@ async function get<T>(path: string): Promise<T> {
   return v;
 }
 
-/** What a deploy is, in one sentence: the empty page's, and the project
- * home's. */
+/** What a deploy is, in one sentence: the empty page's. */
 export const DEPLOYS_MEAN = "A deploy puts a commit on one of the project's environments, once an owner approves it with a passkey.";
 
 const PAGE = 25;
@@ -81,15 +80,6 @@ export function DeploysPage({ project }: { project: string }) {
             </a>
           )
         }
-        sub={
-          <>
-            Every environment's, newest first. Environments are in the project's{" "}
-            <a href={envPath} onClick={(e) => follow(e, envPath)}>
-              settings
-            </a>
-            .
-          </>
-        }
       />
       {err && (
         <p class="control-error" role="alert">
@@ -104,10 +94,10 @@ export function DeploysPage({ project }: { project: string }) {
           title="No deploys yet."
           why={
             envs.length === 0
-              ? `${DEPLOYS_MEAN} It needs an environment to go to first: where it goes, and the driver that applies it.${role === "owner" ? "" : " A project's owners make those."}`
+              ? `A deploy needs an environment to go to first.${role === "owner" ? "" : " A project's owners make those."}`
               : plans
                 ? DEPLOYS_MEAN
-                : `${DEPLOYS_MEAN} A team's owners and editors plan deploys; you can read them here.`
+                : "A team's owners and editors plan deploys; you can read them here."
           }
           action={
             envs.length === 0 ? (

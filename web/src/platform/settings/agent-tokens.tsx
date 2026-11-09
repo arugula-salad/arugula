@@ -205,7 +205,6 @@ export function AgentTokens() {
       id="tokens"
       title="Your agent tokens"
       count={tokens.length}
-      lede="Tokens for agents that run somewhere without Arugula, reaching your projects through Arugula's MCP endpoint."
       more={
         <p>
           A token's agent acts as yours, labelled with the token's name, never past what you can do. It never approves anything: a deploy

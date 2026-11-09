@@ -76,7 +76,6 @@ export function Environments({ p }: { p: PlatformProject }) {
       title="Environments"
       count={envs?.length}
       hooks={{ "data-environments": "" }}
-      lede="Where the project's deploys go. Nothing is applied until an owner approves it with a passkey."
       more={
         <p>
           Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. An owner or editor (or their agent) plans a

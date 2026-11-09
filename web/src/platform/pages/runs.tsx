@@ -168,7 +168,6 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       ...(specs ?? []).map((s) => ({ label: s.name, checked: filter.spec === s.id, run: () => to({ ...filter, spec: s.id }) })),
     ]);
   const narrowed = !!(filter.state || filter.trigger || filter.spec);
-  const settings = pathOf({ page: "project-settings", project: p.id }, names);
 
   return (
     <section class="platform-section sw-page runs-page" data-runs={p.id}>
@@ -186,16 +185,6 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
               </button>
             </>
           )
-        }
-        sub={
-          <>
-            Runs go on this project's cloud workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
-            under the project's standing grant, in its{" "}
-            <a href={settings} onClick={(e) => follow(e, settings)}>
-              settings
-            </a>
-            .
-          </>
         }
         stats={!!list?.length && <RunStats list={list} />}
       />
@@ -286,7 +275,7 @@ function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; worksp
         where="page"
         data-runs-none
         title="No runs yet."
-        why="A run is a command on one of the project's cloud workspaces. It has none yet: make one first."
+        why="A run needs a cloud workspace to go on: make one first."
         action={<NewWorkspaceButton project={p.id} />}
       />
     );
@@ -295,7 +284,7 @@ function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; worksp
       where="page"
       data-runs-none
       title="No runs yet."
-      why="A run is a command on one of the project's cloud workspaces. Start one by hand, or give a run spec a schedule."
+      why="A run is a command on one of the project's cloud workspaces."
       action={
         !starting && (
           <button class="primary" data-runs-none-start onClick={start}>

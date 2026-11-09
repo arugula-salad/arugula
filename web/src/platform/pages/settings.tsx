@@ -68,17 +68,11 @@ export function SettingsPage() {
         <SectionIndex body={body} elsewhere={elsewhere} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Settings" />
-          {/* The line says what's here: the plan only with billing on (UI audit #168). */}
-          <Section
-            id="account"
-            title="Appearance & account"
-            lede={billing?.billing ? "How this device looks, your plan, and where the rest of your account is." : "How this device looks, and where the rest of your account is."}
-          >
+          <Section id="account" title="Appearance & account">
             <ul class="platform-list settings-rows">
               <li>
                 <button class="settings-open" data-open-appearance onClick={openAppearance}>
                   <span class="settings-open-name">Appearance…</span>
-                  <span class="dim">This device's palette, finish, corners and chat density.</span>
                 </button>
               </li>
               {billing?.billing && (
@@ -92,7 +86,6 @@ export function SettingsPage() {
               <li>
                 <a class="settings-open" href={`${controlOrigin()}/#settings=account`} data-settings-control>
                   <span class="settings-open-name">Sign-in, passkeys, devices, teams and usage reports</span>
-                  <span class="dim">On your machines page, where your devices sign them.</span>
                 </a>
               </li>
             </ul>
