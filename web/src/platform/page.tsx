@@ -12,6 +12,7 @@ import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
 import { slugIn } from "./paths";
+import { arrive } from "./chat-nav";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -185,7 +186,7 @@ function useFind(r: Route): string | null {
     return () => void (live = false);
   }, [ask]);
   useEffect(() => {
-    if (to) go(to, true);
+    if (to) arrive(to);
   }, [to]);
   return lost;
 }
