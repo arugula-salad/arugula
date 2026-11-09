@@ -14,7 +14,7 @@ import type { BoardRow, BoardView } from "../proto";
 import { usePhone } from "../ui/hooks";
 import { CheckIcon } from "../ui/icons";
 import { isCard, pointerLabel, rowGlyph } from "./text";
-import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, doneLine, lastStep, linksOf, loadTitle, moreLine, phases, reorder, rowsOf, saveTitle, shown, groupOrder, titleRange, type Link, type Reorder } from "./steps";
+import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, lastStep, linksOf, loadTitle, moreLine, phases, reorder, rowsOf, saveTitle, shown, groupOrder, titleRange, type Link, type Reorder } from "./steps";
 import "./steps.css";
 
 /** One arrow, measured: where it runs, in the chart's own coordinates. */
@@ -238,15 +238,10 @@ export function StepsView({
           const finished = phone ? [] : p.finished;
           return (
             <section class="steps-phase" key={key} data-steps-phase={key}>
-              {(p.group || ps.length > 1 || p.done > 0) && (
+              {(p.group || ps.length > 1) && (
                 <div class="steps-line steps-phase-head">
                   <div class="steps-lab">
-                    {(p.group || ps.length > 1) && <h2>{p.group?.title ?? "No group"}</h2>}
-                    {p.done > 0 && (
-                      <span class="dim" data-steps-done={p.done}>
-                        {doneLine(p.done)}
-                      </span>
-                    )}
+                    <h2>{p.group?.title ?? "No group"}</h2>
                   </div>
                 </div>
               )}

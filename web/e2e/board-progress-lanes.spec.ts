@@ -64,18 +64,20 @@ test("progress lanes: the bar's segments and words on the list and in the header
     await alice.emulateMedia({ colorScheme: scheme });
     await alice.goto(`${app}/p/${project}/boards`);
     const card = alice.locator("[data-board-progress]", { has: alice.locator("[data-lane]") }).first();
-    await expect(alice.locator("[data-board-progress]").filter({ hasText: "3 of 10 done, 2 proven · 2 in review · 1 doing" })).toBeVisible({ timeout: 15_000 });
-    await expect(alice.locator("[data-board-progress]").filter({ hasText: /^2 of 4 done, 0 proven$/ })).toBeVisible();
+    await expect(alice.locator("[data-board-progress]").filter({ hasText: /^3 of 10 done$/ })).toBeVisible({ timeout: 15_000 });
+    await expect(alice.locator("[data-board-progress]").filter({ hasText: /^2 of 4 done$/ })).toBeVisible();
     await expect(card).toBeVisible();
-    const bar = alice.locator("[data-board-progress]").filter({ hasText: "in review" }).getByRole("progressbar");
+    const bar = alice.locator("[data-board-progress]").filter({ hasText: "3 of 10 done" }).getByRole("progressbar");
     await expect(bar.locator("i")).toHaveCount(3);
     expect(await bar.locator("i").evaluateAll((is) => is.map((i) => [i.getAttribute("data-lane"), (i as HTMLElement).style.width]))).toEqual([["done", "30%"], ["review", "20%"], ["doing", "10%"]]);
     await expect(bar).toHaveAttribute("aria-valuenow", "3");
+    // The words the card no longer shows stay in the bar's label.
+    await expect(bar).toHaveAttribute("aria-label", "3 of 10 done, 2 proven · 2 in review · 1 doing");
     await shot(alice, `lanes-list-${w}-${scheme}`);
 
     await alice.goto(`${app}/p/${project}/boards/${ids.Launch}`);
     const head = alice.locator(".board-progress");
-    await expect(head).toContainText("3 of 10 done, 2 proven · 2 in review · 1 doing", { timeout: 15_000 });
+    await expect(head).toHaveText("3 of 10 done", { timeout: 15_000 });
     await expect(head.locator("i")).toHaveCount(3);
     await shot(alice, `lanes-header-${w}-${scheme}`);
   }

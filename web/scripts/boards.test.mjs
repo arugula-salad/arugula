@@ -22,19 +22,22 @@ test("an epic's progress is in words, and a text's first line is what a list sho
   const z = { review: 0, doing: 0 };
   assert.deepEqual(epicLine({ done: 3, total: 5, proven: 2, ...z }), {
     words: "3 of 5 done, 2 proven",
+    short: "3 of 5 done",
     pct: 60,
     segments: [{ lane: "done", pct: 60 }],
   });
-  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0, ...z }), { words: "0 of 2 done", pct: 0, segments: [] });
-  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0, ...z }), { words: "No work yet", pct: 0, segments: [] });
+  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0, ...z }), { words: "0 of 2 done", short: "0 of 2 done", pct: 0, segments: [] });
+  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0, ...z }), { words: "No work yet", short: "No work yet", pct: 0, segments: [] });
   // Every part says its count; a part with none is left out, of the words and of the bar.
   assert.deepEqual(epicLine({ done: 3, total: 10, proven: 0, review: 2, doing: 1 }), {
     words: "3 of 10 done, 0 proven · 2 in review · 1 doing",
+    short: "3 of 10 done",
     pct: 30,
     segments: [{ lane: "done", pct: 30 }, { lane: "review", pct: 20 }, { lane: "doing", pct: 10 }],
   });
   assert.deepEqual(epicLine({ done: 0, total: 4, proven: 0, review: 0, doing: 1 }), {
     words: "0 of 4 done · 1 doing",
+    short: "0 of 4 done",
     pct: 0,
     segments: [{ lane: "doing", pct: 25 }],
   });
@@ -92,9 +95,9 @@ test("a typed pointer is an id of a kind a row may have as its item", () => {
 
 test("a Done row says how it is proven, or that it isn't yet; others say nothing", () => {
   const issue = { kind: "issue", id: "iss_a" };
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "ci" } }), { proven: true, words: "proven by CI" });
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "proven" });
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "not proven yet" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "ci" } }), { proven: true, words: "Proof", title: "proven by CI" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "Proof", title: "proven" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "no proof", title: "not proven yet" });
   assert.equal(proofMark({ lane: "review", pointer: issue }), null);
   // A cancelled row says so in its mark and is not "not proven yet".
   assert.equal(proofMark({ lane: "done", pointer: issue, marks: [{ kind: "cancelled" }] }), null);
@@ -111,7 +114,8 @@ test("an attachment's chip is its label and its state, and says nothing of what 
   const live = { state: "merged", kind: "pr", repo: "acme/app", number: 7, title: "Fix" };
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" }, live }), { label: "acme/app#7", state: "merged" });
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" } }), { label: "PR or issue abc123", state: null });
-  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent", state: "working" });
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent", state: null }, "the Doing lane says working");
+  assert.equal(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "needs_input" } }).state, "needs input");
 });
 
 test("a block's chip is its title, and work on an issue says its board and links to the row (#372)", () => {

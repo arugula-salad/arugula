@@ -38,7 +38,6 @@ import { PageHeader } from "../ui/page-header";
 import { SectionHead } from "../ui/section-head";
 import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
-import { whoLabel } from "../issues/text";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_ORDER, STALE_REV, boards, type ForgeChecks } from "./store";
@@ -48,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -525,8 +524,6 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
   const [note, setNote] = useState("");
   const e = epicLine(b.progress);
   const waiting = needsYou(view);
-  const { teams } = usePlatformApi();
-  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
   const saveGoal = async () => {
     if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
   };
@@ -575,33 +572,14 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
           )}
         </>
       )}
-      {b.lead && (
-        <p class="dim" data-board-lead>
-          Led by {b.lead.session} on {b.lead.machine_name || b.lead.machine}
-        </p>
-      )}
       <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
-      {b.created_by_agent && (
-        <p class="dim" data-board-made-by>
-          Made by {whoLabel(b.created_by, b.created_by_agent, nameOf)}
-        </p>
-      )}
-      <div class="sw-stats board-stats" data-board-stats>
-        <span>
-          <b>{b.progress.done}</b> done
-        </span>
-        <span>
-          <b>{b.progress.proven}</b> proven
-        </span>
-        <span data-board-ready={readyCount(view)}>
-          <b>{readyCount(view)}</b> ready
-        </span>
-        {waiting.length > 0 && (
+      {waiting.length > 0 && (
+        <div class="sw-stats board-stats" data-board-stats>
           <button type="button" class="needs board-needs-you-button" data-board-needs-you={waiting.length} onClick={() => document.querySelector(`[data-board-row="${waiting[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
             <b>{waiting.length}</b> Needs you
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <div class="board-progress" data-board-progress>
         {b.progress.total > 0 && (
           <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
@@ -610,13 +588,12 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
             ))}
           </div>
         )}
-        <span class="dim">{e.words}</span>
+        <span class="dim">{e.short}</span>
       </div>
       {b.closed_at != null ? (
         <div class="board-done" data-board-done>
           <p>
             <Chip kind="tag" tone="ok">Done</Chip> <span class="dim">{day(b.closed_at)}</span>
-            {b.closed_by_agent && <span class="dim" data-board-done-by> by {whoLabel(b.closed_by, b.closed_by_agent, nameOf)}</span>}
           </p>
           <p class="board-goal" data-board-done-note>
             {b.done_note}
@@ -666,7 +643,6 @@ function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: A
   const taken = new Set(docs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
   return (
     <div class="board-docs" data-board-docs>
-      <span class="dim board-docs-label">Docs</span>
       {docs.map((d) => (
         <DocLink key={d.id} d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
       ))}
@@ -868,23 +844,26 @@ function AttachmentChip({ a, platform, facts = "settled" }: { a: BoardAttachment
   const api = usePlatformApi();
   const c = chipOf(a);
   const p = a.pointer;
+  // An agent block with no name of its own is named by its pane, as the machine reports it.
+  if (p.kind === "block" && !a.block?.title?.trim()) c.label = api.paneTitle(p.machine, p.pane) || c.label;
+  const text = a.role === "proof" ? "Proof" : c.label;
   const href = pointerHref({ pointer: p, live: a.live }, platform);
   // The pane: a link to control's page here; in the shell, when the machine is one of the reader's. A block whose machine the reader isn't told (a blank id) links nowhere.
   const pane = p.kind === "block" && p.machine ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
   const name = pane?.href ? (
     <a class="board-ptr" href={pane.href} target="_blank" rel="noopener noreferrer" title="Open its pane" data-board-block-open>
-      {c.label}
+      {text}
     </a>
   ) : pane?.go ? (
     <a class="board-ptr" href="#" title="Open its pane" data-board-block-open onClick={(e) => (e.preventDefault(), pane.go!())}>
-      {c.label}
+      {text}
     </a>
   ) : href ? (
     <a class="board-ptr" href={href} target={p.kind === "forge_item" || p.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
-      {c.label}
+      {text}
     </a>
   ) : (
-    <span class="board-ptr">{c.label}</span>
+    <span class="board-ptr">{text}</span>
   );
   const more = a.block ? (facts === "all" ? blockFacts(a.block) : settledFacts(a.block)) : [];
   return (
@@ -892,12 +871,12 @@ function AttachmentChip({ a, platform, facts = "settled" }: { a: BoardAttachment
       <ObjectChip
         proof={a.role === "proof"}
         class={a.role}
+        title={a.role === "proof" ? c.label : a.block?.state === "working" ? BLOCK_LABEL.working : undefined}
         fact={c.state ? { tone: a.live ? (a.live.state === "merged" ? "merged" : liveTone(a.live.state)) : a.block?.state === "needs_input" ? "accent" : "muted", text: c.state } : null}
         data-board-attachment={a.id}
         data-attach-role={a.role}
         data-board-block={a.block?.state}
       >
-        {a.role === "proof" && <span class="dim">proof </span>}
         {name}
       </ObjectChip>
       {more.length > 0 && (
@@ -1045,8 +1024,9 @@ function Row({
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
   const tone = cardTone(r);
-  const proofTag = mark && (
-    <Chip kind="tag" tone={mark.proven ? "ok" : "muted"} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
+  // Proof attached to the row is its "Proof" link (`AttachmentChip`); the tag stands for proof that has none (a merged PR, CI), and for none.
+  const proofLink = mark && (!mark.proven || !r.attachments.some((a) => a.role === "proof")) && (
+    <Chip kind="tag" tone={mark.proven ? "ok" : "muted"} title={mark.title} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
       {mark.words}
     </Chip>
   );
@@ -1120,7 +1100,7 @@ function Row({
                 {agentShort(r.agent)}
               </span>
             )}
-            {proofTag}
+            {proofLink}
             {setBy && (
               <Chip kind="tag" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
                 {setBy}
@@ -1303,8 +1283,8 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           })}
         </div>
       )}
-      <div class="board-line">
-        {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
+      <div class="board-line" title={r.live?.state === "closed" && r.lane === "done" ? liveWord(r.live) : undefined}>
+        {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
             {pointerLabel(r.pointer, r.live)} <ExternalIcon size="xs" />
@@ -1346,9 +1326,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
             <p class="dim">{href ? <a href={href} target="_blank" rel="noopener noreferrer">Open on GitHub</a> : "Not available here."}</p>
           ) : read.body.trim() ? (
             <Markdown text={read.body} refs={null} />
-          ) : (
-            <p class="dim">No description.</p>
-          )}
+          ) : null}
         </section>
       )}
       {read && read.comments.length > 0 && (

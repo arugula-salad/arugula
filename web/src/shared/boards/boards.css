@@ -438,10 +438,6 @@
   margin: 6px 0;
 }
 
-.board-docs .board-docs-label {
-  flex: none;
-}
-
 .board-doc-remove {
   padding: 0 4px;
   line-height: 1;

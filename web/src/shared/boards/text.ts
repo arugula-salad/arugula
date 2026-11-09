@@ -61,12 +61,12 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
 /** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
  * row that isn't Done, for a note, which has nothing to prove, and for a
  * cancelled one, whose `cancelled` mark says it instead. */
-export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string } | null {
+export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string; title: string } | null {
   if (r.lane !== "done" || !counted(r)) return null;
   if (r.marks?.some((m) => m.kind === "cancelled")) return null;
   const p: BoardProof | undefined = r.proof;
-  if (!p) return { proven: false, words: "not proven yet" };
-  return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
+  if (!p) return { proven: false, words: "no proof", title: "not proven yet" };
+  return { proven: true, words: "Proof", title: p.by === "ci" ? "proven by CI" : "proven" };
 }
 
 /** The lanes in the order every board stacks them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. Four across, the board's CSS reads them Next, Doing, Review, Done instead, to match the progress bar; the DOM keeps this order. */
@@ -231,7 +231,8 @@ export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: str
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
   const label = pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
-  if (a.block) return { label: a.block.title?.trim() || label, state: BLOCK_LABEL[a.block.state] };
+  // "working" is what the Doing lane already says; the other states stay.
+  if (a.block) return { label: a.block.title?.trim() || label, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state] };
   if (a.live) return { label, state: liveWord(a.live) };
   return { label, state: null };
 }
@@ -280,17 +281,19 @@ export function firstLine(text: string): string {
  * `pct` is done's share for its bar, and `segments` the bar's parts in order (a lane with no rows has none). */
 export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven" | "review" | "doing">): {
   words: string;
+  /** Just the done share, for a board's bar and card; `words` is the rest too, for the bar's label. */
+  short: string;
   pct: number;
   segments: { lane: "done" | "review" | "doing"; pct: number }[];
 } {
-  if (!p.total) return { words: "No work yet", pct: 0, segments: [] };
+  if (!p.total) return { words: "No work yet", short: "No work yet", pct: 0, segments: [] };
   const share = (n: number) => Math.round((n / p.total) * 100);
   const proven = p.done ? `, ${p.proven} proven` : "";
   const words = [`${p.done} of ${p.total} done${proven}`, p.review ? `${p.review} in review` : "", p.doing ? `${p.doing} doing` : ""];
   const segments = (["done", "review", "doing"] as const)
     .filter((lane) => p[lane] > 0)
     .map((lane) => ({ lane, pct: share(p[lane]) }));
-  return { words: words.filter(Boolean).join(" · "), pct: share(p.done), segments };
+  return { words: words.filter(Boolean).join(" · "), short: `${p.done} of ${p.total} done`, pct: share(p.done), segments };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
