@@ -129,6 +129,8 @@ fn signed_domains_never_change() {
     let grant_v2 =
         crate::project_grant::ProjectGrant { account: "a".into(), v: 2, by: String::new(), ..project_grant.clone() };
     let revoke_v3 = crate::project_grant::GrantRevoke::v3("p", "d", crate::project_grant::Running::Finish, 1, "a");
+    let closed =
+        crate::hosted::DelegationClosed { project: "p".into(), delegation: "d".into(), at: 1, sig: String::new() };
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
     let lock = TeamLock { team: "t".into(), locked: true, version: 1, at: 1, by: "d".into(), sig: String::new() };
 
@@ -145,6 +147,8 @@ fn signed_domains_never_change() {
         (HEADER.to_owned(), "696c6c6f676963616c2d6465766963652d6b65792031"),
         // Born after the rename (M50), so "arugula"; frozen all the same.
         (first_line(grant.body()), "61727567756c6120626c6f636b206772616e74207631"),
+        // A delegation's end, signed with control's hosted key.
+        (first_line(closed.body()), "61727567756c612070726f6a6563742064656c65676174696f6e20636c6f736564207631"),
         // Public previews' grants (M187), signed with control's hosted key.
         (first_line(public.body()), "61727567756c61207075626c69632070726576696577206772616e74207631"),
         // Run events (M210), which hosted daemons sign.

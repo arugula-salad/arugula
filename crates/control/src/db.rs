@@ -307,6 +307,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("hosted_machines", "purpose")? {
         conn.execute_batch("ALTER TABLE hosted_machines ADD COLUMN purpose TEXT")?;
     }
+    // The revokes of a delegation after the first, each owner's device's.
+    if !has("project_delegations", "more_revokes")? {
+        conn.execute_batch("ALTER TABLE project_delegations ADD COLUMN more_revokes TEXT")?;
+    }
     if !has("daemons", "team")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN team TEXT")?;
     }

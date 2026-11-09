@@ -98,6 +98,7 @@ impl Fake {
             cert: h.cert?,
             delegation: h.delegation,
             revocations: vec![],
+            closed: vec![],
             team: Some(h.pin),
             roster: rosters.last().cloned(),
             certs,
