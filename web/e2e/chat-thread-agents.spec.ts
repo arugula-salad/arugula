@@ -120,7 +120,7 @@ test("no agents, no strip; one agent is a line; several are cards; a phone folds
   await one.locator("[data-thread-agent]").click();
   const detail = chat.locator("[data-thread-agent-detail]");
   await expect(detail).toContainText("Your agent on alices. Only you can stop it.");
-  await expect(detail).toContainText("Never its output, tool arguments or paths.");
+  await expect(detail).not.toContainText("Never its output");
 
   // It took the message in: its mark is under it, and nothing waits.
   sql(`UPDATE chat_mention_status SET state = 'working', session = 'views' WHERE room = '${general}' AND seq = ${me};`);
@@ -139,6 +139,7 @@ test("no agents, no strip; one agent is a line; several are cards; a phone folds
   await expect(cards.nth(1)).toContainText("wake");
   await expect(cards.nth(1)).toContainText("Offline");
   await expect(cards.nth(1)).not.toContainText("LEAD");
+  await expect(many.locator(".thread-agent-where")).toHaveCount(0);
 
   // On a phone they fold into one line, and open again.
   await chat.setViewportSize({ width: 390, height: 780 });

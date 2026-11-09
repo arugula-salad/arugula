@@ -719,7 +719,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         }
         where={
           <BarWhere>
-            {review ? "review" : c.role === "try" ? "try" : "agent session"}{" "}
+            {review ? "review " : c.role === "try" ? "try " : ""}
             {page ? (
               <a class="session-card-id" href={page} title="This session's own page" data-session-page>
                 {short}
@@ -809,13 +809,19 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         </p>
       ) : null}
       {c.turn && (
-        <div class="session-card-turn" data-session-turn>
-          <span class={c.turn.pushed ? "ok" : "dim"}>{review ? "Read only" : c.turn.pushed ? "Pushed" : "Not pushed"}</span>
-          <span class="dim">
-            {" "}
-            · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
-            {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
-          </span>
+        <div class="session-card-turn" data-session-turn title={c.turn.pushed ? `Pushed · ${c.turn.commits.length} commit${c.turn.commits.length === 1 ? "" : "s"}` : undefined}>
+          {c.turn.pushed && !review ? (
+            !!c.turn.uncommitted && <span class="dim">{c.turn.uncommitted} uncommitted</span>
+          ) : (
+            <>
+              <span class="dim">{review ? "Read only" : "Not pushed"}</span>
+              <span class="dim">
+                {" "}
+                · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
+                {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
+              </span>
+            </>
+          )}
           {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
           {c.turn.finish &&
             (c.turn.finish.ok ? (

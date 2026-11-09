@@ -201,7 +201,8 @@ test("the box takes the answer and the turn ends: done, with what it left", asyn
   boxSays(first.id, "state", "done", {});
   await expect(a.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   await expect(a.locator("[data-session-diffstat]")).toContainText("1 file changed");
-  await expect(a.locator("[data-session-turn]")).toContainText("Pushed");
+  await expect(a.locator("[data-session-turn]")).not.toContainText("Pushed");
+  await expect(a.locator("[data-session-turn]")).toHaveAttribute("title", "Pushed · 1 commit");
   await expect(a.locator("[data-session-stop]")).toBeVisible();
 
   // Its own page: the card, larger, and its history.

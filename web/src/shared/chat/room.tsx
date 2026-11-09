@@ -838,7 +838,6 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
           }
         }}
       />
-      <span class="dim">Enter saves, Shift+Enter is a new line, Esc cancels</span>
     </div>
   );
 }
