@@ -1871,7 +1871,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -2236,7 +2236,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -2716,7 +2716,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -2837,7 +2837,7 @@
           },
           "project": {
             "default": null,
-            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the\nproject of the issue you were started on, else the one this clone's\nGitHub repo is linked to, else the user's personal project.",
             "type": [
               "string",
               "null"
@@ -3748,7 +3748,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the issue's you were started on, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6870,7 +6870,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -7248,7 +7248,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -7728,7 +7728,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -7849,7 +7849,7 @@
           },
           "project": {
             "default": null,
-            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the\nproject of the issue you were started on, else the one this clone's\nGitHub repo is linked to, else the user's personal project.",
             "type": [
               "string",
               "null"
@@ -8760,7 +8760,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the issue's you were started on, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -11732,7 +11732,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -12097,7 +12097,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -12577,7 +12577,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -12698,7 +12698,7 @@
           },
           "project": {
             "default": null,
-            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the\nproject of the issue you were started on, else the one this clone's\nGitHub repo is linked to, else the user's personal project.",
             "type": [
               "string",
               "null"
@@ -13609,7 +13609,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the issue's you were started on, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -16731,7 +16731,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -17109,7 +17109,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -17589,7 +17589,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -17710,7 +17710,7 @@
           },
           "project": {
             "default": null,
-            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the\nproject of the issue you were started on, else the one this clone's\nGitHub repo is linked to, else the user's personal project.",
             "type": [
               "string",
               "null"
@@ -18621,7 +18621,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the issue's you were started on, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -20671,7 +20671,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -21030,7 +21030,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -22652,7 +22652,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the project of the issue you were started on, else the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
             "type": [
               "string",
               "null"
@@ -23011,7 +23011,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the project of the issue you were started on (start_agent's\nissue), else the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"

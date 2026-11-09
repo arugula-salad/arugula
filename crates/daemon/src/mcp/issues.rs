@@ -6,8 +6,10 @@
 //!
 //! **Which issue:** `#12` is a number in the current project, `iss_…` an
 //! issue anywhere the owner reads. **The current project** is the one the
-//! call names (`project`: an id, or `personal`), else the one the caller's
-//! clone's GitHub repo is linked to, else the owner's personal project. A
+//! call names (`project`: an id, or `personal`), else the issue's project
+//! when the caller is an agent `start_agent` started on one (its block's
+//! `work.project`, Arugula #771), else the one the caller's clone's GitHub
+//! repo is linked to, else the owner's personal project. A
 //! clone of a GitHub repo that no project of the owner's links is
 //! refused, not guessed (as `arugula issue`'s `#N` there is GitHub's).
 //!
@@ -43,6 +45,8 @@ pub struct Chosen {
 pub enum Rule {
     /// The call named it.
     Asked,
+    /// The caller's block was started on this issue (`#N`), in it.
+    Started(String),
     /// The clone's GitHub repo (`owner/name`) is linked to it.
     Linked(String),
     /// Neither: the owner's personal project.
@@ -50,26 +54,46 @@ pub enum Rule {
 }
 
 impl Rule {
-    /// The rule that chooses with `asked` (the call's `project`) and the
-    /// clone's GitHub repo, if it has one: a named project wins, then the
+    /// The rule that chooses with `asked` (the call's `project`), the
+    /// issue the caller's block was started on and the clone's GitHub repo,
+    /// if it has them: a named project wins, then the issue's, then the
     /// repo's link.
-    fn of(asked: Option<&str>, repo: Option<&str>) -> Self {
-        match (asked, repo) {
-            (Some(_), _) => Rule::Asked,
-            (None, Some(repo)) => Rule::Linked(repo.to_owned()),
-            (None, None) => Rule::Personal,
+    fn of(asked: Option<&str>, started: Option<&Started>, repo: Option<&str>) -> Self {
+        match (asked, started, repo) {
+            (Some(_), _, _) => Rule::Asked,
+            (None, Some(s), _) => Rule::Started(s.issue.clone()),
+            (None, None, Some(repo)) => Rule::Linked(repo.to_owned()),
+            (None, None, None) => Rule::Personal,
         }
     }
 }
 
+/// The issue the caller's block was started on, and its project.
+#[derive(Debug, PartialEq, Eq)]
+struct Started {
+    issue: String,
+    project: String,
+}
+
 impl Rule {
-    /// What `issue-home` is asked, for this rule: the project named, or
-    /// the repo to find one by (nothing: personal).
-    fn query(&self, asked: Option<&str>) -> Vec<(&'static str, String)> {
-        match (self, asked) {
-            (Rule::Asked, Some(p)) => vec![("project", p.to_owned())],
-            (Rule::Linked(repo), _) => vec![("repo", repo.clone())],
+    /// What `issue-home` is asked, for this rule: the project named or
+    /// started in, or the repo to find one by (nothing: personal).
+    fn query(&self, asked: Option<&str>, started: Option<&Started>) -> Vec<(&'static str, String)> {
+        match (self, asked, started) {
+            (Rule::Asked, Some(p), _) => vec![("project", p.to_owned())],
+            (Rule::Started(_), _, Some(s)) => vec![("project", s.project.clone())],
+            (Rule::Linked(repo), _, _) => vec![("repo", repo.clone())],
             _ => vec![],
+        }
+    }
+
+    /// Why it chose the project.
+    fn why(&self) -> String {
+        match self {
+            Rule::Asked => "the one you named".into(),
+            Rule::Started(issue) => format!("you were started on its issue {issue}"),
+            Rule::Linked(repo) => format!("this clone's repo {repo} is linked to it"),
+            Rule::Personal => "you named no project, and no GitHub repo of this clone says another".into(),
         }
     }
 }
@@ -79,12 +103,19 @@ impl Chosen {
     pub fn says(&self) -> String {
         let name = if self.name.is_empty() { self.id.clone() } else { self.name.clone() };
         match &self.rule {
-            Rule::Asked => format!("Project {name} (the one you named)"),
-            Rule::Linked(repo) => format!("Project {name} (this clone's repo {repo} is linked to it)"),
-            Rule::Personal => format!(
-                "Your personal project {name} (you named no project, and no GitHub repo of this clone says another)"
-            ),
+            Rule::Personal => format!("Your personal project {name} ({})", self.rule.why()),
+            r => format!("Project {name} ({})", r.why()),
         }
+    }
+
+    /// What a `#N` that isn't in it says: where it looked, why, and how to
+    /// look in another (Arugula #771).
+    pub fn has_no(&self, n: u64) -> String {
+        let named = if self.name.is_empty() { self.id.clone() } else { format!("{} ({})", self.name, self.id) };
+        format!(
+            "no #{n} in {named}, the current project ({}); pass project (a prj_ id, or personal) to look in another",
+            self.rule.why()
+        )
     }
 
     /// Whether nothing chose it but the fallback.
@@ -255,15 +286,29 @@ impl Call<'_> {
         Ok(self.chosen_project(project).await?.id)
     }
 
+    /// The issue the caller's own block was started on, and its project
+    /// (`start_agent`'s `issue`, kept as its `work`).
+    async fn my_started_issue(&self) -> Option<Started> {
+        let pane = self.own_pane()?;
+        let block = self.app().mux.api(|r| Api::Block(pane, r)).await.flatten()?;
+        let work = &block.config()["work"];
+        let project = work["project"].as_str().filter(|p| !p.is_empty())?;
+        Some(Started { issue: work["issue"].as_str().unwrap_or_default().to_owned(), project: project.to_owned() })
+    }
+
     /// The current project, and the rule that chose it (module docs).
     pub async fn chosen_project(&self, project: Option<&str>) -> Result<Chosen, String> {
         let asked = project.map(str::trim).filter(|p| !p.is_empty());
-        let repo = match asked {
+        let started = match asked {
             Some(_) => None,
-            None => self.my_github_repo().await,
+            None => self.my_started_issue().await,
         };
-        let rule = Rule::of(asked, repo.as_deref());
-        let q = rule.query(asked);
+        let repo = match (asked, &started) {
+            (None, None) => self.my_github_repo().await,
+            _ => None,
+        };
+        let rule = Rule::of(asked, started.as_ref(), repo.as_deref());
+        let q = rule.query(asked, started.as_ref());
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
@@ -271,12 +316,17 @@ impl Call<'_> {
     }
 
     /// A native issue, as the platform answers it.
+    /// A `#N` that isn't there names the project it looked in.
     pub async fn native_issue(&self, at: &Native, project: Option<&str>) -> Result<Value, String> {
-        let path = match at {
-            Native::Id(id) => agent_issue(id),
-            Native::Number(n) => agent_project_issue(&self.current_project(project).await?, *n),
+        let n = match at {
+            Native::Id(id) => return self.issues_call(Method::GET, &agent_issue(id), None).await,
+            Native::Number(n) => *n,
         };
-        self.issues_call(Method::GET, &path, None).await
+        let chosen = self.chosen_project(project).await?;
+        match self.app().control.cloud(Method::GET, &agent_project_issue(&chosen.id, n), None).await {
+            Err(CloudRefused::Said { status: 404, .. }) => Err(chosen.has_no(n)),
+            r => r.map_err(said),
+        }
     }
 
     /// `read_forge`'s `issue` and `forge_read`'s kind `issue` on a native
@@ -341,13 +391,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_named_project_wins_then_the_repos_link_then_personal() {
-        assert_eq!(Rule::of(Some("prj_1"), Some("acme/app")), Rule::Asked);
-        assert_eq!(Rule::of(None, Some("acme/app")), Rule::Linked("acme/app".into()));
-        assert_eq!(Rule::of(None, None), Rule::Personal);
-        assert_eq!(Rule::Asked.query(Some("prj_1")), [("project", "prj_1".to_owned())]);
-        assert_eq!(Rule::Linked("acme/app".into()).query(None), [("repo", "acme/app".to_owned())]);
-        assert!(Rule::Personal.query(None).is_empty());
+    fn a_named_project_wins_then_the_started_issues_then_the_repos_link() {
+        let started = Started { issue: "#771".into(), project: "prj_2".into() };
+        assert_eq!(Rule::of(Some("prj_1"), Some(&started), Some("acme/app")), Rule::Asked);
+        assert_eq!(Rule::of(None, Some(&started), Some("acme/app")), Rule::Started("#771".into()));
+        assert_eq!(Rule::of(None, None, Some("acme/app")), Rule::Linked("acme/app".into()));
+        assert_eq!(Rule::of(None, None, None), Rule::Personal);
+        assert_eq!(Rule::Asked.query(Some("prj_1"), None), [("project", "prj_1".to_owned())]);
+        assert_eq!(Rule::Started("#771".into()).query(None, Some(&started)), [("project", "prj_2".to_owned())]);
+        assert_eq!(Rule::Linked("acme/app".into()).query(None, None), [("repo", "acme/app".to_owned())]);
+        assert!(Rule::Personal.query(None, None).is_empty());
     }
 
     #[test]
@@ -360,8 +413,24 @@ mod tests {
         );
         assert!(chosen(Rule::Personal).says().starts_with("Your personal project Arugula (you named no project"));
         assert!(chosen(Rule::Personal).is_personal_by_default());
+        assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
         let nameless = Chosen { id: "prj_1".into(), name: String::new(), rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
+    }
+
+    /// Arugula #771: a missing `#N` says where it looked and how to look
+    /// elsewhere.
+    #[test]
+    fn a_missing_number_names_the_project_it_looked_in() {
+        let personal = Chosen { id: "prj_125a".into(), name: "Personal".into(), rule: Rule::Personal };
+        let said = personal.has_no(761);
+        assert!(
+            said.starts_with("no #761 in Personal (prj_125a), the current project (you named no project"),
+            "{said}"
+        );
+        assert!(said.ends_with("pass project (a prj_ id, or personal) to look in another"), "{said}");
+        let nameless = Chosen { id: "prj_1".into(), name: String::new(), rule: Rule::Asked };
+        assert!(nameless.has_no(3).starts_with("no #3 in prj_1, the current project (the one you named)"));
     }
 
     #[test]

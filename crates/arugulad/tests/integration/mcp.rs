@@ -3834,7 +3834,8 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
 /// A fake control's platform with two projects whose boards this machine
 /// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
 /// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no
-/// linked repo is in the personal `prj_me`, which this machine doesn't write.
+/// linked repo is in the personal `prj_me` ("Personal"), which this machine
+/// doesn't write; a named project is that one. #12 reads with its timeline.
 /// Every attach as it came: the project, then the body.
 #[cfg(feature = "labs")]
 #[derive(Clone, Default)]
@@ -3861,14 +3862,24 @@ async fn fake_homes(f: FakeHomes) -> String {
         Json(json!({ "projects": [p("prj_1", "Launch crew"), p("prj_2", "Other crew")] }))
     }
     async fn home(Query(q): Query<std::collections::HashMap<String, String>>) -> Json<Value> {
-        let project = if q.get("repo").map(String::as_str) == Some("acme/linked") { "prj_2" } else { "prj_me" };
-        Json(json!({ "project": project, "home": "native" }))
+        let project = match (q.get("project"), q.get("repo").map(String::as_str)) {
+            (Some(p), _) => p.as_str(),
+            (None, Some("acme/linked")) => "prj_2",
+            _ => "prj_me",
+        };
+        let name = match project {
+            "prj_1" => "Launch crew",
+            "prj_2" => "Other crew",
+            _ => "Personal",
+        };
+        Json(json!({ "project": project, "name": name, "home": "native" }))
     }
     async fn issue(Path((project, number)): Path<(String, u64)>) -> axum::response::Response {
         match (project.as_str(), number) {
-            ("prj_1", 12 | 7 | 5) | ("prj_2", 7) => {
-                Json(json!({ "project": project, "number": number })).into_response()
-            }
+            ("prj_1", 12) => Json(json!({ "id": ISS_12, "project": project, "number": 12, "title": "Lexer",
+                                          "state": "open", "author": "a1" }))
+            .into_response(),
+            ("prj_1", 7 | 5) | ("prj_2", 7) => Json(json!({ "project": project, "number": number })).into_response(),
             _ => StatusCode::NOT_FOUND.into_response(),
         }
     }
@@ -3901,6 +3912,7 @@ async fn fake_homes(f: FakeHomes) -> String {
         .route("/api/daemon/issue-home", get(home))
         .route(arugula_control_wire::issues::AGENT_PROJECT_ISSUE, get(issue))
         .route(arugula_control_wire::issues::AGENT_ISSUE, get(by_id))
+        .route(arugula_control_wire::issues::AGENT_ISSUE_EVENTS, get(|| async { Json(json!({ "events": [] })) }))
         .route(arugula_control_wire::boards::AGENT_BOARD_REACH, get(reach))
         .route(arugula_control_wire::boards::AGENT_PROJECT_ATTACH_BLOCK, post(attach))
         .route(
@@ -4006,4 +4018,70 @@ async fn an_agent_is_attached_in_the_project_of_its_issue() {
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Arugula #771: an agent started on `#12` from a clone no project of
+/// #12's links reads `#12` in #12's project, not the clone's or the
+/// personal one: its block keeps the project, its MCP calls' current
+/// project is that one, and its environment says it for `arugula issue`.
+/// A `#N` that isn't there names the project it looked in and why.
+#[cfg(all(unix, feature = "labs"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_started_on_an_issue_reads_it_in_its_project() {
+    let control = FakeHomes::default();
+    let url = fake_homes(control.clone()).await;
+    let machine = control.machine.clone();
+    let d = Daemon::child_in(&[], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    // A clone of a GitHub repo no project links: on its own, "#N" there is
+    // the personal project's.
+    let repo = d.sessions.join("unlinked");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["remote", "add", "origin", "https://github.com/acme/unlinked.git"]);
+    let start = json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "env ARUGULA_PROJECT",
+                "issue": "#12", "cwd": repo });
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let r = loop {
+        let r = call_raw(&s, "start_agent", start.clone()).await;
+        let r = r.structured_content.unwrap_or_default();
+        if r["issue"]["boards"][0]["title"] == "Launch" {
+            break r;
+        }
+        assert!(std::time::Instant::now() < deadline, "never attached: {r}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    };
+    let block = r["block"].as_u64().unwrap();
+    assert_eq!(d.state(block)["work"]["project"], "prj_1", "{r}");
+
+    // The agent's own calls: "#12" is prj_1's.
+    let agent = bridge_in(&d, Client::named("claude-code"), Some(block)).await;
+    let read = call(&agent, "forge_read", json!({ "kind": "issue", "item": "#12" })).await;
+    assert_eq!((read["issue"]["project"].as_str(), read["issue"]["number"].as_u64()), (Some("prj_1"), Some(12)));
+    assert_eq!(read["issue"]["id"], ISS_12, "{read}");
+
+    // A missing #N says where it looked, why, and how to look elsewhere.
+    let why = refused(&agent, "forge_read", json!({ "kind": "issue", "item": "#99" })).await;
+    assert!(why.contains("no #99 in Launch crew (prj_1)"), "{why}");
+    assert!(why.contains("you were started on its issue #12"), "{why}");
+    assert!(why.contains("pass project"), "{why}");
+    // The lead, in no linked clone, looked in its personal project.
+    let why = refused(&s, "forge_read", json!({ "kind": "issue", "item": "#99" })).await;
+    assert!(why.contains("no #99 in Personal (prj_me)"), "{why}");
+    // A named project still wins over the one it was started in.
+    let why = refused(&agent, "forge_read", json!({ "kind": "issue", "item": "#12", "project": "prj_2" })).await;
+    assert!(why.contains("no #12 in Other crew (prj_2)") && why.contains("the one you named"), "{why}");
+
+    // Its environment says the project, for the `arugula issue` it runs.
+    let said = call(&s, "wait", json!({ "pane": block, "until": "idle", "timeout": 20 })).await;
+    assert!(said.to_string().contains("ENV ARUGULA_PROJECT=prj_1"), "{said}");
+
+    s.cancel().await.unwrap();
+    agent.cancel().await.unwrap();
 }
