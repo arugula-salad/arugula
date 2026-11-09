@@ -45,7 +45,7 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
   await expect(page.locator(".pane .xterm-rows")).toContainText("back-9");
 
   // Up arrow from the key bar recalls the last command.
-  await page.getByRole("button", { name: "↑" }).click();
+  await page.getByRole("button", { name: "Up" }).click();
   await page.getByRole("button", { name: "Tab" }).click();
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await text(page, shown)).match(/back-9/g)?.length).toBe(2);

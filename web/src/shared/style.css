@@ -1322,26 +1322,25 @@ button.att {
   background: var(--surface);
 }
 
-/* The keys scroll sideways when they don't fit; the faded edge says there
-   are more. */
+/* The keys share the row's width, so none of them scrolls out of reach. */
 .keybar-keys {
   flex: 1;
   min-width: 0;
   display: flex;
   gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 .keybar .attach {
   flex: none;
+  width: 40px;
 }
 
 .key {
-  flex: 1 0 auto;
-  min-width: 40px;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 38px;
+  padding: 0;
+  font-size: 12px; /* off-scale: "Ctrl" fits a key of a 360px row */
   border-radius: var(--btn-radius);
   background: var(--raised);
   touch-action: manipulation;

@@ -452,15 +452,36 @@ export const TrashIcon = ({ size = "md" }: Sized) => (
   </Svg>
 );
 
-export const ArrowIcon = ({ dir = "right", size = "sm" }: { dir?: "up" | "down" | "right" } & Sized) => (
+export const ArrowIcon = ({ dir = "right", size = "sm" }: { dir?: "up" | "down" | "left" | "right" } & Sized) => (
   <Svg size={size}>
     {dir === "up" ? (
       <path d="m5 12 7-7 7 7M12 19V5" />
     ) : dir === "down" ? (
       <path d="M12 5v14m7-7-7 7-7-7" />
+    ) : dir === "left" ? (
+      <path d="M19 12H5m7 7-7-7 7-7" />
     ) : (
       <path d="M5 12h14m-7-7 7 7-7 7" />
     )}
+  </Svg>
+);
+
+// The key bar's punctuation keys: drawn, so they read the same at any width.
+export const PipeKeyIcon = ({ size = "lg" }: Sized) => (
+  <Svg size={size}>
+    <path d="M12 4v16" />
+  </Svg>
+);
+
+export const TildeKeyIcon = ({ size = "lg" }: Sized) => (
+  <Svg size={size}>
+    <path d="M4 14c1.5-3 3.5-3.5 5.5-2s4 2 5.5 0.5 3-2.5 5-1.5" />
+  </Svg>
+);
+
+export const SlashKeyIcon = ({ size = "lg" }: Sized) => (
+  <Svg size={size}>
+    <path d="M16 4 8 20" />
   </Svg>
 );
 
