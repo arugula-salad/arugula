@@ -32,7 +32,8 @@ jobs:
     # A tick that failed tagged nothing new.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # The rare jobs twice over: testnet alone can take 30 minutes each time.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:
