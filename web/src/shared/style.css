@@ -1055,6 +1055,32 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 0 8px;
 }
 
+/* #815: where a swipe lands. Each dot is a fixed size, so the row never
+   shifts as the active one moves. */
+.pane-pos {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.pane-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.pane-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  opacity: 0.4;
+}
+
+.pane-dots i.on {
+  opacity: 1;
+  background: var(--fg);
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -1296,26 +1322,25 @@ button.att {
   background: var(--surface);
 }
 
-/* The keys scroll sideways when they don't fit; the faded edge says there
-   are more. */
+/* The keys share the row's width, so none of them scrolls out of reach. */
 .keybar-keys {
   flex: 1;
   min-width: 0;
   display: flex;
   gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 .keybar .attach {
   flex: none;
+  width: 40px;
 }
 
 .key {
-  flex: 1 0 auto;
-  min-width: 40px;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 38px;
+  padding: 0;
+  font-size: 12px; /* off-scale: "Ctrl" fits a key of a 360px row */
   border-radius: var(--btn-radius);
   background: var(--raised);
   touch-action: manipulation;
@@ -5460,40 +5485,6 @@ button.diff-why-run {
 }
 
 /* The Doc bar's "Shared copy is older · Update" (#509): a chip you tap. */
-/* A Doc's three actions (Arugula #650, #782): icons, no text. In its bar the
-   path takes the room and they end the row: the bar's own fill would share
-   it with the path and leave them mid-bar. */
-.doc-bar .hbar-fill {
-  display: none;
-}
-
-.doc-actions {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.doc-action.bar-btn[data-copied] {
-  width: auto;
-  min-width: 84px;
-}
-
-.doc-action[data-older] {
-  position: relative;
-}
-
-.doc-action[data-older]::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 .ws-tags {
   display: flex;
   gap: 4px;
@@ -8125,6 +8116,12 @@ button.thread-quote:hover {
   width: 32px;
   min-height: 28px;
   margin: 0 6px 6px 0;
+  padding: 0;
+}
+
+/* Send is a .primary, whose padding (shared/buttons.css) loads after this on
+   the platform and won at one class: 14px a side left the icon 2px. */
+.compose-send.primary {
   padding: 0;
 }
 

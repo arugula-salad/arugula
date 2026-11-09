@@ -498,7 +498,7 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
 });
 
 // The Steps view (Arugula #763): a reorder keeps to its group's order, a link is an arrow the way its kind runs.
-import { linksOf, loadMode, nudge, phases, reorder, shown } from "../src/shared/boards/steps.ts";
+import { lastPlace, linksOf, loadMode, nudge, phases, reorder, shown, stepPlace } from "../src/shared/boards/steps.ts";
 
 test("Steps is the default at 390 px and Lanes elsewhere, and a reorder names the whole group's order it read", () => {
   assert.equal(loadMode(390), "steps");
@@ -521,16 +521,21 @@ test("Steps is the default at 390 px and Lanes elsewhere, and a reorder names th
   assert.equal(shown(2, [...Array(11).keys()], false).more, 0);
 });
 
-test("phases hold the open rows by step in the board's order and count the done ones; links run the way their kind does", () => {
-  const row = (id, lane, step, group, item, relations) => ({ id, lane, step, group, pointer: { kind: "issue", id: item }, relations });
+test("phases hold every row by place, done rows first inside a place, and count the done ones; links run the way their kind does", () => {
+  const row = (id, lane, step, group, item, relations, place) => ({ id, lane, step, place, group, pointer: { kind: "issue", id: item }, relations });
   const g = (id) => ({ id, title: id });
-  const rows = [row("r1", "next", 1, "g1", "iss_1"), row("r2", "next", 2, "g1", "iss_2"), row("r3", "done", undefined, "g1", "iss_3"), row("r4", "next", 1, undefined, "iss_4")];
-  const v = { groups: [g("g1")], zones: [{ rows }], order: ["r2", "r1", "r3", "r4"], sequence: ["r1", "r2", "r4"] };
+  // r3 is done and sits in place 1 beside r1; r2 is ready (step 1) but sits in place 2, after the done r3's chain; r5 has no place, so its step is its column.
+  const rows = [row("r1", "next", 1, "g1", "iss_1", undefined, 1), row("r2", "next", 1, "g1", "iss_2", undefined, 2), row("r3", "done", undefined, "g1", "iss_3", undefined, 1), row("r4", "next", 1, undefined, "iss_4", undefined, 1), row("r5", "next", 2, undefined, "iss_5")];
+  const v = { groups: [g("g1")], zones: [{ rows }], order: ["r2", "r1", "r3", "r4", "r5"], sequence: ["r1", "r2", "r4"] };
   const ps = phases(v);
-  assert.deepEqual(ps.map((p) => [p.group?.id ?? null, p.done, p.steps.map((s) => [s.step, s.rows.map((r) => r.id)])]), [["g1", 1, [[1, ["r1"]], [2, ["r2"]]]], [null, 0, [[1, ["r4"]]]]]);
+  assert.deepEqual(ps.map((p) => [p.group?.id ?? null, p.done, p.places.map((s) => [s.place, s.rows.map((r) => r.id)])]), [["g1", 1, [[1, ["r3", "r1"]], [2, ["r2"]]]], [null, 0, [[1, ["r4"]], [2, ["r5"]]]]]);
+  assert.equal(lastPlace(ps), 2);
+  // A done row can't be moved, and an open row moves among the open rows of its place.
+  assert.equal(stepPlace(v, "r3"), null);
+  assert.deepEqual(stepPlace(v, "r1")?.step, ["r1"]);
   const rel = (id, kind, direction, item) => ({ id, kind, direction, item });
   const me = row("r1", "next", 1, "g1", "iss_1", [rel("a", "before", "out", "iss_2"), rel("b", "discovered_from", "out", "iss_4"), rel("c", "relates", "in", "iss_3")]);
   const drawn = new Set(["r1", "r2", "r4"]);
-  // r3 is done and not drawn, so its link is left out; "discovered from" runs from where it was found.
+  // r3 is done and not on screen here, so its link is left out; "discovered from" runs from where it was found.
   assert.deepEqual(linksOf(me, [me, ...rows.slice(1)], drawn).map((l) => [l.kind, l.from, l.to]), [["before", "r1", "r2"], ["discovered_from", "r4", "r1"]]);
 });
