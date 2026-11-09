@@ -23,15 +23,6 @@
   border-radius: 10px;
 }
 
-.project-doc-head {
-  max-width: var(--lead-measure);
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 16px;
-  box-sizing: border-box;
-  overflow-wrap: anywhere;
-}
-
 .project-doc-row {
   font-size: var(--text-sm);
 }

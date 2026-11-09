@@ -46,8 +46,6 @@ export function copyFrom(d: ProjectDoc): string | null {
   return d.machine ? d.machine_name || "a machine that left" : null;
 }
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-
 /** The preview's Copy link: copies `link`, and says whether it did. */
 const copyTo = (link: string) => async () => {
   try {
@@ -183,10 +181,10 @@ export function DocsPage({ project }: { project?: string }) {
   return <DocList ps={one ? [one] : session.projects} narrowed={!!one} />;
 }
 
-function groupsOf(shown: Row[], narrowed: boolean): ListGroup<Row>[] {
+function groupsOf(shown: Row[], narrowed: boolean, single: boolean): ListGroup<Row>[] {
   const by = new Map<string, ListGroup<Row> & { mine: boolean }>();
   for (const r of shown) {
-    const g = by.get(r.p.id) ?? { title: r.mine ? (narrowed ? "Yours, private" : "Mine") : narrowed ? undefined : r.p.name, items: [], mine: r.mine };
+    const g = by.get(r.p.id) ?? { title: r.mine ? (narrowed ? "Yours, private" : "Mine") : narrowed || single ? undefined : r.p.name, items: [], mine: r.mine };
     g.items.push(r);
     by.set(r.p.id, g);
   }
@@ -252,7 +250,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
               : `No team Docs yet. Share one of yours from Mine${writable.length > 0 ? ", or make one with New Doc" : ""}.`}
       </EmptyLine>
     ) : undefined;
-  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Your team's Docs, and yours from your machines";
+  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : undefined;
   return (
     <div class="docs-list" data-docs-page>
       <ListPage<Row>
@@ -278,7 +276,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         searchLabel="Search titles and headings"
         query={query}
         setQuery={setQuery}
-        groups={groupsOf(shown, narrowed)}
+        groups={groupsOf(shown, narrowed, ps.length === 1)}
         keyOf={(r) => r.doc.id}
         previewOn="click"
         onOpen={(r) => go(docPath(r))}
@@ -364,13 +362,9 @@ function Preview({ row }: { row: Row }) {
     <ListPreview
       data-doc-preview={doc.id}
       facts={
-        <>
-          <span>
-            updated <Time at={doc.updated_at} on />
-          </span>
-          <span>{plural(doc.sections, "section")}</span>
-          {copy && <span data-doc-copy-fact>a copy from {copy}</span>}
-        </>
+        copy && (
+          <span data-doc-copy-fact>a copy from {copy}</span>
+        )
       }
       factsTip={`${row.mine ? "Yours, private" : p.name} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
       actions={
@@ -452,7 +446,6 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
 
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const all = pathOf({ page: "docs", project }, names);
   const copy = view ? copyFrom(view.doc) : null;
   // A copy has no writer, whatever an older platform says (#678).
   const writer = !!view?.writer && !copy;
@@ -461,14 +454,9 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const deleter = !!view && (view.deleter ?? view.writer);
   return (
     <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
-      <p class="dim project-doc-head">
-        <a href={all} onClick={(e) => follow(e, all)}>
-          {p.name}'s Docs
-        </a>
-      </p>
       {view && copy && (
         <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
-          A copy of a Doc in {copy}'s library, updated <Time at={view.doc.updated_at} on />. It's read-only here: change it on {copy}, and its next copy brings the change.
+          Copy from {copy} · <Time at={view.doc.updated_at} />
           {!p.team && (
             <>
               {" "}
@@ -477,11 +465,6 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
               </button>
             </>
           )}
-        </p>
-      )}
-      {view && !copy && view.doc.made_from && (
-        <p class="dim project-doc-copy" data-doc-made-from>
-          Made from {madeFrom(view.doc, p)}.
         </p>
       )}
       {missing && !view && (
@@ -498,16 +481,13 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           load={noImages}
           share={<CopyLinkButton link={new URL(pathOf({ page: "doc", project, doc }, names), location.href).href} />}
           byline={
+            // A copy's line above the Doc already says where it's from and when.
             view &&
-            (copy ? (
+            !copy && (
               <>
-                <span data-doc-maker>a copy from {copy}</span> · updated <Time at={view.doc.updated_at} />
+                <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · <Time at={view.doc.updated_at} />
               </>
-            ) : (
-              <>
-                <span data-doc-maker>made by {whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · changed <Time at={view.doc.updated_at} />
-              </>
-            ))
+            )
           }
         />
       ) : null}
@@ -535,14 +515,6 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   );
 }
 
-/** Where a team Doc was made from, in words: whose Doc, and on which machine. */
-function madeFrom(d: ProjectDoc, p: PlatformProject): string {
-  const owner = nameOf(p)(d.author);
-  const whose = owner === "you" ? "your" : `${owner ?? "a teammate"}'s`;
-  const machine = d.made_from?.machine_name;
-  return `${whose} Doc${machine ? ` on ${machine}` : ""}`;
-}
-
 /** Share with…: the projects the reader writes Docs in, and what each has of
  * this copy. Update copy that would replace the team's edits asks first, in
  * this same dialog. */
@@ -560,7 +532,6 @@ function ShareWithModal({ project, id, done }: { project: string; id: string; do
         </button>
       }
     >
-      <p class="dim">Makes a Doc in the project from this copy as it is now. The team owns and edits it; this one stays the machine's.</p>
       <ShareWith
         project={project}
         id={id}

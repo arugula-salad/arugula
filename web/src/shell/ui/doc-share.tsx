@@ -270,20 +270,15 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
   );
   const linkBody = (
     <>
-      <p class="dim">Anyone with this link can open the Doc, with no account. It shows the Doc as it is now.</p>
+      <p class="dim">Anyone with the link can open it</p>
       {shared && (
         <>
           {url ? <CopyText text={url} share data-doc-link-url /> : <p class="dim">Loading the link…</p>}
-          {s?.shared && (
-            <p class="dim" data-doc-bar-shared title={when(s.shared.updated)}>
-              Shared; the link shows it as it was {ago(s.shared.updated, Date.now(), "long")}.
-            </p>
-          )}
           {s?.shared && s.shared_older && (
             <Count
               for="you"
               data-doc-bar-older
-              title="A section changed after the link was updated. One tap makes the link show the Doc as it is; the link stays the same."
+              title={`The link shows the Doc as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)}). A section changed since. One tap makes the link show the Doc as it is; the link stays the same.`}
               onClick={() => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is"))}
             >
               Shared copy is older · Update
@@ -310,7 +305,6 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
       >
         <section data-doc-share-team>
           <SectionHead title="With a team" />
-          <p class="dim">Makes a Doc in the project from this one as it is now. The team owns and edits it; this one stays yours.</p>
           <ShareWith
             project={copyAt.copy.project}
             id={copyAt.copy.id}
