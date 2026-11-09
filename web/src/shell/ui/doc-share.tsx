@@ -154,14 +154,21 @@ const show = (o: Open | null) => {
 /** Share a Doc by its id, or Update its link, with no block showing it
  * (Arugula #819): the Docs page's Share. The same confirms as the block's,
  * and the same outcome (the link copied, or the link now showing the Doc as
- * it is); `done` hears the reason it failed, or nothing. */
-export function shareClosedDoc(client: Client, doc: { id: string; shared: boolean }, done: (why?: string) => void) {
+ * it is). A shared Doc whose link is current has nothing to update: Share
+ * copies its link, as Copy link does, with no dialog. `done` hears the
+ * reason it failed, or nothing. */
+export function shareClosedDoc(
+  client: Client,
+  doc: { id: string; shared: { link: string } | null; older: boolean },
+  done: (why?: string) => void,
+) {
+  const fail = (v: { error?: string } | null, res: { status: number }) => done(v?.error ?? `HTTP ${res.status}`);
   const go = async (update: boolean) => {
     try {
       const body = { update } satisfies DocShareRequest;
       const res = await client.request(OPS["doc.share"].method, opPath("doc.share", { id: doc.id }), body);
       const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
-      if (!res.ok || !v?.url) return done(v?.error ?? `HTTP ${res.status}`);
+      if (!res.ok || !v?.url) return fail(v, res);
       if (update) client.toast("The link now shows this Doc as it is");
       else if (await copy(v.url)) client.toast("Link copied");
       done();
@@ -169,7 +176,20 @@ export function shareClosedDoc(client: Client, doc: { id: string; shared: boolea
       done((e as Error).message);
     }
   };
-  show({ kind: doc.shared ? "update" : "closed", run: () => void go(doc.shared) });
+  const copyCurrent = async () => {
+    try {
+      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
+      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      if (!res.ok || !v?.url) return fail(v, res);
+      if (await copy(v.url)) client.toast("Link copied");
+      else return done(`Couldn't copy the link: ${v.url}`);
+      done();
+    } catch (e) {
+      done((e as Error).message);
+    }
+  };
+  if (doc.shared && !doc.older) return void copyCurrent();
+  show({ kind: doc.shared ? "update" : "closed", run: () => void go(!!doc.shared) });
 }
 
 export const UPDATE_NOTE = "Update changes what the link shows. To take something back, Unshare.";

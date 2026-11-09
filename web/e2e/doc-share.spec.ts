@@ -745,6 +745,16 @@ test.describe("the owner's menus", () => {
     await preview.locator("[data-doc-copy-link]").click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
 
+    // Shared and current, Share has nothing to update: it copies the link
+    // too, with no dialog and no new version.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    const commits = (await listed()).find((x) => x.id === id)!.shared!.updated;
+    await preview.locator("button[aria-label='Share…']").click();
+    await expect(page.getByText("Link copied")).toBeVisible();
+    await expect(page.locator("[data-doc-share-dialog], [data-doc-update-dialog]")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    expect((await listed()).find((x) => x.id === id)!.shared!.updated, "nothing was updated").toBe(commits);
+
     // The copy goes older (a block fills it, then closes): Share reads
     // Update, and one tap on its confirm makes the same link show the Doc as it is.
     await preview.locator("[data-open-doc]").click();

@@ -144,7 +144,7 @@ function Page({ client }: { client: Client }) {
   // Share goes by the Doc's id (Arugula #819): no pane opens, whether the
   // Doc is open or not. Its dialog confirms; the list reads back after.
   const share = (r: DocRow) =>
-    shareClosedDoc(client, { id: r.id, shared: !!r.shared }, async (why) => {
+    shareClosedDoc(client, { id: r.id, shared: r.shared ?? null, older: !!r.shared && r.updated > r.shared.updated }, async (why) => {
       setError(why ?? "");
       await load();
     });
