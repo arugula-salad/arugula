@@ -256,7 +256,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
 /** Why a reader can't start runs here, in one line; null when they can. */
 export function whyNoStart(p: PlatformProject): string | null {
   if (!mayWrite(p)) return "A team's owners and editors start its runs; you can read them here.";
-  if (!session.hosted) return "Runs go on cloud workspaces, which are in a limited beta your account isn't in yet.";
+  if (!session.hosted) return "Runs: limited beta, not on your account yet.";
   return null;
 }
 

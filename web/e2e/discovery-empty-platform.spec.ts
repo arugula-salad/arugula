@@ -58,7 +58,7 @@ test("a new project's home: each empty section's button does its step", async ({
 
   // Make an environment: the form, open.
   await alice.goto(home$);
-  await expect(alice.locator("[data-project-envs-none]")).toContainText("where the project deploys to");
+  await expect(alice.locator("[data-project-envs-none]")).toContainText("Where the project deploys");
   await alice.locator("[data-project-make-env]").click();
   await expect(alice).toHaveURL(/\/settings#environments$/);
   await expect(alice.locator("[data-environment-form]")).toBeVisible();
