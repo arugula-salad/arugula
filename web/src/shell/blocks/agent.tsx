@@ -700,8 +700,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
-              // The question card says it; this row would say it again.
-              if (e.name === "AskUserQuestion") return null;
+              // While its card shows, the card says it; this row would say
+              // it again. Answered, the row is the transcript's record.
+              if (e.name === "AskUserQuestion" && open.length > 0 && e.status !== "completed" && e.status !== "failed") return null;
               // An archived Managoat conversation's paths were in its
               // sandbox, not here.
               const openAt = client.state?.roles || archived ? undefined : (path: string) => void openFile(client, id, path, null);

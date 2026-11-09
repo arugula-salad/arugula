@@ -65,6 +65,7 @@ test.describe("desktop", () => {
     await expect(block.locator(".agent-status")).toHaveCount(0);
     await expect(card.locator(".ask-message")).toHaveText("Please answer the following questions.");
     await expect(card.locator(".ask-header")).toHaveCount(0);
+    await expect(block.locator(".agent-tool")).toHaveCount(0);
     await expect(card.locator(".ask-text").first()).toHaveAttribute("title", "Colour");
     const submit = card.getByRole("button", { name: "Submit" });
     await expect(submit).toBeDisabled();
@@ -84,7 +85,7 @@ test.describe("desktop", () => {
       "You answered: Which colour do you prefer? Red (dark red please); Which fruits do you like? Apple, Plum, kiwi; Which pet do you prefer? a parrot",
     );
     await expect(block.locator(".agent-note")).toContainText([/^Answered: Which colour do you prefer\? → Red \(dark red please\)/]);
-    await expect(block.locator(".agent-tool")).toHaveCount(0);
+    await expect(block.locator(".agent-tool .agent-tool-icon").first()).toHaveText("?");
 
     // A preview shows in monospace when its option is picked.
     const composer = block.locator(".agent-composer textarea");
@@ -180,7 +181,7 @@ test.describe("phone", () => {
     await expect(block.locator(".agent-msg").last()).toHaveText(
       "You answered: Which fruits do you like? Pear, Plum; Which pet do you prefer? a parrot",
     );
-    await expect(block.locator(".agent-tool")).toHaveCount(0);
+    await expect(block.locator(".agent-tool .agent-tool-status").last()).toHaveText("completed");
   });
 
   test("Claude Code's question in a terminal, answered from the phone", async ({ page }) => {
