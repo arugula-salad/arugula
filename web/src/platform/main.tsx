@@ -24,6 +24,7 @@ import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "./api";
+import { arriveHere } from "./chat-nav";
 import { PlatformPage } from "./page";
 
 // This device's palette and finish, before anything draws: on
@@ -36,6 +37,8 @@ setupDesktop();
 // A Doc's prototype can't run by srcdoc under this page's CSP: until the
 // hub says where its proto page is (session.ts), it shows a note (#506).
 setProtoOrigin(null);
+// A room or thread opened cold gets the levels above it, so Back climbs (#817).
+arriveHere();
 render(
   <PlatformApiContext.Provider value={platformApi}>
     <PlatformPage />
