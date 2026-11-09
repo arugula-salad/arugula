@@ -20,8 +20,9 @@ The status is 421 Misdirected Request.
 
 The daemon only answers to host names it knows: `127.0.0.1`,
 `localhost` and `[::1]` on its port, its tailnet (MagicDNS) name, which it
-finds by itself, and names it's given (`crates/daemon/src/access.rs`,
-`Access::new` and `check_host`). That stops another
+finds by itself, and names it's given (the list is built in
+`crates/daemon/src/lib.rs`, `run`; `crates/daemon/src/access.rs`,
+`Access::new` and `check_host`, refuse the rest). That stops another
 site in your browser from reaching it under a name of its own (DNS
 rebinding). A LAN address, a name in your own DNS, or a reverse proxy
 that passes its own `Host` aren't on the list.

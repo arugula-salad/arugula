@@ -1,7 +1,7 @@
 # Gotchas
 
-<!-- Written by scripts/gotchas-index.mjs (`just gotchas`) from the pages'
-front matter. Edit the pages, not this file. -->
+<!-- Written by `node scripts/gotchas-index.mjs` from the pages' front
+matter. Edit the pages, not this file. -->
 
 Sharp edges people have hit, one page each, found by what you see. Each page
 has three parts: **You see** (the symptom, as it shows on screen or in a
@@ -9,8 +9,8 @@ terminal), **Why** (the cause, so you can tell whether it's yours) and **Do**.
 
 A new one is a page in this folder with a `title`, a one-line
 `description` and an `area` (one of the headings below) in its front
-matter, and the three parts. Run `just gotchas` to rewrite this index;
-`just check` fails while it's stale.
+matter, and the three parts. Run `node scripts/gotchas-index.mjs` to rewrite
+this index; with `--check` it only says whether the index is current.
 
 What the daemon sends off your machine is a page of its own:
 [What leaves your machine](../what-leaves-your-machine.md).

@@ -9,9 +9,8 @@ area: "Install and updates"
 ## You see
 
 The machine is back, but its daemon isn't: the machine shows as offline in
-control and on your other machines, and `arugula status` on it says the
-service isn't running. When it was installed, you may have seen one of
-these:
+control and on your other machines, and `arugula status` on it says
+`Stopped (…)`. When it was installed, you may have seen one of these:
 
 ```
 note: lingering is off, so it starts at login, not boot: `loginctl enable-linger $USER`

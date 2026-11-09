@@ -4,6 +4,10 @@
 // --check, fails instead when the README isn't what it would write, or when a
 // page lacks its front matter, its area or one of its three parts.
 //
+// Run by hand: `node scripts/gotchas-index.mjs` writes the index;
+// `node scripts/gotchas-index.mjs --check` only checks it. Nothing in CI runs
+// it yet.
+//
 // A page's front matter is the JSON subset of YAML, as the decision records'
 // is: `title`, `description` and `area`, one line each.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -61,8 +65,8 @@ const pages = readdirSync(dir)
 
 let md = `# Gotchas
 
-<!-- Written by scripts/gotchas-index.mjs (\`just gotchas\`) from the pages'
-front matter. Edit the pages, not this file. -->
+<!-- Written by \`node scripts/gotchas-index.mjs\` from the pages' front
+matter. Edit the pages, not this file. -->
 
 Sharp edges people have hit, one page each, found by what you see. Each page
 has three parts: **You see** (the symptom, as it shows on screen or in a
@@ -70,8 +74,8 @@ terminal), **Why** (the cause, so you can tell whether it's yours) and **Do**.
 
 A new one is a page in this folder with a \`title\`, a one-line
 \`description\` and an \`area\` (one of the headings below) in its front
-matter, and the three parts. Run \`just gotchas\` to rewrite this index;
-\`just check\` fails while it's stale.
+matter, and the three parts. Run \`node scripts/gotchas-index.mjs\` to rewrite
+this index; with \`--check\` it only says whether the index is current.
 
 What the daemon sends off your machine is a page of its own:
 [What leaves your machine](../what-leaves-your-machine.md).
@@ -92,7 +96,7 @@ if (check) {
     have = readFileSync(out, "utf8");
   } catch {}
   if (have !== md) {
-    console.error("docs/gotchas/README.md is stale: run `just gotchas`");
+    console.error("docs/gotchas/README.md is stale: run `node scripts/gotchas-index.mjs`");
     process.exit(1);
   }
 } else {

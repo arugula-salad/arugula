@@ -13,12 +13,12 @@ then one of:
 
 ```
 …: agent blocks run it through it.
-`arugula setup claude` installs it (or: npm install -g …); then run this again.
+`arugula setup claude` installs it (or: npm install --prefix …); then run this again.
 ```
 
 ```
 ….
-Install Node (`mise use -g node@22`, or nodejs.org), then `arugula setup claude` (or: npm install -g …).
+Install Node (`mise use -g node@22`, or nodejs.org), then `arugula setup claude` (or: npm install --prefix …).
 ```
 
 ## Why

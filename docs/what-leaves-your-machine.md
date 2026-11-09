@@ -29,8 +29,8 @@ telemetry on. It does reach out to these:
   (`crates/daemon/src/args.rs`), on a build from source, and on a hosted
   box (`crates/daemon/src/hosted/mod.rs`, `headless`). `ARUGULA_UPDATE_URL`
   points it elsewhere.
-- **Updating**, only when you ask (`arugulad update`, or *Update* in the web
-  client): downloads `SHA256SUMS` and the archive for this OS and
+- **Updating**, only when you ask (`arugulad update`, or *Update now* in
+  the web client): downloads `SHA256SUMS` and the archive for this OS and
   architecture from GitHub's releases, so GitHub learns those two
   (`crates/daemon/src/selfupdate.rs`, `fetch` and `target`).
 - **Telemetry**, off until the owner says yes: see
@@ -60,10 +60,6 @@ telemetry on. It does reach out to these:
 - **Your other machines, on the tailnet:** `GET <url>/api/host`, with no
   credentials, every 60 s, to each host on your host list
   (`crates/daemon/src/hosts.rs`, `probe_urls`).
-- **Your home daemon, with `--sync` or `--sync-live` only:** this machine's
-  pane history, to the home daemon you joined it to, never to control
-  (`crates/daemon/src/sync.rs`, `push_once`; flags in
-  `crates/daemon/src/args.rs`).
 - **Certificates for block sites, only with `--block-domain` and
   `--block-acme-cloudflare-token-file`:** Let's Encrypt's ACME API (with
   `--block-acme-email` as the account's contact), Cloudflare's API to
@@ -90,7 +86,8 @@ telemetry on. It does reach out to these:
   runtime, blocks opened per kind, clients per surface, views, Labs flags
   on, and errors in the web client (`Counts`).
 - **Crashes:** where in our code a panic happened (a `crates/…/file.rs:line`
-  and our own function names) and the version, never the panic's message
+  and our own function names), which of our programs it was, when, and
+  the version, never the panic's message
   (`crates/control-wire/src/telemetry.rs`, `Crash`). They're kept in
   `crashes/` and go with the next report; a no empties it
   (`crates/daemon/src/telemetry.rs`, module docs).
@@ -108,13 +105,14 @@ and `post_signed`).
 ### The machine itself
 
 - **Joining:** the machine's certificate (its account, device id, name and
-  public keys), its join proof, and a team if one was chosen (`POST
-  /api/join`, `crates/control-wire/src/join.rs`, `JoinRequest`;
+  public keys), its join proof, the protocol features it understands, and
+  a team if one was chosen (`POST /api/join`,
+  `crates/control-wire/src/join.rs`, `JoinRequest`;
   `crates/e2e/src/cert.rs`, `Cert`; sent by `join_start` in
-  `crates/daemon/src/control.rs`). The name is the hostname for
-  `arugulad join`, or the daemon's name (`--name`, the tailnet name, else
-  the hostname) from Getting started (`crates/daemon/src/lib.rs`,
-  `crates/daemon/src/setup.rs`).
+  `crates/daemon/src/control.rs`). The name is `arugulad join --name`,
+  else the hostname; from Getting started it's the daemon's name
+  (`--name`, the tailnet name, else the hostname)
+  (`crates/daemon/src/lib.rs`, `crates/daemon/src/setup.rs`).
 - **Every 60 s:** a refresh of the account's certificates, the team and its
   peers, which tells control this daemon's version, OS and architecture
   (`GET /api/daemon/trust?…&version=&os=&arch=`;
@@ -160,10 +158,17 @@ and `post_signed`).
   through the daemon (`crates/daemon/src/team_chat.rs`, module docs).
   Control keeps chat in plain text: it's the exception to end-to-end
   (`crates/control/src/lib.rs`, module docs).
-- **An agent's chat answer to a mention** is only "done" or why not
-  (`crates/daemon/src/agent_mentions.rs`, `deliver`). `agent_mentions: false` in
-  `sharing.json` in the state directory turns mentions off
-  (`crates/proto/src/sharing.rs`, `agent_mentions`).
+- **An agent's answer to a mention** is how it was routed: which step
+  took it, the session's name, and, when no session has the name the
+  mention used, up to 10 session and tab names it could have used
+  (`crates/daemon/src/agent_mentions.rs`, `deliver`;
+  `crates/control-wire/src/forge.rs`, `Routed`). Then how that session's
+  turn went: working, read, or dropped (`PUT
+  /api/daemon/chat/mention-state`; `crates/control-wire/src/chat.rs`,
+  `PutMentionState`). Never the session's output. `agent_mentions: false`
+  in `sharing.json` in the state directory, or `arugulad sharing
+  agent-mentions off`, turns mentions off (`crates/proto/src/sharing.rs`,
+  `agent_mentions`; `crates/daemon/src/args.rs`).
 
 ### Forges
 
@@ -182,14 +187,11 @@ and `post_signed`).
   `crates/arugulad-forge/src/platform.rs`, `ask_link`, `create`;
   `crates/arugulad-forge/src/pin.rs`). Sending a draft goes to GitHub from
   this machine, as you (`crates/arugulad-forge/src/send_op.rs`).
-- **The inbox shadow, only with `ARUGULA_INBOX_SHADOW` set:** repo, number,
-  why it wants attention and draft ids, never a title or text
-  (`POST /api/inbox/shadow`; `crates/arugulad-forge/src/shadow.rs`).
 
-### Boards (Labs: `boards`)
+### Boards
 
-With the `boards` flag on (`crates/proto/src/flags.rs`), and control's
-`boards.write` grant:
+Boards are on for every account; they left Labs. Once this machine has
+joined control, and with control's `boards.write` grant:
 
 - **An agent block's state:** working, waiting or idle; a title only for a
   block started on an issue; its branch, short HEAD, whether it's pushed, a
@@ -282,15 +284,15 @@ These run only there; a person's machine doesn't send them
 
 ## Labs providers
 
-- **Sprites (VM panes):** the Sprites API, with your token, for the VMs you
-  make: creating, running commands in them (with the pane's environment
-  variables in the request), and their status
-  (`crates/arugulad-labs/src/sprites.rs`). It's set up whenever the token
-  file exists (`--wisp-token-file`, else `$XDG_DATA_HOME/wisp/token`),
-  whatever the `sandbox-providers` flag says
-  (`crates/arugulad-labs/src/lib.rs`, `open_provider`;
-  `crates/daemon/src/lib.rs`), and only calls it for VM hosts you've made
-  (`crates/daemon/src/hosts.rs`, `ask_providers`).
+- **loam (VM panes, `sandbox-providers`):** the loam API at `--loam-url`,
+  with your project key (`--loam-key-file`, else
+  `~/.config/arugula/loam-key`), for the sandboxes you make: creating
+  them, running commands in them (with the pane's environment variables
+  in the request), their files, ports and status
+  (`crates/arugulad-labs/src/loam.rs`). Nothing is opened or asked
+  without `--loam-url`, the key file and the `sandbox-providers` flag on
+  (`crates/daemon/src/lib.rs`, `open_provider`;
+  `crates/daemon/src/provider_gate.rs`).
 - **Agent delegation (`agent-delegation`):** a prompt to a teammate's or
   your other machine's agent, end to end through control's relay
   (`crates/daemon/src/peer.rs`; `crates/arugulad-labs/src/agents/delegate.rs`).
@@ -326,10 +328,8 @@ These run only there; a person's machine doesn't send them
 | Update check | `--no-update-check`, `ARUGULA_NO_UPDATE_CHECK` | `crates/daemon/src/args.rs`, `crates/daemon/src/update.rs` |
 | Relay socket | `--no-relay` | `crates/daemon/src/args.rs` |
 | Chat readers | chat off for the account or team, in control | `crates/daemon/src/chat_readers.rs` |
-| Agent mentions | `agent_mentions: false` in `sharing.json` | `crates/proto/src/sharing.rs`, `agent_mentions` |
-| Boards state | the `boards` flag (`arugulad flags boards off`) | `crates/daemon/src/board_state.rs`, `enabled` |
+| Agent mentions | `arugulad sharing agent-mentions off` (`agent_mentions: false` in `sharing.json`) | `crates/proto/src/sharing.rs`, `agent_mentions` |
+| Boards state | `arugulad leave`, or take away the machine's `boards.write` grant (`arugula grants`) | `crates/daemon/src/board_state.rs`, `enabled`; `crates/platform/src/grants.rs` |
 | Agents' control tools | the machine's grants (`arugula grants`) | `crates/platform/src/grants.rs` |
-| History sync | `--sync`, `--sync-live` (off unless given) | `crates/daemon/src/args.rs`, `crates/daemon/src/sync.rs` |
-| Inbox shadow | `ARUGULA_INBOX_SHADOW` (off unless set) | `crates/arugulad-forge/src/shadow.rs` |
-| Sprites | remove the token file | `crates/arugulad-labs/src/sprites.rs`, `open` |
+| VM panes (loam) | no `--loam-url`, or the `sandbox-providers` flag off | `crates/daemon/src/lib.rs`, `open_provider`; `crates/daemon/src/provider_gate.rs` |
 | Code-server download | `--code-server PATH` | `crates/daemon/src/args.rs` |

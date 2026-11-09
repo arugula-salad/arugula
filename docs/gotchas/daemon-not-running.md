@@ -34,8 +34,9 @@ a named pipe) in the daemon's state directory
 ## Do
 
 - `arugula status` says whether the service is there and running, and
-  gives the fix on its `daemon` line: `systemctl --user start …`, the
-  desktop app's *Daemon > Start*, or `` `arugulad install` sets it up as a
-  service and starts it `` when there's none.
+  gives the fix on its `daemon` line: `systemctl --user start …` or the
+  desktop app's *Daemon > Start* for a stopped service, and
+  `` `arugulad install` sets it up as a service and starts it `` when
+  there's none.
 - If you moved the state directory, point the CLI at the socket:
   `ARUGULA_SOCK=$ARUGULA_STATE_DIR/sock arugula …`, or `--socket PATH`.

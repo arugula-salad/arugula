@@ -14,8 +14,10 @@ Error: this install updates with: brew upgrade arugula && arugulad install
 ```
 
 or ``… with: git pull, build it, and run `arugulad install` again``. In the
-web client, the update notice has no button, and asking for one says
-`can't update from here:` and one of:
+web client, the update notice has no *Update now* button: it says *Run this
+in a terminal on this machine:* and gives the command. Asking the daemon's
+API anyway (`POST /api/update/apply`) answers `can't update from here:` and
+one of:
 
 - `there's no release build for this platform`
 - `this install updates another way (see the command)`

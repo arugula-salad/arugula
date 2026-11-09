@@ -23,7 +23,9 @@ arugulad install -- --owner ada@example.com
 You're signed in to Tailscale as ada@example.com, and this machine has no owner set, so nobody from the tailnet gets in.
 ```
 
-or, from a tagged device, `tagged tailnet nodes have no user identity`.
+or, from a tagged device, `tailnet request without a user identity (from a
+tagged node?)` (`tagged tailnet nodes have no user identity` when it reaches
+the daemon's own port, not the tailnet name).
 
 ## Why
 

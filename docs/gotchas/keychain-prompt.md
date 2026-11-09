@@ -32,5 +32,6 @@ update").
   again. It doesn't come back.
 - **Deny** leaves the app unable to read its keys, and it asks again at
   the next launch.
-- If you don't know the password, delete the item in Keychain Access,
-  then sign in to control again and approve this device again.
+- If you don't know the password, quit the app, delete the item in
+  Keychain Access and open the app again. Then sign in to control again
+  and approve this device again.

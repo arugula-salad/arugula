@@ -22,7 +22,7 @@ Daemon arguments go after `--` (`arugulad install -- --listen …`). With
 none given, an install reads back the ones the last install wrote into the
 service and keeps them, so that updating doesn't drop them
 (`crates/daemon/src/install.rs`, `args_to_install`). That's also why
-`arugulad update` and *Update* in the web client keep them.
+`arugulad update` and *Update now* in the web client keep them.
 
 ## Do
 
