@@ -2,7 +2,7 @@
 
 use arugula_e2e::drivers::arugula_release::Lane;
 
-use super::titles::{Facts, SUBJECT_MAX, expected_version, fetch, subject_of, title};
+use super::titles::{Facts, SUBJECT_MAX, expected_version, fetch, newest_tag, subject_of, title};
 use crate::db::deploys::{Environment, Source, SourceKind};
 
 fn env(driver: &str) -> Environment {
@@ -46,12 +46,40 @@ fn the_expected_version_is_what_release_bump_makes() {
     let toml =
         |v: &str| format!("[package]\nname = \"x\"\nversion = \"9.9.9\"\n\n[workspace.package]\nversion = \"{v}\"\n");
     // The higher of the commit's and main's, then one bump up.
-    assert_eq!(expected_version(Lane::Daemon, &toml("0.63.8"), &toml("0.63.9"), "patch").as_deref(), Some("0.63.10"));
-    assert_eq!(expected_version(Lane::Daemon, &toml("0.64.0"), &toml("0.63.9"), "minor").as_deref(), Some("0.65.0"));
-    assert_eq!(expected_version(Lane::Daemon, &toml("0.63.8"), &toml("0.63.9"), "major").as_deref(), Some("1.0.0"));
+    assert_eq!(
+        expected_version(Lane::Daemon, &toml("0.63.8"), &toml("0.63.9"), None, "patch").as_deref(),
+        Some("0.63.10")
+    );
+    assert_eq!(
+        expected_version(Lane::Daemon, &toml("0.64.0"), &toml("0.63.9"), None, "minor").as_deref(),
+        Some("0.65.0")
+    );
+    assert_eq!(
+        expected_version(Lane::Daemon, &toml("0.63.8"), &toml("0.63.9"), None, "major").as_deref(),
+        Some("1.0.0")
+    );
+    // The lane's newest tag, once releases stop moving the files (#1986).
+    let at = toml("0.66.12");
+    assert_eq!(expected_version(Lane::Daemon, &at, &at, Some("0.66.14"), "patch").as_deref(), Some("0.66.15"));
+    assert_eq!(expected_version(Lane::Daemon, &at, &at, Some("0.66.1"), "patch").as_deref(), Some("0.66.13"));
     // The app's lane reads the desktop crate's [package].
-    assert_eq!(expected_version(Lane::App, &toml("0.1.0"), &toml("0.1.0"), "patch").as_deref(), Some("9.9.10"));
-    assert_eq!(expected_version(Lane::Daemon, "no version", &toml("0.63.9"), "patch"), None);
+    assert_eq!(expected_version(Lane::App, &toml("0.1.0"), &toml("0.1.0"), None, "patch").as_deref(), Some("9.9.10"));
+    assert_eq!(expected_version(Lane::Daemon, "no version", &toml("0.63.9"), None, "patch"), None);
+}
+
+#[test]
+fn the_newest_tag_is_read_from_githubs_matching_refs() {
+    let refs = serde_json::json!([
+        { "ref": "refs/tags/v0.9.0" },
+        { "ref": "refs/tags/v0.10.1" },
+        { "ref": "refs/tags/v0.10.0" },
+        { "ref": "refs/tags/vnext" },
+    ]);
+    assert_eq!(newest_tag(&refs, "v").as_deref(), Some("0.10.1"));
+    let app = serde_json::json!([{ "ref": "refs/tags/app-v1.2.3" }, { "ref": "refs/tags/app-v1.10.0" }]);
+    assert_eq!(newest_tag(&app, "app-v").as_deref(), Some("1.10.0"));
+    assert_eq!(newest_tag(&serde_json::json!([]), "v"), None);
+    assert_eq!(newest_tag(&serde_json::json!({ "message": "Not Found" }), "v"), None);
 }
 
 /// A ref that isn't a commit id never reaches a URL: no fetch (this app has

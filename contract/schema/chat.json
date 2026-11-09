@@ -116,6 +116,50 @@
       ],
       "type": "object"
     },
+    "AgentReplies": {
+      "description": "[`AGENT_REPLIES`]' answer: the threads, the one with the oldest unread\nreply first.",
+      "properties": {
+        "threads": {
+          "items": {
+            "$ref": "#/$defs/AgentReplyThread"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "threads"
+      ],
+      "type": "object"
+    },
+    "AgentReplyThread": {
+      "description": "One thread's unread replies (#580).",
+      "properties": {
+        "replies": {
+          "description": "The unread replies, oldest first, each with its mention status for\nthis machine.",
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "type": "array"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The thread's first message."
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "root",
+        "replies"
+      ],
+      "type": "object"
+    },
     "AgentRoom": {
       "description": "A room as a machine's agents see it.",
       "properties": {
@@ -288,18 +332,6 @@
           "default": false,
           "type": "boolean"
         },
-        "live": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LivePresence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The reader's live presence choice, when they changed it (kept with\n`live-presence` on; ignored with it off)."
-        },
         "machines": {
           "default": [],
           "items": {
@@ -469,6 +501,19 @@
       },
       "required": [
         "found"
+      ],
+      "type": "object"
+    },
+    "ChatGrantNever": {
+      "description": "`POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its\nagents are never to be asked to read this room (#578). What waited for\nthem is `not_granted` for good; a grant over the room undoes it.",
+      "properties": {
+        "daemon": {
+          "description": "The machine's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon"
       ],
       "type": "object"
     },
@@ -911,6 +956,11 @@
           "type": "string"
         },
         {
+          "const": "silenced",
+          "description": "The session it named (`asked`) is there, but its owner silenced\nmentions for it (#579): it waits in the machine's inbox.",
+          "type": "string"
+        },
+        {
           "const": "no_such_session",
           "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
           "type": "string"
@@ -938,6 +988,16 @@
         {
           "const": "read",
           "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+          "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
+          "type": "string"
+        },
+        {
+          "const": "not_granted",
+          "description": "The machine's agents can't read the room (#578): its owner was asked\nto let them. Delivered if they do; final if they said never.",
           "type": "string"
         }
       ]
@@ -983,6 +1043,17 @@
         },
         "state": {
           "$ref": "#/$defs/ChatMentionState"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DropWhy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `dropped`: why (#613)."
         }
       },
       "required": [
@@ -1504,10 +1575,40 @@
         },
         "text": {
           "type": "string"
+        },
+        "to": {
+          "description": "In a thread (#647): who this wakes, chosen in the composer, in place\nof the agent it replies to. Agents the text names come too. Empty:\nnobody. Absent: as before this field. Ignored from an agent, and\noutside a thread.",
+          "items": {
+            "$ref": "#/$defs/ChatPostTarget"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
         "text"
+      ],
+      "type": "object"
+    },
+    "ChatPostTarget": {
+      "description": "An agent a message is for (#647), as [`ChatThreadAgent`] names it.",
+      "properties": {
+        "id": {
+          "description": "The machine's id, or a hosted session's `ses_` id.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session on the machine, when it has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
       ],
       "type": "object"
     },
@@ -1575,17 +1676,6 @@
     "ChatPresence": {
       "description": "Who's around, for one reader: themselves and everyone who shares a team\nwith them (nobody else is named, online or not), and the asked-for\nmachines they may see that are connected. Machines' agents show as\ntheir machine, not as a person.",
       "properties": {
-        "live": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LivePresence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The reader's live presence choice, with the `live-presence` Labs flag\non for them; absent with it off, which is how a page learns the flag."
-        },
         "machines_online": {
           "items": {
             "type": "string"
@@ -1688,6 +1778,13 @@
     "ChatReaction": {
       "description": "One emoji on a message, as the reader sees it.",
       "properties": {
+        "agents": {
+          "default": 0,
+          "description": "How many of `count` are agents' (#632); the rest are people's. An\nolder control leaves it out, and it reads as none.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "count": {
           "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
           "format": "uint32",
@@ -1802,8 +1899,26 @@
       "type": "object"
     },
     "ChatReaders": {
-      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had. Those it\ndoesn't name keep theirs (a pane that closed keeps its readers).",
+      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had.\n\n`held`, on the last post of a send: every pane and session the machine\nstill has a list for (open, or closed and still remembered, read by\nthose who read it when it closed and still may). Control empties the list\nof every other target it has for the machine, so only the machine's\nowner reads those threads. Without it (older daemons) the targets not\nnamed keep their lists.\n\n`seq`: the post's place in the machine's order, higher for each post it\nmakes. Control ignores what a post says of a target whose list came in\na post with a higher one, so a post that arrives late can't undo a newer\none. Without it (older daemons) every post counts as it comes. At most\n`i64::MAX`.",
       "properties": {
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatTargetsHeld"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "targets": {
           "default": [],
           "items": {
@@ -1815,8 +1930,16 @@
       "type": "object"
     },
     "ChatReadersStored": {
-      "description": "How many lists control kept.",
+      "description": "How many lists control was sent, and the highest post number it holds\nfor the machine ([`ChatReaders::seq`]). Higher than the post's own: some\nof what it said was ignored as older, so the machine numbers its posts\nabove this and sends every list again (its clock went back). Older\ncontrols leave it out.",
       "properties": {
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "stored": {
           "format": "uint",
           "minimum": 0,
@@ -1944,6 +2067,13 @@
         },
         "unread": {
           "description": "Messages after the read mark (not the reader's own), and how many\nof those mention the reader.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wants": {
+          "default": 0,
+          "description": "How much of `unread` wants the reader: what a count of it says. In\nan object's thread, its mentions, and on an open native issue\nassigned to the reader what isn't from their own agents; the rest\nof `unread` is only a dot on its row. In any other room, `unread`.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -2249,6 +2379,26 @@
         }
       ]
     },
+    "ChatTargetsHeld": {
+      "description": "The panes and sessions a machine has reader lists for, by id: see\n[`ChatReaders`]. At most [`MAX_HELD`] of each.",
+      "properties": {
+        "panes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "ChatTeamSettings": {
       "description": "`GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners\ndecide about its chat (#114). Anyone in the team reads it, for the\ncomposer; only an owner sets it.",
       "properties": {
@@ -2316,6 +2466,128 @@
         "read",
         "unread",
         "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatThreadAgent": {
+      "description": "One agent in a thread (#645): a session on someone's machine, or a hosted\nsession. Never its output, a tool's arguments or a path (aru-051).",
+      "properties": {
+        "hosted": {
+          "type": "boolean"
+        },
+        "id": {
+          "description": "The machine's id, or a hosted session's `ses_` id.",
+          "type": "string"
+        },
+        "lead": {
+          "description": "The agent a message goes to by default (#647): the thread's hosted\nsession, else the agent first in it.",
+          "type": "boolean"
+        },
+        "machine_name": {
+          "description": "The machine's name, or the hosted box's.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The session's name, as its machine called it, or a hosted session's\nshort id. Empty when a machine was told and no session has spoken.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "The owner's account and name; a hosted session's asker.",
+          "type": "string"
+        },
+        "owner_name": {
+          "type": "string"
+        },
+        "read_seq": {
+          "description": "The newest message of the thread it has taken in, or written.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ChatThreadAgentState"
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "waiting": {
+          "description": "Messages told to it that it hasn't taken in yet.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "working_on": {
+          "description": "With the owner's `work`: what it was started on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "id",
+        "machine_name",
+        "owner",
+        "owner_name",
+        "hosted",
+        "state",
+        "waiting",
+        "lead"
+      ],
+      "type": "object"
+    },
+    "ChatThreadAgentState": {
+      "description": "What an agent in a thread is doing (#645).",
+      "oneOf": [
+        {
+          "enum": [
+            "working",
+            "needs_you",
+            "offline"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Between turns, ready for the next prompt.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A hosted session that failed.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "A hosted session that was stopped.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Its machine answered without saying: an older daemon, a session it\ndoesn't show, or one that has ended.",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatThreadAgents": {
+      "description": "[`chat_thread_agents`]' answer: oldest in the thread first.",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/ChatThreadAgent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agents"
       ],
       "type": "object"
     },
@@ -2504,13 +2776,127 @@
       ],
       "type": "object"
     },
-    "LivePresence": {
-      "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
+    "DropWhy": {
+      "description": "Why a mention was dropped (#613).",
+      "oneOf": [
+        {
+          "const": "stopped",
+          "description": "The person pressed stop while it waited in the session's queue.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "The session's process ended in the middle of its turn.",
+          "type": "string"
+        }
+      ]
+    },
+    "MachineAgent": {
+      "description": "A session of a machine a teammate's agent may mention (#577).",
+      "properties": {
+        "active_ms_ago": {
+          "description": "How long ago it last printed, in ms; absent when the machine does not\nknow.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What `@machine/name` matches: the session's name, as a slug.",
+          "type": "string"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineAgentState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
+        "tab": {
+          "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_on": {
+          "description": "With the owner's `work`: the issue it was started on (`#540`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "MachineAgentState": {
+      "description": "What a machine's session is doing (#645).",
       "enum": [
-        "off",
-        "watching"
+        "working",
+        "idle",
+        "needs_input"
       ],
       "type": "string"
+    },
+    "MachineAgents": {
+      "description": "A machine's sessions an agent may mention in a room (#577).",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "offline": {
+          "default": false,
+          "description": "The machine isn't on control's relay now, or didn't answer.",
+          "type": "boolean"
+        },
+        "sessions": {
+          "description": "Newest active first, at most 20.",
+          "items": {
+            "$ref": "#/$defs/MachineAgent"
+          },
+          "type": "array"
+        },
+        "shared": {
+          "description": "False when its owner shows no session names.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine_name",
+        "shared",
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "MachineAgentsQuery": {
+      "description": "[`agent_machine_sessions`]' query.",
+      "properties": {
+        "from_session": {
+          "default": null,
+          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "MentionTurn": {
       "description": "What the session's turn that took a mention is doing (#540).",
@@ -2524,6 +2910,19 @@
           "const": "read",
           "description": "The turn has ended.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The mention never got a turn, or its turn was cut off (#613).",
+          "properties": {
+            "dropped": {
+              "$ref": "#/$defs/DropWhy"
+            }
+          },
+          "required": [
+            "dropped"
+          ],
+          "type": "object"
         }
       ]
     },

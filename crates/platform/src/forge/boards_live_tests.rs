@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params},
 };
@@ -41,7 +40,6 @@ async fn a_row_reports_what_it_points_at_now() {
     let (_gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &_gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
 
     // bob (an editor, signed in with GitHub) makes a board of four rows: the
     // merged PR, the open PR on the private repo, a native issue and a note.
@@ -111,7 +109,6 @@ async fn a_row_on_an_issue_or_pr_names_its_assignees() {
     let (_gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &_gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
 
     let (_, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Launch" }))).await;
@@ -154,7 +151,6 @@ async fn a_row_carries_its_items_labels() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
 
     let (_, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Launch" }))).await;

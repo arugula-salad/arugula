@@ -10,7 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
-import type { Sharing, SharingSetRequest } from "../../shared/proto.gen";
+import type { AgentListing, Sharing, SharingSetRequest } from "../../shared/proto.gen";
 
 let shown: Client | null = null;
 const listeners = new Set<() => void>();
@@ -74,13 +74,13 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
   return (
     <Modal close={close} label="Guest SSH access" class="rules sharing">
       <h2>Guest SSH access</h2>
-      <p class="hint">
+      <p class="dim">
         Lets you invite someone who has only OpenSSH to watch one of this machine's panes, or type in it if you say so: <i>Invite over
         ssh…</i> in the pane's menu, or <code>arugula share --guest</code>. Each invite ends when it expires or you revoke it. Off
-        until you, the owner, turn it on here; control can't.
+        until you, the owner, turn it on here; Arugula cloud can't.
       </p>
       {error && <p class="error">{error}</p>}
-      {sharing?.built === false && <p class="hint">This daemon was built without guest ssh: the switch turns nothing on.</p>}
+      {sharing?.built === false && <p class="dim">This daemon was built without guest ssh: the switch turns nothing on.</p>}
       {sharing && (
         <label class="sharing-switch">
           <input
@@ -93,8 +93,8 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
           Guest SSH access on this machine
         </label>
       )}
-      <p class="hint">
-        A teammate's <code>@</code>-mention of this machine in a thread, or a reply to one of its agents, is handed to the agent's
+      <p class="dim">
+        A teammate's <code>@</code>-mention of this machine in a thread, or a person's reply to one of its agents, is handed to the agent's
         session as a message from a teammate (never as your approval). On unless you turn it off here.
       </p>
       {sharing && (
@@ -107,6 +107,24 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
             onChange={(e) => void set({ agent_mentions: e.currentTarget.checked })}
           />{" "}
           Agents hear their mentions on this machine
+        </label>
+      )}
+      <p class="dim">
+        What people in a thread, and their agents, can see of this machine's agent sessions. Never their output, a tool's arguments or a path.
+      </p>
+      {sharing && (
+        <label class="sharing-switch">
+          What they see{" "}
+          <select
+            data-sharing-agent-sessions
+            value={sharing.agent_sessions ?? "names"}
+            disabled={sharing.agent_mentions === false}
+            onChange={(e) => void set({ agent_sessions: e.currentTarget.value as AgentListing })}
+          >
+            <option value="work">Name, state, work item and tool name</option>
+            <option value="names">Name and state</option>
+            <option value="none">Nothing</option>
+          </select>
         </label>
       )}
       <div class="prompt-buttons">

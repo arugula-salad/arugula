@@ -1,64 +1,30 @@
 /* Shared embedded-pane chrome: keep controls subordinate to pane identity.
-   UI audit #177: one bar for every block, the same height and buttons,
-   the team chat's and the workspace graph's too (they ran 33-45px, each
-   with its own buttons). */
-.browser-bar,
-.agent-bar,
-.review-bar,
-.chat-block-bar,
-.ws-graph-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  height: 36px;
-  min-height: 36px;
-  flex: none;
+   UI audit #177: one bar for every block (shared/ui/bar.css, #686), the
+   team chat's and the workspace graph's too. */
+/* Its plain buttons are the bar button's (buttons.css); its selects are
+   the same 24px. A primary or secondary in a bar keeps its own look. */
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
   box-sizing: border-box;
-  gap: 8px;
-  padding: 0 10px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  color: var(--subtle);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-/* Its plain buttons and selects, alike (the ↻, ←, Resume, an env); a
-   primary or secondary in a bar keeps its own look. */
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link),
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field),
-.block-open {
-  box-sizing: border-box;
-  display: inline-grid;
-  place-items: center;
+  display: inline-block;
   flex: none;
-  height: 26px;
-  min-width: 26px;
-  padding: 0 8px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--btn-radius);
   background: var(--bg);
   color: var(--subtle);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1;
-  text-decoration: none;
   cursor: pointer;
 }
 
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
-  display: inline-block;
-  padding: 0 4px;
-}
-
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:not(.primary):not(.secondary):not(.link):hover:not(:disabled),
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled),
-.block-open:hover {
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled) {
   background: var(--raised);
   color: var(--fg);
 }
 
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:disabled,
 :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):disabled {
   opacity: 0.45;
   cursor: default;
@@ -71,88 +37,6 @@
   position: static;
   flex: none;
   margin: 0;
-}
-
-/* A tab's other host (#17) comes after its title, and gives way to it. */
-.tab .host-tag.remote {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* UI audit #178: one error card, one empty or loading line, for every
-   block. */
-.block-error {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-.block-error.inline {
-  flex: none;
-  display: block;
-  padding: 10px 12px 0;
-}
-
-.block-error-card {
-  box-sizing: border-box;
-  max-width: 34em;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  border-left: 3px solid var(--danger);
-  border-radius: var(--card-radius);
-  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
-  color: var(--fg);
-  text-align: left;
-}
-
-.block-error.inline .block-error-card {
-  max-width: none;
-}
-
-.block-error-card > * {
-  margin: 0;
-}
-
-.block-error-card > * + * {
-  margin-top: 6px;
-}
-
-.block-error-title {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.block-error-detail {
-  color: var(--dim);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.block-error-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.block-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px;
-  text-align: center;
-  color: var(--dim);
 }
 
 /* A block whose Labs flag is off here (UI audit #178): a card that says
@@ -182,7 +66,7 @@
 
 .browser-url input {
   background: var(--bg);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-log {
@@ -237,7 +121,7 @@
 .agent-msg .md h1,
 .agent-msg .md h2,
 .agent-msg .md h3 {
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.4;
   margin: 12px 0 8px;
 }

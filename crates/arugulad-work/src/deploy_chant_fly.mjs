@@ -1,51 +1,76 @@
-// The chant→Fly driver's apply, on a deploy's box (M220, platform step 7,
-// native Arugula #16; aru-104). arugulad runs it as the run user with
+// The chant→Fly driver, on a deploy's box (M220, platform step 7, native
+// Arugula #16; aru-104, aru-126). arugulad runs it as the run user with
 // `node`, its secrets already in its environment (read from its standard
 // input by the driver's shell, never a file or a command line), its output
 // redacted into the run's pane, and fd 3 a pipe for its result
 // (`work_deploy.rs`).
 //
-// What it does is what the approved plan says
-// (`arugula_e2e::drivers::plan_text`):
+// What it does is what the deploy's plan says
+// (`arugula_e2e::drivers::plan_text`), in one of four phases
+// (DEPLOY_PHASE, #1985):
 //
-// - Check out the commit, exactly, and check FLY_API_TOKEN is a Fly deploy
-//   token for one app that expires within 30 days (`flyctl tokens debug`).
-// - Apply: in the chant member, `npm ci` (with `--ignore-scripts` unless
-//   the `npm_scripts` setting says otherwise), then `chant run <op>
-//   --json`. At each gate of that op it stops at (only the `chant_gates`
-//   setting's, when it names some), `chant approve` it as the approver
-//   (`--approver`, the approval's account), relayed by arugula, with a
-//   note naming the platform's approval, for the plan chant's run recorded
-//   (its pending fact's `planDigest`; no plan, no approval); then run the
-//   op again. Then find chant's new release record for this commit in the
-//   `chant_env` ledger environment, tie it to what Fly runs, and push
-//   chant's ledger.
-// - Roll back: `flyctl deploy --image` of the image the deploy it goes
-//   back to ran (Fly's own roll back), check the app runs it, then `chant
-//   components release` records it in chant's ledger again.
+// - Its plan, on a box of its own before anyone approves it, with no Fly
+//   token, in two steps, each a process of its own: arugulad kills
+//   everything the run user runs after each. DEPLOY_LEDGER_BEFORE is
+//   origin's ledger as arugulad read it (empty: none).
+//   - `plan-fetch`, with GITHUB_TOKEN (minted for the run, reading only):
+//     check out the commit, exactly, and keep chant's ledger at
+//     DEPLOY_LEDGER_BEFORE in the stand-in (below). Nothing of the commit's
+//     runs.
+//   - `plan`, with no token at all: in the chant member, `npm ci` (with
+//     `--ignore-scripts` unless the `npm_scripts` setting says otherwise),
+//     then `chant run <op> --json`, which stops at the op's gate (only the
+//     `chant_gates` setting's, when it names some) and records its pending
+//     fact with chant's plan digest in the stand-in. What chant added to
+//     its ledger goes in a bundle (`ledger.bundle`, DEPLOY_LEDGER_BEFORE..
+//     its tip), which arugulad checks and pushes itself: the run user never
+//     holds a token that writes. Its result is that gate (`chant_gate`),
+//     which the owner's passkey signs chant's statement of. An op that
+//     needs Fly, or GitHub, before its gate fails here.
+// - Its apply (`apply`), on another box once an owner approved it: check
+//   FLY_API_TOKEN is a Fly deploy token for one app that expires within 30
+//   days (`flyctl tokens debug`); check out the commit; `npm ci`; `chant
+//   plan stale` of the approved plan, refused when anything applied to its
+//   targets since; `chant approve <op> <gate> --statement` as the approver
+//   (`arugula:<account>`, relayed by arugula, with the approval's binding
+//   line), checked to be the statement the passkey signed; `chant approve
+//   --at --signature -` with the passkey's assertion, which chant checks
+//   against `.chant/trust.json`; then `chant run <op>` again, which applies.
+//   Then find chant's new release record for this commit in the `chant_env`
+//   ledger environment, tie it to what Fly runs, and push chant's ledger.
+// - Roll back (an apply with DEPLOY_ROLL_BACK): `flyctl deploy --image` of
+//   the image the deploy it goes back to ran (Fly's own roll back), check
+//   the app runs it, then `chant components release` records it in
+//   chant's ledger again. No gate, so no plan first.
 // - Check the Fly app: every started machine's checks passing, on one
 //   image.
 //
+// chant 0.124.64 or newer: the first that signs and checks a binding line
+// (chant#4697). An older chant is refused.
+//
 // Who gets which credential:
-// - the repo's chant op: FLY_API_TOKEN (it deploys), and GITHUB_TOKEN only
-//   with the `chant_github` setting;
+// - the repo's chant op: FLY_API_TOKEN (in an apply: it deploys), and
+//   GITHUB_TOKEN only with the `chant_github` setting, in an apply;
 // - flyctl: FLY_API_TOKEN;
 // - the driver's own git fetch, push and ls-remote: GITHUB_TOKEN (a GitHub
 //   App installation token the platform mints for this run, writing this
-//   repository's contents only, or the environment's own), through a
-//   credential helper for https://github.com that names the variable;
-// - `npm ci`, `chant approve` and `chant components release`: neither.
+//   repository's contents only, or in an apply the environment's own; in
+//   a plan, one that reads for `plan-fetch`, and none in `plan`, the step
+//   that runs the commit's code), through a credential helper for
+//   https://github.com that names the variable;
+// - `npm ci`, `chant approve`, `chant plan stale` and `chant components
+//   release`: neither.
 // Neither token is ever on a command line or in a file. Without
 // GITHUB_TOKEN, chant's own git reads and writes its ledger through a
-// stand-in for origin here, and the driver pushes it.
+// stand-in remote here, and the driver pushes it.
 //
 // Its result goes on fd 3, which only it holds (every program it runs starts
-// with fd 3 closed): chant's ledger entry, chant's
-// record and Fly's image and health, which arugulad reports with the run's
-// end, and the platform checks and keeps.
+// with fd 3 closed): chant's gate (a plan), or chant's ledger entry,
+// chant's record and Fly's image and health (an apply), which arugulad
+// reports with the run's end, and the platform checks and keeps.
 
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, fstatSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
 // The result's pipe, written as fd 3 itself. Reopening it (/dev/fd/3) would
@@ -81,27 +106,62 @@ const op = settings.chant_op || "release";
 const gatesAllowed = settings.chant_gates ? settings.chant_gates.split(",") : null;
 const sha = env.DEPLOY_SOURCE_REF;
 const where = env.DEPLOY_SOURCE_WHERE;
-const approver = env.DEPLOY_APPROVER;
-if (!app || !chantEnv || !where || !approver) fail("the deploy's settings, source or approver are missing");
+// Its plan's steps, before anyone approves it, or its apply (#1985).
+const phase = env.DEPLOY_PHASE;
+if (!["plan-fetch", "plan", "apply"].includes(phase)) fail("DEPLOY_PHASE is plan-fetch, plan or apply");
+const planning = phase !== "apply";
+const approver = planning ? null : env.DEPLOY_APPROVER;
+if (!app || !chantEnv || !where || (!planning && !approver)) fail("the deploy's settings, source or approver are missing");
 if (env.DEPLOY_SOURCE_KIND !== "commit" || !/^[0-9a-f]{40}$/.test(sha || "")) fail("chant-fly deploys a commit, by its full id");
-if (!env.FLY_API_TOKEN) fail("the environment gave no FLY_API_TOKEN: set it (fly tokens create deploy -a <app> -x 720h)");
+if (planning && rollBack) fail("a roll back goes through no gate, so it has no plan to run");
+if (planning && env.FLY_API_TOKEN) fail("a deploy's plan runs without FLY_API_TOKEN, and this one was given it: nothing runs");
+// The repository's code runs only in `plan`, which holds no token: one
+// handed it anyway runs nothing.
+if (phase === "plan" && env.GITHUB_TOKEN)
+  fail("a deploy's plan runs the commit's code with no GitHub token, and this one was given one: nothing runs");
+if (phase === "plan-fetch" && !env.GITHUB_TOKEN) fail("a deploy's plan needs GITHUB_TOKEN to fetch its source, and has none");
+if (!planning && !env.FLY_API_TOKEN) fail("the environment gave no FLY_API_TOKEN: set it (fly tokens create deploy -a <app> -x 720h)");
+// What the owner's passkey signed (v3): chant's gate, the statement's time
+// and binding, the approver's principal, its challenge and the assertion.
+// An apply that isn't a roll back has one, or nothing is approved.
+let relay = null;
+if (!planning && !rollBack) {
+  try {
+    relay = JSON.parse(env.DEPLOY_CHANT || "null");
+  } catch {
+    relay = null;
+  }
+  const g = relay?.gate;
+  const ok = (v) => typeof v === "string" && v.length > 0;
+  if (!g || ![g.op, g.gate, g.plan, relay.at, relay.binding, relay.principal, relay.relay, relay.challenge].every(ok) || !relay.signature)
+    fail("the approval isn't one over chant's gate statement (approval v3): approve this deploy again");
+  if (g.op !== op) fail(`the approval is for op ${g.op}'s gate, and this environment's op is ${op}: not approved`);
+  // The gate too, checked here as the plan checked it: only one the
+  // settings name, whatever the platform said.
+  if (gatesAllowed && !gatesAllowed.includes(g.gate))
+    fail(`the approval is for gate ${g.gate}, which the plan doesn't name: not approved`);
+  if (relay.principal !== `arugula:${approver}`) fail(`the approval's principal ${relay.principal} isn't the approver's`);
+}
 
 // Each program's environment: the run's, with only the credentials it's
 // given. chant says arugula ran it; who approved is the approver.
-const { FLY_API_TOKEN, GITHUB_TOKEN, ARUGULA_CHANT_FLY_TEST, ...rest } = env;
+const { FLY_API_TOKEN, GITHUB_TOKEN, ARUGULA_CHANT_FLY_TEST, DEPLOY_CHANT, ...rest } = env;
 const base = { ...rest, USER: "arugula", LOGNAME: "arugula" };
 const withFly = { ...base, FLY_API_TOKEN };
 const withGit = GITHUB_TOKEN ? { ...base, GITHUB_TOKEN } : base;
-const chantGithub = settings.chant_github === "true" && !!GITHUB_TOKEN;
+// A plan's op gets no GitHub token whatever the settings say: nobody has
+// approved anything yet.
+const chantGithub = !planning && settings.chant_github === "true" && !!GITHUB_TOKEN;
 
-/** Run `argv` in `cwd` with `penv`: its output shown, `{status, stdout}` back. */
-function run(argv, { cwd, penv = base, capture = false, check = true } = {}) {
+/** Run `argv` in `cwd` with `penv`: its output shown, `{status, stdout}` back. `input` goes on its standard input. */
+function run(argv, { cwd, penv = base, capture = false, check = true, input } = {}) {
   say(`$ ${argv.join(" ")}`);
   const [cmd, ...args] = noFd3(argv);
   const r = spawnSync(cmd, args, {
     cwd,
     env: penv,
-    stdio: ["ignore", capture ? "pipe" : "inherit", "inherit"],
+    stdio: [input === undefined ? "ignore" : "pipe", capture ? "pipe" : "inherit", "inherit"],
+    input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -112,6 +172,8 @@ function run(argv, { cwd, penv = base, capture = false, check = true } = {}) {
 const src = join(env.HOME, "src");
 const git = (args, opts = {}) => run(["git", ...args], { cwd: src, ...opts });
 const out = (args, opts = {}) => git(args, { capture: true, ...opts }).stdout.trim();
+// chant's ledger as a plan's step leaves it, for its push (in its home).
+const LEDGER_BUNDLE = "ledger.bundle";
 const remoteTip = () => out(["ls-remote", "origin", "refs/heads/chant/lifecycle"], { penv: withGit }).split(/\s/)[0];
 
 // The source, at the approved commit.
@@ -120,59 +182,147 @@ const gitBase = testing && env.DEPLOY_GIT_BASE ? env.DEPLOY_GIT_BASE : "https://
 // where no token is needed (a public repository).
 const helper = `!f() { test "$1" = get && test -n "$GITHUB_TOKEN" && printf 'username=x-access-token\\npassword=%s\\n' "$GITHUB_TOKEN"; }; f`;
 const originUrl = `${gitBase}${where}.git`;
-run(["git", "init", "-q", src]);
-git(["remote", "add", "origin", originUrl]);
-git(["config", "credential.https://github.com.helper", helper]);
-git(["config", "user.name", `arugula (deploy ${env.DEPLOY_ID})`]);
-git(["config", "user.email", "deploy@arugula.invalid"]);
-git(["fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*", "--tags"], { penv: withGit });
-git(["checkout", "-q", "--detach", sha]);
-const at = out(["rev-parse", "HEAD"]);
-if (at !== sha) fail(`checked out ${at}, not ${sha}`);
+
+/** The pending fact chant's run `id` wrote for gate `gate` of the op, in `facts` (its `_gates/<op>.jsonl`), with a plan digest. */
+function pendingFactIn(facts, gate, id) {
+  for (const line of facts.split("\n").reverse()) {
+    let f;
+    try {
+      f = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const mine = f?.kind === "pending" && f.op === op && f.gate === gate && f.runId === id;
+    if (mine && typeof f.planDigest === "string" && /^(jcs1-)?sha256:[0-9a-f]{64}$/.test(f.planDigest)) return f;
+  }
+  return null;
+}
+
 // chant's ledger as origin has it, before this run: what's new is this
-// run's.
-const before = out(["rev-parse", "-q", "--verify", "refs/remotes/origin/chant/lifecycle"], { check: false });
-if (before) git(["branch", "-q", "-f", "chant/lifecycle", before]);
+// run's (an apply's starts with its plan's pending fact).
+let before = null;
+// A plan's: what arugulad read, which its check of the plan's ledger
+// starts from.
+const planBefore = env.DEPLOY_LEDGER_BEFORE ?? "";
+if (planning && !/^([0-9a-f]{40})?$/.test(planBefore)) fail("DEPLOY_LEDGER_BEFORE isn't a commit id");
+if (phase === "plan") {
+  // Fetched by `plan-fetch`, in this home.
+  if (!existsSync(join(src, ".git"))) fail("the plan's source wasn't fetched first (plan-fetch)");
+  before = planBefore || null;
+} else {
+  run(["git", "init", "-q", src]);
+  git(["remote", "add", "origin", originUrl]);
+  git(["config", "credential.https://github.com.helper", helper]);
+  git(["config", "user.name", `arugula (deploy ${env.DEPLOY_ID})`]);
+  git(["config", "user.email", "deploy@arugula.invalid"]);
+  git(["fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*", "--tags"], { penv: withGit });
+  git(["checkout", "-q", "--detach", sha]);
+  const at = out(["rev-parse", "HEAD"]);
+  if (at !== sha) fail(`checked out ${at}, not ${sha}`);
+  before = out(["rev-parse", "-q", "--verify", "refs/remotes/origin/chant/lifecycle"], { check: false });
+  if (phase === "plan-fetch") {
+    // The ledger arugulad read, which origin's must still hold.
+    if (planBefore && git(["cat-file", "-e", `${planBefore}^{commit}`], { check: false }).status !== 0)
+      fail("chant's ledger on origin moved while this plan fetched it: plan it again");
+    before = planBefore || null;
+  }
+  if (before) git(["branch", "-q", "-f", "chant/lifecycle", before]);
+}
 // chant's ledger goes to origin: without a push, its entry would go with
-// this box. Checked before anything changes.
-if (git(["push", "--dry-run", "-q", "origin", "HEAD:refs/heads/chant/arugula-push-check"], { penv: withGit, check: false }).status !== 0)
+// this box. Checked before anything changes. (A plan's fetch token only
+// reads: its push token comes last, and its push says.)
+if (phase === "apply" && git(["push", "--dry-run", "-q", "origin", "HEAD:refs/heads/chant/arugula-push-check"], { penv: withGit, check: false }).status !== 0)
   fail(
     `origin won't take a push, so chant's ledger can't reach it: the run's GITHUB_TOKEN (minted through the platform's ` +
       `GitHub App, which must be installed on ${where}, or the environment's own) must be able to push`,
   );
 
-// chant reads its ledger from origin before it writes to it, and refuses
-// when it can't (a first deploy, with no chant/lifecycle here yet, would
-// read as unknown, not empty). Without a token of its own it can't reach
-// GitHub, so its git goes to a stand-in for origin instead: a repository
-// here holding chant/lifecycle as origin had it (or none, as origin has
-// none), which takes that branch and nothing else. The driver pushes what
-// chant added to origin itself.
-const chantGit = {};
-if (!chantGithub) {
-  const ledger = join(env.HOME, "ledger.git");
-  run(["git", "init", "-q", "--bare", ledger]);
+// chant reads its ledger from its remote before it writes to it, and
+// refuses when it can't (a first deploy, with no chant/lifecycle here yet,
+// would read as unknown, not empty). Without a token of its own it can't
+// reach GitHub, so its ledger goes to a stand-in instead: a repository here
+// holding chant/lifecycle as origin had it (or none, as origin has none),
+// which takes that branch and nothing else, named as chant's ledger remote
+// (CHANT_LIFECYCLE_REMOTE, chant#4647), so origin stays GitHub for
+// everything else chant reads. The driver pushes what chant added to
+// origin itself. A plan's is made by its fetch.
+const LEDGER_REMOTE = "arugula-ledger";
+const standIn = chantGithub ? null : join(env.HOME, "ledger.git");
+if (standIn && phase !== "plan") {
+  run(["git", "init", "-q", "--bare", standIn]);
   writeFileSync(
-    join(ledger, "hooks", "update"),
+    join(standIn, "hooks", "update"),
     '#!/bin/sh\n[ "$1" = refs/heads/chant/lifecycle ] || { echo "only chant/lifecycle goes here" >&2; exit 1; }\n',
     { mode: 0o755 },
   );
-  if (before) git(["push", "-q", ledger, `${before}:refs/heads/chant/lifecycle`]);
-  const n = Number(base.GIT_CONFIG_COUNT) || 0;
-  Object.assign(chantGit, {
-    GIT_CONFIG_COUNT: String(n + 1),
-    [`GIT_CONFIG_KEY_${n}`]: `url.${ledger}.insteadOf`,
-    [`GIT_CONFIG_VALUE_${n}`]: originUrl,
-  });
+  if (before) git(["push", "-q", standIn, `${before}:refs/heads/chant/lifecycle`]);
+  git(["remote", "add", LEDGER_REMOTE, standIn]);
 }
-// chant's own commands get no token; its op gets the Fly token, and
-// GitHub's with `chant_github`.
-const chantBase = { ...base, ...chantGit };
-const forChant = chantGithub ? { ...chantBase, FLY_API_TOKEN, GITHUB_TOKEN } : { ...chantBase, FLY_API_TOKEN };
+if (phase === "plan-fetch") {
+  // Where chant keeps this member's ledger on chant/lifecycle (chant's
+  // member-ledger.ts), read at the commit as data, for arugulad's check of
+  // what the plan adds there.
+  writeSync(resultFd, JSON.stringify(ledgerLayout()));
+  closeSync(resultFd);
+  say(`fetched ${sha} from ${where}: nothing of it has run`);
+  process.exit(0);
+}
+
+/**
+ * `{ledger_prefix}`: `""` with no workspace declaration between the chant
+ * member and the repository's root (the flat layout), or the root
+ * declaration's member that holds it (the deepest; the root member `.` is
+ * flat) as `_members/<name>/`. `{ledger_layout}`: why any other layout (a
+ * nested workspace, example groups, a `.jsonc` declaration, a repo member)
+ * isn't supported for planning yet.
+ */
+function ledgerLayout() {
+  const unsupported = (why) => ({
+    ledger_layout: `this repository's chant workspace isn't supported for planning yet: ${why}`,
+  });
+  const rel = chantDir.replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
+  if (rel.split("/").some((p) => p === ".." || p === "")) return unsupported(`chant_dir ${chantDir} isn't a plain path`);
+  const declared = (d) =>
+    ["chant.workspace.json", "chant.workspace.jsonc"].filter((f) => existsSync(join(src, d, f)));
+  const dirs = [];
+  for (let d = rel; ; d = d.includes("/") ? d.slice(0, d.lastIndexOf("/")) : ".") {
+    dirs.push(d);
+    if (d === ".") break;
+  }
+  const found = dirs.filter((d) => declared(d).length > 0);
+  if (found.length === 0) return { ledger_prefix: "" };
+  if (found.length > 1 || found[0] !== ".") return unsupported("a nested workspace declaration");
+  if (declared(".").join() !== "chant.workspace.json") return unsupported("a .jsonc declaration");
+  let decl;
+  try {
+    decl = JSON.parse(readFileSync(join(src, "chant.workspace.json"), "utf8"));
+  } catch {
+    return unsupported("its chant.workspace.json doesn't read as JSON");
+  }
+  const members = Array.isArray(decl?.members) ? decl.members : [];
+  if (members.some((m) => m?.kind === "examples")) return unsupported("example groups");
+  const inside = (path, dir) => dir === "." || path === dir || path.startsWith(`${dir}/`);
+  let best = null;
+  for (const m of members) {
+    if (m?.kind === "repo" || typeof m?.dir !== "string" || !inside(rel, m.dir.replace(/\/+$/, "") || ".")) continue;
+    const dir = m.dir.replace(/\/+$/, "") || ".";
+    if (!best || best.dir === "." || (dir !== "." && dir.length > best.dir.length)) best = { ...m, dir };
+  }
+  if (!best || best.dir === ".") return { ledger_prefix: "" };
+  if (best.kind === "workspace") return unsupported("a nested workspace member");
+  if (typeof best.name !== "string" || !/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(best.name))
+    return unsupported(`member ${JSON.stringify(best.name)}'s name`);
+  return { ledger_prefix: `_members/${best.name}/` };
+}
 
 // The token: a deploy token for one app that expires within 30 days, as
 // far as flyctl can tell (its caveats).
-const flyctl = spawnSync("/bin/sh", noFd3(["flyctl", "version"]).slice(1), { env: base }).status === 0 ? "flyctl" : "fly";
+// (A plan runs no flyctl: it has no Fly token.)
+const flyctl = planning
+  ? null
+  : spawnSync("/bin/sh", noFd3(["flyctl", "version"]).slice(1), { env: base }).status === 0
+    ? "flyctl"
+    : "fly";
 function tokenOk() {
   const r = run([flyctl, "tokens", "debug"], { penv: withFly, capture: true, check: false });
   if (r.status !== 0) return "flyctl tokens debug didn't read it";
@@ -223,8 +373,10 @@ function tokenScope(caveats) {
 function readsAtMost(action) {
   return typeof action === "string" && /^r?$/.test(action);
 }
-const bad = tokenOk();
-if (bad) fail(`FLY_API_TOKEN won't do: ${bad}. Make one with: fly tokens create deploy -a ${app} -x 720h`);
+if (!planning) {
+  const bad = tokenOk();
+  if (bad) fail(`FLY_API_TOKEN won't do: ${bad}. Make one with: fly tokens create deploy -a ${app} -x 720h`);
+}
 
 // chant, as the member pins it, its packages fetched without the tokens.
 const member = join(src, chantDir);
@@ -235,6 +387,32 @@ if (existsSync(join(member, "package-lock.json"))) {
 }
 const pinned = join(member, "node_modules", ".bin", "chant");
 const chant = (args, opts = {}) => run([existsSync(pinned) ? pinned : "chant", ...args], { cwd: member, ...opts });
+
+/** Whether chant `version` (`x.y.z`) is `floor` or newer. */
+function atLeast(version, floor) {
+  const a = version.split(".").map(Number);
+  const b = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+}
+
+// chant 0.124.64 or newer: the first that signs and checks a binding line
+// (chant#4697), which an approval over chant's statement carries. An older
+// one is refused, whatever the phase.
+const CHANT_FLOOR = "0.124.64";
+const said = chant(["--version"], { capture: true, check: false });
+const chantVersion = said.status === 0 ? /^\d+\.\d+\.\d+/.exec(said.stdout.trim())?.[0] : undefined;
+if (!chantVersion || !atLeast(chantVersion, CHANT_FLOOR))
+  fail(
+    `${chantDir} pins chant ${chantVersion ?? "(its version didn't read)"}, and chant-fly needs ${CHANT_FLOOR} or newer, ` +
+      `which checks the passkey's signature and its binding line: update @intentius/chant in ${chantDir}'s package.json`,
+  );
+
+const chantGit = standIn ? { CHANT_LIFECYCLE_REMOTE: LEDGER_REMOTE } : {};
+// chant's own commands get no token; its op gets the Fly token in an
+// apply, and GitHub's with `chant_github`. A plan's op gets neither.
+const chantBase = { ...base, ...chantGit };
+const forChant = planning ? chantBase : chantGithub ? { ...chantBase, FLY_API_TOKEN, GITHUB_TOKEN } : { ...chantBase, FLY_API_TOKEN };
 
 // Fly: every started machine's checks passing, all on one image.
 function flyHealth() {
@@ -262,71 +440,133 @@ function flyHealth() {
   return { healthy: true, image: images[0] };
 }
 
-const note =
-  `arugula deploy ${env.DEPLOY_ID}: approval ${env.DEPLOY_APPROVAL || "(no id)"} by ${approver} ` +
-  `from device ${env.DEPLOY_APPROVED_BY}, operation sha256:${env.DEPLOY_OP_HASH}, run ${env.DEPLOY_RUN}`;
+const note = planning
+  ? null
+  : `arugula deploy ${env.DEPLOY_ID}: approval ${env.DEPLOY_APPROVAL || "(no id)"} by ${approver}, ` +
+    `operation sha256:${env.DEPLOY_OP_HASH}, run ${env.DEPLOY_RUN}`;
 let beforeImage = null;
 
-/** The plan digest on the pending fact chant's run `id` wrote for gate `gate` of the op, in the ledger
- * here. */
-function pendingPlan(gate, id) {
-  const facts = out(["show", `refs/heads/chant/lifecycle:_gates/${op}.jsonl`], { check: false }).split("\n");
-  for (const line of facts.reverse()) {
-    let f;
-    try {
-      f = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const mine = f?.kind === "pending" && f.op === op && f.gate === gate && f.runId === id;
-    if (mine && typeof f.planDigest === "string" && /^sha256:[0-9a-f]{64}$/.test(f.planDigest)) return f.planDigest;
-  }
-  return null;
+/** The pending fact chant's run `id` wrote for gate `gate` of the op, in the ledger here, with a plan digest. */
+function pendingFact(gate, id) {
+  return pendingFactIn(out(["show", `refs/heads/chant/lifecycle:_gates/${op}.jsonl`], { check: false }), gate, id);
 }
 
-if (!rollBack) {
-  beforeImage = flyHealth().image ?? null;
-  // chant's op, through each gate of its own it stops at, as the approver.
-  const approved = new Set();
-  for (let i = 0; ; i++) {
-    const r = chant(["run", op, "--json"], { penv: forChant, capture: true, check: false });
-    if (r.status === 0) break;
-    if (r.status !== 3) fail(`chant run ${op} exited ${r.status}`, r.status || 1);
-    // `chant run <op> --json` prints the run's record: its `op`, its `id`,
-    // `gate: {name, since}` and the command that approves it. The plan the
-    // gate was reached for is on the pending fact the run wrote to chant's
-    // ledger (`_gates/<op>.jsonl` on chant/lifecycle, here).
-    let rec;
-    try {
-      rec = JSON.parse(r.stdout);
-    } catch {
-      rec = null;
-    }
-    const gate = rec?.gate?.name;
-    if (typeof gate !== "string" || !gate) fail(`chant run ${op} stopped at a gate, and its --json didn't say which`);
-    if (rec.op !== op) fail(`chant run ${op} stopped at another op's gate (${rec.op} ${gate}): not approved`);
-    if (gatesAllowed && !gatesAllowed.includes(gate))
-      fail(`chant run ${op} stopped at gate ${gate}, which the plan doesn't name: not approved`);
-    // The approval is for this run's plan only: no plan, no approval.
-    const plan = pendingPlan(gate, rec.id);
-    if (!plan)
-      fail(`chant run ${op} stopped at gate ${gate}, and chant's ledger has no plan digest for it (run ${rec.id}): not approved`);
-    const hinted = /--plan (\S+)/.exec(typeof rec.approve === "string" ? rec.approve : "")?.[1];
-    if (hinted && hinted !== plan)
-      fail(`chant run ${op} says to approve plan ${hinted}, its ledger ${plan}: not approved`);
-    const key = `${gate}/${plan}`;
-    if (approved.has(key) || i >= 8) fail(`chant run ${op} stopped again at gate ${gate} after it was approved`);
-    approved.add(key);
-    say(`chant run ${op} waits at gate ${gate}: approving plan ${plan} as ${approver}`);
-    chant(["approve", op, gate, "--approver", approver, "--relayed-by", "arugula", "--note", note, "--plan", plan], {
-      penv: chantBase,
-    });
+/** `chant run <op> --json`'s record, from a run that stopped at a gate: its gate's name, checked. */
+function gatedAt(r) {
+  // `chant run <op> --json` prints the run's record: its `op`, its `id`,
+  // `gate: {name, since}` and the command that approves it.
+  let rec;
+  try {
+    rec = JSON.parse(r.stdout);
+  } catch {
+    rec = null;
   }
+  const gate = rec?.gate?.name;
+  if (typeof gate !== "string" || !gate) fail(`chant run ${op} stopped at a gate, and its --json didn't say which`);
+  if (rec.op !== op) fail(`chant run ${op} stopped at another op's gate (${rec.op} ${gate}): not approved`);
+  if (gatesAllowed && !gatesAllowed.includes(gate))
+    fail(`chant run ${op} stopped at gate ${gate}, which the plan doesn't name: not approved`);
+  return { rec, gate };
+}
+
+let chantGate = null;
+if (planning) {
+  // The plan (#1985): chant's op, with no Fly token, to its gate. chant
+  // records the pending fact and its plan digest on its ledger; that gate
+  // is what the owner approves, over chant's own statement of it.
+  const r = chant(["run", op, "--json"], { penv: forChant, capture: true, check: false });
+  if (r.status === 0)
+    fail(`chant run ${op} finished without stopping at a gate, so there's nothing for a person to approve: give the op a gate`);
+  if (r.status !== 3)
+    fail(`chant run ${op} exited ${r.status} before its gate (an op that needs FLY_API_TOKEN before its gate can't plan here)`, r.status || 1);
+  const { rec, gate } = gatedAt(r);
+  const fact = pendingFact(gate, rec.id);
+  if (!fact) fail(`chant run ${op} stopped at gate ${gate}, and chant's ledger has no plan digest for it (run ${rec.id})`);
+  const hinted = /--plan (\S+)/.exec(typeof rec.approve === "string" ? rec.approve : "")?.[1];
+  if (hinted && hinted !== fact.planDigest)
+    fail(`chant run ${op} says to approve plan ${hinted}, its ledger ${fact.planDigest}: not planned`);
+  chantGate = {
+    chant: chantVersion,
+    op,
+    gate,
+    ...(typeof fact.environment === "string" ? { environment: fact.environment } : {}),
+    plan: fact.planDigest,
+    ...(typeof fact.checkpointDigest === "string" ? { checkpoint: fact.checkpointDigest } : {}),
+    run: rec.id,
+    recorded: fact.timestamp,
+  };
+  say(`chant run ${op} stopped at gate ${gate} with plan ${fact.planDigest}: an owner approves that plan`);
+} else if (!rollBack) {
+  beforeImage = flyHealth().image ?? null;
+  const g = relay.gate;
+  // chant says whether anything applied to the plan's targets since it
+  // was recorded (chant#4648): a laptop's apply, another CI's, ours.
+  const stale = chant(["plan", "stale", g.plan, "--json"], { penv: chantBase, capture: true, check: false });
+  if (stale.status === 2) {
+    let n = "";
+    try {
+      n = ` (${JSON.parse(stale.stdout).applies.length} since)`;
+    } catch {
+      n = "";
+    }
+    fail(`chant says plan ${g.plan} is stale: something applied to its targets after it was recorded${n}. Plan the deploy again`);
+  }
+  if (stale.status !== 0) fail(`chant plan stale ${g.plan} exited ${stale.status}: the plan's freshness couldn't be read`);
+  // The approval, as chant records it: the statement chant makes for it
+  // must be the one the passkey signed, and chant checks the signature
+  // against the passkeys .chant/trust.json lists for the approver.
+  const args = [
+    "approve", op, g.gate,
+    "--actor", relay.principal,
+    "--relayed-by", relay.relay,
+    "--plan", g.plan,
+    ...(g.environment ? ["--env", g.environment] : []),
+    "--binding", relay.binding,
+    "--at", relay.at,
+  ];
+  const st = chant([...args, "--statement"], { penv: chantBase, capture: true, check: false });
+  let statement = null;
+  try {
+    statement = JSON.parse(st.stdout);
+  } catch {
+    statement = null;
+  }
+  if (st.status !== 0 || !statement) fail(`chant approve ${op} ${g.gate} --statement exited ${st.status}: not approved`);
+  if (statement.challenge !== relay.challenge)
+    fail(
+      `chant's statement for this approval isn't the one the passkey signed (chant's challenge ${statement.challenge}, ` +
+        `the passkey's ${relay.challenge}): not approved`,
+    );
+  say(`chant run ${op} waits at gate ${g.gate}: approving plan ${g.plan} as ${relay.principal}, signed with a passkey`);
+  chant([...args, "--note", note, "--signature", "-"], { penv: chantBase, input: JSON.stringify(relay.signature) });
+  const r = chant(["run", op, "--json"], { penv: forChant, capture: true, check: false });
+  if (r.status === 3) {
+    const { gate } = gatedAt(r);
+    fail(
+      gate === g.gate
+        ? `chant run ${op} stopped at gate ${gate} again: chant's plan now isn't the one approved. Plan the deploy again`
+        : `chant run ${op} stopped at gate ${gate}, which this approval doesn't cover: approve it as a deploy of its own`,
+    );
+  }
+  if (r.status !== 0) fail(`chant run ${op} exited ${r.status}`, r.status || 1);
 } else {
   // Fly's own roll back: the image the deploy it goes back to ran.
   const args = [flyctl, "deploy", "--app", app, "--image", rollBack.to.image, "--yes"];
   if (settings.fly_config) args.push("--config", join(src, settings.fly_config));
   run(args, { cwd: src, penv: withFly });
+}
+
+if (planning) {
+  // The pending fact goes to origin, where the apply's box reads it, but
+  // not from here: this step holds no token. What chant added to its
+  // ledger goes in a bundle, which arugulad checks and pushes.
+  const tip = out(["rev-parse", "-q", "--verify", "refs/heads/chant/lifecycle"], { check: false });
+  if (!tip || tip === before) fail(`chant run ${op} left nothing new in chant's ledger`);
+  git(["bundle", "create", "-q", join(env.HOME, LEDGER_BUNDLE), "refs/heads/chant/lifecycle", ...(before ? [`^${before}`] : [])]);
+  writeSync(resultFd, JSON.stringify({ chant_gate: chantGate }));
+  closeSync(resultFd);
+  say(`planned ${sha} for ${app}: chant's gate ${chantGate.gate}, plan ${chantGate.plan}; arugulad pushes chant's ledger next`);
+  process.exit(0);
 }
 
 const [tries, every] = (testing && env.DEPLOY_FLY_CHECKS ? env.DEPLOY_FLY_CHECKS : "12x10").split("x").map(Number);
@@ -350,7 +590,7 @@ if (rollBack) {
       "--git-sha", sha,
       "--run-id", env.DEPLOY_RUN,
       "--actor", "arugula",
-      "--approver", approver,
+      "--approver", `arugula:${approver}`,
     ],
     { penv: chantBase },
   );

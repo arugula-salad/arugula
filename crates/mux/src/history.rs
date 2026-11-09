@@ -64,7 +64,6 @@ pub fn commands_in(events: Vec<(u64, Event)>, pane: PaneId, open: bool) -> Vec<H
                 ended_ms: None,
                 start: offset,
                 end: None,
-                host: None,
                 by,
                 kind,
                 id: String::new(),
@@ -114,16 +113,18 @@ pub fn filtered(all: impl Iterator<Item = HistoryEntry>, f: &Filter, limit: usiz
     all.split_off(skip)
 }
 
-/// Each entry's `id` (M112): its host, pane, output offset and start time,
-/// and how many before it in its pane had all of those (two notes recorded
-/// at once share an offset), hashed. The same on every read, as a pane's
-/// log only grows and pane ids are never reused.
+/// Each entry's `id` (M112): its pane, output offset and start time, and
+/// how many before it in its pane had all of those (two notes recorded at
+/// once share an offset), hashed. The same on every read, as a pane's log
+/// only grows and pane ids are never reused. The key starts with an empty
+/// segment where a synced host's name went (removed in 0.67), so ids stay
+/// what they were.
 fn with_ids(all: impl Iterator<Item = HistoryEntry>) -> impl Iterator<Item = HistoryEntry> {
     use sha2::{Digest, Sha256};
-    let mut seen: std::collections::HashMap<(Option<String>, PaneId, u64, u64), u32> = Default::default();
+    let mut seen: std::collections::HashMap<(PaneId, u64, u64), u32> = Default::default();
     all.map(move |mut c| {
-        let n = seen.entry((c.host.clone(), c.pane, c.start, c.started_ms)).or_default();
-        let key = format!("{}\0{}\0{}\0{}\0{}", c.host.as_deref().unwrap_or(""), c.pane, c.start, c.started_ms, n);
+        let n = seen.entry((c.pane, c.start, c.started_ms)).or_default();
+        let key = format!("\0{}\0{}\0{}\0{}", c.pane, c.start, c.started_ms, n);
         *n += 1;
         c.id = hex::encode(&Sha256::digest(key.as_bytes())[..8]);
         c
@@ -152,7 +153,6 @@ pub fn search(store: &StateDir, kinds: &BlockKinds, re: &Regex, since_ms: Option
                         offset: n as u64,
                         line: line.to_owned(),
                         command: None,
-                        host: None,
                         doc: None,
                         at_ms: None,
                     });
@@ -221,16 +221,7 @@ pub fn search_log(
                 .find(|c| c.start <= line_end && c.end.is_none_or(|e| at < e))
                 .and_then(|c| c.text.clone());
             let at_ms = marks[..marks.partition_point(|(o, _)| *o <= line_end)].last().map(|(_, t)| *t);
-            hits.push(SearchHit {
-                pane,
-                open,
-                offset: at,
-                line: line.to_owned(),
-                command,
-                host: None,
-                doc: None,
-                at_ms,
-            });
+            hits.push(SearchHit { pane, open, offset: at, line: line.to_owned(), command, doc: None, at_ms });
             if hits.len() >= limit {
                 return true;
             }
@@ -397,7 +388,6 @@ mod tests {
             ended_ms: None,
             start: 0,
             end: None,
-            host: None,
             by: None,
             kind: HistoryKind::Command,
             id: String::new(),

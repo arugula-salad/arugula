@@ -10,22 +10,26 @@ import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
-import { newRemote, openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat, remoteHosts } from "../blocks";
+import { machineHandle } from "../../shared/chat/agents";
+import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
+import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
-import { agentNotifyItems, notificationItems, notifyThisDevice } from "./notify";
+import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
 import { openAgentGrants } from "./agent-grants";
+import { openAccess } from "./access";
 import { directory } from "../hosts";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { keyHint } from "./keys";
+import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
@@ -35,6 +39,7 @@ import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from 
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
+import { type Tone } from "../../shared/ui/state-chip";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -42,9 +47,6 @@ import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, u
 export function paneItems(client: Client, id: PaneId, phone: boolean, workspace: string | null): MenuItem[] {
   const info = client.info(id);
   const entry = client.panes.get(id);
-  // #17: a shell on another host, beside this pane.
-  const elsewhere = (): MenuItem[] =>
-    remoteHosts().map((h) => ({ label: `Split right on ${h}`, run: () => void newRemote(client, h, { split: id }) }));
   const moveToTab: MenuItem = {
     label: "Move to new tab",
     disabled: (client.tabOfPane(id) && paneIds(client.tabOfPane(id)!).length < 2) ?? true,
@@ -63,21 +65,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
       ...threadItems(client, id),
     ];
-
-  if (info?.type === "remote") {
-    // Its terminal is its host's: here, only where it is.
-    const at = client.blocks.get(id)?.state as { host: string; pane: PaneId } | null;
-    return [
-      ...(at ? [{ header: `%${at.pane} on ${at.host}` } as MenuItem] : []),
-      ...focus,
-      { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
-      { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
-      ...elsewhere(),
-      "separator",
-      moveToTab,
-      closePane,
-    ];
-  }
 
   const tabId = client.tabOfPane(id)?.id;
   const tabMachine = tabId === undefined ? undefined : client.tabMachine(tabId);
@@ -112,7 +99,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   };
   const openBeside: MenuItem[] = [
     ...(client.has("vms") ? [{ label: "New VM pane on the right", run: () => void client.newVm({ split: id }) } as MenuItem] : []),
-    ...elsewhere(),
     {
       label: "Open a web page…",
       run: async () => {
@@ -131,11 +117,10 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
-    // Who's around in a team, live, on arugula.stream (the block says so
-    // when control has no arugula.stream app, or chat is off).
-    ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
-    // A project's board beside it, with the boards flag.
-    ...(!client.state?.roles && client.flag("boards") ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A project's board beside it.
+    ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A Doc of this machine's, beside it (#703).
+    ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
@@ -157,21 +142,16 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(owner && client.sessionOfPane(id) !== null
       ? [{ label: "Share this pane…", run: () => shareSession(client.sessionOfPane(id)!, { pane: id }) } as MenuItem]
       : []),
-    // A dial-out host's links would be on a daemon nobody can reach.
-    ...(client.base.startsWith("/")
-      ? []
-      : [
-          {
-            label: "Share read-only link…",
-            run: async () => {
-              const url = await client.share(id);
-              if (url) await askText("Read-only link to this pane, for an hour (copied)", url);
-            },
-          } as MenuItem,
-        ]),
+    {
+      label: "Share read-only link…",
+      run: async () => {
+        const url = await client.share(id);
+        if (url) await askText("Read-only link to this pane, for an hour (copied)", url);
+      },
+    } as MenuItem,
     // An ssh command for a guest with only OpenSSH. The owner's. Only where
     // they've turned on Guest SSH access, a sharing setting (native #205).
-    ...(client.base.startsWith("/") || !owner || !client.guestSsh()
+    ...(!owner || !client.guestSsh()
       ? []
       : [
           {
@@ -253,7 +233,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
       : []),
     ...machineItems(client, tab),
     "separator",
-    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => client.intent({ op: "close_tab", tab: tab.id }) },
+    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => confirmCloseTab(client, tab.id) },
   ];
 }
 
@@ -272,16 +252,14 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { session }) } as MenuItem] : []),
-    // #17: a tab here whose shell runs on another host.
-    ...remoteHosts().map((h): MenuItem => ({ label: `New tab on ${h}`, run: () => void newRemote(client, h, { session }) })),
   ];
 }
 
 /** The session's menu: the sidebar row's … and the header's ▾ (after its
  * list of sessions) show the same one (UI audit #171). What acts on this
  * session first, then a new one, then closing it; settings for the
- * device, the machine and the account are in the account menu
- * (`settingsItems`). */
+ * device, the machine and the account are on the Settings page
+ * (`settingsGroups`). */
 export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
   // A guest's: the session's thread and notifications. Making, renaming
   // and closing sessions are the machine owner's (M113).
@@ -295,7 +273,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
-    // VMs and sandboxes need wisp (#180).
+    // VMs and sandboxes need a sandbox provider (#180).
     ...(client.has("vms")
       ? [
           { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
@@ -323,21 +301,11 @@ export function sessionMenuHint(items: MenuItem[]): string {
   return words.join(", ");
 }
 
-/** The account menu's settings: this device, this machine, and help. The
- * same everywhere (the panes, the swarm, chat, agents), with or without a
- * session. */
-export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
-  // The machine's own settings are in the machine menu, where there is
-  // one; else (a daemon's page with no other machine) here. The rail's
-  // Settings always has them: its tooltip says so (UI audit #174).
-  const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
+/** Tips and what Open in editor opens: the account's, through control, so
+ * they follow you to every device. */
+function preferenceItems(): MenuItem[] {
   return [
-    ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
-    // How the page looks is this device's, with or without a machine.
-    { header: "This device" },
-    ...(client?.state ? notificationItems(client) : []),
-    { label: "Appearance…", run: openAppearance },
-    // Hints from facts (shell/hints): the account's, through control.
+    // Hints from facts (shell/hints).
     {
       label: "Tips",
       hint: "A one-time mention when something you can use turns up, like a port listening in a pane",
@@ -352,33 +320,78 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       checked: bigTipsOn(),
       run: () => setBigTips(!bigTipsOn()),
     },
-    // #1731: what Open in editor opens, everywhere. The account's, as Tips.
+    // #1731: what Open in editor opens, everywhere.
     {
       label: "Editor",
-      submenu: [
-        ...EDITORS.map(([e, label]) => ({ label, hint: "What Open in editor opens", checked: editorShown() === e, run: () => setEditorPref(e) }) as MenuItem),
-        // The machine's, so the owner's. The menu is built when it opens,
-        // so it can't wait on the daemon's list of copies: Remove always
-        // runs, and says when there was none.
-        ...(client && !client.state?.roles
-          ? [
-              "separator" as const,
-              {
-                label: "Remove arugula.nvim",
-                hint: "Deletes the copies of arugula.nvim that Arugula installed on this machine; one your plugin manager installed stays",
-                run: () => void removePlugin(client),
-              } as MenuItem,
-            ]
-          : []),
-      ],
+      submenu: EDITORS.map(([e, label]) => ({ label, hint: "What Open in editor opens", checked: editorShown() === e, run: () => setEditorPref(e) }) as MenuItem),
     },
+  ];
+}
+
+/** How to learn what's here. */
+function helpItems(client: Client): MenuItem[] {
+  return [
+    { label: "Getting started", run: () => openGettingStarted(undefined, client) },
+    // Features' help cards, opened on purpose (Tips on or off).
+    { label: "Help", submenu: [{ id: "nvim-help", label: "nvim in Arugula", run: () => openHelpCard(client, undefined) }] },
+    { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) },
+  ];
+}
+
+/** A section of the Settings page (Arugula #695). Each row sits under what it
+ * really reaches: this device, every device, this machine. */
+export interface SettingsGroup {
+  id: string;
+  title: string;
+  lede: string;
+  items: MenuItem[];
+}
+
+/** The Settings page's own sections, the Account section apart (./settings-page
+ * reads that from the account). Ones with nothing in them are left out. */
+export function settingsGroups(client: Client): SettingsGroup[] {
+  const push = client.state ? notificationParts(client) : { device: [], everywhere: [] };
+  const groups: SettingsGroup[] = [
+    {
+      id: "device",
+      title: "This device",
+      lede: "Whether this device is told, and how Arugula looks on it.",
+      items: [...push.device, { label: "Appearance…", hint: "This device's palette, finish, corners and chat density", run: openAppearance }],
+    },
+    { id: "all-devices", title: "All your devices", lede: "What's pushed to every device you turned on.", items: push.everywhere },
+    { id: "preferences", title: "Preferences", lede: "These follow your account to every device.", items: preferenceItems() },
+    {
+      id: "machine",
+      title: `This machine: ${directory.current || client.hostName || "this machine"}`,
+      lede: "The machine you're looking at. Pick another from the machine menu.",
+      items: machineSettingsItems(client),
+    },
+    { id: "help", title: "Help", lede: "Find your way around.", items: client.state ? helpItems(client) : [] },
+  ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** Settings as a menu, where there's no rail to open the page from (a phone,
+ * no machine shown), and for the command palette, which lists every row. */
+export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
+  // The machine's own settings are in the machine menu, where there is
+  // one; else (a daemon's page with no other machine) here.
+  const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
+  const push = client?.state ? notificationParts(client) : { device: [], everywhere: [] };
+  return [
+    ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
+    // How the page looks is this device's, with or without a machine.
+    { header: "This device" },
+    ...push.device,
+    { label: "Appearance…", run: openAppearance },
+    ...(push.everywhere.length ? ["separator" as const, { header: "All your devices" } as MenuItem, ...push.everywhere] : []),
+    "separator",
+    { header: "Preferences" },
+    ...preferenceItems(),
     ...(client?.state
       ? [
           "separator" as const,
-          { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
-          // Features' help cards, opened on purpose (Tips on or off).
-          { label: "Help", submenu: [{ id: "nvim-help", label: "nvim in Arugula", run: () => openHelpCard(client, undefined) }] } as MenuItem,
-          { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) } as MenuItem,
+          ...helpItems(client),
           { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
         ]
       : []),
@@ -428,8 +441,6 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "nvim.help-card": (client, { pane, section }) => openHelpCard(client, Number(pane), section === undefined ? undefined : String(section)),
   "nvim.help": (client, { pane, help }) => void openHelp(client, Number(pane), String(help)),
   "nvim.docs": () => void window.open(NVIM_DOCS, "_blank", "noopener"),
-  /** A shell on another host, split right of the pane (#17). */
-  "remote.split": (client, { pane, host }) => void newRemote(client, String(host), { split: Number(pane) }),
   /** Sign-in and account, where Add a passkey is. */
   "control.passkeys": () => openPanel("account")(),
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
@@ -450,27 +461,72 @@ function under(selector: string) {
   return { clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} };
 }
 
-/** The shown machine's settings: its standing permission rules (#166), its
- * usage and crash reports (M103) and its Labs flags (#665), the owner's.
- * In the machine menu. Developer settings are there whether or not the
- * machine has a `flags.json` yet: the dialog is how a flag gets turned on. */
+/** The shown machine's settings: who can reach it (Arugula #681), its
+ * standing permission rules (#166), its usage and crash reports (M103) and
+ * its Labs flags (#665), the owner's. In the machine menu. Developer
+ * settings are there whether or not the machine has a `flags.json` yet: the
+ * dialog is how a flag gets turned on. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
+    { label: "Access…", hint: "Who can reach this machine, and as what", run: () => openAccess(client) },
     { label: "Permission rules…", run: () => openRules(client) },
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Arugula #500: its name on control, on control's page, where the shown
+    // machine has an id; control refuses anyone but its owner (or its team's).
+    ...renameItems(client),
     // Discovery 10: what its agents may do on control (`arugula grants`),
     // once it's joined (or the page is control's).
     ...(directory.control || directory.joined ? [{ label: "Agents' grants…", run: openAgentGrants }] : []),
     { label: "Developer settings…", run: () => openDeveloper(client) },
+    // The menu is built when it opens, so it can't wait on the daemon's list
+    // of copies: Remove always runs, and says when there was none.
+    {
+      label: "Remove arugula.nvim",
+      hint: "Deletes the copies of arugula.nvim that Arugula installed on this machine; one your plugin manager installed stays",
+      run: () => void removePlugin(client),
+    },
+  ];
+}
+
+/** *Rename…* on the shown machine (Arugula #500): the name the machines list,
+ * the switcher, chat and `@machine` call it. Only through control, which
+ * holds the name; the old one keeps working in mentions. */
+function renameItems(client: Client): MenuItem[] {
+  const host = directory.control ? directory.find(directory.current) : undefined;
+  const session = getControlSession();
+  if (!host?.id || !session) return [];
+  const id = host.id;
+  return [
+    {
+      label: "Rename machine…",
+      hint: "Its name in the machines list, in chat and in @mentions; the old name keeps working",
+      run: () => {
+        void (async () => {
+          const name = await askText(`Rename ${host.name}`, host.name, "a short name, like mini");
+          if (name === null || name.trim() === host.name) return;
+          try {
+            const now = await session.renameDaemon(id, name);
+            client.toast(`Renamed to ${now}. @${machineHandle(now)} reaches it; so does its old name.`);
+          } catch (e) {
+            client.toast((e as Error).message);
+          }
+        })();
+      },
+    },
   ];
 }
 
 /** "idle" when nothing in the tab runs on its machine any more. */
 export function machineState(client: Client, m: Machine): string {
   return m.state === "running" && client.panesOn(m.id).length === 0 ? "idle" : m.state;
+}
+
+/** A machine state's tone on a tag: starting warns, gone is danger, idle is quiet. */
+export function machineTone(state: string): Tone {
+  return state === "starting" ? "warn" : state === "gone" ? "danger" : state === "idle" ? "muted" : "info";
 }
 
 /** The tab's machine: how it is, a new pane on it, reset. */

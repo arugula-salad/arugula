@@ -3,9 +3,14 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
+  blindLine,
+  blindMachines,
+  boardsLimit,
   boardsLevel,
+  columnRefused,
+  revokedByOther,
   boardsMove,
   cellKey,
   cellOf,
@@ -49,6 +54,16 @@ test("what an agent session said is the session's, not a person's (Arugula #215)
   // Its card's message, and an answer from before, aren't.
   assert.equal(authorLabel(msg({ author: "", name: "", via: "session:ses_1a2b3c4d5e6f" })), "a deleted account");
   assert.equal(authorLabel(msg({ via: "session:ses_1a2b3c4d5e6f" })), "Jake");
+});
+
+test("what CI wrote is CI's, and only with no author (native #774)", () => {
+  const ci = msg({ author: "", name: "", via: "ci:chant" });
+  assert.equal(ciName(ci), "chant CI");
+  assert.equal(authorLabel(ci), "chant CI");
+  // A person's message posted via a product named like it isn't CI's.
+  assert.equal(ciName(msg({ via: "ci:chant" })), null);
+  assert.equal(authorLabel(msg({ via: "ci:chant" })), "Jake");
+  assert.equal(ciName(msg({ author: "", name: "", via: "ci:" })), null);
 });
 
 test("a room says whose agents reach it, and what they may do", () => {
@@ -161,8 +176,8 @@ test("the boards column has three levels, and each move gives and revokes what i
   assert.deepEqual(move(write, "write"), { give: [], revoke: [] });
   assert.deepEqual(move(none, "off"), { give: [], revoke: [] });
 
-  assert.deepEqual(cellOf(read, "d1", p, "boards"), { on: true, only: null });
-  assert.deepEqual(cellOf(none, "d1", p, "boards"), { on: false, only: null });
+  assert.deepEqual(cellOf(read, "d1", p, "boards"), { on: true, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(none, "d1", p, "boards"), { on: false, only: null, limited: null, revoked: null });
   assert.equal(cellKey("d1", p, "boards"), "d1/prj_1/boards");
 });
 
@@ -190,17 +205,17 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
   const p = { kind: "project", id: "prj_1", name: "Acme" };
   assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys", "start", "reply", "boards", "plane"]);
   // All three conversation powers is on; one of the two runs powers is partial.
-  assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"] });
-  assert.deepEqual(cellOf(grants, "d1", p, "commands"), { on: false, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "deploys"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d2", p, "threads"), { on: true, only: ["threads.read"] });
-  assert.deepEqual(cellOf(grants, "d2", p, "runs"), { on: false, only: null }, "a revoked runs.start is off");
-  assert.deepEqual(cellOf(grants, "d2", p, "commands"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"], limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "commands"), { on: false, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "deploys"), { on: true, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d2", p, "threads"), { on: true, only: ["threads.read"], limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d2", p, "runs"), { on: false, only: null, limited: null, revoked: null }, "a revoked runs.start is off");
+  assert.deepEqual(cellOf(grants, "d2", p, "commands"), { on: true, only: null, limited: null, revoked: null });
   // Your DMs: read and post is all there is.
   const dms = { kind: "account", name: "Your DMs" };
-  assert.deepEqual(cellOf(grants, "d2", dms, "threads"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d3", dms, "threads"), { on: false, only: null }, "cloud.drive isn't a DM switch");
+  assert.deepEqual(cellOf(grants, "d2", dms, "threads"), { on: true, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d3", dms, "threads"), { on: false, only: null, limited: null, revoked: null }, "cloud.drive isn't a DM switch");
 
   const machines = machinesOf(grants);
   const rows = matrixOf(grants, machines, p, COLUMNS);
@@ -218,6 +233,75 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
 
   assert.equal(cellKey("d1", p, "deploys"), "d1/prj_1/deploys");
   assert.equal(cellKey("d1", dms, "threads"), "d1/dms/threads");
+});
+
+test("a live grant on a viewer's says what it does under its switch, and the switch stays on (Arugula #683)", () => {
+  const g = (id, power, limited = null, live = true) => ({
+    id,
+    subject: { kind: "daemon", id: "d1", name: "geek" },
+    power,
+    scope: { kind: "project", id: "prj_1" },
+    live,
+    limited,
+  });
+  const idle = { label: "idle", why: "issues.write does nothing here" };
+  const reads = { label: "reads only", why: "boards.write reads its boards" };
+  const s = { kind: "project", id: "prj_1", name: "Acme" };
+  const grants = [g("g1", "threads.read"), g("g2", "threads.post"), g("g3", "issues.write", idle), g("g4", "boards.write", reads), g("g5", "deploys.plan", reads, false)];
+  assert.deepEqual(cellOf(grants, "d1", s, "threads"), { on: true, only: null, limited: idle, revoked: null });
+  assert.deepEqual(cellOf(grants, "d1", s, "boards"), { on: true, only: null, limited: reads, revoked: null });
+  assert.deepEqual(boardsLimit(grants, "d1", "prj_1"), reads);
+  assert.deepEqual(cellOf(grants, "d1", s, "deploys"), { on: false, only: null, limited: null, revoked: null }, "a revoked one is off, not limited");
+  // An older platform that says nothing: never limited.
+  const older = grants.map(({ limited: _, ...g }) => g);
+  assert.equal(cellOf(older, "d1", s, "threads").limited, null);
+  assert.equal(boardsLimit(older, "d1", "prj_1"), null);
+});
+
+test("a viewer's switch gives what a viewer's machine is given, and isn't partial without the rest (Arugula #683)", () => {
+  assert.deepEqual(powersFor("project", "viewer"), ["threads.read", "threads.post"]);
+  assert.deepEqual(powersFor("project", "editor"), ["threads.read", "threads.post", "issues.write"]);
+  assert.deepEqual(powersFor("account", "viewer"), ["threads.read", "threads.post"]);
+  const g = (id, power) => ({ id, subject: { kind: "daemon", id: "d1", name: "geek" }, power, scope: { kind: "project", id: "prj_1" }, live: true });
+  const grants = [g("g1", "threads.read"), g("g2", "threads.post"), g("g3", "runs.read")];
+  const s = { kind: "project", id: "prj_1", name: "Acme" };
+  assert.equal(cellOf(grants, "d1", s, "threads", "viewer").only, null, "all a viewer's machine gets");
+  assert.deepEqual(cellOf(grants, "d1", s, "threads", "editor").only, ["threads.read", "threads.post"], "an editor's is partial");
+  assert.equal(cellOf(grants, "d1", s, "runs", "viewer").only, null);
+  assert.deepEqual(cellOf(grants, "d1", s, "runs").only, ["runs.read"]);
+  // Columns with nothing to give a viewer can't be turned on; the rest can.
+  assert.deepEqual(COLUMNS.filter((c) => columnRefused(c, "viewer")), ["commands", "plane"]);
+  assert.ok(!COLUMNS.some((c) => columnRefused(c, "editor")));
+});
+
+test("a switch says who revoked its grant when that wasn't the giver, until a live one replaces it (Arugula #683)", () => {
+  const g = (id, power, live, revoked_by, revoked_at) => ({
+    id,
+    subject: { kind: "daemon", id: "d1", name: "geek" },
+    power,
+    scope: { kind: "project", id: "prj_1" },
+    live,
+    granted_by: "me",
+    revoked_at,
+    revoked_by,
+  });
+  const s = { kind: "project", id: "prj_1", name: "Acme" };
+  const owner = { account: "o1", name: "Sam" };
+  const grants = [
+    g("g1", "threads.read", false, owner, 50),
+    g("g2", "threads.post", false, { account: "me", name: "Me" }, 60),
+    g("g3", "deploys.plan", false, { account: null, name: "an account since deleted" }, 70),
+    g("g4", "runs.read", false, owner, 10),
+    g("g5", "runs.read", true, null, null),
+  ];
+  assert.deepEqual(revokedByOther(grants, "d1", s, ["threads.read", "threads.post", "issues.write"]), { name: "Sam", at: 50 });
+  assert.deepEqual(cellOf(grants, "d1", s, "threads").revoked, { name: "Sam", at: 50 });
+  assert.deepEqual(cellOf(grants, "d1", s, "deploys").revoked, { name: "an account since deleted", at: 70 });
+  assert.equal(cellOf(grants, "d1", s, "runs").revoked, null, "given again since");
+  assert.equal(revokedByOther(grants, "d1", s, ["threads.post"]), null, "the giver's own revoke isn't news");
+  // An older platform says nothing about who.
+  const older = grants.map(({ revoked_by: _, ...g }) => g);
+  assert.equal(cellOf(older, "d1", s, "threads").revoked, null);
 });
 
 test("sessions.start and sessions.reply have a switch each (aru-121), never the conversation one's", () => {
@@ -239,12 +323,12 @@ test("sessions.start and sessions.reply have a switch each (aru-121), never the 
   // Turning conversations off leaves the session grants alone.
   assert.deepEqual(liveOver(grants, "d1", p).map((x) => x.id), ["g1"]);
   // trackers.write (#359) has its own switch too.
-  assert.deepEqual(cellOf(grants, "d1", p, "plane"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "plane"), { on: true, only: null, limited: null, revoked: null });
   assert.equal(SINGLE.plane, "trackers.write");
   assert.ok(!powersFor("project").some((x) => x.startsWith("sessions.")), "conversations on doesn't start sessions");
-  assert.deepEqual(cellOf(grants, "d1", p, "start"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "reply"), { on: false, only: null }, "a revoked sessions.reply is off");
-  assert.deepEqual(cellOf(grants, "d1", { kind: "project", id: "prj_2", name: "" }, "reply"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "start"), { on: true, only: null, limited: null, revoked: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "reply"), { on: false, only: null, limited: null, revoked: null }, "a revoked sessions.reply is off");
+  assert.deepEqual(cellOf(grants, "d1", { kind: "project", id: "prj_2", name: "" }, "reply"), { on: true, only: null, limited: null, revoked: null });
   assert.equal(SINGLE.start, "sessions.start");
   assert.equal(SINGLE.reply, "sessions.reply");
   assert.equal(singleGrant(grants, "d1", "prj_1", "sessions.start")?.id, "g2");
@@ -307,9 +391,41 @@ test("@ offers the machines a mention reaches, each with its sessions under it",
     agent({ machine: "m4", machine_name: "Aaron's Mac" }),
   ];
   const tokens = (typed) => machineMentions(agents, typed).map((m) => m.token);
-  assert.deepEqual(tokens(""), ["mini", "mini/ux-improvements", "mini/billing", "geek-box", "geek-box/docs"]);
+  assert.deepEqual(tokens(""), ["mini", "mini/ux-improvements", "mini/billing", "geek-box", "geek-box/docs", "aaron-s-mac"], "a name with a space or an apostrophe is a word too (#500)");
   assert.deepEqual(tokens("g"), ["geek-box", "geek-box/docs"]);
   assert.deepEqual(tokens("mini/u"), ["mini", "mini/ux-improvements"]);
   assert.deepEqual(tokens("mini/zzz"), []);
   assert.deepEqual(tokens("pad"), [], "without the grant it isn't offered");
+});
+
+test("a machine's word is control's (#500): the hostname as before, a renamed one by its new name", () => {
+  assert.equal(machineHandle("Aarons-Mac-mini.local"), "aarons-mac-mini.local");
+  assert.equal(machineHandle("My Mini"), "my-mini");
+  assert.equal(machineHandle("  mini. "), "mini");
+  assert.equal(machineHandle("***"), "");
+  // Only the current name is offered, never an old one.
+  const renamed = [agent({ machine_name: "mini" })];
+  assert.deepEqual(machineMentions(renamed, "").map((m) => m.token), ["mini"]);
+  assert.deepEqual(machineMentions(renamed, "aarons").map((m) => m.token), []);
+});
+
+test("the Boards page names the machines whose agents can't see a project's boards (#313)", () => {
+  const g = (id, power, daemon, live = true, project = "prj_1") => ({
+    id,
+    subject: { kind: "daemon", id: daemon, name: daemon },
+    power,
+    scope: { kind: "project", id: project },
+    live,
+  });
+  // Every machine has had a grant since it joined; only boards.* count here.
+  const grants = [g("a", "cloud.drive", "alpha"), g("b", "threads.read", "beta"), g("c", "boards.read", "gamma"), g("d", "boards.write", "delta"), g("e", "boards.read", "eps", false)];
+  assert.deepEqual(blindMachines(grants, "prj_1"), ["alpha", "beta", "eps"]);
+  assert.deepEqual(blindMachines(grants, "prj_2"), ["alpha", "beta", "delta", "eps", "gamma"], "another project's boards aren't granted");
+  assert.deepEqual(blindMachines([], "prj_1"), []);
+
+  assert.equal(blindLine([]), "");
+  assert.equal(blindLine(["mac"]), "Agents on mac can't see these boards.");
+  assert.equal(blindLine(["a", "b"]), "Agents on a and b can't see these boards.");
+  assert.equal(blindLine(["a", "b", "c"]), "Agents on a, b and c can't see these boards.");
+  assert.equal(blindLine(["a", "b", "c", "d"]), "Agents on a, b and 2 more can't see these boards.");
 });

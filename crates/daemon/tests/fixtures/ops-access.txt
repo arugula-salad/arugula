@@ -1,4 +1,5 @@
 # name method path access drives credential
+access.get GET /api/access Owner drives=false credential=false
 acl.get GET /api/acl Owner drives=false credential=false
 acl.set POST /api/acl Owner drives=false credential=false
 adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false credential=false
@@ -14,6 +15,7 @@ doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
 doc.open POST /api/docs/open Owner drives=false credential=false
 doc.preview GET /api/docs/{id}/preview Owner drives=false credential=false
 doc.read GET /api/docs/{id}/content Owner drives=false credential=false
+doc.share POST /api/docs/{id}/share Owner drives=false credential=true
 doc_link.delete DELETE /api/doc-links/{id} Owner drives=false credential=false
 doc_link.get GET /api/doc-links/{id} Owner drives=false credential=true
 docs.list GET /api/docs Owner drives=false credential=false
@@ -28,8 +30,6 @@ guests.list GET /api/guests Owner drives=false credential=true
 host.add POST /api/hosts Owner drives=false credential=false
 host.get GET /api/host Anyone drives=false credential=false
 host.remove DELETE /api/hosts/{name} Owner drives=false credential=false
-host_token.mint POST /api/hosts/{name}/token Owner drives=false credential=false
-host_token.revoke DELETE /api/hosts/{name}/token Owner drives=false credential=false
 hosted_setup.get GET /api/hosted/setup Owner drives=false credential=false
 hosts.list GET /api/hosts Owner drives=false credential=false
 ide.get GET /api/ide Owner drives=false credential=false
@@ -60,6 +60,7 @@ pane.drivers GET /api/panes/{id}/drivers Owner drives=false credential=false
 pane.followup POST /api/panes/{id}/followup Pane(Editor) drives=true credential=false
 pane.inbox POST /api/panes/{id}/inbox Pane(Editor) drives=false credential=false
 pane.keys POST /api/panes/{id}/keys Pane(Editor) drives=true credential=false
+pane.mentions POST /api/panes/{id}/mentions Owner drives=false credential=false
 pane.mouse POST /api/panes/{id}/mouse Pane(Editor) drives=true credential=false
 pane.nvim_help POST /api/panes/{id}/nvim/help Owner drives=false credential=false
 pane.nvim_open POST /api/panes/{id}/nvim Owner drives=false credential=false
@@ -77,8 +78,6 @@ push.test POST /api/push/test Handler drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false
 rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false
-sandbox.demote DELETE /api/sandboxes/{name}/resident Owner drives=false credential=false
-sandbox.promote POST /api/sandboxes/{name}/promote Owner drives=false credential=false
 sandboxes.list GET /api/sandboxes Owner drives=false credential=false
 setup.agent POST /api/setup/agents/{kind} Owner drives=false credential=false
 setup.claude POST /api/setup/claude Owner drives=false credential=false
@@ -100,9 +99,6 @@ studio.get GET /api/studio Owner drives=false credential=false
 studio.login POST /api/studio Owner drives=false credential=false
 studio.logout DELETE /api/studio Owner drives=false credential=false
 studio.unfollow DELETE /api/studio/followers/{app} Owner drives=false credential=false
-synced.forget DELETE /api/synced/{host} Owner drives=false credential=false
-synced.list GET /api/synced Owner drives=false credential=false
-synced.rotate POST /api/synced/rotate-key Owner drives=false credential=false
 team_pins.get GET /api/team-pins Owner drives=false credential=false
 team_pins.set POST /api/team-pins Owner drives=false credential=false
 telemetry.get GET /api/telemetry Owner drives=false credential=true

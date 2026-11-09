@@ -54,8 +54,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     repository: the platform drops the access answers it keeps (10
     minutes) when one comes, so a removed collaborator is cut off at
     once rather than within 10 minutes. Without them, that's how long it
-    takes. Any event that carries a repository also marks a linked repo
-    private when GitHub says it is.
+    takes. Only a clear answer is kept: when GitHub can't be asked (an
+    error, a 5xx, its rate limit), the repo is withheld as `unsure` and
+    asked again next time, and the inbox keeps that person's entries,
+    seen and done, as they were. Any event that carries a repository also
+    marks a linked repo private when GitHub says it is.
   - **Webhook URL** `https://control.example.com/github/webhook`, with a
     secret. **Callback URL** `https://control.example.com/auth/github/callback`
     if it also signs people in.
@@ -99,15 +102,24 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     (`crates/platform/src/forge/app.rs`) mints every installation token,
     and nothing else asks GitHub for one. Each names one repository and
     the least it needs: read-only for reads and the mirror's ingest (kept
-    until five minutes before they expire), and `issues: write` or
-    `pull_requests: write` for one send (minted for that send, never
-    kept, and revoked at GitHub, `DELETE /installation/token`, right after
-    its one call). A token whose answer from GitHub doesn't cover exactly
-    the repository asked for is revoked and refused. Every mint is a row
+    until five minutes before they expire); `contents: read` for a cloud
+    workspace's setup clone (`hosted:clone`, logged under the machine,
+    minted for that box, one per machine and repo every five minutes and
+    kept in memory for those five minutes, none once the box has said it's
+    past its clones until it's rebuilt, and revoked by the box once its
+    clones are done); and `issues: write` or `pull_requests: write` for one
+    send (minted for that send, never kept, and revoked at GitHub, `DELETE
+    /installation/token`, right after
+    its one call). An unlink drops and revokes the read and clone tokens
+    that the platform process handling it holds. Each process keeps its
+    own, so another process's end when they expire, within the hour. A
+    token whose answer from GitHub doesn't cover exactly the repository
+    asked for is revoked and refused. Every mint is a row
     in `github_token_mints`: installation, repository id, the permissions
-    asked for, the account (or `platform`), what for, and when, never the
+    asked for, the account (or `platform`, or a hosted machine), what
+    for, and when, never the
     token. A read token used again from the cache inside the platform adds
-    no row; one handed to a hosted box again from the cache adds a row for
+    no row; one handed to a daemon again from the cache adds a row for
     that account, with the purpose `read (cached)`. Rows are kept a year,
     pruned hourly.
 - **Blocks through control** (M50, optional): `--block-domain`
@@ -157,29 +169,10 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the URLs. Without it there, nothing can be made public.
   - Abuse and takedown: "Public previews" under "Operating the hosted
     one".
-- **People blocks** (optional): `ARUGULA_PRESENCE_APP` (an arugula.stream
-  app's `app_…` id) and `ARUGULA_PRESENCE_SECRET` (its server secret) on
-  the platform let a team's members open a People block: who's around in
-  the team, live, in the team's room (`team:<id>`) on arugula.stream's
-  relay (`ARUGULA_PRESENCE_RELAY`, `wss://arugula.stream/socket` by
-  default). The platform signs each member's room token
-  (`POST /api/chat/presence/token`, behind chat's gate); the room, its
-  avatars, voice and calls are the relay's.
-  - Set `ARUGULA_PRESENCE_APP` (and the relay, if it isn't the default) on
-    the hub too: with it, the hub's CSP lets the page load scripts from the
-    relay's origin, compile WebAssembly (`'wasm-unsafe-eval'`) for the
-    camera's trackers, and run the `blob:` scripts the page makes for the
-    Krisp noise filter's audio worklet and worker in voice and calls
-    (without them Krisp falls back to the browser's own suppression).
-    The platform page's CSP (chat, on the platform's host) opens the same
-    way, and may also connect to `wss:` and `https:` (the relay's socket,
-    LiveKit Cloud's, Krisp's models), for live presence's avatars in chat.
-    Without an app, neither CSP changes and a People block says control
-    has no arugula.stream app.
-  - Make the app with arugula.stream's `create_app` (its MCP or dashboard):
-    the secret is shown once. No origins or sign-in provider are needed,
-    since control signs the tokens.
-  - What arugula.stream gets: [control-e2e.md](control-e2e.md#who-else-sees-it).
+- **Native apps** (optional, off by default): `ARUGULA_NATIVE_CLIENTS=1` on
+  the hub lets a native app pair by code, and takes its signature on routes
+  whose `routes.toml` row lists `native` (aru-131). No other browser's key
+  signs anything either way.
 - **Shared Docs** (#1064): always on, and idle until a machine calls. With
   a block domain, anyone opens a link at `docs.<domain>` (a fixed label,
   so the wildcard DNS name and certificate cover it); without one, at
@@ -288,9 +281,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/arugula-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.
-- **The hosted one** is `packaging/control/` on Fly. Each release tag
-  deploys it ("Deploys" below); `just control-deploy` deploys from a
-  laptop.
+- **The hosted one** is `packaging/control/` on Fly. `just
+  server-release` releases it through chant ("Deploys" below); `just
+  control-deploy` deploys from a laptop.
 
 - **Relay limits per account**, so one account can't take the whole
   machine (0 turns each off):
@@ -1120,92 +1113,110 @@ erases its part.
 
 ### Deploys
 
-Each release tag deploys control (M133, #1129). It's automatic, with no
-approval step. The platform deploys from every tag ("The platform"
-below); the hub, which holds every relayed terminal, only from a tag that
-changed something it's built from.
+Control's hub and its platform are released through chant (#1983), from
+the server lane's green commits. Each `v*` tag releases them, with no
+approval step, as the tag's deploy jobs did before (Jake, 2026-10-20):
+chant's cut refuses a commit that isn't green on the server lane.
 
-- **The `control` job** in `.github/workflows/release.yml` runs as soon
-  as the `linux` job has built the tag's static binaries (and the
-  platform's job has ended). It doesn't wait for macOS, Windows or the
-  release to be published.
-- **Only when the hub changed.** A hub deploy drops every relayed
-  terminal for a few seconds, so the job first compares what this tag's
-  hub is built from with the release the hub runs now (`fly status`'s
-  image label, `vX`), and deploys nothing when they match. What the hub
-  is built from (`scripts/ci-hub-changed inputs`, run by the `linux` job
-  and handed over as `hub-inputs`): every workspace file rustc read to
-  build `arugula-control`, from cargo's dep-info beside the binary (all of
-  `crates/control`, `control-common`, `control-wire`, `core`, `e2e`,
-  `forge-github`, `proto` and `platform` that it compiles, `routes.toml`,
-  migrations; no tests), `web/`'s sources for the pages it embeds (less
-  the specs and dev servers), the platform's contract with the hub
-  (`HubPort`, `PlatformPort`, the signed internal calls, `routes.toml`)
-  whatever the hub compiles, every crate's `Cargo.toml`, `Cargo.toml`,
-  `Cargo.lock`, the toolchain and Zig pins, the setup action, the
-  `static`, `web` and `bootstrap` recipes, and `packaging/control`. A
-  bump's own changes (version numbers in the manifests and lock file,
-  THIRD_PARTY.md, release notes, the client fixtures) don't count. A
-  daemon-, docs- or desktop-only release leaves the hub alone.
-  - **It deploys whenever it can't tell:** no `hub-inputs`, machines on
-    different images, a hotfix's image (`deployment-…`), a tag it can't
-    fetch, a comparison that fails.
-  - **A skip is loud:** a notice and the job's summary say `hub unchanged
-    since vX: not deployed`, and the job checks that the hub answers and
-    every machine runs vX (`scripts/ci-control-deploy check vX`). A deploy's
-    summary lists what changed.
-  - **To deploy it anyway**, set the repository variable
-    `ARUGULA_HUB_DEPLOY` to `always` (`gh variable set ARUGULA_HUB_DEPLOY
-    -b always -R arugula-salad/arugula`), re-run the tag's `control` job,
-    and unset it again (`gh variable delete ARUGULA_HUB_DEPLOY -R
-    arugula-salad/arugula`). Or `just control-deploy` (Hotfixes, below).
-  - **So the hub's version lags the tag's.** The hub reports the version
-    it was built as (its user agent, PostHog's `$lib_version`), and `fly
-    releases -a illogical-control` lists only the tags that deployed it.
-    Nothing compares the hub's version with the newest release: daemons
-    and the app read `/control.json`'s capabilities, which carry no
-    version, and control's own page is embedded in the hub, so it changes
-    only when the hub deploys.
-- **The image** is built on GitHub's runner the way `just control-deploy`
-  builds it: `packaging/control/Dockerfile` around `arugula-control` and
-  `arugulad`, with `fly deploy --local-only`. It's labelled with the tag,
-  so `fly releases -a illogical-control` shows
-  `registry.fly.io/illogical-control:vX.Y.Z`.
-- **After the deploy,** `scripts/ci-control-deploy` checks that
-  `https://control.arugula.io/control.json` answers and that every machine
-  runs the tag's image with its health check passing (after a skip, the
-  image of the release it runs). If either fails, the job fails. To run
-  the same check by hand: `scripts/ci-control-deploy check vX.Y.Z`, with
-  the version the hub runs (`fly status -a illogical-control`).
-- **One deploy at a time.** A tag's deploy waits for the one before.
-  With a third tag, the one waiting is dropped, since the newer tag
-  deploys anyway.
-- **Re-running an older tag's job** doesn't take control back: if a newer
-  release is already running, the job says so and deploys nothing.
-  Re-running the job of the tag it runs deploys nothing either, unless
-  `ARUGULA_HUB_DEPLOY=always`.
-- **The token** is the repository secret `FLY_API_TOKEN`, a deploy token
-  for this app only. Without it the job fails and says so; control isn't
-  deployed until it's set and the job is re-run. The one set on
-  2026-10-20 is named `github-release-arugula-v2` and expires in 2046
-  (`fly tokens list -a illogical-control`). To replace it, make a new one
-  (`-x` sets a shorter expiry), then revoke the old:
+They're the `ops/` member (`chant.workspace.json`): three components on
+Fly, in `ops/src/`.
 
-  ```
-  fly tokens create deploy -a illogical-control -n github-release -x 8760h
-  gh secret set FLY_API_TOKEN -R arugula-salad/arugula
-  ```
+- `platform`: arugula-platform's two Machines (`shy-snowflake-5940`, which
+  `fly-release` releases and verifies, and `dawn-tree-5447`, which takes
+  the same image in the same apply). It deploys with every release. The
+  apply rolls them one at a time on their Fly checks, as `fly deploy` did:
+  each must pass `/platform.json` before the next is updated
+  (`checks`, INTENTIUS/chant#4719). Before it, the job checks that the app
+  has the `ARUGULA_PLATFORM_DATABASE_URL` secret and no public address
+  (`flyctl secrets list` and `flyctl ips list`, names only), and deploys
+  nothing when either fails.
+- `platform-dump`: the nightly dump's scheduled Machine ("The nightly
+  dump"), on `packaging/platform-dump`'s image around the release's
+  `arugula-platform`. It runs after the platform, under the same
+  release. It's updated and left stopped. A failure here is a warning and
+  fails nothing, as before.
+- `control`: the hub's Machine (`throbbing-surf-5942`). The hub holds every
+  relayed terminal and a deploy drops them all, so it deploys only when
+  something it's built from changed since the release production runs it
+  from. What it's built from is its `inputs` in
+  `ops/src/control.component.ts`: every crate `arugula-control` compiles
+  (the platform's too, which it runs in process) less their tests, `web/`'s
+  sources less the specs, `editors/nvim`, the manifests and lock files, the
+  toolchain and build scripts, the `justfile`, `packaging/control`, the
+  release workflow, `scripts/release` and the component's own files. chant
+  also compares the plan it deploys (`dist/control.fly.json`). Version
+  numbers alone don't count: chant compares each changed `Cargo.toml` and
+  `Cargo.lock` after `scripts/release blank`, which writes every arugula
+  crate's version as `@V@` (`inputs.normalize`, INTENTIUS/chant#4718), so
+  a daemon-, docs- or desktop-only release leaves the hub alone. Its mount
+  names the `control_data` volume, which chant resolves to its id
+  (`vol_r68lmz2doox9myd4`) at apply time (INTENTIUS/chant#4717).
 
-- **Hotfixes:** `just control-deploy` builds and deploys from your
-  checkout. Its image is labelled `deployment-…`, not a version. The next
-  tag deploys over it. Don't run it while a tag's `control` job is
-  deploying: the two don't wait for each other.
-- **Rolling back:** since a newer release stays (above), re-running an
-  older tag's job won't do it. Deploy the older tag's image instead, from
-  `packaging/control/`:
-  `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`. Only
-  tags that deployed the hub have an image: pick one `fly releases -a
-  illogical-control` lists.
+Each Machine's config is declared in `ops/src/fly/`, as `fly.toml` and
+`fly deploy` left it, with no image: the release hands the image over, so
+the plans are the same bytes from one release to the next unless a
+Machine changes. Secrets are each app's, so an update keeps them. Change a
+Machine in `ops/src/fly/` and in its `fly.toml` together, while hotfixes
+still deploy from the `fly.toml`s.
+
+**Each release:** a `v*` tag starts `.github/workflows/server-release.yml`
+(release.yml no longer deploys). `just server-release` starts it by hand,
+and `just server-release <sha>` for another green commit:
+
+1. `build`: the commit's `just static-server x86_64`, on the home
+   cloud's runner. On a tag the commit is the tag's, when it has a
+   `ci/green-server/<sha>` tag; otherwise, and by hand, it's the newest on
+   main with one (`chant ci last-green --lane server`). Before it builds,
+   `scripts/release stamp` writes a daemon release's version into the
+   checkout, as release.yml's builds do: the tag's on its own commit, else
+   the newest `v*` tag the commit has. The binaries report it, and the
+   platform picks a workspace's E2B template by it.
+2. `images`: `packaging/control`'s, `packaging/platform`'s and
+   `packaging/platform-dump`'s images around those binaries, pushed to
+   Fly's registry as `server-<run>` (and `dump-server-<run>`), handed on by
+   digest. It uses the repository secrets `FLY_API_TOKEN` (a deploy token
+   for illogical-control) and `FLY_PLATFORM_API_TOKEN` (for
+   arugula-platform).
+3. `cut`: `chant release cut server-<run> --lane server --image ...`. chant
+   checks the commit is on main with a `ci/green-server` tag and no
+   `ci/revoked-server` one, and records the release on `chant/lifecycle`.
+   The job's summary lists what's in it (`chant release candidates`).
+4. `platform`: the preflight above, then `chant run --components platform
+   --env prod --release server-<run>` (`scripts/ci-server-deploy`), with
+   the platform's token, then the same for `platform-dump`.
+5. `control`: the same for `control`, with the hub's token, once the
+   platform's job has passed. A skip says so in the log ("inputs
+   unchanged since the deploy prod runs"), and chant records it with
+   `unchangedSince`. The workflow's `deploy-unchanged` input deploys the
+   hub whatever changed. Deployed or not, the job then checks that
+   `https://control.arugula.io/control.json` answers as control.
+
+**A release that doesn't come up healthy goes back.** `fly-release` waits
+for each Machine's Fly checks after its update (five minutes at most) and
+verifies the release; if either fails, it puts back the config each Machine
+it changed had before, the last one changed first, each waiting for its
+checks, and the job fails. That replaced `scripts/ci-fly-rollback` (#2203).
+Going back can fail too: an older build refuses a migration that isn't
+additive, and then the app needs a person.
+
+**One release at a time,** and an older one doesn't take production back: a
+re-run of an older run's deploy job finds a newer `server-<run>` in prod
+(`chant components status prod`) and deploys nothing.
+
+**What runs where:** `chant release list` (in `ops/`) lists the releases
+and where each runs; `chant components status prod` lists what each
+component runs, and `--live` compares it with what the Machines' metadata
+says they serve.
+
+**Hotfixes:** `just control-deploy` and `just platform-deploy` build and
+deploy from your checkout with `fly deploy`. Their image isn't a
+release's, so chant's ledger names the release before it until the next
+one. Don't run one while a release's job is deploying: they don't wait
+for each other.
+
+**Rolling back by hand:** release an older green commit (`just
+server-release <sha>`). It's a new run with a higher number, so the check
+above lets it through.
 
 ### Releasing Arugula as a deploy (M221)
 
@@ -1220,21 +1231,27 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
 1. clones `main` and checks the commit is on it, with a `ci/green/<sha>`
    tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
    before it minted the run's tokens);
-2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if main
-   has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit is in a
-   release already. Otherwise it commits the bump, tags it, and pushes the
-   tag and main in one atomic push. Each of the three carries
-   `Arugula-Deploy: dep_…`, and a deploy whose id is on main already is
-   refused;
+2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if the
+   commit has no `docs/releases/X.Y.Z.md`, those notes leave out a PR since
+   the last release (docs/development.md, "Releasing"), the tag exists, or the
+   commit is in a release already. Otherwise it tags the commit itself `vX.Y.Z`
+   (no version-bump commit since #1986: the release's build stamps the
+   version) and pushes the tag, whose message carries the notes and
+   `Arugula-Deploy: dep_…`. For the daemon it then commits the tag's client fixtures to
+   main (`crates/proto/fixtures/releases/X.Y.Z`, #200) and pushes that
+   with the same token; if main refuses it, the run's log says to run
+   `just release-fixtures X.Y.Z` and the release goes on. A deploy of a
+   commit that's released already is refused, and so is one whose id is on
+   main already (a release from before #1986 committed it there);
 3. revokes its write token, then follows the tag's release workflow for
    up to 45 minutes with its read token, and revokes that. The run
    succeeds once the
    workflow's `publish` job succeeded and the release is out. It reports
    the tag, the commits, `scripts/release`'s blob id, the release's page,
-   the workflow's run and the jobs that failed (today `template` and `extension` fail on every
-   release; they don't fail the deploy). The release's `control` job
-   deploys the hub only when the hub changed, as for any tag
-   ("Deploys" above).
+   the workflow's run and the jobs that failed (today `template` fails on
+   every release; it doesn't fail the deploy). The same tag starts
+   server-release.yml, which releases the hub and the platform through
+   chant ("Deploys" above); the deploy doesn't follow that run.
 
 **There's no roll back.** A bad release is fixed by a new patch release,
 deployed the same way.
@@ -1252,10 +1269,10 @@ before.
 **Set up once:**
 
 - The App (`arugula-io`) gets **Contents: write** on its installation in
-  arugula-salad (it already reads Actions), and a **bypass** on the
-  "binaries check" ruleset, whose required status check would otherwise
-  refuse the push (the push to main is the bump merged in, not a PR).
-  Nothing else.
+  arugula-salad (it already reads Actions), to push the tag, and its
+  bypass on the "binaries check" ruleset, to push a daemon release's
+  client fixtures straight to main after the tag (before #1986 it was for
+  the bump commit). Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token
@@ -1690,12 +1707,19 @@ platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
 the relay, push, block and doc origins, the jump host, telemetry) and
 the platform (`arugula-platform`:
 chat, Cloud, billing, projects and grants, and the GitHub App's webhook
-and key, M161). The platform runs in one of two ways, from the same binaries:
+and key, M161). The platform runs in one of two ways, from the same binaries.
+**Production runs it out of process.** It went out of process at M141's
+window, with the hub calling `http://arugula-platform.internal:7700`, and
+has gone through Flycast since M145's window (2026-10-21): the hub's
+`ARUGULA_PLATFORM` is `http://arugula-platform.flycast:7700`, and
+`arugula-platform` runs two machines. In process is only the rollback
+("Rolling back to in process", below), and it starts by copying the
+platform's tables back.
 
-- **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
-  rollback): inside the hub, as one Fly app. Production runs this way
-  until M141's window.
-- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145):
+- **In process** (`ARUGULA_PLATFORM=in-process`, the default when it's
+  unset, and the rollback): inside the hub, as one Fly app. Production
+  ran this way until M141's window.
+- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145; production's):
   its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), on
   its own Fly Managed Postgres (`arugula-platform-db`, from M145), with no
   volume (Arugula #72; it had `platform_data` at `/data` for `platform.db` until
@@ -1734,8 +1758,8 @@ machines" below).
   handlers) is for Flycast, which needs a **private** IPv6:
   `fly ips allocate-v6 --private -a arugula-platform`. Never
   `fly ips allocate-v4` or a public `allocate-v6` for it: the service
-  would be on the internet. Deploys pass `--no-public-ips`, and
-  `scripts/ci-platform-deploy` won't deploy while the app has a public
+  would be on the internet. A hotfix's `fly deploy` passes
+  `--no-public-ips`, and chant's plan (`ops/src/fly/platform`) declares no
   address. Fly's proxy passes the TCP through untouched, and the platform
   trusts no address: only the hub's signed principal (and, for
   `PlatformPort`, the signed internal call).
@@ -1786,20 +1810,16 @@ then tells the platform (`PlatformPort::account_deleted`). Until the
 platform confirms, a row in the hub's `untold_deletions` keeps what to
 tell it, and the hub tries again every 30 seconds.
 
-**Deploys.** A release tag deploys the platform first (release.yml's
-`platform` job), then the hub (`control`, which waits for it but deploys
-whatever became of it), the hub only when something it's built from
-changed since the release it runs ("Deploys" above). A hub method the
-platform will call ships in the hub a release ahead, which is a change
-to the hub, so that release deploys it; a change to the contract between
-the two (`HubPort`, `PlatformPort`, the signed calls, `routes.toml`)
-always deploys the hub. `scripts/ci-platform-deploy` builds the platform's
-image on GitHub's runner and checks every machine runs the tag with its
-health check passing. Then it builds the nightly dump's image around the
-same binary and moves the dump machine onto it ("The nightly dump"). It needs the repository secret
-`FLY_PLATFORM_API_TOKEN`, a deploy token for `arugula-platform`, which
-can't exist before the app does: without it the job says so and
-succeeds, deploying nothing, and the hub deploys as before. Hotfix:
+**Deploys.** A release deploys the platform first, then the hub, the hub
+only when something it's built from changed since the release production
+runs it from ("Deploys" above). A hub method the platform will call ships
+in the hub a release ahead, which is a change to the hub, so that release
+deploys it; a change to the contract between the two (`HubPort`,
+`PlatformPort`, the signed calls, `routes.toml`) is among the hub's inputs,
+so it deploys the hub. The release's `platform` job moves the nightly
+dump's machine onto the release's dump image after the platform ("The
+nightly dump"). It needs the repository secret `FLY_PLATFORM_API_TOKEN`, a
+deploy token for `arugula-platform`. Hotfix:
 `just platform-deploy`. Roll back: from `packaging/platform/`,
 `fly deploy --image registry.fly.io/arugula-platform:vX.Y.Z`. An older
 platform starts on a database whose migrations it doesn't know only while
@@ -2001,8 +2021,12 @@ never a body or a comment's text.
   first thing, at once. A commit status is kept for any commit (it may
   come before its PR's new head); the poller prunes checks on a commit
   no item has as its head after an hour. An issue deleted or transferred
-  goes, with its events and inbox rows; its drafts stay (M170's). An
-  unlinked repo's events write nothing.
+  goes, with its events, inbox rows and text; its drafts stay (M170's). An
+  unlinked repo's events write nothing. A delivery whose rows fail to
+  write is answered 500 and forgotten, so a redelivery is written, not
+  taken as a duplicate. GitHub doesn't redeliver on its own: redeliver
+  it from the App's advanced settings (*Recent Deliveries*), or through
+  the API. The full pass finds a delete that's never redelivered.
 - **One poller per repo**, leased like Cloud's jobs (`linked_repos.lease`,
   `FOR UPDATE SKIP LOCKED`: two machines never poll one repo). Its first
   turn after linking backfills: open PRs and issues, everything updated
@@ -2019,6 +2043,30 @@ never a body or a comment's text.
   `forge mirror: drift fixed` with the repo id, the item or check, and
   the fields (never a title). Its tokens are read-only, for the one repo,
   logged with purpose `ingest`.
+- **The full pass.** A reconcile only sees what GitHub lists as updated,
+  and a deleted or transferred item never is. So about once a day per
+  repo (each at its own time of day), after a reconcile, the poller runs
+  a full pass. It lists what's open on GitHub and reads again, at the
+  next turn, each open row GitHub didn't list; when those are over 100,
+  or a quarter of the open rows, it reads none and logs `too many open
+  rows GitHub didn't list`. Then it reads the 30 rows written or read
+  longest ago again, with their text where the project mirrors it, so a
+  comment deleted or edited while its webhook was lost catches up. The
+  reconcile and the pass's start (`linked_repos.full_at`) are recorded
+  first, and the pass is best effort: however it stops, the next is a
+  day off. A read GitHub answers with 404 or 410, or with an item that
+  names another number or repo (a transfer's redirect), deletes the row
+  with its text (`forge mirror: an item gone from GitHub went`), but only
+  once the repo itself still reads. An empty or garbled answer, and any
+  other refusal of one item or head (422 for a commit GitHub no longer
+  has), is logged and leaves the row. Its cost per repo per day: a list
+  page per 100 open items (at most 50), one or two reads per open row
+  not listed, and for the 30 stalest rows one read per issue and two per
+  PR, at most 60. Where text is mirrored they're read whole too, at most
+  180: three reads an issue, six a PR. These rows were last read a day
+  or more ago, so the ETag cache mostly won't make them free. A repo with
+  under 100 open items and none missing spends at most 61 reads a day,
+  or 181 with text, inside the reserve below.
 - **Merge states.** Lists don't carry a PR's `mergeable_state`, webhooks
   often say `unknown`, and a base branch that moves changes it with no
   event. At the end of each backfill and reconcile the poller reads up to
@@ -2103,43 +2151,15 @@ to members the viewer check lets read the item, and only for what changed
 in the last hour. `inbox push` lines name the item and the account, never
 a title.
 
-**The inbox's shadow period.** For two weeks the server's inbox is held
-up against forge blocks' attention on Jake's machines. Set
-`ARUGULA_INBOX_SHADOW=1` in each of those daemons' environment (`on`,
-`true`, or a number of minutes; 15 minutes for `1`) and restart them. It's
-off unless set. Each then sends `POST /api/inbox/shadow` with its open
-GitHub blocks on linked repos: the item, the reasons the block's rules
-find (whether or not the person looked), and the platform's drafts it
-shows. No titles or text. The platform compares each with the owner's
-inbox rows for that item (seen, done or not) and logs:
-
-```sh
-fly logs -a arugula-platform | grep 'inbox shadow'
-```
-
-- `inbox shadow`: one line per report, with `day` (UTC), `daemon`,
-  `compared`, `agree`, `disagree` and `explained`. A day's numbers are the
-  sum of its lines on every machine; the match rate is `agree / compared`.
-  The gate is 99%. Explained items aren't in `compared`, so they don't
-  count either way.
-- `inbox shadow: disagree`: one line per disagreement, with the `item` id
-  and both sides' reasons (`block`, `platform`). Expect some, and explain
-  them: a team's review request (the platform doesn't know a person's
-  teams), a block's poll or the platform's recompute catching up,
-  `mergeable` (the platform has only GitHub's
-  `mergeable_state`, and a green PR waits for the poller to learn it, up
-  to a reconcile or two), and an issue someone else opened that you gave
-  yourself (the mirror doesn't keep who assigned it, so the platform
-  takes it as given to you; one you opened, it takes as your own doing).
-- `inbox shadow: explained`: one line per item left out of the score,
-  with the `item`, both sides' reasons and `why`. Today that's only
-  `content not mirrored`: the block found a mention on a repo whose
-  project doesn't mirror content, which the platform can't see, and
-  everything else agrees. A mention on a repo that does mirror content is
-  still a disagreement.
-
-Fly keeps logs only a few days, so ship them where they last (or collect
-the lines daily) for the two weeks.
+**The inbox's shadow period** (M171) ran from 2026-10-22 to 2026-11-02.
+Daemons with `ARUGULA_INBOX_SHADOW` set reported their open forge blocks'
+attention (items and reasons, never a title) to `POST /api/inbox/shadow`,
+and the platform logged how often its inbox agreed: under 90% on the
+first day, and 100% from the end of October once #1354 and #1467 were
+live. Both sides are gone
+(Arugula #674). An older daemon still carrying the setting gets a 404,
+logs it at debug and carries on, but doesn't pin its blocks while the
+setting is there: take it out of the daemon's environment and restart it.
 
 **M173 go-live** (#1219). Turning the mirror on for real people's repos is
 Jake's go. Until then nothing is linked, so the platform mirrors nothing.
@@ -2165,20 +2185,8 @@ In order:
    mirroring off unless the team asks for it. Each repo's first poller turn
    is a backfill: `forge mirror: poller turn` with `backfill` and its
    repo id, within a few minutes.
-3. **The inbox shadow on Jake's machines.** In each daemon's environment,
-   `ARUGULA_INBOX_SHADOW=1`, then restart the daemon:
-   - Linux: `systemctl --user edit arugulad` with
-     `[Service]` and `Environment=ARUGULA_INBOX_SHADOW=1`, then
-     `systemctl --user restart arugulad`.
-   - macOS, `arugulad install`'s agent: the same key under
-     `EnvironmentVariables` in `~/Library/LaunchAgents/arugulad.plist`
-     (reinstalls keep it), then
-     `launchctl kickstart -k gui/$(id -u)/arugulad`.
-
-   Check each: an `inbox shadow` line naming its `daemon` within 15
-   minutes. Its machine needs forge blocks open on linked repos to
-   compare anything; a shadowing daemon doesn't pin, so its blocks keep
-   reading GitHub.
+3. **The inbox shadow on Jake's machines** (done, and gone since; "The
+   inbox's shadow period" above).
 4. **Read the numbers every day,** from the lines above
    ("Reading the mirror's numbers", "The inbox's shadow period"):
 
@@ -2187,19 +2195,18 @@ In order:
    | Webhook to row | `forge mirror: webhook to row by day` | `buckets`, each run's last, summed | p95 at or under 5000 |
    | Drift | `forge mirror: drift today` (every machine) | `drift` over `items`, summed | under 1 per 1000 a day |
    | Rate budget | `forge mirror: rate budget` | `used_pct`, `backing_off` | never backing off for long |
-   | Inbox shadow | `inbox shadow` (every machine) | `agree / compared`, summed | 99% or more |
 
    Fly keeps only a few days of logs, so keep each day's lines:
 
    ```sh
-   fly logs -a arugula-platform --no-tail | grep -E "forge mirror:|inbox shadow" > m173-$(date -u +%F).log
+   fly logs -a arugula-platform --no-tail | grep "forge mirror:" > m173-$(date -u +%F).log
    ```
 
    The lines carry repo and item ids, never titles; keep the files off
    the public repo anyway.
-5. **Post the numbers on #1204** for two weeks: each day's four numbers,
-   the repo count, and every `inbox shadow: disagree` explained (the kinds
-   listed above). M173 is done when they hold for two weeks.
+5. **Post the numbers on #1204** for two weeks: each day's numbers, the
+   repo count, and every shadow disagreement explained. M173 is done when
+   they hold for two weeks.
 6. **Stop** if installers refuse the permission upgrade, or a team objects
    to content custody (#1204). `arugula project unlink` stops reading a
    repo at once and purges its rows within a day; pinned blocks go back to
@@ -2327,8 +2334,7 @@ the platform's default where you run your own, as one machine, but not
 here: a file on a machine with no volume would be lost on its next
 restart. So `fly.toml` sets `ARUGULA_PLATFORM_REQUIRE_POSTGRES=1`, and the
 platform refuses to start unless `ARUGULA_PLATFORM_DATABASE_URL` names
-Postgres; `scripts/ci-platform-deploy` refuses to deploy while the app has
-no such secret. A deploy replaces one machine at a time (`[deploy] strategy =
+Postgres. A `fly deploy` replaces one machine at a time (`[deploy] strategy =
 "rolling"`), each waiting for `/platform.json`, which answers 503 while the
 machine can't reach its database and says whether it leads
 (`{"database": true, "leader": false, ...}`). A stopping machine takes no
@@ -3065,8 +3071,8 @@ backs it up.
     M2=$(fly machine list -a arugula-platform --json | jq -r --arg m "$M" '.[] | select(.config.metadata.fly_process_group == "app" and .id != $m) | .id')
     ```
 
-    From here CI deploys both machines, rolling. `ci-platform-deploy`
-    allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
+    From here a release deploys both machines, rolling on their checks.
+    Its preflight allows two because `ARUGULA_PLATFORM_DATABASE_URL` is set.
 
 11. **The hub through Flycast** (one hub restart; relay sockets reconnect
     by themselves):
@@ -3260,7 +3266,7 @@ arugula's `.infisical.json` is):
    T=$(fly status -a arugula-platform --json | jq -r '[.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag] | unique | .[]')
    echo "$T"                                     # one tag, e.g. v0.60.11
    (cd packaging/platform && fly deploy --image "registry.fly.io/arugula-platform:$T" --ha=false --no-public-ips)
-   scripts/ci-platform-deploy check "$T"         # every app machine on $T, checks passing
+   fly status -a arugula-platform                # every app machine on $T, checks passing
    ```
 
    If the deploy stops partway (one machine replaced, the other not), run
@@ -3522,8 +3528,8 @@ encrypted, in R2, kept 30 days.
 **Where it runs:** a scheduled Fly machine in the `arugula-platform` app,
 started every hour (`--schedule hourly`, "Hourly, and the gate" below),
 that dumps about once a day. It isn't one of the app's process
-groups, so `fly deploy`, `fly scale` and `ci-platform-deploy`'s checks
-leave it alone (they count only `fly_process_group == "app"`). It has no
+groups, so `fly deploy` and `fly scale` leave it alone (they count only
+`fly_process_group == "app"`). It has no
 service, so Flycast never sends it a call. It skips DNS registration, so
 `arugula-platform.internal` never names it. It's found by its metadata,
 `role=platform-dump`.
@@ -3532,12 +3538,13 @@ service, so Flycast never sends it a call. It skips DNS registration, so
   version), plus `age`, `curl` and `jq`, plus the **same `arugula-platform`
   binary the platform runs**.
 - **Why the same binary:** the migration check and the checksums are that
-  build's, so they read the tables the platform has. After each platform
-  deploy, `scripts/ci-platform-deploy dump` builds the image from the
-  release's binary, pushes it as `registry.fly.io/arugula-platform:dump-vX.Y.Z`,
-  and moves the dump machine onto it with `--schedule hourly --skip-start`,
-  so every deploy also asserts the schedule. It never fails a deploy. If the two builds ever differ, the dump says so in its log and
-  runs on.
+  build's, so they read the tables the platform has. Each release builds
+  the image from the release's binary and pushes it as
+  `registry.fly.io/arugula-platform:dump-server-<run>`, and after the
+  platform, chant's `platform-dump` component moves the dump machine onto
+  it, left stopped, with its declared config (`ops/src/fly/platform-dump`),
+  schedule included ("Deploys"). If the two builds ever differ, the dump
+  says so in its log and runs on.
 - **Considered and not chosen:**
   - *A separate app:* fewer secrets on the machine, but its image would
     need its own deploy token in CI (a workflow change) or would drift
@@ -3553,7 +3560,7 @@ service, so Flycast never sends it a call. It skips DNS registration, so
 `--schedule daily`, and the dump ran once, by hand, on 2026-10-21 at
 06:39Z, and then never again until someone noticed two days later. The
 cause: a `fly machine update` restarts Fly's schedule clock, and every
-platform deploy runs one (`ci-platform-deploy dump`, above). A daily run
+platform deploy runs one (above). A daily run
 comes due only 24 h after the last update, and no two platform deploys had
 been 24 h apart since. So:
 - **The machine starts every hour.** A deploy delays a run by an hour at
@@ -3695,8 +3702,10 @@ watch the house. So, in order of effort:
    ```
 
 3. **No bucket rule:** the job prunes its own dumps (above).
-4. **The machine,** on the image the release pushed (`ci-platform-deploy`
-   pushes `dump-vX.Y.Z` even before the machine exists):
+4. **The machine,** on a dump image a release pushed (a release's
+   `images` job pushes `dump-server-<run>`; this is how it was first made,
+   on 2026-10-21, as `dump-vX.Y.Z`; a release now finds it by name, and its
+   plan, `ops/src/fly/platform-dump`, has to match):
 
    ```
    fly machine run registry.fly.io/arugula-platform:dump-vX.Y.Z -a arugula-platform \
@@ -3990,7 +3999,13 @@ happen, in CI.
   platform runs in its process.) It lists jobs whose machine died holding
   them, jobs claimed again and again, jobs that failed this week, runs and
   deploys not ended that no job follows, and every deploy box that isn't
-  deleted, marking the ones no job follows `LEFT OVER`.
+  deleted, marking the ones no job follows `LEFT OVER`. Runs are listed
+  by age too: one made more than 6h 15m ago and not ended is there
+  whatever its job's state, oldest first, with how old it is. Past 6
+  hours a run goes on while its box says it's busy, and its job fails it
+  once its box has been idle or off the relay for 10 minutes; so a run
+  listed for its age is a long one on a busy box, or one its job no
+  longer follows (its job's state says which).
 - **A run or a deploy** on the platform page: its log and its events
   (`/p/<project>/past/<run>`, a deploy's page). A run's log in the bucket:
   `arugula-platform run-logs` ("The run-log bucket" above).

@@ -149,6 +149,21 @@ impl Db {
         self.c().query_row(&format!("SELECT {COLUMNS} FROM agent_tokens WHERE id = ?1"), params![id], row).optional()
     }
 
+    /// These tokens, live or revoked, by id (those that exist), in one
+    /// query: a project's Access view names each token with a grant over
+    /// the project (Arugula #682).
+    pub fn agent_tokens_by_id(&self, ids: &[String]) -> anyhow::Result<Vec<AgentToken>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let marks = vec!["?"; ids.len()].join(", ");
+        self.c().query_map(
+            &format!("SELECT {COLUMNS} FROM agent_tokens WHERE id IN ({marks}) ORDER BY id"),
+            &super::sql::list(ids),
+            row,
+        )
+    }
+
     /// The token whose hash this is, live or revoked.
     pub fn agent_token_by_hash(&self, token_hash: &str) -> anyhow::Result<Option<AgentToken>> {
         self.c()
@@ -202,8 +217,8 @@ impl Db {
             params![id, account, now],
         )?;
         tx.execute(
-            "UPDATE grants SET revoked_at = ?3 WHERE subject_kind = 'agent' AND subject_id = ?1 AND granted_by = ?2
-             AND revoked_at IS NULL",
+            "UPDATE grants SET revoked_at = ?3, revoked_by = ?2 WHERE subject_kind = 'agent' AND subject_id = ?1
+             AND granted_by = ?2 AND revoked_at IS NULL",
             params![id, account, now],
         )?;
         let t = tx
@@ -246,12 +261,12 @@ impl Db {
     }
 
     /// Revoke token `id`'s grants over `project` (a project owner's
-    /// revoke): how many were live.
-    pub fn revoke_agent_token_over(&self, project: &str, id: &str, now: u64) -> anyhow::Result<usize> {
+    /// revoke, `by`): how many were live.
+    pub fn revoke_agent_token_over(&self, project: &str, id: &str, by: &str, now: u64) -> anyhow::Result<usize> {
         self.c().execute(
-            "UPDATE grants SET revoked_at = ?3 WHERE subject_kind = 'agent' AND subject_id = ?2
+            "UPDATE grants SET revoked_at = ?3, revoked_by = ?4 WHERE subject_kind = 'agent' AND subject_id = ?2
              AND scope_kind = 'project' AND scope_id = ?1 AND revoked_at IS NULL",
-            params![project, id, now],
+            params![project, id, now, by],
         )
     }
 
@@ -298,10 +313,10 @@ impl Db {
 /// the team's `team_members`.
 pub(crate) fn revoke_departed(c: &impl Sql, team: &str, now: u64) -> anyhow::Result<usize> {
     c.execute(
-        "UPDATE grants SET revoked_at = ?2 WHERE subject_kind = 'agent' AND revoked_at IS NULL
+        "UPDATE grants SET revoked_at = ?2, revoked_by = ?3 WHERE subject_kind = 'agent' AND revoked_at IS NULL
          AND scope_kind = 'project' AND scope_id IN (SELECT id FROM projects WHERE team_id = ?1)
          AND granted_by NOT IN (SELECT account_id FROM team_members WHERE team_id = ?1)",
-        params![team, now],
+        params![team, now, super::projects::REVOKED_BY_PLATFORM],
     )
 }
 

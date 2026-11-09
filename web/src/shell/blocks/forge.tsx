@@ -5,12 +5,12 @@
 // worktree and branch for it, an agent there, the two in a tab, and the
 // agent's PR joining them), the PRs that refer to it, and a new issue an
 // agent drafted, shown once on its block with Send, Edit, Ask for changes
-// and Drop (no card over it). What waits on
+// and Discard (no card over it). What waits on
 // you comes first (a
 // review asked of you, red checks, changes asked for, a mention), then an
 // agent's drafts, the checks, the reviews and the timeline. An agent's
 // draft is answered on the card over the block (the daemon's ask): edit
-// the text and Send, or Drop. Everything drawn comes from the daemon's
+// the text and Send, or Discard. Everything drawn comes from the daemon's
 // state, so a shared session's viewers see the same, without the buttons.
 // M172: on a repo linked in Arugula control the block is a pin (`s.pin`):
 // the daemon reads the platform's mirror, not GitHub, and the block looks
@@ -29,6 +29,9 @@ import { registerBlock, type BlockView } from "./view";
 import { Time } from "../../shared/ui/time";
 import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
+import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -146,7 +149,10 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 const BLOCKED = "The forge won't merge it yet, though it has no conflicts: on GitHub, branch protection; on GitLab, approvals, unresolved discussions and the like.";
 
-const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
+/** A forge item's state, in its tone: merged is purple, not the accent. */
+const stateTone = (st: string): Tone | null => (st === "open" ? "ok" : st === "merged" ? "merged" : st === "closed" ? "danger" : st === "draft" ? "accent" : st === "revising" ? "warn" : null);
+
+const linkedState = (st: string) => <StateChip tone={stateTone(st)}>{st}</StateChip>;
 
 /** How each forge merges, as the daemon names them, with a word each. */
 const MERGE_STYLES: Record<string, [string, string][]> = {
@@ -243,13 +249,13 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-kind="issue">
       {!it && (
-        <div class="review-bar">
+        <Bar sub class="review-bar">
           <span class="review-path" title={s.repo}>
             <span class="dim forge-ref">
               #{s.number} {s.repo}
             </span>
           </span>
-        </div>
+        </Bar>
       )}
       <div class="review-body ws-body">
         {s.error && (
@@ -357,7 +363,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
  * it's read (what the old polls line said). */
 function issueSource(s: ForgeState, failed: boolean): ItemSource {
   const how = s.pin
-    ? `read through Arugula control${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
+    ? `read through Arugula cloud${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
     : s.live === "webhook"
       ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})`
       : s.live
@@ -385,7 +391,7 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
             <>
               {" "}
               <a class="dim" href={x.url} target="_blank" rel="noopener">
-                ↗
+                <ExternalIcon size="xs" />
               </a>
             </>
           )}
@@ -399,9 +405,9 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
       {settled.map((d) => (
         <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
           <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
-          {d.status === "sent" && <span class="ws-tag">sent by {d.settled_by}</span>}
-          {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
-          {d.error && <span class="ws-tag bad">{d.error}</span>}
+          {d.status === "sent" && <Chip kind="tag">sent by {d.settled_by}</Chip>}
+          {d.status === "dropped" && <Chip kind="tag">discarded by {d.settled_by}</Chip>}
+          {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
       ))}
@@ -417,7 +423,7 @@ function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; e
 
 /** A new issue: an agent's draft, shown once, with every action in the
  * footer (the card the daemon raises is a line for the swarm and the phone).
- * Send it as it is or edited in place, ask the agent for changes, or drop it.
+ * Send it as it is or edited in place, ask the agent for changes, or discard it.
  * A person's own goes out at once. */
 function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState }) {
   const n = s.new!;
@@ -456,9 +462,9 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
       setMode("view");
     });
   };
-  const drop = () => void call("drop", {}, "couldn't drop the draft").then((ok) => ok && setMode("view"));
+  const drop = () => void call("drop", {}, "couldn't discard the draft").then((ok) => ok && setMode("view"));
   const as = s.me && s.login ? `as ${s.me} on ${s.login}` : "with your forge login";
-  const tag = !waiting ? (n.status === "waiting" ? "opening" : n.status) : revising ? "revising" : "draft";
+  const tag = !waiting ? (n.status === "waiting" ? "opening" : n.status === "dropped" ? "discarded" : n.status) : revising ? "revising" : "draft";
 
   let foot: ComponentChildren = null;
   if (waiting && mayWrite) {
@@ -513,7 +519,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
           )}
           <span class="forge-spacer" />
           <button class="secondary danger small forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
-            Drop
+            Discard
           </button>
         </div>
       );
@@ -522,12 +528,12 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
 
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-new={n.status} data-new-mode={mode} data-new-revising={revising || undefined}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path">
           <b>{s.repo}</b> <span class="dim">new issue</span>
         </span>
-        <span class={`ws-tag forge-state ${tag}`}>{tag}</span>
-      </div>
+        <StateChip tone={stateTone(tag)}>{tag}</StateChip>
+      </Bar>
       <div class="review-body ws-body">
         <div class="forge-new">
           {mode === "edit" ? (
@@ -580,7 +586,7 @@ function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: Forge
               )}
               {n.status === "dropped" && (
                 <div class="forge-status" data-new-dropped>
-                  Dropped by {n.settled_by ?? "someone"}
+                  Discarded by {n.settled_by ?? "someone"}
                 </div>
               )}
               {n.error && <div class="forge-status bad">Sending failed: {n.error}. The draft is unchanged, so you can try again.</div>}
@@ -615,20 +621,20 @@ function Drafts({ s }: { s: ForgeState }) {
           <div>
             <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
             {d.status === "sent" && (
-              <span class="ws-tag">
+              <Chip kind="tag">
                 sent by {d.settled_by}
                 {d.url && (
                   <>
                     {" "}
                     <a href={d.url} target="_blank" rel="noopener">
-                      ↗
+                      <ExternalIcon size="xs" />
                     </a>
                   </>
                 )}
-              </span>
+              </Chip>
             )}
-            {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
-            {d.error && <span class="ws-tag bad">{d.error}</span>}
+            {d.status === "dropped" && <Chip kind="tag">discarded by {d.settled_by}</Chip>}
+            {d.error && <Chip kind="tag" tone="danger">{d.error}</Chip>}
           </div>
           {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
@@ -774,7 +780,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                 <>
                   {canComment && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
                   {canComment && !asked && <button class="secondary small" onClick={() => void review("comment")}>Review</button>}
-                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} hold={s.hold?.reason} /> : <button class="secondary small" data-merge-anyway={s.hold ? "" : undefined} onClick={() => void merge()}>{s.hold ? "Merge anyway…" : "Merge ▾"}</button>)}
+                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} hold={s.hold?.reason} /> : <button class="secondary small" data-merge-anyway={s.hold ? "" : undefined} onClick={() => void merge()}>{s.hold ? "Merge anyway…" : <>Merge <Caret /></>}</button>)}
                   {mayOwn && (
                     <button class="secondary small" data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
                       Diff
@@ -829,7 +835,7 @@ function sourceTitle(s: ForgeState): string {
         : "";
   const live = s.live ? (s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling") : "";
   const read = s.pin
-    ? `read through Arugula control${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
+    ? `read through Arugula cloud${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
     : `${plural(s.polls, "poll")}, ${plural(s.reads, "full read")}`;
   return [`${s.repo}`, as, read, live, s.pin?.stale ?? s.live_why ?? ""].filter(Boolean).join("\n");
 }
@@ -864,7 +870,7 @@ function nextStep(
           )}
           {s.rerun?.url && (
             <a class="secondary small" href={s.rerun.url} target="_blank" rel="noopener" title={s.rerun.note} data-rerun-link>
-              Open run ↗
+              Open run <ExternalIcon size="xs" />
             </a>
           )}
         </>
@@ -887,7 +893,7 @@ function nextStep(
       ),
     };
   }
-  // The draft's own card, over the block, holds Send and Drop: a second
+  // The draft's own card, over the block, holds Send and Discard: a second
   // Send here sits under it.
   const [draft] = on.waiting;
   if (draft) {
@@ -918,7 +924,7 @@ function nextStep(
           <ConfirmMerge style={on.confirming} go={on.confirmMerge} />
         ) : (
           <button class="primary small" data-merge disabled={busy !== null} onClick={() => void on.merge()}>
-            Merge ▾
+            Merge <Caret />
           </button>
         )
       ),
@@ -1005,7 +1011,7 @@ function prTabs(s: ForgeState, pr: Pr, open: boolean, waiting: Draft[]): ItemTab
         <section data-forge-reviews>
           {pr.reviews.map((r) => (
             <div key={r.id} class="forge-row" data-review={r.state} title={r.stale ? "older commit" : undefined} style={r.stale ? { opacity: 0.6 } : undefined}>
-              <b>{r.author ?? "a team"}</b> <span class={`ws-tag forge-review ${r.state}`}>{words(r.state)}</span>
+              <b>{r.author ?? "a team"}</b> <StateChip tone={r.state === "changes_requested" ? "danger" : r.state === "approved" ? "ok" : null}>{words(r.state)}</StateChip>
               {r.body && <Body text={r.body} s={s} />}
             </div>
           ))}

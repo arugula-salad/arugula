@@ -13,12 +13,11 @@ import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { SWARM_ABOUT, openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
+import { Caret, ChevronIcon } from "../../shared/ui/icons";
 
 function seen(name: string): string {
   const h = directory.find(name);
   if (!h) return "";
-  // A sandbox's state comes from its provider; it may be asleep.
-  if (h.transport === "provider") return `${h.status ?? "?"} · ${h.provider?.provider ?? "sandbox"}`;
   if (h.transport === "control" && h.status === "online") return "online";
   if (h.last_seen_ms === null) return "not seen yet";
   return `seen ${seenAgo(h.last_seen_ms)}`;
@@ -44,7 +43,6 @@ const seenAgo = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
  * keeps trying it), then this page's own connection to it. */
 export function machineState(name: string): string {
   const d = directory.find(name);
-  if (d?.transport === "provider") return `${d.status ?? "?"} · ${d.provider?.provider ?? "sandbox"}`;
   if (d?.transport === "control" && d.status === "offline") return d.last_seen_ms ? `offline, seen ${seenAgo(d.last_seen_ms)}` : "offline";
   const h = fleet?.host(name);
   switch (h?.state) {
@@ -196,7 +194,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     }
     // One description of the swarm, as the rail's (UI audit #176).
     items.push("separator", { label: "Go to Swarm", detail: SWARM_ABOUT, run: openSwarm });
-    // The shown machine's own settings: here, not in the account menu.
+    // The shown machine's own settings: a row to the Settings page, or (no rail) the rows.
     const mine = machineItems();
     // #778: what its place means is its row's tooltip (UI audit #175: the
     // paragraph here was the menu's longest line). M50: which way its
@@ -207,7 +205,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     if (mine.length || means.length) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...means, ...mine);
     if (fleet?.notice) items.push("separator", { label: fleet.notice, hint: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
-      const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";
+      const what = directory.control ? "Arugula cloud unreachable: saved list" : "Home daemon unreachable: saved list";
       items.push("separator", { label: what, disabled: true, run: () => {} });
     }
     const all = allMachines();
@@ -221,11 +219,11 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     <button ref={ref} class="host-button" title="Hosts" aria-haspopup="menu" aria-expanded={expanded} data-host={directory.current} onClick={open} onContextMenu={open}>
       {directory.current}
       {path && directory.path ? (
-        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula control's relay (end-to-end encrypted)" : "Straight to the machine"}>
+        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula cloud's relay (end-to-end encrypted)" : "Straight to the machine"}>
           {directory.path}
         </span>
       ) : null}{" "}
-      <span class="caret">▾</span>
+      <Caret />
     </button>
   );
 }
@@ -372,7 +370,7 @@ export function HostSection({ close }: { close: () => void }) {
           <h3 class="host-group">
             <button class="host-fold" aria-expanded={cloudNow} data-cloud-fold onClick={() => setCloudOpen(!cloudNow)}>
               <span class="host-caret" aria-hidden="true">
-                {cloudNow ? "▾" : "▸"}
+                <ChevronIcon open={cloudNow} />
               </span>
               {CLOUD}
               <span class="host-count">{cloudShown.length}</span>

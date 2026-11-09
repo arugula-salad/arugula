@@ -81,7 +81,7 @@ test.afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-const card = (p: Page) => p.getByRole("dialog", { name: "Help improve Arugula?" });
+const card = (p: Page) => p.getByRole("region", { name: "Help improve Arugula?" });
 const answer = async (p: Page) =>
   ((await (await p.request.get("/api/me/telemetry")).json()) as { on: boolean | null }).on;
 
@@ -196,7 +196,7 @@ test("a machine the account owns asks once on control's page, after the account'
         ...["--listen", ANY, "--name", "mac", "--state-dir", state],
         ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
       ],
-      { stdio: "ignore", env: { ...env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent" } },
+      { stdio: "ignore", env },
     ),
   );
   await expect

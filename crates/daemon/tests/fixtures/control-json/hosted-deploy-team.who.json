@@ -1,0 +1,167 @@
+{
+  "accounts": [],
+  "agent_accounts": [],
+  "agent_callers": [],
+  "already_in": [
+    "this machine is already in the team Acme on https://control.example. To move it, use Team \u2026 beside it in Devices and machines\u2026 (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in the team Acme on https://control.example",
+    "this machine is already in the team Acme on https://control.example, and a machine is in one team at a time. To work with the team t2 and keep this machine where it is, share a session with that team (Share session\u2026, in the session menu). To move it there, use Team \u2026 beside it in Devices and machines\u2026 (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+  ],
+  "co_owner": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owner_of": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owners": [],
+  "drivers": [],
+  "hosted": true,
+  "is_me": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "is_team": true,
+  "kind_name": [
+    "team",
+    "Acme"
+  ],
+  "known": [
+    "Known { account: \"a\", root: \"2fd78ba2a5780271\", name: \"a\", role: Owner }",
+    "Known { account: \"e\", root: \"ddb304a78f3174b9\", name: \"e\", role: Editor }",
+    "Known { account: \"v\", root: \"7a6968289d341618\", name: \"v\", role: Viewer }"
+  ],
+  "known_roots": {
+    "a": "2fd78ba2a5780271",
+    "acct1": null,
+    "e": "ddb304a78f3174b9",
+    "m": null,
+    "o": "54cc8bcf23f1bda2",
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": "7a6968289d341618",
+    "x": null
+  },
+  "legacy_app_children": {
+    "o": [
+      "54cc8bcf23f1bda2"
+    ]
+  },
+  "name_of_account": {
+    "a": "a",
+    "acct1": null,
+    "e": "e",
+    "m": null,
+    "o": null,
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": "v",
+    "x": null
+  },
+  "others": [],
+  "owners": {
+    "certs": {
+      "a": [
+        2,
+        0
+      ],
+      "e": [
+        3,
+        1
+      ],
+      "o": [
+        2,
+        0
+      ],
+      "v": [
+        1,
+        0
+      ]
+    },
+    "kind": "team",
+    "members": [
+      "o:Owner:54cc8bcf23f1bda2",
+      "a:Owner:2fd78ba2a5780271",
+      "e:Editor:ddb304a78f3174b9",
+      "v:Viewer:7a6968289d341618"
+    ],
+    "team": "t1",
+    "version": 5
+  },
+  "owns_here": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "reaches": {
+    "a": false,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "shared_roles": [],
+  "signers": {
+    "children": {
+      "o": [
+        "54cc8bcf23f1bda2"
+      ]
+    },
+    "origins": {},
+    "passkey_logs": {}
+  },
+  "state": [
+    "team",
+    "Acme"
+  ],
+  "team_people": [],
+  "team_roles": [],
+  "trusted": [],
+  "whose": "the team Acme"
+}

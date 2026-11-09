@@ -30,7 +30,7 @@ const EDITOR: &str = "pal@example.com";
 /// A daemon with its owner, FRIEND a viewer and EDITOR an editor of its
 /// session, and the first terminal pane.
 fn shared() -> (Daemon, u64, u64) {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_with(&args);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
@@ -453,7 +453,7 @@ fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
 /// the Doc, filled.
 #[test]
 fn a_doc_needs_no_flag_and_a_restart_keeps_it() {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let mut d = Daemon::child_with(&args);
     std::fs::write(d.state.join("flags.json"), r#"{ "flags": { "docs": false } }"#).unwrap();
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();

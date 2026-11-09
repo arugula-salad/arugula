@@ -98,9 +98,8 @@ fn history_and_events_by_session_with_stable_ids_and_a_guest_sees_only_theirs() 
     assert_eq!(ids(&theirs), ids(&ha), "a guest's ids are the owner's");
     let (s, body) = as_friend(&d, &format!("/api/history?session={sa}"));
     assert_eq!((s, panes_of(&serde_json::from_str(&body).unwrap())), (200, BTreeSet::from([a])));
-    // Another session is no more theirs by naming it, nor another host's.
+    // Another session is no more theirs by naming it.
     assert_eq!(as_friend(&d, &format!("/api/history?session={sb}")).0, 404);
-    assert_eq!(as_friend(&d, "/api/history?host=*").0, 403);
     let (s, body) = as_friend(&d, "/api/events");
     assert_eq!(s, 200, "{body}");
     assert_eq!(panes_of(&ndjson(&body)), BTreeSet::from([a]), "{body}");
@@ -252,9 +251,7 @@ fn set_private(d: &Daemon, pane: u64, on: bool) {
 }
 
 /// A guest's follow of a pane lasts as long as they may read it: making the
-/// pane private ends it, and so does taking their grant away. A tail of
-/// another host's synced history is the owner's, as `/api/history` is,
-/// whichever local pane it names.
+/// pane private ends it, and so does taking their grant away.
 #[test]
 fn a_guests_follow_ends_when_they_may_no_longer_read_the_pane() {
     let d = start();
@@ -272,11 +269,6 @@ fn a_guests_follow_ends_when_they_may_no_longer_read_the_pane() {
     };
     grant(json!("viewer"));
     let ticks = |s: &str| s.matches("tick").count() >= 3;
-
-    // Another host's history, by way of a pane they may read here.
-    let (s, body) = as_friend(&d, &format!("/api/panes/{ticker}/tail?host=elsewhere"));
-    assert_eq!(s, 403, "{body}");
-    assert_ne!(d.raw("GET", &format!("/api/panes/{ticker}/tail?host=elsewhere"), None).0, 403, "the owner's");
 
     // Made private: the follow ends.
     let mut f = follow_as_friend(&d, ticker);

@@ -414,6 +414,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hmac",
+ "jiff",
  "reqwest",
  "serde",
  "serde_json",

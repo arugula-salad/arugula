@@ -107,7 +107,7 @@ export async function fillsInPlace(page: Page, post: Post, term: PaneId) {
   await expect(section("s1").locator(".doc-fresh")).toHaveCount(1);
 
   await fill(post, doc, "s3", "Few risks.");
-  await expect(block.locator("[data-doc-progress]")).toHaveText("3 of 3 sections written");
+  await expect(block.locator("[data-doc-progress]")).toHaveCount(0);
   await expect(block.locator("[data-pending]")).toHaveCount(0);
   // Nothing reloaded the page, and the viewer was never scrolled.
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
@@ -416,4 +416,51 @@ export async function prototypeRan(page: Page, a: Attacker, scheme: "light" | "d
   await expect(page.locator("[data-pwned]")).toHaveCount(0);
   expect(page.url(), "the page didn't move").toBe(url);
   expect(page.context().pages().length, "no popup").toBe(1);
+}
+
+/** A prototype that uses every class of the kit (#699), and one that uses none. */
+export const kitPrototype = (title = "Kit") => `\`\`\`prototype height=640 ${title}
+<!doctype html>
+<html>
+<body id="kit" style="margin:0;padding:16px;background:var(--ar-bg);color:var(--ar-text);font:13px system-ui">
+<div class="ar-header">
+  <h1>Machines</h1>
+  <span class="ar-chip ar-chip-ok">online</span>
+  <div class="ar-toolbar"><button class="ar-btn ar-btn-ghost">Refresh</button><button class="ar-btn ar-btn-primary">Add machine</button></div>
+</div>
+<div class="ar-row"><span>studio-mac</span><span class="ar-chip ar-chip-accent">3 panes</span><span class="ar-row-sub">Last seen just now</span></div>
+<div class="ar-row"><span>build-box</span><span class="ar-chip ar-chip-warn">updating</span><span class="ar-row-sub">Last seen 4 min ago</span></div>
+<div class="ar-row"><span>old-laptop</span><span class="ar-chip ar-chip-danger">offline</span></div>
+<p class="ar-toolbar"><button class="ar-btn">Cancel</button><button class="ar-btn" disabled>Disabled</button><span class="ar-chip">idle</span></p>
+<div class="ar-toolbar" style="align-items:flex-start">
+  <div class="ar-dialog"><h2>Remove machine?</h2><p style="margin:0">Its panes keep running; you just lose the way in.</p>
+    <div class="ar-toolbar"><button class="ar-btn">Keep</button><button class="ar-btn ar-btn-primary">Remove</button></div></div>
+  <div class="ar-menu"><button class="ar-menu-item">Rename</button><button class="ar-menu-item">Share…</button><button class="ar-menu-item" disabled>Disabled</button></div>
+</div>
+<div class="ar-empty"><h2>No machines yet</h2><p>Install Arugula on a computer and it shows up here.</p><button class="ar-btn ar-btn-primary">Add one</button></div>
+</body>
+</html>
+\`\`\`
+`;
+
+/** A prototype that uses no `ar-` class: the kit must leave it alone. */
+export const plainPrototype = () => `\`\`\`prototype height=200 Plain
+<!doctype html>
+<html><body><p id="p">Plain</p><button id="b">Go</button></body></html>
+\`\`\`
+`;
+
+/** The Doc column's measure (#783), in characters: `.doc-page`'s computed
+ * `max-width`, less its 32px of gutter, over the width of one `ch` in it. */
+export async function measure(page: Page, within = "") {
+  return page.evaluate(async (scope) => {
+    await document.fonts.ready;
+    const el = document.querySelector(`${scope} .doc-page`.trim())!;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100ch";
+    el.append(probe);
+    const ch = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+    return Math.round(((parseFloat(getComputedStyle(el).maxWidth) - 32) / ch) * 10) / 10;
+  }, within);
 }

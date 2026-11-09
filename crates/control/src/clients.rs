@@ -9,6 +9,9 @@
 //! row says, and a route with no row (which routes.rs's test refuses) takes
 //! no CLI signature at all. Daemons' signatures are left to the handlers'
 //! extractors, which take them only where a daemon belongs.
+//!
+//! A native app's signature (a `browser` device paired as one, aru-131)
+//! counts only on a route whose row lists `native`, the same way.
 
 #[cfg(test)]
 use std::collections::HashSet;
@@ -29,6 +32,8 @@ use crate::{auth::Signed, refusal};
 pub const PAGE_ONLY: &str = "page_only";
 /// And what it says.
 pub const PAGE_ONLY_SAY: &str = "this is for Arugula's page, in a browser: a CLI's login can't do it";
+/// And what a native app is told.
+pub const NOT_NATIVE_SAY: &str = "this is for Arugula's page, in a browser: the app can't do it";
 
 #[derive(Deserialize)]
 struct List {
@@ -48,12 +53,27 @@ static CLI_MAY: LazyLock<HashMap<(String, String), bool>> = LazyLock::new(|| {
     list.route.into_iter().map(|r| ((r.method, r.path), r.clients.iter().any(|c| c == "cli"))).collect()
 });
 
+/// The same for a native app.
+static NATIVE_MAY: LazyLock<HashMap<(String, String), bool>> = LazyLock::new(|| {
+    let list: List = toml::from_str(include_str!("../routes.toml")).expect("routes.toml parses");
+    list.route.into_iter().map(|r| ((r.method, r.path), r.clients.iter().any(|c| c == "native"))).collect()
+});
+
 /// Whether a CLI's signature may call `method` on the route registered as
 /// `path`. A `HEAD` is its `GET`; a route registered for every method is
 /// listed as `ANY`. Not listed: no.
 pub fn cli_may(method: &Method, path: &str) -> bool {
+    may(&CLI_MAY, method, path)
+}
+
+/// Whether a native app's signature may call it, the same way.
+pub fn native_may(method: &Method, path: &str) -> bool {
+    may(&NATIVE_MAY, method, path)
+}
+
+fn may(list: &HashMap<(String, String), bool>, method: &Method, path: &str) -> bool {
     let m = if method == Method::HEAD { "GET" } else { method.as_str() };
-    let get = |m: &str| CLI_MAY.get(&(m.to_owned(), path.to_owned())).copied();
+    let get = |m: &str| list.get(&(m.to_owned(), path.to_owned())).copied();
     get(m).or_else(|| get("ANY")).unwrap_or(false)
 }
 
@@ -63,15 +83,26 @@ pub fn page_only() -> HashSet<(String, String)> {
     CLI_MAY.iter().filter(|(_, may)| !**may).map(|(k, _)| k.clone()).collect()
 }
 
+/// Each route as (method, path, whether a native app may call it): for tests
+/// that try each.
+#[cfg(test)]
+pub fn native_rows() -> Vec<(String, String, bool)> {
+    NATIVE_MAY.iter().map(|((m, p), may)| (m.clone(), p.clone(), *may)).collect()
+}
+
 /// Refuses a CLI device's signature on a route whose row doesn't list
-/// `cli`. Runs after `auth::verify_daemon`, which checked the signature.
+/// `cli`, and a native app's on one that doesn't list `native`. Runs after
+/// `auth::verify_daemon`, which checked the signature.
 pub async fn gate(req: Request, next: Next) -> Response {
-    if let Some(Signed(Ok(cert))) = req.extensions().get::<Signed>()
-        && cert.kind == Kind::Cli
-    {
+    if let Some(Signed(Ok(cert))) = req.extensions().get::<Signed>() {
         let path = req.extensions().get::<MatchedPath>().map(|p| p.as_str().to_owned());
-        if !path.is_some_and(|p| cli_may(req.method(), &p)) {
-            return refusal(StatusCode::UNAUTHORIZED, PAGE_ONLY, PAGE_ONLY_SAY).into_response();
+        let refused = match cert.kind {
+            Kind::Cli => (!path.is_some_and(|p| cli_may(req.method(), &p))).then_some(PAGE_ONLY_SAY),
+            Kind::Browser => (!path.is_some_and(|p| native_may(req.method(), &p))).then_some(NOT_NATIVE_SAY),
+            _ => None,
+        };
+        if let Some(say) = refused {
+            return refusal(StatusCode::UNAUTHORIZED, PAGE_ONLY, say).into_response();
         }
     }
     next.run(req).await

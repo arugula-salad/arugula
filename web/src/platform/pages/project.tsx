@@ -8,20 +8,22 @@
 // (Discovery 5): Link a repo, Make an environment, Start a run, Create a
 // cloud workspace, Turn on chat or Ask an owner.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { Time } from "../../shared/ui/time";
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { runs, type RunView } from "../runs";
 import { STATES, runTitle } from "../runs-text";
-import { SectionHead } from "../section-head";
+import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
-import { roomTone, runTone, toneClass } from "../swarm";
+import { roomTone, rowTone, runTone } from "../swarm";
 import { HostedWorkspaceList, NewWorkspaceButton, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { whyNoStart } from "./runs";
 import { platformFetch } from "../../shared/maintenance";
@@ -31,6 +33,7 @@ import { ProjectBoards, useBoards } from "./boards";
 import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
+import { Count } from "../../shared/ui/state-chip";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
@@ -42,7 +45,7 @@ export function ProjectHome({ id }: { id: string }) {
   const p = session.project(id);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
-  const boardsOn = boards !== null && boards !== "off";
+  const boardsOn = boards !== null;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);
@@ -54,12 +57,9 @@ export function ProjectHome({ id }: { id: string }) {
         title={p.name}
         named
         sub={
-          <>
-            <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
-              Project settings
-            </a>
-            <span> · linked repos, environments</span>
-          </>
+          <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
+            Project settings
+          </a>
         }
       />
       {/* A project of one has no members beside it: its lists take the
@@ -67,35 +67,35 @@ export function ProjectHome({ id }: { id: string }) {
       <div class={p.team ? "platform-columns" : "platform-columns solo"}>
         <div>
           <ProjectDrafts project={p.id} nameOf={nameOf} />
-          <SectionHead title="Chat" all={chatPath} />
-          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula control: reload the page to sign in again.</p>}
+          <SectionHead title="Chat" all={chatPath} onAll={(e) => follow(e, chatPath)} />
+          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
-          {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
-          <ul class="platform-list sw-rows" data-project-rooms>
+          {chat.on && rooms.length === 0 && <EmptyLine>No channels yet.</EmptyLine>}
+          <ul class="platform-list card-list" data-project-rooms>
             {rooms
               .sort((a, b) => Number(a.kind === "dm") - Number(b.kind === "dm") || a.name.localeCompare(b.name))
               .map((r) => {
                 const to = roomPath(r.id);
                 return (
-                  <li key={r.id} class={`sw-row ${toneClass(roomTone(r.unread, r.mentions))}`}>
+                  <Card as="li" dense key={r.id} tone={rowTone(roomTone(r.unread, r.mentions))}>
                     <a href={to} data-project-room={r.id} onClick={(e) => follow(e, to)}>
                       {r.kind === "channel" ? `# ${r.name}` : `@ ${r.with?.name ?? "someone who left"}`}
-                      {r.unread > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span>}
+                      {r.unread > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.unread}</Count>}
                     </a>
-                  </li>
+                  </Card>
                 );
               })}
           </ul>
-          {/* With boards on, they lead and Issues is Triage (#292). */}
+          {/* With boards on, they lead; the issues on no board are on the Boards page (#656). */}
           {boardsOn && <ProjectBoards p={p} list={boards} />}
-          {chat.on && <ProjectIssues p={p} />}
-          {chat.on && <ProjectDocs p={p} />}
+          <ProjectIssues p={p} />
+          <ProjectDocs p={p} />
           <ProjectRuns p={p} workspaces={workspaces} />
           <ProjectSetup p={p} />
           {!boardsOn && <ProjectBoards p={p} list={boards} />}
           {(session.hosted || !!workspaces?.length) && (
             <>
-              <SectionHead title="Cloud workspaces" all={workspacesPath} />
+              <SectionHead title="Cloud workspaces" all={workspacesPath} onAll={(e) => follow(e, workspacesPath)} />
               {workspaces === null ? null : workspaces.length ? <HostedWorkspaceList project={p.id} list={workspaces} /> : <NoWorkspaces project={p.id} />}
               {!!workspaces?.length && <SessionNumbers project={p.id} />}
             </>
@@ -114,25 +114,35 @@ function ChatOff({ p }: { p: PlatformProject }) {
   const teams = `${controlOrigin()}/#teams`;
   if (!p.team)
     return (
-      <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat comes with a team: its channels, direct messages and issues. Make a team, or turn chat on for one you own, under Teams on Control.</p>
-        <a class="secondary" href={teams} data-chat-teams>
-          Teams on Control
-        </a>
-      </div>
+      <EmptyState
+        where="page"
+        data-chat-off
+        title="Chat comes with a team."
+        why="A team has channels and direct messages. Make a team, or turn chat on for one you own, under Teams on your machines page."
+        action={
+          <a class="secondary" href={teams} data-chat-teams>
+            Teams on your machines page
+          </a>
+        }
+      />
     );
   if (p.team.role === "owner")
     return (
-      <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels, direct messages and issues, here and on Control.</p>
-        <a class="primary" href={teams} data-chat-turn-on>
-          Turn on chat
-        </a>
-      </div>
+      <EmptyState
+        where="page"
+        data-chat-off
+        title={`Chat is off for ${p.team.name}.`}
+        why="Turned on, the team gets channels and direct messages, here and on your machines page."
+        action={
+          <a class="primary" href={teams} data-chat-turn-on>
+            Turn on chat
+          </a>
+        }
+      />
     );
   const owners = p.team.members.filter((m) => m.role === "owner").map((m) => m.name);
   const ask = async () => {
-    const note = `Could you turn on chat for ${p.team!.name}? It's under Teams on Control: ${teams}`;
+    const note = `Could you turn on chat for ${p.team!.name}? It's under Teams on your machines page: ${teams}`;
     try {
       await navigator.clipboard.writeText(note);
       toast(`Copied a note asking for it: send it to ${owners[0] ?? "an owner"}.`);
@@ -141,14 +151,17 @@ function ChatOff({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <div class="platform-empty" data-chat-off>
-      <p class="dim">
-        Chat is off for {p.team.name}. Its owners turn it on{owners.length ? ` (${owners.join(", ")})` : ""}.
-      </p>
-      <button class="secondary" data-chat-ask-owner onClick={() => void ask()}>
-        Ask an owner
-      </button>
-    </div>
+    <EmptyState
+      where="page"
+      data-chat-off
+      title={`Chat is off for ${p.team.name}.`}
+      why={`Its owners turn it on${owners.length ? ` (${owners.join(", ")})` : ""}.`}
+      action={
+        <button class="secondary" data-chat-ask-owner onClick={() => void ask()}>
+          Ask an owner
+        </button>
+      }
+    />
   );
 }
 
@@ -179,11 +192,11 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     </a>
   );
   const rows = (list: string[], data: string) => (
-    <ul class="platform-list sw-rows" {...{ [`data-${data}`]: "" }}>
+    <ul class="platform-list card-list" {...{ [`data-${data}`]: "" }}>
       {list.map((n) => (
-        <li key={n} class="sw-row">
+        <Card as="li" dense key={n}>
           <span class="sw-mono">{n}</span>
-        </li>
+        </Card>
       ))}
     </ul>
   );
@@ -191,27 +204,33 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     <>
       {repos !== null && (
         <>
-          <SectionHead title="Repos" all={`${settings}#repos`} />
+          <SectionHead title="Repos" all={`${settings}#repos`} onAll={(e) => follow(e, `${settings}#repos`)} />
           {repos.length ? (
             rows(repos, "project-repos")
           ) : (
-            <div class="platform-empty" data-project-repos-none>
-              <p class="dim">{REPOS_MEAN}</p>
-              {changes ? step(`${settings}#repos`, "Link a repo", "project-link-repo") : <p class="dim">A team's owners and editors link repos.</p>}
-            </div>
+            <EmptyState
+              where="page"
+              data-project-repos-none
+              title="No repos linked yet."
+              why={changes ? REPOS_MEAN : `${REPOS_MEAN} A team's owners and editors link repos.`}
+              action={changes && step(`${settings}#repos`, "Link a repo", "project-link-repo")}
+            />
           )}
         </>
       )}
       {envs !== null && (
         <>
-          <SectionHead title="Environments" all={`${settings}#environments`} />
+          <SectionHead title="Environments" all={`${settings}#environments`} onAll={(e) => follow(e, `${settings}#environments`)} />
           {envs.length ? (
             rows(envs, "project-envs")
           ) : (
-            <div class="platform-empty" data-project-envs-none>
-              <p class="dim">{ENVIRONMENTS_MEAN}</p>
-              {owner ? step(`${settings}#environments`, "Make an environment", "project-make-env") : <p class="dim">A project's owners make its environments.</p>}
-            </div>
+            <EmptyState
+              where="page"
+              data-project-envs-none
+              title="No environments yet."
+              why={owner ? ENVIRONMENTS_MEAN : `${ENVIRONMENTS_MEAN} A project's owners make its environments.`}
+              action={owner && step(`${settings}#environments`, "Make an environment", "project-make-env")}
+            />
           )}
         </>
       )}
@@ -221,8 +240,8 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
 
 /** What a linked repo is for, in one sentence (here and in the settings). */
 export const REPOS_MEAN = "A linked GitHub repo brings its pull requests and issues into the project, and its pushes and events can start runs.";
-/** What an environment is for, in one sentence (here and in the settings). */
-export const ENVIRONMENTS_MEAN = "An environment is where the project deploys to (production, staging): the driver that applies a deploy, its settings and its secrets.";
+/** What an environment is for, in one line (here and in the settings). */
+export const ENVIRONMENTS_MEAN = "Where the project deploys: production, staging.";
 
 /** The project's last three runs (UI audit #162), so its home covers each
  * of the bar's places: rows, as its rooms and issues are, each with its
@@ -243,37 +262,43 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
   const all = pathOf({ page: "runs", project: p.id }, names);
   return (
     <>
-      <SectionHead title="Runs" all={all} />
+      <SectionHead title="Runs" all={all} onAll={(e) => follow(e, all)} />
       {list.length === 0 &&
         (whyNoStart(p) ? (
-          <p class="dim" data-project-runs-why>
-            No runs yet. {whyNoStart(p)}
-          </p>
+          <EmptyState where="page" data-project-runs-why title="No runs yet." why={whyNoStart(p)} />
         ) : workspaces && !workspaces.length ? (
-          <div class="platform-empty" data-project-runs-none>
-            <p class="dim">No runs yet. A run is a command on one of the project's cloud workspaces: make one first.</p>
-            <NewWorkspaceButton project={p.id} />
-          </div>
+          <EmptyState
+            where="page"
+            data-project-runs-none
+            title="No runs yet."
+            why="A run is a command on one of the project's cloud workspaces. It has none yet: make one first."
+            action={<NewWorkspaceButton project={p.id} />}
+          />
         ) : (
-          <div class="platform-empty" data-project-runs-none>
-            <p class="dim">No runs yet. A run is a command on one of the project's cloud workspaces, by hand, on a schedule or on an event.</p>
-            <a class="primary" href={`${all}#new-run`} onClick={(e) => follow(e, `${all}#new-run`)} data-project-start-run>
-              Start a run
-            </a>
-          </div>
+          <EmptyState
+            where="page"
+            data-project-runs-none
+            title="No runs yet."
+            why="A run is a command on one of the project's cloud workspaces, by hand, on a schedule or on an event."
+            action={
+              <a class="primary" href={`${all}#new-run`} onClick={(e) => follow(e, `${all}#new-run`)} data-project-start-run>
+                Start a run
+              </a>
+            }
+          />
         ))}
-      <ul class="platform-list sw-rows" data-project-runs>
+      <ul class="platform-list card-list" data-project-runs>
         {list.map((r) => {
           const to = pathOf({ page: "run", project: p.id, run: r.id }, names);
           return (
-            <li key={r.id} class={`sw-row ${toneClass(runTone(r.state))}`} data-project-run={r.id}>
+            <Card as="li" dense key={r.id} tone={rowTone(runTone(r.state))} data-project-run={r.id}>
               <a href={to} onClick={(e) => follow(e, to)}>
                 {runTitle(r.op, null, r.deploy)}
               </a>{" "}
               <span class="dim sw-mono">
                 {STATES[r.state] ?? r.state} · <Time at={r.created_at} long />
               </span>
-            </li>
+            </Card>
           );
         })}
       </ul>
@@ -297,13 +322,13 @@ function Members({ p }: { p: PlatformProject }) {
           </li>
         ))}
       </ul>
-      <p class="dim">
-        Team {t.name}. {t.role === "owner" ? "Add people, change roles and take people out" : "See who's in it"} on{" "}
-        <a href={controlOrigin()} data-manage-team>
-          Control
-        </a>
-        , under your account's Teams: a change to the team is signed by one of your devices there.
-      </p>
+      {t.role === "owner" && (
+        <p>
+          <a href={controlOrigin()} data-manage-team>
+            Manage team
+          </a>
+        </p>
+      )}
     </aside>
   );
 }

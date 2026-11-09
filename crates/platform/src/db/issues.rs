@@ -342,11 +342,52 @@ fn add_event(
     )
 }
 
+/// Set issue `id`'s GitHub origin as `by`, once, in the caller's
+/// transaction (the one that ends an export's send, [`Db::end_send`]):
+/// its `exported` event, and, when a board has made it a work item, the
+/// mirrored GitHub issue joins that work item (`work_item_refs`). The
+/// issue and the event; `None` when it has an origin already, or there's
+/// no such issue.
+pub(super) fn set_github(
+    c: &impl Sql,
+    id: &str,
+    to: &GithubOrigin,
+    by: Actor,
+    at: u64,
+) -> Result<Option<(Issue, Event)>> {
+    let n = c.execute(
+        "UPDATE issues SET github_repo = ?2, github_repo_id = ?3, github_number = ?4, updated_at = ?5
+         WHERE id = ?1 AND github_number IS NULL",
+        params![id, to.repo, to.repo_id, to.number, at],
+    )?;
+    if n != 1 {
+        return Ok(None);
+    }
+    let issue = c.query_row(&format!("SELECT {COLS} FROM issues WHERE id = ?1"), params![id], issue_row)?;
+    let event = add_event(c, id, EventKind::Exported, by, at, json!({ "repo": to.repo, "number": to.number }))?;
+    super::work_items::joined(c, id, at)?;
+    Ok(Some((issue, event)))
+}
+
 impl Db {
     /// Open an issue in `project` as `by`: the project gives it the next
     /// number, and its timeline starts with `opened`. `None`: there's no
     /// such project.
     pub fn create_issue(&self, new: &NewIssue, by: Actor, at: u64) -> Result<Option<Issue>> {
+        self.create_issue_and(new, by, at, |_, _| Ok(true))
+    }
+
+    /// [`Db::create_issue`], and `and` in the same transaction once the
+    /// issue is there: `false` rolls it all back, and the answer is `None`
+    /// as for no such project (CI alerts' one open issue per branch,
+    /// `db::ci_alerts`).
+    pub fn create_issue_and(
+        &self,
+        new: &NewIssue,
+        by: Actor,
+        at: u64,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>, &Issue) -> Result<bool>,
+    ) -> Result<Option<Issue>> {
         let (mut labels, mut assignees) = (new.labels.to_vec(), new.assignees.to_vec());
         dedupe(&mut labels);
         dedupe(&mut assignees);
@@ -383,6 +424,9 @@ impl Db {
             issue_row,
         )?;
         add_event(&tx, &issue.id, EventKind::Opened, by, at, json!({}))?;
+        if !and(&tx, &issue)? {
+            return Ok(None);
+        }
         tx.commit()?;
         Ok(Some(issue))
     }
@@ -463,6 +507,22 @@ impl Db {
     /// same transaction: the issue as it is now, and those events (none
     /// when nothing changed). `None`: there's no such issue.
     pub fn patch_issue(&self, id: &str, p: &Patch, by: Actor, at: u64) -> Result<Option<(Issue, Vec<Event>)>> {
+        self.patch_issue_and(id, p, by, at, |_| Ok(true))
+    }
+
+    /// [`Db::patch_issue`], and `and` in the same transaction when the
+    /// patch changes something: `false` rolls it back, and the answer is
+    /// the issue as it was with no events (as for a patch that changes
+    /// nothing). CI alerts close an issue and note their event in one
+    /// write (`ci_alerts`).
+    pub fn patch_issue_and(
+        &self,
+        id: &str,
+        p: &Patch,
+        by: Actor,
+        at: u64,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>) -> Result<bool>,
+    ) -> Result<Option<(Issue, Vec<Event>)>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let Some(old) = tx
@@ -544,6 +604,9 @@ impl Db {
             .into_iter()
             .map(|(kind, detail)| add_event(&tx, id, kind, by, at, detail))
             .collect::<Result<Vec<_>>>()?;
+        if !and(&tx)? {
+            return Ok(Some((old, vec![])));
+        }
         tx.commit()?;
         Ok(Some((new, events)))
     }
@@ -723,26 +786,6 @@ pub struct Held {
 
 /// Open on GitHub (M205): an issue's origin, and the comments that cross.
 impl Db {
-    /// Set `id`'s GitHub origin as `by`, once, and write its `exported`
-    /// event in the same transaction: the issue and the event. `None` when
-    /// it has an origin already, or there's no such issue.
-    pub fn set_issue_github(&self, id: &str, to: &GithubOrigin, by: Actor, at: u64) -> Result<Option<(Issue, Event)>> {
-        let mut c = self.c();
-        let tx = c.immediate()?;
-        let n = tx.execute(
-            "UPDATE issues SET github_repo = ?2, github_repo_id = ?3, github_number = ?4, updated_at = ?5
-             WHERE id = ?1 AND github_number IS NULL",
-            params![id, to.repo, to.repo_id, to.number, at],
-        )?;
-        if n != 1 {
-            return Ok(None);
-        }
-        let issue = tx.query_row(&format!("SELECT {COLS} FROM issues WHERE id = ?1"), params![id], issue_row)?;
-        let event = add_event(&tx, id, EventKind::Exported, by, at, json!({ "repo": to.repo, "number": to.number }))?;
-        tx.commit()?;
-        Ok(Some((issue, event)))
-    }
-
     /// The native issue exported to issue `number` of repo `repo_id`, if
     /// one was.
     pub fn exported_issue(&self, repo_id: u64, number: u64) -> Result<Option<Issue>> {

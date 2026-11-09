@@ -92,6 +92,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
 - [aru-127](docs/decisions/aru-127-hints-come-from-facts-once-per-account.md): Hints come from facts, once per account
+- [aru-132](docs/decisions/aru-132-the-iphone-app-is-swift-on-a-rust-core-with-no-web-views-yet.md): The iPhone app is Swift on a Rust core, with no web views yet
 
 ## Agents and blocks
 
@@ -127,6 +128,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-122](docs/decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md): Boards manage a project's issues, wherever they live; an epic is a board
 - [aru-123](docs/decisions/aru-123-agents-make-and-run-boards.md): Agents make and run boards, but don't destroy other hands' work
 - [aru-128](docs/decisions/aru-128-a-claude-code-mod-reports-live-session-signals-beside-the.md): A Claude Code mod reports live session signals beside the hooks, through the CLI
+- [aru-133](docs/decisions/aru-133-a-thread-shows-its-agents-and-control-keeps-none-of-their-live-state.md): A thread shows its agents, and control keeps none of their live state
+- [aru-138](docs/decisions/aru-138-video-presence-is-removed.md): Video presence is removed
 
 ## Federation and control
 
@@ -167,6 +170,9 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-125](docs/decisions/aru-125-boards-are-rows-of-work-and-lanes-follow-the-work.md): Boards are rows of work, and lanes follow the work
 - [aru-129](docs/decisions/aru-129-a-doc-s-prototype-runs-in-a-frame-on-control-s-proto-origin.md): A Doc's prototype runs in a frame on control's proto origin
 - [aru-130](docs/decisions/aru-130-an-issue-opened-on-github-stays-native-and-only-new-comments-cross.md): An issue opened on GitHub stays native, and only new comments cross
+- [aru-134](docs/decisions/aru-134-one-data-model-what-each-noun-means-and-where-its-truth-lives.md): One data model: what each noun means and where its truth lives
+- [aru-135](docs/decisions/aru-135-a-machine-s-doc-is-the-truth-its-platform-copy-is-read-only.md): A machine's Doc is the truth; its platform copy is read-only
+- [aru-136](docs/decisions/aru-136-a-machine-s-kind-is-one-type-control-json-keeps-its-flat-shape.md): A machine's kind is one type; control.json keeps its flat shape
 
 ## Build and release
 
@@ -180,3 +186,4 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-070](docs/decisions/aru-070-windows-is-a-full-platform-built-on-github-s-runners.md): Windows is a full platform, built on GitHub's runners
 - [aru-104](docs/decisions/aru-104-drivers-come-in-order-chant-to-fly-then-apps-pla.md): Drivers come in order: chant to Fly, then apps-platform; planter in step 8
 - [aru-117](docs/decisions/aru-117-four-labs-flags-stay-renamed-the-rest-graduate-or-retire.md): Four Labs flags stay, renamed; the rest graduate or retire
+- [aru-137](docs/decisions/aru-137-a-release-s-notes-travel-with-its-tag.md): A release's notes travel with its tag

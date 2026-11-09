@@ -5,7 +5,7 @@
 // Arugula for the account, with what was spent on its own key (M231), and
 // this device's Appearance…, the shell's dialog. Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
-// there. Each part is a section (../settings/section): a heading, one
+// there. Each part is a section (shared/ui/settings-section): a heading, one
 // line, the rest behind More; on a wide screen an index of them sits
 // beside the column (../settings.css).
 
@@ -22,7 +22,8 @@ import { LinkedProducts } from "../settings/linked";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { NotificationSettings } from "../settings/notifications";
-import { Section, SectionIndex } from "../settings/section";
+import { SHELL_SECTIONS } from "../../shared/settings-map";
+import { ElsewhereLinks, Section, SectionIndex, type Elsewhere } from "../../shared/ui/settings-section";
 import { controlOrigin, session } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -56,38 +57,36 @@ export function SettingsPage() {
     location.href = (await call<{ url: string }>("/api/billing/checkout", { team })).url;
   };
   const body = useRef<HTMLDivElement>(null);
+  // The rest of Settings is on your machines page (Arugula #695).
+  const elsewhere: Elsewhere = {
+    title: "On your machines page",
+    links: SHELL_SECTIONS.map((s) => ({ title: s.title, href: `${controlOrigin()}/#settings=${s.id}` })),
+  };
   return (
     <section class="platform-section sw-page settings-page" data-platform-settings>
       <div class="settings-layout">
-        <SectionIndex body={body} />
+        <SectionIndex body={body} elsewhere={elsewhere} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Settings" />
-          {/* The line says what's here: the plan only with billing on (UI audit #168). */}
-          <Section
-            id="account"
-            title="Appearance & account"
-            lede={billing?.billing ? "How this device looks, your plan, and where the rest of your account is." : "How this device looks, and where the rest of your account is."}
-          >
+          <Section id="account" title="Appearance & account">
             <ul class="platform-list settings-rows">
               <li>
-                <button class="link" data-open-appearance onClick={openAppearance}>
-                  Appearance…
+                <button class="settings-open" data-open-appearance onClick={openAppearance}>
+                  <span class="settings-open-name">Appearance…</span>
                 </button>
-                <span class="dim">This device's palette, finish, corners and chat density.</span>
               </li>
               {billing?.billing && (
                 <li>
-                  <button class="link" data-open-plan onClick={() => setPlan(true)}>
-                    Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}
+                  <button class="settings-open" data-open-plan onClick={() => setPlan(true)}>
+                    <span class="settings-open-name">Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}</span>
+                    <span class="dim">Your plan, and what you used this month.</span>
                   </button>
-                  <span class="dim">Your plan, and what you used this month.</span>
                 </li>
               )}
               <li>
-                <a href={controlOrigin()} data-settings-control>
-                  Sign-in, passkeys, devices, teams and usage reports
+                <a class="settings-open" href={`${controlOrigin()}/#settings=account`} data-settings-control>
+                  <span class="settings-open-name">Sign-in, passkeys, devices, teams and usage reports</span>
                 </a>
-                <span class="dim">On Control, where your devices sign them.</span>
               </li>
             </ul>
           </Section>
@@ -97,6 +96,7 @@ export function SettingsPage() {
           <AgentTokens />
           <ChatAlerts />
           <ClaudeSettings me={session.me?.account} />
+          <ElsewhereLinks elsewhere={elsewhere} />
         </div>
       </div>
       {plan && (

@@ -16,7 +16,8 @@
         "operationId": "GET_api_boards_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -63,7 +64,8 @@
         "operationId": "PATCH_api_boards_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -122,7 +124,8 @@
         "operationId": "POST_api_boards_id_asks_ask_answer",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -189,7 +192,8 @@
         "operationId": "POST_api_boards_id_attachments",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -248,7 +252,8 @@
         "operationId": "DELETE_api_boards_id_attachments_attachment",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -305,7 +310,8 @@
         "operationId": "POST_api_boards_id_close",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -364,7 +370,8 @@
         "operationId": "POST_api_boards_id_docs",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -423,7 +430,8 @@
         "operationId": "DELETE_api_boards_id_docs_doc",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -480,7 +488,8 @@
         "operationId": "POST_api_boards_id_docs_doc_move",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -547,7 +556,8 @@
         "operationId": "PUT_api_boards_id_entries",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -601,12 +611,72 @@
         }
       }
     },
+    "/api/boards/{id}/entries/many": {
+      "post": {
+        "operationId": "POST_api_boards_id_entries_many",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedMany"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMany"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/boards/{id}/entries/{entry}": {
       "delete": {
         "operationId": "DELETE_api_boards_id_entries_entry",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -663,7 +733,8 @@
         "operationId": "POST_api_boards_id_entries_entry_move",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -730,7 +801,8 @@
         "operationId": "POST_api_boards_id_reopen",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -779,7 +851,8 @@
         "operationId": "POST_api_boards_id_rows_row_ask",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -845,7 +918,8 @@
       "put": {
         "operationId": "PUT_api_boards_id_rows_row_lane",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -911,7 +985,8 @@
       "get": {
         "operationId": "GET_api_chat",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -949,7 +1024,8 @@
       "get": {
         "operationId": "GET_api_chat_avatar_account",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -990,7 +1066,8 @@
       "get": {
         "operationId": "GET_api_chat_keywords",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1026,7 +1103,8 @@
       "put": {
         "operationId": "PUT_api_chat_keywords",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1074,7 +1152,8 @@
       "get": {
         "operationId": "GET_api_chat_live",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1112,7 +1191,8 @@
       "post": {
         "operationId": "POST_api_chat_live_open",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1160,7 +1240,8 @@
       "get": {
         "operationId": "GET_api_chat_previews_image",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1194,7 +1275,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1240,7 +1322,8 @@
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1298,7 +1381,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_files",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1355,7 +1439,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_files_file",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1403,11 +1488,67 @@
         ]
       }
     },
+    "/api/chat/rooms/{id}/grant-never": {
+      "post": {
+        "operationId": "POST_api_chat_rooms_id_grant_never",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatGrantNever"
+              }
+            }
+          }
+        },
+        "x-arugula-untyped": [
+          "the answer: {refused}, how many waiting mentions it settled"
+        ]
+      }
+    },
     "/api/chat/rooms/{id}/join": {
       "post": {
         "operationId": "POST_api_chat_rooms_id_join",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1455,7 +1596,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_leave",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1496,7 +1638,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_level",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1554,7 +1697,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_members",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1612,7 +1756,8 @@
       "delete": {
         "operationId": "DELETE_api_chat_rooms_id_members_account",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1669,7 +1814,8 @@
         "operationId": "GET_api_chat_rooms_id_messages",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -1725,7 +1871,8 @@
         "operationId": "POST_api_chat_rooms_id_messages",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -1780,10 +1927,66 @@
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}": {
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessage"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id_messages_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1843,67 +2046,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq",
-        "x-arugula-clients": [
-          "page"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatMessage"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "seq",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/pin": {
-      "put": {
-        "operationId": "PUT_api_chat_rooms_id_messages_seq_pin",
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_pin",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1954,10 +2104,11 @@
           }
         ]
       },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_pin",
+      "put": {
+        "operationId": "PUT_api_chat_rooms_id_messages_seq_pin",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2013,7 +2164,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_messages_seq_previews",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2063,10 +2215,69 @@
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/reactions": {
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_reactions",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessage"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "query: ChatReactQuery"
+        ]
+      },
       "post": {
         "operationId": "POST_api_chat_rooms_id_messages_seq_reactions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2126,70 +2337,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_reactions",
-        "x-arugula-clients": [
-          "page"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatMessage"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "seq",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "x-arugula-untyped": [
-          "query: ChatReactQuery"
-        ]
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/saved": {
-      "put": {
-        "operationId": "PUT_api_chat_rooms_id_messages_seq_saved",
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2236,7 +2391,8 @@
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2290,10 +2446,11 @@
           }
         }
       },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_saved",
+      "put": {
+        "operationId": "PUT_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2342,7 +2499,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_mute",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2400,7 +2558,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_pins",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2448,7 +2607,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_previews",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2493,7 +2653,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_read",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2551,7 +2712,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_threads_seq_follow",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2617,7 +2779,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_threads_seq_read",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2683,7 +2846,8 @@
       "put": {
         "operationId": "PUT_api_chat_rooms_id_topic",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2741,7 +2905,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_typing",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2782,7 +2947,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_unread",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2840,7 +3006,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_room_asks_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2894,7 +3061,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_room_asks_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2960,7 +3128,8 @@
       "get": {
         "operationId": "GET_api_chat_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2998,7 +3167,8 @@
       "get": {
         "operationId": "GET_api_chat_search",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3047,7 +3217,8 @@
       "get": {
         "operationId": "GET_api_chat_sidebar",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3083,7 +3254,8 @@
       "put": {
         "operationId": "PUT_api_chat_sidebar",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3132,7 +3304,8 @@
         "operationId": "POST_api_chat_targets",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3180,7 +3353,8 @@
       "get": {
         "operationId": "GET_api_chat_teams_team_channels",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3229,7 +3403,8 @@
       "post": {
         "operationId": "POST_api_chat_teams_team_channels",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3287,7 +3462,8 @@
       "post": {
         "operationId": "POST_api_chat_teams_team_dms",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3345,7 +3521,8 @@
       "get": {
         "operationId": "GET_api_chat_threads",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3383,7 +3560,8 @@
       "get": {
         "operationId": "GET_api_deploys_waiting",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3418,7 +3596,8 @@
         "operationId": "GET_api_deploys_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3462,7 +3641,8 @@
       "post": {
         "operationId": "POST_api_deploys_id_approve",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3507,7 +3687,8 @@
       "get": {
         "operationId": "GET_api_deploys_id_can_decide",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3551,7 +3732,8 @@
       "post": {
         "operationId": "POST_api_deploys_id_deny",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3592,12 +3774,121 @@
         ]
       }
     },
+    "/api/devices": {
+      "get": {
+        "operationId": "GET_api_devices",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/directory": {
+      "get": {
+        "operationId": "GET_api_directory",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/flags": {
+      "get": {
+        "operationId": "GET_api_flags",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
     "/api/inbox": {
       "get": {
         "operationId": "GET_api_inbox",
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -3648,7 +3939,8 @@
         "operationId": "POST_api_inbox_item",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3707,7 +3999,8 @@
         "operationId": "GET_api_issues_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3754,7 +4047,8 @@
         "operationId": "PATCH_api_issues_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3813,7 +4107,8 @@
         "operationId": "GET_api_issues_id_events",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3861,7 +4156,8 @@
       "post": {
         "operationId": "POST_api_issues_issue_agent",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3905,12 +4201,99 @@
         ]
       }
     },
-    "/api/projects": {
+    "/api/join": {
+      "post": {
+        "operationId": "POST_api_join",
+        "x-arugula-clients": [
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinRequest"
+              }
+            }
+          }
+        },
+        "x-arugula-untyped": [
+          "response: JoinAnswer or RemovedAnswer"
+        ]
+      }
+    },
+    "/api/join/{code}": {
       "get": {
-        "operationId": "GET_api_projects",
+        "operationId": "GET_api_join_code",
+        "x-arugula-clients": [
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "$ref": "#/components/schemas/PollQuery"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: JoinPoll, through crate::reply"
+        ]
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "GET_api_me",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "native"
         ],
         "security": [
           {
@@ -3936,8 +4319,83 @@
           }
         },
         "x-arugula-untyped": [
-          "response: Answer<Value>"
+          "response: a JSON object built in place"
         ]
+      }
+    },
+    "/api/people": {
+      "get": {
+        "operationId": "GET_api_people",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "query and response: local to the handler"
+        ]
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "GET_api_projects",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Projects"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project}/boards": {
@@ -3945,7 +4403,8 @@
         "operationId": "GET_api_projects_project_boards",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3992,7 +4451,8 @@
         "operationId": "POST_api_projects_project_boards",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4050,7 +4510,8 @@
       "get": {
         "operationId": "GET_api_projects_project_docs",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4096,7 +4557,8 @@
       "post": {
         "operationId": "POST_api_projects_project_docs",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4154,7 +4616,8 @@
       "get": {
         "operationId": "GET_api_projects_project_docs_doc_boards",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4207,10 +4670,62 @@
       }
     },
     "/api/projects/{project}/docs/{id}": {
+      "delete": {
+        "operationId": "DELETE_api_projects_project_docs_id",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: Value"
+        ]
+      },
       "get": {
         "operationId": "GET_api_projects_project_docs_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4264,7 +4779,8 @@
       "put": {
         "operationId": "PUT_api_projects_project_docs_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4324,11 +4840,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_projects_project_docs_id",
+      }
+    },
+    "/api/projects/{project}/docs/{id}/assets/{name}": {
+      "get": {
+        "operationId": "GET_api_projects_project_docs_id_assets_name",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4350,7 +4869,7 @@
             }
           },
           "2XX": {
-            "description": "OK"
+            "description": "The picture"
           }
         },
         "parameters": [
@@ -4369,10 +4888,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
-        ],
-        "x-arugula-untyped": [
-          "response: Value"
         ]
       }
     },
@@ -4382,6 +4906,7 @@
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -4434,7 +4959,8 @@
         "operationId": "GET_api_projects_project_issues",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4490,7 +5016,8 @@
         "operationId": "POST_api_projects_project_issues",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4549,7 +5076,8 @@
         "operationId": "GET_api_projects_project_issues_number",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4607,6 +5135,7 @@
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -4659,7 +5188,8 @@
         "operationId": "GET_api_projects_project_runs_grant",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4701,7 +5231,8 @@
       "post": {
         "operationId": "POST_api_projects_project_runs_grant",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4746,7 +5277,8 @@
       "post": {
         "operationId": "POST_api_projects_project_runs_grant_revoke",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4800,7 +5332,8 @@
       "get": {
         "operationId": "GET_api_projects_project_sessions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4857,7 +5390,8 @@
       "get": {
         "operationId": "GET_api_projects_project_work",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4910,12 +5444,89 @@
         ]
       }
     },
+    "/api/relay/c/{id}": {
+      "get": {
+        "operationId": "GET_api_relay_c_id",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "A WebSocket: Noise frames to and from the machine"
+          },
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/relay/m": {
+      "get": {
+        "operationId": "GET_api_relay_m",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "A WebSocket: Noise frames to and from the machine"
+          },
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{run}": {
       "get": {
         "operationId": "GET_api_runs_run",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4973,7 +5584,8 @@
         "operationId": "GET_api_runs_run_log",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -5030,7 +5642,8 @@
       "get": {
         "operationId": "GET_api_sessions_ses",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5078,7 +5691,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_actions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5136,7 +5750,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_move",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5194,7 +5809,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_pick",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5252,7 +5868,8 @@
       "get": {
         "operationId": "GET_api_sessions_ses_pr",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5298,7 +5915,8 @@
       "put": {
         "operationId": "PUT_api_sessions_ses_pr",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5356,7 +5974,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_pr_send",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5404,7 +6023,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_stop",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5452,7 +6072,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_try",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5505,6 +6126,87 @@
           }
         }
       }
+    },
+    "/api/teams": {
+      "get": {
+        "operationId": "GET_api_teams",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/teams/{id}/rosters": {
+      "get": {
+        "operationId": "GET_api_teams_id_rosters",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "query and response: local to the handler"
+        ]
+      }
     }
   },
   "components": {
@@ -5513,7 +6215,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "x-arugula-auth",
-        "description": "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only on routes marked native (#600), which aren't yet."
+        "description": "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only if it paired as a native app, on routes marked native, with control's --native-clients on (aru-131)."
       },
       "sessionCookie": {
         "type": "apiKey",
@@ -5538,6 +6240,64 @@
         },
         "required": [
           "pointer"
+        ],
+        "type": "object"
+      },
+      "AddMany": {
+        "description": "[`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or\n`untriaged` (everything that matches, but the `except` pointers). More\nthan [`ADD_MANY_MAX`] is refused, 400: narrow the filter.",
+        "properties": {
+          "except": {
+            "description": "With `untriaged`: pointers to leave out.",
+            "items": {
+              "$ref": "#/components/schemas/Pointer"
+            },
+            "type": "array"
+          },
+          "pointers": {
+            "items": {
+              "$ref": "#/components/schemas/Pointer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "untriaged": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UntriagedQuery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AddedMany": {
+        "description": "[`BOARD_ENTRIES_MANY`]' answer.",
+        "properties": {
+          "added": {
+            "description": "Rows made. An item on the board already isn't counted.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "attached": {
+            "description": "PRs attached to the row of the issue they close, as a single add does.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "board": {
+            "$ref": "#/components/schemas/BoardView"
+          }
+        },
+        "required": [
+          "added",
+          "attached",
+          "board"
         ],
         "type": "object"
       },
@@ -5666,6 +6426,36 @@
           "question",
           "asked_by",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "Asset": {
+        "description": "One picture of a Doc, without its bytes: the shape a machine Doc's\nstate gives (`DocState.assets`).",
+        "properties": {
+          "mime": {
+            "description": "`image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the\nbytes say.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rev": {
+            "description": "Changes whenever the name is written with other bytes: clients cache\na picture by `name/rev`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "mime",
+          "size",
+          "rev"
         ],
         "type": "object"
       },
@@ -5884,6 +6674,17 @@
           "id": {
             "type": "string"
           },
+          "lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoardLead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session that leads the board (#414): a post on the board's thread\nreaches it. Absent when no session does."
+          },
           "progress": {
             "$ref": "#/components/schemas/BoardProgress",
             "default": {
@@ -5946,6 +6747,13 @@
             ],
             "description": "The machine whose agent linked it, if one did."
           },
+          "copy": {
+            "description": "A machine Doc's copy on the platform (`pdc_…`), when it sits in this\nboard's project (native #673): the title and counts are then the\ncopy's, and the chip opens it while the machine is away. Older\nplatforms don't send it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "uint64",
             "minimum": 0,
@@ -5996,6 +6804,34 @@
           "title",
           "added_by",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "BoardLead": {
+        "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
+        "properties": {
+          "at": {
+            "description": "When the session took the lead.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "machine": {
+            "type": "string"
+          },
+          "machine_name": {
+            "default": "",
+            "description": "The machine's name now; empty while it can't be told.",
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine",
+          "session",
+          "at"
         ],
         "type": "object"
       },
@@ -6101,6 +6937,13 @@
           "board": {
             "$ref": "#/components/schemas/Board"
           },
+          "chain": {
+            "description": "The longest chain of open rows (`row_…`), first to last; empty when\nno row waits on another (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "docs": {
             "default": [],
             "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
@@ -6114,6 +6957,13 @@
             "description": "Empty for a board with none; an old client ignores it.",
             "items": {
               "$ref": "#/components/schemas/Group"
+            },
+            "type": "array"
+          },
+          "order": {
+            "description": "Every row (`row_…`) as the board stores them: by group, in the\ngroups' order, then by position inside each, those with no group\nlast. A move that names the order it read (`seen`) names a group's\nrows from here.",
+            "items": {
+              "type": "string"
             },
             "type": "array"
           },
@@ -6131,9 +6981,16 @@
               "null"
             ]
           },
+          "sequence": {
+            "description": "The rows (`row_…`) that have a [`Row::step`], by step, and inside a\nstep by what unblocks the most open rows, then by position (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "zones": {
             "items": {
-              "$ref": "#/components/schemas/Zone"
+              "$ref": "#/components/schemas/LaneView"
             },
             "type": "array"
           }
@@ -6155,6 +7012,61 @@
           "canceled"
         ],
         "type": "string"
+      },
+      "Cert": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "approver": {
+            "description": "The device that signed this; the device itself for the root.",
+            "type": "string"
+          },
+          "created": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "noise": {
+            "description": "X25519 public key, hex (zeros for a recovery code).",
+            "type": "string"
+          },
+          "sig": {
+            "default": "",
+            "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+            "type": "string"
+          },
+          "sign": {
+            "description": "Ed25519 public key, hex.",
+            "type": "string"
+          },
+          "v": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "v",
+          "account",
+          "device",
+          "kind",
+          "name",
+          "noise",
+          "sign",
+          "created",
+          "approver"
+        ],
+        "type": "object"
       },
       "ChatAddMembers": {
         "description": "`POST /api/chat/rooms/{id}/members`: a channel's creator or its team's\nowners add people of the team.",
@@ -6422,6 +7334,19 @@
         },
         "required": [
           "found"
+        ],
+        "type": "object"
+      },
+      "ChatGrantNever": {
+        "description": "`POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its\nagents are never to be asked to read this room (#578). What waited for\nthem is `not_granted` for good; a grant over the room undoes it.",
+        "properties": {
+          "daemon": {
+            "description": "The machine's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "daemon"
         ],
         "type": "object"
       },
@@ -6864,6 +7789,11 @@
             "type": "string"
           },
           {
+            "const": "silenced",
+            "description": "The session it named (`asked`) is there, but its owner silenced\nmentions for it (#579): it waits in the machine's inbox.",
+            "type": "string"
+          },
+          {
             "const": "no_such_session",
             "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
             "type": "string"
@@ -6891,6 +7821,16 @@
           {
             "const": "read",
             "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+            "type": "string"
+          },
+          {
+            "const": "dropped",
+            "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
+            "type": "string"
+          },
+          {
+            "const": "not_granted",
+            "description": "The machine's agents can't read the room (#578): its owner was asked\nto let them. Delivered if they do; final if they said never.",
             "type": "string"
           }
         ]
@@ -6936,6 +7876,17 @@
           },
           "state": {
             "$ref": "#/components/schemas/ChatMentionState"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DropWhy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `dropped`: why (#613)."
           }
         },
         "required": [
@@ -7457,10 +8408,40 @@
           },
           "text": {
             "type": "string"
+          },
+          "to": {
+            "description": "In a thread (#647): who this wakes, chosen in the composer, in place\nof the agent it replies to. Agents the text names come too. Empty:\nnobody. Absent: as before this field. Ignored from an agent, and\noutside a thread.",
+            "items": {
+              "$ref": "#/components/schemas/ChatPostTarget"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "text"
+        ],
+        "type": "object"
+      },
+      "ChatPostTarget": {
+        "description": "An agent a message is for (#647), as [`ChatThreadAgent`] names it.",
+        "properties": {
+          "id": {
+            "description": "The machine's id, or a hosted session's `ses_` id.",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session on the machine, when it has a name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
         ],
         "type": "object"
       },
@@ -7587,6 +8568,13 @@
       "ChatReaction": {
         "description": "One emoji on a message, as the reader sees it.",
         "properties": {
+          "agents": {
+            "default": 0,
+            "description": "How many of `count` are agents' (#632); the rest are people's. An\nolder control leaves it out, and it reads as none.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "count": {
             "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
             "format": "uint32",
@@ -7770,6 +8758,13 @@
           },
           "unread": {
             "description": "Messages after the read mark (not the reader's own), and how many\nof those mention the reader.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wants": {
+            "default": 0,
+            "description": "How much of `unread` wants the reader: what a count of it says. In\nan object's thread, its mentions, and on an open native issue\nassigned to the reader what isn't from their own agents; the rest\nof `unread` is only a dot on its row. In any other room, `unread`.",
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
@@ -8457,6 +9452,34 @@
             "description": "`pdc_` and 32 hex characters.",
             "type": "string"
           },
+          "machine": {
+            "default": null,
+            "description": "The machine this Doc is a copy from, or null for one made here. A\ncopy is read-only here: the machine's Doc is the truth (#678).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine_name": {
+            "default": null,
+            "description": "That machine's name, when control knows it: null for a Doc made\nhere, or once the machine left. Older pages don't read it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "made_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MadeFrom"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For a team Doc made from a copy (Share with…): where from. Null for\nany other Doc, and from an older platform."
+          },
           "project": {
             "type": "string"
           },
@@ -8569,6 +9592,19 @@
       "DocView": {
         "description": "`GET` [`PROJECT_DOC`]: a Doc with its sections, in order.",
         "properties": {
+          "assets": {
+            "default": [],
+            "description": "Its pictures, by name.",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "type": "array"
+          },
+          "deleter": {
+            "default": false,
+            "description": "Whether the reader may delete it: a person who writes in the\nproject, a copy included (native #673). An older platform sends\nnone; the page then takes `writer`.",
+            "type": "boolean"
+          },
           "doc": {
             "$ref": "#/components/schemas/Doc"
           },
@@ -8631,6 +9667,21 @@
         },
         "type": "object"
       },
+      "DropWhy": {
+        "description": "Why a mention was dropped (#613).",
+        "oneOf": [
+          {
+            "const": "stopped",
+            "description": "The person pressed stop while it waited in the session's queue.",
+            "type": "string"
+          },
+          {
+            "const": "exited",
+            "description": "The session's process ended in the middle of its turn.",
+            "type": "string"
+          }
+        ]
+      },
       "EditBoard": {
         "description": "`PATCH`: what to change; a field left out stays. An empty goal clears it.",
         "properties": {
@@ -8653,11 +9704,19 @@
       },
       "EntryKind": {
         "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-        "enum": [
-          "zone",
-          "row"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "row"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "zone",
+            "description": "A group; `group` is read as this too.",
+            "type": "string"
+          }
+        ]
       },
       "ForgeDraft": {
         "properties": {
@@ -9669,6 +10728,89 @@
         },
         "type": "object"
       },
+      "JoinProof": {
+        "properties": {
+          "ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sig": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ms",
+          "sig"
+        ],
+        "type": "object"
+      },
+      "JoinRequest": {
+        "description": "`POST /api/join`. The CLI joins the same way, with only `cert` and\n`proof`.",
+        "properties": {
+          "cert": {
+            "$ref": "#/components/schemas/Cert"
+          },
+          "features": {
+            "default": "",
+            "description": "What the daemon understands, comma-separated (older ones send none).",
+            "type": "string"
+          },
+          "proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JoinProof"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its signature with the key it asks with (0.17 and newer)."
+          },
+          "team": {
+            "default": null,
+            "description": "A machine that belongs to a team (M19), not a person.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cert"
+        ],
+        "type": "object"
+      },
+      "Kind": {
+        "oneOf": [
+          {
+            "enum": [
+              "browser",
+              "cli",
+              "daemon"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "recovery",
+            "description": "A recovery code: approves a new device when every other is lost.",
+            "type": "string"
+          },
+          {
+            "const": "app",
+            "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+            "type": "string"
+          }
+        ]
+      },
       "Lane": {
         "description": "Where a row is, worked out on every read from the live state of its\nitems and never stored (aru-125). Each is the furthest that applies, in\nthe order `done`, `review`, `doing`, `next`.",
         "oneOf": [
@@ -9715,6 +10857,45 @@
           "lane",
           "by",
           "at"
+        ],
+        "type": "object"
+      },
+      "LaneView": {
+        "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZoneKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rev",
+          "title",
+          "rows"
         ],
         "type": "object"
       },
@@ -9854,6 +11035,31 @@
           }
         ]
       },
+      "MadeFrom": {
+        "description": "The copy a team Doc was made from.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "machine_name": {
+            "default": null,
+            "description": "The name of the machine the copy is from, when control knows it. Only\nwhat the platform could tell; the copy itself is its owner's to read.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The copy's project (its owner's personal one) and its id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "id"
+        ],
+        "type": "object"
+      },
       "Mark": {
         "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
         "oneOf": [
@@ -9947,9 +11153,23 @@
           {
             "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
             "properties": {
+              "board": {
+                "description": "The other board the blocker is a row of, when the reader may read\nthe blocker and it is on a board other than this one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "const": "blocked_by",
                 "type": "string"
+              },
+              "lead": {
+                "description": "The session that leads that board, when one does.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "number": {
                 "format": "uint64",
@@ -9976,8 +11196,44 @@
               "kind"
             ],
             "type": "object"
+          },
+          {
+            "description": "The row's item is in a loop of open ordering edges (Plane can make\none): it shares its `step` with the others in the loop.",
+            "properties": {
+              "kind": {
+                "const": "cycle",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
           }
         ]
+      },
+      "Me": {
+        "description": "The signed-in person, as the hub knows them.",
+        "properties": {
+          "account": {
+            "description": "Control's id for the account.",
+            "type": "string"
+          },
+          "login": {
+            "description": "Its sign-in login (GitHub's), or \"\".",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name it chose, else its login, else \"\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "login",
+          "name"
+        ],
+        "type": "object"
       },
       "MoveDoc": {
         "description": "[`BOARD_DOC_MOVE`]'s body: the Doc it goes before, in the same strip or\nrow; none: last.",
@@ -9993,7 +11249,7 @@
         "type": "object"
       },
       "MoveEntry": {
-        "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
+        "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.\n\n`seen` is the row ids of the group the row goes to, in the order the\ncaller read them. A row's `rev` doesn't count moves, so this is what a\nmove that mustn't overwrite someone else's checks: if the group's rows\naren't those, in that order, nothing moves and the answer is 409\n`stale_order` with the group's rows as they are now ([`StaleOrder`]).\nAbsent, a move is made whatever the order.",
         "properties": {
           "before": {
             "default": null,
@@ -10011,8 +11267,17 @@
               "null"
             ]
           },
+          "seen": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "zone": {
-            "description": "The group the row goes to; `null`: none. Absent: its own.",
+            "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
             "type": [
               "string",
               "null"
@@ -10063,6 +11328,13 @@
         "properties": {
           "goal": {
             "description": "What the board is for; left out: none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lead_session": {
+            "description": "With an agent's write: the session that makes it leads the new board\n(#414). A person's write ignores it.",
             "type": [
               "string",
               "null"
@@ -10275,7 +11547,7 @@
             "type": "object"
           },
           {
-            "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off.",
+            "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off; a [`BoardDoc`] reads the\nmachine's copy instead when the copy sits in the board's project.",
             "properties": {
               "doc": {
                 "type": "string"
@@ -10300,6 +11572,115 @@
             "type": "object"
           }
         ]
+      },
+      "PollQuery": {
+        "description": "The token the daemon polls with: `GET /api/join/{code}?poll=`.",
+        "properties": {
+          "poll": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "poll"
+        ],
+        "type": "object"
+      },
+      "Project": {
+        "properties": {
+          "id": {
+            "description": "`prj_` and 32 hex characters.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTeam"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team it's the default project of; `None` for the person's own."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProjectMember": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "name": {
+            "description": "What the roster calls them.",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ProjectTeam": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMember"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "description": "The reader's role in it: `owner`, `editor` or `viewer`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "members"
+        ],
+        "type": "object"
+      },
+      "Projects": {
+        "properties": {
+          "hosted": {
+            "default": false,
+            "description": "Hosted workspaces are open to this person (M179's allowlist): only\nthen does the shell offer to delegate a project to control (M178).\nA platform from before leaves it out.",
+            "type": "boolean"
+          },
+          "me": {
+            "$ref": "#/components/schemas/Me"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "me",
+          "projects"
+        ],
+        "type": "object"
       },
       "Proof": {
         "description": "The mark on a Done row that is proven. A Done row without one is not\nproven yet.",
@@ -10422,7 +11803,7 @@
           },
           "zone": {
             "default": null,
-            "description": "A new row's group (`zon_…`).",
+            "description": "A new row's group (`zon_…`); `group` is read as this too.",
             "type": [
               "string",
               "null"
@@ -10463,7 +11844,7 @@
         ]
       },
       "RelationKind": {
-        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
         "oneOf": [
           {
             "enum": [
@@ -10484,6 +11865,11 @@
           {
             "const": "discovered_from",
             "description": "The first item was found while working on the second.",
+            "type": "string"
+          },
+          {
+            "const": "before",
+            "description": "The first item comes before the second, in the order the work is\ndone in.",
             "type": "string"
           }
         ]
@@ -10618,6 +12004,15 @@
           "note": {
             "type": "string"
           },
+          "place": {
+            "description": "The column the row sits in on the Steps chart (Arugula #824): the\nsame longest-path layout as [`Row::step`], but over every row with an\nissue or a PR, done ones included, using their ordering edges whether\nthe other end is open or closed. So finishing work never moves a row.\nAbsent for a row with no issue or PR.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pointer": {
             "$ref": "#/components/schemas/Pointer"
           },
@@ -10648,6 +12043,15 @@
             "$ref": "#/components/schemas/Status",
             "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
           },
+          "step": {
+            "description": "Where the row falls in the board's order (Arugula #762): 1 plus the\nhighest step of the open rows that come before it, worked out on\nevery read and never stored. Absent for a row with no issue or PR,\nand for a Done row. Doing and Review rows are step 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "updated_at": {
             "format": "uint64",
             "minimum": 0,
@@ -10661,6 +12065,90 @@
           "note",
           "status",
           "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RowCandidate": {
+        "description": "One thing a row may point at.",
+        "properties": {
+          "assignees": {
+            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "identifier": {
+            "description": "A tracker item's project key (`ARUGU`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "`issue`, `pr` or `run`.",
+            "type": "string"
+          },
+          "labels": {
+            "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "number": {
+            "description": "A run has none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pointer": {
+            "$ref": "#/components/schemas/Pointer",
+            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+          },
+          "repo": {
+            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "`native`, `github`, `plane` or `run`.",
+            "type": "string"
+          },
+          "state": {
+            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+            "type": "string"
+          },
+          "title": {
+            "description": "A run's: how it started (`manual run`).",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "Where a tracker item is, in the tracker.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pointer",
+          "source",
+          "kind",
+          "title",
+          "state",
+          "assignees",
           "updated_at"
         ],
         "type": "object"
@@ -11438,7 +12926,7 @@
           "work": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/sessions.SessionWork"
+                "$ref": "#/components/schemas/SessionIssueLink"
               },
               {
                 "type": "null"
@@ -11528,6 +13016,47 @@
           "title",
           "labels",
           "state"
+        ],
+        "type": "object"
+      },
+      "SessionIssueLink": {
+        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board_title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "The issue (`iss_…`) and its number.",
+            "type": "string"
+          },
+          "number": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "row": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "issue",
+          "number"
         ],
         "type": "object"
       },
@@ -12311,6 +13840,30 @@
         ],
         "type": "string"
       },
+      "UntriagedQuery": {
+        "description": "Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`\nset, of the board's own project.",
+        "properties": {
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
       "WithheldRepo": {
         "properties": {
           "repo": {
@@ -12318,7 +13871,7 @@
             "type": "string"
           },
           "why": {
-            "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+            "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour), `unsure` (GitHub\ncouldn't be asked just now: it's asked again next time) or `no_app`\n(this control has no GitHub App to ask with).",
             "type": "string"
           }
         },
@@ -12333,12 +13886,36 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/boards.WorkItem"
+              "$ref": "#/components/schemas/RowCandidate"
             },
             "type": "array"
           },
+          "labels": {
+            "description": "With `untriaged`: the labels of everything that matches `q`, `label`\naside (so the chips keep their counts), most items first, then by name.",
+            "items": {
+              "$ref": "#/components/schemas/WorkLabel"
+            },
+            "type": "array"
+          },
+          "next": {
+            "default": null,
+            "description": "With `untriaged`: the cursor of the next page, null at the end.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "type": "string"
+          },
+          "total": {
+            "description": "With `untriaged`: how many items match `q` and `label` in all.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -12347,12 +13924,46 @@
         ],
         "type": "object"
       },
+      "WorkLabel": {
+        "description": "A label and how many of a query's matches carry it.",
+        "properties": {
+          "count": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "type": "object"
+      },
       "WorkQuery": {
         "description": "[`PROJECT_WORK`]'s query.",
         "properties": {
+          "cursor": {
+            "default": null,
+            "description": "With `untriaged`: the page after the one that answered this\n[`WorkItems::next`]. Opaque; it holds its place when items leave the\nlist between pages.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
             "default": null,
             "description": "`issue`, `pr` or `run`; absent means all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "default": null,
+            "description": "With `untriaged`: only items with this label.",
             "type": [
               "string",
               "null"
@@ -12365,6 +13976,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "order": {
+            "default": null,
+            "description": "With `untriaged`, `new` (the default) or `old`: by when an item was\nlast updated.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -12384,127 +14003,12 @@
         },
         "type": "object"
       },
-      "Zone": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ZoneKind"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rev": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/Row"
-            },
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "rev",
-          "title",
-          "rows"
-        ],
-        "type": "object"
-      },
       "ZoneKind": {
         "description": "A zone's kind: every zone a read answers is a `lane`, one of the four\n([`Lane`]). No one makes a zone.",
         "enum": [
           "lane"
         ],
         "type": "string"
-      },
-      "boards.WorkItem": {
-        "description": "One thing a row may point at.",
-        "properties": {
-          "assignees": {
-            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "identifier": {
-            "description": "A tracker item's project key (`ARUGU`).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "description": "`issue`, `pr` or `run`.",
-            "type": "string"
-          },
-          "number": {
-            "description": "A run has none.",
-            "format": "uint64",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "pointer": {
-            "$ref": "#/components/schemas/Pointer",
-            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-          },
-          "repo": {
-            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "description": "`native`, `github`, `plane` or `run`.",
-            "type": "string"
-          },
-          "state": {
-            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-            "type": "string"
-          },
-          "title": {
-            "description": "A run's: how it started (`manual run`).",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "url": {
-            "description": "Where a tracker item is, in the tracker.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "pointer",
-          "source",
-          "kind",
-          "title",
-          "state",
-          "assignees",
-          "updated_at"
-        ],
-        "type": "object"
       },
       "issues.NewIssue": {
         "properties": {
@@ -12533,47 +14037,6 @@
         },
         "required": [
           "title"
-        ],
-        "type": "object"
-      },
-      "sessions.SessionWork": {
-        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
-        "properties": {
-          "board": {
-            "default": null,
-            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "board_title": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "issue": {
-            "description": "The issue (`iss_…`) and its number.",
-            "type": "string"
-          },
-          "number": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "row": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "issue",
-          "number"
         ],
         "type": "object"
       }

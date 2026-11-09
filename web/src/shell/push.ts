@@ -144,7 +144,7 @@ export function desktopPush(
       const k = await invoke<{ id: string; p256dh: string; auth: string }>("notices_keys");
       const endpoint = `${location.origin}/api/push/live/${k.id}`;
       const { listen } = await control.subscribe({ endpoint, p256dh: k.p256dh, auth: k.auth });
-      if (!listen) throw new Error("control didn't take the app's subscription");
+      if (!listen) throw new Error("Arugula cloud didn't take the app's subscription");
       await invoke("notices_start", { endpoint, listen });
       return "on";
     },

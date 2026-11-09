@@ -1,9 +1,11 @@
-//! The chant→Fly driver's apply (M220), against a fake chant, a fake
-//! flyctl and a fake npm that record what they're run with, and a local
-//! origin: it checks the token, runs chant's op, approves the op's own gate
-//! as the approver, ties chant's new ledger entry to what Fly runs, and
-//! rolls back through Fly and chant. Each program gets only the credentials
-//! it's meant to, and only in its environment; the result comes on fd 3.
+//! The chant→Fly driver (M220, #1985), against a fake chant, a fake flyctl
+//! and a fake npm that record what they're run with, and a local origin:
+//! its plan runs chant's op to its gate with no Fly token and pushes the
+//! pending fact; its apply checks the token, asks chant whether the plan is
+//! stale, hands chant the passkey's signature over chant's own statement,
+//! runs the op, ties chant's new ledger entry to what Fly runs, and rolls
+//! back through Fly and chant. Each program gets only the credentials it's
+//! meant to, and only in its environment; the result comes on fd 3.
 
 use std::{
     io::Read as _,
@@ -12,49 +14,75 @@ use std::{
     process::Command,
 };
 
-use super::{CHANT_FLY, RESULT_FD, result_of};
+use arugula_control_wire::work::{DeployWork, PasskeyAssertion};
+use arugula_e2e::deploy::{Approval, Operation, chant::Gate};
+
+use super::{
+    CHANT_FLY, RESULT_FD, chant_relay,
+    plan_ledger::{BUNDLE, PlanLedger, Want},
+    result_of,
+};
 
 const TOKEN: &str = "fly-token-m220-secret"; // gitleaks:allow
 const GH: &str = "gh-token-m220-secret"; // gitleaks:allow
+/// The token that writes, which only arugulad's own push holds (#1985).
+const GH_WRITE: &str = "gh-write-token-1985-secret"; // gitleaks:allow
 
 fn image(n: char) -> String {
     format!("registry.fly.io/acme-web:deployment-{n}@sha256:{}", n.to_string().repeat(64))
 }
 
-/// A fake chant, after `@intentius/chant` 0.124.40 as the M220 rig ran it
-/// (arugula-salad/deploy-smoke): each command first reads chant's ledger
-/// (`chant/lifecycle`) from origin, and refuses when it isn't here and
-/// origin can't be reached (chant's `requireLifecycleLedger`); origin, as
-/// GitHub answers for a private repository, answers only a git that has
-/// GITHUB_TOKEN, and any other remote (the driver's stand-in) answers.
+/// A fake chant, after `@intentius/chant` 0.124.68 (and, with
+/// $FAKE_CHANT_VERSION, an older one, which the driver refuses): `--version`
+/// says which. Each command first reads chant's ledger (`chant/lifecycle`)
+/// from its remote, and refuses when it isn't here and the remote can't be
+/// reached (chant's `requireLifecycleLedger`). The remote is the one
+/// `CHANT_LIFECYCLE_REMOTE` names (chant#4647), else origin, and must be one
+/// of the repository's. origin, as GitHub answers for a private repository,
+/// answers only a git that has GITHUB_TOKEN, and any other remote (the
+/// driver's stand-in) answers.
 /// `run release --json` stops at its gate (exit 3) until a resolution of
 /// this commit's plan is in the ledger: it writes a pending fact
 /// (`_gates/release.jsonl`, its `planDigest`) and prints its run record
 /// (`gate: {name, since}`, `approve`), as chant does; then it deploys (a
-/// new image) and records the release. `approve` resolves the gate for the
-/// plan given (`--plan` must be the pending one's); `components release`
-/// records a release again. Each push goes to origin when it's reachable,
-/// a warning otherwise. Each call goes in $FAKE_LOG with which tokens it
-/// saw.
+/// new image) and records the release. With $FAKE_DIR/needs-fly it fails
+/// before its gate without the Fly token. `approve` with `--statement`
+/// prints chant's gate statement (its lines, as chant's `gateSealPayload`,
+/// and their challenge); with `--signature -` it reads a WebAuthn
+/// assertion on stdin, takes it only when its client data's challenge is
+/// that statement's (a real chant checks the signature too, against
+/// `.chant/trust.json`), and resolves the gate for the plan given (`--plan`
+/// must be the pending one's). `plan stale <digest>` says it's current, or
+/// stale with $FAKE_DIR/stale, or unknown (exit 1) when no pending fact
+/// records it. `components release` records a release again. Each push
+/// goes to the remote when it's reachable, a warning otherwise. Each call
+/// goes in $FAKE_LOG with which tokens it saw and which remote it used.
 const FAKE_CHANT: &str = r#"#!/bin/bash
 set -e
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
 fd3=no; (: >&3) 2>/dev/null && fd3=yes
-echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER" >> "$FAKE_LOG"
+version=${FAKE_CHANT_VERSION:-0.124.68}
+remote=origin
+[ -n "$CHANT_LIFECYCLE_REMOTE" ] && remote=$CHANT_LIFECYCLE_REMOTE
+echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER remote:$remote" >> "$FAKE_LOG"
+[ "$1" = --version ] && { echo "$version"; exit 0; }
+git remote get-url "$remote" >/dev/null 2>&1 || { echo "CHANT_LIFECYCLE_REMOTE names the remote \"$remote\", which this repository doesn't have" >&2; exit 1; }
 export LC_ALL=C
 B=refs/heads/chant/lifecycle
 now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
-reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url origin)" != "$FAKE_ORIGIN" ]; }
+# chant's default gate timeout (48h) after $1.
+expires() { node -e 'process.stdout.write(new Date(Date.parse(process.argv[1]) + 48 * 3600e3).toISOString())' "$1"; }
+reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url "$remote")" != "$FAKE_ORIGIN" ]; }
 ledger() {
   local had err
   had=$(git rev-parse -q --verify $B || true)
   if reachable; then
-    err=$(git fetch -q origin chant/lifecycle:chant/lifecycle 2>&1) && return 0
+    err=$(git fetch -q "$remote" chant/lifecycle:chant/lifecycle 2>&1) && return 0
     case "$err" in *"couldn't find remote ref"*) return 0 ;; esac
   fi
   [ -n "$had" ] && return 0
-  echo "the chant/lifecycle ledger branch is not in this checkout and could not be fetched from \"origin\", so what is on it cannot be read. Refusing rather than treating an unreadable ledger as an empty one." >&2
+  echo "the chant/lifecycle ledger branch is not in this checkout and could not be fetched from \"$remote\", so what is on it cannot be read. Refusing rather than treating an unreadable ledger as an empty one." >&2
   return 1
 }
 append() {
@@ -73,16 +101,26 @@ append() {
   unset GIT_INDEX_FILE
 }
 push() {
-  if reachable && git push -q origin chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
-  echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"origin\" failed" >&2
+  if reachable && git push -q "$remote" chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
+  echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"$remote\" failed" >&2
 }
 # macOS may have no sha256sum (its Tart VMs don't): shasum there.
 sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; }
+b64url() { openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=\n'; }
 sha=$(git rev-parse HEAD)
-plan="sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/dev/null)" | sha256 | cut -c1-64)"
+plan="jcs1-sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/dev/null)" | sha256 | cut -c1-64)"
 case "$1 $2" in
   "run release")
     ledger || { echo '{"version":1,"op":"release","status":"fail"}'; exit 1; }
+    # An op that would take the push's token if it could: git configuration
+    # in its home whose pre-push hook keeps $GITHUB_TOKEN.
+    if [ -e "$FAKE_DIR/plant" ]; then
+      mkdir -p "$HOME/hooks"
+      printf '#!/bin/sh\necho "pre-push saw ${GITHUB_TOKEN:-nothing}" >> "%s/leak"\n' "$FAKE_DIR" > "$HOME/hooks/pre-push"
+      chmod +x "$HOME/hooks/pre-push"
+      printf '[core]\n\thooksPath = %s/hooks\n' "$HOME" > "$HOME/.gitconfig"
+    fi
+    [ -e "$FAKE_DIR/needs-fly" ] && [ "$fly" = no ] && { echo "the op's plan step needs FLY_API_TOKEN" >&2; exit 1; }
     op=$(cat "$FAKE_DIR/gate-op" 2>/dev/null || echo release)
     gate=approve-release
     if ! git show $B:_gates/release.jsonl 2>/dev/null | grep '"resolvedBy"' | grep -F "\"gitSha\":\"$sha\"" | grep -qF "\"planDigest\":\"$plan\""; then
@@ -90,7 +128,7 @@ case "$1 $2" in
       if [ -e "$FAKE_DIR/no-plan" ]; then pd=; hint="chant approve $op $gate"
       else pd="\"planDigest\":\"$plan\","; hint="chant approve $op $gate --plan $plan"; fi
       [ -e "$FAKE_DIR/other-hint" ] && hint="chant approve $op $gate --plan sha256:$(printf '%064d' 0)"
-      append _gates/$op.jsonl "{\"description\":\"Approve deploying this commit to acme-web\",\"expiresAt\":\"$t\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"kind\":\"pending\",\"neverOverMcp\":true,\"op\":\"$op\",\"origin\":\"cli\",$pd\"runId\":\"$id\",\"timestamp\":\"$t\",\"version\":1}"
+      append _gates/$op.jsonl "{\"description\":\"Approve deploying this commit to acme-web\",\"expiresAt\":\"$(expires "$t")\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"kind\":\"pending\",\"neverOverMcp\":true,\"op\":\"$op\",\"origin\":\"cli\",$pd\"runId\":\"$id\",\"timestamp\":\"$t\",\"version\":1}"
       push
       echo "{\"version\":1,\"id\":\"$id\",\"op\":\"$op\",\"env\":\"local\",\"started\":\"$t\",\"ended\":\"$t\",\"status\":\"gated\",\"labels\":{},\"outcomes\":{},\"phases\":[{\"name\":\"Plan\",\"status\":\"ok\",\"steps\":[{\"fn\":\"shellCmd\",\"status\":\"ok\",\"durationMs\":23}],\"durationMs\":23},{\"name\":\"Approve\",\"status\":\"skipped\",\"steps\":[{\"fn\":\"gate:$gate\",\"status\":\"skipped\",\"durationMs\":118}],\"durationMs\":119}],\"gate\":{\"name\":\"$gate\",\"since\":\"$t\"},\"gitSha\":\"$sha\",\"approve\":\"$hint\"}"
       exit 3
@@ -103,15 +141,34 @@ case "$1 $2" in
     echo "{\"version\":1,\"id\":\"$id\",\"op\":\"release\",\"env\":\"local\",\"status\":\"ok\",\"gitSha\":\"$sha\"}" ;;
   "approve release")
     ledger || exit 1
-    gate=$3; by=; relayed=; note=; given=; prev=
-    for a in "$@"; do case "$prev" in --approver) by=$a;; --relayed-by) relayed=$a;; --note) note=$a;; --plan) given=$a;; esac; prev=$a; done
+    gate=$3; by=; relayed=; note=; given=; envn=; binding=; at=; statement=no; signature=; prev=
+    for a in "$@"; do case "$prev" in --actor) by=$a;; --relayed-by) relayed=$a;; --note) note=$a;; --plan) given=$a;; --env) envn=$a;; --binding) binding=$a;; --at) at=$a;; --signature) signature=$a;; esac; [ "$a" = --statement ] && statement=yes; prev=$a; done
     pending=$(git show $B:_gates/release.jsonl 2>/dev/null | grep '"kind":"pending"' | grep -F "\"gitSha\":\"$sha\"" | tail -1)
     [ -n "$pending" ] || { echo "no pending gate $gate for $sha" >&2; exit 1; }
     case "$pending" in *"\"planDigest\":\"$given\""*) ;; *) echo "that plan isn't the pending one's" >&2; exit 1 ;; esac
+    text=$(printf 'release\n%s\n%s\n%s\n%s\n%s\nrelayed-by %s\nbinding %s' "$gate" "$envn" "$given" "$by" "$at" "$relayed" "$binding")
+    challenge=$(printf '%s' "$text" | b64url)
+    if [ $statement = yes ]; then
+      printf '{"schema":"chant-gate-statement/v1","chantVersion":"%s","op":"release","gate":"%s","planDigest":"%s","resolvedBy":"%s","relayedBy":"%s","timestamp":"%s","binding":"%s","sealVersion":3,"challenge":"%s"}\n' "$version" "$gate" "$given" "$by" "$relayed" "$at" "$binding" "$challenge"
+      exit 0
+    fi
+    [ "$signature" = - ] || { echo "a gate under identity.gates needs --signature" >&2; exit 1; }
+    assertion=$(cat)
+    cd_b64=$(printf '%s' "$assertion" | sed 's/.*"clientDataJSON":"\([^"]*\)".*/\1/' | tr '_-' '/+')
+    while [ $(( ${#cd_b64} % 4 )) -ne 0 ]; do cd_b64="$cd_b64="; done
+    case "$(printf '%s' "$cd_b64" | base64 -d 2>/dev/null)" in
+      *"\"challenge\":\"$challenge\""*) ;;
+      *) echo "Gate \"$gate\" on \"release\" was not approved: the signature does not verify for $by: its challenge is not this approval's statement digest" >&2; exit 1 ;;
+    esac
     runid=$(printf '%s' "$pending" | sed 's/.*"runId":"\([^"]*\)".*/\1/')
-    append _gates/release.jsonl "{\"approver\":{\"kind\":\"human\"},\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"note\":\"$note\",\"op\":\"release\",\"origin\":\"cli\",\"planDigest\":\"$given\",\"relayedBy\":\"$relayed\",\"resolvedBy\":\"$by\",\"runId\":\"$runid\",\"timestamp\":\"$(now)\",\"version\":1}"
+    append _gates/release.jsonl "{\"approver\":{\"kind\":\"human\"},\"binding\":\"$binding\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"note\":\"$note\",\"op\":\"release\",\"origin\":\"cli\",\"planDigest\":\"$given\",\"relayedBy\":\"$relayed\",\"resolvedBy\":\"$by\",\"runId\":\"$runid\",\"seal\":{\"kind\":\"webauthn\",\"version\":3},\"timestamp\":\"$at\",\"version\":1}"
     push
     echo "Gate \"$gate\" on \"release\" resolved by $by, relayed by $relayed" ;;
+  "plan stale")
+    ledger || exit 1
+    git show $B:_gates/release.jsonl 2>/dev/null | grep '"kind":"pending"' | grep -qF "\"planDigest\":\"$3\"" || { echo '{"contract":1,"plan":null,"stale":null,"applies":[]}'; exit 1; }
+    if [ -e "$FAKE_DIR/stale" ]; then echo '{"contract":1,"stale":true,"applies":[{"source":"deploys"}]}'; exit 2; fi
+    echo '{"contract":1,"stale":false,"applies":[]}' ;;
   "components release")
     ledger || exit 1
     gsha=; run=; actor=; by=; prev=
@@ -249,8 +306,17 @@ struct Ran {
 
 impl Rig {
     /// Run the driver as arugulad would: an empty environment but the
-    /// deploy's and its secrets, its result pipe as fd 3.
-    fn apply(&self, settings: &str, roll_back: Option<String>, extra: &[(&str, &str)]) -> Ran {
+    /// deploy's and its secrets, its result pipe as fd 3. A plan gets
+    /// GITHUB_TOKEN only; an apply both tokens and (unless it's a roll
+    /// back) `relay` as `DEPLOY_CHANT`.
+    fn drive(
+        &self,
+        phase: &str,
+        settings: &str,
+        roll_back: Option<String>,
+        relay: Option<String>,
+        extra: &[(&str, &str)],
+    ) -> Ran {
         let node = node().unwrap();
         let node_dir = Path::new(&node).parent().unwrap().to_string_lossy().into_owned();
         let path = format!("{}:{node_dir}:/usr/bin:/bin", self.dir.join("bin").display());
@@ -263,28 +329,36 @@ impl Rig {
             .env("PATH", path)
             .env("HOME", self.dir.join("home"))
             .env("USER", "runner")
-            .env("DEPLOY_ID", format!("dep_{}", "1".repeat(32)))
+            .env("DEPLOY_ID", DEPLOY)
             .env("DEPLOY_RUN", "run_1")
+            .env("DEPLOY_PHASE", phase)
             .env("DEPLOY_ENVIRONMENT", "production")
             .env("DEPLOY_SOURCE_KIND", "commit")
             .env("DEPLOY_SOURCE_REF", &self.sha)
             .env("DEPLOY_SOURCE_WHERE", "acme/app")
-            .env("DEPLOY_APPROVER", "acct1")
-            .env("DEPLOY_APPROVED_BY", "dev1")
-            .env("DEPLOY_APPROVAL", "apv_1")
-            .env("DEPLOY_OP_HASH", "ab12")
             .env("DEPLOY_SETTINGS", settings)
             .env("DEPLOY_ROLL_BACK", roll_back.unwrap_or_default())
             .env("ARUGULA_CHANT_FLY_TEST", "1")
             .env("DEPLOY_GIT_BASE", format!("{}/origin/", self.dir.display()))
             .env("DEPLOY_FLY_CHECKS", "2x0")
-            .env("FLY_API_TOKEN", TOKEN)
-            .env("GITHUB_TOKEN", GH)
             .env("FAKE_TOKEN", TOKEN)
             .env("FAKE_LOG", self.dir.join("log"))
             .env("FAKE_DIR", &self.dir)
-            .env("FAKE_ORIGIN", self.dir.join("origin/acme/app.git"))
-            .envs(extra.iter().copied());
+            .env("FAKE_ORIGIN", self.dir.join("origin/acme/app.git"));
+        // The plan's step that runs the commit's code gets no token; its
+        // fetch and push, and an apply, GitHub's.
+        if phase != "plan" {
+            c.env("GITHUB_TOKEN", GH);
+        }
+        if phase == "apply" {
+            c.env("FLY_API_TOKEN", TOKEN)
+                .env("DEPLOY_APPROVER", "acct1")
+                .env("DEPLOY_APPROVED_BY", "")
+                .env("DEPLOY_APPROVAL", "apv_1")
+                .env("DEPLOY_OP_HASH", "ab12")
+                .env("DEPLOY_CHANT", relay.unwrap_or_default());
+        }
+        c.envs(extra.iter().copied());
         // SAFETY: dup2 only, between fork and exec.
         unsafe {
             c.pre_exec(move || {
@@ -302,6 +376,89 @@ impl Rig {
         Ran { code: out.status.code().unwrap_or(-1), out: text, result: result_of(&said) }
     }
 
+    /// Its plan, in a home of its own (`plan-home`): a box of its own,
+    /// in its three steps as arugulad runs them (`deploy::plan_steps`):
+    /// its fetch, its plan with no token, then its push with the gate the
+    /// plan reported. Its exit is the first step's that isn't 0, its output
+    /// theirs, its result the plan's.
+    fn plan(&self, settings: &str, extra: &[(&str, &str)]) -> Ran {
+        let home = self.dir.join("plan-home");
+        std::fs::create_dir_all(&home).unwrap();
+        let mut extra = extra.to_vec();
+        extra.push(("HOME", home.to_str().unwrap()));
+        // arugulad's own read of origin's ledger, in a directory of its own.
+        let origin = self.dir.join("origin/acme/app.git");
+        let origin = origin.to_str().unwrap();
+        let ledger = PlanLedger::new(self.dir.join(format!("daemon-{}", self.plans()))).unwrap();
+        let before = ledger.fetch_before(origin, Some(GH)).unwrap();
+        let before_s = before.clone().unwrap_or_default();
+        extra.push(("DEPLOY_LEDGER_BEFORE", &before_s));
+        let fetch = self.drive("plan-fetch", settings, None, None, &extra);
+        if fetch.code != 0 {
+            return fetch;
+        }
+        let plan = self.drive("plan", settings, None, None, &extra);
+        let out = format!("{}{}", fetch.out, plan.out);
+        if plan.code != 0 {
+            return Ran { out, ..plan };
+        }
+        // Then arugulad takes its ledger as data, checks it, and pushes it.
+        let s: serde_json::Value = serde_json::from_str(settings).unwrap();
+        let gate: Gate = serde_json::from_value(plan.result.as_ref().unwrap()["chant_gate"].clone()).unwrap();
+        let set = |k: &str| s[k].as_str().filter(|v| !v.is_empty());
+        let prefix = fetch.result.as_ref().and_then(|r| r["ledger_prefix"].as_str().map(str::to_owned));
+        let Some(prefix) = prefix else {
+            let why = fetch.result.as_ref().map(|r| r["ledger_layout"].to_string()).unwrap_or_default();
+            return Ran { code: 4, out: format!("{out}{why}\n"), result: plan.result };
+        };
+        let want = Want {
+            op: set("chant_op").unwrap_or("release"),
+            gate: &gate,
+            gates_allowed: set("chant_gates"),
+            source_ref: &self.sha,
+            prefix: &prefix,
+            chant_env: set("chant_env").unwrap_or_default(),
+        };
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let taken = rt.block_on(ledger.take_bundle(None, &home.join(BUNDLE)));
+        let checked = taken.and_then(|()| ledger.check(before.as_deref(), &want));
+        let pushed = checked
+            .and_then(|tip| ledger.push(origin, &tip, before.as_deref(), Some(GH_WRITE)).map_err(|e| e.to_string()));
+        match pushed {
+            Ok(()) => Ran { code: 0, out, result: plan.result },
+            Err(why) => Ran { code: 4, out: format!("{out}{why}\n"), result: plan.result },
+        }
+    }
+
+    /// How many plans this rig made, for each one's own directory.
+    fn plans(&self) -> usize {
+        let n = std::fs::read_dir(&self.dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("daemon-"))
+            .count();
+        n + 1
+    }
+
+    /// Its plan, then its apply with the passkey's signature over chant's
+    /// statement for the gate the plan found (`challenge` says the
+    /// assertion's, when it isn't the statement's own).
+    fn release(&self, settings: &str, extra: &[(&str, &str)]) -> Ran {
+        self.release_signed(settings, extra, None)
+    }
+
+    fn release_signed(&self, settings: &str, extra: &[(&str, &str)], challenge: Option<&str>) -> Ran {
+        let planned = self.plan(settings, extra);
+        assert_eq!(planned.code, 0, "the plan: {}", planned.out);
+        let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+        self.drive("apply", settings, None, Some(relay(&gate, challenge)), extra)
+    }
+
+    /// A roll back: an apply with no gate.
+    fn roll_back(&self, settings: &str, to: String) -> Ran {
+        self.drive("apply", settings, Some(to), None, &[])
+    }
+
     fn log(&self) -> Vec<String> {
         std::fs::read_to_string(self.dir.join("log")).unwrap_or_default().lines().map(str::to_owned).collect()
     }
@@ -314,6 +471,49 @@ impl Rig {
     fn origin(&self, script: &str) -> String {
         sh(&self.dir.join("origin/acme/app.git"), script)
     }
+}
+
+const DEPLOY: &str = "dep_11111111111111111111111111111111";
+const AT: &str = "2099-01-01T00:00:00.000Z";
+
+/// What arugulad hands the driver for a v3 approval of `gate` by `acct1`
+/// (`chant_relay`): its assertion's client data names `challenge`, or the
+/// statement's own (a real passkey signs what its client data names).
+fn relay(gate: &Gate, challenge: Option<&str>) -> String {
+    use base64::Engine as _;
+    let op = Operation {
+        project: "prj_1".into(),
+        environment: "env_1".into(),
+        environment_name: "production".into(),
+        plan: "ab".repeat(32),
+        source_kind: "commit".into(),
+        source_ref: "c".repeat(40),
+        source_where: "acme/app".into(),
+        planned: "cd".repeat(32),
+    };
+    // A time no earlier than the pending fact's: the fake's are now.
+    let approval = Approval::v3(DEPLOY, &op, "acct1", 1, AT, gate);
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let ch = challenge.map_or_else(|| approval.passkey_challenge(), str::to_owned);
+    let cd = serde_json::json!({ "type": "webauthn.get", "challenge": ch, "origin": "https://control.test" });
+    let d = DeployWork {
+        deploy: DEPLOY.into(),
+        operation: op,
+        approval,
+        passkey: Some(PasskeyAssertion {
+            id: "pk1".into(),
+            client_data_json: b64.encode(cd.to_string()),
+            authenticator_data: "AAAA".into(),
+            signature: "AAAA".into(),
+        }),
+        passkey_log: None,
+        driver: "chant-fly".into(),
+        secrets: vec![],
+        settings: Default::default(),
+        roll_back: None,
+        approval_id: None,
+    };
+    chant_relay(&d).expect("a v3's relay")
 }
 
 const SETTINGS: &str =
@@ -332,44 +532,194 @@ macro_rules! needs_node {
     };
 }
 
+/// #1985: the plan runs chant's op to its gate with no Fly token and only
+/// GitHub's for the driver's own git, and pushes the gate's pending fact;
+/// its result is that gate, which the passkey signs chant's statement of.
+#[test]
+fn chant_fly_plans_without_fly_and_says_which_gate() {
+    needs_node!();
+    let r = rig("chant-fly-plan");
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 0, "{}", ran.out);
+    let calls = r.calls();
+    assert!(!calls.iter().any(|c| c.starts_with("flyctl")), "a plan runs no flyctl: {calls:?}");
+    assert!(!calls.iter().any(|c| c.starts_with("chant approve")), "nobody approves at planning: {calls:?}");
+    assert_eq!(calls.iter().filter(|c| c.starts_with("chant run release --json")).count(), 1, "{calls:?}");
+    for l in r.log() {
+        assert!(l.contains("fly:no gh:no"), "a plan's programs get no token: {l}");
+        assert!(!l.contains("fd3:yes"), "{l}");
+    }
+    let gate = &ran.result.expect("its result, on fd 3")["chant_gate"];
+    let tip = r.origin("git rev-parse refs/heads/chant/lifecycle");
+    let facts = r.origin(&format!("git show {tip}:_gates/release.jsonl"));
+    let pending = facts.lines().find(|l| l.contains("\"kind\":\"pending\"")).expect("its pending fact reached origin");
+    assert_eq!(gate["op"], "release");
+    assert_eq!(gate["gate"], "approve-release");
+    assert_eq!(gate["chant"], "0.124.68");
+    let plan = gate["plan"].as_str().unwrap();
+    assert!(plan.starts_with("jcs1-sha256:") && pending.contains(&format!("\"planDigest\":\"{plan}\"")), "{pending}");
+    assert!(pending.contains(&format!("\"runId\":\"{}\"", gate["run"].as_str().unwrap())), "{pending}");
+    assert!(pending.contains(&format!("\"timestamp\":\"{}\"", gate["recorded"].as_str().unwrap())), "{pending}");
+    let g: Gate = serde_json::from_value(gate.clone()).unwrap();
+    assert!(g.well_formed(), "{g:?}");
+    // Handed a Fly token, or with none of GitHub's: nothing runs.
+    // The step that runs the commit's code, handed a GitHub token anyway:
+    // nothing runs.
+    let r = rig("chant-fly-plan-gh");
+    assert_eq!(r.drive("plan-fetch", SETTINGS, None, None, &[]).code, 0);
+    let ran = r.drive("plan", SETTINGS, None, None, &[("GITHUB_TOKEN", GH)]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("with no GitHub token"), "{}", ran.out);
+    assert!(r.calls().is_empty(), "{:?}", r.calls());
+    let r = rig("chant-fly-plan-fly");
+    let ran = r.plan(SETTINGS, &[("FLY_API_TOKEN", TOKEN)]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("runs without FLY_API_TOKEN"), "{}", ran.out);
+    assert!(r.calls().is_empty(), "{:?}", r.calls());
+    // An op that needs Fly before its gate fails at planning.
+    let r = rig("chant-fly-plan-needs-fly");
+    std::fs::write(r.dir.join("needs-fly"), "").unwrap();
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("before its gate"), "{}", ran.out);
+}
+
+/// #1985 review: the token that writes never reaches the run user. The
+/// plan's op runs with no token, and arugulad pushes chant's ledger itself:
+/// the token is in no run-user process's environment, no file of the
+/// plan's, and no hook the op planted sees it.
+#[test]
+fn chant_fly_pushes_its_plan_where_the_op_cant_reach_the_token() {
+    needs_node!();
+    let r = rig("chant-fly-plan-plant");
+    std::fs::write(r.dir.join("plant"), "").unwrap();
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 0, "{}", ran.out);
+    let home = r.dir.join("plan-home");
+    assert!(home.join(".gitconfig").exists(), "the op planted its configuration");
+    let leak = std::fs::read_to_string(r.dir.join("leak")).unwrap_or_default();
+    assert!(leak.lines().all(|l| l == "pre-push saw nothing"), "{leak}");
+    assert!(r.log().iter().all(|l| l.contains("gh:no")), "{:?}", r.log());
+    let mut files = vec![home.clone()];
+    while let Some(p) = files.pop() {
+        match std::fs::read_dir(&p) {
+            Ok(rd) => files.extend(rd.flatten().map(|e| e.path())),
+            Err(_) => {
+                let b = std::fs::read(&p).unwrap_or_default();
+                assert!(!b.windows(GH_WRITE.len()).any(|w| w == GH_WRITE.as_bytes()), "{p:?}");
+            }
+        }
+    }
+    let gate = &ran.result.unwrap()["chant_gate"];
+    let tip = r.origin("git rev-parse refs/heads/chant/lifecycle");
+    assert!(r.origin(&format!("git show {tip}:_gates/release.jsonl")).contains(gate["plan"].as_str().unwrap()));
+    assert!(!ran.out.contains(GH) && !ran.out.contains(GH_WRITE), "{}", ran.out);
+}
+
+/// #1985 review: chant's ledger is checked under this deploy's member's
+/// prefix, read at the commit by the plan's fetch. A member of the root
+/// declaration writes under `_members/<name>/`, so a flat write (the fake
+/// chant's) is refused and nothing is pushed; a nested workspace isn't
+/// supported for planning yet.
+#[test]
+fn chant_fly_checks_the_ledger_under_its_members_prefix() {
+    needs_node!();
+    for (name, files, says) in [
+        (
+            "chant-fly-member",
+            vec![("chant.workspace.json", r#"{"members":[{"name":"ops","dir":"ops","kind":"app"}]}"#)],
+            "changes _gates/release.jsonl",
+        ),
+        (
+            "chant-fly-nested",
+            vec![("chant.workspace.json", r#"{"members":[]}"#), ("ops/chant.workspace.json", r#"{"members":[]}"#)],
+            "isn't supported for planning yet: a nested workspace declaration",
+        ),
+    ] {
+        let mut r = rig(name);
+        let repo = r.dir.join("repo");
+        for (f, text) in files {
+            std::fs::write(repo.join(f), text).unwrap();
+        }
+        sh(
+            &repo,
+            "git add -A && git -c user.name=t -c user.email=t@t commit -q -m ws && git push -q ../origin/acme/app.git main",
+        );
+        r.sha = sh(&repo, "git rev-parse HEAD");
+        let ran = r.plan(SETTINGS, &[]);
+        assert_eq!(ran.code, 4, "{}", ran.out);
+        assert!(ran.out.contains(says), "{name}: {}", ran.out);
+        assert!(r.origin("git rev-parse -q --verify refs/heads/chant/lifecycle || true").is_empty(), "nothing pushed");
+    }
+}
+
+/// #1985 review: the box checks the approval's gate against `chant_gates`
+/// itself, as the plan did: a gate the settings don't name is never
+/// approved, whatever the platform relayed.
+#[test]
+fn chant_fly_approves_only_a_gate_its_settings_name() {
+    needs_node!();
+    let r = rig("chant-fly-apply-gate");
+    let planned = r.plan(SETTINGS, &[]);
+    assert_eq!(planned.code, 0, "{}", planned.out);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    assert_eq!(gate.gate, "approve-release");
+    let calls = r.calls().len();
+    let ran = r.drive("apply", &with(r#""chant_gates":"ship""#), None, Some(relay(&gate, None)), &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("is for gate approve-release, which the plan doesn't name"), "{}", ran.out);
+    assert_eq!(r.calls().len(), calls, "nothing of the apply's ran: {:?}", r.calls());
+}
+
+/// The apply: chant says the plan is current, chant's statement for the
+/// approval is the one the passkey signed, chant takes the signature, and
+/// the op runs through its gate; chant's new ledger entry is linked.
 #[test]
 fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     needs_node!();
     let r = rig("chant-fly-apply");
-    let ran = r.apply(SETTINGS, None, &[]);
+    let ran = r.release(SETTINGS, &[]);
     assert_eq!(ran.code, 0, "{}", ran.out);
     let calls = r.calls();
+    let applied = calls.iter().position(|c| c.starts_with("flyctl version")).expect("the apply's calls");
+    let calls = &calls[applied..];
     let at = |prefix: &str| {
         calls.iter().position(|c| c.starts_with(prefix)).unwrap_or_else(|| panic!("{prefix}: {calls:?}"))
     };
     assert!(at("flyctl tokens debug") < at("npm ci"), "the token's checked before anything of the repo's runs");
     assert_eq!(calls[at("npm ci")], "npm ci --no-fund --no-audit --ignore-scripts");
-    let gated = at("chant run release --json");
-    assert!(
-        calls[gated + 1]
-            .starts_with("chant approve release approve-release --approver acct1 --relayed-by arugula --note ")
+    let stale = at("chant plan stale ");
+    let plan = calls[stale].split(' ').nth(3).unwrap().to_owned();
+    assert!(plan.starts_with("jcs1-sha256:") && calls[stale].ends_with(" --json"), "{}", calls[stale]);
+    let approve = format!(
+        "chant approve release approve-release --actor arugula:acct1 --relayed-by arugula --plan {plan} --binding \
+         arugula deploy {DEPLOY} op "
     );
-    assert!(calls[gated + 1].contains("approval apv_1 by acct1 from device dev1, operation sha256:ab12, run run_1"));
-    // The plan chant's run recorded (its pending fact's), and only that.
-    let plan = calls[gated + 1].rsplit_once(" --plan ").map(|(_, p)| p.to_owned()).unwrap_or_default();
-    assert!(plan.starts_with("sha256:") && plan.len() == 71, "{}", calls[gated + 1]);
-    assert_eq!(calls[gated + 2], "chant run release --json");
+    assert!(calls[stale + 1].starts_with(&approve) && calls[stale + 1].ends_with(&format!(" --at {AT} --statement")));
+    assert!(calls[stale + 2].starts_with(&approve) && calls[stale + 2].ends_with(" --signature -"));
+    assert!(calls[stale + 2].contains("--note arugula deploy dep_1111"), "{}", calls[stale + 2]);
+    assert_eq!(calls[stale + 3], "chant run release --json");
     assert_eq!(calls.last().unwrap(), "flyctl status --app acme-web --json");
     // Who saw which token: chant's op and flyctl the Fly token, nobody
-    // GitHub's but the driver's own git; npm and chant approve neither.
-    for l in r.log() {
+    // GitHub's but the driver's own git; npm, chant's own reads and chant
+    // approve neither.
+    for l in r.log().iter().skip(applied) {
         let (call, saw) = l.split_once(" | ").unwrap();
-        let want = if call.starts_with("npm") || call.starts_with("chant approve") || call == "flyctl version" {
+        let want = if call.starts_with("npm")
+            || call.starts_with("chant approve")
+            || call.starts_with("chant plan")
+            || call == "flyctl version"
+            || call == "chant --version"
+        {
             "fly:no gh:no"
         } else {
             "fly:yes gh:no"
         };
         assert!(saw.starts_with(want), "{l}");
         assert!(!call.contains(TOKEN) && !call.contains(GH), "on a command line: {l}");
-        // Only the driver holds its result pipe: what it runs starts without it.
         assert!(!saw.contains("fd3:yes"), "fd 3 reached a program the driver ran: {l}");
     }
-    assert!(r.log().iter().filter(|l| l.starts_with("chant")).all(|l| l.ends_with("user:arugula")));
+    assert!(r.log().iter().filter(|l| l.starts_with("chant")).all(|l| l.contains(" user:arugula ")));
     assert!(!ran.out.contains(TOKEN) && !ran.out.contains(GH), "{}", ran.out);
     assert!(!ran.out.contains("\"chant_ledger\""), "the result isn't on its output: {}", ran.out);
 
@@ -378,21 +728,27 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     assert_eq!(result["chant_ledger"], format!("https://github.com/acme/app/blob/{tip}/github/releases.jsonl#L1"));
     assert_eq!(result["chant_record"]["gitSha"], r.sha);
     assert_eq!(result["fly"], serde_json::json!({ "app": "acme-web", "image": image('2'), "healthy": true }));
-    let line = r.origin(&format!("git show {tip}:github/releases.jsonl"));
-    assert!(line.contains("\"actor\":\"arugula\"") && !line.contains(TOKEN), "{line}");
-    // chant's gate facts reached origin too: what it waited for, and who
-    // resolved it, for which plan.
+    // chant's gate facts reached origin: what the plan waited for, and the
+    // passkey's approval of that plan, with its binding.
     let gates = r.origin(&format!("git show {tip}:_gates/release.jsonl"));
     let resolved = gates.lines().find(|l| l.contains("\"resolvedBy\"")).unwrap_or_default();
-    for want in ["\"resolvedBy\":\"acct1\"", "\"relayedBy\":\"arugula\"", &format!("\"planDigest\":\"{plan}\"")] {
+    for want in [
+        "\"resolvedBy\":\"arugula:acct1\"",
+        "\"relayedBy\":\"arugula\"",
+        &format!("\"planDigest\":\"{plan}\""),
+        &format!("\"binding\":\"arugula deploy {DEPLOY} op "),
+        "\"kind\":\"webauthn\"",
+    ] {
         assert!(resolved.contains(want), "{want} in {gates}");
     }
-    // chant had no GitHub token, and origin (like a private repository on
-    // GitHub) answers none without one: on this first deploy there was no
-    // chant/lifecycle to read, and chant read and wrote its ledger through
-    // the driver's stand-in, which takes that branch only.
+    // chant had no GitHub token: it read and wrote its ledger through the
+    // driver's stand-in, by name, and origin stayed origin.
     assert!(!ran.out.contains("could not be fetched") && !ran.out.contains("did not land"), "{}", ran.out);
     let home = r.dir.join("home");
+    assert_eq!(remotes(&home), ["arugula-ledger", "origin"]);
+    for l in r.log().iter().filter(|l| l.starts_with("chant") && !l.starts_with("chant --version")) {
+        assert!(l.ends_with(" remote:arugula-ledger"), "{l}");
+    }
     assert!(
         !Command::new("git")
             .args(["-C", "src", "push", "-q", "../ledger.git", "HEAD:refs/heads/main"])
@@ -407,9 +763,11 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     // The next deploy reads origin's ledger and adds to it.
     std::fs::write(r.dir.join("next-image"), image('3')).unwrap();
     std::fs::write(r.dir.join("plan-salt"), "2").unwrap();
-    let next = r.dir.join("home2");
-    std::fs::create_dir_all(&next).unwrap();
-    let ran = r.apply(SETTINGS, None, &[("HOME", next.to_str().unwrap())]);
+    for h in ["home", "plan-home"] {
+        std::fs::remove_dir_all(r.dir.join(h)).unwrap();
+        std::fs::create_dir_all(r.dir.join(h)).unwrap();
+    }
+    let ran = r.release(SETTINGS, &[]);
     assert_eq!(ran.code, 0, "{}", ran.out);
     let tip2 = r.origin("git rev-parse refs/heads/chant/lifecycle");
     assert_eq!(r.origin(&format!("git merge-base --is-ancestor {tip} {tip2} && echo yes")), "yes");
@@ -419,36 +777,100 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     );
 }
 
-/// chant's gate is approved for the plan its run recorded, from the
-/// pending fact in its ledger: with none, or when the run names another,
-/// nothing is approved.
+/// The remotes of the box's checkout (`~/src`).
+fn remotes(home: &Path) -> Vec<String> {
+    let mut v: Vec<String> = sh(&home.join("src"), "git remote").lines().map(str::to_owned).collect();
+    v.sort();
+    v
+}
+
+/// Nothing is approved when chant says the plan is stale, when chant's
+/// statement isn't the one the passkey signed, or with no approval over
+/// chant's statement at all.
 #[test]
-fn chant_fly_approves_only_the_plan_chant_recorded() {
+fn chant_fly_approves_only_a_current_plan_its_passkey_signed() {
+    needs_node!();
+    let r = rig("chant-fly-stale");
+    let planned = r.plan(SETTINGS, &[]);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    std::fs::write(r.dir.join("stale"), "").unwrap();
+    let ran = r.drive("apply", SETTINGS, None, Some(relay(&gate, None)), &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("is stale") && ran.out.contains("(1 since)"), "{}", ran.out);
+    assert!(!r.calls().iter().any(|c| c.starts_with("chant approve")), "{:?}", r.calls());
+
+    // What Arugula says the passkey signed isn't chant's statement for
+    // this approval: the driver stops before chant records anything.
+    let r = rig("chant-fly-other-statement");
+    let planned = r.plan(SETTINGS, &[]);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    let mut other: serde_json::Value = serde_json::from_str(&relay(&gate, None)).unwrap();
+    other["challenge"] = "another-statements-challenge".into();
+    let ran = r.drive("apply", SETTINGS, None, Some(other.to_string()), &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("isn't the one the passkey signed"), "{}", ran.out);
+    assert!(!r.calls().iter().any(|c| c.ends_with("--signature -")), "{:?}", r.calls());
+
+    // A signature over something else: chant refuses it, and nothing runs.
+    let r = rig("chant-fly-bad-signature");
+    let ran = r.release_signed(SETTINGS, &[], Some("another-statements-challenge"));
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("the signature does not verify for arugula:acct1"), "{}", ran.out);
+    assert_eq!(r.calls().iter().filter(|c| c.starts_with("chant run")).count(), 1, "only the plan's: {:?}", r.calls());
+
+    let r = rig("chant-fly-no-relay");
+    let ran = r.drive("apply", SETTINGS, None, None, &[]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("approval v3"), "{}", ran.out);
+    assert!(r.calls().is_empty(), "{:?}", r.calls());
+}
+
+/// chant older than 0.124.64 can't check a binding line: refused, in a
+/// plan or an apply, before anything of chant's runs but `--version`.
+#[test]
+fn chant_fly_refuses_a_chant_that_checks_no_binding() {
+    needs_node!();
+    let r = rig("chant-fly-old-chant");
+    let ran = r.plan(SETTINGS, &[("FAKE_CHANT_VERSION", "0.124.63")]);
+    assert_eq!(ran.code, 1, "{}", ran.out);
+    assert!(ran.out.contains("pins chant 0.124.63, and chant-fly needs 0.124.64 or newer"), "{}", ran.out);
+    assert_eq!(r.calls().iter().filter(|c| c.starts_with("chant")).collect::<Vec<_>>(), ["chant --version"]);
+    assert!(ran.result.is_none());
+}
+
+/// chant's gate is planned from the pending fact its run recorded: with
+/// no plan digest, or when the run names another, nothing is planned.
+#[test]
+fn chant_fly_plans_only_the_plan_chant_recorded() {
     needs_node!();
     for (kind, says) in [("no-plan", "has no plan digest"), ("other-hint", "says to approve plan sha256:000")] {
         let r = rig(&format!("chant-fly-{kind}"));
         std::fs::write(r.dir.join(kind), "").unwrap();
-        let ran = r.apply(SETTINGS, None, &[]);
+        let ran = r.plan(SETTINGS, &[]);
         assert_eq!(ran.code, 1, "{}", ran.out);
         assert!(ran.out.contains(says), "{}", ran.out);
-        assert!(!r.calls().iter().any(|c| c.starts_with("chant approve")), "{:?}", r.calls());
         assert!(ran.result.is_none());
     }
 }
 
 /// The settings the plan names change what runs: install scripts, chant's
-/// GitHub token, the gates it approves.
+/// GitHub token (an apply's op only), the gates it plans.
 #[test]
 fn chant_fly_does_what_its_settings_say() {
     needs_node!();
     let r = rig("chant-fly-settings");
-    let ran =
-        r.apply(&with(r#""npm_scripts":"true","chant_github":"true","chant_gates":"approve-release""#), None, &[]);
+    let ran = r.release(&with(r#""npm_scripts":"true","chant_github":"true","chant_gates":"approve-release""#), &[]);
     assert_eq!(ran.code, 0, "{}", ran.out);
     assert!(r.calls().contains(&"npm ci --no-fund --no-audit".to_owned()), "{:?}", r.calls());
-    assert!(r.log().iter().any(|l| l.starts_with("chant run") && l.contains("fly:yes gh:yes")), "{:?}", r.log());
+    let runs: Vec<String> = r.log().into_iter().filter(|l| l.starts_with("chant run")).collect();
+    assert!(runs[0].contains("fly:no gh:no"), "the plan's op gets no token: {runs:?}");
+    assert!(runs.last().unwrap().contains("fly:yes gh:yes"), "{runs:?}");
+    // With its own token, chant keeps an apply's ledger on origin: no
+    // stand-in. (The plan, with none, had one.)
+    assert_eq!(remotes(&r.dir.join("home")), ["origin"]);
+    assert_eq!(remotes(&r.dir.join("plan-home")), ["arugula-ledger", "origin"]);
 
-    // A gate the plan doesn't name, or another op's: never approved.
+    // A gate the plan doesn't name, or another op's: never planned.
     for (name, settings, gate_op, says) in [
         ("chant-fly-gates", with(r#""chant_gates":"ship""#), None, "which the plan doesn't name"),
         ("chant-fly-gate-op", SETTINGS.to_owned(), Some("other"), "another op's gate"),
@@ -457,10 +879,10 @@ fn chant_fly_does_what_its_settings_say() {
         if let Some(o) = gate_op {
             std::fs::write(r.dir.join("gate-op"), o).unwrap();
         }
-        let ran = r.apply(&settings, None, &[]);
+        let ran = r.plan(&settings, &[]);
         assert_eq!(ran.code, 1, "{}", ran.out);
         assert!(ran.out.contains(says), "{}", ran.out);
-        assert!(!r.calls().iter().any(|c| c.starts_with("chant approve")), "{:?}", r.calls());
+        assert!(ran.result.is_none());
     }
 }
 
@@ -482,14 +904,19 @@ fn chant_fly_wants_an_app_token_that_expires() {
     ] {
         let r = rig(&format!("chant-fly-token-{kind}"));
         std::fs::write(r.dir.join("token"), kind).unwrap();
-        let ran = r.apply(SETTINGS, None, &[]);
+        let ran = r.release(SETTINGS, &[]);
         assert_eq!(ran.code, 1, "{}", ran.out);
         assert!(
             ran.out.contains(says) && ran.out.contains("fly tokens create deploy -a acme-web -x 720h"),
             "{}",
             ran.out
         );
-        assert!(!r.calls().iter().any(|c| c.starts_with("npm") || c.starts_with("chant")), "{:?}", r.calls());
+        let applied = r.calls().iter().position(|c| c.starts_with("flyctl")).unwrap();
+        assert!(
+            !r.calls()[applied..].iter().any(|c| c.starts_with("npm") || c.starts_with("chant")),
+            "{:?}",
+            r.calls()
+        );
         assert!(ran.result.is_none());
     }
 }
@@ -502,7 +929,7 @@ fn chant_fly_ties_its_evidence_to_this_release() {
     // Fly unhealthy: failed, its entry reported still.
     let r = rig("chant-fly-unhealthy");
     std::fs::write(r.dir.join("unhealthy"), "").unwrap();
-    let ran = r.apply(SETTINGS, None, &[]);
+    let ran = r.release(SETTINGS, &[]);
     assert_eq!(ran.code, 5, "{}", ran.out);
     let result = ran.result.unwrap();
     assert_eq!(result["fly"]["healthy"], false);
@@ -511,11 +938,11 @@ fn chant_fly_ties_its_evidence_to_this_release() {
     // The release didn't reach Fly (it runs the image it ran before).
     let r = rig("chant-fly-no-deploy");
     std::fs::write(r.dir.join("no-deploy"), "").unwrap();
-    let ran = r.apply(SETTINGS, None, &[]);
+    let ran = r.release(SETTINGS, &[]);
     assert_eq!(ran.code, 6, "{}", ran.out);
     // The record's digest must be the image's, when the plan says so.
     let r = rig("chant-fly-digest");
-    let ran = r.apply(&with(r#""chant_digest":"image""#).replace(r#""chant_digest":"plan","#, ""), None, &[]);
+    let ran = r.release(&with(r#""chant_digest":"image""#).replace(r#""chant_digest":"plan","#, ""), &[]);
     assert_eq!(ran.code, 6, "{}", ran.out);
     assert!(ran.out.contains("not the image Fly runs"), "{}", ran.out);
 
@@ -525,20 +952,29 @@ fn chant_fly_ties_its_evidence_to_this_release() {
         if extra.is_none() {
             std::fs::write(r.dir.join("no-record"), "").unwrap();
         }
-        let ran = r.apply(SETTINGS, None, extra.as_slice());
+        let ran = r.release(SETTINGS, extra.as_slice());
         assert_eq!(ran.code, 4, "{}", ran.out);
         assert!(ran.result.unwrap()["chant_ledger"].is_null());
     }
 
     // An origin that won't take a push (as GitHub refuses one without a
-    // token that can write): nothing runs.
+    // token that can write): an apply runs nothing. A plan's fetch token
+    // only reads, so its push step is where it finds out: not planned.
     let r = rig("chant-fly-readonly");
+    let planned = r.plan(SETTINGS, &[]);
+    let gate: Gate = serde_json::from_value(planned.result.unwrap()["chant_gate"].clone()).unwrap();
+    let calls = r.calls().len();
     let refuse =
         [("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "remote.origin.receivepack"), ("GIT_CONFIG_VALUE_0", "false")];
-    let ran = r.apply(SETTINGS, None, &refuse);
+    let ran = r.drive("apply", SETTINGS, None, Some(relay(&gate, None)), &refuse);
     assert_eq!(ran.code, 1, "{}", ran.out);
     assert!(ran.out.contains("origin won't take a push"), "{}", ran.out);
-    assert!(!r.calls().iter().any(|c| c.starts_with("chant")), "{:?}", r.calls());
+    assert_eq!(r.calls().len(), calls, "{:?}", r.calls());
+    let r = rig("chant-fly-readonly-plan");
+    exe(&r.dir.join("origin/acme/app.git/hooks/pre-receive"), "#!/bin/sh\nexit 1\n");
+    let ran = r.plan(SETTINGS, &[]);
+    assert_eq!(ran.code, 4, "{}", ran.out);
+    assert!(ran.out.contains("chant's ledger wasn't pushed"), "{}", ran.out);
 }
 
 /// A short id, or one that isn't the commit checked out: refused.
@@ -547,11 +983,11 @@ fn chant_fly_checks_out_a_full_commit_id_exactly() {
     needs_node!();
     let r = rig("chant-fly-short");
     let mut short = Rig { dir: r.dir.clone(), sha: r.sha[..12].to_owned() };
-    let ran = short.apply(SETTINGS, None, &[]);
+    let ran = short.plan(SETTINGS, &[]);
     assert_eq!(ran.code, 1, "{}", ran.out);
     assert!(ran.out.contains("by its full id"), "{}", ran.out);
     short.sha = "f".repeat(40);
-    let ran = short.apply(SETTINGS, None, &[]);
+    let ran = short.plan(SETTINGS, &[]);
     assert_ne!(ran.code, 0, "{}", ran.out);
     assert!(!r.calls().iter().any(|c| c.starts_with("chant")), "{:?}", r.calls());
 }
@@ -565,7 +1001,7 @@ fn chant_fly_rolls_back_through_fly_and_chant() {
         "deploy": format!("dep_{}", "0".repeat(32)),
         "to": { "chant_component": "acme", "chant_digest": "sha256:d1", "chant_env": "github", "image": image('1') },
     });
-    let ran = r.apply(SETTINGS, Some(back.to_string()), &[]);
+    let ran = r.roll_back(SETTINGS, back.to_string());
     assert_eq!(ran.code, 0, "{}", ran.out);
     let calls = r.calls();
     let deploy = calls.iter().position(|c| c.starts_with("flyctl deploy")).unwrap();
@@ -575,11 +1011,11 @@ fn chant_fly_rolls_back_through_fly_and_chant() {
         calls[deploy + 2],
         format!(
             "chant components release github --component acme --digest sha256:d1 --git-sha {} --run-id run_1 \
-             --actor arugula --approver acct1",
+             --actor arugula --approver arugula:acct1",
             r.sha
         )
     );
-    assert!(!calls.iter().any(|c| c.starts_with("chant run")), "no release op on a roll back");
+    assert!(!calls.iter().any(|c| c.starts_with("chant run") || c.starts_with("chant approve")), "no gate");
     let release = r.log().into_iter().find(|l| l.starts_with("chant components")).unwrap();
     assert!(release.contains("fly:no gh:no"), "chant's own command gets no token: {release}");
     let result = ran.result.unwrap();

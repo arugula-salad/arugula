@@ -21,6 +21,7 @@ import type {
   ChatPin,
   ChatPins,
   ChatPost,
+  ChatPostTarget,
   ChatPosted,
   ChatRoom,
   ChatRoomAgent,
@@ -346,6 +347,8 @@ export class ChatStore {
         return;
       case "object":
         this.objectChanged(ev.target);
+        // Assigned or closed: what an issue's thread wants of me moved.
+        if (ev.target.startsWith("iss_")) this.roomsSoon();
         return;
       case "session":
         // M257: a session's card reads it again (`onObject(ses)`).
@@ -666,7 +669,7 @@ export class ChatStore {
   async read(id: string, seq: number) {
     const r = this.room(id);
     if (!r || (seq <= r.read && r.unread === 0)) return;
-    this.rooms = this.rooms.map((x) => (x.id === id ? { ...x, read: Math.max(x.read, seq), unread: 0, mentions: 0 } : x));
+    this.rooms = this.rooms.map((x) => (x.id === id ? { ...x, read: Math.max(x.read, seq), unread: 0, mentions: 0, wants: 0 } : x));
     this.emit();
     await call("POST", `/api/chat/rooms/${enc(id)}/read`, { seq }).catch(() => {});
   }
@@ -847,8 +850,8 @@ export class ChatStore {
 
   /** Reply in the thread of message `parent` (#106). Sent to the channel too
    * (`also`), the room's list reads it back as well. */
-  async reply(id: string, parent: number, text: string, also: boolean, files?: string[] | null): Promise<ChatPosted> {
-    const posted = await this.threads.post(id, parent, text, also, files);
+  async reply(id: string, parent: number, text: string, also: boolean, files?: string[] | null, to?: ChatPostTarget[]): Promise<ChatPosted> {
+    const posted = await this.threads.post(id, parent, text, also, files, to);
     if (also && this.loaded.has(id)) await this.newer(id);
     // The first message's summary, in the room's list.
     if (this.loaded.has(id)) void this.refetch(id, parent);

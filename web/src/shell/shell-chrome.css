@@ -5,10 +5,6 @@
   margin-left: 8px;
 }
 
-.ws-wordmark + .ws-crumbs {
-  margin-left: 0;
-}
-
 
 .ws-sidebar {
   border-right-color: var(--line-strong);
@@ -20,9 +16,9 @@
 
 .ws-sidebar-head h2 {
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
-  letter-spacing: .04em;
+  letter-spacing: 0;
 }
 
 .ws-search {
@@ -37,7 +33,7 @@
 
 .ws-group {
   margin: var(--space-4) var(--space-2) 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -51,23 +47,18 @@
   margin-bottom: 3px;
 }
 
-.ws-session.current {
-  background: var(--chrome-selected);
-  border-color: var(--chrome-selected-line);
-}
-
 .ws-session-main {
   gap: var(--space-2);
   padding: 10px 6px 10px var(--space-2);
 }
 
 .ws-session-name {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .ws-session-sub {
   padding-left: 14px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-session-context {
@@ -91,11 +82,6 @@
 
 .ws-session-counts {
   gap: 6px;
-}
-
-.ws-session-actions .work-chip {
-  font-size: 11px;
-  padding: 0 6px;
 }
 
 .ws-session-actions .att {
@@ -124,39 +110,18 @@
   gap: 8px;
 }
 
-.pt-presets {
-  gap: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  overflow: hidden;
-}
-
-.pt-presets > button {
-  border-radius: 0;
-  padding-inline: 8px;
-}
-
-.pt-presets > button + button {
-  border-left: 1px solid var(--line-strong);
-}
-
-.pane-toolbar > .pt-focus,
-.pane-toolbar > .pt-add {
-  border: 1px solid var(--chrome-selected-line);
-  border-radius: var(--btn-radius);
-  color: var(--accent);
-}
-
-.pane-toolbar > .pt-add {
-  background: var(--chrome-selected);
-}
-
 .pt-add kbd {
   display: none;
 }
 
+/* It sits with the panes, on their background and at their inset, so the
+   space around it is even (the panes' padding is the space above it). */
+:where(html:not([data-corners="square"], [data-finish="glass"]) .app.ws) .ws-work:has(> .ws-activity) {
+  background: var(--letterbox);
+}
+
 .ws-activity {
-  margin: 0 8px 6px;
+  margin: 0 8px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   overflow: visible;
@@ -172,7 +137,7 @@
 }
 
 .ws-activity-time {
-  font: 11px ui-monospace, Menlo, monospace;
+  font: var(--text-xs) var(--f-mono);
   min-width: 8ch;
 }
 
@@ -187,7 +152,7 @@
 
 .ws-foot {
   gap: 16px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   border-top-color: var(--line-strong);
 }
 
@@ -227,9 +192,6 @@
 }
 .ws-session-counts { grid-column: 4; justify-self: end; }
 .ws-session-sub { padding-right: 0; }
-.ws-session.current {
-  box-shadow: inset 2px 0 var(--accent);
-}
 
 .ws-group:not(:first-child) { border-top-color: var(--line-strong); }
 .ws-tabs .tab {
@@ -250,7 +212,7 @@
 .ws-foot kbd { border-color: var(--line-strong); }
 @media (max-width: 1100px) {
   .ws-foot-hints { gap: 6px !important; }
-  .pane-toolbar .pt-presets > button { padding-inline: var(--space-1); }
+  .pane-toolbar .pt-presets > .bar-btn { padding-inline: var(--space-1); }
 }
 
 /* AppKit's overlay buttons occupy a ~78px-wide, 28px-high strip: they
@@ -287,7 +249,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   border-radius: var(--btn-radius);
   background: none;
   color: var(--dim);
-  font-size: 18px;
+  font-size: 18px; /* off-scale: glyph */
   line-height: 1;
 }
 .ws-sidebar-toggle:hover {

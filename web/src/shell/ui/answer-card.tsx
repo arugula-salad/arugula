@@ -107,14 +107,18 @@ export const ANSWERED_MS = 60_000;
 export const VIEWER_NOTE = "You're watching this session: an editor answers it.";
 
 /** The agent's next instruction (M29), for whoever may drive the pane. On
- * someone's own machine a 403 offers to ask them for trust instead. */
+ * someone's own machine a 403 offers to ask them for trust instead. `open`:
+ * the agent can take one now. The follow-up that wakes it closes the box, and
+ * what the box said about that follow-up stays. */
 export function FollowUpBox({
   pane,
   request,
   paneOp,
   toast,
+  open = true,
 }: {
   pane: number;
+  open?: boolean;
   request: Requester;
   paneOp: (op: PaneOp) => void;
   toast: (m: string) => void;
@@ -145,18 +149,20 @@ export function FollowUpBox({
   };
   return (
     <>
-      <form
-        class="followup"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <input value={text} placeholder="Send a follow-up" aria-label="Send a follow-up" onInput={(e) => setText((e.target as HTMLInputElement).value)} />
-        <button class="primary" type="submit" disabled={!text.trim()}>
-          Send
-        </button>
-      </form>
+      {open && (
+        <form
+          class="followup"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          <input value={text} placeholder="Send a follow-up" aria-label="Send a follow-up" onInput={(e) => setText((e.target as HTMLInputElement).value)} />
+          <button class="primary" type="submit" disabled={!text.trim()}>
+            Send
+          </button>
+        </form>
+      )}
       {needTrust && (
         <div class="followup-trust">
           This runs on {needTrust}'s own machine.{" "}

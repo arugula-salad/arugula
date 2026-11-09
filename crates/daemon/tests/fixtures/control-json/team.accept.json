@@ -1,0 +1,245 @@
+[
+  {
+    "expect": "ok prj_2",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "34dfd6e780fbcd36c379e0adfcd7f496",
+        "device": "6f5fe30b4d19aa83",
+        "name": "other",
+        "noise": "efa65884933f1f267ce46fb682958a31364c685f395cd333c47e9f7f95f24a6e",
+        "owner": "team:t1",
+        "project": "prj_2",
+        "sig": "14c54c18bf0a0f460c6858bf38de11e1c44ece6390cca3b24ca1af32c05845c9ed8b8a396de7b02fc637dcd27e5c1c416b495a4a664708dfa21feec90ff3c009",
+        "sign": "90cd170512f41ba76dba338f5fda03071ea3fbc1974d47979f220d5be3d7eea6",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "54cc8bcf23f1bda2",
+        "key": "57f4b35d5da513e3a3a6c3b6af81d964c14db3c299fdc3f201f66d69b34d9869",
+        "owner": "team:t1",
+        "project": "prj_2",
+        "sig": "e55d468ccf8800d6b6effc06509bf195138150a18468ab27380843098c0eb68da72836d010e771743a0d0c336849575f5290cb5db0bbbb2cc2e599a1d7c6730a"
+      },
+      "revocations": []
+    },
+    "id": "6f5fe30b4d19aa83"
+  },
+  {
+    "expect": "err",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "470fbbc0f9fd832c4b2d7e92303852c6",
+        "device": "54f717405cd11bdd",
+        "name": "other",
+        "noise": "37827186c4163f1ad4be23a2c81837828cf3d6ac1ce4882527216a2cb9de6947",
+        "owner": "team:t1",
+        "project": "prj_2",
+        "sig": "b4213b26502fbee23284a55e4bb3519847ebf7a1ce92b1dbf9c94c5c8991cab7891bfe0398cb3a3f5508c6755a392b093ec8a130909e2087679387db5b2b5905",
+        "sign": "b6c41dba8db6c3870bb17c65b46b2e8074149413887b73d0b1d39d3785b02d0e",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "ddb304a78f3174b9",
+        "key": "8c8904d88d08326e08288d1a540772c0347244b1f3c2057e3a874247dbad3308",
+        "owner": "team:t1",
+        "project": "prj_2",
+        "sig": "c7ea607163a141465f55e321c3267c0c35341798e2a469419be82150a26b35c728c060f07c34a19aa4247be14230c1acb6fc89f0811d6381447b8d130e9dc20a"
+      },
+      "revocations": []
+    },
+    "id": "54f717405cd11bdd"
+  },
+  {
+    "expect": "ok prj_2",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "e2f9d7f977fbaa8e3375f5674c5d302c",
+        "device": "81518d288cf22726",
+        "name": "other",
+        "noise": "749ebee05066ddb761c84a1f6e15dcc2306a35ec9452ff83b236bbfbca3f5c08",
+        "owner": "team:t2",
+        "project": "prj_2",
+        "sig": "6a8cc390b3b44ac934e929e4c5d1dc958d271966fd44a2d07bbaf3cfa827fcbce47e941168853c10d1f1b04dcc3559e3a8b188eaac1299f5f4f3ca9ff938470f",
+        "sign": "0aac621bf876b73e13b8191c0889c8233d9f6604308c6c93a4c9f9514c8c3e99",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "6a330f42647017f0",
+        "key": "3be7f738b2aa4cd088ecb98fbed2ee3f7a9cd907a7e481f224a060c803cef6a1",
+        "owner": "team:t2",
+        "project": "prj_2",
+        "sig": "ce8c1bb2b7914bc80f846462641d19b09a701c1612dc1a41f36c087bcfa9a85f4525f355c9293aa90a9fb1054c54b81831d7130bb3ff01ee7e9a7426a30fda0f"
+      },
+      "revocations": []
+    },
+    "id": "81518d288cf22726"
+  },
+  {
+    "expect": "err",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "baecf5ca6c631280d87e837b2e682f44",
+        "device": "a409c1268127b962",
+        "name": "other",
+        "noise": "51164e2f49494ada7bc27bd98b687528c8a109a69b2551e21855a4cebe63a019",
+        "owner": "team:t2",
+        "project": "prj_2",
+        "sig": "212b0ff1584399e8d7e17a79b1b32ae4bf3da7b1e9b440839564bdf9261e5517290528392af21accb07d4d92fea71eda268c193995549a49d6b2d9652c91970c",
+        "sign": "800ec1029f3b46e10254df54fae3e89bfe54cd42816f7142e14d17ba155abff7",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "2fd78ba2a5780271",
+        "key": "24cb6e2572c39dff3ab09422c94b92f2f53d1a6c9b05fee7932aa569b85eedb3",
+        "owner": "team:t2",
+        "project": "prj_2",
+        "sig": "a7cb493059de5c53a72fdf35cf06ee1cbd3c6f1590a534c11a6eb9c4f2f5b8fab127f4b4c6496b55fe1fa7fad31180d2f381d3eed871708e2fd72d739e92be00"
+      },
+      "revocations": []
+    },
+    "id": "a409c1268127b962"
+  },
+  {
+    "expect": "ok prj_2",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "a198adf84d67031e7c80e4f0a9fa876b",
+        "device": "c51dab5a1cf4ac21",
+        "name": "other",
+        "noise": "6baed749c3960183ac4a3ffc4820ffc1fb7d3c7f3eecfef9913e4864817e3f0f",
+        "owner": "team:t3",
+        "project": "prj_2",
+        "sig": "280c86692d3795b8a336d13182a1eda4b9a856dbb641c3e5da246a9cdba09bfb96d3a8cf952aea82b66be82eb6485484c11bf83ca3bbb2da819ca10ab3454804",
+        "sign": "d1476343ddcba7ac91fe05e27e742e9df62dbd16fb9bba127ee83e5730df0e83",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "0fe891b6ffa4c9a8",
+        "key": "f28b599b8fd77f9293d8e77bf67fc47fdcdaece625f834acdc24ecce898f0d35",
+        "owner": "team:t3",
+        "project": "prj_2",
+        "sig": "657a6eab78b51f7f2d09458989cc9a74721ba53e8a270221a368824657357022d56d9f007fcc0e70cceec90522b6ae6ddbc9ccbb7c65efbb87d84cf9ca605904"
+      },
+      "revocations": []
+    },
+    "id": "c51dab5a1cf4ac21"
+  },
+  {
+    "expect": "err",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "62a733798b259f5d5256ed53e718a81a",
+        "device": "d5ce12723e0cdde2",
+        "name": "other",
+        "noise": "d43d362d3ee2e419e3ed624c68af70b1557dc6949121cb32b4bbdd9eef04870b",
+        "owner": "team:t9",
+        "project": "prj_2",
+        "sig": "84574d3a1dfed69cc23e5802a27d916276dc93d1cb15f68dc312055d321431286ae2f154de6b3d661d0a09fca180277c10d03cfd4ae66cc5579091bcd9bd4907",
+        "sign": "a6c495331ba533c27d7955fc34bcc41d1b878768d18c12e8c4c5fc0dcd370b6e",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "6a330f42647017f0",
+        "key": "019bcebdf2849ef73a4cd56e829851b014a774b8c2774bfcbe50c6742c679927",
+        "owner": "team:t9",
+        "project": "prj_2",
+        "sig": "5761240cbae11dbee255f312fc87292711b3f28363383cf495421795384e566310a532546010732cf1251bd4d4c3db948e9e3f3d886338e0b75cc86fc8f9f40f"
+      },
+      "revocations": []
+    },
+    "id": "d5ce12723e0cdde2"
+  },
+  {
+    "expect": "ok prj_2",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "d5bedc0f3111b75d1dcb9bab38ed65ad",
+        "device": "884aac2524f6f872",
+        "name": "other",
+        "noise": "aa3cf38b1a44232170e50c49b01bfb8090928e775b2638aa9c38d2b67a26e927",
+        "owner": "account:a",
+        "project": "prj_2",
+        "sig": "762e54d41830d6ed6a35a6d163adb1c3262c3c559d64c289c3daa5a8d3280c4956efa6f382f190f65da85afda61e59119d5f34225a623f2a6a750e9c3962db09",
+        "sign": "fc5a4b8d314d09921c861bee9ce8db2b110c90cefe9d3f19d5c36a9ee7ed45d3",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "2fd78ba2a5780271",
+        "key": "11954eca7e3fb3dc2a0be5e4b4f9520702a599370ef2fa4324f88c237fc494cd",
+        "owner": "account:a",
+        "project": "prj_2",
+        "sig": "20aad7bbc3f5f1429e4ef20f640e2d34efc62430ce09bbd5acf247c2085c35aac55ae834b3770b49e49a5fcfcb740efb387f8bc84a946fa86baa53a4a9ea960a"
+      },
+      "revocations": []
+    },
+    "id": "884aac2524f6f872"
+  },
+  {
+    "expect": "err",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "71f727ff7ec95b5012930adafcb0f24d",
+        "device": "90d9959347f63c88",
+        "name": "other",
+        "noise": "cec5995c99df5fb6f639ce1429fb08ede9ced2bc6675a95e685a832882e34656",
+        "owner": "account:a",
+        "project": "prj_2",
+        "sig": "e197304f09cd556405c64d7e02a981fdb09b3e372f63e383f2e8ad1933edb96cb77fa87eadbccae79c76c91e4be6c8a2617a00b858a806ac505ed8dd32431a05",
+        "sign": "9e3887a654f67b2605dbc4eed7463c8ab4af7df4d22fe068968862f6b5a7c75a",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "40ef365d45873fc6",
+        "key": "c1bb73854d73f3b988ee391eec293b7f54cd111180178654a779e8ef3c1e6ea5",
+        "owner": "account:a",
+        "project": "prj_2",
+        "sig": "4290965978159d3a5627241aaa8484e330ce45827f75ff5b678c720d1847f238ac9d1d562bccd03073d2333c5aadb8c80e58249b2d335feb94c25c22a9edee03"
+      },
+      "revocations": []
+    },
+    "id": "90d9959347f63c88"
+  },
+  {
+    "expect": "err",
+    "hosted": {
+      "cert": {
+        "created": 2,
+        "delegation": "2f3fe48146b4b7499cc5d21b821bc5a4",
+        "device": "1f2596051b82485f",
+        "name": "other",
+        "noise": "695ddc6c983fa0e03680ee31cef349dedbe3fa1098f68c8806cad9e39e717a08",
+        "owner": "account:acct1",
+        "project": "prj_2",
+        "sig": "30f8771627cf3d5574fbb29921bd56b74b2bf9b94341c0e3a06b6b9c695e10f18de50841a097a84029c0329a6a92be26c5cbd79e9afb4823111077875345f503",
+        "sign": "7934f4a846bb0f493ad170a01dc33153dfcf578a66cf4b3893166bd268687f42",
+        "workspace": "hw_9"
+      },
+      "delegation": {
+        "at": 1,
+        "by": "b417a38661d90f76",
+        "key": "881235ff84de2893a99b1f5171e2abd8ecfe8cea7a630c066f6b8393a2181592",
+        "owner": "account:acct1",
+        "project": "prj_2",
+        "sig": "d8db280b32920dc7f516bee5d05fca73eed55b6694f3a9c1fc296d073fafc49dfa1a06eccd9888c2070ac8fb0ca07df782948d406a1855273fd546eb8634270d"
+      },
+      "revocations": []
+    },
+    "id": "1f2596051b82485f"
+  }
+]

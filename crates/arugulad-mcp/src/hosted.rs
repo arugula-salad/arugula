@@ -44,7 +44,7 @@ cloud_workspace again to reach them.";
 pub const ARG: &str = "cloud_workspace";
 
 /// `schema` with [`ARG`] in it, for the tools in [`TOOLS`] (`wait` has it
-/// already, for a Cloud workspace's tab).
+/// already, for a Cloud workspace's agent block).
 pub fn with_workspace(tool: &str, schema: Arc<serde_json::Map<String, Value>>) -> Arc<serde_json::Map<String, Value>> {
     if !TOOLS.contains(&tool) || tool == "wait" {
         return schema;
@@ -53,7 +53,7 @@ pub fn with_workspace(tool: &str, schema: Arc<serde_json::Map<String, Value>>) -
     if let Some(Value::Object(props)) = s.get_mut("properties") {
         match props.get_mut(ARG) {
             // A grouped tool's kind takes one already (list kind
-            // cloud_tabs): said beside it.
+            // cloud_agents): said beside it.
             Some(Value::Object(p)) => {
                 let was = p.get("description").and_then(Value::as_str).unwrap_or_default().to_owned();
                 p.insert(
@@ -70,17 +70,18 @@ pub fn with_workspace(tool: &str, schema: Arc<serde_json::Map<String, Value>>) -
 }
 
 /// The cloud workspace a machine tool's call names, taken out of its
-/// arguments. A `wait` on a Cloud workspace's tab (`tab`) is `wait`'s own.
+/// arguments. A `wait` on a Cloud workspace's agent block (`agent_block`,
+/// or its old name `tab`) is `wait`'s own.
 pub fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<String, String>> {
     if !TOOLS.contains(&tool) {
         return None;
     }
     let o = args.as_object_mut()?;
-    if tool == "wait" && o.get("tab").is_some_and(|t| !t.is_null()) {
+    if tool == "wait" && ["agent_block", "tab"].iter().any(|k| o.get(*k).is_some_and(|t| !t.is_null())) {
         return None;
     }
     // The kind that names a Cloud workspace itself.
-    if o.get("kind").and_then(Value::as_str) == Some("cloud_tabs") {
+    if matches!(o.get("kind").and_then(Value::as_str), Some("cloud_agents" | "cloud_tabs")) {
         return None;
     }
     match o.remove(ARG)? {
@@ -285,7 +286,7 @@ async fn read_here(a: ReadArgs) -> Out {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::hosted::tab_pane;
+    use crate::mcp::hosted::agent_pane;
 
     #[test]
     fn workspace_goes_on_the_machine_tools_only() {
@@ -298,14 +299,16 @@ mod tests {
         let mut other = json!({ "cloud_workspace": "dev" });
         assert_eq!(take_workspace("cloud", &mut other), None, "not a machine tool");
         assert_eq!(other["cloud_workspace"], "dev");
-        // wait: a pane on a hosted one's machine, by id or name; a tab is
-        // wait's own.
+        // wait: a pane on a hosted one's machine, by id or name; an agent
+        // block (agent_block, or tab, its old name) is wait's own.
         let mut w = json!({ "cloud_workspace": "hw_ab", "pane": 3, "until": "idle" });
         assert_eq!(take_workspace("wait", &mut w), Some(Ok("hw_ab".into())));
         let mut w = json!({ "cloud_workspace": "dev", "pane": 3, "until": "idle" });
         assert_eq!(take_workspace("wait", &mut w), Some(Ok("dev".into())));
+        assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "agent_block": "3" })), None);
         assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "tab": "3" })), None);
-        // list kind cloud_tabs names one itself.
+        // list kind cloud_agents (cloud_tabs, its old name) names one itself.
+        assert_eq!(take_workspace("list", &mut json!({ "kind": "cloud_agents", "cloud_workspace": "hw_ab" })), None);
         assert_eq!(take_workspace("list", &mut json!({ "kind": "cloud_tabs", "cloud_workspace": "hw_ab" })), None);
         assert!(take_workspace("list", &mut json!({ "kind": "panes", "cloud_workspace": "hw_ab" })).is_some());
 
@@ -313,8 +316,8 @@ mod tests {
         assert!(with_workspace("read_output", schema.clone())["properties"]["cloud_workspace"].is_object());
         assert!(with_workspace("cloud", schema)["properties"].get("cloud_workspace").is_none());
 
-        assert_eq!(tab_pane("%7").unwrap(), json!(7));
-        assert!(tab_pane("cwc_ab").is_err());
+        assert_eq!(agent_pane("%7").unwrap(), json!(7));
+        assert!(agent_pane("cwc_ab").is_err());
     }
 
     /// The reads a driving machine makes for read_cloud: a repository's

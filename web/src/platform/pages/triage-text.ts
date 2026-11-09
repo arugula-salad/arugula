@@ -1,18 +1,10 @@
-// The Triage page's words and the "Add to board…" menu's model (#292), as
+// The "Not on a board" section's words and the "Add to board…" menu's model (#292), as
 // plain functions: a project's open issues that sit on no board, and where
 // each can go. Run with `node --experimental-strip-types`.
 
 import type { BoardPointer, BoardWorkItem, ProjectBoard } from "../../shared/proto";
 
-export const TRIAGE_LEDE = "Open issues that aren't on a board yet.";
 export const TRIAGE_NONE = "Nothing to triage: every open issue is on a board.";
-export const TRIAGE_OFF = "Boards are a Labs feature, and they're off for you. Triage comes with them: until then, every issue is under All issues.";
-
-/** The place the bar's Issues place becomes: Triage once boards are on. A
- * reader whose boards haven't answered yet (`null`) or are off keeps Issues. */
-export function issuesPlace(boards: readonly unknown[] | null | "off"): "issues" | "triage" {
-  return boards === null || boards === "off" ? "issues" : "triage";
-}
 
 /** `OWNER/NAME#N` of a mirrored issue, `ARUGU-12` of a tracker's, `#N` of a native one. */
 export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "identifier" | "number">): string {
@@ -43,4 +35,23 @@ export function targets(list: readonly Pick<ProjectBoard, "id" | "title" | "clos
 /** The items still on the list once `pointer` has been put on a board. */
 export function without<T extends { pointer: BoardPointer }>(items: readonly T[], pointer: BoardPointer): T[] {
   return items.filter((i) => JSON.stringify(i.pointer) !== JSON.stringify(pointer));
+}
+
+/** The keys from `a` to `b` in `keys`, either way round; just `b` when `a` isn't in them (no anchor yet). */
+export function rangeKeys(keys: readonly string[], a: string | null, b: string): string[] {
+  const x = a === null ? -1 : keys.indexOf(a);
+  const y = keys.indexOf(b);
+  if (y < 0) return [];
+  if (x < 0) return [b];
+  return keys.slice(Math.min(x, y), Math.max(x, y) + 1);
+}
+
+/** The select-all box over `of` rows with `picked` of them selected: unchecked, mixed or checked. */
+export function boxState(picked: number, of: number): "none" | "some" | "all" {
+  return picked === 0 || of === 0 ? "none" : picked >= of ? "all" : "some";
+}
+
+/** The toast after `n` issues went onto `board`: "#12 is on Launch, in Next". `one` is the lone issue's label. */
+export function addedWords(n: number, one: string, board: string): string {
+  return n === 1 ? `${one} is on ${board}, in Next` : `${n} issues are on ${board}, in Next`;
 }

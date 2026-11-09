@@ -12,3 +12,10 @@ export const HOSTED_LABEL = "Hosted · operator can read";
 /** What the label means, where there's room to say. */
 export const HOSTED_MEANS =
   "it runs in a box Arugula's operator runs, so whoever runs it can read its memory, as with any VM. Only its project's people reach it.";
+
+/** The direct URLs a client may try for a machine the directory lists:
+ * none for a hosted machine, whatever the directory says. It's reached
+ * only through control's relay. */
+export function directUrls(d: { urls?: string[]; hosted?: unknown }): string[] {
+  return d.hosted ? [] : (d.urls ?? []);
+}

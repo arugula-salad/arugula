@@ -7,8 +7,10 @@ use std::time::Duration;
 
 use arugula_proto::{
     PaneId,
-    api::{AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MouseRequest, SendRequest},
-    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMouse, PaneSend},
+    api::{
+        AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MentionsRequest, MouseRequest, SendRequest,
+    },
+    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMentions, PaneMouse, PaneSend},
 };
 use axum::http::StatusCode;
 
@@ -81,6 +83,22 @@ impl Handle for PaneMouse {
 impl Handle for PaneAttention {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: AttentionRequest) -> Result<Empty, OpError> {
         match cx.app.mux.api(|r| Api::Attention(id, req.state, req.why, r)).await {
+            Some(true) => Ok(Empty {}),
+            _ => Err(OpError::NoPane(id)),
+        }
+    }
+}
+
+/// Let teammates' agents mention a session, or not (#579). The owner's:
+/// `authz` made that check.
+impl Handle for PaneMentions {
+    async fn handle(cx: &Cx<'_>, id: PaneId, req: MentionsRequest) -> Result<Empty, OpError> {
+        // Silence is the owner's alone, not an agent's on the owner's CLI
+        // (which could un-silence its own pane).
+        if cx.agent_or_guest() {
+            return Err(OpError::Forbidden("only this machine's owner silences or allows mentions".into()));
+        }
+        match cx.app.mux.api(|r| Api::SilenceTagged(id, req.on, r)).await {
             Some(true) => Ok(Empty {}),
             _ => Err(OpError::NoPane(id)),
         }

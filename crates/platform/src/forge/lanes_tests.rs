@@ -9,7 +9,6 @@ use serde_json::{Value, json};
 
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params},
 };
@@ -21,7 +20,6 @@ pub(super) async fn start() -> (String, Arc<crate::Platform>, String, String) {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     let (s, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Lanes" }))).await;
     assert_eq!(s, 200, "{b}");

@@ -2,7 +2,7 @@
 //! it, drawn when it's read, for the reader.
 //!
 //! - **Our own objects.** A link to an issue, run, deploy, hosted
-//!   workspace or agent session (M254), in any path form the platform page has (`web/src/platform/
+//!   workspace, agent session (M254) or board (#627), in any path form the platform page has (`web/src/platform/
 //!   paths.ts`), on one of control's own hosts ([`own_host`]), becomes a
 //!   card of title, state, who and when, read from the platform's tables
 //!   *as the reader*: only a member of the object's project gets one (the
@@ -12,7 +12,9 @@
 //!   project the reader is in (and, for a private repo, may read on GitHub:
 //!   M165); the card is the mirror's. A card isn't stored, so it's the
 //!   object's state now: the page asks again while it's open, and a closed
-//!   issue's card shows closed.
+//!   issue's card shows closed. A board's card is the board at a glance
+//!   (its progress, who leads it, what waits on the reader), read by the
+//!   boards module for the reader.
 //! - **Web links.** Anything else is read for Open Graph by
 //!   [`link_fetch`] (SSRF-guarded), kept [`TTL`] (a failure [`FAILED_TTL`]),
 //!   and shown as a card whose image comes through
@@ -33,6 +35,7 @@ use std::{
 };
 
 use arugula_control_common::{ApiError, err};
+use arugula_control_wire::boards as wire;
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
@@ -47,8 +50,9 @@ use super::{J, gate, link_fetch, objects, room_for};
 use crate::{
     Platform,
     auth::Person,
+    boards,
     db::{
-        issues::{CloseReason, State as IssueState},
+        issues::{Actor, CloseReason, State as IssueState},
         link_previews::WebPreview,
     },
 };
@@ -80,7 +84,7 @@ pub enum Tone {
 pub enum Preview {
     Object {
         url: String,
-        /// `issue`, `pull request`, `run`, `deploy`, `workspace`.
+        /// `issue`, `pull request`, `run`, `deploy`, `workspace`, `session`.
         what: String,
         title: String,
         /// In words: `open`, `merged`, `waiting for approval`.
@@ -88,6 +92,25 @@ pub enum Preview {
         tone: Tone,
         /// A display name, when the object has a person.
         who: Option<String>,
+        at: u64,
+    },
+    /// A board at a glance (#627): its progress as the board counts it.
+    Board {
+        url: String,
+        title: String,
+        /// The goal's first line.
+        goal: Option<String>,
+        done: u32,
+        review: u32,
+        doing: u32,
+        total: u32,
+        /// Rows with an ask waiting on the reader.
+        needs_you: u32,
+        /// `U3 on mini`: the session that leads it, and its machine.
+        lead: Option<String>,
+        closed: bool,
+        /// The close note's first line.
+        note: Option<String>,
         at: u64,
     },
     Web {
@@ -122,6 +145,7 @@ enum Link {
     Session(String),
     Deploy(String),
     Workspace(String),
+    Board(String),
     /// `OWNER/NAME`, number.
     Github(String, u64),
     Web,
@@ -170,6 +194,7 @@ fn classify(app: &Platform, u: &Url) -> Link {
             ["runs", s] => id_of(s, "run_").map(Link::Run),
             ["sessions", s] => id_of(s, "ses_").map(Link::Session),
             ["workspaces", s] => id_of(s, "hw_").map(Link::Workspace),
+            ["boards", s] => id_of(s, "brd_").map(Link::Board),
             ["deploys", s] => s.starts_with("dep_").then(|| Link::Deploy((*s).to_owned())),
             _ => None,
         };
@@ -346,8 +371,15 @@ async fn object_cards(
         private: Option<(String, u64)>,
     }
     let mut seen: Vec<Seen> = Vec::new();
+    // A board's project, to decide with the rest; its card is read after.
+    let mut boards: Vec<(String, String, String)> = Vec::new();
     for (url, link) in links {
         match link {
+            Link::Board(id) => {
+                if let Some(b) = app.db.board(id)? {
+                    boards.push((url.clone(), b.project, id.clone()));
+                }
+            }
             Link::Issue(id) => {
                 if let Some(i) = app.db.issue(id)? {
                     seen.push(Seen {
@@ -418,13 +450,17 @@ async fn object_cards(
                 if let Some((_, project, _)) = app.db.hosted_places(&[id.as_str()])?.into_iter().next()
                     && let Some(w) = app.db.hosted_any(&project, id)?
                 {
+                    // Named only while they're in the project, as the
+                    // workspace routes name them.
+                    let who =
+                        crate::hosted::routes::Members::or_nobody(app, &project).await.named(w.created_by.clone());
                     seen.push(Seen {
                         url: url.clone(),
                         project,
                         what: "workspace",
                         title: w.name.clone(),
                         state: workspace_state(&w.state),
-                        who: w.created_by.clone(),
+                        who,
                         at: w.created_at,
                         private: None,
                     });
@@ -449,7 +485,8 @@ async fn object_cards(
             Link::Web => {}
         }
     }
-    let mut projects: Vec<String> = seen.iter().map(|s| s.project.clone()).collect();
+    let mut projects: Vec<String> =
+        seen.iter().map(|s| s.project.clone()).chain(boards.iter().map(|b| b.1.clone())).collect();
     projects.sort();
     projects.dedup();
     let mine = member_projects(app, account, &projects).await?;
@@ -472,32 +509,64 @@ async fn object_cards(
     let ids: Vec<String> =
         shown.iter().filter(|s| s.what != "pull request" && s.who.is_some()).filter_map(|s| s.who.clone()).collect();
     let names = app.cache.accounts(&*app.hub, &ids).await?;
-    Ok(shown
-        .into_iter()
-        .map(|s| {
-            let who = match (s.what, s.who) {
-                ("pull request", w) => w,
-                (_, Some(id)) => names
-                    .get(&id)
-                    .map(|a| a.name.clone())
-                    .filter(|n| !n.is_empty())
-                    .or(Some(id).filter(|i| !i.contains('_'))),
-                (_, None) => None,
-            };
-            (
-                s.url.clone(),
-                Preview::Object {
-                    url: s.url,
-                    what: s.what.to_owned(),
-                    title: s.title,
-                    state: s.state.0,
-                    tone: s.state.1,
-                    who,
-                    at: s.at,
-                },
-            )
-        })
-        .collect())
+    let mut cards: HashMap<String, Preview> = HashMap::new();
+    for (url, project, id) in boards {
+        if !mine.contains(&project) || cards.contains_key(&url) {
+            continue;
+        }
+        // The board's own read, as the reader: the same counts the page shows.
+        if let Ok(view) = boards::get(app, Actor::person(account), &id).await {
+            cards.insert(url.clone(), board_card(url, view));
+        }
+    }
+    cards.extend(shown.into_iter().map(|s| {
+        let who = match (s.what, s.who) {
+            ("pull request", w) => w,
+            (_, Some(id)) => names
+                .get(&id)
+                .map(|a| a.name.clone())
+                .filter(|n| !n.is_empty())
+                .or(Some(id).filter(|i| !i.contains('_'))),
+            (_, None) => None,
+        };
+        (
+            s.url.clone(),
+            Preview::Object {
+                url: s.url,
+                what: s.what.to_owned(),
+                title: s.title,
+                state: s.state.0,
+                tone: s.state.1,
+                who,
+                at: s.at,
+            },
+        )
+    }));
+    Ok(cards)
+}
+
+/// A board's card from its view: the board's own progress, and the asks
+/// the reader has (the page's Needs you).
+fn board_card(url: String, view: wire::BoardView) -> Preview {
+    let first = |t: &str| t.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_owned);
+    let needs_you = view.zones.iter().flat_map(|z| &z.rows).filter(|r| r.ask.as_ref().is_some_and(|a| a.mine)).count();
+    let b = view.board;
+    Preview::Board {
+        url,
+        goal: first(&b.goal),
+        done: b.progress.done,
+        review: b.progress.review,
+        doing: b.progress.doing,
+        total: b.progress.total,
+        needs_you: needs_you as u32,
+        lead: b.lead.map(|l| {
+            format!("{} on {}", l.session, if l.machine_name.is_empty() { &l.machine } else { &l.machine_name })
+        }),
+        closed: b.closed_at.is_some(),
+        note: b.closed_at.and_then(|_| first(&b.done_note)),
+        at: b.closed_at.unwrap_or(b.updated_at),
+        title: b.title,
+    }
 }
 
 /// The object cards for `urls` as `account` sees them, in order, each

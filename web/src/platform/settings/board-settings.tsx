@@ -6,7 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { BoardSettings as Settings } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {

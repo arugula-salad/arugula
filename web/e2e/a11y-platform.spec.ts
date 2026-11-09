@@ -2,7 +2,7 @@
 // issues, an issue, triage, boards and a board, Docs and a Doc, a chat
 // room, the inbox, every project's boards, the project's settings and the
 // account's, each at 1440 and 400 px, light and dark. Alice owns team
-// Acme, with chat's and boards' Labs flags on, three issues (one on the
+// Acme, with chat on, three issues (one on the
 // board Launch), a Doc and #general with a message in it. A local control
 // (team-fixture.ts, `--platform-host app.localhost`), as
 // boards-platform.spec.ts runs it. What's checked and the known list:
@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
 
   // #general, with a line in it.
   await home(alice);
@@ -75,7 +75,7 @@ test.beforeAll(async ({ browser }) => {
   await platform(`${project}/boards`);
   await alice.locator("[data-board-new-title]").fill("Launch");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
   await platform(`${project}/triage`);
   await alice.locator("[data-triage-row]", { hasText: "Fix the installer" }).locator("[data-triage-add]").click();

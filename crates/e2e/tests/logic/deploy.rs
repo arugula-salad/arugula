@@ -134,10 +134,14 @@ fn approval() -> Example {
          is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's \
          assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no \
          `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 \
-         signature over the body (sig). well_formed: no field is empty, longer than 200 bytes, or holds \
+         signature over the body (sig). v3 (#1985; `v: 3`) approves a chant-fly deploy once: its body is \
+         chant's gate statement for the gate the deploy's plan stopped at (`chant`), as `arugula:<account>` \
+         at `at`, relayed by arugula, with a last line `binding arugula deploy <deploy> op <hash> expires \
+         <ms>`; LF-joined, no final newline. well_formed: no field is empty, longer than 200 bytes, or holds \
          anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no \
-         sig, and no other version is. signed_by: a v1, well formed, and the signature is the given key's; \
-         never a v2.",
+         sig; a v3 neither, approves once, and has its chant gate and a time no earlier than the gate's; no \
+         other version is one. signed_by: a v1, well formed, and the signature is the given key's; never a v2 \
+         or a v3.",
         &[
             "arugula_e2e::deploy::Approval::body",
             "arugula_e2e::deploy::Approval::well_formed",
@@ -158,6 +162,18 @@ fn approval() -> Example {
     let v2_named = Approval { by: alice.keys.id(), ..v2.clone() };
     let v2_signed = Approval { sig: hex::encode(alice.keys.signature(v2.body().as_bytes())), ..v2.clone() };
     let v3 = Approval { v: 3, ..v2.clone() };
+    let gate = arugula_e2e::deploy::chant::Gate {
+        chant: "0.124.68".into(),
+        op: "release".into(),
+        gate: "ship".into(),
+        environment: None,
+        plan: format!("jcs1-sha256:{}", "ab".repeat(32)),
+        checkpoint: None,
+        run: "run-1".into(),
+        recorded: "2026-11-02T10:00:00.000Z".into(),
+    };
+    let v3_chant = Approval::v3("dep_1", &o, "alice", 90_000, "2026-11-02T10:05:00.000Z", &gate);
+    let v3_deny = Approval { decision: Decision::Deny, ..v3_chant.clone() };
     let once = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Once, 90_000);
     let deny = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Deny, 90_000);
     let pk = hex::encode(alice.keys.sign_public());
@@ -174,6 +190,8 @@ fn approval() -> Example {
         ("v2-naming-a-device", &v2_named),
         ("v2-with-a-signature", &v2_signed),
         ("v3", &v3),
+        ("v3-chant", &v3_chant),
+        ("v3-deny", &v3_deny),
         ("once", &once),
         ("deny", &deny),
         ("expires-changed", &later),
@@ -190,7 +208,9 @@ fn approval() -> Example {
     case("alice denies it, v2", "v2-deny", &pk, false, true);
     case("a v2 naming a device: not well formed", "v2-naming-a-device", &pk, false, false);
     case("a v2 carrying a device's signature: not well formed", "v2-with-a-signature", &pk, false, false);
-    case("version 3: not one", "v3", &pk, false, false);
+    case("version 3 without its chant gate: not one", "v3", &pk, false, false);
+    case("v3: alice approves a chant-fly deploy once, over chant's statement", "v3-chant", &pk, false, true);
+    case("a v3 deny: a deny stays v2", "v3-deny", &pk, false, false);
     case("v1: alice approves the deploy once, from her device", "once", &pk, true, true);
     case("v1: alice denies it: a deny is signed too", "deny", &pk, true, true);
     case("v1, checked against another key", "once", &them, false, true);
@@ -316,7 +336,7 @@ fn check_apply_cases() -> Example {
         run_check_apply,
         "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than \
          the platform's word, in this order, the first failure being the refusal: the approval is well formed \
-         (approval_form; a v2: a v1, from before DK4, applies no more since DK8); for this deploy (approval_deploy); over exactly this \
+         (approval_form; a v2 or a v3: a v1, from before DK4, applies no more since DK8); for this deploy (approval_deploy); over exactly this \
          operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now \
          (approval_expired); its account an owner of the project, as the machine knows them, its team's roster \
          or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no \

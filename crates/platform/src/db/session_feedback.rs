@@ -29,7 +29,7 @@ use anyhow::{Context as _, Result};
 
 use super::{
     Db,
-    sessions::{COLS, NewPrompt, Session, Source, queue_in, session_for_update, session_row},
+    sessions::{AgentSession, COLS, NewPrompt, Source, queue_in, session_for_update, session_row},
     sql::{Optional as _, Row, Sql, params},
 };
 
@@ -332,7 +332,7 @@ impl Db {
     /// The newest session in a project that links repo `repo_id` (as
     /// `owner/name`, `repo`) whose branch is `branch`: a session's branch
     /// is one per project.
-    pub fn session_on_branch(&self, repo_id: u64, repo: &str, branch: &str) -> Result<Option<Session>> {
+    pub fn session_on_branch(&self, repo_id: u64, repo: &str, branch: &str) -> Result<Option<AgentSession>> {
         self.c()
             .query_row(
                 &format!(
@@ -448,7 +448,7 @@ impl Db {
         id: &str,
         due_by: u64,
         now: u64,
-        answer: impl FnOnce(&Feedback, &[Item], &Session) -> Answer,
+        answer: impl FnOnce(&Feedback, &[Item], &AgentSession) -> Answer,
     ) -> Result<Option<(Feedback, Vec<Item>, Settled)>> {
         let mut c = self.c();
         let tx = c.immediate()?;

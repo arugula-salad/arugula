@@ -6,8 +6,7 @@
 //!   ([`signed_hex`]). A connection that is unknown, disconnected, or kept no
 //!   secret is a 404, the same answer for all three; a bad or missing
 //!   signature is a 401, and it comes before anything is read or written,
-//!   the delivery's id included. Behind the boards Labs flag of whoever
-//!   connected it.
+//!   the delivery's id included.
 //! - **Deduplicated** by `X-Plane-Delivery` in the GitHub webhook's table
 //!   ([`Db::first_delivery`], key `plane:<delivery>`). A failure after that
 //!   forgets it, so Plane's retry is taken.
@@ -141,14 +140,9 @@ pub async fn webhook(
 }
 
 /// The live connection `id` and its webhook secret, opened; `None` unless
-/// the connection is live, it kept a secret, and boards are on for whoever
-/// connected it.
+/// the connection is live and it kept a secret.
 async fn checked(app: &Platform, id: &str) -> anyhow::Result<Option<(Connection, String)>> {
     let Some(c) = app.db.live_tracker_connection(id)? else { return Ok(None) };
-    let Some(who) = &c.linked_by else { return Ok(None) };
-    if !crate::chat::flag_on(app, who, crate::boards::FLAG).await? {
-        return Ok(None);
-    }
     let Some(master) = app.secret_key.as_deref() else { return Ok(None) };
     let secret = keys::open(&app.db, master, &c.project_id, &webhook_name(&c.id))?;
     Ok(secret.map(|s| (c, s)))

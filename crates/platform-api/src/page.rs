@@ -36,28 +36,13 @@ struct Build;
 /// `'unsafe-inline'` for styles alone.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 
-/// [`CSP`], or with live presence (control has an arugula.stream app, whose
-/// relay is at `presence`, an https origin): scripts also come from the
-/// relay (its SDK and chunks), may be `blob:` URLs the page made (its Krisp
-/// noise filter's audio worklet and worker) and may compile WebAssembly
-/// (`'wasm-unsafe-eval'`, not JS `eval`: the camera's trackers); and the
-/// page may connect to the relay's socket, LiveKit Cloud's (any `wss:`
-/// host, per project) and https (Krisp's models, the relay's assets).
-///
-/// `proto` (control's proto origin, when it has a block domain): the one
-/// frame the page may have, a Doc's prototype (#506), in place of
-/// `frame-src 'none'`.
-pub fn csp(presence: Option<&str>, proto: Option<&str>) -> Cow<'static, str> {
-    let base = match presence {
-        None => Cow::Borrowed(CSP),
-        Some(o) => Cow::Owned(
-            CSP.replacen("script-src 'self';", &format!("script-src 'self' {o} blob: 'wasm-unsafe-eval';"), 1)
-                .replacen("connect-src 'self';", "connect-src 'self' wss: https:;", 1),
-        ),
-    };
+/// [`CSP`], with `proto` (control's proto origin, when it has a block
+/// domain): the one frame the page may have, a Doc's prototype (#506), in
+/// place of `frame-src 'none'`.
+pub fn csp(proto: Option<&str>) -> Cow<'static, str> {
     match proto {
-        None => base,
-        Some(p) => Cow::Owned(base.replacen("frame-src 'none';", &format!("frame-src {p};"), 1)),
+        None => Cow::Borrowed(CSP),
+        Some(p) => Cow::Owned(CSP.replacen("frame-src 'none';", &format!("frame-src {p};"), 1)),
     }
 }
 
@@ -66,7 +51,7 @@ pub fn csp(presence: Option<&str>, proto: Option<&str>) -> Cow<'static, str> {
 /// as a 404 (UI audit #193). This is a copy of `TOP` there; keep the two
 /// in step (a test below reads it).
 pub const PAGES: &[&str] =
-    &["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs"];
+    &["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"];
 
 /// Where the page's files come from: the build embedded in this binary, or
 /// a directory (development: `vite build --watch` writes there).

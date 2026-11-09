@@ -10,7 +10,7 @@ import { Time } from "../../shared/ui/time";
 import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
 import { fingerprint, type Cert } from "../e2e/cert.ts";
 import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
-import { Mark } from "../ui/shell/icons";
+import { Mark } from "../../shared/ui/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
 import { ResetOffer } from "./reset";
@@ -33,7 +33,7 @@ function HostedTerms() {
 /** Everything before the app: sign in, approval, no machines yet. */
 export function ControlGate({ s }: { s: ControlSession }) {
   useControl(s);
-  if (s.phase === "loading") return <Center>Connecting to Arugula control…</Center>;
+  if (s.phase === "loading") return <Center>Connecting to Arugula cloud…</Center>;
   if (s.phase === "error")
     return (
       <Center>
@@ -62,7 +62,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
           ) : null}
           {s.info.passkeys ? <PasskeyButtons /> : null}
         </div>
-        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this control.</p> : null}
+        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this server.</p> : null}
         <HostedTerms />
       </Center>
     );
@@ -273,6 +273,8 @@ function Waiting({ s }: { s: ControlSession }) {
   return (
     <Center>
       <h1>{inApp() ? "Approve this app as a device" : "Approve this browser"}</h1>
+      {/* #641: a synced passkey needs no other device, so it comes first. */}
+      <PasskeyInstead s={s} lead />
       {mine ? (
         <>
           <p data-waiting-browser={name} data-waiting-passkey={s.fromPasskey ? "" : undefined}>
@@ -302,7 +304,12 @@ function Waiting({ s }: { s: ControlSession }) {
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
-      <PasskeyInstead s={s} />
+      {/* A GitHub-only account has nothing to use yet: what to do next time. */}
+      {s.info.passkeys && !s.passkeys && !s.fromPasskey && !inApp() ? (
+        <p class="dim" data-waiting-next-time>
+          Next time: once you're in, add a passkey that syncs and turn on <i>Use on new computers</i>. A computer it syncs to won't need another device.
+        </p>
+      ) : null}
       <RecoveryForm s={s} open={recovering()} />
       {inApp() ? null : <ResetOffer />}
       <SignOuts s={s} />
@@ -349,15 +356,16 @@ function WhyAgain({ s, name }: { s: ControlSession; name: string }) {
 
 /** #764: a passkey whose PRF output gives the device another browser
  * enrolled with it: this browser becomes that device, with no approval. */
-function PasskeyInstead({ s }: { s: ControlSession }) {
+function PasskeyInstead({ s, lead = false }: { s: ControlSession; lead?: boolean }) {
   const [err, setErr] = useState("");
   if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
   return (
     <>
-      <button class="secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
-        Use your passkey instead
+      <button class={lead ? "primary" : "secondary"} data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+        {lead ? "Use your passkey" : "Use your passkey instead"}
       </button>
       {err ? <p class="control-error">{err}</p> : null}
+      {lead ? <p class="dim" data-waiting-or>Or approve it from a device you already use:</p> : null}
     </>
   );
 }
@@ -374,7 +382,7 @@ function Unvouched({ s }: { s: ControlSession }) {
       <Center>
         <h1>The approval doesn't match this browser's code</h1>
         <p data-unvouched="wrong">
-          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or control changed the account
+          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or Arugula cloud changed the account
           it was approved into. This browser doesn't trust it, and that code is used up.
         </p>
         <p>Enroll it again to get a new code. If the old one is listed under <i>Devices and machines</i> on your other device, remove it there.</p>
@@ -388,7 +396,7 @@ function Unvouched({ s }: { s: ControlSession }) {
     <Center>
       <h1>Check your account's fingerprint</h1>
       <p data-unvouched="missing">
-        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one control made up. On{" "}
+        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one Arugula cloud made up. On{" "}
         {v.by ? "that device" : "a device you use"}, open <i>Devices and machines</i> and check your account's fingerprint there is this one:
       </p>
       <p class="fingerprint" data-unvouched-account={v.root}>

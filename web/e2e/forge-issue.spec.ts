@@ -198,7 +198,7 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   const other = page.locator(`[data-forge-block="${(await draftNew("Nope")).block}"]`);
   await other.locator("[data-new-drop]").click();
   await expect(other).toHaveAttribute("data-forge-new", "dropped");
-  await expect(other.locator("[data-new-dropped]")).toContainText("Dropped by");
+  await expect(other.locator("[data-new-dropped]")).toContainText("Discarded by");
   expect(writes.length).toBe(1);
 });
 

@@ -1,0 +1,292 @@
+{
+  "url": "https://control.example",
+  "trust": {
+    "account": "o",
+    "root": "54cc8bcf23f1bda2"
+  },
+  "cert": {
+    "v": 1,
+    "account": "o",
+    "device": "5fc1b41e1c347cfd",
+    "kind": "daemon",
+    "name": "box",
+    "noise": "b8844b59e30cc48ff43c455e150279d8bcf3b56b19b5946ccee78103e18dc636",
+    "sign": "ef34385bd4d2e483edc4a7b9440a28ffe900d5130cf8cc210bdf0bbedaee2698",
+    "created": 2,
+    "approver": "",
+    "sig": "b913c740725d3e03b50aad55e49a18e1aa281451f4d421e0d845ea5ea1b8a8085846f29dba7c51c2642c4bc914a22b7ed5335b8ba2438f41cf8697a606a27d08"
+  },
+  "certs": [],
+  "revocations": [],
+  "team": {
+    "team": "t1",
+    "founder": "o",
+    "founder_root": "54cc8bcf23f1bda2"
+  },
+  "roster": {
+    "v": 1,
+    "team": "t1",
+    "name": "Acme",
+    "version": 5,
+    "at": 5,
+    "members": [
+      {
+        "account": "o",
+        "root": "54cc8bcf23f1bda2",
+        "role": "owner",
+        "name": "o"
+      },
+      {
+        "account": "a",
+        "root": "2fd78ba2a5780271",
+        "role": "owner",
+        "name": "a"
+      },
+      {
+        "account": "e",
+        "root": "ddb304a78f3174b9",
+        "role": "editor",
+        "name": "e"
+      },
+      {
+        "account": "v",
+        "root": "7a6968289d341618",
+        "role": "viewer",
+        "name": "v"
+      }
+    ],
+    "by": "54cc8bcf23f1bda2",
+    "sig": "af0a7133063deee64bfa2d5ea8bc20963913c2c66ecfc421e869772de77f43ca0c4d2167bac64d7d9b4923922b5e469d3b80b61853262c307a38bbf7d759f905"
+  },
+  "team_certs": {
+    "e": [
+      [
+        {
+          "v": 1,
+          "account": "e",
+          "device": "ddb304a78f3174b9",
+          "kind": "browser",
+          "name": "x",
+          "noise": "695e18d8ffad5df6050c2d020ba5ae0059269a278a9ddc7305a495d07b2dbc1b",
+          "sign": "5b984e89ef13eb4c7a6bba966358a0ee55fcc26d1807fe33686b59c60cf37374",
+          "created": 1793773139448,
+          "approver": "ddb304a78f3174b9",
+          "sig": "9c4c31b10a21ec0e45c07ec445847ea9519bdcfedebfbdae22ab762560024e5a04d9168baa6ff312688f1b8d986f862afdb083b83754a538105babf2424a2c04"
+        },
+        {
+          "v": 1,
+          "account": "e",
+          "device": "5f81234825604ec6",
+          "kind": "daemon",
+          "name": "e-box",
+          "noise": "3859851ea7c5ea5138b317dd6774570697924431f48f834f7cb83b67b5223276",
+          "sign": "33647cf3d2c44dc6f4ec26036a2fb7175d4d5cdbc00ba86a698ea259e0fc6169",
+          "created": 1793773139454,
+          "approver": "ddb304a78f3174b9",
+          "sig": "9ca95305f7b8873a6ba27b9eb445b05cf30775d310fc1861e4c6a6ba7437ea8846768b8951a283ab2e4dbe70fe4ba2edb93a68ec8aec19e52edaf817674b370a"
+        },
+        {
+          "v": 1,
+          "account": "e",
+          "device": "e6a435ac4d26c64c",
+          "kind": "browser",
+          "name": "e-phone",
+          "noise": "be619923a79d5c7f82fd311e6c1358ae74fc24842ae926ed8111d8cc9436e85f",
+          "sign": "930e1c424f34c68c911d0aa295b561d15e3eff98d86fc419a66debe776ba8123",
+          "created": 1793773139461,
+          "approver": "ddb304a78f3174b9",
+          "sig": "83371d3b1c43ed81425c700a0d69655be51b6979369156079842b3f65fcc08da14926505bdef4141d15dab9813894e415efd7fb846216bd1a0e6465e37d2010f"
+        }
+      ],
+      [
+        {
+          "v": 1,
+          "account": "e",
+          "device": "e6a435ac4d26c64c",
+          "at": 1793773139461,
+          "by": "ddb304a78f3174b9",
+          "sig": "854c2eddc5880d70b54ea49111cfffdfe55bf4379a61c4c3ffd593868811ce29840fda7fb68693ca0117d2d064fd738d7b56981e51cdd9aa7a1843658014180d"
+        }
+      ]
+    ],
+    "o": [
+      [
+        {
+          "v": 1,
+          "account": "o",
+          "device": "54cc8bcf23f1bda2",
+          "kind": "browser",
+          "name": "x",
+          "noise": "9a1ba034448f1068d64f2277f27af7b5683820aedccb5b329df7b515d50a816b",
+          "sign": "7cd1c657c334b9e4c8507505f0fa4d9aeeb3624f5fad03835efb906894faa16a",
+          "created": 1793773139436,
+          "approver": "54cc8bcf23f1bda2",
+          "sig": "28c06d0af42cdad642b1111c39eecb822edea9599a9edd75726f6b730089fd0811471772b25ad870547f7cdd3b2cfda14f23e0e699d5b9f9ec6c3976e406db0a"
+        },
+        {
+          "v": 1,
+          "account": "o",
+          "device": "116952298439d2ae",
+          "kind": "daemon",
+          "name": "o-box",
+          "noise": "b457554578b2536ab25291b056e3644144d53b5626fd15b2969c9d3cb55a387a",
+          "sign": "abf14f05e9c2ee68ec7bd0d9798343ba13f9615f3d39c448e447160b4a5df1f3",
+          "created": 1793773139442,
+          "approver": "54cc8bcf23f1bda2",
+          "sig": "83d6cf384cd7cccaa12faea99ae0d8615b71364ec9262d5f5625e8f3a1ce4e0a1fc0fcd117b9f5b73addf8eb6094578f03024ade16783669f6f98664ac92e30a"
+        }
+      ],
+      []
+    ],
+    "v": [
+      [
+        {
+          "v": 1,
+          "account": "v",
+          "device": "7a6968289d341618",
+          "kind": "browser",
+          "name": "x",
+          "noise": "678261c90f37270b1e0551dbc800221baf023e7eb10b21e4b2c3484573824258",
+          "sign": "1135e7fa25eca526253c7adb09e2d72e59c2e13fc108c5fde4ffc5703a48e874",
+          "created": 1793773139467,
+          "approver": "7a6968289d341618",
+          "sig": "11f3f1797d340dc06b611de81da3d6075484cdca42dbc1a459490b40ede7be4ad1a229e2ec571b03b945283c3cbfd76f3af96b382ccc0743601323e849b57e01"
+        }
+      ],
+      []
+    ],
+    "a": [
+      [
+        {
+          "v": 1,
+          "account": "a",
+          "device": "2fd78ba2a5780271",
+          "kind": "browser",
+          "name": "x",
+          "noise": "a8cf8feab8f91e4547d41833ddea8c95efa2121495ffa296ebcfe5b11678171f",
+          "sign": "e07043aab33b8e513c219a3fab18e2ad1c252613136f9a58d96bd42d076d102f",
+          "created": 1793773139403,
+          "approver": "2fd78ba2a5780271",
+          "sig": "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600"
+        },
+        {
+          "v": 1,
+          "account": "a",
+          "device": "fc05fb621ffbc559",
+          "kind": "browser",
+          "name": "phone",
+          "noise": "d888c9352555ba42456624445c732495bdb1d17c4ff2f4d01ad09b00a4415566",
+          "sign": "f7f129a8affcdddff50898210aff9f8f23f2ff2d1eda7aea8d1924108fa7af22",
+          "created": 1793773139416,
+          "approver": "2fd78ba2a5780271",
+          "sig": "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09"
+        }
+      ],
+      []
+    ]
+  },
+  "former_members": {
+    "x": {
+      "root": "9e701f0267dff69e",
+      "certs": [
+        {
+          "v": 1,
+          "account": "x",
+          "device": "9e701f0267dff69e",
+          "kind": "browser",
+          "name": "x",
+          "noise": "e11871024c6273948a5d184e4938c79acfaad2cefef6a8d2aee6ebe599c0f245",
+          "sign": "ae7ee20f3071a7c8fe759a20490e5b02002d5f74e458a2afed2923c51c216f8c",
+          "created": 1793773139487,
+          "approver": "9e701f0267dff69e",
+          "sig": "9ccf6e495e36bd6cd6d3b61dbc537ed52fd7fd6e4c693232f18b7d4b5b0f14bb32f4597bb0fad31989442552f51f0cfd2636777f9eb3624d6c6a9e2c6f15c507"
+        },
+        {
+          "v": 1,
+          "account": "x",
+          "device": "bf41e03f3de5a275",
+          "kind": "daemon",
+          "name": "x-box",
+          "noise": "f104512a483d4da985ebe5c7498203a21d9b5aaff8dbf019200b332c14ea034f",
+          "sign": "ddea642b5a41dbdec660d2446592a839bf50f902289c1e303d4e1b34033ecb37",
+          "created": 1793773139494,
+          "approver": "9e701f0267dff69e",
+          "sig": "4651e7b302fa776e522149a5d6c7d62da752664e0bd68987d5c26861650556cf0def9038266900cdc331b93f649149cd5d551a75d187afe1bc9725c253ac420a"
+        }
+      ],
+      "revocations": [
+        {
+          "v": 1,
+          "account": "x",
+          "device": "bf41e03f3de5a275",
+          "at": 1793773139494,
+          "by": "9e701f0267dff69e",
+          "sig": "e49d01becc72cbad5239b90dd5e7f0a9b5ef5f243b68614eb93924d238d0e1561d75af11bf5d01dada5fa6809378ff949e33992b43818be1c3fbd9a99bab570f"
+        }
+      ]
+    }
+  },
+  "locked": true,
+  "lock": {
+    "team": "t1",
+    "locked": true,
+    "version": 4,
+    "at": 40,
+    "by": "54cc8bcf23f1bda2",
+    "sig": "2a7e72445fa458976ef697b9f1a869477f8a64a7b2b4e408afd2049c0608cb605b8e504e2650e1909faef9d4a8dfc55b5410238adbe29f1c1d126f8fde147204"
+  },
+  "seen": {
+    "round": 1,
+    "at": {
+      "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600": 1,
+      "11f3f1797d340dc06b611de81da3d6075484cdca42dbc1a459490b40ede7be4ad1a229e2ec571b03b945283c3cbfd76f3af96b382ccc0743601323e849b57e01": 1,
+      "28c06d0af42cdad642b1111c39eecb822edea9599a9edd75726f6b730089fd0811471772b25ad870547f7cdd3b2cfda14f23e0e699d5b9f9ec6c3976e406db0a": 1,
+      "4651e7b302fa776e522149a5d6c7d62da752664e0bd68987d5c26861650556cf0def9038266900cdc331b93f649149cd5d551a75d187afe1bc9725c253ac420a": 1,
+      "83371d3b1c43ed81425c700a0d69655be51b6979369156079842b3f65fcc08da14926505bdef4141d15dab9813894e415efd7fb846216bd1a0e6465e37d2010f": 1,
+      "83d6cf384cd7cccaa12faea99ae0d8615b71364ec9262d5f5625e8f3a1ce4e0a1fc0fcd117b9f5b73addf8eb6094578f03024ade16783669f6f98664ac92e30a": 1,
+      "854c2eddc5880d70b54ea49111cfffdfe55bf4379a61c4c3ffd593868811ce29840fda7fb68693ca0117d2d064fd738d7b56981e51cdd9aa7a1843658014180d": 1,
+      "9c4c31b10a21ec0e45c07ec445847ea9519bdcfedebfbdae22ab762560024e5a04d9168baa6ff312688f1b8d986f862afdb083b83754a538105babf2424a2c04": 1,
+      "9ca95305f7b8873a6ba27b9eb445b05cf30775d310fc1861e4c6a6ba7437ea8846768b8951a283ab2e4dbe70fe4ba2edb93a68ec8aec19e52edaf817674b370a": 1,
+      "9ccf6e495e36bd6cd6d3b61dbc537ed52fd7fd6e4c693232f18b7d4b5b0f14bb32f4597bb0fad31989442552f51f0cfd2636777f9eb3624d6c6a9e2c6f15c507": 1,
+      "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09": 1,
+      "e49d01becc72cbad5239b90dd5e7f0a9b5ef5f243b68614eb93924d238d0e1561d75af11bf5d01dada5fa6809378ff949e33992b43818be1c3fbd9a99bab570f": 1
+    }
+  },
+  "moved_at": 0,
+  "hosted": {
+    "cert": {
+      "project": "prj_1",
+      "owner": "team:t1",
+      "workspace": "hw_1",
+      "delegation": "c894109b24468f2ace451167db63daf6",
+      "device": "5fc1b41e1c347cfd",
+      "name": "box",
+      "noise": "b8844b59e30cc48ff43c455e150279d8bcf3b56b19b5946ccee78103e18dc636",
+      "sign": "ef34385bd4d2e483edc4a7b9440a28ffe900d5130cf8cc210bdf0bbedaee2698",
+      "created": 2,
+      "sig": "b913c740725d3e03b50aad55e49a18e1aa281451f4d421e0d845ea5ea1b8a8085846f29dba7c51c2642c4bc914a22b7ed5335b8ba2438f41cf8697a606a27d08"
+    },
+    "delegation": {
+      "project": "prj_1",
+      "owner": "team:t1",
+      "key": "46f9714ce2400de4c3a383792badbee2c94f1699b6f07b147e69fe6e82c624aa",
+      "at": 1,
+      "by": "54cc8bcf23f1bda2",
+      "sig": "46a6f97e709f9d7e92b9b405ae1c9a6d8720eb87eb33cbd3a28c63411d1770f5644c4b67e44ed1c8b2c7e7744c39c14905a3d3d8ef217c58f1683d4b2bb52305"
+    },
+    "revocations": [
+      {
+        "project": "prj_1",
+        "delegation": "ed87732e4687219f886e4c2135417458",
+        "at": 5,
+        "by": "54cc8bcf23f1bda2",
+        "sig": "8574c42cec09ca925467f997eb4a6e026862ff2d912396a92afd7595405e00f2609f231449d90759ba97d5988421e4240bd41a9f906d057fd2ec3391e67b2708"
+      }
+    ],
+    "legacy_app_children": {
+      "o": [
+        "54cc8bcf23f1bda2"
+      ]
+    }
+  }
+}

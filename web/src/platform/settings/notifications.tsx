@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
 import { clock, deviceZone, LEVELS, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -77,7 +77,6 @@ export function NotificationSettings() {
       <Section
         id="notifications"
         title="Chat notifications"
-        lede="How much of chat pushes you, and when to leave you alone."
         hooks={{ "data-notify-settings": "" }}
         more={
           <p>
@@ -115,16 +114,14 @@ export function NotificationSettings() {
                 data-notify-all
                 onChange={(e) => void run({ all_notices: e.currentTarget.checked })}
               />
-              <span>Pausing covers every notice, not just chat's</span>
+              <span title="Inbox items and deploy approvals wait too. Alerts about your account never do.">Pause everything, not just chat</span>
             </label>
-            <span class="dim">Inbox items and deploy approvals wait too. Alerts about your account never do.</span>
           </li>
         </ul>
       </Section>
       <Section
         id="quiet-hours"
         title="Quiet hours"
-        lede="Days and hours chat leaves you alone, in the time zone here. Tick a day to set its hours."
         more={<p>They follow the time zone chosen here, not the device's, so travelling doesn't move them.</p>}
         hooks={{ "data-notify-quiet": "" }}
       >

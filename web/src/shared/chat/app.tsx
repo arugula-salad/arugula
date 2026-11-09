@@ -17,6 +17,7 @@
 //    fits that box (a narrow one, a single pinned room, one of several).
 
 import { maintenance, MAINTENANCE_SAID } from "../maintenance";
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -37,27 +38,34 @@ export function ChatApp({ route, fit, scope }: { route: ChatRoute; fit?: ChatFit
   if (maintenance.down) note = <p data-maintenance-note>{MAINTENANCE_SAID}</p>;
   else if (chat.on === null) {
     note = chat.unreachable ? (
-      <p data-chat-unreachable>Can't reach chat on Arugula control. Trying again…</p>
+      <EmptyState data-chat-unreachable title="Can't reach chat." why="Arugula cloud isn't answering. Trying again…" />
     ) : (
-      <p class="dim" data-chat-loading>
-        Loading chat…
-      </p>
+      <BlockLoading data-chat-loading what="chat" />
     );
   } else if (chat.signedOut) {
     note = (
-      <p data-chat-signed-out>
-        You're signed out of Arugula control.{" "}
-        <button class="primary" onClick={() => location.reload()}>
-          Sign in again
-        </button>
-      </p>
+      <EmptyState
+        data-chat-signed-out
+        title="You're signed out of Arugula cloud."
+        action={
+          <button class="primary" onClick={() => location.reload()}>
+            Sign in again
+          </button>
+        }
+      />
     );
-  } else note = <p>Chat is off for you. A team owner turns it on for the team under Teams, on Control: its channels, messages and threads.</p>;
+  } else
+    note = (
+      <EmptyState
+        title="Chat is off for you."
+        why="A team owner turns it on for the team under Teams, on your machines page: its channels, messages and threads."
+      />
+    );
   return (
     <div class="chat" data-chat data-chat-off={chat.on === false && !chat.signedOut ? "" : undefined}>
       <Bar />
       <div class="chat-body">
-        <div class="chat-thread chat-empty">{note}</div>
+        <div class="chat-thread">{note}</div>
       </div>
     </div>
   );

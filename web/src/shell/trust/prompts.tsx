@@ -130,6 +130,45 @@ export function ConfirmPasskey({ s }: { s: ControlSession }) {
   );
 }
 
+/** #641: the passkey just added, as a device of the account: what it gets
+ * you and what it costs (aru-061), asked from a click because a browser
+ * asks for a passkey only on one. */
+export function PasskeyOffer({ s, offer }: { s: ControlSession; offer: { id: string; provider: string | null } }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal close={() => s.dropPasskeyOffer()}>
+      <h2>Use this passkey on new computers?</h2>
+      <p data-passkey-offer>A new computer with this passkey will reach your machines straight away, with no other device to approve it.</p>
+      <p class="dim" data-passkey-offer-cost>
+        Whoever can use this passkey can then do what this browser does: reach your machines, approve new devices, and remove your others. So it's only as safe as{" "}
+        {offer.provider ?? "whatever keeps it"}. It's listed under Devices, and you can remove it there; this passkey can't be turned on again after that.
+      </p>
+      {err ? <p class="control-error">{err}</p> : null}
+      <div class="prompt-buttons">
+        <button class="secondary" data-passkey-offer-no onClick={() => s.dropPasskeyOffer()}>
+          Not now
+        </button>
+        <button
+          class="primary"
+          data-passkey-offer-yes
+          disabled={busy}
+          onClick={() => {
+            setErr("");
+            setBusy(true);
+            s.passkeyAsDevice(offer.id, offer.provider).catch((e: Error) => {
+              setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message);
+              setBusy(false);
+            });
+          }}
+        >
+          Turn it on
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /** Back from signing in with GitHub again to add a passkey (an account
  * with none needs a sign-in from the last few minutes): make it now. */
 export function AddPasskeyAgain({ s }: { s: ControlSession }) {

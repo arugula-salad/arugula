@@ -17,7 +17,7 @@ use crate::{
     chat_tests::{TestHub, call},
     db::{
         projects::{SESSIONS_REPLY, SESSIONS_START, THREADS_POST},
-        sessions::{ActionKind, Session, State},
+        sessions::{ActionKind, AgentSession, State},
     },
     grants::AGENT_UNGRANTED,
     sessions_hydrate_tests::{platform, post_in, sessions, take},
@@ -54,7 +54,7 @@ async fn joined(hub: &TestHub, app: &Platform) {
     crate::cache::catch_up(app).await.unwrap();
 }
 
-fn session_of(app: &Platform, project: &str, parent: i64) -> Option<Session> {
+fn session_of(app: &Platform, project: &str, parent: i64) -> Option<AgentSession> {
     sessions(app, project).into_iter().find(|s| s.parent_seq == parent as u64)
 }
 
@@ -156,6 +156,27 @@ async fn an_agent_starts_one_on_an_issue_and_answers_which_repo() {
     assert_eq!(s.work_item.as_deref(), Some(i.id.as_str()));
     let (st, v) = call(&base, "a", "GET", &format!("/api/sessions/{}", s.id), None).await;
     assert_eq!((st, v["card"]["work"]["number"].as_u64()), (200, Some(i.number)), "{v}");
+    // With the issue on a board, the card names it: no flag asked (boards left Labs, #191).
+    let (st, made) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    assert_eq!(st, 200, "{made}");
+    let board = made["board"]["id"].as_str().unwrap().to_owned();
+    let pointer = json!({ "kind": "issue", "id": i.id });
+    let (st, v) = call(
+        &base,
+        "a",
+        "PUT",
+        &format!("/api/boards/{board}/entries"),
+        Some(json!({ "entry": "row", "pointer": pointer })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = call(&base, "a", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(
+        (st, &v["card"]["work"]["board"], &v["card"]["work"]["board_title"]),
+        (200, &json!(board), &json!("Launch")),
+        "{v}"
+    );
 
     // In the channel: the agent's reply naming a repo answers its ask.
     let (st, v) = geek(&base, "POST", AGENT_SESSIONS, Some(json!({ "room": ROOM, "prompt": "tidy the README" }))).await;
@@ -256,7 +277,7 @@ async fn asked(
     keys: &arugula_e2e::DeviceKeys,
     who: &str,
     text: &str,
-) -> (i64, Session) {
+) -> (i64, AgentSession) {
     let p = post_in(base, ROOM, who, text, None).await["seq"].as_i64().unwrap();
     let s = session_of(app, project, p).expect("a session");
     take(app, keys, &s.id);

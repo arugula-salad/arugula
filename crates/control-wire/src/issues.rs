@@ -360,4 +360,8 @@ pub struct IssueExport {
     pub issues: Vec<ExportedIssue>,
     /// Everyone it names (authors, actors, assignees, commenters).
     pub people: Vec<ExportedPerson>,
+    /// The comments were left out: they're in chat, which is off for the
+    /// reader (Arugula #746). Absent when they're there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub comments_in_chat: bool,
 }

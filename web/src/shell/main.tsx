@@ -2,8 +2,6 @@
 import "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
-// Live presence (#343): in the reader's teams' rooms while their switch says so.
-import { live } from "../shared/live/live";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
@@ -24,6 +22,8 @@ import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
 import "./docs-page.css";
+import "../shared/ui/settings-section.css";
+import "./settings-page.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
@@ -32,7 +32,7 @@ import { Client } from "./client";
 import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
 import { App } from "./ui/app";
-import { openTeamChat, remotes } from "./blocks";
+import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
 import { setReadOnlyLink } from "./ui/link-note";
@@ -590,13 +590,9 @@ Object.assign(window, {
       return client;
     },
     hosts: directory,
-    /** #17: the connections remote panes use, by host. */
-    remotes,
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
-    /** #343: live presence's rooms on arugula.stream. */
-    live,
     fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),

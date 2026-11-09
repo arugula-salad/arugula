@@ -120,7 +120,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
-        // from where a "from now" share starts); synced hosts are the owner's.
+        // from where a "from now" share starts).
         ["api", "history" | "events"] if get => Policy::Handler,
         // M24: the handler shows each person what they may read, and checks
         // each pane acted on.
@@ -247,15 +247,9 @@ mod tests {
             (&p, "/api/host", Policy::Owner),
             (&g, "/api/hosts", Policy::Owner),
             (&p, "/api/hosts", Policy::Owner),
-            (&p, "/api/hosts/invite", Policy::Owner),
-            (&p, "/api/hosts/join", Policy::Owner),
             (&d, "/api/hosts/box", Policy::Owner),
-            (&p, "/api/hosts/box/token", Policy::Owner),
-            (&d, "/api/hosts/box/token", Policy::Owner),
             // A host named like a pane is still a host.
             (&d, "/api/hosts/3", Policy::Owner),
-            (&p, "/api/hosts/3/token", Policy::Owner),
-            (&d, "/api/hosts/3/token", Policy::Owner),
             (&g, "/api/setup", Policy::Owner),
             (&p, "/api/setup/tailscale", Policy::Owner),
             (&p, "/api/setup/control", Policy::Owner),
@@ -285,6 +279,10 @@ mod tests {
             (&d, "/api/guests/3"),
             (&g, "/api/acl"),
             (&p, "/api/acl"),
+            // Arugula #681: the access view, on every path (socket, tailnet,
+            // control alike: the policy is the same table).
+            (&g, "/api/access"),
+            (&p, "/api/access"),
             (&p, "/api/links"),
             (&p, "/api/invite"),
             (&g, "/api/team-pins"),
@@ -370,25 +368,17 @@ mod tests {
         assert_eq!(policy(&g, "/api/studio/apps"), Policy::Owner);
     }
 
-    /// #578 part c: synced history, sandboxes and studio were the owner's by
-    /// the default arm; as operations they say so, and an editor, a viewer or
-    /// a guest is refused all of them (studio's login is a way into a box as
-    /// the owner).
+    /// #578 part c: sandboxes and studio were the owner's by the default
+    /// arm; as operations they say so, and an editor, a viewer or a guest is
+    /// refused all of them (studio's login is a way into a box as the
+    /// owner).
     #[test]
-    fn synced_sandboxes_and_studio_stay_the_owners() {
+    fn sandboxes_and_studio_stay_the_owners() {
         let (g, p, u, d) = (Method::GET, Method::POST, Method::PUT, Method::DELETE);
         for (m, path) in [
-            (&g, "/api/synced"),
-            (&p, "/api/synced/rotate-key"),
-            (&d, "/api/synced/geek"),
             // A name that is a number is still not a pane.
-            (&d, "/api/synced/7"),
-            (&p, "/api/sandboxes/7/promote"),
-            (&d, "/api/sandboxes/7/resident"),
             (&u, "/api/studio/followers/7"),
             (&g, "/api/sandboxes"),
-            (&p, "/api/sandboxes/box/promote"),
-            (&d, "/api/sandboxes/box/resident"),
             (&g, "/api/studio"),
             (&p, "/api/studio"),
             (&d, "/api/studio"),

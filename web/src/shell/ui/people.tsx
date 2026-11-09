@@ -19,7 +19,7 @@ import { useEscape } from "./keys";
 import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
-import { LiveFace, accountOf } from "../../shared/live/face";
+import { CheckIcon, EditIcon } from "../../shared/ui/icons";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -38,12 +38,9 @@ function initials(name: string): string {
 }
 
 export function Avatar({ p, onClick, title }: { p: Pick<Presence, "who" | "name" | "pic">; onClick?: () => void; title?: string }) {
-  const live = accountOf(p.who);
   return (
     <span class="avatar" style={{ "--who": colorOf(p.who) }} title={title ?? p.name} data-who={p.who} onClick={onClick}>
       {p.pic ? <img src={p.pic} alt="" referrerpolicy="no-referrer" /> : initials(p.name)}
-      {/* #344: their live face, for someone here through control. */}
-      {live && <LiveFace account={live} />}
     </span>
   );
 }
@@ -113,7 +110,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         ) : null}
         {driving ? (
           <span class="pane-driver" data-you-drive title="You have control: your typing reaches it">
-            ✎ you drive
+            <EditIcon size="xs" /> you drive
           </span>
         ) : null}
         {focused.map((p) => (
@@ -124,7 +121,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         {driver ? (
           <>
             <span class="pane-driver" data-driver={driver.who} title={`${driver.name} is driving: only their typing reaches it`}>
-              ✎ {driver.name.split("@")[0]}
+              <EditIcon size="xs" /> {driver.name.split("@")[0]}
             </span>
             {/* You may type here, but they have control: say how to get it (#551). */}
             {!pair && client.mayType(pane) ? (
@@ -135,7 +132,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
           </>
         ) : pair ? (
           <span class="pane-driver" title="Pair mode: everyone types">
-            ✎ pair
+            <EditIcon size="xs" /> pair
           </span>
         ) : null}
       </div>
@@ -276,7 +273,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
             const c = readVerifyCode(t);
             if (!c) return false;
             if (c.account === who.account && c.root === who.root) ok();
-            else setErr(`That code isn't the key control gave for ${who.name}. Don't share with them here.`);
+            else setErr(`That code isn't the key Arugula cloud gave for ${who.name}. Don't share with them here.`);
             return true;
           }}
           close={() => setScanning(false)}
@@ -294,7 +291,7 @@ function VerifyPerson({ who, done, close }: { who: Person; done: () => void; clo
           The words match
         </button>
       </div>
-      <p class="dim">Inviting them to a team by link doesn't trust control at all.</p>
+      <p class="dim">Inviting them to a team by link doesn't trust Arugula cloud at all.</p>
     </div>
   );
 }
@@ -500,7 +497,7 @@ export function ShareDialog({ client }: { client: Client }) {
                     {verified(g) ? (
                       <span class="share-verified" title="You verified their key" aria-label="verified" data-verified>
                         {" "}
-                        ✓
+                        <CheckIcon size="xs" />
                       </span>
                     ) : null}
                   </span>
@@ -584,9 +581,10 @@ export function ShareDialog({ client }: { client: Client }) {
             ? "People you share with open their own panes on throwaway VMs."
             : "People you share with see its panes but can't open their own here."}{" "}
           {machine
-            ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. Your teams aren't asked. `
+            ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. `
             : ""}
-          Unless this machine is in their team, even people who drive ask you before typing in one of its panes.
+          Unless this machine is in their team, even people who drive ask you before typing in its panes. An owner here owns the
+          session, not the machine.
         </p>
         {changed ? (
           <div class="share-changed" data-key-changed={changed.p.account}>
@@ -601,7 +599,7 @@ export function ShareDialog({ client }: { client: Client }) {
               ) : (
                 ""
               )}
-              Control has given a different key since <Time at={changed.seen} on />. Nothing was shared.
+              Arugula cloud has given a different key since <Time at={changed.seen} on />. Nothing was shared.
             </p>
             <div class="prompt-buttons">
               <button class="secondary" onClick={() => setChanged(null)}>Cancel</button>

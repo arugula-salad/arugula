@@ -21,7 +21,6 @@ use super::{
 };
 use crate::{
     Platform,
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{
         Sql as _,
@@ -53,7 +52,6 @@ async fn start() -> World {
     let (gh, app, base) = serve_with(&hub, |p| fake = Some(plane(p))).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     let (s, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Lanes" }))).await;
     assert_eq!(s, 200, "{b}");

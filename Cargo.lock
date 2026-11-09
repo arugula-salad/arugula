@@ -391,18 +391,15 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "clap",
- "crossbeam-channel",
  "futures-util",
  "getrandom 0.4.3",
  "hex",
  "hkdf",
- "hmac",
  "http-body-util",
  "hyper",
  "hyper-util",
  "instant-acme",
  "libc",
- "memchr",
  "nix",
  "p256",
  "percent-encoding",
@@ -426,7 +423,6 @@ dependencies = [
  "webpki-root-certs",
  "windows-sys 0.60.2",
  "x509-parser",
- "zstd",
 ]
 
 [[package]]
@@ -454,6 +450,7 @@ version = "0.0.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
+ "arugula-control-wire",
  "arugula-core",
  "arugula-mux",
  "arugula-proto",
@@ -605,7 +602,6 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tracing",
- "tracing-subscriber",
  "url",
 ]
 

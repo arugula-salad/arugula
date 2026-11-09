@@ -3,6 +3,603 @@
 <head>
 <meta charset="utf-8">
 <title>prototype</title>
+<!-- The prototype kit (#699): the house look as opt-in `ar-` classes and `--ar-`
+     tokens, written into every prototype before its own styles, so a prototype
+     can start from them with nothing to import (the frame loads nothing). A
+     template, so this page doesn't apply it. Colors are `light-dark(Latte,
+     Slate)`: they follow the `color-scheme` the runner already sets and moves,
+     and `scripts/prototype-kit.test.mjs` checks each against what appearance.ts's
+     legible() paints. The
+     type scale is style.css's four most-used sizes (12px 123 times, 11px 71,
+     13px 35, 15px 13; #687 will settle the real one). Nothing here selects an
+     element, so a prototype that uses no `ar-` class renders as it did. -->
+<template id="arugula-kit"><style>
+:root {
+  --ar-bg: light-dark(#eff1f5, #0c1118);
+  --ar-surface: light-dark(#e6e9ef, #090d13);
+  --ar-raised: light-dark(#ccd0da, #1a2230);
+  --ar-raised-hover: light-dark(#bcc0cc, #243042);
+  --ar-text: light-dark(#4c4f69, #d6dee9);
+  --ar-muted: light-dark(#56586a, #8b98ab);
+  --ar-subtle: light-dark(#56586f, #b4c0d0);
+  --ar-faint: light-dark(#9ca0b0, #3a4658);
+  --ar-border: light-dark(#ccd0da, #1a2230);
+  --ar-accent: light-dark(#702fc6, #56c8dc);
+  --ar-on-accent: light-dark(#ffffff, #06090d);
+  --ar-danger: light-dark(#b30d31, #f2778a);
+  --ar-ok: light-dark(#29661c, #5fd394);
+  --ar-warn: light-dark(#7d4f10, #f0b45a);
+  --ar-info: light-dark(#1851c4, #7aa7f0);
+  --ar-merged: light-dark(#6941b4, #b49cf2);
+  --ar-teal: light-dark(#106368, #5fd3c4);
+  /* Text on a solid color (a count on the accent or warn): the palette's
+     on-color, as --ar-on-accent is. */
+  --ar-on-color: light-dark(#ffffff, #06090d);
+  /* The chrome's frame and a border that has to show on a raised fill:
+     style.css's --line-strong, 55% of the palette's muted (--ar-faint) over
+     the surface. */
+  --ar-line-strong: color-mix(in srgb, var(--ar-faint) 55%, var(--ar-surface));
+  /* A selected button's tint: buttons.css's --on-fill, 18% of the accent.
+     Its text is the accent. */
+  --ar-on-fill: color-mix(in srgb, var(--ar-accent) 18%, transparent);
+  --ar-text-xs: 11px;
+  --ar-text-sm: 12px;
+  --ar-text-md: 13px;
+  --ar-text-lg: 15px;
+  --ar-text-xl: 19px;
+  --ar-text-2xl: 32px;
+  --ar-text-doc: 38px;
+  --ar-lh-xs: 16px;
+  --ar-lh-sm: 16px;
+  --ar-lh-md: 18px;
+  --ar-lh-lg: 20px;
+  --ar-lh-prose: 1.45;
+  --ar-font: system-ui, sans-serif;
+  --ar-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ar-space-1: 4px;
+  --ar-space-2: 8px;
+  --ar-space-3: 12px;
+  --ar-space-4: 16px;
+  --ar-icon-xs: 12px;
+  --ar-icon-sm: 14px;
+  --ar-icon-md: 16px;
+  --ar-icon-lg: 18px;
+  --ar-radius-sm: 6px;
+  --ar-radius: 8px;
+  --ar-radius-lg: 10px;
+  /* A card's sizes (style.css's --card-pad, --card-pad-dense, --card-gap and
+     --card-bar), and its corners, the app's --card-radius. */
+  --ar-card-pad: 10px 12px;
+  --ar-card-pad-dense: 6px 12px;
+  --ar-card-gap: 10px;
+  --ar-card-bar: 3px;
+  --ar-card-radius: var(--ar-radius);
+  --ar-shadow: 0 12px 40px light-dark(rgb(0 0 0 / 0.21), rgb(0 0 0 / 0.6));
+  --ar-backdrop: rgb(0 0 0 / 0.4);
+}
+
+/* A card (#698): the app's Card (shared/ui/card.css). A plain one is the
+   surface with a 1px edge, and hover lifts the edge. ar-card-tone with a
+   tone (accent, ok, warn, danger, info, teal, muted) adds a 3px bar and an
+   edge and fill from the tone: on a dark palette 45% and 7% of it, on a
+   light one the tone's hue at a light card's lightness (style.css's
+   --card-edge and --card-tint). ar-card-dense is one line. A grid of cards
+   is a grid with gap var(--ar-card-gap). */
+.ar-card {
+  --c: var(--ar-faint);
+  --ct: var(--ar-subtle);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--ar-card-pad);
+  border: 1px solid var(--ar-border);
+  border-radius: var(--ar-card-radius);
+  background: var(--ar-surface);
+  color: var(--ar-text);
+  font: var(--ar-text-md)/1.35 var(--ar-font);
+}
+.ar-card:is(:hover, :focus-visible, :focus-within) { border-color: var(--ar-muted); }
+.ar-card-tone {
+  --ar-card-edge: light-dark(oklch(from var(--c) 0.8 min(calc(c * 0.7), 0.1) h), color-mix(in srgb, var(--c) 45%, var(--ar-border)));
+  --ar-card-tint: light-dark(oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h), color-mix(in srgb, var(--c) 7%, var(--ar-surface)));
+  padding-left: 14px;
+  border-color: var(--ar-card-edge);
+  background: var(--ar-card-tint);
+}
+.ar-card-tone::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: var(--ar-card-bar);
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+.ar-card-tone:is(:hover, :focus-visible, :focus-within) { border-color: color-mix(in srgb, var(--c) 80%, var(--ar-border)); }
+.ar-card-accent { --c: var(--ar-accent); --ct: var(--ar-accent); }
+.ar-card-ok { --c: var(--ar-ok); --ct: var(--ar-ok); }
+.ar-card-warn { --c: var(--ar-warn); --ct: var(--ar-warn); }
+.ar-card-danger { --c: var(--ar-danger); --ct: var(--ar-danger); }
+.ar-card-info { --c: var(--ar-info); --ct: var(--ar-info); }
+.ar-card-teal { --c: var(--ar-teal); --ct: var(--ar-teal); }
+.ar-card-muted { --c: var(--ar-faint); --ct: var(--ar-subtle); }
+.ar-card-dense {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--ar-space-2);
+  min-height: 32px;
+  padding: var(--ar-card-pad-dense);
+  border-radius: var(--ar-radius-sm);
+  white-space: nowrap;
+}
+.ar-card-dense.ar-card-tone { padding-left: 14px; }
+
+/* An icon: an <svg viewBox="0 0 24 24"> with paths, as the app draws them (shared/ui/icons.tsx):
+   strokes in the text's color, 1.7 wide, 2 at xs. */
+.ar-icon {
+  flex: none;
+  width: var(--ar-icon-sm);
+  height: var(--ar-icon-sm);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+}
+.ar-icon-xs { width: var(--ar-icon-xs); height: var(--ar-icon-xs); stroke-width: 2; vertical-align: -2px; }
+.ar-icon-sm { width: var(--ar-icon-sm); height: var(--ar-icon-sm); }
+.ar-icon-md { width: var(--ar-icon-md); height: var(--ar-icon-md); }
+.ar-icon-lg { width: var(--ar-icon-lg); height: var(--ar-icon-lg); }
+
+.ar-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--ar-text) 18%, transparent);
+  border-radius: var(--ar-radius-sm);
+  background: color-mix(in srgb, var(--ar-text) 6%, transparent);
+  color: var(--ar-text);
+  font: 600 var(--ar-text-md)/1.2 var(--ar-font);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ar-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-text) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ar-accent) 60%, transparent);
+}
+.ar-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ar-btn-primary {
+  background: var(--ar-accent);
+  border-color: var(--ar-accent);
+  color: var(--ar-on-accent);
+}
+.ar-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-accent) 85%, var(--ar-text));
+  border-color: var(--ar-accent);
+}
+.ar-btn-ghost {
+  background: none;
+  border-color: transparent;
+}
+
+.ar-chip {
+  --c: var(--ar-faint);
+  --ct: var(--ar-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--c);
+  border-radius: 999px;
+  /* Over the surface, as the app's chip is: its tint is what its text must read on. */
+  background: color-mix(in srgb, var(--c) 12%, var(--ar-surface));
+  color: var(--ct);
+  font: 600 var(--ar-text-xs)/18px var(--ar-mono);
+  white-space: nowrap;
+}
+.ar-chip-dot::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.ar-chip-accent { --c: var(--ar-accent); --ct: var(--ar-accent); }
+.ar-chip-ok { --c: var(--ar-ok); --ct: var(--ar-ok); }
+.ar-chip-warn { --c: var(--ar-warn); --ct: var(--ar-warn); }
+.ar-chip-danger { --c: var(--ar-danger); --ct: var(--ar-danger); }
+.ar-chip-info { --c: var(--ar-info); --ct: var(--ar-info); }
+.ar-chip-teal { --c: var(--ar-teal); --ct: var(--ar-teal); }
+.ar-chip-merged { --c: var(--ar-merged); --ct: var(--ar-merged); }
+
+/* A label: a raised box with no edge and square corners (a chip is round). */
+.ar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--ar-raised);
+  color: var(--ar-subtle);
+  font: 500 var(--ar-text-xs)/18px var(--ar-font);
+  white-space: nowrap;
+}
+
+/* A count: neutral; ar-count-you is the accent, ar-count-mention is warn. */
+.ar-count {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ar-raised);
+  color: var(--ar-text);
+  font: 700 var(--ar-text-xs)/1 var(--ar-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ar-count-you { background: var(--ar-accent); color: var(--ar-on-color); }
+.ar-count-mention { background: var(--ar-warn); color: var(--ar-on-color); }
+
+/* A linked thing: its id in mono, then its title. */
+.ar-object {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--ar-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ar-text);
+  font: 500 var(--ar-text-sm)/1.4 var(--ar-font);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.ar-object > .ar-object-id {
+  flex: none;
+  font: 600 var(--ar-text-xs)/1.4 var(--ar-mono);
+}
+
+/* A hint about a pane: one line, its action and a dismiss. */
+.ar-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ar-accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ar-accent) 12%, var(--ar-surface));
+  color: var(--ar-text);
+  font: var(--ar-text-xs)/18px var(--ar-font);
+}
+.ar-hint > button {
+  height: 18px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ar-accent);
+  color: var(--ar-on-color);
+  font: 600 var(--ar-text-xs)/1 var(--ar-font);
+  cursor: pointer;
+}
+.ar-hint > button.ar-hint-dismiss {
+  padding: 0 4px;
+  background: none;
+  color: var(--ar-muted);
+}
+
+/* The bar button: the 24px ghost button of a bar. ar-bar-btn-sq is its icon. */
+.ar-bar-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 6px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--ar-radius-sm);
+  background: none;
+  color: var(--ar-subtle);
+  font: var(--ar-text-sm)/1 var(--ar-font);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ar-bar-btn-sq { width: 24px; padding: 0; }
+.ar-bar-btn:hover:not(:disabled),
+.ar-seg > button:hover:not(:disabled) {
+  background: var(--ar-raised);
+  color: var(--ar-text);
+}
+.ar-bar-btn:disabled,
+.ar-seg > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A choice of one among a few, as a group of buttons. */
+.ar-seg {
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--ar-text) 18%, transparent);
+  border-radius: var(--ar-radius-sm);
+  background: color-mix(in srgb, var(--ar-text) 6%, transparent);
+}
+.ar-seg > button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ar-subtle);
+  font: 500 var(--ar-text-md)/1 var(--ar-font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The one "on": a tint of the accent with accent text, on a bar button or a
+   segment. A segment's is laid over the page, not over its track, as
+   buttons.css does, so the accent keeps its contrast. */
+.ar-bar-btn:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]),
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: var(--ar-on-fill);
+  color: var(--ar-accent);
+}
+.ar-bar-btn:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled),
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-accent) 26%, transparent);
+  color: var(--ar-accent);
+}
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--ar-accent) 18%, var(--ar-bg));
+}
+.ar-seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ar-accent) 26%, var(--ar-bg));
+}
+.ar-bar-btn:focus-visible,
+.ar-seg > button:focus-visible {
+  outline: 2px solid var(--ar-accent);
+  outline-offset: 1px;
+}
+
+.ar-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ar-space-2) var(--ar-space-3);
+  min-width: 0;
+  margin: 0 0 var(--ar-space-4);
+  padding: 0 0 var(--ar-space-3);
+  border-bottom: 1px solid var(--ar-border);
+  color: var(--ar-text);
+  font: var(--ar-text-md)/1.3 var(--ar-font);
+}
+.ar-header > :is(h1, h2, h3) {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ar-text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ar-header > .ar-toolbar {
+  margin-left: auto;
+}
+
+.ar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 14px;
+  padding: var(--ar-space-2) var(--ar-space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--ar-border) 55%, transparent);
+  color: var(--ar-text);
+  font: var(--ar-text-md)/1.3 var(--ar-font);
+}
+.ar-row:hover {
+  background: color-mix(in srgb, var(--ar-raised) 45%, transparent);
+}
+.ar-row > .ar-row-sub {
+  grid-column: 1 / -1;
+  color: var(--ar-muted);
+  font-size: var(--ar-text-sm);
+}
+
+.ar-dialog {
+  box-sizing: border-box;
+  display: grid;
+  gap: var(--ar-space-3);
+  width: min(440px, 100%);
+  padding: var(--ar-space-4);
+  border-radius: var(--ar-radius-lg);
+  background: var(--ar-raised);
+  color: var(--ar-text);
+  box-shadow: var(--ar-shadow);
+  font: var(--ar-text-md)/1.3 var(--ar-font);
+}
+.ar-dialog > :is(h1, h2, h3) {
+  margin: 0;
+  font-size: var(--ar-text-lg);
+  font-weight: 600;
+}
+.ar-dialog > .ar-dialog-buttons {
+  /* The app's footer: right-aligned, Cancel first and the action last. */
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ar-space-2);
+}
+
+.ar-menu {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 190px;
+  max-width: 100%;
+  padding: 4px;
+  border-radius: var(--ar-radius);
+  background: var(--ar-raised);
+  color: var(--ar-text);
+  box-shadow: var(--ar-shadow);
+  font: var(--ar-text-md)/1.3 var(--ar-font);
+}
+.ar-menu-item {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--ar-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ar-menu-item:hover:not(:disabled) {
+  background: var(--ar-raised-hover);
+}
+.ar-menu-item:disabled {
+  color: var(--ar-muted);
+  cursor: default;
+}
+.ar-menu-item.danger {
+  color: var(--ar-danger);
+}
+/* As the app's menu: a 16px lead column for an icon or a mark, a dim
+   detail, a chord, a header, a 1px line between groups. */
+.ar-menu-lead {
+  display: inline-block;
+  width: 16px;
+  margin-right: 8px;
+  color: var(--ar-muted);
+  text-align: center;
+  vertical-align: middle;
+}
+.ar-menu-detail {
+  margin-left: 4px;
+  color: var(--ar-muted);
+  font-size: var(--ar-text-sm);
+}
+.ar-menu-key {
+  float: right;
+  margin-left: 16px;
+  color: var(--ar-muted);
+  font: var(--ar-text-xs)/var(--ar-lh-xs) var(--ar-font);
+}
+.ar-menu-header {
+  padding: 6px 10px 2px;
+  color: var(--ar-muted);
+  font-size: var(--ar-text-xs);
+  font-weight: 600;
+}
+.ar-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--ar-raised-hover);
+}
+/* A menu of 13 rows or more starts with a filter row. */
+.ar-menu-filter {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--ar-line-strong);
+  border-radius: var(--ar-radius-sm);
+  background: var(--ar-surface);
+  color: var(--ar-text);
+  font: inherit;
+  outline: none;
+}
+.ar-menu-filter:focus {
+  border-color: var(--ar-accent);
+}
+.ar-menu-none {
+  padding: 6px 10px;
+  color: var(--ar-muted);
+}
+/* Under a finger the rows are 44px at 15px, and the chords go. */
+@media (max-width: 600px), (pointer: coarse) {
+  .ar-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: var(--ar-text-lg);
+  }
+  .ar-menu-key {
+    display: none;
+  }
+  .ar-menu-filter {
+    font-size: 16px;
+  }
+}
+
+.ar-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 32px var(--ar-space-4);
+  color: var(--ar-muted);
+  font: var(--ar-text-md)/1.3 var(--ar-font);
+  text-align: center;
+}
+.ar-empty > :is(h1, h2, h3) {
+  margin: 0;
+  color: var(--ar-text);
+  font-size: var(--ar-text-lg);
+  font-weight: 600;
+}
+.ar-empty > p {
+  max-width: 420px;
+  margin: 0 0 var(--ar-space-3);
+}
+
+.ar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ar-space-2);
+}
+</style></template>
 </head>
 <body>
 <script>
@@ -38,6 +635,8 @@
     if (!m || m.type !== "arugula.html" || typeof m.html !== "string") return;
     removeEventListener("message", onmessage);
     var scheme = m.colorScheme === "dark" ? "dark" : "light";
+    // The kit (#699): a <style>, read before document.open() drops this page.
+    var kit = document.getElementById("arugula-kit").innerHTML;
     document.open();
     // The policy comes first in the same write, so nothing the prototype
     // writes can come before it.
@@ -45,6 +644,7 @@
       '<!doctype html><meta http-equiv="Content-Security-Policy" content="' + POLICY + '">' +
         '<meta id="arugula-scheme-meta" name="color-scheme" content="' + scheme + '">' +
         '<style id="arugula-scheme-style">:root{color-scheme:' + scheme + "}</style>" +
+        kit +
         // The page's one listener: the parent can change the scheme later. (Opening
         // the document dropped this page's own.) It takes only that message, only from the parent.
         "<script>addEventListener('message',function(e){" +

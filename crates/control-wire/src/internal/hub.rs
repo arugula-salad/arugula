@@ -171,6 +171,11 @@ pub struct Daemon {
     /// The team it's in, if it's a team's.
     pub team: Option<String>,
     pub name: String,
+    /// The handles ([`crate::machine::handle`]) it went by before it was
+    /// renamed (#500): `@old` still reaches it, unless another machine is
+    /// called that now.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 /// Labs flags by name: on or off. One not here is unset.

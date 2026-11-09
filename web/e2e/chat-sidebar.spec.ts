@@ -131,8 +131,15 @@ test("Bob's sidebar is his own, and his phone stars a room", async () => {
   await expect.poll(() => groupsOf(bob)).toEqual([`${team}/channels`, `${team}/dms`]);
   // From the room's header on the phone (it has no drag).
   await list.locator(`[data-chat-room="${general}"]`).click();
-  await list.locator("[data-room-star]").click();
-  await expect(list.locator("[data-room-star]")).toHaveAttribute("aria-pressed", "true");
+  // The phone's head has no room for the star (#760): it's in ⋯.
+  const head = list.locator("[data-room-view] .chat-head");
+  await expect(head.locator("[data-room-star]")).toHaveCount(0);
+  await head.locator("[data-hbar-more]").click();
+  await bob.getByRole("menuitem", { name: "Star", exact: true }).click();
+  await head.locator("[data-hbar-more]").click();
+  await expect(bob.getByRole("menuitem", { name: "Unstar", exact: true })).toBeVisible();
+  // (A phone's menu is a sheet over a scrim: a press on it closes it.)
+  await bob.mouse.click(200, 300);
   // Back to the list (on a phone the room has the screen).
   await platform(bob, "/chat");
   await expect.poll(() => groupsOf(bob)).toEqual(["starred", `${team}/channels`, `${team}/dms`]);
@@ -167,6 +174,16 @@ test("an agent grant: the room shows a chip and says so once", async () => {
   await page.locator("[data-agents-chip]").click();
   await expect(page.locator("[data-agents-pop] [data-agents-machine]")).toContainText("read and post");
   await expect(page.locator("[data-agents-grants]")).toBeVisible();
+  // It takes the focus, the Tab key stays inside it, and Escape gives the chip the focus back.
+  const pop = page.locator("[data-agents-pop]");
+  await expect(pop).toBeFocused();
+  await aliceChat.keyboard.press("Tab");
+  await expect(page.locator("[data-agents-grants]")).toBeFocused();
+  await aliceChat.keyboard.press("Tab");
+  await expect(page.locator("[data-agents-grants]")).toBeFocused();
+  await aliceChat.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+  await expect(page.locator("[data-agents-chip]")).toBeFocused();
   // Said in the room: once for read, once for read and post; not again.
   const said = page.locator("[data-system]");
   await expect(said).toHaveCount(2);

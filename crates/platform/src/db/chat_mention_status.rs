@@ -42,19 +42,36 @@ pub const REDELIVER_WITHIN_MS: u64 = 24 * 60 * 60 * 1000;
 /// restarted mid-delivery, #419): the daemon is given 5 s to answer.
 pub const STALE_SENDING_MS: u64 = 2 * 60 * 1000;
 
-/// Whether the daemon's word on the turn (`working`, then `read`, #540) may
-/// replace a status that is `current`. Only forward, and only for a mention
-/// a session took: `answered` is final (the agent's reply usually comes
-/// before its turn ends), `read` never goes back to `working`, and a
+/// The stored states of a dropped mention (#613): `dropped` and why, in the
+/// one column.
+pub const DROPPED_STOPPED: &str = "dropped_stopped";
+pub const DROPPED_EXITED: &str = "dropped_exited";
+
+/// Whether the daemon's word on the turn (`working`, then `read`, #540, or
+/// `dropped`, #613) may replace a status that is `current`. Only forward,
+/// and only for a mention a session took: `answered` is final (the agent's
+/// reply usually comes before its turn ends), so is a dropped one (a late
+/// `read` from a stale turn can't undo it), `read` never goes back to
+/// `working` or on to `dropped` (its turn ended), and a
 /// mention that no session took (`no_such_session`, `waiting`, `offline`,
 /// `chain`, `missed`) has no turn to report. `sending` takes it: the
 /// daemon's report can beat its own answer to the push.
 pub fn turn_follows(current: &str, report: &str) -> bool {
     matches!(
         (current, report),
-        ("sending" | "delivered" | "queued" | "fell_back", "working" | "read") | ("working", "read")
+        ("sending" | "delivered" | "queued" | "fell_back", "working" | "read" | DROPPED_STOPPED | DROPPED_EXITED)
+            | ("working", "read" | DROPPED_STOPPED | DROPPED_EXITED)
     )
 }
+
+/// A mention of a machine whose agents can't read the room (#578), kept for
+/// its owner's grant; `not_granted` is the owner's "never", or it waited
+/// past [`GRANT_PENDING_MS`]. Neither has a turn to report.
+pub const GRANT_PENDING: &str = "grant_pending";
+pub const NOT_GRANTED: &str = "not_granted";
+
+/// How long a mention waits for a grant (#578); an older one is dropped.
+pub const GRANT_PENDING_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 
 /// The most mentions sent again at one connect (#419).
 pub const REDELIVER_MAX: usize = 20;
@@ -86,7 +103,7 @@ impl Db {
     }
 
     /// The daemon says where the turn that took a mention is (#540):
-    /// `state` is `working` or `read`. Only a row the machine has for the
+    /// `state` is `working`, `read` or a dropped one. Only a row the machine has for the
     /// message changes, and only forward ([`turn_follows`]); a `sending`
     /// one takes `session` from the report, as the push's answer may not
     /// have settled it yet. `None`: no such row (the report is refused);
@@ -204,6 +221,17 @@ impl Db {
         Ok(machines)
     }
 
+    /// The statuses of the messages of one thread (#645), oldest first.
+    pub fn chat_mention_statuses_of_thread(&self, room: &str, root: i64) -> Result<Vec<MentionStatus>> {
+        self.c().query_map(
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
+             FROM chat_mention_status WHERE room = ?1 AND root = ?2
+             ORDER BY seq, machine_name, machine",
+            params![room, root],
+            status_row,
+        )
+    }
+
     /// The statuses of messages `from..=to` of a room, by message and then
     /// machine's name.
     pub fn chat_mention_statuses(&self, room: &str, from: i64, to: i64) -> Result<Vec<MentionStatus>> {
@@ -214,6 +242,123 @@ impl Db {
             params![room, from, to],
             status_row,
         )
+    }
+
+    /// The replies in threads `machine`'s agents posted in (#580) that no
+    /// session of it has read: a status that isn't `read`, `answered` or
+    /// dropped, on a reply that isn't deleted, written at or after `since`.
+    /// The newest `max`, newest first.
+    pub fn unread_agent_replies(&self, machine: &str, since: u64, max: usize) -> Result<Vec<MentionStatus>> {
+        self.c().query_map(
+            "SELECT s.room, s.seq, s.machine, s.machine_name, s.root, s.state, s.session, s.asked, s.reply, s.at, s.names
+             FROM chat_mention_status s JOIN chat_messages m ON m.room = s.room AND m.seq = s.seq
+             WHERE s.machine = ?1 AND m.at >= ?2 AND m.parent IS NOT NULL AND m.deleted IS NULL
+             AND s.state NOT IN ('read', 'answered', 'dropped_stopped', 'dropped_exited', 'grant_pending', 'not_granted')
+             AND EXISTS (SELECT 1 FROM chat_messages a WHERE a.room = s.room AND a.agent = s.machine
+                         AND a.seq < s.seq AND (a.seq = s.root OR a.parent = s.root))
+             ORDER BY m.at DESC, s.seq DESC LIMIT ?3",
+            params![machine, since as i64, max as i64],
+            status_row,
+        )
+    }
+
+    /// The owner of `machine` said never for `room` (#578): later mentions
+    /// there raise no card. Saying it twice changes nothing.
+    pub fn set_chat_grant_never(&self, room: &str, machine: &str, at: u64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_grant_never (room, machine, at) VALUES (?1, ?2, ?3) ON CONFLICT (room, machine) DO NOTHING",
+            params![room, machine, at as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the owner of `machine` said never for `room` (#578).
+    pub fn chat_grant_never(&self, room: &str, machine: &str) -> Result<bool> {
+        let n: Vec<i64> = self.c().query_map(
+            "SELECT 1 FROM chat_grant_never WHERE room = ?1 AND machine = ?2",
+            params![room, machine],
+            |r| r.get(0),
+        )?;
+        Ok(!n.is_empty())
+    }
+
+    /// A grant undoes a "never" (#578): the machine's agents read the room.
+    pub fn clear_chat_grant_never(&self, room: &str, machine: &str) -> Result<()> {
+        self.c().execute("DELETE FROM chat_grant_never WHERE room = ?1 AND machine = ?2", params![room, machine])?;
+        Ok(())
+    }
+
+    /// The owner said never: what waited for `machine` in `room` is
+    /// `not_granted` for good. The statuses changed.
+    pub fn refuse_pending_mentions(&self, room: &str, machine: &str, at: u64) -> Result<Vec<MentionStatus>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let mut rows: Vec<MentionStatus> = tx.query_map(
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
+             FROM chat_mention_status WHERE room = ?1 AND machine = ?2 AND state = 'grant_pending' ORDER BY seq",
+            params![room, machine],
+            status_row,
+        )?;
+        tx.execute(
+            "UPDATE chat_mention_status SET state = 'not_granted', at = ?3
+             WHERE room = ?1 AND machine = ?2 AND state = 'grant_pending'",
+            params![room, machine, at as i64],
+        )?;
+        tx.commit()?;
+        for s in &mut rows {
+            (s.state, s.at) = (NOT_GRANTED.into(), at);
+        }
+        Ok(rows)
+    }
+
+    /// The (room, machine) pairs that have a mention waiting for a grant
+    /// (#578), at most `max`.
+    pub fn pending_grant_pairs(&self, max: usize) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT DISTINCT room, machine FROM chat_mention_status WHERE state = 'grant_pending'
+             ORDER BY room, machine LIMIT ?1",
+            params![max as i64],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )
+    }
+
+    /// A grant lets `machine` read `room` (#578): claim what waited for it.
+    /// Each claimed mention is `sending` when this returns, and only a row
+    /// still `grant_pending` is claimed, so a second grant, or a restart,
+    /// finds nothing: it is delivered once. Mentions older than `since` (ms)
+    /// aren't claimed: they're `not_granted`, and come back as the second
+    /// list.
+    pub fn claim_granted_mentions(
+        &self,
+        room: &str,
+        machine: &str,
+        since: u64,
+        now: u64,
+    ) -> Result<(Vec<MentionStatus>, Vec<MentionStatus>)> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let rows: Vec<MentionStatus> = tx.query_map(
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
+             FROM chat_mention_status WHERE room = ?1 AND machine = ?2 AND state = 'grant_pending' ORDER BY seq",
+            params![room, machine],
+            status_row,
+        )?;
+        let (mut claimed, mut expired) = (vec![], vec![]);
+        for mut s in rows {
+            let old = s.at < since;
+            let to = if old { NOT_GRANTED } else { "sending" };
+            let n = tx.execute(
+                "UPDATE chat_mention_status SET state = ?4, at = ?5
+                 WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = 'grant_pending'",
+                params![s.room, s.seq, s.machine, to, now as i64],
+            )?;
+            if n == 1 {
+                (s.state, s.at) = (to.into(), now);
+                if old { expired.push(s) } else { claimed.push(s) }
+            }
+        }
+        tx.commit()?;
+        Ok((claimed, expired))
     }
 
     /// `machine` replied at message `reply`, in the thread of `root`: every
@@ -231,7 +376,8 @@ impl Db {
         let tx = c.transaction()?;
         let seqs: Vec<i64> = tx.query_map(
             "SELECT seq FROM chat_mention_status WHERE room = ?1 AND root = ?2 AND machine = ?3
-             AND seq < ?4 AND at >= ?5 AND state NOT IN ('answered', 'chain') ORDER BY seq",
+             AND seq < ?4 AND at >= ?5 AND state NOT IN ('answered', 'chain', 'grant_pending', 'not_granted')
+             ORDER BY seq",
             params![room, root, machine, reply, since as i64],
             |r| r.get(0),
         )?;
@@ -323,6 +469,18 @@ mod tests {
             assert!(follows(taken, "working") && follows(taken, "read"), "{taken}");
         }
         assert!(follows("working", "read"));
+        // A drop (#613) follows a turn that hasn't ended, and is final.
+        for why in [DROPPED_STOPPED, DROPPED_EXITED] {
+            for before in ["sending", "delivered", "queued", "fell_back", "working"] {
+                assert!(follows(before, why), "{before}");
+            }
+            for before in ["read", "answered", "waiting", "dropped_stopped", "dropped_exited"] {
+                assert!(!follows(before, why), "{before}");
+            }
+            for late in ["working", "read", DROPPED_STOPPED, DROPPED_EXITED] {
+                assert!(!follows(why, late), "{why} then {late}");
+            }
+        }
         assert!(!follows("working", "working") && !follows("read", "working") && !follows("read", "read"));
         // The agent's reply is final; a mention no session took has no turn.
         for other in ["answered", "no_such_session", "waiting", "offline", "chain", "missed"] {

@@ -21,8 +21,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::{
-    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatMessage,
-    ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery,
+    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentReplies, AgentReplyThread, AgentRoom, AgentRooms,
+    ChatFound, ChatMessage, ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery, MachineAgents,
+    MachineAgentsQuery, REPLIES_MAX,
 };
 use axum::{
     Json,
@@ -30,8 +31,8 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
-    objects, pins, post_as, reactions, rooms_seen, search_in, threads,
+    AgentsAnswer, Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files,
+    gate, hears, in_team, listed_as, objects, pins, post_as, reactions, room_agents, rooms_seen, search_in, threads,
 };
 use crate::{
     Platform,
@@ -227,6 +228,114 @@ pub async fn messages(
     let extras = pins::Extras::of(&app.db, &[&room])?;
     let room = shown(&app, &facts, &d.account, &room, powers, last, &extras)?;
     Ok(Json(AgentMessages { room, messages, more, pins, parent }))
+}
+
+/// How far back [`replies`] looks (#580).
+const REPLIES_SINCE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// `GET /api/daemon/chat/replies` (#580): the replies to this machine's
+/// agents' posts that none of its sessions has read, in the rooms it reads
+/// (`threads.read`, asked again for each), the last 7 days, the newest
+/// [`REPLIES_MAX`], grouped by thread. A thread comes with its first message;
+/// its replies are oldest first, and the thread with the oldest unread reply
+/// first.
+pub async fn replies(State(app): State<Arc<Platform>>, d: Machine) -> J<AgentReplies> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let now = arugula_e2e::now_ms();
+    let found = app.db.unread_agent_replies(&d.daemon, now.saturating_sub(REPLIES_SINCE_MS), 4 * REPLIES_MAX)?;
+    // Rooms the machine reads now, and from when its owner has been there.
+    let mut rooms: HashMap<String, Option<(Room, u64)>> = HashMap::new();
+    let mut kept = Vec::new();
+    for s in found {
+        if !rooms.contains_key(&s.room) {
+            let r = room_of(&app, &d, THREADS_READ, &s.room).await.ok().map(|(room, from, _)| (room, from));
+            rooms.insert(s.room.clone(), r);
+        }
+        let Some(Some((_, from))) = rooms.get(&s.room) else { continue };
+        let Some(m) = app.db.chat_message(&s.room, s.seq)? else { continue };
+        if m.at >= *from {
+            kept.push((s.root, m));
+        }
+    }
+    kept.truncate(REPLIES_MAX);
+    // Oldest first, by thread.
+    kept.sort_by_key(|(_, m)| (m.at, m.seq));
+    let mut groups: Vec<(String, i64, Vec<Message>)> = Vec::new();
+    for (root, m) in kept {
+        match groups.iter_mut().find(|(r, o, _)| *r == m.room && *o == root) {
+            Some((_, _, ms)) => ms.push(m),
+            None => groups.push((m.room.clone(), root, vec![m])),
+        }
+    }
+    let mut firsts: HashMap<(String, i64), Message> = HashMap::new();
+    for (room, root, _) in &groups {
+        if let Some(m) = app.db.chat_message(room, *root)? {
+            firsts.insert((room.clone(), *root), m);
+        }
+    }
+    let all: Vec<&Message> = groups.iter().flat_map(|(_, _, ms)| ms).chain(firsts.values()).collect();
+    let shower = Shower::of(&app, &d.account, &all).await?.for_agent(&d.daemon);
+    let threads = groups
+        .iter()
+        .filter_map(|(room, root, ms)| {
+            let first = firsts.get(&(room.clone(), *root))?;
+            let name = rooms.get(room)?.as_ref()?.0.name.clone();
+            Some(AgentReplyThread {
+                room: room.clone(),
+                room_name: name,
+                root: shower.show(first),
+                replies: ms.iter().map(|m| shower.show(m)).collect(),
+            })
+        })
+        .collect();
+    Ok(Json(AgentReplies { threads }))
+}
+
+/// `GET /api/daemon/chat/rooms/{id}/agents/{machine}/sessions?from_session=`:
+/// the sessions of a machine of the room that an agent may mention (#577),
+/// as that machine's owner shows them. The asker reads the room
+/// (`threads.read`), and `machine` (its name, as in `@machine`) hears it:
+/// otherwise it is no such machine here (404). An offline machine answers an
+/// empty list and `offline`. `from_session` counts only for the asker's own
+/// machine (#575).
+pub async fn machine_sessions(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, machine)): Path<(String, String)>,
+    Query(q): Query<MachineAgentsQuery>,
+) -> J<MachineAgents> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, _, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
+    let word = machine.trim_start_matches('@').to_lowercase();
+    let mut hearing = room_agents(&app, &facts, &room).await?;
+    hearing.retain(hears);
+    let target = super::agents_named(&hearing, &word).first().map(|a| (*a).clone()).ok_or_else(|| {
+        arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
+    })?;
+    let from_session = q.from_session.filter(|_| target.machine == d.daemon);
+    let ask = arugula_control_wire::forge::MachineAgentsAsk { room: room.id.clone(), from_session, only: vec![] };
+    let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {
+        AgentsAnswer::Said { shared, sessions } => (false, shared, sessions),
+        AgentsAnswer::Offline | AgentsAnswer::NoWord => (true, true, vec![]),
+    };
+    Ok(Json(MachineAgents { machine_name: target.machine_name, offline, shared, sessions }))
+}
+
+/// `GET /api/daemon/chat/rooms/{id}/threads/{seq}/agents`: the agents in a
+/// thread, for an agent reading it (#649).
+pub async fn thread_agents(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, root)): Path<(String, i64)>,
+) -> J<arugula_control_wire::chat::ChatThreadAgents> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, from, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    let first = threads::parent_in(&app, &room, from, root)?;
+    Ok(Json(super::thread_agents::of_thread(&app, &room, root, first).await?))
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post

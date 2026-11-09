@@ -38,6 +38,7 @@ fn done(step: RoutedStep, session: Option<&str>, asked: Option<&str>) -> OpAnswe
             asked: asked.map(str::to_owned),
             queued: false,
             names: vec![],
+            silenced: false,
         }),
     }
 }
@@ -60,6 +61,7 @@ fn no_such(asked: &str, names: &[&str]) -> OpAnswer {
             asked: Some(asked.into()),
             queued: false,
             names: names.iter().map(|n| (*n).to_owned()).collect(),
+            silenced: false,
         }),
     }
 }
@@ -262,6 +264,11 @@ async fn the_agents_reply_in_the_thread_answers_it() {
 /// The daemon's word on a delivered mention's turn (#540), as `machine`
 /// (`a geek` and the like) signs it.
 async fn turn(base: &str, daemon: &str, seq: i64, state: &str) -> (u16, Value) {
+    turn_as(base, daemon, seq, json!(state)).await
+}
+
+/// [`turn`], with the state as the wire has it: `{"dropped": "stopped"}`.
+async fn turn_as(base: &str, daemon: &str, seq: i64, state: Value) -> (u16, Value) {
     let r = reqwest::Client::new()
         .put(format!("{base}{}", arugula_control_wire::chat::MENTION_STATE))
         .header("x-test-daemon", daemon)
@@ -347,4 +354,68 @@ async fn a_late_read_never_undoes_answered() {
     assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
     assert_eq!(turn(&base, "a geek", waiting, "working").await.0, 200);
     assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
+}
+
+/// The trap (#613): `dropped` is final, and only goes forward. It lands
+/// after `working` (a turn cut off) or on a mention that never got a turn
+/// (a stop cleared the queue), shows its reason to every reader, and a
+/// late `read` or `working` from a stale turn can't undo it. It never
+/// replaces `answered` or `read`, nor a mention no session took.
+#[tokio::test]
+async fn a_dropped_mention_stays_dropped_and_never_replaces_an_answer() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    let stopped = json!({ "dropped": "stopped" });
+    let exited = json!({ "dropped": "exited" });
+    let dropped = |s: &Value| (s[0]["state"].clone(), s[0]["why"].clone());
+
+    // A turn cut off: working, then dropped; the stale turn's `read` and
+    // `working`, and a second drop with another reason, change nothing.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let cut = post(&base, "b", "@geek-box/slowness first", None).await;
+    assert_eq!(turn(&base, "a geek", cut, "working").await.0, 200);
+    assert_eq!(turn_as(&base, "a geek", cut, exited.clone()).await.0, 200);
+    assert_eq!(dropped(&status(&base, "b", cut, None).await), (json!("dropped"), json!("exited")));
+    for late in [json!("read"), json!("working"), stopped.clone()] {
+        assert_eq!(turn_as(&base, "a geek", cut, late.clone()).await.0, 200, "{late}");
+        assert_eq!(dropped(&status(&base, "b", cut, None).await), (json!("dropped"), json!("exited")), "{late}");
+    }
+
+    // Never got a turn: dropped from delivered.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let waiting = post(&base, "b", "@geek-box/slowness second", None).await;
+    assert_eq!(turn_as(&base, "a geek", waiting, stopped.clone()).await.0, 200);
+    assert_eq!(dropped(&status(&base, "b", waiting, None).await), (json!("dropped"), json!("stopped")));
+
+    // The agent answered first: dropped doesn't replace it. Nor `read`.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let answered = post(&base, "b", "@geek-box/slowness third", None).await;
+    let reply = reqwest::Client::new()
+        .post(format!("{base}{}", agent_messages("ch_general")))
+        .header("x-test-daemon", "a geek")
+        .json(&json!({ "text": "the db", "parent": answered }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["seq"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(turn_as(&base, "a geek", answered, stopped.clone()).await.0, 200);
+    let s = status(&base, "b", answered, None).await;
+    assert_eq!((s[0]["state"].clone(), s[0]["reply"].clone()), (json!("answered"), json!(reply)));
+
+    // Its turn ended (`read`): a drop after it is for a turn that is over.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let read = post(&base, "b", "@geek-box/slowness fourth", None).await;
+    turn(&base, "a geek", read, "read").await;
+    turn_as(&base, "a geek", read, exited.clone()).await;
+    assert_eq!(status(&base, "b", read, None).await[0]["state"], "read");
+
+    // Nobody took it: it has no turn to drop.
+    hub.answers_ops("geek", done(RoutedStep::Inbox, None, None));
+    let inbox = post(&base, "b", "@geek-box anyone", None).await;
+    turn_as(&base, "a geek", inbox, stopped).await;
+    assert_eq!(status(&base, "b", inbox, None).await[0]["state"], "waiting");
 }

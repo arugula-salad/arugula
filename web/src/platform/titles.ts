@@ -43,7 +43,7 @@ export function titleOf(r: Route, k: Known): string {
       return i ? parts(`#${i.number} ${i.title}`, p) : parts("Issue", p);
     }
     case "triage":
-      return parts("Triage", p);
+      return parts("Boards", p);
     case "boards":
       return parts("Boards", p);
     case "board":
@@ -59,7 +59,7 @@ export function titleOf(r: Route, k: Known): string {
     case "run":
       return parts(k.run(r.run) ?? "Run", p);
     case "sessions":
-      return parts("Sessions", p);
+      return parts("Agent sessions", p);
     case "session":
       return parts("Agent session", p);
     case "chat":
@@ -87,6 +87,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Boards");
     case "settings":
       return parts("Account settings");
+    case "design":
+      return parts("Design reference");
     case "missing":
       return parts("Not found");
     case "find":

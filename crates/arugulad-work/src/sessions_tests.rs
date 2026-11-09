@@ -50,7 +50,7 @@ fn the_template_makes_a_user_for_each_session_held() {
 fn each_report_is_the_sessions_next_signed() {
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l = Session {
+    let mut l = AgentSessionLedger {
         session: format!("ses_{}", "c".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -149,7 +149,7 @@ fn a_turns_report_carries_its_last_message() {
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l = Session {
+    let mut l = AgentSessionLedger {
         session: format!("ses_{}", "e".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -472,7 +472,7 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
 #[tokio::test]
 async fn a_push_back_after_an_end_cleans_again() {
     let dir = crate::hosted::scratch("session-push-end");
-    let l = Session {
+    let l = AgentSessionLedger {
         session: format!("ses_{}", "d".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -559,7 +559,7 @@ fn what_was_typed_in_the_block_is_its_turns() {
 /// reports say the one its agent is on when that changes, and each turn's.
 #[test]
 fn a_session_runs_on_the_model_asked_for() {
-    let w = |model: Option<&str>| -> SessionWork {
+    let w = |model: Option<&str>| -> AgentSessionWork {
         serde_json::from_value(json!({ "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1",
             "workspace": "hw_1", "asker": "acct1", "branch": "arugula/x", "state": "queued", "n": 0, "model": model }))
         .unwrap()
@@ -572,12 +572,12 @@ fn a_session_runs_on_the_model_asked_for() {
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l: Session = serde_json::from_value(json!({
+    let mut l: AgentSessionLedger = serde_json::from_value(json!({
         "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1", "workspace": "hw_1", "asker": "acct1",
         "branch": "arugula/x", "user": { "user": "ses1", "home": "/home/ses1" }, "checkout": "/home/ses1/work/x",
         "taken_at": 1, "n": 0, "state": "queued", "model": "opus" }))
     .unwrap();
-    let model = |l: &Session, i: usize| -> Option<String> {
+    let model = |l: &AgentSessionLedger, i: usize| -> Option<String> {
         serde_json::from_str::<SessionDetail>(&l.events[i].report.detail).unwrap().model
     };
     l.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());

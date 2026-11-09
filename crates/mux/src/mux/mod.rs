@@ -6,18 +6,19 @@
 mod api_calls;
 mod attention;
 mod blocks;
-mod chat_readers;
 mod clients;
 mod config;
 mod followups;
 mod info;
 mod machines;
+mod notices;
 mod outside;
+mod readers;
 mod who_may;
 
 pub use config::{AtExit, Config};
 pub use outside::{
-    AgentSessions, CardsCall, CardsCx, MentionTag, Notify, PaneCards, PaneGone, People, Turn, Turns, Usage,
+    CardsCall, CardsCx, Conversations, DropWhy, Followups, Notify, PaneCards, PaneGone, People, Tag, Turn, Usage,
 };
 
 /// Who answers an invite card: the owner, by any route.
@@ -29,19 +30,18 @@ pub const DOC_OWNER_ONLY: &str = "only the owner can share this Doc";
 /// ...and closes the block it waits on (its drafts would go with it).
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
-/// What a thread in control's chat is about, here (M124): a pane or a
-/// session.
+/// What may be read here (M124): a pane or a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ChatTarget {
+pub enum Readable {
     Pane(PaneId),
     Session(SessionId),
 }
 
-/// Who may read the thread on each pane and session here now (M124): by
-/// principal id, each from when (ms; 0 is everything), and whether they
-/// only watch (a viewer: they read and don't post). The owner isn't listed:
-/// they read everything.
-pub type ChatReaders = Vec<(ChatTarget, Vec<(String, u64, bool)>)>;
+/// Who may read each pane and session here now (M124): by principal id,
+/// each from when (ms; 0 is everything), and whether they only watch (a
+/// viewer: they read and don't write). The owner isn't listed: they read
+/// everything.
+pub type Readers = Vec<(Readable, Vec<(String, u64, bool)>)>;
 
 use self::attention::{TermAsk, Waiter};
 use crate::{
@@ -193,6 +193,11 @@ pub enum Api {
     /// Why one pane wants you now, and whether it's a block (else a
     /// terminal).
     Reason(PaneId, oneshot::Sender<Option<(Reason, bool)>>),
+    /// Raise attention that belongs to no pane, or count it into the one
+    /// with its key (#551).
+    RaiseNotice(arugula_proto::Notice, oneshot::Sender<()>),
+    /// Take a notice away by its key; whether one was there.
+    ClearNotice(String, oneshot::Sender<bool>),
     Close(PaneId, oneshot::Sender<bool>),
     /// Open a block of any type; for a guest (M14), their principal: then
     /// it must be an agent beside a pane they edit, and runs on a VM of
@@ -225,6 +230,11 @@ pub enum Api {
     /// `PostToolUse`, `Stop` and `UserPromptSubmit` close a card the
     /// terminal answered first.
     Hook(PaneId, serde_json::Value),
+    /// A tool call ended (#644): a tagged follow-up waiting for the pane, if there is
+    /// one and the hook is from its own conversation.
+    TakeTagged(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver)>>),
+    /// The tool each pane's session last ran (#645).
+    LastTools(oneshot::Sender<HashMap<PaneId, String>>),
     /// What Claude Code running in a pane says of its session from inside
     /// it (#450, its arugula-live mod), as the agent block's `context`
     /// reads (`PaneInfo.live`); `None` forgets it. With the pid of the
@@ -240,9 +250,21 @@ pub enum Api {
     InboxGone(PaneId, u64),
     /// A follow-up for Claude Code in a terminal, from `by`: delivered at
     /// once if it waits, else queued for when it does. `Ok(true)`: it
-    /// went straight in. With the mention it carries (#540), whose turn
-    /// is reported.
-    FollowUp(PaneId, String, Driver, Option<MentionTag>, oneshot::Sender<Result<bool, String>>),
+    /// went straight in. With the tag the binary gave it (#540, #675),
+    /// whose turn is reported.
+    FollowUp(PaneId, String, Driver, Option<Tag>, oneshot::Sender<Result<bool, String>>),
+    /// The owner tapped deliver on a held follow-up (#579): it leaves the
+    /// pane's queue and comes back as the text to type, and its turn starts.
+    HeldDeliver(PaneId, oneshot::Sender<Result<String, String>>),
+    /// The owner dismissed the held follow-ups' card (#579): how many went.
+    HeldDrop(PaneId, oneshot::Sender<usize>),
+    /// Silence tagged follow-ups for a pane, or not (#579). It lasts as
+    /// long as the pane. False: no such terminal.
+    SilenceTagged(PaneId, bool, oneshot::Sender<bool>),
+    /// An agent block's turn for a tagged follow-up started or ended
+    /// (#611): the block says so, and it goes to the same [`Followups`] a
+    /// terminal's does.
+    FollowupTurn(PaneId, Tag, Turn),
     /// Someone answered a block's approval or question (M29), for its
     /// card, the pane's history and the audit log: `(id, how, headline)`.
     Answered(PaneId, Driver, String, String, String),
@@ -256,9 +278,8 @@ pub enum Api {
     RoleOn(crate::acl::Principal, PaneId, oneshot::Sender<Option<(Role, Option<u64>)>>),
     /// Whether a guest may type in a pane on this machine (M14).
     MayDrive(crate::acl::Principal, PaneId, oneshot::Sender<Result<(), String>>),
-    /// M124: who reads the thread on each pane and session here, for
-    /// control's chat.
-    ChatReaders(oneshot::Sender<ChatReaders>),
+    /// M124: who may read each pane and session here.
+    Readers(oneshot::Sender<Readers>),
     /// Where an invite to a session opens (#233): the pane given, if it's
     /// in the session, else the session's first; and the session's name.
     InviteTo(SessionId, Option<PaneId>, oneshot::Sender<Result<(PaneId, String), String>>),
@@ -269,6 +290,9 @@ pub enum Api {
     Trust(PaneId, String, u32, oneshot::Sender<bool>),
     /// A notice for whoever (by principal id) is connected.
     Tell(String, String),
+    /// Who is trusted with which pane on this machine now (Arugula #681):
+    /// each live grant of trust as (pane, principal id, until ms).
+    Trusted(oneshot::Sender<Vec<(PaneId, String, u64)>>),
     /// The panes `who` may read the history and events of (M112): every
     /// pane of a session (`Some`), or of every session they reach, that's
     /// readable to them. `None` when there's no such session, or `who` has
@@ -457,6 +481,9 @@ struct Daemon {
     /// machine from before it, so a pane it closed (or a machine that goes
     /// with it) is stored with where it was (#1035).
     was: HashMap<PaneId, (Option<SessionId>, bool, Option<MachineId>)>,
+    /// Panes and sessions that closed, for their threads' readers
+    /// (`readers.rs`); saved with the layout.
+    closed: crate::store::Closed,
     attention: HashMap<PaneId, Attention>,
     /// Why each pane wants you (M24), as recorded when it started to.
     reasons: HashMap<PaneId, Reason>,
@@ -478,6 +505,18 @@ struct Daemon {
     /// Terminals one of Arugula's Claude Code hooks has spoken from, while
     /// Claude Code runs there (`PaneInfo.unhooked`).
     hooked: std::collections::HashSet<PaneId>,
+    /// Terminals whose owner silenced tagged follow-ups (#579), for as
+    /// long as the pane lives (`PaneInfo.mentions_off`).
+    tagged_off: std::collections::HashSet<PaneId>,
+    /// The session in each pane that heard how a mid-turn follow-up
+    /// arrives (#644). Not kept across a restart: until its next
+    /// `SessionStart`, a session gets them between turns.
+    midturn_told: HashMap<PaneId, String>,
+    /// The tool each pane's session last ran (#645).
+    last_tools: HashMap<PaneId, String>,
+    /// The card for the follow-ups held on each terminal whose hooks aren't
+    /// listening (#579): typed only when the owner taps deliver.
+    held: HashMap<PaneId, Reason>,
     /// What Claude Code in each pane said of its session from inside it
     /// (#450), while it runs there (`PaneInfo.live`).
     live: HashMap<PaneId, serde_json::Value>,
@@ -541,7 +580,7 @@ struct Daemon {
     pre: HashMap<PaneId, std::collections::VecDeque<serde_json::Value>>,
     /// Follow-up waiters (`arugula inbox`), and follow-ups waiting for one.
     inbox: HashMap<PaneId, Waiter>,
-    queued: followups::Followups,
+    queued: followups::Queue,
     next_ask: u64,
     /// The next block an intent spawns is this type, with this config,
     /// instead of a terminal.
@@ -561,6 +600,8 @@ struct Daemon {
     access: watch::Sender<u64>,
     tx: mpsc::UnboundedSender<Cmd>,
     machines: BTreeMap<MachineId, Machine>,
+    /// Attention that belongs to no pane, by key (#551).
+    pane_less: BTreeMap<String, arugula_proto::Notice>,
     next_machine: MachineId,
     save_due: Option<Instant>,
     last_saved: Option<SavedParts>,
@@ -610,7 +651,7 @@ enum Dirty {
 }
 
 /// What one person sees besides panes: machines, and who's here.
-type Seen = (Vec<Machine>, Vec<Presence>);
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<arugula_proto::Notice>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -625,6 +666,7 @@ struct Sent {
     panes: HashMap<PaneId, PaneJson>,
     machines: Vec<Machine>,
     presence: Vec<Presence>,
+    notices: Vec<arugula_proto::Notice>,
 }
 
 /// A pane's working directory and foreground command, as the OS showed
@@ -675,6 +717,7 @@ pub fn start(
         panes: HashMap::new(),
         meta: HashMap::new(),
         was: HashMap::new(),
+        closed: store.load_closed(),
         attention: HashMap::new(),
         reasons: HashMap::new(),
         watching: Default::default(),
@@ -685,6 +728,10 @@ pub fn start(
         status_pushed: Default::default(),
         turn_typed: Default::default(),
         hooked: Default::default(),
+        tagged_off: Default::default(),
+        midturn_told: Default::default(),
+        last_tools: Default::default(),
+        held: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),
         links: Default::default(),
@@ -717,7 +764,7 @@ pub fn start(
         answered: HashMap::new(),
         pre: HashMap::new(),
         inbox: HashMap::new(),
-        queued: followups::Followups::default(),
+        queued: followups::Queue::default(),
         next_ask: 1,
         next_block: None,
         last_block_error: None,
@@ -728,6 +775,7 @@ pub fn start(
         tx: tx.clone(),
         access: access.clone(),
         machines: BTreeMap::new(),
+        pane_less: BTreeMap::new(),
         next_machine: 1,
         save_due: None,
         last_saved: None,
@@ -823,14 +871,29 @@ impl Daemon {
         self.next_machine = next_machine.max(1);
         // A machine is only kept with what owns it.
         let panes: Vec<PaneId> = self.mux.panes();
+        let here = self.config.provider.as_ref().map(|p| p.name().to_owned());
         for (id, m) in machines {
             let owned = match m.owner {
                 Owner::Pane(p) => panes.contains(&p),
                 Owner::Tab(t) => self.mux.tab(t).is_ok(),
             };
-            if owned {
-                self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
+            if !owned {
+                continue;
             }
+            // One from another provider (wisp's, from before the Sprites
+            // adapter was removed) stays with its panes as it was: they
+            // say the machine is gone, or that VM panes aren't set up, and
+            // a new one is made on this daemon's provider when they're used.
+            if !m.provider.is_empty() && here.as_deref() != Some(m.provider.as_str()) {
+                warn!(
+                    machine = id,
+                    provider = %m.provider,
+                    sprite = %m.sprite,
+                    here = here.as_deref().unwrap_or("none"),
+                    "a saved machine is from a provider this daemon doesn't have; its panes are kept, and can't reach it"
+                );
+            }
+            self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
         }
         // Nobody is connected yet; whoever views a tab next sizes it.
         let owners: Vec<ClientId> = self.mux.tabs.values().filter_map(|t| t.owner).collect();
@@ -862,19 +925,28 @@ impl Daemon {
                 },
                 _ => self.config.restore(id, &meta),
             };
+            if meta.kind == BlockType::Remote {
+                // A place for a pane on another daemon (#17, removed): the
+                // pane is still that daemon's own; this leaf goes, and the
+                // rest of the layout stays as it was.
+                info!(block = id, "dropped a remote block from the layout: remote blocks were removed");
+                self.drop_restored(id, meta.private);
+                continue;
+            }
             if meta.kind != BlockType::Terminal {
                 let config = meta.config.clone().unwrap_or_default();
                 // What systemd kept for it (an agent server's pipes).
                 let prefix = format!("agent-{id}-");
                 let names: Vec<String> = kept.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
                 let mine = names.into_iter().filter_map(|k| kept.remove_entry(&k)).collect();
+                let private = meta.private;
                 match self.make_block(id, meta.kind, config, meta.host, Some((meta.policy.clone(), mine))) {
                     Ok(()) => {
                         self.meta.insert(id, meta);
                     }
                     Err(e) => {
                         warn!(block = id, error = %e, "can't restore block; dropping it");
-                        let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                        self.drop_restored(id, private);
                     }
                 }
                 continue;
@@ -884,6 +956,7 @@ impl Daemon {
             let hold = meta.hold && matches!(start, Start::Adopt(_) | Start::Resume { .. });
             // Its process went with the old daemon: its policy says what now.
             let fresh = !matches!(start, Start::Adopt(_) | Start::Resume { .. });
+            let private = meta.private;
             match self.open_pane(id, cols, rows, true, start, cwd, integrate, hold, meta.host) {
                 Ok(()) => {
                     if fresh {
@@ -893,7 +966,7 @@ impl Daemon {
                 }
                 Err(e) => {
                     warn!(pane = id, error = %e, "can't restore pane; dropping it");
-                    let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                    self.drop_restored(id, private);
                 }
             }
         }
@@ -907,6 +980,41 @@ impl Daemon {
         });
         self.last_saved = Some((self.mux.clone(), self.meta.clone().into_iter().collect(), self.machines.clone()));
         true
+    }
+
+    /// A pane the restore can't bring back leaves the layout: it closed,
+    /// as its thread's readers go (`readers.rs`), and so did its session
+    /// if it was the last there.
+    fn drop_restored(&mut self, id: PaneId, private: bool) {
+        if let Some(session) = self.session_of(id) {
+            let readers = self.readers_at_close(session, private);
+            self.closed.pane(id, session, private, now_ms(), readers);
+        }
+        let before: Vec<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
+        let _ = self.mux.apply(Intent::ClosePane { pane: id });
+        self.sessions_gone(before);
+    }
+
+    /// Of the sessions there `before` a change, those that went: they're
+    /// kept as closed with who read them, for their threads' readers, and
+    /// then their shares go.
+    /// Write `closed.json` if it changed.
+    pub(super) fn save_closed(&mut self) {
+        if !self.closed.dirty {
+            return;
+        }
+        match self.store.save_closed(&self.closed) {
+            Ok(()) => self.closed.dirty = false,
+            Err(e) => warn!(error = %e, "can't save the closed panes' readers"),
+        }
+    }
+
+    pub(super) fn sessions_gone(&mut self, before: Vec<SessionId>) {
+        for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
+            let readers = self.readers_at_close(gone, false);
+            self.closed.session(gone, now_ms(), readers);
+            self.config.acl.forget_session(gone);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

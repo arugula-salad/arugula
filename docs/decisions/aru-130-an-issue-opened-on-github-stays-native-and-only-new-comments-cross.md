@@ -82,8 +82,10 @@ back to their machine" (aru-085). This record says what happens next.
     A person's comment still goes out.
   - `issue_github_comments` keeps every GitHub comment that crossed, by
     GitHub's id, so neither way brings one back. GitHub's copy of a
-    comment that went out, even one whose webhook comes before the send
-    answers, is matched to its draft by its text and kept out.
+    comment that went out is kept out. One whose webhook comes before the send
+    answers, and looks like it by text, is held (`issue_github_held`) until the
+    send's answer says which comment it was; text decides only if the answer
+    names none.
   - Edits and deletions don't cross, and comments from before the export
     stay native.
 - **GitHub's text in the thread** is a public repo's, readable by everyone

@@ -462,6 +462,179 @@ async fn reader_lists_decide_who_reads_a_panes_thread() {
     let _ = &r.carol_keys;
 }
 
+/// A thread's readers follow the machine's latest list, removals
+/// included: a list that shrinks, a send that failed and came again whole,
+/// a closed pane whose session's share went later, and a pane the machine
+/// no longer holds. A machine that says nothing of what it holds (an
+/// older daemon) leaves the lists it doesn't name as they were.
+#[tokio::test]
+async fn a_threads_readers_follow_the_machines_latest_list_including_removals() {
+    let r = rig().await;
+    let thread = |target: &'static str| {
+        let r = &r;
+        async move {
+            let body = json!({ "machine": r.box_a.id(), "kind": "pane", "target": target });
+            r.ok(&r.jake, "POST", "/api/chat/targets", Some(body)).await["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let (p7, p8, p9, p10) = (thread("7").await, thread("8").await, thread("9").await, thread("10").await);
+    for th in [&p7, &p8, &p9, &p10] {
+        r.post(&r.jake, th, json!({ "text": "said before" })).await;
+    }
+    let reads = |th: &str| {
+        let (r, path) = (&r, format!("/api/chat/rooms/{th}"));
+        async move { r.call(&r.carol, "GET", &path, None).await.0 == 200 }
+    };
+    let carol = json!([{ "account": "a4carol" }]);
+    let all = json!({ "panes": ["7", "8", "9", "10"], "sessions": ["1"] });
+    let (st, _) = r
+        .readers(
+            &r.box_a,
+            json!({ "targets": [
+                { "kind": "pane", "target": "7", "readers": carol },
+                { "kind": "pane", "target": "8", "readers": carol },
+                { "kind": "pane", "target": "9", "readers": carol },
+                { "kind": "pane", "target": "10", "readers": carol },
+                { "kind": "session", "target": "1", "readers": carol },
+            ], "held": all }),
+        )
+        .await;
+    assert_eq!(st, 200);
+    for th in [&p7, &p8, &p9, &p10] {
+        assert!(reads(th).await);
+    }
+
+    // Carol's share is taken away while the machine can't reach control:
+    // nothing comes, and control goes on with what it last knew. When the
+    // send comes again it names every list, and she's in none.
+    let (st, _) = r
+        .readers(
+            &r.box_a,
+            json!({ "targets": [
+                { "kind": "pane", "target": "7", "readers": [] },
+                { "kind": "pane", "target": "8", "readers": carol },
+                { "kind": "pane", "target": "9", "readers": carol },
+                { "kind": "pane", "target": "10", "readers": carol },
+                { "kind": "session", "target": "1", "readers": [] },
+            ], "held": all }),
+        )
+        .await;
+    assert_eq!(st, 200);
+    assert!(!reads(&p7).await, "a shrunk list takes her out");
+
+    // Pane 8 closed: the machine still holds it, with the readers it has
+    // now, so she keeps its history. Its session's share goes later: its
+    // list comes again without her.
+    assert!(reads(&p8).await, "a closed pane keeps its readers");
+    r.readers(&r.box_a, json!({ "targets": [{ "kind": "pane", "target": "8", "readers": [] }], "held": all })).await;
+    assert!(!reads(&p8).await, "a share taken after the pane closed");
+
+    // Pane 9 forgotten: not held, so only the machine's owner reads it.
+    let (st, _) =
+        r.readers(&r.box_a, json!({ "targets": [], "held": { "panes": ["7", "8", "10"], "sessions": ["1"] } })).await;
+    assert_eq!(st, 200);
+    assert!(!reads(&p9).await, "a pane the machine no longer holds");
+    assert_eq!(r.messages(&r.jake, &p9).await.len(), 1, "its owner still reads it all");
+    assert!(reads(&p10).await, "a held pane's list stays");
+
+    // An older daemon says nothing of what it holds: what it doesn't name
+    // keeps its list.
+    r.readers(&r.box_a, json!({ "targets": [{ "kind": "pane", "target": "7", "readers": [] }] })).await;
+    assert!(reads(&p10).await);
+
+    // What's held is checked like the lists.
+    let (st, _) = r.readers(&r.box_a, json!({ "targets": [], "held": { "panes": ["no spaces"] } })).await;
+    assert_eq!(st, 400);
+}
+
+/// A post that arrives after a newer one changes nothing the newer one
+/// said; a list emptied because the machine no longer holds the pane keeps
+/// the team's other owners out, where a pane with no list yet lets them
+/// in; and a private pane that closed is read only by whom its list names.
+#[tokio::test]
+async fn late_posts_emptied_lists_and_a_private_closed_pane() {
+    let r = rig().await;
+    // alex is one of acme's owners now, and not box-a's.
+    let v2 = roster(
+        TEAM,
+        2,
+        vec![
+            member("a1jake", &r.jake_keys, TeamRole::Owner),
+            member("a2alex", &r.alex_keys, TeamRole::Owner),
+            member("a4carol", &r.carol_keys, TeamRole::Viewer),
+        ],
+        &r.jake_keys,
+    );
+    r.c.app.db.add_roster(TEAM, 2, &serde_json::to_string(&v2).unwrap()).unwrap();
+    r.settle().await;
+    let thread = |target: &'static str| {
+        let r = &r;
+        async move {
+            let body = json!({ "machine": r.box_a.id(), "kind": "pane", "target": target });
+            r.ok(&r.jake, "POST", "/api/chat/targets", Some(body)).await["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let reads = |who: &'static str, th: String| {
+        let r = &r;
+        async move {
+            let who = if who == "alex" { &r.alex } else { &r.carol };
+            r.call(who, "GET", &format!("/api/chat/rooms/{th}"), None).await.0 == 200
+        }
+    };
+    let (p1, p2, p3, p4) = (thread("1").await, thread("2").await, thread("3").await, thread("4").await);
+    let alex = json!({ "account": "a2alex" });
+    let carol = json!({ "account": "a4carol" });
+    let held = json!({ "panes": ["1", "2", "3"], "sessions": [] });
+
+    // Post 20 takes carol off pane 1; post 10, sent before it and arriving
+    // after, still names her, and is ignored.
+    let post = |seq: Option<u64>, lists: Value, held: Value| {
+        let mut b = json!({ "targets": lists, "held": held });
+        if let Some(n) = seq {
+            b["seq"] = json!(n);
+        }
+        r.readers(&r.box_a, b)
+    };
+    post(Some(5), json!([{ "kind": "pane", "target": "1", "readers": [carol] }]), held.clone()).await;
+    assert!(reads("carol", p1.clone()).await);
+    post(Some(20), json!([{ "kind": "pane", "target": "1", "readers": [] }]), held.clone()).await;
+    let (st, _) = post(Some(10), json!([{ "kind": "pane", "target": "1", "readers": [carol] }]), held.clone()).await;
+    assert_eq!(st, 200);
+    assert!(!reads("carol", p1.clone()).await, "a late post undid a newer one");
+    // A post without a number (an older daemon's) counts as it comes.
+    r.readers(&r.box_a, json!({ "targets": [{ "kind": "pane", "target": "1", "readers": [carol] }] })).await;
+    assert!(reads("carol", p1.clone()).await);
+
+    // Pane 4 has no list yet: the team's owners read it, alex among them.
+    assert!(reads("alex", p4.clone()).await, "no list yet: the team's owners");
+    // Pane 2's list names alex, then the machine no longer holds it: its
+    // emptied list keeps him out, though he's one of the team's owners.
+    post(Some(30), json!([{ "kind": "pane", "target": "2", "readers": [alex] }]), held.clone()).await;
+    assert!(reads("alex", p2.clone()).await);
+    post(Some(40), json!([]), json!({ "panes": ["1", "3"], "sessions": [] })).await;
+    assert!(!reads("alex", p2.clone()).await, "an emptied list let a team owner back in");
+    // Pane 3 was private and closed: the machine holds it with only those
+    // who read every pane, alex here, and carol doesn't read it.
+    post(
+        Some(50),
+        json!([{ "kind": "pane", "target": "3", "readers": [alex] }]),
+        json!({ "panes": ["1", "3"], "sessions": [] }),
+    )
+    .await;
+    assert!(reads("alex", p3.clone()).await);
+
+    // A post sent before that one and arriving after, which no longer held
+    // pane 3: the newer list stands. Its answer says control holds a newer
+    // post, which the machine numbers above (its clock went back).
+    let (st, v) = post(Some(45), json!([]), json!({ "panes": ["1"], "sessions": [] })).await;
+    assert_eq!((st, v["seq"].as_u64()), (200, Some(50)));
+    assert!(reads("alex", p3.clone()).await, "a late post emptied a newer list");
+    // A number past what control keeps is refused.
+    let (st, _) = r.readers(&r.box_a, json!({ "targets": [], "seq": u64::MAX })).await;
+    assert_eq!(st, 400);
+    assert!(!reads("carol", p3.clone()).await, "a private closed pane");
+}
+
 #[tokio::test]
 async fn messages_are_edited_and_deleted_by_whom_they_may_be() {
     let r = rig().await;

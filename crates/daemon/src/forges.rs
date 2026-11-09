@@ -178,6 +178,8 @@ pub fn op_from_control(app: &Arc<App>, text: &str, answers: &tokio::sync::mpsc::
             DaemonOp::HostedArchive(_) => crate::hosted::archive::flush(None).await,
             DaemonOp::HostedArchiveBlocks(b) => crate::hosted::archive::flush(Some(&b.blocks)).await,
             DaemonOp::AgentMention(m) => crate::agent_mentions::deliver(app.as_ref(), &m).await,
+            DaemonOp::MachineAgents(a) => crate::agent_mentions::sessions_for(app.as_ref(), &a).await,
+            DaemonOp::AgentGrantAsk(a) => crate::agent_mentions::grant_ask(app.as_ref(), &a).await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });

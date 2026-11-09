@@ -25,7 +25,7 @@ decided_on: "2026-10-18"
 reviews: []
 constrains:
   - "path:crates/proto/src/flags.rs"
-  - "path:crates/daemon/tests/integration/flag_gates.rs"
+  - "path:crates/arugulad/tests/integration/flag_gates.rs"
 ---
 
 # A retired flag is a name that isn't one
@@ -39,5 +39,5 @@ control push that names one, on or off, is read as any unknown name always
 was: ignored, and kept by a write, so an older daemon reading the same file
 keeps its word. `arugulad flags NAME …` and `PUT /api/flags/NAME` say why
 it's gone instead of "no flag named".
-Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/arugulad/tests/integration/flag_gates.rs`.
 From: #942 (Q4), F5.

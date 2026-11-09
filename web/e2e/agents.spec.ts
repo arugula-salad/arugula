@@ -4,11 +4,11 @@
 // ACP server the daemon's tests use, so nothing here costs anything.
 
 import { execFileSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, text } from "./helpers";
+import { menu, paneEl, panes, reset, text, settingsRow, closeSettingsPage } from "./helpers";
 
 const fake = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
 
@@ -41,7 +41,7 @@ test.describe("desktop", () => {
     // The permission card; approving runs it.
     const card = block.getByRole("alertdialog", { name: "Allow ls --color?" });
     await expect(card).toContainText("Bash wants to run");
-    await expect(block.locator(".agent-status")).toHaveText("Needs you");
+    await expect(block.locator(".agent-status")).toHaveCount(0);
     await card.getByRole("button", { name: "Approve" }).click();
     await expect(card).toBeHidden();
     // Its output, in a read-only terminal (colours and all).
@@ -74,6 +74,36 @@ test.describe("desktop", () => {
     await page.evaluate((b) => window.__arugula.client.intent({ op: "close_pane", pane: b }), id);
     await expect.poll(() => panes(page)).toEqual([term]);
   });
+});
+
+test("a command's plain output is text, ending at its last line; only colours get a terminal", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  await menu(page, paneEl(page, term), "Start an agent…");
+  await startFake(page, "plain make");
+  await expect.poll(() => agentBlock(page)).not.toBeNull();
+  const block = paneEl(page, (await agentBlock(page))!);
+  await block.getByRole("button", { name: "Approve" }).click();
+  const tool = block.locator(".agent-tool").first();
+  await expect(tool.locator(".agent-tool-status")).toHaveText("completed");
+  await expect(tool.locator("pre.agent-tool-text")).toContainText("line 40");
+  // Each terminal restyles the whole page: plain text doesn't get one.
+  await expect(tool.locator(".xterm")).toHaveCount(0);
+  // Longer than its box, it shows the end, as a terminal does.
+  const shows = await tool.locator("pre.agent-tool-text").evaluate((pre) => {
+    const box = pre.getBoundingClientRect();
+    const text = document.createRange();
+    text.selectNodeContents(pre);
+    const rects = [...text.getClientRects()];
+    return { overflows: pre.scrollHeight > pre.clientHeight, end: rects[rects.length - 1].bottom <= box.bottom + 1, start: rects[0].top >= box.top };
+  });
+  expect(shows).toEqual({ overflows: true, end: true, start: false });
+
+  await block.locator(".agent-composer textarea").fill("run ls --color");
+  await block.getByRole("button", { name: "Send" }).click();
+  await block.getByRole("button", { name: "Approve" }).click();
+  await expect(block.locator(".agent-tool").last().locator(".xterm-rows")).toContainText("ran: ls --color");
+  await expect(block.locator(".agent-tool .xterm")).toHaveCount(1);
 });
 
 // M71: an image pasted into the composer goes with the prompt as an image
@@ -163,9 +193,8 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await expect(second.locator(".agent-msg")).toContainText("Ran it.");
   await expect(second.locator(".agent-note").filter({ hasText: /Allowed make test \(standing rule: Bash make… in / })).toBeVisible();
 
-  // The account menu lists it; Forget, and the next request asks again.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Permission rules…" }).click();
+  // Settings lists it; Forget, and the next request asks again.
+  await settingsRow(page, "Permission rules…");
   const dialog = page.getByRole("dialog", { name: "Permission rules" });
   await expect(dialog.locator("[data-rule]")).toHaveCount(1);
   await expect(dialog.locator("[data-rule=\"0\"] .rule-text")).toContainText("Bash commands starting “make” in ");
@@ -173,6 +202,7 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await expect(dialog.locator("[data-rule]")).toHaveCount(0);
   await expect(dialog).toContainText("No standing tool rules yet");
   await dialog.getByRole("button", { name: "Close" }).click();
+  await closeSettingsPage(page);
   await second.locator(".agent-composer textarea").fill("run make install");
   await second.getByRole("button", { name: "Send" }).click();
   await expect(second.getByRole("alertdialog", { name: "Allow make install?" })).toBeVisible();
@@ -217,7 +247,7 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
   await dialog.locator("select[name=agent]").selectOption("claude");
   await expect(dialog.locator(".adapter-help")).toBeHidden();
   await expect(dialog.getByRole("button", { name: "Start" })).toBeEnabled();
-  // On a VM it installs its own (where VMs are set up: wisp, #180).
+  // On a VM it installs its own (where VMs are set up, #180).
   await dialog.locator("select[name=agent]").selectOption("codex");
   if (await page.evaluate(() => window.__arugula.client.has("vms"))) {
     await dialog.locator("input[name=vm]").check();
@@ -346,6 +376,17 @@ test.describe("phone", () => {
     await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(id);
     const block = paneEl(page, id);
     await expect(page.locator(".keybar")).toBeHidden();
+    // On a terminal the key bar fits the row without scrolling, and has no "-" key.
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.evaluate(() => window.__arugula.client.setActive(window.__arugula.client.state!.panes[0].id));
+    const keys = page.locator(".keybar-keys");
+    await expect(keys).toBeVisible();
+    await expect(page.locator(".keybar").getByRole("button", { name: "Pipe" })).toBeVisible();
+    await expect(page.locator(".keybar").getByRole("button", { name: "-", exact: true })).toHaveCount(0);
+    expect(await keys.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    mkdirSync("/tmp/claude-arugula-813", { recursive: true });
+    await page.locator(".keybar").screenshot({ path: "/tmp/claude-arugula-813/keybar.png" });
+    await page.evaluate((id) => window.__arugula.client.setActive(id), id);
     const approve = block.getByRole("button", { name: "Approve" });
     await expect(approve).toBeVisible();
     const box = (await approve.boundingBox())!;
@@ -363,5 +404,38 @@ test.describe("phone", () => {
     await page.locator(".needs-you .sheet-item").first().click();
     await paneEl(page, id).getByRole("button", { name: "Deny", exact: true }).tap();
     await expect(paneEl(page, id).locator(".agent-msg").last()).toHaveText("Not allowed.");
+  });
+
+  test("a long-press on a link in the transcript is the browser's; elsewhere, the pane's menu", async ({ page }) => {
+    await reset(page);
+    await page.locator(".sheet-button").click();
+    await page.getByRole("button", { name: "New agent" }).click();
+    await startFake(page, "hello");
+    await expect.poll(() => agentBlock(page)).not.toBeNull();
+    const block = paneEl(page, (await agentBlock(page))!);
+    await expect(block.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
+    await block.locator(".agent-log").evaluate((log) => {
+      const a = document.createElement("a");
+      a.id = "t619-link";
+      a.href = "https://example.com/";
+      a.textContent = "a link";
+      log.append(a);
+    });
+    const press = (selector: string) =>
+      page.evaluate((selector) => {
+        const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        document.querySelector(selector)!.dispatchEvent(e);
+        return e.defaultPrevented;
+      }, selector);
+    expect(await press("#t619-link")).toBe(false);
+    await expect(page.getByRole("menuitem")).toHaveCount(0);
+    // Selected transcript text keeps the browser's Copy.
+    await block.locator(".agent-msg").last().evaluate((el) => {
+      getSelection()!.selectAllChildren(el);
+    });
+    expect(await press(".agent-msg:last-of-type")).toBe(false);
+    await page.evaluate(() => getSelection()!.removeAllRanges());
+    expect(await press(".agent-log")).toBe(true);
+    await expect(page.getByRole("menuitem").first()).toBeVisible();
   });
 });

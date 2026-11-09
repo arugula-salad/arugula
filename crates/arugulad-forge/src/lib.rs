@@ -73,7 +73,6 @@ pub mod others;
 pub mod pin;
 pub mod platform;
 pub mod send_op;
-pub mod shadow;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
 // map onto too).
 pub use arugula_forge_github::model;
@@ -133,7 +132,6 @@ impl Forges for Forge {
 
     fn start(&self, state_dir: std::path::PathBuf, control: Option<&Arc<crate::control::Control>>, urls: Vec<String>) {
         live::init(state_dir, control, urls);
-        shadow::start();
     }
 
     fn open_config<'a>(&'a self, c: &'a Value, state_dir: &'a Path) -> BoxFuture<'a, Result<Value, String>> {
@@ -199,7 +197,7 @@ const UPLOADED: usize = 50;
 
 // What went wrong, a poll's cheap part and a write's answer are the GitHub
 // crate's, and every forge's adapter uses them.
-pub use arugula_forge_github::{Error, Polled, Sent};
+pub use arugula_forge_github::{Error, Polled, QUEUED, Sent};
 // Forgejo's adapter (Labs) logs URLs with it.
 pub use arugula_forge_github::redact;
 
@@ -596,47 +594,6 @@ impl ForgeBlock {
 
     pub fn is_closed(&self) -> bool {
         self.live.closed()
-    }
-
-    /// M171's shadow period: what this block's attention rules find now,
-    /// whether or not the person looked, as the platform's inbox says its
-    /// reasons, and the platform's waiting drafts it shows. Only a GitHub
-    /// block on a repo linked in control, once it has read the item and
-    /// who you are; never a title.
-    pub fn shadow(&self) -> Option<arugula_control_wire::projects::ShadowBlock> {
-        let (provider, host, repo, number) = self.live_key();
-        if provider != Provider::Github || host != "github.com" {
-            return None;
-        }
-        let drafts = {
-            let p = self.platform.lock().unwrap();
-            p.link.as_ref()?;
-            p.drafts.iter().map(|d| d.id.clone()).collect()
-        };
-        let me = self.you.lock().unwrap().clone()?;
-        let wants = {
-            let st = self.state.lock().unwrap();
-            match (st.pr.as_ref(), st.issue.as_ref()) {
-                (Some(pr), _) => model::attention(pr, &me, 0),
-                (None, Some(issue)) => model::issue_attention(issue, &me, 0),
-                (None, None) => return None,
-            }
-        };
-        let reasons = wants
-            .iter()
-            .map(|w| {
-                match w {
-                    Want::Review { .. } => "review_requested",
-                    Want::Failed { .. } => "checks_failed",
-                    Want::Changes { .. } => "changes_requested",
-                    Want::Mention { .. } => "mentioned",
-                    Want::Assigned { .. } => "assigned",
-                    Want::Done { .. } => "done",
-                }
-                .to_owned()
-            })
-            .collect();
-        Some(arugula_control_wire::projects::ShadowBlock { repo, number, reasons, drafts })
     }
 
     /// Something changed on the forge: poll now.
@@ -1213,7 +1170,9 @@ impl ForgeBlock {
         );
         if let Ok(mut l) = self.ctx.log() {
             let at = l.end();
-            let mut text = format!("{} on {repo}#{number}", w.what());
+            // "A merge on …" that exited 0 reads as merged; a queued one hasn't.
+            let what = r.as_ref().ok().map(|s| s.said.as_str()).filter(|s| s.contains(QUEUED)).unwrap_or(w.what());
+            let mut text = format!("{what} on {repo}#{number}");
             if let Some(d) = drafted {
                 text.push_str(&format!(" (drafted by {d})"));
             }
@@ -1268,7 +1227,10 @@ impl ForgeBlock {
         if self.asking.lock().unwrap().is_some() || self.live.closed() {
             return;
         }
-        let first = self.state.lock().unwrap().drafts.iter().find(|d| d.status == DraftStatus::Waiting).cloned();
+        let first = {
+            let st = self.state.lock().unwrap();
+            st.drafts.iter().find(|d| d.status == DraftStatus::Waiting && self.may_settle(d)).cloned()
+        };
         let Some(d) = first else { return };
         let (repo, number) = self.repo();
         let ask = draft_ask(&d, &repo, number);
@@ -1377,6 +1339,22 @@ impl ForgeBlock {
             .collect()
     }
 
+    /// Whether this machine's owner may settle a draft from its card. On a
+    /// project the owner only views, a platform draft is theirs to settle
+    /// only if they wrote it: they can neither send nor drop another's. The
+    /// block still lists those; the card never asks about them.
+    fn may_settle(&self, d: &Draft) -> bool {
+        if !platform::is_platform_id(&d.id) {
+            return true;
+        }
+        let p = self.platform.lock().unwrap();
+        if p.link.as_ref().and_then(|l| l.role.as_deref()) != Some("viewer") {
+            return true;
+        }
+        let owner = live::control().and_then(|c| c.account());
+        p.drafts.iter().any(|f| f.id == d.id && owner.as_deref() == Some(f.author.as_str()))
+    }
+
     /// Log a failure to sync once, not every poll.
     fn say_once(&self, why: String) {
         let mut p = self.platform.lock().unwrap();
@@ -1418,6 +1396,7 @@ impl ForgeBlock {
         };
         self.platform.lock().unwrap().link = Some(link.clone());
         let mut changed = false;
+        let mut quiet = true;
         let waiting: Vec<Draft> = {
             let refused = self.platform.lock().unwrap().refused.clone();
             self.config.lock().unwrap().drafts.iter().filter(|d| !refused.contains(&d.id)).cloned().collect()
@@ -1439,6 +1418,7 @@ impl ForgeBlock {
                 }
                 Err(platform::Failed::Later(why)) => {
                     self.say_once(why);
+                    quiet = false;
                     break;
                 }
             }
@@ -1452,7 +1432,11 @@ impl ForgeBlock {
                     p.errors.retain(|id, _| list.iter().any(|d| d.id == *id));
                     changed |= p.drafts != list;
                     p.drafts = list;
-                    p.said = None;
+                    // What the upload just said stays said: a list that
+                    // works doesn't make the next poll say it again.
+                    if quiet {
+                        p.said = None;
+                    }
                 }
                 Err(platform::Failed::NotLinked) => platform::forget(&repo),
                 Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.say_once(why),
@@ -1578,17 +1562,10 @@ impl ForgeBlock {
 
     // ------------------------------------------------------------ pins (M172)
 
-    /// Whether this machine pins blocks: not while it reports its blocks'
-    /// own attention for M171's shadow period, which is held up against
-    /// GitHub's answers, not the mirror's.
-    fn pins() -> bool {
-        shadow::every(std::env::var("ARUGULA_INBOX_SHADOW").ok().as_deref()).is_none()
-    }
-
     /// Read a block on a linked repo from the platform ([`pin`]'s docs):
     /// `false` when GitHub's reader reads it instead.
     async fn read_pinned(&self) -> bool {
-        if !self.on_github() || !Self::pins() {
+        if !self.on_github() {
             return false;
         }
         let (repo, number) = self.repo();
@@ -1635,7 +1612,15 @@ impl ForgeBlock {
                 self.unpin("Arugula control doesn't have it for you any more");
                 false
             }
-            Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.platform_down(why),
+            Err(platform::Failed::Later(why)) => self.platform_down(why),
+            Err(platform::Failed::Refused(why)) => {
+                // Not away, but refusing (a 400 or 409): nothing of what it
+                // said last is worth waiting on. GitHub's reader reads now,
+                // and the config keeps the pin for when it answers again.
+                self.pinned.lock().unwrap().down_since = None;
+                self.github_instead(&why);
+                false
+            }
         }
     }
 
@@ -1700,24 +1685,33 @@ impl ForgeBlock {
     /// that), `false`: GitHub's reader reads it until the platform answers.
     fn platform_down(&self, why: String) -> bool {
         let since = *self.pinned.lock().unwrap().down_since.get_or_insert_with(std::time::Instant::now);
-        let mut st = self.state.lock().unwrap();
-        if let Some(p) = st.pin.as_mut()
-            && since.elapsed() < pin::STALE
         {
-            if p.stale.as_deref() != Some(why.as_str()) {
-                warn!(pane = self.ctx.id, why, "can't read the platform: the block shows what it said last");
-                p.stale = Some(why);
-                drop(st);
-                self.ctx.changed();
+            let mut st = self.state.lock().unwrap();
+            if let Some(p) = st.pin.as_mut()
+                && since.elapsed() < pin::STALE
+            {
+                if p.stale.as_deref() != Some(why.as_str()) {
+                    warn!(pane = self.ctx.id, why, "can't read the platform: the block shows what it said last");
+                    p.stale = Some(why);
+                    drop(st);
+                    self.ctx.changed();
+                }
+                return true;
             }
-            return true;
         }
-        if st.pin.take().is_some() {
-            warn!(pane = self.ctx.id, why, "can't read the platform: reading GitHub until it's back");
-            // Who you are, with your teams, is GitHub's word again.
+        self.github_instead(&why);
+        false
+    }
+
+    /// GitHub's reader reads the block until the platform answers again:
+    /// the state's pin goes (the config keeps it, so the platform is asked
+    /// first on every read), and who you are, with your teams, is GitHub's
+    /// word again.
+    fn github_instead(&self, why: &str) {
+        if self.state.lock().unwrap().pin.take().is_some() {
+            warn!(pane = self.ctx.id, why, "can't read the platform: reading GitHub until it answers");
             *self.you.lock().unwrap() = None;
         }
-        false
     }
 
     /// The platform says it isn't linked (for the owner) now: the block
@@ -2139,6 +2133,9 @@ impl Block for ForgeBlock {
             for w in &st.wants {
                 out.push_str(&format!("  {}: {}\n", w.kind.as_str(), w.why));
             }
+        }
+        if let Some(s) = st.said.as_deref().filter(|s| s.contains(QUEUED)) {
+            out.push_str(&format!("{s} (not merged until GitHub's queue merges it)\n"));
         }
         let waiting: Vec<&Draft> = st.drafts.iter().filter(|d| d.status == DraftStatus::Waiting).collect();
         if !waiting.is_empty() {

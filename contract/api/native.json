@@ -11,6 +11,14 @@
   ],
   "out": [
     {
+      "match": "/threads/{seq}/agents",
+      "why": "The strip of a thread's agents is on the web for now (Arugula #646)"
+    },
+    {
+      "match": "/docs/\\{id\\}/copies",
+      "why": "Share with… is on the web for now"
+    },
+    {
       "match": "/secrets",
       "why": "Project secrets stay on the web"
     },
@@ -19,8 +27,16 @@
       "why": "Registered clients are configured on the web"
     },
     {
+      "match": "/ci-alerts(/|$)",
+      "why": "CI alerts are set up on the web, and their key is shown once there (native #774)"
+    },
+    {
       "match": "/agent-tokens",
       "why": "Agent tokens stay on the web"
+    },
+    {
+      "match": "/projects/\\{project\\}/grants$",
+      "why": "A project's Access view is on the web and the CLI for now"
     },
     {
       "match": "/inference",
@@ -103,18 +119,102 @@
       "why": "Team chat settings stay on the web"
     },
     {
-      "match": "/chat/presence/token$",
-      "why": "Live presence is not in the first app"
-    },
-    {
       "match": "/chat/presence$",
-      "why": "Live presence is not in the first app"
+      "why": "Chat presence is not in the first app"
     }
   ],
   "operations": {
+    "GET /api/boards/{id}": {
+      "handler": "crates/platform/src/boards.rs#get_route",
+      "response": "BoardView"
+    },
+    "PATCH /api/boards/{id}": {
+      "handler": "crates/platform/src/boards.rs#edit_route",
+      "request": "EditBoard",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/asks/{ask}/answer": {
+      "handler": "crates/platform/src/boards/asks.rs#answer_route",
+      "request": "AnswerAsk",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/attachments": {
+      "handler": "crates/platform/src/boards.rs#attach_route",
+      "request": "AttachRow",
+      "response": "BoardView"
+    },
+    "DELETE /api/boards/{id}/attachments/{attachment}": {
+      "handler": "crates/platform/src/boards.rs#detach_route",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/close": {
+      "handler": "crates/platform/src/boards.rs#close_route",
+      "request": "CloseBoard",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/docs": {
+      "handler": "crates/platform/src/boards/docs.rs#add_route",
+      "request": "AddDoc",
+      "response": "BoardView"
+    },
+    "DELETE /api/boards/{id}/docs/{doc}": {
+      "handler": "crates/platform/src/boards/docs.rs#remove_route",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/docs/{doc}/move": {
+      "handler": "crates/platform/src/boards/docs.rs#move_route",
+      "request": "MoveDoc",
+      "response": "BoardView"
+    },
+    "PUT /api/boards/{id}/entries": {
+      "handler": "crates/platform/src/boards.rs#put_route",
+      "request": "PutEntry",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/entries/many": {
+      "handler": "crates/platform/src/boards.rs#add_many_route",
+      "request": "AddMany",
+      "response": "AddedMany"
+    },
+    "DELETE /api/boards/{id}/entries/{entry}": {
+      "handler": "crates/platform/src/boards.rs#delete_route",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/entries/{entry}/move": {
+      "handler": "crates/platform/src/boards.rs#move_route",
+      "request": "MoveEntry",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/reopen": {
+      "handler": "crates/platform/src/boards.rs#reopen_route",
+      "response": "BoardView"
+    },
+    "POST /api/boards/{id}/rows/{row}/ask": {
+      "handler": "crates/platform/src/boards/asks.rs#ask_route",
+      "request": "NewAsk",
+      "response": "BoardView"
+    },
+    "PUT /api/boards/{id}/rows/{row}/lane": {
+      "handler": "crates/platform/src/boards.rs#set_lane_route",
+      "request": "SetLane",
+      "response": "BoardView"
+    },
     "GET /api/chat": {
       "handler": "crates/platform-chat/src/chat.rs#rooms",
       "response": "ChatRooms"
+    },
+    "GET /api/chat/avatar/{account}": {
+      "handler": "crates/platform-chat/src/chat/people.rs#avatar",
+      "bytes": "The file"
+    },
+    "GET /api/chat/keywords": {
+      "handler": "crates/platform-chat/src/chat/alerts.rs#keywords",
+      "response": "ChatKeywords"
+    },
+    "PUT /api/chat/keywords": {
+      "handler": "crates/platform-chat/src/chat/alerts.rs#set_keywords",
+      "request": "ChatKeywords",
+      "response": "ChatKeywords"
     },
     "GET /api/chat/live": {
       "handler": "crates/platform-chat/src/chat.rs#live",
@@ -124,6 +224,180 @@
       "handler": "crates/platform-chat/src/chat.rs#open",
       "request": "ChatOpen",
       "response": "ChatOpen"
+    },
+    "GET /api/chat/previews/image": {
+      "handler": "crates/platform-chat/src/chat/previews.rs#image",
+      "bytes": "The file",
+      "untyped": [
+        "query: ImageQuery"
+      ]
+    },
+    "GET /api/chat/rooms/{id}": {
+      "handler": "crates/platform-chat/src/chat.rs#room",
+      "response": "ChatRoomDetail"
+    },
+    "PATCH /api/chat/rooms/{id}": {
+      "handler": "crates/platform-chat/src/chat.rs#change_room",
+      "request": "ChatRoomChange",
+      "response": "ChatRoom"
+    },
+    "POST /api/chat/rooms/{id}/files": {
+      "handler": "crates/platform-chat/src/chat/files.rs#upload",
+      "query": "ChatUploadQuery",
+      "response": "ChatFile"
+    },
+    "GET /api/chat/rooms/{id}/files/{file}": {
+      "handler": "crates/platform-chat/src/chat/files.rs#get",
+      "bytes": "The file",
+      "untyped": [
+        "query: Download"
+      ]
+    },
+    "POST /api/chat/rooms/{id}/grant-never": {
+      "handler": "crates/platform-chat/src/chat/grant_ask.rs#never",
+      "request": "ChatGrantNever",
+      "untyped": [
+        "the answer: {refused}, how many waiting mentions it settled"
+      ]
+    },
+    "POST /api/chat/rooms/{id}/join": {
+      "handler": "crates/platform-chat/src/chat/members.rs#join",
+      "response": "ChatRoom"
+    },
+    "POST /api/chat/rooms/{id}/leave": {
+      "handler": "crates/platform-chat/src/chat/members.rs#leave",
+      "empty": true
+    },
+    "POST /api/chat/rooms/{id}/level": {
+      "handler": "crates/platform-chat/src/chat.rs#level",
+      "request": "ChatLevel",
+      "response": "ChatRoom"
+    },
+    "POST /api/chat/rooms/{id}/members": {
+      "handler": "crates/platform-chat/src/chat/members.rs#add",
+      "request": "ChatAddMembers",
+      "response": "ChatRoom"
+    },
+    "DELETE /api/chat/rooms/{id}/members/{account}": {
+      "handler": "crates/platform-chat/src/chat/members.rs#remove",
+      "response": "ChatRoom"
+    },
+    "GET /api/chat/rooms/{id}/messages": {
+      "handler": "crates/platform-chat/src/chat.rs#messages",
+      "query": "ChatMessagesQuery",
+      "response": "ChatMessages"
+    },
+    "POST /api/chat/rooms/{id}/messages": {
+      "handler": "crates/platform-chat/src/chat.rs#post",
+      "request": "ChatPost",
+      "response": "ChatPosted"
+    },
+    "DELETE /api/chat/rooms/{id}/messages/{seq}": {
+      "handler": "crates/platform-chat/src/chat.rs#delete",
+      "response": "ChatMessage"
+    },
+    "PATCH /api/chat/rooms/{id}/messages/{seq}": {
+      "handler": "crates/platform-chat/src/chat.rs#edit",
+      "request": "ChatEdit",
+      "response": "ChatMessage"
+    },
+    "DELETE /api/chat/rooms/{id}/messages/{seq}/pin": {
+      "handler": "crates/platform-chat/src/chat/pins.rs#unpin",
+      "response": "ChatMessage"
+    },
+    "PUT /api/chat/rooms/{id}/messages/{seq}/pin": {
+      "handler": "crates/platform-chat/src/chat/pins.rs#pin",
+      "response": "ChatMessage"
+    },
+    "POST /api/chat/rooms/{id}/messages/{seq}/previews": {
+      "handler": "crates/platform-chat/src/chat/previews.rs#hide",
+      "untyped": [
+        "request: Hide",
+        "response: serde_json::Value"
+      ]
+    },
+    "DELETE /api/chat/rooms/{id}/messages/{seq}/reactions": {
+      "handler": "crates/platform-chat/src/chat/reactions.rs#remove",
+      "response": "ChatMessage",
+      "untyped": [
+        "query: ChatReactQuery"
+      ]
+    },
+    "POST /api/chat/rooms/{id}/messages/{seq}/reactions": {
+      "handler": "crates/platform-chat/src/chat/reactions.rs#add",
+      "request": "ChatReact",
+      "response": "ChatMessage"
+    },
+    "DELETE /api/chat/rooms/{id}/messages/{seq}/saved": {
+      "handler": "crates/platform-chat/src/chat/saved.rs#unsave",
+      "empty": true
+    },
+    "PATCH /api/chat/rooms/{id}/messages/{seq}/saved": {
+      "handler": "crates/platform-chat/src/chat/saved.rs#done",
+      "request": "ChatSavedDone",
+      "empty": true
+    },
+    "PUT /api/chat/rooms/{id}/messages/{seq}/saved": {
+      "handler": "crates/platform-chat/src/chat/saved.rs#save",
+      "empty": true
+    },
+    "POST /api/chat/rooms/{id}/mute": {
+      "handler": "crates/platform-chat/src/chat.rs#mute",
+      "request": "ChatMute",
+      "response": "ChatRoom"
+    },
+    "GET /api/chat/rooms/{id}/pins": {
+      "handler": "crates/platform-chat/src/chat/pins.rs#list",
+      "response": "ChatPins"
+    },
+    "GET /api/chat/rooms/{id}/previews": {
+      "handler": "crates/platform-chat/src/chat/previews.rs#previews",
+      "untyped": [
+        "query: PreviewsQuery",
+        "response: Previews"
+      ]
+    },
+    "POST /api/chat/rooms/{id}/read": {
+      "handler": "crates/platform-chat/src/chat.rs#read",
+      "request": "ChatRead",
+      "response": "ChatRoom"
+    },
+    "POST /api/chat/rooms/{id}/threads/{seq}/follow": {
+      "handler": "crates/platform-chat/src/chat/threads.rs#follow",
+      "request": "ChatFollow",
+      "response": "ChatMessage"
+    },
+    "POST /api/chat/rooms/{id}/threads/{seq}/read": {
+      "handler": "crates/platform-chat/src/chat/threads.rs#read",
+      "request": "ChatThreadRead",
+      "response": "ChatMessage"
+    },
+    "PUT /api/chat/rooms/{id}/topic": {
+      "handler": "crates/platform-chat/src/chat/pins.rs#set_topic",
+      "request": "ChatTopicSet",
+      "response": "ChatRoom"
+    },
+    "POST /api/chat/rooms/{id}/typing": {
+      "handler": "crates/platform-chat/src/chat/typing.rs#typing",
+      "empty": true
+    },
+    "POST /api/chat/rooms/{id}/unread": {
+      "handler": "crates/platform-chat/src/chat/saved.rs#unread",
+      "request": "ChatUnread",
+      "response": "ChatRoom"
+    },
+    "GET /api/chat/rooms/{room}/asks/{seq}": {
+      "handler": "crates/platform-chat/src/chat/sessions.rs#ask_show",
+      "response": "ChatAsk"
+    },
+    "POST /api/chat/rooms/{room}/asks/{seq}": {
+      "handler": "crates/platform-chat/src/chat/sessions.rs#ask_answer",
+      "request": "ChatAskAnswer",
+      "response": "ChatAsk"
+    },
+    "GET /api/chat/saved": {
+      "handler": "crates/platform-chat/src/chat/saved.rs#list",
+      "response": "ChatSaved"
     },
     "GET /api/chat/search": {
       "handler": "crates/platform-chat/src/chat.rs#search",
@@ -138,10 +412,6 @@
       "handler": "crates/platform-chat/src/chat/sidebar.rs#put",
       "request": "ChatSidebar",
       "response": "ChatSidebar"
-    },
-    "GET /api/chat/avatar/{account}": {
-      "handler": "crates/platform-chat/src/chat/people.rs#avatar",
-      "bytes": "The file"
     },
     "POST /api/chat/targets": {
       "handler": "crates/platform-chat/src/chat.rs#open_target",
@@ -165,251 +435,185 @@
       "request": "ChatNewDm",
       "response": "ChatRoom"
     },
-    "GET /api/chat/rooms/{id}": {
-      "handler": "crates/platform-chat/src/chat.rs#room",
-      "response": "ChatRoomDetail"
-    },
-    "PATCH /api/chat/rooms/{id}": {
-      "handler": "crates/platform-chat/src/chat.rs#change_room",
-      "request": "ChatRoomChange",
-      "response": "ChatRoom"
-    },
-    "GET /api/chat/rooms/{id}/messages": {
-      "handler": "crates/platform-chat/src/chat.rs#messages",
-      "query": "ChatMessagesQuery",
-      "response": "ChatMessages"
-    },
-    "POST /api/chat/rooms/{id}/messages": {
-      "handler": "crates/platform-chat/src/chat.rs#post",
-      "request": "ChatPost",
-      "response": "ChatPosted"
-    },
-    "PATCH /api/chat/rooms/{id}/messages/{seq}": {
-      "handler": "crates/platform-chat/src/chat.rs#edit",
-      "request": "ChatEdit",
-      "response": "ChatMessage"
-    },
-    "DELETE /api/chat/rooms/{id}/messages/{seq}": {
-      "handler": "crates/platform-chat/src/chat.rs#delete",
-      "response": "ChatMessage"
-    },
-    "POST /api/chat/rooms/{id}/files": {
-      "handler": "crates/platform-chat/src/chat/files.rs#upload",
-      "query": "ChatUploadQuery",
-      "response": "ChatFile"
-    },
-    "GET /api/chat/rooms/{id}/files/{file}": {
-      "handler": "crates/platform-chat/src/chat/files.rs#get",
-      "bytes": "The file",
-      "untyped": [
-        "query: Download"
-      ]
-    },
-    "GET /api/chat/rooms/{id}/previews": {
-      "handler": "crates/platform-chat/src/chat/previews.rs#previews",
-      "untyped": [
-        "query: PreviewsQuery",
-        "response: Previews"
-      ]
-    },
-    "POST /api/chat/rooms/{id}/messages/{seq}/previews": {
-      "handler": "crates/platform-chat/src/chat/previews.rs#hide",
-      "untyped": [
-        "request: Hide",
-        "response: serde_json::Value"
-      ]
-    },
-    "GET /api/chat/previews/image": {
-      "handler": "crates/platform-chat/src/chat/previews.rs#image",
-      "bytes": "The file",
-      "untyped": [
-        "query: ImageQuery"
-      ]
-    },
-    "POST /api/chat/rooms/{id}/messages/{seq}/reactions": {
-      "handler": "crates/platform-chat/src/chat/reactions.rs#add",
-      "request": "ChatReact",
-      "response": "ChatMessage"
-    },
-    "DELETE /api/chat/rooms/{id}/messages/{seq}/reactions": {
-      "handler": "crates/platform-chat/src/chat/reactions.rs#remove",
-      "response": "ChatMessage",
-      "untyped": [
-        "query: ChatReactQuery"
-      ]
-    },
-    "PUT /api/chat/rooms/{id}/topic": {
-      "handler": "crates/platform-chat/src/chat/pins.rs#set_topic",
-      "request": "ChatTopicSet",
-      "response": "ChatRoom"
-    },
-    "GET /api/chat/rooms/{id}/pins": {
-      "handler": "crates/platform-chat/src/chat/pins.rs#list",
-      "response": "ChatPins"
-    },
-    "PUT /api/chat/rooms/{id}/messages/{seq}/pin": {
-      "handler": "crates/platform-chat/src/chat/pins.rs#pin",
-      "response": "ChatMessage"
-    },
-    "DELETE /api/chat/rooms/{id}/messages/{seq}/pin": {
-      "handler": "crates/platform-chat/src/chat/pins.rs#unpin",
-      "response": "ChatMessage"
-    },
-    "POST /api/chat/rooms/{id}/join": {
-      "handler": "crates/platform-chat/src/chat/members.rs#join",
-      "response": "ChatRoom"
-    },
-    "POST /api/chat/rooms/{id}/leave": {
-      "handler": "crates/platform-chat/src/chat/members.rs#leave",
-      "empty": true
-    },
-    "POST /api/chat/rooms/{id}/members": {
-      "handler": "crates/platform-chat/src/chat/members.rs#add",
-      "request": "ChatAddMembers",
-      "response": "ChatRoom"
-    },
-    "DELETE /api/chat/rooms/{id}/members/{account}": {
-      "handler": "crates/platform-chat/src/chat/members.rs#remove",
-      "response": "ChatRoom"
-    },
-    "POST /api/chat/rooms/{id}/read": {
-      "handler": "crates/platform-chat/src/chat.rs#read",
-      "request": "ChatRead",
-      "response": "ChatRoom"
-    },
     "GET /api/chat/threads": {
       "handler": "crates/platform-chat/src/chat/threads.rs#followed",
       "response": "ChatThreads"
     },
-    "POST /api/chat/rooms/{id}/threads/{seq}/read": {
-      "handler": "crates/platform-chat/src/chat/threads.rs#read",
-      "request": "ChatThreadRead",
-      "response": "ChatMessage"
-    },
-    "POST /api/chat/rooms/{id}/threads/{seq}/follow": {
-      "handler": "crates/platform-chat/src/chat/threads.rs#follow",
-      "request": "ChatFollow",
-      "response": "ChatMessage"
-    },
-    "POST /api/chat/rooms/{id}/mute": {
-      "handler": "crates/platform-chat/src/chat.rs#mute",
-      "request": "ChatMute",
-      "response": "ChatRoom"
-    },
-    "POST /api/chat/rooms/{id}/level": {
-      "handler": "crates/platform-chat/src/chat.rs#level",
-      "request": "ChatLevel",
-      "response": "ChatRoom"
-    },
-    "POST /api/chat/rooms/{id}/unread": {
-      "handler": "crates/platform-chat/src/chat/saved.rs#unread",
-      "request": "ChatUnread",
-      "response": "ChatRoom"
-    },
-    "GET /api/chat/saved": {
-      "handler": "crates/platform-chat/src/chat/saved.rs#list",
-      "response": "ChatSaved"
-    },
-    "PUT /api/chat/rooms/{id}/messages/{seq}/saved": {
-      "handler": "crates/platform-chat/src/chat/saved.rs#save",
-      "empty": true
-    },
-    "PATCH /api/chat/rooms/{id}/messages/{seq}/saved": {
-      "handler": "crates/platform-chat/src/chat/saved.rs#done",
-      "request": "ChatSavedDone",
-      "empty": true
-    },
-    "DELETE /api/chat/rooms/{id}/messages/{seq}/saved": {
-      "handler": "crates/platform-chat/src/chat/saved.rs#unsave",
-      "empty": true
-    },
-    "POST /api/chat/rooms/{id}/typing": {
-      "handler": "crates/platform-chat/src/chat/typing.rs#typing",
-      "empty": true
-    },
-    "GET /api/chat/keywords": {
-      "handler": "crates/platform-chat/src/chat/alerts.rs#keywords",
-      "response": "ChatKeywords"
-    },
-    "PUT /api/chat/keywords": {
-      "handler": "crates/platform-chat/src/chat/alerts.rs#set_keywords",
-      "request": "ChatKeywords",
-      "response": "ChatKeywords"
-    },
-    "GET /api/projects": {
-      "handler": "crates/platform-agents/src/clients.rs#projects",
+    "GET /api/deploys/waiting": {
+      "handler": "crates/platform-deploys/src/deploys.rs#waiting",
       "untyped": [
-        "response: Answer<Value>"
+        "response: J"
       ]
     },
-    "GET /api/sessions/{ses}": {
-      "handler": "crates/platform-chat/src/session_live.rs#show",
-      "response": "SessionView"
+    "GET /api/deploys/{id}": {
+      "handler": "crates/platform-deploys/src/deploys.rs#get",
+      "untyped": [
+        "response: J"
+      ]
     },
-    "POST /api/sessions/{ses}/stop": {
-      "handler": "crates/platform-chat/src/session_live.rs#stop",
-      "response": "SessionView"
+    "POST /api/deploys/{id}/approve": {
+      "handler": "crates/platform-deploys/src/deploys.rs#approve",
+      "untyped": [
+        "request: Signed",
+        "response: J"
+      ]
     },
-    "POST /api/sessions/{ses}/actions": {
-      "handler": "crates/platform-chat/src/session_live.rs#act",
-      "request": "SessionAct",
-      "response": "SessionView"
+    "GET /api/deploys/{id}/can-decide": {
+      "handler": "crates/platform-deploys/src/deploys.rs#can_decide",
+      "untyped": [
+        "response: J"
+      ]
     },
-    "GET /api/sessions/{ses}/pr": {
-      "handler": "crates/platform-chat/src/sessions/pr.rs#show",
-      "response": "SessionPr"
+    "POST /api/deploys/{id}/deny": {
+      "handler": "crates/platform-deploys/src/deploys.rs#deny",
+      "untyped": [
+        "request: Signed",
+        "response: J"
+      ]
     },
-    "PUT /api/sessions/{ses}/pr": {
-      "handler": "crates/platform-chat/src/sessions/pr.rs#save",
-      "request": "SessionPrEdit",
-      "response": "SessionPr"
+    "GET /api/devices": {
+      "handler": "crates/control/src/api.rs#devices",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
     },
-    "POST /api/sessions/{ses}/pr/send": {
-      "handler": "crates/platform-chat/src/sessions/pr.rs#route",
-      "response": "SessionPrSent"
+    "GET /api/directory": {
+      "handler": "crates/control/src/api.rs#directory",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
     },
-    "POST /api/sessions/{ses}/try": {
-      "handler": "crates/platform-chat/src/sessions/tries.rs#start",
-      "request": "SessionTryAsk",
-      "response": "SessionView"
+    "GET /api/flags": {
+      "handler": "crates/control/src/labs_flags.rs#list",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
     },
-    "POST /api/sessions/{ses}/pick": {
-      "handler": "crates/platform-chat/src/sessions/tries.rs#pick",
-      "request": "SessionPick",
-      "response": "SessionView"
+    "GET /api/inbox": {
+      "handler": "crates/platform/src/forge/inbox.rs#list",
+      "query": "InboxQuery",
+      "response": "Inbox"
+    },
+    "POST /api/inbox/{item}": {
+      "handler": "crates/platform/src/forge/inbox.rs#mark",
+      "request": "InboxMark",
+      "response": "InboxMarked"
+    },
+    "GET /api/issues/{id}": {
+      "handler": "crates/platform/src/issues.rs#get_route",
+      "response": "Issue"
+    },
+    "PATCH /api/issues/{id}": {
+      "handler": "crates/platform/src/issues.rs#patch_route",
+      "request": "IssuePatch",
+      "response": "IssuePatched"
+    },
+    "GET /api/issues/{id}/events": {
+      "handler": "crates/platform/src/issues.rs#events_route",
+      "response": "IssueEvents"
     },
     "POST /api/issues/{issue}/agent": {
       "handler": "crates/platform-chat/src/chat/sessions.rs#issue_agent",
       "response": "IssueAgent"
     },
-    "GET /api/projects/{project}/sessions": {
-      "handler": "crates/platform-chat/src/sessions/wave.rs#list",
-      "query": "SessionWaveQuery",
-      "response": "SessionWave"
+    "POST /api/join": {
+      "handler": "crates/control/src/api.rs#join",
+      "request": "JoinRequest",
+      "untyped": [
+        "response: JoinAnswer or RemovedAnswer"
+      ]
     },
-    "POST /api/sessions/{ses}/move": {
-      "handler": "crates/platform-chat/src/sessions/moves.rs#route",
-      "request": "SessionMove",
-      "response": "SessionView"
+    "GET /api/join/{code}": {
+      "handler": "crates/control/src/api.rs#join_poll",
+      "query": "PollQuery",
+      "untyped": [
+        "response: JoinPoll, through crate::reply"
+      ]
     },
-    "GET /api/chat/rooms/{room}/asks/{seq}": {
-      "handler": "crates/platform-chat/src/chat/sessions.rs#ask_show",
-      "response": "ChatAsk"
+    "GET /api/me": {
+      "handler": "crates/control/src/api.rs#me",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
     },
-    "POST /api/chat/rooms/{room}/asks/{seq}": {
-      "handler": "crates/platform-chat/src/chat/sessions.rs#ask_answer",
-      "request": "ChatAskAnswer",
-      "response": "ChatAsk"
+    "GET /api/people": {
+      "handler": "crates/control/src/teams.rs#person",
+      "untyped": [
+        "query and response: local to the handler"
+      ]
     },
-    "GET /api/runs/{run}": {
-      "handler": "crates/platform/src/triggers/read.rs#show",
-      "query": "RunQuery",
-      "response": "RunView"
+    "GET /api/projects": {
+      "handler": "crates/platform/src/projects.rs#list",
+      "response": "Projects"
     },
-    "GET /api/runs/{run}/log": {
-      "handler": "crates/platform/src/triggers/read.rs#log",
-      "query": "RunLogQuery",
-      "response": "RunLogPage"
+    "GET /api/projects/{project}/boards": {
+      "handler": "crates/platform/src/boards.rs#list_route",
+      "response": "BoardList"
+    },
+    "POST /api/projects/{project}/boards": {
+      "handler": "crates/platform/src/boards.rs#create_route",
+      "request": "NewBoard",
+      "response": "BoardView"
+    },
+    "GET /api/projects/{project}/docs": {
+      "handler": "crates/platform/src/project_docs.rs#list_route",
+      "response": "DocList"
+    },
+    "POST /api/projects/{project}/docs": {
+      "handler": "crates/platform/src/project_docs.rs#create_route",
+      "request": "NewDoc",
+      "response": "DocView"
+    },
+    "GET /api/projects/{project}/docs/{doc}/boards": {
+      "handler": "crates/platform/src/boards/docs.rs#on_boards_route",
+      "response": "DocBoards"
+    },
+    "DELETE /api/projects/{project}/docs/{id}": {
+      "handler": "crates/platform/src/project_docs.rs#delete_route",
+      "untyped": [
+        "response: Value"
+      ]
+    },
+    "GET /api/projects/{project}/docs/{id}": {
+      "handler": "crates/platform/src/project_docs.rs#get_route",
+      "response": "DocView"
+    },
+    "PUT /api/projects/{project}/docs/{id}": {
+      "handler": "crates/platform/src/project_docs.rs#put_route",
+      "request": "DocWrite",
+      "response": "DocView"
+    },
+    "GET /api/projects/{project}/docs/{id}/assets/{name}": {
+      "handler": "crates/platform/src/project_docs.rs#asset_route",
+      "bytes": "The picture"
+    },
+    "GET /api/projects/{project}/drafts": {
+      "handler": "crates/platform/src/forge/drafts.rs#project",
+      "response": "ForgeDrafts",
+      "untyped": [
+        "query: DraftsQuery"
+      ]
+    },
+    "GET /api/projects/{project}/issues": {
+      "handler": "crates/platform/src/issues.rs#list_route",
+      "query": "IssueQuery",
+      "response": "IssueList"
+    },
+    "POST /api/projects/{project}/issues": {
+      "handler": "crates/platform/src/issues.rs#create_route",
+      "request": "issues.NewIssue",
+      "response": "Issue"
+    },
+    "GET /api/projects/{project}/issues/{number}": {
+      "handler": "crates/platform/src/issues.rs#by_number_route",
+      "response": "Issue"
+    },
+    "GET /api/projects/{project}/items": {
+      "handler": "crates/platform/src/forge/items.rs#list",
+      "response": "ForgeItems",
+      "untyped": [
+        "query: ItemsQuery"
+      ]
     },
     "GET /api/projects/{project}/runs/grant": {
       "handler": "crates/platform/src/run_grant.rs#show",
@@ -431,199 +635,85 @@
         "response: serde_json::Value"
       ]
     },
-    "GET /api/projects/{project}/items": {
-      "handler": "crates/platform/src/forge/items.rs#list",
-      "response": "ForgeItems",
-      "untyped": [
-        "query: ItemsQuery"
-      ]
-    },
-    "GET /api/projects/{project}/drafts": {
-      "handler": "crates/platform/src/forge/drafts.rs#project",
-      "response": "ForgeDrafts",
-      "untyped": [
-        "query: DraftsQuery"
-      ]
-    },
-    "GET /api/inbox": {
-      "handler": "crates/platform/src/forge/inbox.rs#list",
-      "query": "InboxQuery",
-      "response": "Inbox"
-    },
-    "POST /api/inbox/{item}": {
-      "handler": "crates/platform/src/forge/inbox.rs#mark",
-      "request": "InboxMark",
-      "response": "InboxMarked"
-    },
-    "GET /api/projects/{project}/boards": {
-      "handler": "crates/platform/src/boards.rs#list_route",
-      "response": "BoardList"
-    },
-    "POST /api/projects/{project}/boards": {
-      "handler": "crates/platform/src/boards.rs#create_route",
-      "request": "NewBoard",
-      "response": "BoardView"
-    },
-    "GET /api/boards/{id}": {
-      "handler": "crates/platform/src/boards.rs#get_route",
-      "response": "BoardView"
-    },
-    "PATCH /api/boards/{id}": {
-      "handler": "crates/platform/src/boards.rs#edit_route",
-      "request": "EditBoard",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/close": {
-      "handler": "crates/platform/src/boards.rs#close_route",
-      "request": "CloseBoard",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/reopen": {
-      "handler": "crates/platform/src/boards.rs#reopen_route",
-      "response": "BoardView"
-    },
-    "PUT /api/boards/{id}/entries": {
-      "handler": "crates/platform/src/boards.rs#put_route",
-      "request": "PutEntry",
-      "response": "BoardView"
-    },
-    "DELETE /api/boards/{id}/entries/{entry}": {
-      "handler": "crates/platform/src/boards.rs#delete_route",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/entries/{entry}/move": {
-      "handler": "crates/platform/src/boards.rs#move_route",
-      "request": "MoveEntry",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/attachments": {
-      "handler": "crates/platform/src/boards.rs#attach_route",
-      "request": "AttachRow",
-      "response": "BoardView"
-    },
-    "DELETE /api/boards/{id}/attachments/{attachment}": {
-      "handler": "crates/platform/src/boards.rs#detach_route",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/docs": {
-      "handler": "crates/platform/src/boards/docs.rs#add_route",
-      "request": "AddDoc",
-      "response": "BoardView"
-    },
-    "DELETE /api/boards/{id}/docs/{doc}": {
-      "handler": "crates/platform/src/boards/docs.rs#remove_route",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/docs/{doc}/move": {
-      "handler": "crates/platform/src/boards/docs.rs#move_route",
-      "request": "MoveDoc",
-      "response": "BoardView"
-    },
-    "GET /api/projects/{project}/docs/{doc}/boards": {
-      "handler": "crates/platform/src/boards/docs.rs#on_boards_route",
-      "response": "DocBoards"
-    },
-    "POST /api/boards/{id}/rows/{row}/ask": {
-      "handler": "crates/platform/src/boards/asks.rs#ask_route",
-      "request": "NewAsk",
-      "response": "BoardView"
-    },
-    "PUT /api/boards/{id}/rows/{row}/lane": {
-      "handler": "crates/platform/src/boards.rs#set_lane_route",
-      "request": "SetLane",
-      "response": "BoardView"
-    },
-    "POST /api/boards/{id}/asks/{ask}/answer": {
-      "handler": "crates/platform/src/boards/asks.rs#answer_route",
-      "request": "AnswerAsk",
-      "response": "BoardView"
+    "GET /api/projects/{project}/sessions": {
+      "handler": "crates/platform-chat/src/sessions/wave.rs#list",
+      "query": "SessionWaveQuery",
+      "response": "SessionWave"
     },
     "GET /api/projects/{project}/work": {
       "handler": "crates/platform/src/boards/work.rs#route",
       "query": "WorkQuery",
       "response": "WorkItems"
     },
-    "GET /api/projects/{project}/docs": {
-      "handler": "crates/platform/src/project_docs.rs#list_route",
-      "response": "DocList"
+    "GET /api/relay/c/{id}": {
+      "handler": "crates/control/src/relay.rs#client",
+      "upgrade": true
     },
-    "POST /api/projects/{project}/docs": {
-      "handler": "crates/platform/src/project_docs.rs#create_route",
-      "request": "NewDoc",
-      "response": "DocView"
+    "GET /api/relay/m": {
+      "handler": "crates/control/src/relay.rs#many",
+      "upgrade": true
     },
-    "GET /api/projects/{project}/docs/{id}": {
-      "handler": "crates/platform/src/project_docs.rs#get_route",
-      "response": "DocView"
+    "GET /api/runs/{run}": {
+      "handler": "crates/platform/src/triggers/read.rs#show",
+      "query": "RunQuery",
+      "response": "RunView"
     },
-    "PUT /api/projects/{project}/docs/{id}": {
-      "handler": "crates/platform/src/project_docs.rs#put_route",
-      "request": "DocWrite",
-      "response": "DocView"
+    "GET /api/runs/{run}/log": {
+      "handler": "crates/platform/src/triggers/read.rs#log",
+      "query": "RunLogQuery",
+      "response": "RunLogPage"
     },
-    "DELETE /api/projects/{project}/docs/{id}": {
-      "handler": "crates/platform/src/project_docs.rs#delete_route",
+    "GET /api/sessions/{ses}": {
+      "handler": "crates/platform-chat/src/session_live.rs#show",
+      "response": "SessionView"
+    },
+    "POST /api/sessions/{ses}/actions": {
+      "handler": "crates/platform-chat/src/session_live.rs#act",
+      "request": "SessionAct",
+      "response": "SessionView"
+    },
+    "POST /api/sessions/{ses}/move": {
+      "handler": "crates/platform-chat/src/sessions/moves.rs#route",
+      "request": "SessionMove",
+      "response": "SessionView"
+    },
+    "POST /api/sessions/{ses}/pick": {
+      "handler": "crates/platform-chat/src/sessions/tries.rs#pick",
+      "request": "SessionPick",
+      "response": "SessionView"
+    },
+    "GET /api/sessions/{ses}/pr": {
+      "handler": "crates/platform-chat/src/sessions/pr.rs#show",
+      "response": "SessionPr"
+    },
+    "PUT /api/sessions/{ses}/pr": {
+      "handler": "crates/platform-chat/src/sessions/pr.rs#save",
+      "request": "SessionPrEdit",
+      "response": "SessionPr"
+    },
+    "POST /api/sessions/{ses}/pr/send": {
+      "handler": "crates/platform-chat/src/sessions/pr.rs#route",
+      "response": "SessionPrSent"
+    },
+    "POST /api/sessions/{ses}/stop": {
+      "handler": "crates/platform-chat/src/session_live.rs#stop",
+      "response": "SessionView"
+    },
+    "POST /api/sessions/{ses}/try": {
+      "handler": "crates/platform-chat/src/sessions/tries.rs#start",
+      "request": "SessionTryAsk",
+      "response": "SessionView"
+    },
+    "GET /api/teams": {
+      "handler": "crates/control/src/teams.rs#list",
       "untyped": [
-        "response: Value"
+        "response: a JSON object built in place"
       ]
     },
-    "GET /api/projects/{project}/issues": {
-      "handler": "crates/platform/src/issues.rs#list_route",
-      "query": "IssueQuery",
-      "response": "IssueList"
-    },
-    "POST /api/projects/{project}/issues": {
-      "handler": "crates/platform/src/issues.rs#create_route",
-      "request": "issues.NewIssue",
-      "response": "Issue"
-    },
-    "GET /api/projects/{project}/issues/{number}": {
-      "handler": "crates/platform/src/issues.rs#by_number_route",
-      "response": "Issue"
-    },
-    "GET /api/issues/{id}": {
-      "handler": "crates/platform/src/issues.rs#get_route",
-      "response": "Issue"
-    },
-    "PATCH /api/issues/{id}": {
-      "handler": "crates/platform/src/issues.rs#patch_route",
-      "request": "IssuePatch",
-      "response": "IssuePatched"
-    },
-    "GET /api/issues/{id}/events": {
-      "handler": "crates/platform/src/issues.rs#events_route",
-      "response": "IssueEvents"
-    },
-    "GET /api/deploys/waiting": {
-      "handler": "crates/platform-deploys/src/deploys.rs#waiting",
+    "GET /api/teams/{id}/rosters": {
+      "handler": "crates/control/src/teams.rs#rosters",
       "untyped": [
-        "response: J"
-      ]
-    },
-    "GET /api/deploys/{id}": {
-      "handler": "crates/platform-deploys/src/deploys.rs#get",
-      "untyped": [
-        "response: J"
-      ]
-    },
-    "POST /api/deploys/{id}/approve": {
-      "handler": "crates/platform-deploys/src/deploys.rs#approve",
-      "untyped": [
-        "request: Signed",
-        "response: J"
-      ]
-    },
-    "POST /api/deploys/{id}/deny": {
-      "handler": "crates/platform-deploys/src/deploys.rs#deny",
-      "untyped": [
-        "request: Signed",
-        "response: J"
-      ]
-    },
-    "GET /api/deploys/{id}/can-decide": {
-      "handler": "crates/platform-deploys/src/deploys.rs#can_decide",
-      "untyped": [
-        "response: J"
+        "query and response: local to the handler"
       ]
     }
   }

@@ -18,6 +18,64 @@
       ],
       "type": "object"
     },
+    "AddMany": {
+      "description": "[`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or\n`untriaged` (everything that matches, but the `except` pointers). More\nthan [`ADD_MANY_MAX`] is refused, 400: narrow the filter.",
+      "properties": {
+        "except": {
+          "description": "With `untriaged`: pointers to leave out.",
+          "items": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "type": "array"
+        },
+        "pointers": {
+          "items": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "untriaged": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntriagedQuery"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AddedMany": {
+      "description": "[`BOARD_ENTRIES_MANY`]' answer.",
+      "properties": {
+        "added": {
+          "description": "Rows made. An item on the board already isn't counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "attached": {
+          "description": "PRs attached to the row of the issue they close, as a single add does.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "board": {
+          "$ref": "#/$defs/BoardView"
+        }
+      },
+      "required": [
+        "added",
+        "attached",
+        "board"
+      ],
+      "type": "object"
+    },
     "AnswerAsk": {
       "additionalProperties": false,
       "description": "[`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when\nit has none.",
@@ -476,6 +534,17 @@
         "id": {
           "type": "string"
         },
+        "lead": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardLead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The session that leads the board (#414): a post on the board's thread\nreaches it. Absent when no session does."
+        },
         "progress": {
           "$ref": "#/$defs/BoardProgress",
           "default": {
@@ -538,6 +607,13 @@
           ],
           "description": "The machine whose agent linked it, if one did."
         },
+        "copy": {
+          "description": "A machine Doc's copy on the platform (`pdc_…`), when it sits in this\nboard's project (native #673): the title and counts are then the\ncopy's, and the chip opens it while the machine is away. Older\nplatforms don't send it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "created_at": {
           "format": "uint64",
           "minimum": 0,
@@ -588,6 +664,34 @@
         "title",
         "added_by",
         "created_at"
+      ],
+      "type": "object"
+    },
+    "BoardLead": {
+      "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
+      "properties": {
+        "at": {
+          "description": "When the session took the lead.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": "",
+          "description": "The machine's name now; empty while it can't be told.",
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "session",
+        "at"
       ],
       "type": "object"
     },
@@ -754,6 +858,13 @@
         "board": {
           "$ref": "#/$defs/Board"
         },
+        "chain": {
+          "description": "The longest chain of open rows (`row_…`), first to last; empty when\nno row waits on another (#762).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "docs": {
           "default": [],
           "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
@@ -767,6 +878,13 @@
           "description": "Empty for a board with none; an old client ignores it.",
           "items": {
             "$ref": "#/$defs/Group"
+          },
+          "type": "array"
+        },
+        "order": {
+          "description": "Every row (`row_…`) as the board stores them: by group, in the\ngroups' order, then by position inside each, those with no group\nlast. A move that names the order it read (`seen`) names a group's\nrows from here.",
+          "items": {
+            "type": "string"
           },
           "type": "array"
         },
@@ -784,9 +902,16 @@
             "null"
           ]
         },
+        "sequence": {
+          "description": "The rows (`row_…`) that have a [`Row::step`], by step, and inside a\nstep by what unblocks the most open rows, then by position (#762).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "zones": {
           "items": {
-            "$ref": "#/$defs/Zone"
+            "$ref": "#/$defs/LaneView"
           },
           "type": "array"
         }
@@ -991,11 +1116,19 @@
     },
     "EntryKind": {
       "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-      "enum": [
-        "zone",
-        "row"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "row"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "zone",
+          "description": "A group; `group` is read as this too.",
+          "type": "string"
+        }
+      ]
     },
     "Group": {
       "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
@@ -1078,6 +1211,162 @@
         "lane",
         "by",
         "at"
+      ],
+      "type": "object"
+    },
+    "LaneView": {
+      "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "LeadBoard": {
+      "description": "`POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's\nlead (`session`, its name on its machine), or with `release` the lead is\ncleared, by the machine of the session that leads or by a person.",
+      "properties": {
+        "release": {
+          "default": false,
+          "type": "boolean"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LinkBatch": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s body.",
+      "properties": {
+        "add": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LinkEnds"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "LinkEnds": {
+      "additionalProperties": false,
+      "description": "One link of a [`LinkBatch`]: `from` is `kind` `to`.",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "LinkOutcome": {
+      "description": "What became of one link.",
+      "oneOf": [
+        {
+          "enum": [
+            "added",
+            "already_there",
+            "removed",
+            "not_there"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Not done; `why` says.",
+          "type": "string"
+        }
+      ]
+    },
+    "LinkResult": {
+      "description": "One link's outcome, in the order it was given.",
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/LinkOutcome"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "LinksDone": {
+      "description": "[`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of\n`add` and of `remove`, in order.",
+      "properties": {
+        "add": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "items": {
+            "$ref": "#/$defs/LinkResult"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "add",
+        "remove"
       ],
       "type": "object"
     },
@@ -1310,9 +1599,23 @@
         {
           "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
           "properties": {
+            "board": {
+              "description": "The other board the blocker is a row of, when the reader may read\nthe blocker and it is on a board other than this one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "kind": {
               "const": "blocked_by",
               "type": "string"
+            },
+            "lead": {
+              "description": "The session that leads that board, when one does.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "number": {
               "format": "uint64",
@@ -1339,6 +1642,19 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "The row's item is in a loop of open ordering edges (Plane can make\none): it shares its `step` with the others in the loop.",
+          "properties": {
+            "kind": {
+              "const": "cycle",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1356,7 +1672,7 @@
       "type": "object"
     },
     "MoveEntry": {
-      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
+      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.\n\n`seen` is the row ids of the group the row goes to, in the order the\ncaller read them. A row's `rev` doesn't count moves, so this is what a\nmove that mustn't overwrite someone else's checks: if the group's rows\naren't those, in that order, nothing moves and the answer is 409\n`stale_order` with the group's rows as they are now ([`StaleOrder`]).\nAbsent, a move is made whatever the order.",
       "properties": {
         "before": {
           "default": null,
@@ -1374,8 +1690,17 @@
             "null"
           ]
         },
+        "seen": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "zone": {
-          "description": "The group the row goes to; `null`: none. Absent: its own.",
+          "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
           "type": [
             "string",
             "null"
@@ -1426,6 +1751,13 @@
       "properties": {
         "goal": {
           "description": "What the board is for; left out: none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lead_session": {
+          "description": "With an agent's write: the session that makes it leads the new board\n(#414). A person's write ignores it.",
           "type": [
             "string",
             "null"
@@ -1597,7 +1929,7 @@
           "type": "object"
         },
         {
-          "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off.",
+          "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off; a [`BoardDoc`] reads the\nmachine's copy instead when the copy sits in the board's project.",
           "properties": {
             "doc": {
               "type": "string"
@@ -1665,6 +1997,15 @@
       "additionalProperties": false,
       "description": "[`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and\nits state.",
       "properties": {
+        "age_ms": {
+          "description": "How long ago, in milliseconds, the machine saw the block in this\nstate: more than none when the report waited out a failure to reach\ncontrol. A machine that sends it (0 included) also sends each live\nblock's state again every [`BLOCK_STATE_EVERY_MS`], so control counts\none of its reports older than [`BLOCK_STATE_STALE_MS`] as unknown.\nNone: a daemon from before Arugula #745, whose report is as of now\nand never goes stale.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "block": {
           "$ref": "#/$defs/BlockStateReport"
         },
@@ -1761,7 +2102,7 @@
         },
         "zone": {
           "default": null,
-          "description": "A new row's group (`zon_…`).",
+          "description": "A new row's group (`zon_…`); `group` is read as this too.",
           "type": [
             "string",
             "null"
@@ -1821,7 +2162,7 @@
       ]
     },
     "RelationKind": {
-      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
       "oneOf": [
         {
           "enum": [
@@ -1842,6 +2183,11 @@
         {
           "const": "discovered_from",
           "description": "The first item was found while working on the second.",
+          "type": "string"
+        },
+        {
+          "const": "before",
+          "description": "The first item comes before the second, in the order the work is\ndone in.",
           "type": "string"
         }
       ]
@@ -2025,6 +2371,15 @@
         "note": {
           "type": "string"
         },
+        "place": {
+          "description": "The column the row sits in on the Steps chart (Arugula #824): the\nsame longest-path layout as [`Row::step`], but over every row with an\nissue or a PR, done ones included, using their ordering edges whether\nthe other end is open or closed. So finishing work never moves a row.\nAbsent for a row with no issue or PR.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "pointer": {
           "$ref": "#/$defs/Pointer"
         },
@@ -2055,6 +2410,15 @@
           "$ref": "#/$defs/Status",
           "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
         },
+        "step": {
+          "description": "Where the row falls in the board's order (Arugula #762): 1 plus the\nhighest step of the open rows that come before it, worked out on\nevery read and never stored. Absent for a row with no issue or PR,\nand for a Done row. Doing and Review rows are step 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "updated_at": {
           "format": "uint64",
           "minimum": 0,
@@ -2068,6 +2432,90 @@
         "note",
         "status",
         "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "RowCandidate": {
+      "description": "One thing a row may point at.",
+      "properties": {
+        "assignees": {
+          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`issue`, `pr` or `run`.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "A run has none.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "`native`, `github`, `plane` or `run`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+          "type": "string"
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pointer",
+        "source",
+        "kind",
+        "title",
+        "state",
+        "assignees",
         "updated_at"
       ],
       "type": "object"
@@ -2140,6 +2588,29 @@
       ],
       "type": "object"
     },
+    "StaleOrder": {
+      "description": "The body of a move refused as `stale_order`: the group's rows now, in\norder.",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "error",
+        "reason",
+        "rows"
+      ],
+      "type": "object"
+    },
     "Status": {
       "description": "Where a row stands. `None` says nothing.",
       "enum": [
@@ -2152,66 +2623,19 @@
       ],
       "type": "string"
     },
-    "WorkItem": {
-      "description": "One thing a row may point at.",
+    "UntriagedQuery": {
+      "description": "Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`\nset, of the board's own project.",
       "properties": {
-        "assignees": {
-          "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "identifier": {
-          "description": "A tracker item's project key (`ARUGU`).",
+        "label": {
           "type": [
             "string",
             "null"
           ]
         },
-        "kind": {
-          "description": "`issue`, `pr` or `run`.",
+        "project": {
           "type": "string"
         },
-        "number": {
-          "description": "A run has none.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "pointer": {
-          "$ref": "#/$defs/Pointer",
-          "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-        },
-        "repo": {
-          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "source": {
-          "description": "`native`, `github`, `plane` or `run`.",
-          "type": "string"
-        },
-        "state": {
-          "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-          "type": "string"
-        },
-        "title": {
-          "description": "A run's: how it started (`manual run`).",
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "url": {
-          "description": "Where a tracker item is, in the tracker.",
+        "q": {
           "type": [
             "string",
             "null"
@@ -2219,13 +2643,7 @@
         }
       },
       "required": [
-        "pointer",
-        "source",
-        "kind",
-        "title",
-        "state",
-        "assignees",
-        "updated_at"
+        "project"
       ],
       "type": "object"
     },
@@ -2234,12 +2652,36 @@
       "properties": {
         "items": {
           "items": {
-            "$ref": "#/$defs/WorkItem"
+            "$ref": "#/$defs/RowCandidate"
           },
           "type": "array"
         },
+        "labels": {
+          "description": "With `untriaged`: the labels of everything that matches `q`, `label`\naside (so the chips keep their counts), most items first, then by name.",
+          "items": {
+            "$ref": "#/$defs/WorkLabel"
+          },
+          "type": "array"
+        },
+        "next": {
+          "default": null,
+          "description": "With `untriaged`: the cursor of the next page, null at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "project": {
           "type": "string"
+        },
+        "total": {
+          "description": "With `untriaged`: how many items match `q` and `label` in all.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2248,12 +2690,46 @@
       ],
       "type": "object"
     },
+    "WorkLabel": {
+      "description": "A label and how many of a query's matches carry it.",
+      "properties": {
+        "count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "count"
+      ],
+      "type": "object"
+    },
     "WorkQuery": {
       "description": "[`PROJECT_WORK`]'s query.",
       "properties": {
+        "cursor": {
+          "default": null,
+          "description": "With `untriaged`: the page after the one that answered this\n[`WorkItems::next`]. Opaque; it holds its place when items leave the\nlist between pages.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "default": null,
           "description": "`issue`, `pr` or `run`; absent means all.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "default": null,
+          "description": "With `untriaged`: only items with this label.",
           "type": [
             "string",
             "null"
@@ -2266,6 +2742,14 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "order": {
+          "default": null,
+          "description": "With `untriaged`, `new` (the default) or `old`: by when an item was\nlast updated.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -2283,44 +2767,6 @@
           "type": "boolean"
         }
       },
-      "type": "object"
-    },
-    "Zone": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "kind": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ZoneKind"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "rev": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "rows": {
-          "items": {
-            "$ref": "#/$defs/Row"
-          },
-          "type": "array"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "rev",
-        "title",
-        "rows"
-      ],
       "type": "object"
     },
     "ZoneKind": {

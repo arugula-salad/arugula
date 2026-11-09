@@ -123,6 +123,12 @@ pub struct ChatRoom {
     /// of those mention the reader.
     pub unread: u64,
     pub mentions: u64,
+    /// How much of `unread` wants the reader: what a count of it says. In
+    /// an object's thread, its mentions, and on an open native issue
+    /// assigned to the reader what isn't from their own agents; the rest
+    /// of `unread` is only a dot on its row. In any other room, `unread`.
+    #[serde(default)]
+    pub wants: u64,
     /// The reader turned its pushes off (`level` is `nothing`).
     pub muted: bool,
     /// What the reader is notified of here: their own choice for the room,
@@ -207,6 +213,13 @@ pub struct ChatRoomAgent {
     /// the room's detail fills it.
     #[serde(default)]
     pub sessions: Vec<String>,
+    /// The handles its machine went by before it was renamed (#500): `@old`
+    /// still reaches it, unless another machine here is called that now.
+    /// Never sent: control resolves a mention with it, and the picker lists
+    /// the current name alone.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub aliases: Vec<String>,
 }
 
 /// The agent that wrote a message (M197): the machine whose grant it acted
@@ -460,6 +473,10 @@ pub struct ChatReaction {
     pub emoji: String,
     /// All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
     pub count: u32,
+    /// How many of `count` are agents' (#632); the rest are people's. An
+    /// older control leaves it out, and it reads as none.
+    #[serde(default)]
+    pub agents: u32,
     /// The reader has: a person's own reaction, or for an agent reading,
     /// its own (never the owner's, nor the agent's for the owner).
     pub mine: bool,
@@ -493,6 +510,10 @@ pub struct ChatMentionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reply: Option<i64>,
+    /// With `dropped`: why (#613).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<DropWhy>,
 }
 
 /// How far a [`ChatMentionStatus`] has got.
@@ -512,6 +533,9 @@ pub enum ChatMentionState {
     /// The session (`session`) has it queued, but its hooks aren't
     /// listening to take it (#571).
     Queued,
+    /// The session it named (`asked`) is there, but its owner silenced
+    /// mentions for it (#579): it waits in the machine's inbox.
+    Silenced,
     /// The session it named isn't there (`asked`), or is more than one:
     /// no other session got it, and it waits in the inbox. `names` are the
     /// ones there are (#576).
@@ -529,6 +553,12 @@ pub enum ChatMentionState {
     /// That turn has ended (#540). An agent's reply, `answered`, usually
     /// comes first and stays.
     Read,
+    /// The session dropped it (#613): `why` says how. Final, like
+    /// `answered`, which it never replaces.
+    Dropped,
+    /// The machine's agents can't read the room (#578): its owner was asked
+    /// to let them. Delivered if they do; final if they said never.
+    NotGranted,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -769,6 +799,13 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub notify_anyway: Option<bool>,
+    /// In a thread (#647): who this wakes, chosen in the composer, in place
+    /// of the agent it replies to. Agents the text names come too. Empty:
+    /// nobody. Absent: as before this field. Ignored from an agent, and
+    /// outside a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub to: Option<Vec<ChatPostTarget>>,
     /// A reply in the thread of this message (#106): the number of a
     /// message of the room that is not itself a reply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -894,6 +931,17 @@ pub struct ChatRead {
     pub seq: i64,
 }
 
+/// `POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its
+/// agents are never to be asked to read this room (#578). What waited for
+/// them is `not_granted` for good; a grant over the room undoes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatGrantNever {
+    /// The machine's id.
+    pub daemon: String,
+}
+
 /// `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
 /// mark goes to just before it, backwards if need be (#116). The answer is
 /// the room, as the reader now sees it.
@@ -952,6 +1000,92 @@ pub struct ChatSavedItem {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
+}
+
+/// An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPostTarget {
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The session on the machine, when it has a name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+}
+
+/// `GET /api/chat/rooms/{id}/threads/{seq}/agents`: the agents in a thread
+/// and what each is doing now (#645), for the strip at its top. Whoever sees
+/// the room may ask. Control keeps none of the live part: it asks each
+/// machine's daemon, and what that shows is the owner's `agent_sessions`.
+pub fn chat_thread_agents(room: &str, seq: i64) -> String {
+    format!("/api/chat/rooms/{room}/threads/{seq}/agents")
+}
+
+/// [`chat_thread_agents`]' answer: oldest in the thread first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgents {
+    pub agents: Vec<ChatThreadAgent>,
+}
+
+/// What an agent in a thread is doing (#645).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatThreadAgentState {
+    Working,
+    /// Between turns, ready for the next prompt.
+    Idle,
+    NeedsYou,
+    Offline,
+    /// A hosted session that failed.
+    Failed,
+    /// A hosted session that was stopped.
+    Stopped,
+    /// Its machine answered without saying: an older daemon, a session it
+    /// doesn't show, or one that has ended.
+    Unknown,
+}
+
+/// One agent in a thread (#645): a session on someone's machine, or a hosted
+/// session. Never its output, a tool's arguments or a path (aru-051).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgent {
+    /// The session's name, as its machine called it, or a hosted session's
+    /// short id. Empty when a machine was told and no session has spoken.
+    pub name: String,
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The machine's name, or the hosted box's.
+    pub machine_name: String,
+    /// The owner's account and name; a hosted session's asker.
+    pub owner: String,
+    pub owner_name: String,
+    pub hosted: bool,
+    pub state: ChatThreadAgentState,
+    /// With the owner's `work`: what it was started on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub working_on: Option<String>,
+    /// With the owner's `work`: the name of the tool it last ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tool: Option<String>,
+    /// The newest message of the thread it has taken in, or written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub read_seq: Option<i64>,
+    /// Messages told to it that it hasn't taken in yet.
+    pub waiting: u32,
+    /// The agent a message goes to by default (#647): the thread's hosted
+    /// session, else the agent first in it.
+    pub lead: bool,
 }
 
 /// `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
@@ -1199,20 +1333,6 @@ pub enum PresenceMode {
     Offline,
 }
 
-/// Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
-/// account so every page agrees: `off` (the default), in no arugula.stream
-/// room; `watching`, in your teams' rooms, seeing their live faces. Live
-/// (your camera) isn't kept: it's per window, on top of `watching`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(rename_all = "lowercase")]
-pub enum LivePresence {
-    #[default]
-    Off,
-    Watching,
-}
-
 /// `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
 /// open, and the answer is what it shows. `idle`: the page hasn't been
 /// used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
@@ -1229,10 +1349,6 @@ pub struct ChatBeat {
     pub gone: bool,
     #[serde(default)]
     pub mode: Option<PresenceMode>,
-    /// The reader's live presence choice, when they changed it (kept with
-    /// `live-presence` on; ignored with it off).
-    #[serde(default)]
-    pub live: Option<LivePresence>,
     #[serde(default)]
     pub machines: Vec<String>,
 }
@@ -1256,10 +1372,6 @@ pub struct ChatPresent {
 pub struct ChatPresence {
     /// The reader's own choice.
     pub mode: PresenceMode,
-    /// The reader's live presence choice, with the `live-presence` Labs flag
-    /// on for them; absent with it off, which is how a page learns the flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub live: Option<LivePresence>,
     pub people: Vec<ChatPresent>,
     pub machines_online: Vec<String>,
 }
@@ -1396,13 +1508,40 @@ fn shown() -> bool {
 }
 
 /// What a daemon says of a thread's readers: for each pane or session it
-/// names, the whole list, which replaces the last one control had. Those it
-/// doesn't name keep theirs (a pane that closed keeps its readers).
+/// names, the whole list, which replaces the last one control had.
+///
+/// `held`, on the last post of a send: every pane and session the machine
+/// still has a list for (open, or closed and still remembered, read by
+/// those who read it when it closed and still may). Control empties the list
+/// of every other target it has for the machine, so only the machine's
+/// owner reads those threads. Without it (older daemons) the targets not
+/// named keep their lists.
+///
+/// `seq`: the post's place in the machine's order, higher for each post it
+/// makes. Control ignores what a post says of a target whose list came in
+/// a post with a higher one, so a post that arrives late can't undo a newer
+/// one. Without it (older daemons) every post counts as it comes. At most
+/// `i64::MAX`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReaders {
     #[serde(default)]
     pub targets: Vec<ChatReaderList>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<ChatTargetsHeld>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+/// The panes and sessions a machine has reader lists for, by id: see
+/// [`ChatReaders`]. At most [`MAX_HELD`] of each.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ChatTargetsHeld {
+    #[serde(default)]
+    pub panes: Vec<String>,
+    #[serde(default)]
+    pub sessions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1428,11 +1567,17 @@ pub struct ChatReader {
     pub watching: bool,
 }
 
-/// How many lists control kept.
+/// How many lists control was sent, and the highest post number it holds
+/// for the machine ([`ChatReaders::seq`]). Higher than the post's own: some
+/// of what it said was ignored as older, so the machine numbers its posts
+/// above this and sends every list again (its clock went back). Older
+/// controls leave it out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 /// A daemon says how far the session got with a mention it delivered
@@ -1450,6 +1595,20 @@ pub enum MentionTurn {
     Working,
     /// The turn has ended.
     Read,
+    /// The mention never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a mention was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the session's queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
 }
 
 /// [`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for
@@ -1470,6 +1629,8 @@ pub struct PutMentionState {
 /// The most lists in one [`ChatReaders`], and readers in one list.
 pub const MAX_READER_TARGETS: usize = 500;
 pub const MAX_READERS: usize = 500;
+/// The most panes, and sessions, in one [`ChatTargetsHeld`].
+pub const MAX_HELD: usize = 20_000;
 
 // ---------------------------------------------------------------- agents
 
@@ -1577,6 +1738,73 @@ pub struct AgentReach {
     pub name: String,
     /// `threads.read`, `threads.post`, `issues.write`.
     pub powers: Vec<String>,
+}
+
+/// The sessions of a machine in a room that an agent may mention (`GET`,
+/// [`MachineAgentsQuery`], answered [`MachineAgents`], #577).
+/// `machine` is its name as in `@machine`. Refused unless the asking
+/// machine reads `room` and `machine` hears it.
+pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/agents/{machine}/sessions")
+}
+
+/// The agents in a thread, for an agent reading it (`GET`, answered
+/// [`ChatThreadAgents`], #649). Refused unless the machine reads `room`.
+pub fn agent_thread_agents(room: &str, seq: i64) -> String {
+    format!("{AGENT_ROOMS}/{room}/threads/{seq}/agents")
+}
+
+/// [`agent_machine_sessions`]' query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineAgentsQuery {
+    /// The asking session's name, so a machine asked about itself leaves it
+    /// out (#575).
+    #[serde(default)]
+    pub from_session: Option<String>,
+}
+
+/// A machine's sessions an agent may mention in a room (#577).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineAgents {
+    pub machine_name: String,
+    /// The machine isn't on control's relay now, or didn't answer.
+    #[serde(default)]
+    pub offline: bool,
+    /// False when its owner shows no session names.
+    pub shared: bool,
+    /// Newest active first, at most 20.
+    pub sessions: Vec<crate::forge::MachineAgent>,
+}
+
+/// The replies to this machine's agents' posts that no session has read yet
+/// (`GET`, answered [`AgentReplies`], #580): in the rooms the machine reads,
+/// the last 7 days, at most [`REPLIES_MAX`], grouped by thread.
+pub const AGENT_REPLIES: &str = "/api/daemon/chat/replies";
+
+/// The most replies [`AGENT_REPLIES`] answers.
+pub const REPLIES_MAX: usize = 50;
+
+/// [`AGENT_REPLIES`]' answer: the threads, the one with the oldest unread
+/// reply first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentReplies {
+    pub threads: Vec<AgentReplyThread>,
+}
+
+/// One thread's unread replies (#580).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentReplyThread {
+    pub room: String,
+    pub room_name: String,
+    /// The thread's first message.
+    pub root: ChatMessage,
+    /// The unread replies, oldest first, each with its mention status for
+    /// this machine.
+    pub replies: Vec<ChatMessage>,
 }
 
 /// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`

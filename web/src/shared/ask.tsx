@@ -178,8 +178,7 @@ function QuestionCard({ ask, questions, actions, more }: { ask: Ask; questions: 
       {questions.map((q, n) => (
         <fieldset key={n} class="ask-question" data-question={n}>
           <legend>
-            {q.header && <span class="ask-header">{q.header}</span>}
-            <span class="ask-text">{q.question}</span>
+            <span class="ask-text" title={q.header}>{q.question}</span>
             {q.multiSelect && <span class="ask-hint">any of these</span>}
           </legend>
           <div class={q.multiSelect ? "ask-options multi" : "ask-options"} role={q.multiSelect ? "group" : "radiogroup"}>
@@ -362,7 +361,7 @@ function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
           </label>
         );
       })}
-      {/* M36: a forge draft is sent (with your login) or dropped. #234: an
+      {/* M36: a forge draft is sent (with your login) or discarded. #234: an
           agent's invite is sent, or declined with the reason you gave. */}
       <Buttons
         actions={ask.source === "invite" ? { ...actions, decline: () => actions.answer({ decline: true, ...(filled(values.reason) ? { reason: values.reason } : {}) }) } : actions}
@@ -371,7 +370,7 @@ function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
         more={more}
         labels={
           ask.source === "forge"
-            ? { submit: "Send", decline: "Drop" }
+            ? { submit: "Send", decline: "Discard" }
             : ask.source === "invite"
               ? { submit: "Invite", decline: "Decline" }
               : ask.source === "doc"

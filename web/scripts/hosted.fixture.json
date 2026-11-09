@@ -11,6 +11,18 @@
     "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
     "workspace": "hw_1"
   },
+  "closed": {
+    "at": 4000,
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "project": "prj_1",
+    "sig": "888c6779220423a432c648babd40f87783697cca52be8ea3f6efacda3671f83f93d2e93054d591008072c2a218d1f5d03efc2cbbef9e16822ba897e92302de03"
+  },
+  "closedEarly": {
+    "at": 2500,
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "project": "prj_1",
+    "sig": "6072e87cbeb128921ef8875e0256f3607f0bb213c0efef90de45761c245ca71736929dbd156166e7ed8463bea88e4ce62a9dead37f26435e86752bdf2cdbf001"
+  },
   "delegation": {
     "at": 2000,
     "by": "4439457f6ef4c3ff",

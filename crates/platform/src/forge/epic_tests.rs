@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, issues::Actor, sql::params},
 };
@@ -67,7 +66,6 @@ async fn progress_counts_the_rows_in_done_and_those_proven() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     {
         // Two more issues on each repo: an open and a closed one.
         let c = app.db.c();
@@ -158,7 +156,6 @@ async fn progress_counts_the_rows_in_review_and_doing_too() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     {
         let c = app.db.c();
         c.execute(
@@ -207,7 +204,6 @@ async fn a_goal_is_set_and_a_board_is_closed_and_opened_again() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     let mk = |t: &'static str| {
         let (base, team) = (base.clone(), team.clone());
         async move {
@@ -292,7 +288,7 @@ async fn a_deleted_accounts_boards_keep_no_creator_or_closer() {
     let hub = Arc::new(TestHub::default());
     let (gh, app, _base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
-    let b = app.db.create_board(&team, "E", "", Actor::person("gone"), 1, 10).unwrap().unwrap();
+    let b = app.db.create_board(&team, "E", "", Actor::person("gone"), None, 1, 10).unwrap().unwrap();
     assert!(app.db.close_board(&b.id, "Shipped.", Actor::person("gone"), 2).unwrap());
     let d = crate::Deleted { account: "gone".into(), machines: vec![], disbanded: vec![] };
     crate::db::boards::erase_account(&app.db.c(), &d).unwrap();

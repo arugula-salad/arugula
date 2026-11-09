@@ -14,6 +14,7 @@
 // project's inference keys are `./hosted-manage`'s, as `arugula cloud`'s
 // edit, rebuild, preview, secret and key (Discovery 10).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
@@ -21,18 +22,19 @@ import { CopyText } from "../../shared/ui/copy";
 import { Markdown } from "../../shared/ui/markdown";
 import { usePlatformApi } from "../../shared/platform-api";
 import { PageHeader } from "../../shared/ui/page-header";
-import { StateChip } from "../../shared/ui/state-chip";
+import { Chip, StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { Modal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { toneClass, workspaceTone, type Tone } from "../swarm";
+import { workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 import { Time } from "../../shared/ui/time";
 import { SIZES, sizeOf, type Size } from "../settings/workspace-size";
 import { mayWrite } from "./issues";
 import { InferenceKeys, Previews, Secrets, WorkspaceActions, type Spec } from "./hosted-manage";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A hosted workspace, as the platform answers it. */
 interface HostedWorkspace {
@@ -152,26 +154,26 @@ export function useHostedWorkspaces(id: string): HostedWorkspace[] | null {
  * rebuild (UI audit #165). */
 export function HostedWorkspaceList({ project: id, list }: { project: string; list: HostedWorkspace[] }) {
   return (
-    <ul class="platform-list sw-cards sw-grid" data-hosted-workspaces-list>
+    <ul class="platform-list card-grid" data-hosted-workspaces-list>
       {list.map((w) => {
         const to = pathOf({ page: "workspace", project: id, workspace: w.id }, names);
         return (
           <li key={w.id}>
-            <a class={`sw-card ${toneClass(workspaceTone(w.state, w.asked))}`} href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
-              <span class="sw-head">
-                <b class="sw-name">{w.name}</b>
+            <Card as="a" tone={workspaceTone(w.state, w.asked)} href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
+              <span class="card-head">
+                <b class="card-title big">{w.name}</b>
               </span>
-              <span class="sw-id">
+              <span class="card-id">
                 <span title={w.id}>{w.id.slice(0, 11)}</span> ·{" "}
                 {w.machine ? <span title={`Its machine: ${w.machine}`}>machine {shortMachine(w.machine)}</span> : "no machine yet"}
               </span>
               <span class="dim">{said(w)}</span>
               {w.rebuild_needed && (
-                <span class="sw-chip" title="Its spec changed since its box was made" data-hosted-rebuild-chip>
+                <StateChip tone="warn" title="Its spec changed since its box was made" data-hosted-rebuild-chip>
                   Wants a rebuild
-                </span>
+                </StateChip>
               )}
-            </a>
+            </Card>
           </li>
         );
       })}
@@ -409,7 +411,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             <WorkspaceActions p={p} w={w} changed={(v) => v && setW({ ...w, ...v })} />
             {w.machine && w.state === "ready" && (
               <button type="button" class="primary" onClick={() => window.open(machineHref(w.machine ?? "", true), "_blank", "noopener")} data-hosted-agent>
-                + Agent ↗
+                + Agent <ExternalIcon size="xs" />
               </button>
             )}
           </>
@@ -431,7 +433,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
             </p>
             {/* A chip, and what it means as a sentence (UI audit #184). */}
             <p class="hosted-label">
-              <span class="hosted-chip">{HOSTED_LABEL}</span> {HOSTED_MEANS[0].toUpperCase() + HOSTED_MEANS.slice(1)}
+              <Chip kind="tag" class="chip-gap">{HOSTED_LABEL}</Chip> {HOSTED_MEANS[0].toUpperCase() + HOSTED_MEANS.slice(1)}
             </p>
           </>
         }
@@ -440,7 +442,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
       {w.rebuild_needed && (
         <div class="hosted-rebuild" data-hosted-rebuild>
           <p>
-            <span class="sw-chip">Wants a rebuild</span> Its spec changed since its box was made.{" "}
+            <StateChip tone="warn">Wants a rebuild</StateChip> Its spec changed since its box was made.{" "}
             {mayWrite(p) && session.hosted ? "Rebuild it here, or from a terminal" : "An owner or editor rebuilds it, here or from a terminal"}: the
             command checks its repos for unpushed work first, and stops if there is some.
           </p>
@@ -453,10 +455,10 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
           <h2>Panes and agents</h2>
           {w.machine ? (
             <p>
-              Its terminals and agent blocks are live on Control, where your machines are, and everyone in the project sees the same ones.{" "}
+              Its terminals and agent blocks are live on your machines page, and everyone in the project sees the same ones.{" "}
               {ready ? (
                 <a href={machineHref(w.machine)} target="_blank" rel="noopener" data-hosted-open>
-                  Open them ↗
+                  Open them <ExternalIcon size="xs" />
                 </a>
               ) : (
                 <span class="dim" data-hosted-open-later>

@@ -243,6 +243,22 @@ Other flakes red on main on 2026-10-27 and 28, filed while working #1662:
 started), #1674 (the journeys' allow-app step, three journeys). #1525's
 cause was fixed by #1660; #1515's is in its own PR.
 
+## 8. What one released pull request costs
+
+Job minutes for #2177, which shipped in v0.67.0, before the merge queue. One
+push to a pull request took 85, the merge to main 178, and the release 101
+(rare-nightly 56, release.yml 45), shared by the pull requests in it. That's
+364 for a clean run, about an hour of it on our pods and Macs. In the 72 hours
+to 2026-11-04 07:00 UTC the repo spent 57,484 across 181 merges, 318 a merge:
+pull request workflows 49%, check.yml 40%, Windows 7%, the rest 4%. Merge to
+published took 52-73 minutes over the last four releases, of which 36-55 came
+before the tag; release.yml alone takes about 17, with control live at about 7.
+
+To measure again: the jobs API's `filter=all` lists a job a re-run carried over
+a second time with the same timestamps, so dedupe on run, name, start and end,
+or totals run 8% high. Query runs in 6-hour `created` slices, since a filtered
+query stops at 1,000 results.
+
 ## Follow-ups
 
 Labelled `release-health-10-28`, in the order they're worth doing:

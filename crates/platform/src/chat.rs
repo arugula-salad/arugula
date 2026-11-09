@@ -33,7 +33,7 @@ use crate::{
     db::{
         Db,
         chat::NewChatEvent,
-        sessions::{Role, Session},
+        sessions::{AgentSession, Role},
     },
     hub::{Account, Flags},
 };
@@ -81,6 +81,21 @@ pub fn flag_of(flags: &HashMap<String, Flags>, owner: &str, flag: &str) -> Optio
 /// when any team it's in turned it on.
 pub async fn chat_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
     flag_on(app, account, FLAG).await
+}
+
+/// Whether the account itself said its personal machines copy their Docs
+/// up (native #673, `DOC_COPIES`): its own word only, never a team's. It
+/// lets a machine's copies in without chat, and turns nothing else on.
+pub async fn copies_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
+    Ok(copies_word(app, account).await? == Some(true))
+}
+
+/// The account's own word for copies, if it gave one: `false` is a no, which
+/// chat doesn't override.
+pub async fn copies_word(app: &Platform, account: &str) -> anyhow::Result<Option<bool>> {
+    let owner = account_owner(account);
+    let flags = app.cache.flags(&*app.hub, std::slice::from_ref(&owner)).await?;
+    Ok(flag_of(&flags, &owner, arugula_control_wire::DOC_COPIES))
 }
 
 /// Whether the Labs flag `flag` is on for an account, by the rule chat's
@@ -639,7 +654,7 @@ impl Hub {
     /// Session `s` changed (M257): pages showing its card read it again, on
     /// every machine (through `chat_events`). A Try 3's sibling's parent
     /// card shows it in its compare view (M264), so it's told too.
-    pub fn session(&self, db: &Db, s: &Session) {
+    pub fn session(&self, db: &Db, s: &AgentSession) {
         self.publish(db, ChatLive::Session { room: s.room.clone(), ses: s.id.clone() }, None);
         if let (Role::Try, Some(parent)) = (s.role, &s.parent_session) {
             self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);

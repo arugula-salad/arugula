@@ -208,7 +208,7 @@ pub(crate) const READ: &[Kind] = &[
         name: "tracker_fields",
         description: "What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.",
         schema: schema_for_type::<TrackerFieldsArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "checks",

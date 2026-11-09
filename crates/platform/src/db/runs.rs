@@ -564,8 +564,14 @@ impl Db {
         };
         let deploy = match f.deploy {
             None => "",
-            Some(true) => " AND EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
-            Some(false) => " AND NOT EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
+            Some(true) => {
+                " AND (EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)
+                       OR EXISTS (SELECT 1 FROM deploy_plans p WHERE p.run_id = runs.id))"
+            }
+            Some(false) => {
+                " AND NOT EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)
+                  AND NOT EXISTS (SELECT 1 FROM deploy_plans p WHERE p.run_id = runs.id)"
+            }
         };
         c.query_map(
             &format!(
@@ -653,14 +659,19 @@ impl Db {
 
 /// What deleting an account takes from here, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// the runs of projects that went, with their events and artifacts' rows
-/// (their files expire from the bucket, M213), and the account's name on
+/// the runs of projects that went, with their events, artifacts' rows
+/// (their files expire from the bucket, M213) and inbox entries, and the account's name on
 /// the runs that stay. Events keep the daemon that signed them: a
 /// signature names its signer.
 ///
 /// The runs go first: `run_events` refuses a delete while its run is
 /// there.
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
+    // Every member's inbox entries on them go too (M215).
+    c.execute(
+        "DELETE FROM inbox_items WHERE item IN (SELECT id FROM runs WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
     c.execute("DELETE FROM runs WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM run_events WHERE run_id NOT IN (SELECT id FROM runs)", params![])?;
     c.execute("DELETE FROM run_artifacts WHERE run_id NOT IN (SELECT id FROM runs)", params![])?;

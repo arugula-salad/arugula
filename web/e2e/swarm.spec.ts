@@ -72,7 +72,7 @@ test("clusters by project (with fallback groups), machine, kind, session and own
   await expect.poll(() => clusters(page), { timeout: 10_000 }).toEqual(expect.arrayContaining(["api", "web", "infra", "~/scratch", temp]));
   expect(await clusters(page)).not.toContain("none");
   // It says so (#551).
-  await expect(page.locator(".swarm-hint")).toContainText("A pane's project is the git repository it's in");
+  await expect(page.locator(".swarm-hint")).toContainText("A pane's repo is the git repository it's in");
   // Machines, kinds, sessions, owners.
   await page.locator('[data-g="machine"]').click();
   await expect.poll(() => clusters(page)).toEqual(["build-01", "build-02", "workstation"]);

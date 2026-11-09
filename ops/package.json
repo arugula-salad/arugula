@@ -1,0 +1,14 @@
+{
+  "name": "arugula-ops",
+  "private": true,
+  "type": "module",
+  "license": "MIT OR Apache-2.0",
+  "description": "Control (illogical-control) and the platform (arugula-platform) as chant components on Fly (#1983)",
+  "scripts": {
+    "build": "chant build src/fly/control --lexicon fly -o dist/control.fly.json && chant build src/fly/platform --lexicon fly -o dist/platform.fly.json && chant build src/fly/platform-dump --lexicon fly -o dist/platform-dump.fly.json"
+  },
+  "dependencies": {
+    "@intentius/chant": "0.124.70",
+    "@intentius/chant-lexicon-fly": "0.124.70"
+  }
+}

@@ -130,10 +130,25 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
     as_header(base, ("x-test-daemon", "a geek"), method, path, body).await
 }
 
-/// The chant-fly driver's plan for commit `sha` of acme/app to production
-/// (M219: the platform makes it, and checks a plan it's given), with the
-/// settings [`production`] gives it (M220: defaults filled in).
+/// The fake driver's plan for commit `sha` of acme/app to production
+/// (M219: the platform makes it, and checks a plan it's given): what
+/// [`production`] plans.
 fn driver_plan(sha: &str) -> String {
+    let text = arugula_e2e::drivers::plan_text(
+        "fake",
+        "production",
+        "commit",
+        &full(sha),
+        "acme/app",
+        &Default::default(),
+        None,
+    );
+    hex::encode(Sha256::digest(text.as_bytes()))
+}
+
+/// The chant-fly driver's plan for commit `sha` of acme/app to `fly`, with
+/// the settings [`fly`] gives it (M220: defaults filled in).
+fn fly_plan(sha: &str) -> String {
     let settings = [
         ("fly_app", "acme-app"),
         ("chant_env", "github"),
@@ -144,8 +159,7 @@ fn driver_plan(sha: &str) -> String {
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v.to_owned()))
     .collect();
-    let text =
-        arugula_e2e::drivers::plan_text("chant-fly", "production", "commit", &full(sha), "acme/app", &settings, None);
+    let text = arugula_e2e::drivers::plan_text("chant-fly", "fly", "commit", &full(sha), "acme/app", &settings, None);
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
@@ -215,6 +229,28 @@ pub fn signed_until(who: &str, d: &str, op: &str, decision: Decision, expires: u
     signed_with(who, d, op, decision, expires, Some(&Pk { of: who, challenge: None, flags: 0x05 }))
 }
 
+/// `who`'s v3 approval (#1985) of chant-fly deploy `d` (operation hash
+/// `op`): chant's statement for `gate` at `at`, good for an hour, confirmed
+/// with `who`'s passkey: the body the approve route takes.
+pub fn signed_v3(who: &str, d: &str, op: &str, gate: &arugula_e2e::deploy::chant::Gate, at: &str) -> Value {
+    let a = Approval {
+        deploy: d.into(),
+        op: op.into(),
+        account: who.into(),
+        decision: Decision::Once,
+        expires: now_ms() + 3_600_000,
+        by: String::new(),
+        sig: String::new(),
+        v: arugula_e2e::deploy::V3,
+        chant: Some(gate.clone()),
+        at: at.into(),
+    };
+    json!({
+        "op": a.op, "expires": a.expires, "at": a.at,
+        "passkey": assertion(&a.body(), &Pk { of: who, challenge: None, flags: 0x05 }),
+    })
+}
+
 /// The v2 approval's bytes for the route's body, and its assertion by `pk`.
 fn signed_with(who: &str, d: &str, op: &str, decision: Decision, expires: u64, pk: Option<&Pk>) -> Value {
     let a = v2(who, d, op, decision, expires);
@@ -235,6 +271,8 @@ fn v2(who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Approva
         by: String::new(),
         sig: String::new(),
         v: arugula_e2e::deploy::V2,
+        chant: None,
+        at: String::new(),
     }
 }
 
@@ -250,6 +288,8 @@ fn signed_v1(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision
         by: keys.id(),
         sig: String::new(),
         v: arugula_e2e::deploy::V1,
+        chant: None,
+        at: String::new(),
     };
     a.sig = hex::encode(keys.signature(a.body().as_bytes()));
     json!({
@@ -258,15 +298,30 @@ fn signed_v1(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision
     })
 }
 
-/// t's environment `production`, made by a, its owner.
+/// t's environment `production`, made by a, its owner: the fake driver's,
+/// approved with a v2 (a chant-fly deploy plans first, #1985: `fly`).
 async fn production(base: &str, t: &str) -> String {
     let (st, env) = call(
         base,
         "a",
         "POST",
         &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "production", "driver": "fake", "secret_names": ["APP_TOKEN"] })),
+    )
+    .await;
+    assert_eq!(st, 200, "{env}");
+    env["id"].as_str().unwrap().to_owned()
+}
+
+/// t's chant-fly environment `fly`, made by a.
+async fn fly(base: &str, t: &str) -> String {
+    let (st, env) = call(
+        base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
         Some(json!({
-            "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+            "name": "fly", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
             "settings": { "fly_app": "acme-app", "chant_env": "github" },
         })),
     )
@@ -329,12 +384,23 @@ async fn an_owners_passkey_approves_and_the_log_keeps_its_assertion() {
         assert_eq!(st, 400, "{v}");
     }
 
-    // A full commit id only (M220): never a branch or a short id.
+    // chant-fly deploys a full commit id only (M220): never a branch or a
+    // short id. Its plan (M220) says what it does, the plan first (#1985).
+    let fly_env = fly(&base, &t).await;
     for r in ["main", "deadbeef"] {
-        let body = json!({ "environment": env, "source": { "kind": "commit", "ref": r, "where": "acme/app" } });
+        let body = json!({ "environment": fly_env, "source": { "kind": "commit", "ref": r, "where": "acme/app" } });
         let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
         assert_eq!(st, 400, "{r}: {v}");
     }
+    let (st, d) =
+        call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), plan_body(&fly_env, "deadbeef")).await;
+    assert_eq!(st, 200, "{d}");
+    let text = d["plan_text"].as_str().unwrap();
+    assert_eq!(digest(text), fly_plan("deadbeef"), "{text}");
+    assert!(text.contains("chant run release") && text.contains("Fly app acme-app"), "{text}");
+    assert!(text.contains("before anyone approves it") && text.contains("chant plan stale"), "{text}");
+    assert_eq!((d["approval_v"].as_u64(), d["chant"]["state"].as_str()), (Some(3), Some("not_asked")), "{d}");
+    assert_eq!(d["environment"]["settings"]["fly_app"], "acme-app");
 
     let (id, op) = asked(&base, "b", &t, &env, "deadbeef").await;
     let (st, d) = call(&base, "x", "GET", &format!("/api/deploys/{id}"), None).await;
@@ -342,8 +408,7 @@ async fn an_owners_passkey_approves_and_the_log_keeps_its_assertion() {
     // The plan an owner reads (M220) is the one the operation names.
     let text = d["plan_text"].as_str().unwrap();
     assert_eq!(digest(text), driver_plan("deadbeef"), "{text}");
-    assert!(text.contains("chant run release") && text.contains("Fly app acme-app"), "{text}");
-    assert_eq!(d["environment"]["settings"]["fly_app"], "acme-app");
+    assert_eq!((d["approval_v"].as_u64(), &d["chant"]), (Some(2), &Value::Null), "{d}");
     let body = d["operation"]["body"].as_str().unwrap();
     assert!(
         body.starts_with(&format!(
@@ -438,6 +503,39 @@ async fn an_owners_passkey_approves_and_the_log_keeps_its_assertion() {
         call(&base, "a", "POST", &format!("/api/deploys/{id2}/deny"), Some(signed("a", &id2, &op2, Decision::Deny)))
             .await;
     assert_eq!((st, &d["state"], &d["approvals"][0]["decision"]), (200, &json!("denied"), &json!("deny")), "{d}");
+}
+
+/// A viewer's machine is given deploys.plan, since it reads with it
+/// (Arugula #683): its agent reads a deploy, and never plans one.
+#[tokio::test]
+async fn a_viewers_agent_reads_deploys_and_never_plans() {
+    let (hub, app, base, t, _) = seeded().await;
+    hub.daemon("xbox", "x", Some("t"));
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let env = production(&base, &t).await;
+    let path = format!("/api/daemon/projects/{t}/deploys");
+    let (_, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", DEPLOYS_PLAN, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(g["live"], json!(true), "{g}");
+    let (st, d) = geek(&base, "POST", &path, plan_body(&env, "deadbeef")).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+
+    let (st, g) =
+        call(&base, "x", "POST", "/api/grants", give("xbox", DEPLOYS_PLAN, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!((st, &g["limited"]["label"]), (200, &json!("reads only")), "{g}");
+    let xbox = |method: &'static str, path: String, body: Option<Value>| {
+        let base = base.clone();
+        async move { as_header(&base, ("x-test-daemon", "x xbox"), method, &path, body).await }
+    };
+    let (st, d) = xbox("GET", format!("/api/daemon/deploys/{id}"), None).await;
+    assert_eq!((st, &d["id"]), (200, &json!(id)), "a viewer's agent reads: {d}");
+    let (st, v) = xbox("POST", path, plan_body(&env, "deadbeef")).await;
+    assert_eq!(st, 403, "and never plans: {v}");
+    assert!(v["error"].as_str().unwrap().contains("viewer"), "{v}");
 }
 
 /// Agents plan and ask, and never approve or deny: not a's agent on geek,
@@ -1286,7 +1384,7 @@ async fn a_deploy_names_its_environment_by_name_too() {
     let (st, d) =
         geek(&base, "POST", &format!("/api/daemon/projects/{t}/deploys"), plan_body("production", "beef")).await;
     assert_eq!((st, &d["environment"]["id"], &d["agent"]["machine"]), (200, &json!(env), &json!("geek")), "{d}");
-    assert!(d["plan_text"].as_str().unwrap().contains("fly_app acme-app"), "{d}");
+    assert!(d["plan_text"].as_str().unwrap().contains("driver fake"), "{d}");
 }
 
 /// A project's history (`GET /api/projects/{project}/deploys`): every

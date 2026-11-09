@@ -21,6 +21,27 @@
   },
   "approval_v2_body": "arugula deploy approval v2\ndeploy dep_00112233445566778899aabbccddeeff\nop 1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e\naccount acct1\ndecision once\nexpires 1800000000000\n",
   "approval_v2_challenge": "ZTUoJf6aO0XmbMXqYsjWKPkSA4Ase3EJ8oGWzCTFop0",
+  "approval_v3": {
+    "account": "acct1",
+    "at": "2026-11-02T10:05:00.000Z",
+    "by": "",
+    "chant": {
+      "chant": "0.124.68",
+      "gate": "ship",
+      "op": "release",
+      "plan": "jcs1-sha256:abababababababababababababababababababababababababababababababab",
+      "recorded": "2026-11-02T10:00:00.000Z",
+      "run": "run-1"
+    },
+    "decision": "once",
+    "deploy": "dep_00112233445566778899aabbccddeeff",
+    "expires": 1800000000000,
+    "op": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e",
+    "sig": "",
+    "v": 3
+  },
+  "approval_v3_body": "release\nship\n\njcs1-sha256:abababababababababababababababababababababababababababababababab\narugula:acct1\n2026-11-02T10:05:00.000Z\nrelayed-by arugula\nbinding arugula deploy dep_00112233445566778899aabbccddeeff op 1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e expires 1800000000000",
+  "approval_v3_challenge": "HhyZpLnqog7P68R1x2s8sTJwhqtniyrGEeDSNoAnHVg",
   "operation": {
     "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan abababababababababababababababababababababababababababababababab\nsource commit deadbeef\nwhere acme/app\nplanned efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef\n",
     "hash": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e"

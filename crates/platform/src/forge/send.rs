@@ -58,7 +58,7 @@ use super::{
 use crate::{
     Platform,
     auth::{Caller, Machine},
-    db::forge::{DraftRow, MintKind, NewMint, SendEnd},
+    db::forge::{DraftRow, MintKind, NewMint, SendEnd, SentBy},
 };
 
 /// What a machine that asks to send is told.
@@ -137,9 +137,10 @@ fn back_path(back: &str) -> String {
 /// Send `account`'s draft `id` as them, `how`: the one way in, for the
 /// route, the hub's callback and the typed ops (M169's `draft.send`).
 pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<wire::DraftSent, ApiError> {
-    let v = Viewer::of(app, account).await?;
+    // As the hub says now: whether a user token is theirs is decided by it.
+    let mut v = Viewer::now(app, account).await?;
     let (repo_id, author) = app.db.draft_target(id)?.ok_or_else(no_draft)?;
-    let r = readable(app, &v, repo_id).await?.ok_or_else(no_draft)?;
+    let r = readable(app, &mut v, repo_id).await?.ok_or_else(no_draft)?;
     let row = app.db.draft(&r, id)?.ok_or_else(no_draft)?;
     if matches!(how, How::Token(_)) {
         // Written down as it arrives (GitHub minted it, whatever becomes
@@ -189,11 +190,52 @@ pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<w
 
 /// End the send holding `id` since `at`, and the draft as the wire says it.
 async fn end(app: &Platform, id: &str, at: u64, e: SendEnd<'_>) -> Result<wire::ForgeDraft, ApiError> {
-    let row = app.db.end_send(id, at, e, now_ms())?.ok_or_else(|| err(StatusCode::CONFLICT, "another send took it"))?;
+    let by = match &e {
+        SendEnd::Sent(Some(url)) => sent_by(app, id, url).await?,
+        _ => SentBy::default(),
+    };
+    let row =
+        app.db.end_send(id, at, e, &by, now_ms())?.ok_or_else(|| err(StatusCode::CONFLICT, "another send took it"))?;
     // A native issue's (M205): its origin, or its comment's link, and the
     // GitHub comments held for it settled (Arugula #585).
     super::export::ended(app, &row).await;
     Ok(wire_drafts(app, vec![row]).await?.remove(0))
+}
+
+/// For an export whose send named `url`: GitHub's id of the draft's
+/// person, and, when the mirror doesn't have the issue yet, the issue as
+/// GitHub has it (`Db::end_send` checks it's the send's).
+async fn sent_by(app: &Platform, id: &str, url: &str) -> Result<SentBy, ApiError> {
+    let Some((_, author)) = app.db.draft_target(id)? else { return Ok(SentBy::default()) };
+    let github = Viewer::of(app, &author).await.ok().and_then(|v| v.github).map(|g| g.id);
+    let Some((repo, number)) = super::export::issue_at(url) else { return Ok(SentBy { github, issue: None }) };
+    let Some((repo_id, name, installation, mirrored)) = app.db.export_target(id, number)? else {
+        return Ok(SentBy { github, issue: None });
+    };
+    if mirrored || !repo.eq_ignore_ascii_case(&name) {
+        return Ok(SentBy { github, issue: None });
+    }
+    Ok(SentBy { github, issue: Some(read_issue(app, &author, (repo_id, &name, installation), number).await) })
+}
+
+/// Issue `number` of a linked repo as GitHub has it now: its creation time
+/// and author's id, or why not.
+async fn read_issue(
+    app: &Platform,
+    account: &str,
+    (repo_id, name, installation): (u64, &str, u64),
+    number: u64,
+) -> Result<(u64, Option<u64>), String> {
+    let gh = app.github.as_ref().ok_or(super::NO_APP)?;
+    let tokens =
+        super::poller::RepoTokens { p: app, caller: account, purpose: super::Purpose::Read, installation, repo_id };
+    let client = arugula_forge_github::Github::new(&gh.api, app.http.clone(), tokens);
+    let v = client.read(name, &format!("repositories/{repo_id}/issues/{number}")).await.map_err(|e| e.to_string())?;
+    if super::ingest::answer_for(&v, repo_id, name, number) != super::ingest::Answer::Same {
+        return Err(format!("GitHub's answer isn't {name}#{number}"));
+    }
+    let created = super::ingest::ms(&v["created_at"]).ok_or("GitHub's answer has no creation time")?;
+    Ok((created, v["user"]["id"].as_u64()))
 }
 
 /// What a draft's call writes, for the mint's log.
@@ -389,7 +431,8 @@ async fn by_machine(
             }
             OpAnswer::Cant { why } => tried.push(format!("{}: {why}", m.name)),
             OpAnswer::Unknown => tried.push(format!("{}: its Arugula is too old to send drafts", m.name)),
-            OpAnswer::Offline => {}
+            // Only `agents.sessions` answers so (#577): not to a send.
+            OpAnswer::Offline | OpAnswer::Sessions { .. } => {}
         }
     }
     info!(draft = d.id, account, tried = tried.join("; "), "no way to send a draft: it waits");
@@ -409,15 +452,17 @@ pub async fn machine(
     Path(id): Path<String>,
     Json(b): Json<wire::MachineSending>,
 ) -> Result<Json<wire::ForgeDraft>, ApiError> {
-    let v = Viewer::of(&app, &m.account).await?;
+    let mut v = Viewer::now(&app, &m.account).await?;
     let (repo_id, author) = app.db.draft_target(&id)?.ok_or_else(no_draft)?;
-    let r = readable(&app, &v, repo_id).await?.ok_or_else(no_draft)?;
+    let r = readable(&app, &mut v, repo_id).await?.ok_or_else(no_draft)?;
     if author != m.account {
         return Err(err(StatusCode::FORBIDDEN, "it's another person's draft: they send it as themselves"));
     }
     let now = now_ms();
     let draft = match b.step.as_str() {
         "start" => {
+            // Open on GitHub (M205), as a send from the page checks it.
+            super::export::before_send(&app, &app.db.draft(&r, &id)?.ok_or_else(no_draft)?)?;
             let held = app
                 .db
                 .hold_draft(&r, &id, &author, now)?

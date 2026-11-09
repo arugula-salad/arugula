@@ -1,5 +1,60 @@
 {
   "$defs": {
+    "AgentGrantAsk": {
+      "description": "A mention of this machine that its agents can't read the room for (#578).",
+      "properties": {
+        "author": {
+          "description": "Who wrote it, as people read it.",
+          "type": "string"
+        },
+        "line": {
+          "description": "Its first line.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "This machine's id and name, for the card.",
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "scope_id": {
+          "default": "",
+          "type": "string"
+        },
+        "scope_kind": {
+          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, or `account`.",
+          "type": "string"
+        },
+        "scope_name": {
+          "default": "",
+          "description": "The scope's name as its owner reads it (the team's, or \"your DMs\"),\nfor the card to say what the grant reaches. Empty: just the room.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The mention's number in the room.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "seq",
+        "author",
+        "line",
+        "machine",
+        "machine_name",
+        "scope_kind"
+      ],
+      "type": "object"
+    },
     "AgentMention": {
       "description": "A message in a thread for a machine's agents (Arugula #394).",
       "properties": {
@@ -13,6 +68,13 @@
             "string",
             "null"
           ]
+        },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
@@ -30,6 +92,13 @@
           "default": "",
           "description": "What the room is called, for the one reading.",
           "type": "string"
+        },
+        "root_line": {
+          "description": "With a reply (#580): the first line of the thread's root message,\nabout 120 characters at most. The daemon names the thread by it when\nreplies come in together; without it, by the root's number. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "seq": {
           "description": "The message's number in the room.",
@@ -196,6 +265,34 @@
           "properties": {
             "op": {
               "const": "agents.mention",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MachineAgentsAsk",
+          "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
+          "properties": {
+            "op": {
+              "const": "agents.sessions",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentGrantAsk",
+          "description": "A teammate mentioned this machine in a room its agents can't read\n(#578): the daemon raises a card asking its owner to let them. The\ngrant itself is the owner's own act, made over their control session.",
+          "properties": {
+            "op": {
+              "const": "agents.grant_ask",
               "type": "string"
             }
           },
@@ -546,6 +643,96 @@
       ],
       "type": "object"
     },
+    "MachineAgent": {
+      "description": "A session of a machine a teammate's agent may mention (#577).",
+      "properties": {
+        "active_ms_ago": {
+          "description": "How long ago it last printed, in ms; absent when the machine does not\nknow.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What `@machine/name` matches: the session's name, as a slug.",
+          "type": "string"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineAgentState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
+        "tab": {
+          "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_on": {
+          "description": "With the owner's `work`: the issue it was started on (`#540`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "MachineAgentState": {
+      "description": "What a machine's session is doing (#645).",
+      "enum": [
+        "working",
+        "idle",
+        "needs_input"
+      ],
+      "type": "string"
+    },
+    "MachineAgentsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
+      ],
+      "type": "object"
+    },
     "OpAnswer": {
       "description": "How a machine (or control, for it) answered an op.",
       "oneOf": [
@@ -611,6 +798,30 @@
           "required": [
             "answer",
             "why"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.sessions`' answer (#577): the sessions the owner shows,\nnewest first. `shared` is false when the owner shows none.",
+          "properties": {
+            "answer": {
+              "const": "sessions",
+              "type": "string"
+            },
+            "sessions": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/MachineAgent"
+              },
+              "type": "array"
+            },
+            "shared": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "answer",
+            "shared"
           ],
           "type": "object"
         },
@@ -850,6 +1061,10 @@
             "string",
             "null"
           ]
+        },
+        "silenced": {
+          "description": "The session it named is there, but its owner silenced mentions for it\n(#579): the message waits in the inbox. With `asked`.",
+          "type": "boolean"
         },
         "step": {
           "$ref": "#/$defs/RoutedStep"

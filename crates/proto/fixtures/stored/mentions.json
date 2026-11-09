@@ -1,0 +1,32 @@
+{
+  "posted": {
+    "ch_0123456789abcdef": 12
+  },
+  "threads": [
+    {
+      "room": "ch_0123456789abcdef",
+      "root": 40,
+      "pane": 12
+    }
+  ],
+  "names": {
+    "12": "wake"
+  },
+  "unread": [
+    {
+      "room": "ch_0123456789abcdef",
+      "target": "wake",
+      "room_name": "general",
+      "seq": 41,
+      "parent": 40,
+      "author": "Sam (sam)",
+      "text": "@geek/wake can you look at this?",
+      "session": "wake",
+      "from_session": "fix",
+      "root_line": "The build is red",
+      "others": [
+        "fix (Sam's, laptop)"
+      ]
+    }
+  ]
+}

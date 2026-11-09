@@ -26,7 +26,10 @@ use super::{
     taken,
 };
 use anyhow::Result;
-use arugula_control_wire::chat::ChatReader;
+use arugula_control_wire::{
+    chat::ChatReader,
+    sessions::{CARD_VIA, SAID_VIA},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Room {
@@ -54,7 +57,7 @@ pub struct RoomMeta {
     pub dm_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Message {
     pub room: String,
     pub seq: i64,
@@ -261,6 +264,9 @@ pub struct UnreadAsk<'a> {
 }
 
 type Readers = std::collections::HashMap<(String, String, String), Vec<ChatReader>>;
+/// [`Db::chat_reader_rows`]: by (kind, target), the list and its post's
+/// number.
+pub type ReaderRows = std::collections::HashMap<(String, String), (Vec<ChatReader>, Option<u64>)>;
 
 /// The words as an FTS5 query: each a phrase (`"mean"`), or a prefix
 /// (`"mea"*`), so FTS5's syntax is only ever text inside one.
@@ -567,11 +573,26 @@ impl Db {
     /// Append a message: control numbers it, and its author has read it
     /// (unless an agent wrote it: its owner hasn't, M197). Its number.
     pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
+        Ok(self.add_chat_message_and(room, m, |_| Ok(true))?.expect("nothing refuses it"))
+    }
+
+    /// [`Db::add_chat_message`], and `and` in the same transaction: `false`
+    /// rolls it back and the answer is `None` (CI alerts note their event
+    /// with the comment it writes, `ci_alerts`).
+    pub fn add_chat_message_and(
+        &self,
+        room: &str,
+        m: &NewMessage,
+        and: impl FnOnce(&super::sql::Tx<'_, '_>) -> Result<bool>,
+    ) -> Result<Option<i64>> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let seq = add_message_in(&tx, room, m, None)?;
+        if !and(&tx)? {
+            return Ok(None);
+        }
         tx.commit()?;
-        Ok(seq)
+        Ok(Some(seq))
     }
 
     /// A page of a room's messages, oldest first, and whether there are
@@ -1123,6 +1144,59 @@ impl Db {
         Ok(rows.into_iter().collect())
     }
 
+    /// Of these rooms' unread, by room, what wants `account` when the room
+    /// is on an issue assigned to them: its mentions of them, and what
+    /// others wrote. Not their own agents' posts, a session's card, or what
+    /// a session they asked for said: those are their own work reporting.
+    pub fn chat_wanted_in(
+        &self,
+        account: &str,
+        rooms: &[UnreadAsk<'_>],
+    ) -> Result<std::collections::HashMap<String, u64>> {
+        if rooms.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let asks = serde_json::to_string(
+            &rooms
+                .iter()
+                .map(|a| serde_json::json!({"room": a.room, "since": a.read, "floor": a.from}))
+                .collect::<Vec<_>>(),
+        )?;
+        // As `chat_unread_in`.
+        let (want, mentioned) = match c.dialect() {
+            Dialect::Sqlite => (
+                "SELECT json_extract(value, '$.room') AS room, json_extract(value, '$.since') AS since,
+                     json_extract(value, '$.floor') AS floor FROM json_each(?2)",
+                "EXISTS (SELECT 1 FROM json_each(m.mentions) WHERE value = ?1)",
+            ),
+            Dialect::Postgres => (
+                "SELECT * FROM jsonb_to_recordset(CAST(?2 AS jsonb)) AS w(room text, since bigint, floor bigint)",
+                "EXISTS (SELECT 1 FROM jsonb_array_elements_text(m.mentions::jsonb) v WHERE v = ?1)",
+            ),
+        };
+        let rows = c.query_map(
+            &format!(
+                "SELECT w.room, count(m.seq)
+                 FROM ({want}) w
+                 LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
+                     AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
+                     AND (m.via IS NULL OR m.via != 'system')
+                     AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = m.room AND s.seq = m.seq)
+                     AND (m.parent IS NULL OR m.also = TRUE)
+                     AND ({mentioned} OR (
+                         NOT (m.author = ?1 AND m.agent IS NOT NULL)
+                         AND (m.via IS NULL OR m.via NOT LIKE '{CARD_VIA}%')
+                         AND NOT EXISTS (SELECT 1 FROM agent_sessions a WHERE m.via = '{SAID_VIA}' || a.id AND a.asker = ?1)
+                     ))
+                 GROUP BY w.room"
+            ),
+            params![account, asks],
+            |r| Ok((r.get::<String>(0)?, r.get(1)?)),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+
     /// Messages in these rooms that match, newest first: by their words,
     /// or (#107) by a file's name that has all the words.
     pub fn chat_search(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
@@ -1268,12 +1342,70 @@ impl Db {
         readers: &[ChatReader],
         at: u64,
     ) -> Result<()> {
-        self.c().execute(
-            "INSERT INTO chat_readers (machine, kind, target, readers, at) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (machine, kind, target) DO UPDATE SET readers = excluded.readers, at = excluded.at",
-            params![machine, kind, target, serde_json::to_string(readers)?, at],
+        self.put_chat_readers(machine, kind, target, readers, at, None).map(drop)
+    }
+
+    /// [`set_chat_readers`](Self::set_chat_readers), from the machine's
+    /// post numbered `seq` (`None`: a daemon that doesn't number them),
+    /// unless the list there came in a post with a higher number: checked
+    /// in the one statement, so of two posts at once the newer stands.
+    /// Whether it was written.
+    pub fn put_chat_readers(
+        &self,
+        machine: &str,
+        kind: &str,
+        target: &str,
+        readers: &[ChatReader],
+        at: u64,
+        seq: Option<u64>,
+    ) -> Result<bool> {
+        let seq = seq.map(i64::try_from).transpose()?;
+        let n = self.c().execute(
+            "INSERT INTO chat_readers (machine, kind, target, readers, at, seq) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (machine, kind, target)
+             DO UPDATE SET readers = excluded.readers, at = excluded.at, seq = excluded.seq
+             WHERE chat_readers.seq IS NULL OR excluded.seq IS NULL OR excluded.seq >= chat_readers.seq",
+            params![machine, kind, target, serde_json::to_string(readers)?, at, seq],
         )?;
-        Ok(())
+        Ok(n > 0)
+    }
+
+    /// The highest post number of a machine's reader lists, if any has one.
+    pub fn chat_readers_seq(&self, machine: &str) -> Result<Option<u64>> {
+        let n: Option<i64> =
+            self.c()
+                .query_row("SELECT MAX(seq) FROM chat_readers WHERE machine = ?1", params![machine], |r| r.get(0))?;
+        Ok(n.map(|n| n as u64))
+    }
+
+    /// The reader lists a machine has for these targets (by id, of either
+    /// kind), each with the number of the post it came in: by (kind,
+    /// target).
+    pub fn chat_reader_rows(&self, machine: &str, targets: &[&str]) -> Result<ReaderRows> {
+        if targets.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!(
+                "SELECT kind, target, readers, seq FROM chat_readers WHERE machine = ?1 AND {}",
+                in_json(&c, "target", 2)
+            ),
+            params![machine, json_list(targets)?],
+            |r| Ok(((r.get(0)?, r.get(1)?), (r.get::<String>(2)?, r.get::<Option<i64>>(3)?))),
+        )?;
+        rows.into_iter()
+            .map(|(k, (body, seq))| Ok((k, (serde_json::from_str(&body)?, seq.map(|s| s as u64)))))
+            .collect()
+    }
+
+    /// A machine's targets whose reader lists aren't empty: (kind, target).
+    pub fn chat_readers_listed(&self, machine: &str) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT kind, target FROM chat_readers WHERE machine = ?1 AND readers <> '[]'",
+            params![machine],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
     }
 }
 
@@ -1350,6 +1482,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
             "chat_members",
             "chat_reactions",
             "chat_mention_status",
+            "chat_grant_never",
             "chat_saved",
             "chat_files",
             "chat_topics",
@@ -1384,6 +1517,8 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     for m in machines {
         drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
         tx.execute("DELETE FROM chat_readers WHERE machine = ?1", params![m])?;
+        // Its "never for this room" answers (#578).
+        tx.execute("DELETE FROM chat_grant_never WHERE machine = ?1", params![m])?;
     }
     for t in disband {
         drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;
@@ -1605,6 +1740,26 @@ mod tests {
         assert_eq!(db.chat_members("trio").unwrap(), ["b2", "c3"]);
         assert!(db.chat_room("pair").unwrap().is_none());
         assert!(db.chat_room("other").unwrap().is_some());
+    }
+
+    /// A reader list is written only from a post no older than the one it
+    /// came in, checked in the one statement; a list or a post without a
+    /// number always counts.
+    #[test]
+    fn a_reader_list_from_an_older_post_isnt_written() {
+        let db = Db::test();
+        let who = |a: &str| vec![ChatReader { account: a.into(), ..Default::default() }];
+        let list = |db: &Db| db.chat_readers("m", "pane", "1").unwrap().unwrap()[0].account.clone();
+        assert!(db.put_chat_readers("m", "pane", "1", &who("a"), 1, Some(10)).unwrap());
+        assert!(!db.put_chat_readers("m", "pane", "1", &who("b"), 2, Some(9)).unwrap());
+        assert_eq!(list(&db), "a");
+        assert!(db.put_chat_readers("m", "pane", "1", &who("c"), 3, Some(10)).unwrap(), "the same post again");
+        assert!(db.put_chat_readers("m", "pane", "1", &who("d"), 4, None).unwrap(), "an older daemon's");
+        assert!(db.put_chat_readers("m", "pane", "1", &who("e"), 5, Some(3)).unwrap(), "over a list with no number");
+        assert_eq!(list(&db), "e");
+        assert_eq!(db.chat_readers_seq("m").unwrap(), Some(3));
+        assert!(db.put_chat_readers("m", "pane", "1", &[], 6, Some(u64::MAX)).is_err(), "past i64");
+        assert_eq!(db.chat_readers_listed("m").unwrap(), [("pane".to_owned(), "1".to_owned())]);
     }
 
     #[test]

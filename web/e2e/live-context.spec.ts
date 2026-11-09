@@ -76,7 +76,7 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
     // is the estimate at API prices.
     await expect(bar.locator("[data-context]")).toHaveAttribute("data-source", "transcript");
     await expect(bar.locator("[data-fill]")).toHaveAttribute("data-fill", "");
-    await expect(bar.locator("[data-estimate] button")).toContainText("at API prices");
+    await expect(bar.locator("[data-estimate] button")).not.toContainText("at API prices");
     await bar.locator("[data-context] button").click();
     await expect(page.locator("[data-context-source]")).toHaveText("Read from the transcript Claude Code writes, after each reply.");
     await page.keyboard.press("Escape");

@@ -26,9 +26,8 @@
 //! in the routes that call them. The person's role is still the ceiling on
 //! each: a viewer's machine makes nothing.
 //!
-//! **Gating:** the `boards` Labs flag ([`FLAG`], resolved as chat's is).
-//! With it off for the account, every route here answers 404, as if boards
-//! weren't there.
+//! Boards are on for everyone: they left Labs (#191), and the old `boards`
+//! flag is read by nothing here.
 //!
 //! **Lanes** (aru-125): a board is rows, a row is one piece of work, and
 //! nobody sets its lane. A read answers the board as four synthetic zones
@@ -64,6 +63,20 @@
 //! what aru-116 allows ([`wire::BlockState`]). A report pushes an object
 //! change for the boards whose rows or attachments point at the block.
 //!
+//! **Whose blocks:** an agent attaches only its own machine's blocks; a
+//! person, only a block on a machine control routes them to (the hub's
+//! `may_reach`, asked on every attach, and refused while the hub can't
+//! say). A read shows a block's state, and its machine's id, as a machine
+//! Doc names its machine ([`docs`]): one its own machine's agent attached
+//! while that machine writes the project, and any to a reader who may reach
+//! its machine. To anyone else the chip is a plain agent block, so an
+//! attachment made before the check says nothing to those it doesn't
+//! concern. That is a label: it waits on the hub [`LABEL_WAIT`] at most,
+//! and on an error shows less and goes on; a read asks once for its Docs
+//! and blocks together. A row's lane comes from its blocks whoever reads,
+//! as from an item the reader can't read, but its stalled mark only from
+//! the blocks the reader is told: one they aren't told never stalls it.
+//!
 //! **Work** ([`work`]): a project's issues, PRs and runs, for a row to point
 //! at, and the open issues that no board of the project has a row for.
 //!
@@ -73,7 +86,11 @@
 //!
 //! [`db::boards`]: crate::db::boards
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::{boards as wire, chat::ChatAgent};
@@ -82,13 +99,13 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 
 use crate::db::boards_docs as db_docs;
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat::flag_on,
     db::{
         boards::{self as db, Put, Refused},
         forge::{CheckState, ForgeItem},
@@ -118,18 +135,53 @@ pub mod lanes;
 pub mod refs;
 pub mod relations;
 pub mod resolve;
+pub mod steps;
 pub mod work;
 
-/// The Labs flag boards are behind.
-pub const FLAG: &str = "boards";
 /// The reason a refusal gives for a write made on a stale rev.
 pub const STALE_REV: &str = "stale_rev";
+/// The reason a move gives when the group's rows are not in the order it read.
+pub const STALE_ORDER: &str = "stale_order";
+
+/// A move that wasn't made: refused as any change is, or its group's rows
+/// are in another order than the move read, which answers 409 `stale_order`
+/// with the rows as they are ([`wire::StaleOrder`]).
+pub enum Unmoved {
+    Refused(ApiError),
+    Order(Vec<String>),
+}
+
+impl From<ApiError> for Unmoved {
+    fn from(e: ApiError) -> Self {
+        Unmoved::Refused(e)
+    }
+}
+
+const ORDER_MOVED: &str = "someone moved these rows first: read the board again";
+
+impl From<Unmoved> for ApiError {
+    fn from(u: Unmoved) -> Self {
+        match u {
+            Unmoved::Refused(e) => e,
+            Unmoved::Order(_) => refusal(StatusCode::CONFLICT, STALE_ORDER, ORDER_MOVED),
+        }
+    }
+}
+
+impl IntoResponse for Unmoved {
+    fn into_response(self) -> Response {
+        match self {
+            Unmoved::Refused(e) => e.into_response(),
+            Unmoved::Order(rows) => (
+                StatusCode::CONFLICT,
+                Json(wire::StaleOrder { error: ORDER_MOVED.to_owned(), reason: STALE_ORDER.to_owned(), rows }),
+            )
+                .into_response(),
+        }
+    }
+}
 
 type J<T> = Result<Json<T>, ApiError>;
-
-fn nothing() -> ApiError {
-    err(StatusCode::NOT_FOUND, "not found")
-}
 
 fn no_project() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such project")
@@ -143,20 +195,13 @@ fn bad(msg: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, msg)
 }
 
-/// 404 unless boards are on for `account`. Plane connections (Arugula
-/// #356) are behind the same flag: issues on boards are Labs.
-pub(crate) async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
-    if flag_on(app, account, FLAG).await? { Ok(()) } else { Err(nothing()) }
-}
-
 /// The project `asked` names (its id, or [`PERSONAL`]) as `account` sees
-/// it: 404 for a stranger or when boards are off; with `write`, 403 for a
+/// it: 404 for a stranger; with `write`, 403 for a
 /// viewer, and the team's roster comes from the hub, not the cache. An
 /// agent also needs its machine's grant over the project (`boards.read`, or
 /// `boards.write` to change; a write reads too).
 async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<String, ApiError> {
     let account = by.account;
-    gate(app, account).await?;
     let id = if asked == PERSONAL {
         crate::projects::personal_project(app, account).await?.ok_or_else(no_project)?
     } else {
@@ -192,7 +237,6 @@ async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Resul
 /// A board by its id as `account` sees it: 404 unless they may read it
 /// (or, with `write`, change it).
 async fn board_place(app: &Platform, by: Actor<'_>, id: &str, write: bool) -> Result<wire::Board, ApiError> {
-    gate(app, by.account).await?;
     let board = app.db.board(id)?.ok_or_else(no_board)?;
     match place(app, by, &board.project, write).await {
         Err(e) if e.0 == StatusCode::NOT_FOUND => Err(no_board()),
@@ -206,6 +250,7 @@ fn refused(r: Refused) -> ApiError {
         Refused::Stale { rev } => {
             refusal(StatusCode::CONFLICT, STALE_REV, &format!("this entry is at rev {rev} now: read the board again"))
         }
+        Refused::Order { .. } => refusal(StatusCode::CONFLICT, STALE_ORDER, ORDER_MOVED),
         Refused::Bad(why) => err(StatusCode::BAD_REQUEST, &why),
         Refused::Forbidden(why) => err(StatusCode::FORBIDDEN, &why),
         Refused::Conflict(why) => err(StatusCode::CONFLICT, &why),
@@ -299,6 +344,52 @@ fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     }
 }
 
+/// A block pointer as `by` may attach it: an agent attaches only a block on
+/// its own machine, a person only one on a machine they may reach (asked of
+/// the hub each time, so a machine just joined or shared counts; an error
+/// refuses).
+async fn block_ok(app: &Platform, by: Actor<'_>, machine: &str) -> Result<(), ApiError> {
+    match by.agent {
+        Some(own) if own != machine => {
+            Err(err(StatusCode::FORBIDDEN, "an agent attaches only blocks on its own machine"))
+        }
+        Some(_) => Ok(()),
+        None => {
+            let asked = [machine.to_owned()];
+            if app.cache.may_reach(&*app.hub, by.account, &asked).await?.contains(machine) {
+                Ok(())
+            } else {
+                Err(err(StatusCode::FORBIDDEN, "a person attaches only blocks on a machine they can reach"))
+            }
+        }
+    }
+}
+
+/// The most a read waits on the hub to say which machines its reader may
+/// reach, for what it shows them.
+const LABEL_WAIT: Duration = Duration::from_secs(2);
+
+/// Of `machines`, those `account` may reach, for what a read shows them, not
+/// a check: [`crate::cache::Cache::may_reach_label`] within [`LABEL_WAIT`].
+/// An error or a longer wait is none, with a warning, so the read shows
+/// less rather than failing. `what` says what it was for, in the warning.
+async fn reach_label(app: &Platform, account: &str, machines: &[String], what: &str) -> HashSet<String> {
+    if machines.is_empty() {
+        return HashSet::new();
+    }
+    match tokio::time::timeout(LABEL_WAIT, app.cache.may_reach_label(&*app.hub, account, machines)).await {
+        Ok(Ok(reach)) => reach,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "boards: asking whom the hub routes to {what}: showing less");
+            HashSet::new()
+        }
+        Err(_) => {
+            tracing::warn!("boards: the hub took over {LABEL_WAIT:?} to say whom it routes to {what}: showing less");
+            HashSet::new()
+        }
+    }
+}
+
 /// A link pointer's URL: `https://` and a host, at most
 /// [`wire::LINK_MAX`] bytes, no userinfo, no whitespace or control
 /// characters.
@@ -321,13 +412,15 @@ fn link_ok(url: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Name the machine on each board that an agent made or closed.
+/// Name the machine on each board that an agent made or closed, or whose
+/// lead runs there.
 async fn name_boards(app: &Platform, boards: &mut [wire::Board]) -> Result<(), ApiError> {
     let mut machines: Vec<String> = boards
         .iter()
         .flat_map(|b| [&b.created_by_agent, &b.closed_by_agent])
         .flatten()
         .map(|a| a.machine.clone())
+        .chain(boards.iter().filter_map(|b| b.lead.as_ref()).map(|l| l.machine.clone()))
         .collect();
     machines.sort();
     machines.dedup();
@@ -337,6 +430,9 @@ async fn name_boards(app: &Platform, boards: &mut [wire::Board]) -> Result<(), A
     let names = agent_names(app, &machines).await?;
     for a in boards.iter_mut().flat_map(|b| [&mut b.created_by_agent, &mut b.closed_by_agent]).flatten() {
         a.machine_name = names.get(&a.machine).map(|d| d.name.clone()).unwrap_or_default();
+    }
+    for l in boards.iter_mut().filter_map(|b| b.lead.as_mut()) {
+        l.machine_name = names.get(&l.machine).map(|d| d.name.clone()).unwrap_or_default();
     }
     Ok(())
 }
@@ -463,16 +559,21 @@ fn live_run(run: &Run) -> wire::Live {
 }
 
 /// Whether `machine` holds a live `boards.write` grant over `project`, one
-/// its owner may still give ([`agent_may`]).
-async fn machine_writes(app: &Platform, machine: &str, project: &str) -> bool {
-    let Ok(grants) = app.db.machine_write_projects(machine, BOARDS_WRITE) else { return false };
+/// its owner may still give ([`agent_may`]). An error is a lookup that
+/// failed, not a refusal: the caller can't tell, and mustn't act as if the
+/// grant were gone (Arugula #745).
+async fn machine_writes(app: &Platform, machine: &str, project: &str) -> Result<bool, ApiError> {
+    let grants = app.db.machine_write_projects(machine, BOARDS_WRITE)?;
     for (scope, owner) in grants.into_iter().filter(|(p, _)| p == project) {
         let m = Machine { account: owner, daemon: machine.to_owned() };
-        if agent_may(app, &m, BOARDS_WRITE, &AgentScope::Project(scope)).await.is_ok() {
-            return true;
+        match agent_may(app, &m, BOARDS_WRITE, &AgentScope::Project(scope)).await {
+            Ok(_) => return Ok(true),
+            // Refused: not this grant.
+            Err(e) if e.0.is_client_error() => {}
+            Err(e) => return Err(e),
         }
     }
-    false
+    Ok(false)
 }
 
 /// Each of `ids` the reader may see, as a chip says it: items of the
@@ -488,8 +589,8 @@ async fn chips(
     let mut live: HashMap<String, wire::Live> = HashMap::new();
     if !ids.items.is_empty() {
         let repos = app.db.linked_repos(project)?;
-        let viewer = Viewer::of(app, account).await?;
-        let checked = viewer::check(app, &viewer, &repos).await?;
+        let mut viewer = Viewer::of(app, account).await?;
+        let checked = viewer::check(app, &mut viewer, &repos).await?;
         let found: Vec<&str> = ids.items.iter().map(String::as_str).collect();
         // A Plane item is read through the connections of the project it's on a board of.
         let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
@@ -619,8 +720,11 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
             f.by_id.insert(id.clone(), Fact::Run { running: run.state == RunState::Running });
         }
     }
-    for (k, b) in &blocks.state {
-        f.blocks.insert(k.clone(), Fact::Block { closed: b.state == wire::BlockWord::Closed });
+    // A stale report is unknown: the block moves no lane. One whose machine
+    // left is released: closed.
+    for (k, b) in blocks.state.iter().filter(|(k, _)| !blocks.stale.contains(*k)) {
+        let closed = b.state == wire::BlockWord::Closed || blocks.gone.contains(k);
+        f.blocks.insert(k.clone(), Fact::Block { closed });
     }
     Ok(f)
 }
@@ -682,19 +786,38 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
     Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed, cancelled }
 }
 
+/// How far a row's derived lane can be trusted, from its blocks' reports
+/// (Arugula #745).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Doubt {
+    Sure,
+    /// A block of it is stale: the lane follows the rest of the work for
+    /// now, and a fresh report may bring the block back.
+    Stale,
+    /// A block of it is on a machine whose grant couldn't be looked up: the
+    /// lane may be wrong.
+    Unsure,
+}
+
 /// The lane a row shows, and the override behind it (#494). A person's lane
 /// holds only while the work still derives the lane it did when they set it:
-/// once that changes, the row goes back to following the work.
-fn shown(derived: wire::Lane, set: Option<&db::LaneSet>) -> (wire::Lane, Option<&db::LaneSet>) {
-    match set.filter(|s| s.holds(derived)) {
+/// once that changes, the row goes back to following the work. While a
+/// block of the row couldn't be looked up, it holds as it is.
+fn shown(derived: wire::Lane, set: Option<&db::LaneSet>, doubt: Doubt) -> (wire::Lane, Option<&db::LaneSet>) {
+    match set.filter(|s| doubt == Doubt::Unsure || s.holds(derived)) {
         Some(s) => (s.lane, Some(s)),
         None => (derived, None),
     }
 }
 
 /// Drop the override of `row` that `derived` has outgrown, so it can't come
-/// back if the work returns to the lane it was set in.
-fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set: Option<&db::LaneSet>) {
+/// back if the work returns to the lane it was set in. Not while a block of
+/// the row is stale or couldn't be looked up: `derived` may change back
+/// without the work changing.
+fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set: Option<&db::LaneSet>, doubt: Doubt) {
+    if doubt != Doubt::Sure {
+        return;
+    }
     let Some(set) = set.filter(|s| !s.holds(derived)) else { return };
     if let Err(e) = app.db.clear_stale_lane(board, row, set.at) {
         tracing::warn!(error = %e, "boards: clearing a lane that was set by hand");
@@ -747,12 +870,14 @@ fn is_earlier(a: &db::Attached, facts: &Facts) -> bool {
 }
 
 /// When the row stalled (see [`lanes::stalled`]), from the blocks as they
-/// reported and `minutes`, the project's setting.
+/// reported and `minutes`, the project's setting. Only blocks the reader is
+/// told count as idle ([`Shown`]), so a block they aren't told holds no
+/// stall up to them, and its idle time says nothing.
 fn stall_of(
     attachments: &[&db::Attached],
     lane: wire::Lane,
     facts: &Facts,
-    blocks: &Blocks,
+    told: &Shown<'_>,
     now: u64,
     minutes: u32,
 ) -> Option<u64> {
@@ -762,7 +887,7 @@ fn stall_of(
         .filter(|a| a.released_at.is_none())
         .filter(|a| matches!(facts.of(&a.pointer), Some(Fact::Block { closed: false })))
         .map(|a| match &a.pointer {
-            wire::Pointer::Block { machine, pane } => blocks.idle_since(machine, pane),
+            wire::Pointer::Block { machine, pane } => told.idle_since(machine, pane, a.agent.as_deref()),
             _ => None,
         })
         .collect();
@@ -776,9 +901,40 @@ struct Blocks {
     state: HashMap<(String, String), wire::BlockState>,
     /// The account of the machine that reported the block: its owner.
     owner: HashMap<(String, String), String>,
+    /// The machines that hold `boards.write` over the project now.
+    writing: HashSet<String>,
+    /// Reports older than [`wire::BLOCK_STATE_STALE_MS`] from a machine that
+    /// sends again, and not of a close: shown, but unknown to lanes and
+    /// claims (Arugula #745).
+    stale: HashSet<(String, String)>,
+    /// Machines whose grant couldn't be looked up: what they reported isn't
+    /// here, and isn't known to be gone.
+    unsure: HashSet<String>,
+    /// Stale blocks whose machine left control: released, so a lane reads
+    /// them as closed and no doubt holds the row.
+    gone: HashSet<(String, String)>,
 }
 
 impl Blocks {
+    /// How far the lane of a row with `attached` can be trusted: only the
+    /// blocks that are work on it and weren't taken over count.
+    fn doubt(&self, attached: &[Attach<'_>]) -> Doubt {
+        let mut doubt = Doubt::Sure;
+        for (role, p, released) in attached {
+            let wire::Pointer::Block { machine, pane } = p else { continue };
+            if *role != wire::AttachRole::Work || *released {
+                continue;
+            }
+            if self.unsure.contains(machine) {
+                return Doubt::Unsure;
+            }
+            if self.stale.contains(&(machine.clone(), pane.clone())) {
+                doubt = Doubt::Stale;
+            }
+        }
+        doubt
+    }
+
     fn idle_since(&self, machine: &str, pane: &str) -> Option<u64> {
         let b = self.state.get(&(machine.to_owned(), pane.to_owned()))?;
         (b.state == wire::BlockWord::Idle).then_some(b.since).flatten()
@@ -786,6 +942,68 @@ impl Blocks {
 
     fn owned_by(&self, machine: &str, pane: &str, account: &str) -> bool {
         self.owner.get(&(machine.to_owned(), pane.to_owned())).is_some_and(|o| o == account)
+    }
+}
+
+/// Which blocks a read shows its reader (the module's top says which): those
+/// on a machine the reader may reach, and those its own machine's agent
+/// attached while that machine writes the project.
+struct Shown<'a> {
+    blocks: &'a Blocks,
+    reach: HashSet<String>,
+}
+
+impl<'a> Shown<'a> {
+    /// The machines of the blocks `pointers` point at, each with the machine
+    /// whose agent attached it (none: a person), that a read asks the hub
+    /// about: those the attachment doesn't settle.
+    fn to_ask<'p>(
+        blocks: &Blocks,
+        pointers: impl Iterator<Item = (&'p wire::Pointer, Option<&'p str>)>,
+    ) -> Vec<&'p str> {
+        pointers
+            .filter_map(|(p, by)| match p {
+                wire::Pointer::Block { machine, .. } if !Self::own(blocks, machine, by) => Some(machine.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Its own machine's agent attached it, and the machine writes the
+    /// project.
+    fn own(blocks: &Blocks, machine: &str, by: Option<&str>) -> bool {
+        by == Some(machine) && blocks.writing.contains(machine)
+    }
+
+    fn shows(&self, machine: &str, by: Option<&str>) -> bool {
+        Self::own(self.blocks, machine, by) || self.reach.contains(machine)
+    }
+
+    /// The block's state as this reader is told it: none when they aren't.
+    fn state(&self, p: &wire::Pointer, by: Option<&str>) -> Option<wire::BlockState> {
+        match p {
+            wire::Pointer::Block { machine, pane } if self.shows(machine, by) => {
+                self.blocks.state.get(&(machine.clone(), pane.clone())).cloned()
+            }
+            _ => None,
+        }
+    }
+
+    /// Since when the block has been idle, as this reader is told it: none
+    /// (not idle, so no stall) when they aren't told the block.
+    fn idle_since(&self, machine: &str, pane: &str, by: Option<&str>) -> Option<u64> {
+        if self.shows(machine, by) { self.blocks.idle_since(machine, pane) } else { None }
+    }
+
+    /// The pointer as this reader is told it: a block's machine blanked when
+    /// they aren't told the block.
+    fn pointer(&self, p: &wire::Pointer, by: Option<&str>) -> wire::Pointer {
+        match p {
+            wire::Pointer::Block { machine, pane } if !self.shows(machine, by) => {
+                wire::Pointer::Block { machine: String::new(), pane: pane.clone() }
+            }
+            p => p.clone(),
+        }
     }
 }
 
@@ -798,16 +1016,56 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
         by_machine.entry(machine).or_default().push(pane);
     }
     let mut found = Blocks::default();
+    let now = now_ms();
     for (machine, panes) in by_machine {
-        if !machine_writes(app, machine, project).await {
-            continue;
+        match machine_writes(app, machine, project).await {
+            Ok(true) => {
+                found.writing.insert(machine.to_owned());
+            }
+            Ok(false) => continue,
+            Err(e) => {
+                tracing::warn!(machine, error = %e.1, "boards: looking up a machine's grant");
+                found.unsure.insert(machine.to_owned());
+                continue;
+            }
         }
-        for (pane, state, owner) in app.db.block_states(machine, &panes)? {
-            found.owner.insert((machine.to_owned(), pane.clone()), owner);
-            found.state.insert((machine.to_owned(), pane), state);
+        for r in app.db.block_states(machine, &panes)? {
+            let stale = r.stale(now);
+            let key = (machine.to_owned(), r.pane);
+            if stale {
+                found.stale.insert(key.clone());
+            }
+            found.owner.insert(key.clone(), r.owner);
+            found.state.insert(key, r.state);
         }
     }
+    release_gone(app, &mut found).await;
     Ok(found)
+}
+
+/// Move the stale blocks of machines that left control to `gone`: nothing
+/// will be heard from them again, so a row isn't left in doubt. A machine's
+/// grants go when it leaves, which hides its reports anyway; this covers
+/// the time before control has read that. On an error they stay stale.
+async fn release_gone(app: &Platform, found: &mut Blocks) {
+    let mut machines: Vec<String> = found.stale.iter().map(|(m, _)| m.clone()).collect();
+    if machines.is_empty() {
+        return;
+    }
+    machines.sort();
+    machines.dedup();
+    let joined = match agent_names(app, &machines).await {
+        Ok(joined) => joined,
+        Err(e) => {
+            tracing::warn!(error = %e, "boards: asking which machines are still in control");
+            return;
+        }
+    };
+    let gone: Vec<_> = found.stale.iter().filter(|(m, _)| !joined.contains_key(m)).cloned().collect();
+    for k in gone {
+        found.stale.remove(&k);
+        found.gone.insert(k);
+    }
 }
 
 /// Fill each board's progress: its rows with an issue or a PR as their item,
@@ -835,8 +1093,9 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
                 .filter_map(|a| a.role.map(|r| (r, &a.pointer, false)))
                 .collect();
             let a = assess(&t.pointer, &attached, &facts);
-            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref());
-            let (lane, _) = shown(a.lane, t.lane_set.as_ref());
+            let doubt = blocks.doubt(&attached);
+            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref(), doubt);
+            let (lane, _) = shown(a.lane, t.lane_set.as_ref(), doubt);
             b.progress.total += 1;
             b.progress.done += u32::from(lane == wire::Lane::Done);
             b.progress.review += u32::from(lane == wire::Lane::Review);
@@ -884,18 +1143,36 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let blocks = block_states(app, &project, &ids.blocks).await?;
     let facts = facts(app, &project, &ids, &blocks)?;
     let (now, minutes) = (now_ms(), app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)?);
-    let chip = |p: &wire::Pointer| -> (Option<wire::Live>, Option<wire::BlockState>) {
+    // One label call for the board: the machines of its Docs and blocks
+    // that the reader is told of only if they may reach them.
+    let pointers = stored
+        .rows
+        .iter()
+        .map(|r| (&r.pointer, r.agent.as_deref()))
+        .chain(stored.attachments.iter().map(|a| (&a.pointer, a.agent.as_deref())));
+    let mut ask: Vec<String> =
+        docs::to_ask(&strip).chain(Shown::to_ask(&blocks, pointers)).map(str::to_owned).collect();
+    ask.sort();
+    ask.dedup();
+    let reach = reach_label(app, account, &ask, "a machine on a board").await;
+    let named = docs::named(app, &project, &strip, reach.clone()).await;
+    let told = Shown { blocks: &blocks, reach };
+    // `by`: the machine whose agent put the pointer there, none for a person.
+    let chip = |p: &wire::Pointer, by: Option<&str>| -> (Option<wire::Live>, Option<wire::BlockState>) {
         match p {
             wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } | wire::Pointer::Run { id } => {
                 (live.get(id).cloned(), None)
             }
-            wire::Pointer::Block { machine, pane } => {
-                (None, blocks.state.get(&(machine.clone(), pane.clone())).cloned())
-            }
+            wire::Pointer::Block { .. } => (None, told.state(p, by)),
             _ => (None, None),
         }
     };
     let asks = asks::Asks::load(app, account, &project, id).await?;
+    let copies = if strip.iter().any(|d| matches!(d.pointer, wire::Pointer::MachineDoc { .. })) {
+        docs::copies_in(app, &stored.board.project)?
+    } else {
+        Default::default()
+    };
     let mut row_docs: HashMap<String, Vec<db_docs::Strip>> = HashMap::new();
     let mut strip_only = vec![];
     for d in strip {
@@ -904,9 +1181,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             None => strip_only.push(d),
         }
     }
-    let mut zones: Vec<wire::Zone> = wire::Lane::ALL
+    let mut zones: Vec<wire::LaneView> = wire::Lane::ALL
         .iter()
-        .map(|l| wire::Zone {
+        .map(|l| wire::LaneView {
             id: l.id().to_owned(),
             rev: 0,
             title: l.title().to_owned(),
@@ -914,6 +1191,16 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rows: vec![],
         })
         .collect();
+    let elsewhere = elsewhere_of(app, &project, id, &others)?;
+    let at_item: HashMap<&str, usize> =
+        stored.rows.iter().enumerate().filter_map(|(i, r)| item_id(&r.pointer).map(|x| (x, i))).collect();
+    // For each row, in order: where it sits in `zones`, and what its steps
+    // are worked out from.
+    let mut placed: Vec<((usize, usize), steps::Node)> = vec![];
+    // The same rows for `place`: every row with an item counts, and its
+    // edges count whether the other end is open or closed.
+    let mut closed: Vec<steps::Node> = vec![];
+    let mut prs: HashMap<(Option<String>, u64), usize> = HashMap::new();
     let mut ready: Vec<String> = vec![];
     let mut groups: Vec<wire::Group> = stored
         .groups
@@ -924,28 +1211,54 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let mut a = assess(&e.pointer, &attached, &facts);
-        let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
-        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref());
-        let (lane, set) = shown(a.lane, e.lane_set.as_ref());
+        let stalled = stall_of(&mine, a.lane, &facts, &told, now, minutes);
+        let doubt = blocks.doubt(&attached);
+        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), doubt);
+        let (lane, set) = shown(a.lane, e.lane_set.as_ref(), doubt);
         a.lane = lane;
-        let (row_live, row_block) = chip(&e.pointer);
+        let (row_live, row_block) = chip(&e.pointer, e.agent.as_deref());
         // The attachments of a replaced agent come last.
         let mut ordered = mine.clone();
         ordered.sort_by_key(|a| is_earlier(a, &facts));
         let (relations, blocked) = match item_id(&e.pointer) {
-            Some(item) => edges.of(item, &facts, &live),
+            Some(item) => edges.of(item, &facts, &live, &elsewhere),
             None => (vec![], vec![]),
         };
+        let mut node = steps::Node {
+            open: item_id(&e.pointer).is_some() && a.lane != wire::Lane::Done,
+            started: matches!(a.lane, wire::Lane::Doing | wire::Lane::Review),
+            ..Default::default()
+        };
+        let mut whole = steps::Node { open: item_id(&e.pointer).is_some(), ..Default::default() };
+        if let Some(item) = item_id(&e.pointer) {
+            for other in edges.before(item, &facts) {
+                match at_item.get(other) {
+                    Some(&j) => node.before.push(j),
+                    None => node.off = true,
+                }
+            }
+            whole.before = edges.before_any(item).into_iter().filter_map(|o| at_item.get(o).copied()).collect();
+        }
+        closed.push(whole);
+        let work = mine.iter().filter(|a| a.role == wire::AttachRole::Work).map(|a| &a.pointer);
+        for p in std::iter::once(&e.pointer).chain(work) {
+            if let (wire::Pointer::ForgeItem { .. }, Some(l)) = (p, chip(p, None).0) {
+                prs.entry((l.repo, l.number)).or_insert(placed.len());
+            }
+        }
         if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
             ready.push(e.id.clone());
         }
-        let marks = marks_of(&a, stalled, &e.pointer, &mine, &facts, blocked, &|p| chip(p).0.and_then(|l| l.repo));
+        let marks =
+            marks_of(&a, stalled, &e.pointer, &mine, &facts, blocked, &|p| chip(p, None).0.and_then(|l| l.repo));
         let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {
-                let (live, block) = chip(&a.pointer);
+                let by = a.agent.as_deref();
+                let (live, block) = chip(&a.pointer, by);
                 let released = a.released_at.is_some();
-                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released }
+                let pointer = told.pointer(&a.pointer, by);
+                wire::Attachment { id: a.id.clone(), role: a.role, pointer, live, block, released }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
@@ -956,6 +1269,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             g.progress.proven += u32::from(a.proof.is_some());
         }
         let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
+        placed.push(((at, zones[at].rows.len()), node));
         // Needs you, when the reader owns a block that stalled the row.
         let stalled_yours =
             stalled.zip(mine.iter().filter(|a| a.role == wire::AttachRole::Work && a.released_at.is_none()).find_map(
@@ -973,23 +1287,22 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         zones[at].rows.push(wire::Row {
             id: e.id.clone(),
             rev: e.rev,
-            pointer: e.pointer.clone(),
+            pointer: told.pointer(&e.pointer, e.agent.as_deref()),
             note: e.note.clone(),
-            status: match (&ask, e.status) {
-                (Some(_), _) => wire::Status::NeedsInput,
-                (None, wire::Status::NeedsInput) => wire::Status::None,
-                (None, s) => s,
-            },
+            // What old rows kept from before lanes doesn't reach clients.
+            status: if ask.is_some() { wire::Status::NeedsInput } else { wire::Status::None },
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
-            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names),
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &named, &copies),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
             ask,
             asked,
             relations,
+            step: None,
+            place: None,
             live: row_live,
             block: row_block,
             agent: e.agent.clone().map(|m| ChatAgent {
@@ -1001,7 +1314,58 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names), ready, said: None })
+    // A PR stacked on another waits for it, so its row comes after the row
+    // that holds the lower PR.
+    for (i, ((z, k), node)) in placed.iter_mut().enumerate() {
+        let after = zones[*z].rows[*k].marks.iter().find_map(|m| match m {
+            wire::Mark::After { number, repo } => Some((repo.clone(), *number)),
+            _ => None,
+        });
+        let below = after.and_then(|key| prs.get(&key).copied()).filter(|&j| j != i);
+        node.before.extend(below);
+        closed[i].before.extend(below);
+    }
+    let nodes: Vec<steps::Node> = placed.iter().map(|(_, n)| n.clone()).collect();
+    let found = steps::work_out(&nodes);
+    let laid = steps::work_out(&closed);
+    for (i, ((z, k), _)) in placed.iter().enumerate() {
+        let row = &mut zones[*z].rows[*k];
+        row.step = found.step[i];
+        row.place = laid.step[i];
+        if found.cycle[i] {
+            row.marks.push(wire::Mark::Cycle);
+        }
+    }
+    let row_id = |i: &usize| stored.rows[*i].id.clone();
+    let (sequence, chain) = (found.sequence.iter().map(row_id).collect(), found.chain.iter().map(row_id).collect());
+    let order = stored.rows.iter().map(|r| r.id.clone()).collect();
+    let docs = docs::view(strip_only, &names, &named, &copies);
+    Ok(wire::BoardView { board, zones, groups, docs, ready, sequence, chain, order, said: None })
+}
+
+/// For each of these items (the other ends of a board's edges) that a row
+/// of another board of `project` points at, that board's title and lead.
+fn elsewhere_of(
+    app: &Platform,
+    project: &str,
+    board: &str,
+    others: &[wire::Pointer],
+) -> Result<HashMap<String, relations::Elsewhere>, ApiError> {
+    let held = app.db.boards_holding(project, &others.iter().filter_map(item_id).collect::<Vec<_>>())?;
+    let mut out = HashMap::new();
+    if held.iter().all(|(_, b)| b == board) {
+        return Ok(out);
+    }
+    let boards = app.db.boards(project)?;
+    for (item, b) in held.into_iter().filter(|(_, b)| b != board) {
+        if let (false, Some(b)) = (out.contains_key(&item), boards.iter().find(|x| x.id == b)) {
+            out.insert(
+                item,
+                relations::Elsewhere { board: b.title.clone(), lead: b.lead.as_ref().map(|l| l.session.clone()) },
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -1079,9 +1443,49 @@ pub async fn create(
     let goal = new.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?.unwrap_or("");
     let board = app
         .db
-        .create_board(&id, title, goal, by, now_ms(), wire::BOARDS_MAX)?
+        .create_board(&id, title, goal, by, session_ok(new.lead_session.as_deref())?, now_ms(), wire::BOARDS_MAX)?
         .ok_or_else(|| bad(&format!("a project has at most {} boards", wire::BOARDS_MAX)))?;
     read(app, by.account, &board.id).await
+}
+
+/// A session's name as a lead: trimmed, one line, at most
+/// [`wire::LEAD_SESSION_MAX`] characters. Empty is none.
+fn session_ok(session: Option<&str>) -> Result<Option<&str>, ApiError> {
+    let Some(s) = session.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    if !one_line(s) || s.chars().count() > wire::LEAD_SESSION_MAX {
+        return Err(bad(&format!("a session's name is one line of at most {} characters", wire::LEAD_SESSION_MAX)));
+    }
+    Ok(Some(s))
+}
+
+/// The calling session takes a board's lead, or its lead is released
+/// (#414). Taking is an agent's: it names the session, and the machine is
+/// the one that signed. Releasing is for the lead's own machine or a
+/// person; releasing a board nobody leads changes nothing.
+pub async fn lead(app: &Platform, by: Actor<'_>, id: &str, l: &wire::LeadBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, by, id, true).await?;
+    if l.release {
+        if let (Some(machine), Some(lead)) = (by.agent, &board.lead)
+            && lead.machine != machine
+        {
+            return Err(err(
+                StatusCode::FORBIDDEN,
+                "only the machine of the session that leads this board, or a person, can release it",
+            ));
+        }
+        if board.lead.is_some() && !app.db.set_board_lead(id, None, now_ms())? {
+            return Err(no_board());
+        }
+    } else {
+        let (Some(machine), Some(session)) = (by.agent, session_ok(l.session.as_deref())?) else {
+            return Err(bad("a lead is a session of an agent's machine, and it has a name"));
+        };
+        if !app.db.set_board_lead(id, Some((machine, session)), now_ms())? {
+            return Err(no_board());
+        }
+    }
+    changed(app, &board.project, id);
+    read(app, by.account, id).await
 }
 
 /// A board with its zones and rows in order, as `account` may read it.
@@ -1227,8 +1631,8 @@ async fn known(
     if items.is_empty() {
         return Ok(out);
     }
-    let viewer = Viewer::of(app, account).await?;
-    let checked = viewer::check(app, &viewer, &app.db.linked_repos(project)?).await?;
+    let mut viewer = Viewer::of(app, account).await?;
+    let checked = viewer::check(app, &mut viewer, &app.db.linked_repos(project)?).await?;
     let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
     for i in app.db.tracker_items_among(&conns, items)? {
         if let Some(c) = conns.get(i.mirror_id) {
@@ -1279,8 +1683,11 @@ fn already(stored: &db::Stored, pointer: &wire::Pointer) -> Option<String> {
 
 /// Whether another machine's block holds `row` against a block of `machine`
 /// (#404): one that is work on the row, was not taken over and isn't
-/// reported closed. A block that hasn't reported yet holds it: it is
-/// attached and isn't closed. The machine's own other panes are no
+/// reported closed. A block that hasn't reported yet holds it for
+/// [`wire::BLOCK_STATE_STALE_MS`] after it was attached (or while its
+/// machine's grant can't be looked up); after that, and once its report is
+/// stale, it is unknown and holds nothing. Nor does a block whose machine
+/// left control (Arugula #745). The machine's own other panes are no
 /// conflict (a pane it restarted). Refused 409 `claimed`, saying that
 /// `what` ("#12") is being worked by the holder, since when it attached.
 pub(crate) async fn claim_conflict(
@@ -1320,15 +1727,29 @@ pub(crate) async fn claim_holder(
         })
         .collect();
     let blocks = block_states(app, project, &panes).await?;
+    let mut machines: Vec<String> = panes.iter().map(|(m, _)| m.clone()).collect();
+    machines.dedup();
+    // Only machines still in control: one that left is missing.
+    let joined = agent_names(app, &machines).await?;
+    let now = now_ms();
     for a in holders {
         let wire::Pointer::Block { machine: m, pane } = &a.pointer else { continue };
-        let state = blocks.state.get(&(m.clone(), pane.clone()));
-        if state.is_some_and(|b| b.state == wire::BlockWord::Closed) {
+        let Some(d) = joined.get(m) else { continue };
+        let key = (m.clone(), pane.clone());
+        let state = blocks.state.get(&key);
+        let holds = match state {
+            Some(b) => b.state != wire::BlockWord::Closed && !blocks.stale.contains(&key),
+            None => blocks.unsure.contains(m) || now.saturating_sub(a.created_at) <= wire::BLOCK_STATE_STALE_MS,
+        };
+        if !holds {
             continue;
         }
-        let title = state.and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
-        let name = agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default();
-        let on = if name.is_empty() { "another machine".to_owned() } else { name };
+        // Its title and machine only for a block its own machine's agent
+        // attached while the machine writes the project, as a board shows it
+        // to everyone.
+        let own = Shown::own(&blocks, m, a.agent.as_deref());
+        let title = state.filter(|_| own).and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
+        let on = if own && !d.name.is_empty() { d.name.clone() } else { "another machine".to_owned() };
         let at = (a.created_at / 60_000) % 1440;
         return Ok(Some(format!(
             "{what} is being worked by {title} on {on}, since {:02}:{:02} UTC: pass take: true to take it over",
@@ -1447,8 +1868,6 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     if let Some(ptr) = &p.pointer {
         primary_ok(ptr)?;
     }
-    let mut said = None;
-    let mut change = true;
     let put = Put {
         id: p.id.as_deref(),
         rev: p.rev,
@@ -1460,31 +1879,13 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
         status: p.status,
         agent: by.agent,
     };
+    let (mut said, mut change) = (None, true);
     if p.id.is_some() || p.entry == Some(wire::EntryKind::Zone) {
         app.db.put_entry(id, &put, &[], now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
     } else {
-        let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
-        let plan = match pointer {
-            Some(ptr) => plan_add(app, by.account, &stored, ptr).await?,
-            None => Plan::Add { absorb: vec![], said: None },
-        };
-        match plan {
-            Plan::Already(s) => {
-                change = false;
-                said = Some(s);
-            }
-            Plan::Attach { row, said: s } => {
-                let ptr = pointer.ok_or_else(|| bad("an attachment points at something"))?;
-                app.db
-                    .attach(id, &row, wire::AttachRole::Work, ptr, by.agent, now_ms(), wire::ATTACHMENTS_MAX)?
-                    .map_err(refused)?;
-                said = Some(s);
-            }
-            Plan::Add { absorb, said: s } => {
-                app.db.put_entry(id, &put, &absorb, now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
-                said = s;
-            }
-        }
+        let (did, s) = add_row(app, by, id, &put, pointer).await?;
+        change = did != Did::Already;
+        said = s;
     }
     if change {
         changed(app, &board.project, id);
@@ -1492,6 +1893,111 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     let mut v = read(app, by.account, id).await?;
     v.said = said;
     Ok(v)
+}
+
+/// What adding an item to a board did.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Did {
+    Row,
+    Attached,
+    Already,
+}
+
+/// Add one item as a new row, last: [`plan_add`]'s rules, for a single add
+/// and for [`add_many`]. What it did, and what it says about it.
+async fn add_row(
+    app: &Platform,
+    by: Actor<'_>,
+    id: &str,
+    put: &Put<'_>,
+    pointer: Option<&wire::Pointer>,
+) -> Result<(Did, Option<String>), ApiError> {
+    let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
+    let plan = match pointer {
+        Some(ptr) => plan_add(app, by.account, &stored, ptr).await?,
+        None => Plan::Add { absorb: vec![], said: None },
+    };
+    Ok(match plan {
+        Plan::Already(s) => (Did::Already, Some(s)),
+        Plan::Attach { row, said } => {
+            let ptr = pointer.ok_or_else(|| bad("an attachment points at something"))?;
+            app.db
+                .attach(id, &row, wire::AttachRole::Work, ptr, by.agent, now_ms(), wire::ATTACHMENTS_MAX)?
+                .map_err(refused)?;
+            (Did::Attached, Some(said))
+        }
+        Plan::Add { absorb, said } => {
+            app.db.put_entry(id, put, &absorb, now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
+            (Did::Row, said)
+        }
+    })
+}
+
+/// `POST /api/boards/{id}/entries/many`: add the pointers, or the untriaged
+/// items that match and aren't in `except`, each as a single add does (owners
+/// and editors, people only). More than [`wire::ADD_MANY_MAX`] is a 400.
+pub async fn add_many(
+    app: &Platform,
+    account: &str,
+    id: &str,
+    body: &wire::AddMany,
+) -> Result<wire::AddedMany, ApiError> {
+    let by = Actor::person(account);
+    let board = board_place(app, by, id, true).await?;
+    let pointers: Vec<wire::Pointer> = match (&body.pointers, &body.untriaged) {
+        (Some(p), None) if body.except.is_empty() => p.clone(),
+        (Some(_), None) => return Err(bad("except goes with untriaged")),
+        (None, Some(u)) => {
+            let (project, items) =
+                work::untriaged(app, account, &u.project, u.q.as_deref(), u.label.as_deref()).await?;
+            if project != board.project {
+                return Err(bad("untriaged names the board's own project"));
+            }
+            items.into_iter().map(|i| i.pointer).filter(|p| !body.except.contains(p)).collect()
+        }
+        _ => return Err(bad("add either pointers or untriaged, one of the two")),
+    };
+    if pointers.len() > wire::ADD_MANY_MAX {
+        return Err(bad(&format!(
+            "that is {} items and one call adds at most {}: narrow the filter, or add them in several calls",
+            pointers.len(),
+            wire::ADD_MANY_MAX
+        )));
+    }
+    for p in &pointers {
+        primary_ok(p)?;
+    }
+    let (mut added, mut attached) = (0, 0);
+    let mut failed = None;
+    for ptr in &pointers {
+        let put = Put { pointer: Some(ptr), ..Put::default() };
+        match add_row(app, by, id, &put, Some(ptr)).await {
+            Ok((Did::Row, _)) => added += 1,
+            Ok((Did::Attached, _)) => attached += 1,
+            Ok((Did::Already, _)) => {}
+            Err(e) => {
+                failed = Some(e);
+                break;
+            }
+        }
+    }
+    if added + attached > 0 {
+        changed(app, &board.project, id);
+    }
+    if let Some(e) = failed {
+        return Err(e);
+    }
+    Ok(wire::AddedMany { added, attached, board: read(app, account, id).await? })
+}
+
+/// `POST /api/boards/{id}/entries/many`; see [`add_many`].
+pub async fn add_many_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(id): Path<String>,
+    Json(b): Json<wire::AddMany>,
+) -> J<wire::AddedMany> {
+    Ok(Json(add_many(&app, &s.account, &id, &b).await?))
 }
 
 /// Attach work or proof to a row: a PR, an agent block or a run as `work`
@@ -1512,6 +2018,9 @@ pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow
         }));
     }
     pointer_ok(&a.pointer)?;
+    if let wire::Pointer::Block { machine, .. } = &a.pointer {
+        block_ok(app, by, machine).await?;
+    }
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     if !stored.rows.iter().any(|r| r.id == a.row) {
         return Err(refused(Refused::Missing("no such row")));
@@ -1579,10 +2088,10 @@ pub async fn move_entry(
     id: &str,
     entry: &str,
     m: &wire::MoveEntry,
-) -> Result<wire::BoardView, ApiError> {
+) -> Result<wire::BoardView, Unmoved> {
     let board = board_place(app, by, id, true).await?;
     if entry.starts_with("lane_") {
-        return Err(not_a_lane());
+        return Err(not_a_lane().into());
     }
     if id_ok(entry, "zon").is_err() {
         id_ok(entry, "row").map_err(|_| bad("expected an id that starts row_ or zon_"))?;
@@ -1590,10 +2099,18 @@ pub async fn move_entry(
     if let Some(Some(z)) = &m.zone {
         group_id_ok(z)?;
     }
-    let to = db::Move { zone: m.zone.as_ref().map(|z| z.as_deref()), before: m.before.as_deref(), rev: m.rev };
-    app.db.move_entry(id, entry, &to, now_ms())?.map_err(refused)?;
+    let to = db::Move {
+        zone: m.zone.as_ref().map(|z| z.as_deref()),
+        before: m.before.as_deref(),
+        rev: m.rev,
+        seen: m.seen.as_deref(),
+    };
+    match app.db.move_entry(id, entry, &to, now_ms()).map_err(ApiError::from)? {
+        Err(Refused::Order { rows }) => return Err(Unmoved::Order(rows)),
+        moved => moved.map_err(refused)?,
+    }
     changed(app, &board.project, id);
-    read(app, by.account, id).await
+    Ok(read(app, by.account, id).await?)
 }
 
 /// The lane `row` derives from its work now, as the board reads it before a
@@ -1608,6 +2125,10 @@ async fn derived_lane(
     let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
     let ids = Ids::of(std::iter::once(&row.pointer).chain(mine.iter().map(|a| &a.pointer)));
     let blocks = block_states(app, project, &ids.blocks).await?;
+    if blocks.doubt(&attached) == Doubt::Unsure {
+        // A lane set against a wrong basis would hold, or lapse, wrongly.
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "couldn't read the row's work just now: try again"));
+    }
     let facts = facts(app, project, &ids, &blocks)?;
     Ok(assess(&row.pointer, &attached, &facts).lane)
 }
@@ -1804,13 +2325,14 @@ pub async fn put_route(
 }
 
 /// `POST /api/boards/{id}/entries/{entry}/move`: a row's group and place, or
-/// a group's place (owners and editors); a lane is refused, 400.
+/// a group's place (owners and editors); a lane is refused, 400. With
+/// `seen`, 409 `stale_order` when the group's rows have moved on.
 pub async fn move_route(
     State(app): State<Arc<Platform>>,
     s: Person,
     Path((id, entry)): Path<(String, String)>,
     Json(m): Json<wire::MoveEntry>,
-) -> J<wire::BoardView> {
+) -> Result<Json<wire::BoardView>, Unmoved> {
     Ok(Json(move_entry(&app, Actor::person(&s.account), &id, &entry, &m).await?))
 }
 

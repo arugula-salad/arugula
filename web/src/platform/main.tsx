@@ -11,6 +11,7 @@ import "./platform.css";
 // The lists in the swarm's language, over platform.css's.
 import "./swarm.css";
 // /settings: its sections, the agents' matrices and the switches.
+import "../shared/ui/settings-section.css";
 import "./settings.css";
 import "./finish.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
@@ -23,8 +24,7 @@ import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "./api";
-// Live presence (#343): in the reader's teams' rooms while their switch says so.
-import "../shared/live/live";
+import { arriveHere } from "./chat-nav";
 import { PlatformPage } from "./page";
 
 // This device's palette and finish, before anything draws: on
@@ -37,6 +37,8 @@ setupDesktop();
 // A Doc's prototype can't run by srcdoc under this page's CSP: until the
 // hub says where its proto page is (session.ts), it shows a note (#506).
 setProtoOrigin(null);
+// A room or thread opened cold gets the levels above it, so Back climbs (#817).
+arriveHere();
 render(
   <PlatformApiContext.Provider value={platformApi}>
     <PlatformPage />

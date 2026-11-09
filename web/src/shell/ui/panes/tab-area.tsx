@@ -1,7 +1,7 @@
 // A tab's panes, laid out at the cells the daemon computed.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { Client } from "../../client";
+import { paneIds, type Client } from "../../client";
 import type { PaneId, TabId, TabView } from "../../../shared/proto";
 import type { Cell } from "../cells";
 import { PaneHeader } from "../shell/pane-header";
@@ -10,6 +10,7 @@ import { DropOverlay } from "./drop-overlay";
 import { len, px } from "./geometry";
 import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
+import { attachSwipe } from "../../../shared/ui/swipe";
 import { FONT_SIZE } from "../../terminal-view";
 
 /** The smallest a viewer's pane is drawn on a phone: text at 10px. */
@@ -81,6 +82,26 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     shown.current = { tab: tab.id, zoom };
     client.view(tab.id, cols, rows, zoom, claim);
   }, [client, tab.id, cols, rows, zoom]);
+
+  // #815: on a phone, a sideways swipe moves to the next or previous pane
+  // of the tab, in its order. Not for a viewer's single pane (below).
+  useEffect(() => {
+    const el = ref.current;
+    if (!phone || !el) return;
+    const near = (dir: 1 | -1) => {
+      const ids = paneIds(client.tabView(tab.id) ?? tab);
+      const at = ids.indexOf(client.active(tab.id) ?? -1);
+      return at < 0 ? undefined : ids[at + dir];
+    };
+    return attachSwipe(el, {
+      moved: () => el.querySelector<HTMLElement>(".grid"),
+      has: (dir) => near(dir) !== undefined,
+      commit: (dir) => {
+        const to = near(dir);
+        if (to !== undefined) client.setActive(to);
+      },
+    });
+  }, [client, tab.id, phone]);
 
   // Keyboard focus follows the active pane (not on phones: that would pop
   // up the keyboard on every switch).

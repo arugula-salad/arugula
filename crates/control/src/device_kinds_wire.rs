@@ -4,7 +4,7 @@
 //! the app's window joins as an `app` device, and never as an account's
 //! first one.
 
-use arugula_e2e::{Cert, DeviceKeys, Kind, now_ms};
+use arugula_e2e::{Cert, DeviceKeys, Kind, Trust, cert::device_pin_body, now_ms};
 use serde_json::{Value, json};
 
 use crate::{
@@ -569,4 +569,58 @@ async fn a_browser_removed_since_keeps_what_it_approved() {
     let (ask, cert) = approve_by(&y, "Brave");
     let (st, v) = try_approve(ask, cert).await;
     assert_eq!(st, 403, "Y removed: {v}");
+}
+
+/// #641: a browser adds the device a passkey's keys are, and says which
+/// passkey they're from. Its own sign-in stays what it was, and nothing but
+/// a browser all the way back adds one.
+#[tokio::test]
+async fn a_browser_adds_a_passkeys_device_and_only_a_browser() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
+    let cookie = session(&c.app, "a1");
+    let token = cookie.strip_prefix(&format!("{SESSION_COOKIE}=")).unwrap().to_owned();
+    c.app.db.set_session_device(&hash(&token), "a1", &root.id()).unwrap();
+    let ask = |cert: &Cert| Some(json!({ "cert": cert, "passkey_device": true }));
+
+    // A CLI of the account can't, and leaves nothing waiting.
+    let (k, cert) = signed(&cli, "a1", Kind::Browser, "Passkey");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", ask(&cert)).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{v}");
+    assert!(c.app.db.device("a1", &k.id()).unwrap().is_none());
+
+    // Unsigned is refused too, not left waiting as a plain request is.
+    let k = DeviceKeys::generate();
+    let cert = Cert::new(&k, "a1", Kind::Browser, "Passkey");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", ask(&cert)).await;
+    assert_eq!(st, 400, "{v}");
+    assert!(c.app.db.device("a1", &k.id()).unwrap().is_none());
+
+    // The browser can, and it stays this sign-in's device.
+    let (k, cert) = signed(&root, "a1", Kind::Browser, "Passkey");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", ask(&cert)).await;
+    assert_eq!((st, &v["approved"]), (200, &json!(true)), "{v}");
+    assert_eq!(c.app.db.device("a1", &k.id()).unwrap().map(|(_, approved)| approved), Some(true));
+    let info = c.app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap();
+    assert_eq!(info.device.as_deref(), Some(root.id().as_str()));
+
+    // The desktop app's window can't, whoever signed it.
+    let (other, cert) = signed(&root, "a1", Kind::Browser, "Passkey");
+    let app_window = session_via(&c, "a1", Via::App);
+    let (st, v) = c.as_person(&app_window, "POST", "/api/devices", ask(&cert)).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("app_window")), "{v}");
+    assert!(c.app.db.device("a1", &other.id()).unwrap().is_none());
+
+    // Its pin names the passkey for the page, if it's this account's.
+    let trust = Trust { account: "a1".into(), root: root.id() };
+    let pin = hex::encode(k.signature(device_pin_body(&trust, &k.id()).as_bytes()));
+    let path = format!("/api/devices/{}/pin", k.id());
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(json!({ "pin": pin, "passkey": "someone-elses" }))).await;
+    assert_eq!(st, 404, "{v}");
+    c.app.db.add_passkey("pk1", "a1", -8, &[7; 32], 1).unwrap();
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(json!({ "pin": pin, "passkey": "pk1" }))).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = c.as_person(&cookie, "GET", "/api/me/passkeys", None).await;
+    assert_eq!(v["passkeys"][0]["device"].as_str(), Some(k.id().as_str()), "{v}");
 }

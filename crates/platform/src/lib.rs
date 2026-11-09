@@ -42,6 +42,7 @@ pub mod cache;
 pub mod chat;
 #[cfg(any(test, feature = "testing"))]
 pub mod chat_tests;
+pub mod ci_alerts;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
@@ -51,6 +52,8 @@ pub mod drivers;
 pub mod features;
 pub mod forge;
 pub mod grants;
+#[cfg(test)]
+mod grants_tests;
 pub mod hosted;
 pub use arugula_platform_api::hub;
 pub mod in_process;
@@ -63,6 +66,10 @@ pub use arugula_platform_api::page;
 pub mod planter;
 mod port;
 pub mod project_docs;
+pub mod project_docs_machine;
+pub mod project_grants;
+#[cfg(test)]
+mod project_grants_tests;
 pub mod project_roles;
 pub mod projects;
 pub use arugula_platform_api::remote;
@@ -84,7 +91,7 @@ pub mod work;
 
 /// What the platform is told when it starts: `arugula-platform-api`'s, which
 /// the hub makes it with.
-pub use arugula_platform_api::{Config, Presence};
+pub use arugula_platform_api::Config;
 pub use hub::HubPort;
 pub use port::{Archived, Deleted, PlatformPort, PublicPreview, TurnAnswer};
 pub use router::{paths, router};

@@ -5,6 +5,23 @@
 // centred in some and top-left in others, and four kinds of "open ↗".
 
 import type { ComponentChildren } from "preact";
+import { useEffect, useState } from "preact/hooks";
+import { ExternalIcon } from "./icons";
+// Its styles come in through shared/style.css (an @import there), not from
+// here: the Doc renderer imports this too, and a CSS chunk of its own would be
+// shared by the app and the share page (doc-link.spec).
+
+/** How long a load must take before it says so: a fast one never flashes. */
+export const LOADING_DELAY_MS = 300;
+
+export function useAfter(ms: number): boolean {
+  const [late, setLate] = useState(ms <= 0);
+  useEffect(() => {
+    const t = setTimeout(() => setLate(true), ms);
+    return () => clearTimeout(t);
+  }, [ms]);
+  return late;
+}
 
 /** The detail without the headline it repeats: "can't read the issue: 404"
  * under "Can't read the issue" says just "404". */
@@ -26,7 +43,7 @@ export function detailOf(title: string, detail: string | null | undefined): stri
 }
 
 /**
- * A block's error: a bold headline, the detail dim under it (without what
+ * A block's error: a headline ("Can't …"), the detail dim under it (without what
  * the headline already says), a danger accent, and Try again when `retry`
  * is given. `children` go under it (another login to use, a hint).
  * `inline` sits in a column with the block's other content; otherwise it
@@ -68,21 +85,78 @@ export function BlockError({
   );
 }
 
-/** Nothing to show yet, or at all: one dim line (and what follows it),
- * centred in the block. */
-export function BlockEmpty({ children, ...data }: { children: ComponentChildren; [attr: `data-${string}`]: unknown }) {
+/**
+ * An empty place: a statement with a full stop for a title, what the thing
+ * is and where it comes from in a line or two, and at most one action (a
+ * `.primary` the caller draws; none when the action is already on screen or
+ * the reader can't take it). `where="page"` is a card in a page's column;
+ * `"pane"` fills a block and centres the card. `children` go under the why.
+ */
+export function EmptyState({
+  title,
+  why,
+  action,
+  where = "pane",
+  children,
+  ...data
+}: {
+  title: string;
+  why?: ComponentChildren;
+  action?: ComponentChildren;
+  where?: "page" | "pane";
+  children?: ComponentChildren;
+  [attr: `data-${string}`]: unknown;
+}) {
   return (
-    <div class="block-empty" {...data}>
-      {children}
+    <div class={`empty-state in-${where}`} {...data}>
+      <div class="empty-state-card">
+        <h3 class="empty-state-title">{title}</h3>
+        {why && <p class="empty-state-why">{why}</p>}
+        {children}
+        {action && <div class="empty-state-action">{action}</div>}
+      </div>
     </div>
   );
 }
 
-/** "Loading the pull request…", centred, in the one place every block
- * says it. */
-export function BlockLoading({ what, ...data }: { what: string; [attr: `data-${string}`]: unknown }) {
+/** No match, or "None yet." in a settings section: a dim line, not a card,
+ * with Clear when something narrows the list. */
+export function EmptyLine({
+  children,
+  clear,
+  clearLabel = "Clear",
+  role,
+  ...data
+}: {
+  children: ComponentChildren;
+  clear?: () => void;
+  clearLabel?: string;
+  role?: "status";
+  [attr: `data-${string}`]: unknown;
+}) {
   return (
-    <div class="block-empty" role="status" {...data}>
+    <p class="empty-line" role={role} {...data}>
+      {children}
+      {clear && (
+        <>
+          {" "}
+          <button type="button" class="link" onClick={clear}>
+            {clearLabel}
+          </button>
+        </>
+      )}
+    </p>
+  );
+}
+
+/** "Loading the pull request…": says nothing for the first
+ * {@link LOADING_DELAY_MS}, so a quick load doesn't flash it. `inline` is a
+ * dim line in a column; otherwise it fills the block, centred. */
+export function BlockLoading({ what, inline, ...data }: { what: string; inline?: boolean; [attr: `data-${string}`]: unknown }) {
+  const late = useAfter(LOADING_DELAY_MS);
+  if (!late) return null;
+  return (
+    <div class={inline ? "empty-line" : "block-loading"} role="status" {...data}>
       Loading {what}…
     </div>
   );
@@ -92,7 +166,7 @@ export function BlockLoading({ what, ...data }: { what: string; [attr: `data-${s
 export function OpenOutside({ href, ...data }: { href: string; [attr: `data-${string}`]: unknown }) {
   return (
     <a class="block-open" href={href} target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open in a new tab" {...data}>
-      ↗
+      <ExternalIcon size="xs" />
     </a>
   );
 }

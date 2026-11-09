@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# The daemon's release on a train (release-train.yml, #724, Arugula #794): each time
+# chant's tick finishes on main, at most once every 2 hours, the newest commit CI
+# passed goes out as a patch, if its pull requests have anything
+# to tell people. Its notes come from them (docs/notes/, scripts/release-notes.mjs).
+# The rare jobs run on it first, and a release needs them, so one that fails holds
+# the release, and merges go on. Daemons don't install on their own: people get a
+# notice with an Update now button (crates/daemon/src/update.rs). The server deploys
+# from the same tag, and the hub only when what it's built from changed.
+#
+#   scripts/release-train
+#
+# It goes out only when:
+#   ARUGULA_RELEASE_TRAIN is on (a repository variable)
+#   no release.yml run is going, and no `scripts/release bump` tagged the commit
+#   the last release.yml run (the train's or a hand cut's) started at least
+#   ARUGULA_TRAIN_GAP_MINUTES ago (default 120; the workflow's manual run passes 0)
+#   the commit is newer than the last v* tag, and something in between added a note
+#
+# Minor and major versions stay a person's: `just release minor COMMIT --notes FILE`.
+# GH_TOKEN starts and watches rare-nightly.yml, with `actions: write`. git's own
+# credentials push the tag, which has to set off release.yml, so they aren't the
+# job's token: the workflow checks out with CI_GREEN_TOKEN. ARUGULA_TRAIN_RELEASE
+# is for tests.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
+release=${ARUGULA_TRAIN_RELEASE:-$here/release}
+
+say() {
+  echo "release-train: $1"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '%s\n' "$1" >>"$GITHUB_STEP_SUMMARY"; fi
+}
+
+[ "${ARUGULA_RELEASE_TRAIN:-off}" = on ] || {
+  say "ARUGULA_RELEASE_TRAIN isn't on: not releasing"
+  exit 0
+}
+
+# How many release.yml runs are going, and when the newest started.
+read -r going started < <(gh run list -R "$repo" --workflow release.yml --limit 20 --json status,createdAt \
+  --jq '"\([.[] | select(.status != "completed")] | length) \(.[0].createdAt // "")"')
+if [ "$going" != 0 ]; then
+  say "a release is already going: not starting another"
+  exit 0
+fi
+gap=${ARUGULA_TRAIN_GAP_MINUTES:-120}
+if [ -n "${started:-}" ] && [ "$gap" != 0 ]; then
+  ago=$(node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 60000))' "$started")
+  if [ "$ago" -lt "$gap" ]; then
+    say "the last release started ${ago}m ago: the next waits for ${gap}m"
+    exit 0
+  fi
+fi
+
+git fetch -q --tags --force origin
+commit=$("$release" last-green daemon)
+[ -n "$commit" ] || {
+  say "no commit has the daemon's green tag: not releasing"
+  exit 0
+}
+last=$(git tag -l 'v[0-9]*' --sort=-v:refname | sed -n 1p)
+[ -n "$last" ] || {
+  say "no v* tag to count from: a person cuts the first"
+  exit 0
+}
+if git merge-base --is-ancestor "$commit" "$last"; then
+  say "${commit:0:12} went out in $last or before: nothing new"
+  exit 0
+fi
+
+IFS=. read -r major minor patch <<<"${last#v}"
+next=$major.$minor.$((patch + 1))
+notes=$(mktemp)
+trap 'rm -f "$notes"' EXIT
+code=0
+node "$here/release-notes.mjs" "$last" "$commit" "$next" >"$notes" || code=$?
+case "$code" in
+  0) ;;
+  3)
+    say "nothing between $last and ${commit:0:12} added a note: not releasing"
+    exit 0
+    ;;
+  *)
+    say "the notes for $next couldn't be built, so it's not going out"
+    exit 1
+    ;;
+esac
+
+say "releasing ${commit:0:12} as v$next"
+if ! "$release" bump "$commit" --notes "$notes" --rare; then
+  say "v$next is held: ${commit:0:12} didn't pass what a release needs. See this run's log. Merges go on, and the next train tries a newer commit."
+  exit 1
+fi
+say "v$next is tagged, and release.yml takes it from here"

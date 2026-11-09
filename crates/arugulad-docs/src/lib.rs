@@ -19,7 +19,7 @@ use std::{path::Path, sync::Arc};
 use arugula_proto::{
     BlockType,
     api::SearchHit,
-    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocsList},
+    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocShare, DocsList},
 };
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -55,6 +55,13 @@ impl arugulad_base::features::Feature for Docs {
     fn with_control(&self, control: &Arc<control::Control>) {
         // Doc blocks share through control (#1066).
         docs::link::init(control.clone());
+        // ...and are copied up to the platform (#418).
+        docs::copies::start(control.clone());
+    }
+
+    fn left_control(&self, state_dir: &Path) {
+        // Where each Doc's copy was is control's to know (native #673).
+        docs::library::forget_platform(state_dir);
     }
 
     fn kinds(&self, kinds: &mut block::BlockKinds, _cx: &arugulad_base::features::KindsCx) {
@@ -70,6 +77,7 @@ impl arugulad_base::features::Feature for Docs {
             .op_of::<DocRead, Docs>()
             .op_of::<DocAssetGet, Docs>()
             .op_of::<DocLinkDelete, Docs>()
+            .op_of::<DocShare, Docs>()
     }
 
     fn search(

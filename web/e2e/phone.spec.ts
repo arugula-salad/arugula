@@ -45,7 +45,7 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
   await expect(page.locator(".pane .xterm-rows")).toContainText("back-9");
 
   // Up arrow from the key bar recalls the last command.
-  await page.getByRole("button", { name: "↑" }).click();
+  await page.getByRole("button", { name: "Up" }).click();
   await page.getByRole("button", { name: "Tab" }).click();
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await text(page, shown)).match(/back-9/g)?.length).toBe(2);
@@ -191,4 +191,135 @@ test("a keyboard suggestion replaces the word, not the line", async ({ page }) =
   await page.keyboard.press("Enter");
   await expect.poll(() => text(page, shown)).toMatch(/^brown$/m);
   expect(await text(page, shown)).not.toContain("brpwn");
+});
+
+// #709: Close pane and Close tab in the sheet ask first, as the desktop's
+// close does, instead of acting at once on a tap.
+test("Close pane and Close tab ask first: Cancel keeps them, Close takes them", async ({ page }) => {
+  await reset(page);
+  const panes = () => page.evaluate(() => window.__arugula.client.state!.panes.length);
+  const tabs = () => page.evaluate(() => window.__arugula.client.state!.tabs.length);
+  await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
+  await page.getByRole("button", { name: "Split pane" }).click();
+  await expect.poll(panes).toBe(2);
+  const shown = await active(page);
+  await ready(page, shown);
+
+  const more = async (name: string) => {
+    await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
+    await page.getByRole("button", { name, exact: true }).click();
+  };
+  const confirm = page.getByRole("alertdialog");
+
+  // Close pane: the sheet is gone, the question is up, and nothing has closed.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole("heading")).toHaveText("Close this pane?");
+  await page.waitForTimeout(700);
+  expect(await panes()).toBe(2);
+  await confirm.locator("[data-cancel-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  expect(await panes()).toBe(2);
+
+  // Escape is Cancel too.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  expect(await panes()).toBe(2);
+
+  // Close tab asks as well.
+  const before = await tabs();
+  await more("Close tab");
+  await expect(confirm.getByRole("heading")).toHaveText("Close this tab?");
+  await confirm.locator("[data-cancel-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  expect(await tabs()).toBe(before);
+
+  // Confirmed, the pane goes.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await expect(confirm.locator("[data-confirm-remove]")).toBeEnabled();
+  await confirm.locator("[data-confirm-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  await expect.poll(panes).toBe(1);
+});
+
+// #815: a sideways swipe on the shown pane moves to the tab's next or
+// previous pane. Real touches (CDP), so they reach the page as touch pointers.
+test("swipe sideways between a tab's panes", async ({ page }) => {
+  await reset(page);
+  const split = async () => {
+    await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
+    await page.getByRole("button", { name: "Split pane" }).click();
+  };
+  await split();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(2);
+  await split();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(3);
+  await expect(page.locator(".pane-dots i")).toHaveCount(3);
+  await expect.poll(() => page.locator(".pane").count()).toBe(1);
+
+  const order = () =>
+    page.evaluate(() => {
+      const c = window.__arugula.client;
+      const ids: number[] = [];
+      const walk = (n: any) => (n.type === "pane" ? ids.push(n.pane) : n.children.forEach((k: any) => walk(k.node)));
+      walk(c.tabView()!.root);
+      return ids;
+    });
+  const [first, second, third] = await order();
+  await expect.poll(() => active(page)).toBe(third); // a split focuses the new pane
+  const cdp = await page.context().newCDPSession(page);
+  const swipe = async (dx: number, dy: number, steps = 8) => {
+    const x = 195;
+    const y = 400;
+    const touch = (type: string, i: number) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: type === "touchEnd" ? [] : [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }],
+      });
+    await touch("touchStart", 0);
+    for (let i = 1; i <= steps; i++) await touch("touchMove", i);
+    await touch("touchEnd", steps);
+  };
+
+  // The last pane: a swipe to the next doesn't move (it rubber-bands back).
+  await swipe(-250, 0);
+  await page.waitForTimeout(400);
+  expect(await active(page)).toBe(third);
+  // A vertical drag doesn't change the pane.
+  await swipe(0, -250);
+  await page.waitForTimeout(400);
+  expect(await active(page)).toBe(third);
+  // Starting in something that scrolls sideways, a swipe is its own. It starts
+  // mid-scroll: at the scroller's left edge, CI's Chrome takes the overscroll
+  // as Back and leaves the page.
+  await page.evaluate(() => {
+    const wide = document.createElement("div");
+    wide.id = "wide";
+    wide.style.cssText = "position:absolute;inset:0;overflow-x:auto;z-index:5";
+    wide.innerHTML = '<div style="width:3000px;height:10px"></div>';
+    document.querySelector(".pane")!.append(wide);
+    wide.scrollLeft = 1000;
+  });
+  await swipe(250, 0);
+  await page.waitForTimeout(400);
+  expect(await active(page)).toBe(third);
+  await page.evaluate(() => document.getElementById("wide")!.remove());
+  // Right goes back, in the tab's order; left goes forward.
+  await swipe(250, 0);
+  await expect.poll(() => active(page)).toBe(second);
+  await swipe(250, 0);
+  await expect.poll(() => active(page)).toBe(first);
+  await expect(page.locator(".pane-dots i.on")).toHaveCount(1);
+  await swipe(250, 0); // the first: nothing before it
+  await page.waitForTimeout(400);
+  expect(await active(page)).toBe(first);
+  await swipe(-250, 0);
+  await expect.poll(() => active(page)).toBe(second);
+  await page.screenshot({ path: "/tmp/claude-arugula-815/swipe-dots.png" });
 });

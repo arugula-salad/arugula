@@ -78,8 +78,9 @@ fn release_trees(root: &std::path::Path, dir: &str, version: (u64, u64, u64)) ->
 /// folder, its chain of releases (a `Release` for each tree that differs from
 /// the release before it, with the tags that have it), and `CHECKOUT_*`, the
 /// folder's files as they are now, which only keeps them among the crate's
-/// inputs (rustc's dep-info lists them, so `scripts/ci-hub-changed` sees an
-/// edit to the folder).
+/// inputs (rustc's dep-info lists them, so cargo rebuilds on an edit to the
+/// folder; the hub's release inputs, `ops/src/control.component.ts`, list it
+/// too).
 ///
 /// A release build (a `v*` tag's push, `GITHUB_REF_TYPE` and
 /// `GITHUB_REF_NAME` as release.yml has them) fails unless the tags are

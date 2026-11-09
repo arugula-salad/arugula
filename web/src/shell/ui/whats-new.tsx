@@ -8,7 +8,7 @@
 // browser), so after an update: the daemon's page reloads onto the new
 // build, control's page is deployed, and the desktop app's window shows
 // one of the two. It's seen when shown. The update chip's *What's new*
-// and the account menu's open it again. Items this person can't use are
+// and Settings' open it again. Items this person can't use are
 // left out (their `needs`).
 
 import { useEffect, useState } from "preact/hooks";
@@ -21,6 +21,7 @@ import { advances, notesUrl, PREF, unshown, upTo, usable, type Need, type WhatsN
 import { platformOrigin, openPlatform } from "../platform-links";
 import { COMMANDS } from "./commands";
 import { getControlSession } from "./people";
+import { CloseIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
 
 /** This build's version (vite.config.ts, from Cargo.toml), and the
  * release notes' headlines (scripts/whats-new.mjs), newest first. */
@@ -63,7 +64,7 @@ async function forThem(client: Client, releases: WhatsNewRelease[]): Promise<Wha
 }
 
 /** Open it with this build's newest releases (the update chip's
- * *What's new*, the account menu's). */
+ * *What's new*, in Settings). */
 export async function openWhatsNew(client: Client, newer?: Newer) {
   open = { client, releases: await forThem(client, upTo(RELEASES, BUILT)), newer };
   changed();
@@ -107,15 +108,15 @@ function Panel({ client, releases, newer }: { client: Client; releases: WhatsNew
     <section class="whats-new" aria-label="What's new" data-whats-new>
       <header class="whats-new-head">
         <h2>What's new</h2>
-        <button class="whats-new-close" aria-label="Close What's new" data-whats-new-close onClick={closeWhatsNew}>
-          ×
-        </button>
+        <IconButton label="Close What's new" class="whats-new-close" data-whats-new-close onClick={closeWhatsNew}>
+          <CloseIcon size="md" />
+        </IconButton>
       </header>
       {newer && (
         <p class="whats-new-newer">
           Arugula {newer.latest} is out.{" "}
           <a href={newer.url} target="_blank" rel="noreferrer">
-            Its notes ↗
+            Its notes <ExternalIcon size="xs" />
           </a>
         </p>
       )}
@@ -124,7 +125,7 @@ function Panel({ client, releases, newer }: { client: Client; releases: WhatsNew
           <div class="whats-new-version">
             <b>Arugula {r.version}</b>
             <a href={notesUrl(r.version)} target="_blank" rel="noreferrer" data-whats-new-notes>
-              Full notes ↗
+              Full notes <ExternalIcon size="xs" />
             </a>
           </div>
           <ul>
