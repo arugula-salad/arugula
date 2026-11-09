@@ -8128,6 +8128,12 @@ button.thread-quote:hover {
   padding: 0;
 }
 
+/* Send is a .primary, whose padding (shared/buttons.css) loads after this on
+   the platform and won at one class: 14px a side left the icon 2px. */
+.compose-send.primary {
+  padding: 0;
+}
+
 /* M123: control's chat. The composer's "Quote a pane" beside Send. */
 .compose-box.with-tools {
   grid-template-columns: 1fr auto auto auto auto;
