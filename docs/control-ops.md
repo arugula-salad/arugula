@@ -173,29 +173,6 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   the hub lets a native app pair by code, and takes its signature on routes
   whose `routes.toml` row lists `native` (aru-131). No other browser's key
   signs anything either way.
-- **People blocks** (optional): `ARUGULA_PRESENCE_APP` (an arugula.stream
-  app's `app_…` id) and `ARUGULA_PRESENCE_SECRET` (its server secret) on
-  the platform let a team's members open a People block: who's around in
-  the team, live, in the team's room (`team:<id>`) on arugula.stream's
-  relay (`ARUGULA_PRESENCE_RELAY`, `wss://arugula.stream/socket` by
-  default). The platform signs each member's room token
-  (`POST /api/chat/presence/token`, behind chat's gate); the room, its
-  avatars, voice and calls are the relay's.
-  - Set `ARUGULA_PRESENCE_APP` (and the relay, if it isn't the default) on
-    the hub too: with it, the hub's CSP lets the page load scripts from the
-    relay's origin, compile WebAssembly (`'wasm-unsafe-eval'`) for the
-    camera's trackers, and run the `blob:` scripts the page makes for the
-    Krisp noise filter's audio worklet and worker in voice and calls
-    (without them Krisp falls back to the browser's own suppression).
-    The platform page's CSP (chat, on the platform's host) opens the same
-    way, and may also connect to `wss:` and `https:` (the relay's socket,
-    LiveKit Cloud's, Krisp's models), for live presence's avatars in chat.
-    Without an app, neither CSP changes and a People block says control
-    has no arugula.stream app.
-  - Make the app with arugula.stream's `create_app` (its MCP or dashboard):
-    the secret is shown once. No origins or sign-in provider are needed,
-    since control signs the tokens.
-  - What arugula.stream gets: [control-e2e.md](control-e2e.md#who-else-sees-it).
 - **Shared Docs** (#1064): always on, and idle until a machine calls. With
   a block domain, anyone opens a link at `docs.<domain>` (a fixed label,
   so the wildcard DNS name and certificate cover it); without one, at

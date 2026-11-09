@@ -1197,6 +1197,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     // For each row, in order: where it sits in `zones`, and what its steps
     // are worked out from.
     let mut placed: Vec<((usize, usize), steps::Node)> = vec![];
+    // The same rows for `place`: every row with an item counts, and its
+    // edges count whether the other end is open or closed.
+    let mut closed: Vec<steps::Node> = vec![];
     let mut prs: HashMap<(Option<String>, u64), usize> = HashMap::new();
     let mut ready: Vec<String> = vec![];
     let mut groups: Vec<wire::Group> = stored
@@ -1226,6 +1229,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             started: matches!(a.lane, wire::Lane::Doing | wire::Lane::Review),
             ..Default::default()
         };
+        let mut whole = steps::Node { open: item_id(&e.pointer).is_some(), ..Default::default() };
         if let Some(item) = item_id(&e.pointer) {
             for other in edges.before(item, &facts) {
                 match at_item.get(other) {
@@ -1233,7 +1237,9 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
                     None => node.off = true,
                 }
             }
+            whole.before = edges.before_any(item).into_iter().filter_map(|o| at_item.get(o).copied()).collect();
         }
+        closed.push(whole);
         let work = mine.iter().filter(|a| a.role == wire::AttachRole::Work).map(|a| &a.pointer);
         for p in std::iter::once(&e.pointer).chain(work) {
             if let (wire::Pointer::ForgeItem { .. }, Some(l)) = (p, chip(p, None).0) {
@@ -1296,6 +1302,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             asked,
             relations,
             step: None,
+            place: None,
             live: row_live,
             block: row_block,
             agent: e.agent.clone().map(|m| ChatAgent {
@@ -1314,13 +1321,17 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             wire::Mark::After { number, repo } => Some((repo.clone(), *number)),
             _ => None,
         });
-        node.before.extend(after.and_then(|key| prs.get(&key).copied()).filter(|&j| j != i));
+        let below = after.and_then(|key| prs.get(&key).copied()).filter(|&j| j != i);
+        node.before.extend(below);
+        closed[i].before.extend(below);
     }
     let nodes: Vec<steps::Node> = placed.iter().map(|(_, n)| n.clone()).collect();
     let found = steps::work_out(&nodes);
+    let laid = steps::work_out(&closed);
     for (i, ((z, k), _)) in placed.iter().enumerate() {
         let row = &mut zones[*z].rows[*k];
         row.step = found.step[i];
+        row.place = laid.step[i];
         if found.cycle[i] {
             row.marks.push(wire::Mark::Cycle);
         }

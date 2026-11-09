@@ -11,7 +11,7 @@ import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
-import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
+import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pinDoc } from "./docs-route";
@@ -117,9 +117,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
-    // Who's around in a team, live, on arugula.stream (the block says so
-    // when control has no arugula.stream app, or chat is off).
-    ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it.
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // A Doc of this machine's, beside it (#703).

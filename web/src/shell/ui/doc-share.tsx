@@ -1,5 +1,5 @@
 // Sharing a Doc with a link (#1066): its three actions in its bar (Copy
-// link, Share and Open in browser: ./doc-actions.tsx, Arugula #650, #782) and
+// link, Share and Open in browser: shared/docs/doc-actions.tsx, Arugula #650, #782) and
 // the block's menu (Copy link, and once it's shared, Update shared copy and
 // Unshare). The daemon does it (`doc_share`
 // and the rest, the owner's, never an agent's); this is the buttons, the one
@@ -19,7 +19,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { docHooks, type DocState } from "../blocks/doc";
 import type { Client } from "../client";
-import type { PaneId } from "../../shared/proto";
+import { opPath, OPS } from "../ops";
+import type { DocLinkUrl, DocShareRequest, PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import type { MenuItem } from "../../shared/ui/menu";
@@ -29,7 +30,7 @@ import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Count } from "../../shared/ui/state-chip";
-import { DocActions, NO_LINK, ONLY_YOU, openTab } from "./doc-actions";
+import { DocActions, NO_LINK, ONLY_YOU, openTab } from "../../shared/docs/doc-actions";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
@@ -138,6 +139,7 @@ const seen = new Map<PaneId, string>();
 
 type Open =
   | { kind: "share"; client: Client; id: PaneId }
+  | { kind: "closed"; run: () => void }
   | { kind: "update"; run: () => void }
   | { kind: "unshare"; run: () => void }
   | { kind: "edited"; edited: Edited };
@@ -149,8 +151,46 @@ const show = (o: Open | null) => {
   listeners.forEach((fn) => fn());
 };
 
-/** The share dialog for a Doc open in `id`, for the Docs page to open. */
-export const shareDoc = (client: Client, id: PaneId) => show({ kind: "share", client, id });
+/** Share a Doc by its id, or Update its link, with no block showing it
+ * (Arugula #819): the Docs page's Share. The same confirms as the block's,
+ * and the same outcome (the link copied, or the link now showing the Doc as
+ * it is). A shared Doc whose link is current has nothing to update: Share
+ * copies its link, as Copy link does, with no dialog. `done` hears the
+ * reason it failed, or nothing. */
+export function shareClosedDoc(
+  client: Client,
+  doc: { id: string; shared: { link: string } | null; older: boolean },
+  done: (why?: string) => void,
+) {
+  const fail = (v: { error?: string } | null, res: { status: number }) => done(v?.error ?? `HTTP ${res.status}`);
+  const go = async (update: boolean) => {
+    try {
+      const body = { update } satisfies DocShareRequest;
+      const res = await client.request(OPS["doc.share"].method, opPath("doc.share", { id: doc.id }), body);
+      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      if (!res.ok || !v?.url) return fail(v, res);
+      if (update) client.toast("The link now shows this Doc as it is");
+      else if (await copy(v.url)) client.toast("Link copied");
+      done();
+    } catch (e) {
+      done((e as Error).message);
+    }
+  };
+  const copyCurrent = async () => {
+    try {
+      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
+      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      if (!res.ok || !v?.url) return fail(v, res);
+      if (await copy(v.url)) client.toast("Link copied");
+      else return done(`Couldn't copy the link: ${v.url}`);
+      done();
+    } catch (e) {
+      done((e as Error).message);
+    }
+  };
+  if (doc.shared && !doc.older) return void copyCurrent();
+  show({ kind: doc.shared ? "update" : "closed", run: () => void go(!!doc.shared) });
+}
 
 export const UPDATE_NOTE = "Update changes what the link shows. To take something back, Unshare.";
 
@@ -182,6 +222,36 @@ export function DocShareLayer() {
     );
   }
   if (o.kind === "edited") return <EditedDialog edited={o.edited} cancel={close} />;
+  if (o.kind === "closed") {
+    return (
+      <Modal
+        x={false}
+        title="Share this Doc with a link?"
+        close={close}
+        root={{ "data-doc-link-dialog": true, "data-doc-share-dialog": "unshared" }}
+        buttons={
+          <>
+            <button class="secondary" type="button" onClick={close}>
+              Cancel
+            </button>
+            <button
+              class="primary"
+              type="button"
+              data-doc-share-go
+              onClick={() => {
+                close();
+                o.run();
+              }}
+            >
+              Create link
+            </button>
+          </>
+        }
+      >
+        <p class="dim">Anyone with the link can open it</p>
+      </Modal>
+    );
+  }
   if (o.kind === "update") {
     return (
       <Modal
