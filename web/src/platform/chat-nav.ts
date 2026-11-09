@@ -55,7 +55,7 @@ export function chatGo(path: string) {
  * load): a room or thread with no entries under it gets the list and the
  * room inserted, so Back climbs. An entry already marked is left alone, so
  * a reload doesn't stack them again. */
-export function arrive(path: string) {
+export function arrive(path: string, hash = "") {
   const to = routeOf(path);
   const level = chatLevel(to);
   if (level === null || level === "list" || marked()) return go(path, true, level === null ? null : mark(to));
@@ -63,12 +63,14 @@ export function arrive(path: string) {
   history.replaceState(mark({ page: "chat", project: to.project }), "", pathOf({ page: "chat", project: to.project }, names));
   const room = pathOf({ ...to, thread: undefined, msg: level === "thread" ? undefined : to.msg }, names);
   if (level === "thread") history.pushState(mark({ ...to, thread: undefined }), "", room);
-  history.pushState(mark(to), "", path);
+  // The hash stays on the page's own entry: a sign-in's #code is read off it
+  // after this runs (signin.ts).
+  history.pushState(mark(to), "", path + hash);
   go(path); // renders; same path, so no new entry
 }
 
 /** The page's first route, if it's a room or thread arrived at cold. */
 export function arriveHere() {
   const level = chatLevel();
-  if (level && level !== "list" && !marked()) arrive(location.pathname + location.search);
+  if (level && level !== "list" && !marked()) arrive(location.pathname + location.search, location.hash);
 }
