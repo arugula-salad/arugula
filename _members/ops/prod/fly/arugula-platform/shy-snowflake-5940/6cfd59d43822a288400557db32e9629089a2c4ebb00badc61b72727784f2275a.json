@@ -1,0 +1,66 @@
+{
+  "env": {
+    "ARUGULA_CONTROL_URL": "https://control.arugula.io",
+    "ARUGULA_PLATFORM_HOST": "app.arugula.io",
+    "ARUGULA_PLATFORM_HUB": "http://illogical-control.internal:7691",
+    "ARUGULA_PLATFORM_LISTEN": "[::]:7700",
+    "ARUGULA_PLATFORM_REQUIRE_POSTGRES": "1",
+    "ARUGULA_PREVIEW_DOMAIN": "arugula.site",
+    "FLY_PROCESS_GROUP": "app",
+    "OTEL_RESOURCE_ATTRIBUTES": "chant.workspace=arugula,chant.member=ops,chant.decl=platformA,service.version=sha256%3A6cfd59d43822a288400557db32e9629089a2c4ebb00badc61b72727784f2275a,vcs.ref.head.revision=98240c6f8cb1a713a1d17db4b0329fd202cf6c7d",
+    "OTEL_SERVICE_NAME": "arugula-platform",
+    "PRIMARY_REGION": "iad",
+    "APP_REVISION": "98240c6f8cb1a713a1d17db4b0329fd202cf6c7d"
+  },
+  "guest": {
+    "cpu_kind": "shared",
+    "cpus": 1,
+    "memory_mb": 512
+  },
+  "image": "registry.fly.io/arugula-platform@sha256:6cfd59d43822a288400557db32e9629089a2c4ebb00badc61b72727784f2275a",
+  "metadata": {
+    "fly_process_group": "app",
+    "managed-by": "chant",
+    "chant-release-digest": "sha256:6cfd59d43822a288400557db32e9629089a2c4ebb00badc61b72727784f2275a",
+    "chant-release-git-sha": "98240c6f8cb1a713a1d17db4b0329fd202cf6c7d",
+    "chant-release-previous-digest": "sha256:64e7a0633c285c880b05a03e4861b20f5884d08ddca81fc194feb41653129429"
+  },
+  "restart": {
+    "max_retries": 10,
+    "policy": "on-failure"
+  },
+  "services": [
+    {
+      "autostart": false,
+      "autostop": false,
+      "checks": [
+        {
+          "grace_period": "10s",
+          "interval": "15s",
+          "method": "get",
+          "path": "/platform.json",
+          "protocol": "http",
+          "timeout": "5s",
+          "type": "http"
+        }
+      ],
+      "concurrency": {
+        "hard_limit": 5000,
+        "soft_limit": 4000,
+        "type": "connections"
+      },
+      "internal_port": 7700,
+      "min_machines_running": 2,
+      "ports": [
+        {
+          "port": 7700
+        }
+      ],
+      "protocol": "tcp"
+    }
+  ],
+  "stop_config": {
+    "signal": "SIGTERM",
+    "timeout": "25s"
+  }
+}
