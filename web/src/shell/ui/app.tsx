@@ -134,7 +134,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
-      {state && <DocsPageLayer client={client} />}
       <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -197,6 +196,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
+            {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
+            {state && <DocsPageLayer client={client} inWorkspace />}
             {/* M111: between the header and the footer, over the panes. */}
             <AttentionDrawer client={client} />
           </div>
@@ -357,7 +358,7 @@ function SettingsPageLayer({ client }: { client: Client }) {
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is
  * up. Not Labs' since native #204. */
-function DocsPageLayer({ client }: { client: Client }) {
+function DocsPageLayer({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [, setTick] = useState(0);
   const [page, setPage] = useState<typeof import("./docs-page") | null>(null);
   useEffect(() => {
@@ -370,5 +371,5 @@ function DocsPageLayer({ client }: { client: Client }) {
     if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
   }, [on]);
   if (!on || !page) return null;
-  return <page.DocsPage client={client} />;
+  return <page.DocsPage client={client} inWorkspace={inWorkspace} />;
 }

@@ -68,7 +68,8 @@ export function Rail({ client }: { client: Client }) {
       target: "arugula-platform",
       onClick: () => openPlatform(PROJECTS_PATH),
     },
-    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "docs" || at === "agents", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
+    // A machine's Docs light the rail's Docs, or Panes where there's none (Arugula #796).
+    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "agents" || (at === "docs" && !teamDocs), hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
     {
       label: "Swarm",
       aria: `Swarm: ${SWARM_ABOUT}`,
@@ -93,7 +94,7 @@ export function Rail({ client }: { client: Client }) {
     !!teamDocs && {
       label: "Docs",
       tip: "Docs: your team's Docs, and yours from your machines",
-      here: false,
+      here: at === "docs",
       hook: "data-open-docs-all",
       icon: <DocsIcon />,
       href: teamDocs,
