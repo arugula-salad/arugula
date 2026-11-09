@@ -148,11 +148,6 @@ details.issues-note > summary {
   margin-right: 4px;
 }
 
-.issues-home-line {
-  margin: 16px 0 0;
-  font-size: var(--text-sm);
-}
-
 /* Where new issues go, in the project's settings (UI audit #163). */
 [data-issue-home] .control-confirm {
   display: block;

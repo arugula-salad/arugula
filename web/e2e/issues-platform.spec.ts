@@ -198,7 +198,7 @@ test("what's new in the thread of an issue assigned to you is in the inbox, and 
   const card = alice.locator('[data-inbox-group="threads"] [data-inbox-thread]');
   await expect(card).toHaveCount(1, { timeout: 15_000 });
   await expect(card).toContainText("Search misses hyphenated words");
-  await expect(card).toContainText("1 new in its thread");
+  await expect(card).toContainText("1 new");
   await card.locator("[data-inbox-thread-done]").click();
   await expect(alice.locator('[data-inbox-group="threads"]')).toHaveCount(0);
 

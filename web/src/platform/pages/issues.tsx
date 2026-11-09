@@ -18,7 +18,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../../shared/ui/settings-section";
 import { issues, type IssueFilter } from "../../shared/issues/store";
-import { githubNewIssue, rowLine, stateLabel } from "../../shared/issues/text";
+import { githubNewIssue, rowLine } from "../../shared/issues/text";
 import { when } from "../../shared/time";
 import { LabelChip, pickLabels } from "../../shared/issues/view";
 import { names } from "../links";
@@ -251,7 +251,6 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
           More issues
         </button>
       )}
-      {home && <IssueHomeLine p={p} home={home} />}
     </section>
   );
 }
@@ -261,18 +260,18 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
  * disclosure when there are several). */
 function IssuesBoth({ home }: { home: IssueHome }) {
   const n = home.native_issues;
-  const here = `${n} ${n === 1 ? "issue" : "issues"} here, open or closed`;
+  const here = `${n} here`;
   if (home.repos.length === 1) {
     return (
       <p class="issues-note" role="note" data-issues-both>
-        This project's issues are in two places: {here}, and those on <b>{home.repos[0]}</b> on GitHub, where new ones go.
+        {here} · <b>{home.repos[0]}</b> on GitHub
       </p>
     );
   }
   return (
     <details class="issues-note" data-issues-both>
       <summary>
-        This project's issues are in two places: {here}, and those on its {home.repos.length} linked GitHub repos, where new ones go.
+        {here} · {home.repos.length} linked GitHub repos
       </summary>
       <ul class="issues-note-repos">
         {home.repos.map((r) => (
@@ -280,23 +279,6 @@ function IssuesBoth({ home }: { home: IssueHome }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-/** Where the project's new issues go, in a line at the list's foot, and
- * the way to its setting (UI audit #163: a project setting, not the
- * list's). */
-function IssueHomeLine({ p, home }: { p: PlatformProject; home: IssueHome }) {
-  const settings = `${pathOf({ page: "project-settings", project: p.id }, names)}#issues`;
-  return (
-    <p class="issues-home-line dim" data-issue-home={home.home}>
-      {home.home === "github" ? "New issues go to GitHub." : "New issues are kept here."}{" "}
-      {mayWrite(p) && home.repos.length > 0 && (
-        <a href={settings} data-issue-home-settings onClick={(e) => follow(e, settings)}>
-          Change it in the project's settings
-        </a>
-      )}
-    </p>
   );
 }
 
@@ -368,9 +350,14 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
         {i.labels.map((l) => (
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}
-        <span class="issue-row-meta dim">
+        <span class="issue-row-meta dim" title={i.state === "closed" ? undefined : "Open"}>
           {/* The row's line says why it closed, so its chip needn't (UI audit #163). */}
-          <StateChip tone={issueTone(i.state)}>{i.state === "closed" ? "Closed" : stateLabel(i)}</StateChip> · #{i.number}{" "}
+          {i.state === "closed" && (
+            <>
+              <StateChip tone={issueTone(i.state)}>Closed</StateChip> ·{" "}
+            </>
+          )}
+          #{i.number}{i.state === "closed" ? " " : " · "}
           {/* The full time on hover (UI audit #182). */}
           <span title={when(i.state === "closed" && i.closed_at ? i.closed_at : i.created_at)}>{rowLine(i, nameOf)}</span>
         </span>
