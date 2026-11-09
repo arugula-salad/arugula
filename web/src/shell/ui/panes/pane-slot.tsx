@@ -17,7 +17,7 @@ import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
 import { px } from "./geometry";
-import { Chip, StateChip } from "../../../shared/ui/state-chip";
+import { Chip } from "../../../shared/ui/state-chip";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
 const parking = document.createElement("div");
@@ -155,11 +155,6 @@ export function PaneSlot({
       <StartedByBadge client={client} id={id} />
       <PaneMarks client={client} pane={id} />
       <ThreadBadge client={client} pane={id} />
-      {!active && (info?.attention === "needs_input" || info?.attention === "done") && (
-        <StateChip tone={info.attention === "done" ? "ok" : "accent"} class="pane-attention" title={info.reason?.headline} data-pane-attention={info.attention}>
-          {info.reason?.kind === "failed" ? "failed" : info.reason?.kind === "exited" ? "exited" : info.attention === "done" ? "done" : "needs you"}
-        </StateChip>
-      )}
       {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
       {info?.unhooked && !info.ask && <HooksOffer client={client} id={id} />}
