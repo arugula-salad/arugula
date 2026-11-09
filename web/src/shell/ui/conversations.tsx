@@ -312,11 +312,6 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
       <div class="picker-where">
         <span class="picker-host">Claude Code conversations</span>
-        {hosts?.some((h) => h.list.some((c) => c.estimate)) && (
-          <span class="conv-cost-note" title={COST_NOTE}>
-            ≈ costs at API prices
-          </span>
-        )}
         <label class="check">
           <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
           Open now

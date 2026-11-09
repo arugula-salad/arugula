@@ -259,7 +259,7 @@ export function CostEstimate({ e, claude }: { e?: Estimate | null; claude?: numb
     <span class="agent-estimate" ref={pop.box} data-estimate={e?.usd ?? ""} data-cost={own ? "claude" : "estimate"}>
       <button class={pop.open ? "agent-estimate-btn on" : "agent-estimate-btn"} aria-expanded={pop.open} aria-haspopup="dialog" title={title} onClick={pop.toggle}>
         {own ? usd(claude!) : costLabel(e!)}
-        <span class="agent-estimate-note">{own ? " Claude Code's figure" : e!.usd == null ? " · no price" : " at API prices"}</span>
+        {(own || e!.usd == null) && <span class="agent-estimate-note">{own ? " Claude Code's figure" : " · no price"}</span>}
       </button>
       {pop.open && (
         <div class="agent-estimate-pop" role="dialog" aria-label={own ? "Cost" : "Estimated cost"} data-estimate-pop style={pop.style} onPointerDown={pop.stop} onDblClick={pop.stop}>

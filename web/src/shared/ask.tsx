@@ -178,8 +178,7 @@ function QuestionCard({ ask, questions, actions, more }: { ask: Ask; questions: 
       {questions.map((q, n) => (
         <fieldset key={n} class="ask-question" data-question={n}>
           <legend>
-            {q.header && <span class="ask-header">{q.header}</span>}
-            <span class="ask-text">{q.question}</span>
+            <span class="ask-text" title={q.header}>{q.question}</span>
             {q.multiSelect && <span class="ask-hint">any of these</span>}
           </legend>
           <div class={q.multiSelect ? "ask-options multi" : "ask-options"} role={q.multiSelect ? "group" : "radiogroup"}>
