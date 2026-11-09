@@ -1,10 +1,10 @@
 ---
 section: Changed
 title: Agent sessions need Allow runs
-line: `@arugula` runs under the project's standing grant: until an owner allows runs on Control's page, under Devices and machines, Runs on cloud workspaces, it starts nothing and says how.
+line: Agent sessions run under the project's standing grant: until an owner allows runs on Control's page, under Devices and machines, Runs on cloud workspaces, asking Arugula in a thread starts nothing and says how.
 ---
 Agent sessions now run under the same standing grant as the project's runs.
-Until a project owner allows them, `@arugula`, Agent on this, Try 3 and
+Until a project owner allows them, asking Arugula in a thread, Agent on this, Try 3 and
 `@codex review` start nothing, and the thread says how to allow them.
 
 **To allow them**, a project owner opens Control's page and goes to *Devices
