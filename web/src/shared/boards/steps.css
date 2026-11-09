@@ -240,9 +240,13 @@
   touch-action: none;
 }
 
-.steps-grip:is(:hover, :focus-visible) {
-  background: var(--selected);
-  box-shadow: inset -2px 0 0 var(--accent);
+/* Its only mark is a 2px accent line down the border, while it's hovered, dragged or focused from the keyboard; a mouse's focus after a drag shows nothing. */
+.steps-grip:focus {
+  outline: none;
+}
+
+.steps-grip:is(:hover, :active, :focus-visible) {
+  background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
 }
 
 /* A link's kind is how its arrow looks: before thin, blocks heavy and warm, relates dotted without a head, duplicate_of double, discovered_from dashed. */
