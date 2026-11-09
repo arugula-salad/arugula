@@ -5,7 +5,7 @@
 // step sideways replaces.
 
 import { names } from "./links";
-import { current, go, parse, pathOf, type Route } from "./router";
+import { current, go, onRoute, parse, pathOf, type Route } from "./router";
 
 export type ChatLevel = "list" | "room" | "thread";
 
@@ -73,4 +73,44 @@ export function arrive(path: string, hash = "") {
 export function arriveHere() {
   const level = chatLevel();
   if (level && level !== "list" && !marked()) arrive(location.pathname + location.search, location.hash);
+}
+
+// Swipe left (#816) goes back down: into the room last open in a project's
+// list, or the thread last open in a room. Set
+// whenever the route (the page's own, Back's, a cold load) is at a room or a
+// thread. Keyed by ids, not paths: a path's slugs change as names load.
+const lastChild = new Map<string, string>();
+const parentKey = (project: string, room?: string) => (room ? `${project}/${room}` : project);
+
+function note(r: Route = current()) {
+  const level = chatLevel(r);
+  if ((r.page === "chat" || r.page === "dm") && (level === "room" || level === "thread")) {
+    lastChild.set(parentKey(r.project, level === "thread" ? r.room : undefined), pathOf({ ...r, msg: level === "room" ? undefined : r.msg }, names));
+  }
+}
+note();
+onRoute(() => note());
+
+/** Where a swipe right goes from here: one level up (what Back does), or from
+ * the list out to the projects at `/`. Null where chat isn't. */
+export function swipeUp(r: Route = current()): string | null {
+  const level = chatLevel(r);
+  if (level === null) return null;
+  if (level === "list") return r.page === "chat" && r.view ? pathOf({ page: "chat", project: r.project }, names) : "/";
+  return chatUp(r);
+}
+
+/** Where a swipe left goes: the room or thread last open one level down, if any. */
+export function swipeDown(r: Route = current()): string | null {
+  if (r.page !== "chat" && r.page !== "dm") return null;
+  const level = chatLevel(r);
+  if (level === "list") return r.page === "chat" && !r.view ? lastChild.get(parentKey(r.project)) ?? null : null;
+  if (level === "room") return lastChild.get(parentKey(r.project, r.room)) ?? null;
+  return null;
+}
+
+/** Commit a swipe's target: `/` is a plain push, the rest are chat's levels. */
+export function swipeGo(path: string) {
+  if (path === "/") return go("/");
+  chatGo(path);
 }

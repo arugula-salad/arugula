@@ -13290,3 +13290,28 @@ button.chat-agent-name:hover {
 .md .doc-prototype-box .doc-prototype {
   margin: 0;
 }
+
+/* A phone's chat levels (#816): the level swiped away is the card, with the
+   one beneath drawn behind it only while a drag is on. No touch-action here:
+   it would stop a code block's own sideways scrolling. */
+.chat.phone .chat-level {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.chat.phone .chat-beneath {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--surface);
+  pointer-events: none;
+}

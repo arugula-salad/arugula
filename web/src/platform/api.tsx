@@ -5,7 +5,7 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
-import { chatGo } from "./chat-nav";
+import { chatGo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
 import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -34,6 +34,9 @@ export const platformApi: PlatformApi = {
       go(project ? pathOf({ page: "project", project }, names) : "/");
     },
     openRoom: (room, msg, thread) => chatGo(roomPath(room, msg, thread)),
+    up: () => swipeUp(),
+    down: () => swipeDown(),
+    goTo: swipeGo,
     openChatView(view, q = "") {
       const r = chatIn(view, q);
       if (!r) return;

@@ -12,6 +12,11 @@ export type SwipeOptions = {
   /** Is there a next (1) or previous (-1) one? Without, the drag rubber-bands. */
   has: (dir: SwipeDir) => boolean;
   commit: (dir: SwipeDir) => void;
+  /** A drag is claimed toward `dir` (again if the finger turns back): what
+   * shows beneath the moving element can be put there (#816). */
+  claim?: (dir: SwipeDir) => void;
+  /** The drag and its slide are over, and the element is back at rest. */
+  settle?: () => void;
 };
 
 const SLOP = 12;
@@ -20,11 +25,13 @@ const FLICK = 0.5; // px per ms
 const SLIDE_MS = 180;
 const RUBBER = 0.3;
 
-/** Starting here, the swipe isn't ours: the thing scrolls sideways itself, or
- * is a frame with drags of its own (a Doc's prototype, #507). */
+/** Starting here, the swipe isn't ours: the thing scrolls sideways itself, is
+ * a frame with drags of its own (a Doc's prototype, #507), or is where text is
+ * typed and selected (#816). */
 function ours(start: EventTarget | null, host: HTMLElement): boolean {
   for (let el = start instanceof Element ? start : null; el && el !== host; el = el.parentElement) {
     if (el instanceof HTMLIFrameElement) return false;
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement || (el instanceof HTMLElement && el.isContentEditable)) return false;
     const x = getComputedStyle(el).overflowX;
     if ((x === "auto" || x === "scroll") && el.scrollWidth > el.clientWidth) return false;
   }
@@ -33,7 +40,7 @@ function ours(start: EventTarget | null, host: HTMLElement): boolean {
 
 /** Listens on `host`; returns what removes it. */
 export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
-  type Track = { id: number; x: number; y: number; claimed: boolean; samples: [number, number][] };
+  type Track = { id: number; x: number; y: number; claimed: boolean; dir: SwipeDir | 0; samples: [number, number][] };
   let track: Track | null = null;
   let busy = false; // sliding after a release
   let timer = 0;
@@ -58,7 +65,7 @@ export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
     if (busy || track || e.touches.length !== 1) return;
     if (!ours(e.target, host)) return;
     const f = e.touches[0];
-    track = { id: f.identifier, x: f.clientX, y: f.clientY, claimed: false, samples: [[e.timeStamp, f.clientX]] };
+    track = { id: f.identifier, x: f.clientX, y: f.clientY, claimed: false, dir: 0, samples: [[e.timeStamp, f.clientX]] };
   };
 
   const move = (e: TouchEvent) => {
@@ -80,6 +87,10 @@ export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
     t.samples.push([e.timeStamp, f.clientX]);
     if (t.samples.length > 6) t.samples.shift();
     const dir: SwipeDir = dx < 0 ? 1 : -1;
+    if (t.dir !== dir) {
+      t.dir = dir;
+      o.claim?.(dir);
+    }
     shift(o.has(dir) ? dx : dx * RUBBER);
   };
 
@@ -105,6 +116,7 @@ export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
     if (calm) {
       reset();
       if (go) o.commit(dir);
+      o.settle?.();
       return;
     }
     busy = true;
@@ -113,7 +125,10 @@ export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
       busy = false;
       if (go) o.commit(dir);
       // After the next frame draws the new pane, not before.
-      requestAnimationFrame(reset);
+      requestAnimationFrame(() => {
+        reset();
+        o.settle?.();
+      });
     }, SLIDE_MS);
   };
 
@@ -128,5 +143,6 @@ export function attachSwipe(host: HTMLElement, o: SwipeOptions): () => void {
     host.removeEventListener("touchcancel", end);
     clearTimeout(timer);
     reset();
+    o.settle?.();
   };
 }
