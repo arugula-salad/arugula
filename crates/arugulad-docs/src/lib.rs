@@ -19,7 +19,7 @@ use std::{path::Path, sync::Arc};
 use arugula_proto::{
     BlockType,
     api::SearchHit,
-    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocsList},
+    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocShare, DocsList},
 };
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -77,6 +77,7 @@ impl arugulad_base::features::Feature for Docs {
             .op_of::<DocRead, Docs>()
             .op_of::<DocAssetGet, Docs>()
             .op_of::<DocLinkDelete, Docs>()
+            .op_of::<DocShare, Docs>()
     }
 
     fn search(

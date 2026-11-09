@@ -2341,6 +2341,12 @@ platform?: DocOnPlatform, };
 export type DocSectionShape = { heading: string, words: number, figures: number, };
 
 /**
+ * `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+ * now (it has one already); otherwise the Doc gets a link.
+ */
+export type DocShareRequest = { update: boolean, };
+
+/**
  * When a Doc was shared with a link, and last updated.
  */
 export type DocShared = { made: number, updated: number, 
@@ -6023,6 +6029,7 @@ export const OPS = {
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
   "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
+  "doc.share": { method: "POST", path: "/api/docs/{id}/share" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },

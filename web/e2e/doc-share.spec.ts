@@ -709,6 +709,63 @@ test.describe("the owner's menus", () => {
     await expect(block).toHaveCount(0);
   });
 
+  test("the Docs page's Share shares a closed Doc with no pane opened, Copy link works, and Update works the same (Arugula #819)", async ({ page }) => {
+    const d = await doc(r);
+    const listed = async () => ((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; open?: number | null; shared?: { updated: number; link: string } | null }[]);
+    const panes = async () => ((await (await fetch(`${r.mini}/api/panes`)).json()) as unknown[]).length;
+    await page.goto(r.mini);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+    const first = page.locator(`[data-doc-block="${d}"]`);
+    await expect(first.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
+    const id = (await listed()).find((x) => x.open === d)!.id;
+    await menu(page, first, "Close pane");
+    await expect(first).toHaveCount(0);
+
+    // Share from the Docs page: the confirm, then the link, and no pane.
+    await page.locator("[data-machine-docs]").click();
+    const mine = page.locator(`[data-doc="${id}"]`);
+    await mine.click();
+    const preview = page.locator("[data-list-preview]");
+    const before = await panes();
+    await preview.locator("button[aria-label='Share…']").click();
+    const dialog = page.locator("[data-doc-share-dialog]");
+    await expect(dialog).toContainText("Anyone with the link can open it");
+    expect((await listed()).find((x) => x.id === id)!.shared, "nothing is shared before the confirm").toBeFalsy();
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(mine.locator("[data-doc-shared]")).toBeVisible();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    expect(await panes(), "no pane opened").toBe(before);
+    const row = (await listed()).find((x) => x.id === id)!;
+    expect(row.open ?? null).toBeNull();
+    const url = ((await (await fetch(`${r.mini}/api/doc-links/${row.shared!.link}`)).json()) as { url: string }).url;
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+
+    // Copy link copies it again.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    await preview.locator("[data-doc-copy-link]").click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+
+    // The copy goes older (a block fills it, then closes): Share reads
+    // Update, and one tap on its confirm makes the same link show the Doc as it is.
+    await preview.locator("[data-open-doc]").click();
+    await expect.poll(async () => (await listed()).find((x) => x.id === id)!.open ?? null).not.toBeNull();
+    const now = (await listed()).find((x) => x.id === id)!.open!;
+    await fill(r.post, now, "s3", `Written after ${MARK}`);
+    await menu(page, page.locator(`[data-doc-block="${now}"]`), "Close pane");
+    await page.locator("[data-machine-docs]").click();
+    await mine.click();
+    const share = preview.locator("button[data-older]");
+    await expect(share).toHaveAttribute("title", "Update the shared copy: it's older than this Doc");
+    const was = (await listed()).find((x) => x.id === id)!.shared!.updated;
+    const panesNow = await panes();
+    await share.click();
+    await page.locator("[data-doc-update-go]").click();
+    await expect.poll(async () => (await listed()).find((x) => x.id === id)!.shared!.updated).toBeGreaterThan(was);
+    expect(await panes(), "no pane opened").toBe(panesNow);
+    expect((await listed()).find((x) => x.id === id)!.shared!.link).toBe(row.shared!.link);
+    await expect(preview.locator("button[data-older]")).toHaveCount(0);
+  });
+
   test("an agent on the owner's CLI can't share, update, unshare or read a link back", async () => {
     const d = await doc(r);
     await share(r, d);
