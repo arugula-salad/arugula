@@ -1212,6 +1212,11 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
     assert_eq!(c.as_person(&mate, "POST", "/api/flags", Some(set.clone())).await.0, 403);
     let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
     assert_eq!((st, &v["flags"]), (200, &json!({ "chat": true })));
+    // Chat is control's own setting, read per account on the platform
+    // (the account's word, else any of its teams'): a member's own
+    // machine hears the team's chat as a word of its own, never as `chat`
+    // (native #673: no daemon starts copying Docs up for it).
+    assert_eq!(flags(&c, &own_box).await, json!({ "account": {}, "team": { "chat-heard": true } }));
     // Their own account's are.
     let (st, _) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "chat", "on": false }))).await;
     assert_eq!(st, 200);
@@ -1219,9 +1224,9 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
     assert_eq!(c.as_person(&mate, "POST", "/api/flags", Some(bad)).await.0, 400);
 
     // The team's machine gets both (account over team is the daemon's to
-    // decide); the member's own machine only the account's.
+    // decide); the member's own machine the account's, and the heard word.
     assert_eq!(flags(&c, &team_box).await, json!({ "account": { "chat": false }, "team": { "chat": true } }));
-    assert_eq!(flags(&c, &own_box).await, json!({ "account": { "chat": false }, "team": {} }));
+    assert_eq!(flags(&c, &own_box).await, json!({ "account": { "chat": false }, "team": { "chat-heard": true } }));
 
     // A renamed flag set by its old name (aru-117, an older page) is kept
     // by its new one, and a machine is sent both, for a daemon from before.
@@ -1232,6 +1237,8 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
         flags(&c, &team_box).await["team"],
         json!({ "chat": true, "chant-workspaces": true, "workspaces": true })
     );
+    // A Labs flag of the team's stays the team's machines' alone.
+    assert_eq!(flags(&c, &own_box).await["team"], json!({ "chat-heard": true }));
     let unset = json!({ "name": "chant-workspaces", "on": null, "team": team });
     assert_eq!(c.as_person(&owner, "POST", "/api/flags", Some(unset)).await.0, 200);
 
@@ -1260,9 +1267,90 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
     assert_eq!(c.as_person(&mate, "GET", "/api/flags", None).await.1["dev"], true);
     assert_eq!(c.as_person(&owner, "GET", "/api/flags", None).await.1["dev"], false);
 
-    // Unset is gone, not off.
+    // Unset is gone, not off; the team's chat still reaches the member's
+    // own machine, and goes when the team's owner unsets it.
     c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "chat", "on": null }))).await;
+    assert_eq!(flags(&c, &own_box).await, json!({ "account": {}, "team": { "chat-heard": true } }));
+    let unset = json!({ "name": "chat", "on": null, "team": team });
+    assert_eq!(c.as_person(&owner, "POST", "/api/flags", Some(unset)).await.0, 200);
     assert_eq!(flags(&c, &own_box).await, json!({ "account": {}, "team": {} }));
+}
+
+/// Native #673: Doc copies are an account's own word. A person sets it
+/// for their account on the page; a team's owner can't set it for the
+/// team, nor can the CLI for the account. Control sends it to the
+/// account's personal machine and not to a team's machine it enrolled.
+#[tokio::test]
+async fn doc_copies_are_an_accounts_own_word_for_its_personal_machines() {
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    let mate_root = person(&c.app, "mate", "m1");
+    let team = "00112233445566ef";
+    acme(&c.app, team, &owner_root);
+    let v2r = roster(
+        team,
+        2,
+        vec![member("own1", &owner_root, TeamRole::Owner), member("m1", &mate_root, TeamRole::Editor)],
+        &owner_root,
+    );
+    c.app.db.add_roster(team, 2, &serde_json::to_string(&v2r).unwrap()).unwrap();
+    let team_box = daemon(&c.app, "m1", "team-box");
+    c.app.db.set_daemon_team(&team_box.id(), team).unwrap();
+    let own_box = daemon(&c.app, "m1", "laptop");
+    let (owner, mate) = (session(&c.app, "own1"), session(&c.app, "m1"));
+    async fn flags(c: &Control, d: &DeviceKeys) -> Value {
+        let (st, v) = c.daemon_get(d, "/api/daemon/trust?features=").await;
+        assert_eq!(st, 200, "{v}");
+        v["flags"].clone()
+    }
+
+    let set = json!({ "name": "doc-copies", "on": true, "team": team });
+    let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
+    assert_eq!(st, 400, "a team has no say: {v}");
+    let (st, v) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "doc-copies", "on": true }))).await;
+    assert_eq!((st, &v["flags"]), (200, &json!({ "doc-copies": true })), "{v}");
+    assert_eq!(flags(&c, &own_box).await["account"], json!({ "doc-copies": true }));
+    assert_eq!(flags(&c, &team_box).await["account"], json!({}), "a team's machine never copies");
+    // Off is kept as off, and never unset.
+    let (st, _) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "doc-copies", "on": false }))).await;
+    assert_eq!(st, 200);
+    let (st, v) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "doc-copies", "on": null }))).await;
+    assert_eq!(st, 400, "{v}");
+    assert_eq!(flags(&c, &own_box).await["account"], json!({ "doc-copies": false }));
+
+    // The CLI is refused on the route: the page alone sets flags.
+    let cli = DeviceKeys::generate();
+    let mut cert = Cert::new(&cli, "m1", Kind::Cli, "Arugula CLI");
+    cert.sign_with(&mate_root);
+    c.app.db.put_device(&cert, true, now_ms()).unwrap();
+    let body = serde_json::to_vec(&json!({ "name": "doc-copies", "on": true })).unwrap();
+    let r = c
+        .http
+        .post(format!("{}/api/flags", c.base))
+        .header("x-arugula-auth", v2(&cli, "POST", "/api/flags", &body))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 401, "the CLI doesn't set flags");
+    // Nor the native client (a Browser device that signs, the iPhone app).
+    let app_keys = DeviceKeys::generate();
+    let mut cert = Cert::new(&app_keys, "m1", Kind::Browser, "Arugula on an iPhone");
+    cert.sign_with(&mate_root);
+    c.app.db.put_device(&cert, true, now_ms()).unwrap();
+    let body = serde_json::to_vec(&json!({ "name": "doc-copies", "on": true })).unwrap();
+    let r = c
+        .http
+        .post(format!("{}/api/flags", c.base))
+        .header("x-arugula-auth", v2(&app_keys, "POST", "/api/flags", &body))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 401, "the native client doesn't set flags");
+    assert_eq!(flags(&c, &own_box).await["account"], json!({ "doc-copies": false }), "nothing changed");
 }
 
 #[tokio::test]
@@ -1411,7 +1499,7 @@ async fn a_joined_machines_direct_urls_are_listed() {
 }
 
 /// A daemon's relay socket, as `arugulad` dials it.
-async fn dial_relay(
+pub(crate) async fn dial_relay(
     c: &Control,
     d: &DeviceKeys,
 ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {

@@ -34,7 +34,7 @@ use std::{
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, WorkItem},
+    work::{DeployWork, PasskeyAssertion, ReadyRun, Report, Secret, SecretsAsk, SecretsGiven, Work},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -70,7 +70,7 @@ struct Fake {
     delegation: Delegation,
     /// What it answered the box's enrollment, and the box's signing key.
     enrolled: Arc<Mutex<Option<(Enrollment, String)>>>,
-    items: Arc<Mutex<Vec<WorkItem>>>,
+    items: Arc<Mutex<Vec<ReadyRun>>>,
     pulls: Arc<Mutex<u32>>,
     reports: Arc<Mutex<Vec<Report>>>,
     /// The project's revokes, with every pull.
@@ -166,15 +166,15 @@ impl Fake {
     }
 
     /// A run of `sh -c script` on the box, under `grant`.
-    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> WorkItem {
+    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> ReadyRun {
         let op = Op { argv: vec!["sh".into(), "-c".into(), script.into()], ..Op::default() };
         self.item_of(run, &op, grant)
     }
 
     /// A run of `op` on the box, under `grant`.
-    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> WorkItem {
+    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> ReadyRun {
         let op = op.encode(&self.device());
-        WorkItem {
+        ReadyRun {
             run: run.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),
@@ -186,6 +186,7 @@ impl Fake {
             revokes: vec![],
             passkey_log: None,
             deploy: None,
+            deploy_plan: None,
         }
     }
 
@@ -506,7 +507,7 @@ fn a_hosted_machine_runs_each_run_once() {
     .unwrap();
     std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let mut d = arugulad!("hostedwork")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -695,7 +696,7 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
     let sessions = marks.join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     let d = arugulad!("hostedagent")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -758,7 +759,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let mut d = arugulad!("hostedcrash")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -825,7 +826,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
 /// A deploy of `source` to production, approved (v2, DK4) with an assertion
 /// over the approval by the key `by` as the passkey `pk` (the account's
 /// passkey when it's the root's, or someone else's key).
-fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
+fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> ReadyRun {
     deploy_item_by(f, run, dep, source, by, ("fake", "acme/app", &["APP_TOKEN"]))
 }
 
@@ -837,7 +838,7 @@ fn deploy_item_by(
     source: &str,
     by: &DeviceKeys,
     driver: (&str, &str, &[&str]),
-) -> WorkItem {
+) -> ReadyRun {
     deploy_item_with(f, run, dep, source, by, driver, Default::default())
 }
 
@@ -851,7 +852,7 @@ fn deploy_item_with(
     by: &DeviceKeys,
     (driver, place, secrets): (&str, &str, &[&str]),
     settings: arugula_e2e::drivers::Settings,
-) -> WorkItem {
+) -> ReadyRun {
     use base64::Engine as _;
     let mut op = Operation {
         project: PROJECT.into(),
@@ -873,10 +874,12 @@ fn deploy_item_with(
     let mut signed = data.clone();
     signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
     let signature = b64.encode(by.signature(&signed));
-    let run_op =
-        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
-            .encode(&f.device());
-    WorkItem {
+    let run_op = Op {
+        deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash(), plan: false }),
+        ..Op::default()
+    }
+    .encode(&f.device());
+    ReadyRun {
         run: run.into(),
         project: PROJECT.into(),
         workspace: WORKSPACE.into(),
@@ -904,6 +907,7 @@ fn deploy_item_with(
             roll_back: None,
             approval_id: None,
         }),
+        deploy_plan: None,
     }
 }
 
@@ -942,7 +946,7 @@ fn a_hosted_machine_runs_under_a_passkey_grant() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let _d = arugulad!("hostedpasskey")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -1078,7 +1082,7 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("hosteddeploy")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1164,7 +1168,7 @@ fn a_deploy_box_takes_its_one_deploy_and_stops() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("deploybox")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1213,7 +1217,7 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
     let f = Fake::new();
     let url = serve(&rt, f.clone());
     let d = arugulad!("hostedlogs")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -1389,7 +1393,7 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
         at
     });
     let d = arugulad!("appsplatform")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1524,7 +1528,7 @@ fn a_deploy_box_releases_arugula() {
         at
     });
     let d = arugulad!("arugularelease")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])

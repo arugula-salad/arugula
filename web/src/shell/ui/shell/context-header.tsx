@@ -18,6 +18,7 @@ import { offlineWhy } from "./live";
 import { setSidebarOpen, useSidebar } from "./prefs";
 import { usePlace } from "./rail";
 import { MachinePlaces } from "../places";
+import { ChevronIcon } from "../../../shared/ui/icons";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
 
@@ -79,7 +80,7 @@ function SidebarToggle({ client }: { client: Client }) {
       title={`${label} on ${directory.current || "this machine"}`}
       onClick={() => setSidebarOpen(!open)}
     >
-      <span aria-hidden="true">{open ? "‹" : "›"}</span>
+      <ChevronIcon dir={open ? "left" : "right"} />
     </button>
   );
 }

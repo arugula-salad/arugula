@@ -13,6 +13,7 @@ import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
 import { useProductNames } from "./linked";
 import { Section } from "../../shared/ui/settings-section";
+import { Chip } from "../../shared/ui/state-chip";
 
 type App = { client: string; app: string; title: string; added_by: string | null; added_at: number };
 
@@ -46,7 +47,7 @@ export function ClientApps({ p }: { p: PlatformProject }) {
             <strong>
               <bdi>{a.title}</bdi>
             </strong>
-            <span class="settings-tag">{product(a.client)}</span>
+            <Chip kind="tag">{product(a.client)}</Chip>
             <code class="sw-mono">{a.app}</code>
             <span class="dim">
               added <Time at={a.added_at} />

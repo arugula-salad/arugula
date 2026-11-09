@@ -10,7 +10,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use arugula_mux::{
     acl::{Acl, Principal},
     block::BlockKinds,
-    mux::{self, AgentSessions, Cmd, Config, Followups, MuxHandle, Notify, PaneGone, People, Tag, Turn, Usage},
+    mux::{self, Cmd, Config, Conversations, Followups, MuxHandle, Notify, PaneGone, People, Tag, Turn, Usage},
     pane::{Launcher, Subscriber, ToClient, client_queue},
     provider::Provider,
     store::StateDir,
@@ -33,7 +33,7 @@ impl People for Quiet {
     fn owns_here(&self, _: &str) -> bool {
         false
     }
-    fn co_owners(&self) -> Vec<Principal> {
+    fn as_owner(&self) -> Vec<Principal> {
         Vec::new()
     }
     fn team_people(&self) -> Vec<Principal> {
@@ -41,7 +41,7 @@ impl People for Quiet {
     }
 }
 
-impl AgentSessions for Quiet {
+impl Conversations for Quiet {
     fn transcript(&self, _: &str) -> Option<PathBuf> {
         None
     }

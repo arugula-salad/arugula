@@ -204,7 +204,7 @@ pub(super) fn text(st: &ForgeState) -> String {
             }
             DraftStatus::Waiting => out.push_str("opening it…\n"),
             DraftStatus::Dropped => {
-                out.push_str(&format!("dropped by {}\n", n.settled_by.as_deref().unwrap_or("someone")));
+                out.push_str(&format!("discarded by {}\n", n.settled_by.as_deref().unwrap_or("someone")));
             }
             DraftStatus::Sent => {}
         }
@@ -599,7 +599,7 @@ impl ForgeBlock {
         Ok(json!({ "block": self.ctx.id }))
     }
 
-    /// *Drop* on the block: as the card's, and also while the agent revises
+    /// *Discard* on the block: as the card's, and also while the agent revises
     /// (when there's no card).
     pub(super) async fn drop_new(&self, by: Option<String>) -> Result<Value, String> {
         self.draft_new()?;
@@ -620,7 +620,7 @@ impl ForgeBlock {
         match c.new.clone() {
             Some(n) if c.number == 0 && n.agent && n.status == DraftStatus::Waiting => Ok(n),
             Some(_) if c.number != 0 => Err("this issue was sent already".into()),
-            Some(n) if n.status == DraftStatus::Dropped => Err("this draft was dropped".into()),
+            Some(n) if n.status == DraftStatus::Dropped => Err("this draft was discarded".into()),
             _ => Err("this block isn't an agent's new-issue draft".into()),
         }
     }

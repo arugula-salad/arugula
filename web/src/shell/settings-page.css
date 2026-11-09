@@ -49,18 +49,12 @@
   margin-top: 4px;
 }
 
-/* The display headings, as `/settings` has them (platform/swarm.css). */
-.settings-place .page-title h1 {
-  font: 800 32px/0.95 var(--f-display);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
+/* The display headings, as `/settings` has them (platform/swarm.css); the
+   page title is PageHeader's (shared/ui/page-header.css). */
 .settings-place .settings-sec > h2,
 .settings-place .settings-elsewhere > h2 {
-  font: 700 19px/1.05 var(--f-display);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font: 700 var(--text-xl)/1.05 var(--f-display);
+  letter-spacing: var(--track-section);
 }
 
 .settings-place .settings-rows a {

@@ -80,7 +80,7 @@ test("a pinned squash-only PR's Merge ▾ offers only Squash", async ({ page }) 
   const block = await open(page, "pr", 1);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el.locator("[data-item-head] .item-number")).toHaveText("#1");
-  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge", exact: true }).click();
   await expect(page.locator(".prompt-choices button")).toHaveText(["Squash"]);
 });
 
@@ -93,7 +93,7 @@ test("a pinned PR looks as GitHub's does, read through Arugula cloud", async ({ 
   await expect(el.locator("[data-item-head] .item-title")).toHaveText("Fix the parser");
   await expect(el.locator("[data-item-pill]")).toHaveText("Open");
   await expect(el.locator("[data-item-fact=branch]")).toHaveText("fix-parser → main");
-  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✓ 2");
+  await expect(el.locator('[data-item-fact="checks"] .item-ok')).toHaveText("2");
   await expect(el.locator('[data-item-fact="reviewers"] [data-item-avatar]')).toHaveCount(1);
   await expect(el.locator('[data-item-avatar][data-name="dan-gh"]')).toHaveAttribute("title", "dan-gh approved");
   await expect(el.locator('[data-item-fact="mergeable"]')).toHaveAttribute("data-mergeable", "clean");

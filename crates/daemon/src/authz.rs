@@ -279,6 +279,10 @@ mod tests {
             (&d, "/api/guests/3"),
             (&g, "/api/acl"),
             (&p, "/api/acl"),
+            // Arugula #681: the access view, on every path (socket, tailnet,
+            // control alike: the policy is the same table).
+            (&g, "/api/access"),
+            (&p, "/api/access"),
             (&p, "/api/links"),
             (&g, "/api/links"),
             (&d, "/api/links/0123456789ab"),

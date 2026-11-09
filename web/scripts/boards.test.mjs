@@ -22,19 +22,22 @@ test("an epic's progress is in words, and a text's first line is what a list sho
   const z = { review: 0, doing: 0 };
   assert.deepEqual(epicLine({ done: 3, total: 5, proven: 2, ...z }), {
     words: "3 of 5 done, 2 proven",
+    short: "3 of 5 done",
     pct: 60,
     segments: [{ lane: "done", pct: 60 }],
   });
-  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0, ...z }), { words: "0 of 2 done", pct: 0, segments: [] });
-  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0, ...z }), { words: "No work yet", pct: 0, segments: [] });
+  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0, ...z }), { words: "0 of 2 done", short: "0 of 2 done", pct: 0, segments: [] });
+  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0, ...z }), { words: "No work yet", short: "No work yet", pct: 0, segments: [] });
   // Every part says its count; a part with none is left out, of the words and of the bar.
   assert.deepEqual(epicLine({ done: 3, total: 10, proven: 0, review: 2, doing: 1 }), {
     words: "3 of 10 done, 0 proven · 2 in review · 1 doing",
+    short: "3 of 10 done",
     pct: 30,
     segments: [{ lane: "done", pct: 30 }, { lane: "review", pct: 20 }, { lane: "doing", pct: 10 }],
   });
   assert.deepEqual(epicLine({ done: 0, total: 4, proven: 0, review: 0, doing: 1 }), {
     words: "0 of 4 done · 1 doing",
+    short: "0 of 4 done",
     pct: 0,
     segments: [{ lane: "doing", pct: 25 }],
   });
@@ -92,9 +95,9 @@ test("a typed pointer is an id of a kind a row may have as its item", () => {
 
 test("a Done row says how it is proven, or that it isn't yet; others say nothing", () => {
   const issue = { kind: "issue", id: "iss_a" };
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "ci" } }), { proven: true, words: "proven by CI" });
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "proven" });
-  assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "not proven yet" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "ci" } }), { proven: true, words: "Proof", title: "proven by CI" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "Proof", title: "proven" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "no proof", title: "not proven yet" });
   assert.equal(proofMark({ lane: "review", pointer: issue }), null);
   // A cancelled row says so in its mark and is not "not proven yet".
   assert.equal(proofMark({ lane: "done", pointer: issue, marks: [{ kind: "cancelled" }] }), null);
@@ -111,7 +114,8 @@ test("an attachment's chip is its label and its state, and says nothing of what 
   const live = { state: "merged", kind: "pr", repo: "acme/app", number: 7, title: "Fix" };
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" }, live }), { label: "acme/app#7", state: "merged" });
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" } }), { label: "PR or issue abc123", state: null });
-  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent", state: "working" });
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent", state: null }, "the Doing lane says working");
+  assert.equal(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "needs_input" } }).state, "needs input");
 });
 
 test("a block's chip is its title, and work on an issue says its board and links to the row (#372)", () => {
@@ -376,6 +380,7 @@ test("a Doc's chip says its written sections, or the machine it is on; only work
   const machine = { kind: "machine_doc", machine: "m1", doc: "00112233445566ff", title: "Perf notes" };
   assert.equal(docWords({ pointer: machine, machine_name: "geek-box" }), "on geek-box");
   assert.equal(docWords({ pointer: machine }), "on a machine");
+  assert.equal(docWords({ pointer: machine, machine_name: "geek-box", sections: 2, written: 1 }), "1/2 on geek-box", "a machine Doc with a copy has counts");
   assert.equal(pointerLabel(machine), "Perf notes");
   assert.equal(pointerLabel(doc), "Doc 01234567");
   assert.equal(pointerText(machine), "", "a machine Doc is never typed in");
@@ -490,4 +495,42 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
   assert.equal(initialsOf("alice"), "A");
   assert.equal(initialsOf("bob-the_builder x"), "BT");
   assert.equal(initialsOf(""), "?");
+});
+
+// The Steps view (Arugula #763): a reorder keeps to its group's order, a link is an arrow the way its kind runs.
+import { linksOf, loadMode, nudge, phases, reorder, shown } from "../src/shared/boards/steps.ts";
+
+test("Steps is the default at 390 px and Lanes elsewhere, and a reorder names the whole group's order it read", () => {
+  assert.equal(loadMode(390), "steps");
+  assert.equal(loadMode(1280), "lanes");
+  // One group, a b c d e; the step is a, c, d (b and e are in other steps).
+  const group = ["a", "b", "c", "d", "e"];
+  const step = ["a", "c", "d"];
+  // d before a: the whole order is what was read, `before` is a.
+  assert.deepEqual(reorder(group, step, "d", "a"), { before: "a", seen: group });
+  // a to the end of its step goes before the next row of the group after the step's last, wherever that is.
+  assert.deepEqual(reorder(group, step, "a", null), { before: "e", seen: group });
+  // Where it already is, nothing is sent.
+  assert.equal(reorder(group, step, "c", "d"), null);
+  assert.equal(reorder(group, step, "d", null), null);
+  assert.deepEqual(nudge(group, step, "c", true), { before: "a", seen: group });
+  assert.deepEqual(nudge(group, step, "c", false), { before: "e", seen: group });
+  assert.equal(nudge(group, step, "a", true), null);
+  // Step 1 folds after 8.
+  assert.deepEqual(shown(1, [...Array(11).keys()], false), { rows: [...Array(8).keys()], more: 3 });
+  assert.equal(shown(2, [...Array(11).keys()], false).more, 0);
+});
+
+test("phases hold the open rows by step in the board's order and count the done ones; links run the way their kind does", () => {
+  const row = (id, lane, step, group, item, relations) => ({ id, lane, step, group, pointer: { kind: "issue", id: item }, relations });
+  const g = (id) => ({ id, title: id });
+  const rows = [row("r1", "next", 1, "g1", "iss_1"), row("r2", "next", 2, "g1", "iss_2"), row("r3", "done", undefined, "g1", "iss_3"), row("r4", "next", 1, undefined, "iss_4")];
+  const v = { groups: [g("g1")], zones: [{ rows }], order: ["r2", "r1", "r3", "r4"], sequence: ["r1", "r2", "r4"] };
+  const ps = phases(v);
+  assert.deepEqual(ps.map((p) => [p.group?.id ?? null, p.done, p.steps.map((s) => [s.step, s.rows.map((r) => r.id)])]), [["g1", 1, [[1, ["r1"]], [2, ["r2"]]]], [null, 0, [[1, ["r4"]]]]]);
+  const rel = (id, kind, direction, item) => ({ id, kind, direction, item });
+  const me = row("r1", "next", 1, "g1", "iss_1", [rel("a", "before", "out", "iss_2"), rel("b", "discovered_from", "out", "iss_4"), rel("c", "relates", "in", "iss_3")]);
+  const drawn = new Set(["r1", "r2", "r4"]);
+  // r3 is done and not drawn, so its link is left out; "discovered from" runs from where it was found.
+  assert.deepEqual(linksOf(me, [me, ...rows.slice(1)], drawn).map((l) => [l.kind, l.from, l.to]), [["before", "r1", "r2"], ["discovered_from", "r4", "r1"]]);
 });

@@ -130,12 +130,12 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
   return (
     <div data-shared-docs>
       <h2>Shared Docs</h2>
-      <p class="hint">
+      <p class="dim">
         Docs you shared with a link. Arugula cloud keeps them encrypted and can't read them; the link, with its key, is on the machine that shared it.
       </p>
       {err && <p class="control-error">{err}</p>}
-      {note && <p class="hint" data-shared-docs-note>{note}</p>}
-      {rows && rows.length === 0 && <p class="hint">No Doc is shared.</p>}
+      {note && <p class="dim" data-shared-docs-note>{note}</p>}
+      {rows && rows.length === 0 && <p class="dim">No Doc is shared.</p>}
       <ul class="rules-list shared-docs-list">
         {(rows ?? []).map((r) => (
           <li key={r.id} data-shared-doc={r.id}>

@@ -180,6 +180,8 @@ function ci() {
   // What failed, against what a PR runs.
   const pr = readFileSync(join(repo, ".github/workflows/pull-request.yml"), "utf8");
   const gate = new Set([...pr.slice(pr.indexOf("\njobs:")).matchAll(/^ {2}([a-z0-9_-]+):$/gm)].map((m) => m[1]));
+  // binaries.yml's quick has check.yml's lint.
+  gate.add("lint");
   const failures = all.filter((r) => r.conclusion === "failure").slice(-30);
   const jobs = new Map();
   let outside = 0;

@@ -2,7 +2,7 @@
 // and the platform's settings (web/src/platform/settings/) alike, so both
 // sides draw it the same (M149).
 //
-// UI audit #150: every dialog behaves the same way. Focus moves into it and
+// UI audit #150, #690: every dialog behaves the same way. Focus moves into it and
 // stays there (Tab wraps), Escape closes it before the terminal under it can
 // hear the key, and focus goes back to what opened it. Dialogs drawn by hand
 // (Permission rules, Appearance, Getting started…) use `useModal` for this.
@@ -16,6 +16,7 @@
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { escapeTaken } from "./menu";
+import { CloseIcon, IconButton } from "./icons";
 
 interface Open {
   el: () => HTMLElement | null;
@@ -81,8 +82,10 @@ function onKey(e: KeyboardEvent) {
   const root = up?.el();
   if (!up || !root) return;
   if (e.key === "Escape") {
-    // A menu open over the dialog takes its own Escape (menu.tsx).
-    if (e.isComposing || escapeTaken(e)) return;
+    // A menu open over the dialog takes its own Escape (menu.tsx), and so
+    // does a context window's popover (blocks/agent-context.tsx, which
+    // listens on the window too, after this).
+    if (e.isComposing || escapeTaken(e) || document.querySelector("[data-context-pop]")) return;
     e.preventDefault();
     e.stopPropagation();
     up.close()?.();
@@ -139,7 +142,15 @@ function install() {
  * With `covers`, it's a pane modal over that pane alone (above): the pane
  * is inert while it's up, and the focus moves in only from that pane (or
  * from nowhere), and back to it after. */
-export function useModal(ref: { current: HTMLElement | null }, close: (() => void) | undefined, open = true, covers?: () => HTMLElement | null) {
+export function useModal(
+  ref: { current: HTMLElement | null },
+  close: (() => void) | undefined,
+  open = true,
+  covers?: () => HTMLElement | null,
+  /** Asked as it shuts: false when what it did (a command run from the
+   * palette) put the focus where it belongs, so it doesn't go back. */
+  returnFocus?: () => boolean,
+) {
   const latest = useRef(close);
   latest.current = close;
   useLayoutEffect(() => {
@@ -171,7 +182,7 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
       const at = document.activeElement;
       const ours = !at || at === document.body || !at.isConnected || (root?.contains(at) ?? false);
       const under = top()?.el();
-      if (!ours) return;
+      if (!ours || returnFocus?.() === false) return;
       if (covers) {
         // Back to what had the focus in the pane (the caller gives a pane
         // that had none its own).
@@ -184,23 +195,75 @@ export function useModal(ref: { current: HTMLElement | null }, close: (() => voi
   }, [open]);
 }
 
-/** The corner ×, pinned where it can always be seen: Modal's, and the
+/** The corner ×: a plain button, never a form's default one (Enter in a
+ * field would press it). Pinned where it can always be seen: Modal's, and the
  * dialogs drawn by hand (Permission rules, Developer settings, Usage and
  * crash reports: UI audit #158). */
 export function CloseX({ close }: { close: () => void }) {
   return (
-    <button class="modal-close" aria-label="Close dialog" title="Close" onClick={close}>
-      ×
-    </button>
+    <IconButton label="Close dialog" title="Close" class="modal-close" onClick={close}>
+      <CloseIcon size="md" />
+    </IconButton>
   );
 }
 
-/** A control dialog: as tall as the window allows, scrolling inside, with
- * its close button pinned where it can always be seen. Its name is its
- * `label`, else its heading. */
-export function Modal({ children, close, label, class: cls }: { children: preact.ComponentChildren; close?: () => void; label?: string; class?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useModal(ref, close);
+/** The one dialog: a title, a body and a footer of buttons, Cancel first and
+ * the action last (laid out by buttons.css). Its name is its `label`, else
+ * its title, else the first h2 in its body. `title` and `buttons` are for
+ * a dialog drawn through it; a dialog with its own head puts it in the
+ * children. */
+export function Modal({
+  children,
+  close,
+  label,
+  class: cls,
+  title,
+  buttons,
+  alert,
+  x = true,
+  backdropClose = true,
+  bare,
+  onSubmit,
+  returnFocus,
+  root,
+  covers,
+  backdropClass,
+  backdropProps,
+}: {
+  children: preact.ComponentChildren;
+  close?: () => void;
+  label?: string;
+  class?: string;
+  /** Drawn as the dialog's h2 (15/600). */
+  title?: string;
+  /** The footer: its buttons, Cancel first. */
+  buttons?: preact.ComponentChildren;
+  /** An alert dialog: it asks before something is lost. */
+  alert?: boolean;
+  /** The corner ×; off for a dialog that has its own Cancel to answer. */
+  x?: boolean;
+  /** Whether a click on the backdrop closes it (a confirm waits out a double-click). */
+  backdropClose?: boolean;
+  /** The dialog draws its own box (a picker, the palette, Getting started):
+   * it gets the backdrop, the trap, Escape and the focus's return, and none
+   * of the card (padding, × and title). Its look is `class`. */
+  bare?: boolean;
+  /** A dialog that is a form: its root is the `<form>`, so the footer's
+   * submit button and Enter in a field send it. */
+  onSubmit?: (e: Event) => void;
+  /** See `useModal`. */
+  returnFocus?: () => boolean;
+  /** Attributes for the dialog itself, such as a `data-` hook for the specs. */
+  root?: Record<string, string | boolean | ((e: any) => void)>;
+  /** A pane modal (a big tip): the pane it covers, as `useModal`'s `covers`. */
+  covers?: () => HTMLElement | null;
+  /** Added to the backdrop's class, for a dialog that is not the window's (a pane's tip, a full-bleed picture). */
+  backdropClass?: string;
+  /** Attributes and handlers for the backdrop, such as a `data-` hook for the specs. */
+  backdropProps?: preact.JSX.IntrinsicElements["div"] & Record<`data-${string}`, string>;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  useModal(ref, close, true, covers, returnFocus);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || label) return;
@@ -210,12 +273,25 @@ export function Modal({ children, close, label, class: cls }: { children: preact
       el.setAttribute("aria-labelledby", h.id);
     }
   });
+  // A form is a div as far as the markup below is concerned.
+  const Root = (onSubmit ? "form" : "div") as "div";
+  const classes = bare ? cls : cls ? `prompt control-prompt ${cls}` : "prompt control-prompt";
   return (
-    <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && close?.()}>
-      <div ref={ref} class={cls ? `prompt control-prompt ${cls}` : "prompt control-prompt"} role="dialog" aria-modal="true" aria-label={label}>
-        {close ? <CloseX close={close} /> : null}
+    <div class={backdropClass ? `prompt-backdrop ${backdropClass}` : "prompt-backdrop"} {...backdropProps} onClick={(e) => backdropClose && e.target === e.currentTarget && close?.()}>
+      <Root
+        ref={ref as { current: HTMLDivElement | null }}
+        class={classes}
+        role={alert ? "alertdialog" : "dialog"}
+        aria-modal="true"
+        aria-label={label}
+        onSubmit={onSubmit}
+        {...root}
+      >
+        {close && x && !bare ? <CloseX close={close} /> : null}
+        {title && !bare ? <h2>{title}</h2> : null}
         {children}
-      </div>
+        {buttons ? <div class="prompt-buttons">{buttons}</div> : null}
+      </Root>
     </div>
   );
 }

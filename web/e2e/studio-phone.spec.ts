@@ -158,7 +158,7 @@ test.beforeAll(async () => {
   );
   chmodSync(join(dir, "hud"), 0o755);
 
-  ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {

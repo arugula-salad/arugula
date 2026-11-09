@@ -98,7 +98,7 @@
       "type": "object"
     },
     "Flags": {
-      "description": "Labs flags control sends a machine (#347): its account's, and its\nteam's if it's a team's machine, by flag name. On or off; a flag\nneither names follows the machine's own default. The daemon's own\n`flags.json` wins over both, and account over team.",
+      "description": "Labs flags control sends a machine (#347): its account's, and its\nteam's if it's a team's machine, by flag name. On or off; a flag\nneither names follows the machine's own default. The daemon's own\n`flags.json` wins over both, and account over team. A personal\nmachine's `team` holds only [`CHAT_HEARD`], when it applies.",
       "properties": {
         "account": {
           "additionalProperties": {

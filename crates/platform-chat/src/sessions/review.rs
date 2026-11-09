@@ -42,7 +42,7 @@ use crate::{
     chat::{at_words, without_code},
     db::{
         chat::{NewMessage, Room},
-        sessions::{Event, Kind, MAX_PROMPT, Move, Role, Session, SessionDetail, State, create_review_in},
+        sessions::{AgentSession, Event, Kind, MAX_PROMPT, Move, Role, SessionDetail, State, create_review_in},
     },
     sessions::hydrate,
     triggers::may_start,
@@ -88,8 +88,22 @@ pub fn asks(text: &str) -> bool {
 /// mentions, and not through chat's post: nobody is pushed for it, and it
 /// never starts or prompts a session.
 pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: &str, text: &str) -> Result<i64> {
+    Ok(post_and(app, room, thread, author, via, text, |_| Ok(true))?.expect("nothing refuses it"))
+}
+
+/// [`post`], and `and` in the message's transaction: `false` posts
+/// nothing, and the answer is `None`.
+pub(crate) fn post_and(
+    app: &Platform,
+    room: &Room,
+    thread: u64,
+    author: &str,
+    via: &str,
+    text: &str,
+    and: impl FnOnce(&crate::db::sql::Tx<'_, '_>) -> Result<bool>,
+) -> Result<Option<i64>> {
     let parent = (thread > 0).then_some(thread as i64);
-    let seq = app.db.add_chat_message(
+    let Some(seq) = app.db.add_chat_message_and(
         &room.id,
         &NewMessage {
             author,
@@ -105,13 +119,17 @@ pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: 
             also: false,
             agent_session: None,
         },
-    )?;
+        and,
+    )?
+    else {
+        return Ok(None);
+    };
     let ev = match parent {
         Some(parent) => ChatLive::Reply { room: room.id.clone(), parent, seq },
         None => ChatLive::Message { room: room.id.clone(), seq },
     };
     app.chat.publish(&app.db, ev, None);
-    Ok(seq)
+    Ok(Some(seq))
 }
 
 fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Result<i64> {
@@ -155,7 +173,7 @@ fn first(text: &str, max: usize) -> (&str, bool) {
 
 /// A review's prompt: what it's for, then the thread and the diff, each
 /// fenced as data, at most [`MAX_PROMPT`] bytes (the diff cut first).
-pub fn prompt(asker: &str, s: &Session, spec: &str, thread: &str, diff: &str) -> String {
+pub fn prompt(asker: &str, s: &AgentSession, spec: &str, thread: &str, diff: &str) -> String {
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();
     let repo = s.repo.as_deref().unwrap_or("its repo");
     let head = format!(
@@ -207,7 +225,7 @@ async fn thread_text(app: &Platform, room: &Room, thread: u64) -> Result<String>
 
 /// What the review is of: the diff from the repo's default branch to the
 /// session's branch on GitHub, and how it says that (`main...arugula/…`).
-async fn diff_of(app: &Platform, s: &Session) -> Result<(String, String), String> {
+async fn diff_of(app: &Platform, s: &AgentSession) -> Result<(String, String), String> {
     let repo = s.repo.as_deref().ok_or("the session works in no repo")?;
     let link = app
         .db
@@ -286,7 +304,7 @@ pub async fn asked(app: &Platform, room: &Room, thread: u64, author: &str, text:
 /// After session `s`'s box reported `events` (`session_live::report`): a
 /// review's turn with a reply posts it in the thread, and a review that's
 /// done ends.
-pub async fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<()> {
+pub async fn reported(app: &Platform, s: &AgentSession, events: &[Event]) -> Result<()> {
     if s.role != Role::Review {
         return Ok(());
     }
@@ -341,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_reviews_prompt_fences_the_thread_and_the_diff_and_fits() {
-        let s = Session {
+        let s = AgentSession {
             id: "ses_abcdef0123".into(),
             project: "p".into(),
             room: "r".into(),

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
+use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE, now_ms};
 use arugula_core::{Intent, Role};
 use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
 use tokio::time::Instant;
@@ -29,6 +29,7 @@ impl Daemon {
                 let _ = reply.send(self.may_drive_here(&who, pane));
             }
             Api::Readers(reply) => {
+                self.settle_closed();
                 let _ = reply.send(self.readers());
             }
             Api::InviteTo(session, pane, reply) => {
@@ -57,6 +58,17 @@ impl Daemon {
                 let _ = reply.send(ok);
             }
             Api::Tell(who, message) => self.tell(&who, ServerMsg::Notice { message }),
+            Api::Trusted(reply) => {
+                let now = now_ms();
+                let mut live: Vec<(PaneId, String, u64)> = self
+                    .trust
+                    .iter()
+                    .filter(|(_, until)| **until > now)
+                    .map(|((p, to), u)| (*p, to.clone(), *u))
+                    .collect();
+                live.sort();
+                let _ = reply.send(live);
+            }
             Api::Scope(who, session, reply) => {
                 let _ = reply.send(self.scope(&who, session));
             }

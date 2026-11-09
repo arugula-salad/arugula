@@ -86,7 +86,7 @@ test("the update chip's What's new opens the panel, with the new release's notes
   await page.locator("[data-update-whats-new]").click();
   await expect(page.getByRole("dialog", { name: "Update Arugula" })).toHaveCount(0);
   await expect(panel(page)).toContainText("Arugula 0.17.0 is out.");
-  await expect(panel(page).getByRole("link", { name: "Its notes ↗" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);
+  await expect(panel(page).getByRole("link", { name: "Its notes" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);
   await panel(page).locator("[data-whats-new-close]").click();
   await expect(panel(page)).toHaveCount(0);
 });

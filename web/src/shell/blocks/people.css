@@ -14,7 +14,7 @@
 }
 
 .people-head {
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin-bottom: 8px;
 }
 
@@ -35,7 +35,7 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .people-seg {
@@ -65,5 +65,5 @@
 
 .people-rest {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }

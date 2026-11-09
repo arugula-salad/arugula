@@ -309,16 +309,7 @@ fn daemon_in(bin: &Path, origin: &str, poll: &str, labs: bool) -> Daemon {
         })
     };
     start(
-        &[
-            "--wisp-token-file",
-            "/nonexistent",
-            "--owner",
-            OWNER,
-            "--tailscale-socket",
-            "/nonexistent/sock",
-            "--direct-url",
-            "http://127.0.0.1:0",
-        ],
+        &["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--direct-url", "http://127.0.0.1:0"],
         &[
             ("PATH", &path),
             ("ARUGULA_FORGE_POLL_MS", poll),

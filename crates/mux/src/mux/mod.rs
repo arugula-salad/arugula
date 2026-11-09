@@ -18,7 +18,7 @@ mod who_may;
 
 pub use config::{AtExit, Config};
 pub use outside::{
-    AgentSessions, CardsCall, CardsCx, DropWhy, Followups, Notify, PaneCards, PaneGone, People, Tag, Turn, Usage,
+    CardsCall, CardsCx, Conversations, DropWhy, Followups, Notify, PaneCards, PaneGone, People, Tag, Turn, Usage,
 };
 
 /// Who answers an invite card: the owner, by any route.
@@ -290,6 +290,9 @@ pub enum Api {
     Trust(PaneId, String, u32, oneshot::Sender<bool>),
     /// A notice for whoever (by principal id) is connected.
     Tell(String, String),
+    /// Who is trusted with which pane on this machine now (Arugula #681):
+    /// each live grant of trust as (pane, principal id, until ms).
+    Trusted(oneshot::Sender<Vec<(PaneId, String, u64)>>),
     /// The panes `who` may read the history and events of (M112): every
     /// pane of a session (`Some`), or of every session they reach, that's
     /// readable to them. `None` when there's no such session, or `who` has
@@ -478,6 +481,9 @@ struct Daemon {
     /// machine from before it, so a pane it closed (or a machine that goes
     /// with it) is stored with where it was (#1035).
     was: HashMap<PaneId, (Option<SessionId>, bool, Option<MachineId>)>,
+    /// Panes and sessions that closed, for their threads' readers
+    /// (`readers.rs`); saved with the layout.
+    closed: crate::store::Closed,
     attention: HashMap<PaneId, Attention>,
     /// Why each pane wants you (M24), as recorded when it started to.
     reasons: HashMap<PaneId, Reason>,
@@ -711,6 +717,7 @@ pub fn start(
         panes: HashMap::new(),
         meta: HashMap::new(),
         was: HashMap::new(),
+        closed: store.load_closed(),
         attention: HashMap::new(),
         reasons: HashMap::new(),
         watching: Default::default(),
@@ -864,14 +871,29 @@ impl Daemon {
         self.next_machine = next_machine.max(1);
         // A machine is only kept with what owns it.
         let panes: Vec<PaneId> = self.mux.panes();
+        let here = self.config.provider.as_ref().map(|p| p.name().to_owned());
         for (id, m) in machines {
             let owned = match m.owner {
                 Owner::Pane(p) => panes.contains(&p),
                 Owner::Tab(t) => self.mux.tab(t).is_ok(),
             };
-            if owned {
-                self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
+            if !owned {
+                continue;
             }
+            // One from another provider (wisp's, from before the Sprites
+            // adapter was removed) stays with its panes as it was: they
+            // say the machine is gone, or that VM panes aren't set up, and
+            // a new one is made on this daemon's provider when they're used.
+            if !m.provider.is_empty() && here.as_deref() != Some(m.provider.as_str()) {
+                warn!(
+                    machine = id,
+                    provider = %m.provider,
+                    sprite = %m.sprite,
+                    here = here.as_deref().unwrap_or("none"),
+                    "a saved machine is from a provider this daemon doesn't have; its panes are kept, and can't reach it"
+                );
+            }
+            self.machines.insert(id, Machine { state: MachineState::Starting, ..m });
         }
         // Nobody is connected yet; whoever views a tab next sizes it.
         let owners: Vec<ClientId> = self.mux.tabs.values().filter_map(|t| t.owner).collect();
@@ -903,19 +925,28 @@ impl Daemon {
                 },
                 _ => self.config.restore(id, &meta),
             };
+            if meta.kind == BlockType::Remote {
+                // A place for a pane on another daemon (#17, removed): the
+                // pane is still that daemon's own; this leaf goes, and the
+                // rest of the layout stays as it was.
+                info!(block = id, "dropped a remote block from the layout: remote blocks were removed");
+                self.drop_restored(id, meta.private);
+                continue;
+            }
             if meta.kind != BlockType::Terminal {
                 let config = meta.config.clone().unwrap_or_default();
                 // What systemd kept for it (an agent server's pipes).
                 let prefix = format!("agent-{id}-");
                 let names: Vec<String> = kept.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
                 let mine = names.into_iter().filter_map(|k| kept.remove_entry(&k)).collect();
+                let private = meta.private;
                 match self.make_block(id, meta.kind, config, meta.host, Some((meta.policy.clone(), mine))) {
                     Ok(()) => {
                         self.meta.insert(id, meta);
                     }
                     Err(e) => {
                         warn!(block = id, error = %e, "can't restore block; dropping it");
-                        let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                        self.drop_restored(id, private);
                     }
                 }
                 continue;
@@ -925,6 +956,7 @@ impl Daemon {
             let hold = meta.hold && matches!(start, Start::Adopt(_) | Start::Resume { .. });
             // Its process went with the old daemon: its policy says what now.
             let fresh = !matches!(start, Start::Adopt(_) | Start::Resume { .. });
+            let private = meta.private;
             match self.open_pane(id, cols, rows, true, start, cwd, integrate, hold, meta.host) {
                 Ok(()) => {
                     if fresh {
@@ -934,7 +966,7 @@ impl Daemon {
                 }
                 Err(e) => {
                     warn!(pane = id, error = %e, "can't restore pane; dropping it");
-                    let _ = self.mux.apply(Intent::ClosePane { pane: id });
+                    self.drop_restored(id, private);
                 }
             }
         }
@@ -948,6 +980,41 @@ impl Daemon {
         });
         self.last_saved = Some((self.mux.clone(), self.meta.clone().into_iter().collect(), self.machines.clone()));
         true
+    }
+
+    /// A pane the restore can't bring back leaves the layout: it closed,
+    /// as its thread's readers go (`readers.rs`), and so did its session
+    /// if it was the last there.
+    fn drop_restored(&mut self, id: PaneId, private: bool) {
+        if let Some(session) = self.session_of(id) {
+            let readers = self.readers_at_close(session, private);
+            self.closed.pane(id, session, private, now_ms(), readers);
+        }
+        let before: Vec<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
+        let _ = self.mux.apply(Intent::ClosePane { pane: id });
+        self.sessions_gone(before);
+    }
+
+    /// Of the sessions there `before` a change, those that went: they're
+    /// kept as closed with who read them, for their threads' readers, and
+    /// then their shares go.
+    /// Write `closed.json` if it changed.
+    pub(super) fn save_closed(&mut self) {
+        if !self.closed.dirty {
+            return;
+        }
+        match self.store.save_closed(&self.closed) {
+            Ok(()) => self.closed.dirty = false,
+            Err(e) => warn!(error = %e, "can't save the closed panes' readers"),
+        }
+    }
+
+    pub(super) fn sessions_gone(&mut self, before: Vec<SessionId>) {
+        for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
+            let readers = self.readers_at_close(gone, false);
+            self.closed.session(gone, now_ms(), readers);
+            self.config.acl.forget_session(gone);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

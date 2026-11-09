@@ -37,8 +37,8 @@
 use anyhow::{Result, bail};
 use arugula_control_wire::{
     boards::{
-        AttachRole, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat, EntryKind, Lane, Pointer,
-        Status,
+        AttachRole, BLOCK_STATE_STALE_MS, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat,
+        EntryKind, Lane, Pointer, Status,
     },
     chat::ChatAgent,
 };
@@ -85,6 +85,9 @@ pub enum Refused {
     Missing(&'static str),
     /// The entry's rev isn't the one named: read the board again.
     Stale { rev: u64 },
+    /// The group's rows aren't in the order the move read them: they are,
+    /// now, these (row ids).
+    Order { rows: Vec<String> },
     /// The change isn't allowed; why.
     Bad(String),
     /// The change is something its author may not do; why.
@@ -121,6 +124,30 @@ pub struct Entry {
     pub source: Option<String>,
     /// The lane a person moved the row to, if one did (#494).
     pub lane_set: Option<LaneSet>,
+}
+
+/// What a machine last said of one of its blocks ([`Db::block_states`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub pane: String,
+    pub state: BlockState,
+    /// The account the machine reported for: the block's owner.
+    pub owner: String,
+    /// When the machine saw the state, in milliseconds.
+    pub seen: u64,
+    /// The machine sends each live block's state again (Arugula #745), so
+    /// an old report means it lost the block, or control lost it.
+    pub sends_again: bool,
+}
+
+impl Reported {
+    /// Unknown at `now`: older than [`BLOCK_STATE_STALE_MS`] from a machine
+    /// that sends again, and not a close (a close is final).
+    pub fn stale(&self, now: u64) -> bool {
+        self.sends_again
+            && self.state.state != BlockWord::Closed
+            && now.saturating_sub(self.seen) > BLOCK_STATE_STALE_MS
+    }
 }
 
 /// A lane a person set on a row: `lane` (never Done), the lane the work
@@ -224,6 +251,9 @@ pub struct Move<'a> {
     pub before: Option<&'a str>,
     /// The rev it must still have.
     pub rev: Option<u64>,
+    /// The row ids of the group a row goes to, as its caller read them: the
+    /// group's whole order, not part of it.
+    pub seen: Option<&'a [String]>,
 }
 
 pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
@@ -983,7 +1013,7 @@ impl Db {
     /// goes to), or last in it. `rev`, if named, must be the row's or
     /// group's.
     pub fn move_entry(&self, board: &str, id: &str, m: &Move, at: u64) -> Result<std::result::Result<(), Refused>> {
-        let Move { zone, before, rev } = *m;
+        let Move { zone, before, rev, seen } = *m;
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
@@ -1030,6 +1060,15 @@ impl Db {
                 params![board],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            if let Some(seen) = seen {
+                // The destination group's whole order, the row itself in it
+                // if it's there already.
+                let now: Vec<&str> = all.iter().filter(|(_, z)| *z == to).map(|(i, _)| i.as_str()).collect();
+                if now.len() != seen.len() || now.iter().zip(seen).any(|(a, b)| *a != b.as_str()) {
+                    let rows = now.into_iter().map(str::to_owned).collect();
+                    return Ok(Err(Refused::Order { rows }));
+                }
+            }
             all.retain(|(i, _)| i != id);
             let index = match before {
                 Some(b) => match all.iter().position(|(i, z)| i == b && *z == to) {
@@ -1082,6 +1121,24 @@ impl Db {
                             .to_owned(),
                     )));
                 }
+            }
+            // A row the epic's sync added goes only with its epic, in a
+            // group as on its own.
+            let synced: Vec<String> = tx.query_map(
+                "SELECT id FROM board_entries
+                 WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 AND source IS NOT NULL
+                 ORDER BY position",
+                params![board, id],
+                |r| r.get(0),
+            )?;
+            if let Some(row) = synced.first().map(|r| entry(&tx, board, r)).transpose()?.flatten() {
+                let why = super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?;
+                return bad(match synced.len() {
+                    1 => format!("this group holds a row its epic adds: move it out of the group first ({why})"),
+                    n => format!(
+                        "this group holds {n} rows its epic adds: move them out of the group first (the first: {why})"
+                    ),
+                });
             }
             super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
@@ -1229,6 +1286,27 @@ impl Db {
         )
     }
 
+    /// For each of these item ids (`iss_` or `fi_`) that a row of one of
+    /// `project`'s boards points at, the item and that board, boards in the
+    /// order [`Self::boards`] lists them.
+    pub fn boards_holding(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                 WHERE e.kind = 'row' AND e.target_kind IN ('issue', 'forge_item') AND b.project_id = ?2
+                   AND {}
+                 ORDER BY b.closed_at IS NOT NULL, b.created_at, b.id",
+                in_json(&c, "e.target", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The native issues among `ids` in `project`, as (id, number, title,
     /// closed, assignees): one read for any number (a board's rows).
     pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {
@@ -1371,22 +1449,44 @@ impl Db {
         )
     }
 
-    /// Keep what `machine` says of its block `pane`, replacing the last.
-    pub fn put_block_state(&self, machine: &str, account: &str, pane: &str, b: &BlockState, at: u64) -> Result<()> {
+    /// Keep what `machine` says of its block `pane`, as it saw it at `seen`,
+    /// replacing the last unless that was seen later (a report that waited
+    /// out an outage never undoes a newer one): whether it was kept. A field
+    /// the report leaves out keeps what was said before (a daemon that
+    /// restarted knows the state but not yet the branch). `sends_again`:
+    /// the machine sends each live block's state again, so this one can go
+    /// stale (Arugula #745).
+    pub fn put_block_state(
+        &self,
+        machine: &str,
+        account: &str,
+        pane: &str,
+        b: &BlockState,
+        seen: u64,
+        sends_again: bool,
+    ) -> Result<bool> {
         let d = b.diffstat;
-        self.c().execute(
+        Ok(self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at, title, state_since)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
+                 diff_files, diff_added, diff_removed, updated_at, title, state_since, sends_again)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?14)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
                  title = COALESCE(excluded.title, board_block_states.title),
-                 branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
-                 uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
-                 diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
+                 branch = COALESCE(excluded.branch, board_block_states.branch),
+                 head = COALESCE(excluded.head, board_block_states.head),
+                 pushed = COALESCE(excluded.pushed, board_block_states.pushed),
+                 uncommitted = COALESCE(excluded.uncommitted, board_block_states.uncommitted),
+                 diff_files = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_files ELSE excluded.diff_files END,
+                 diff_added = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_added ELSE excluded.diff_added END,
+                 diff_removed = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_removed ELSE excluded.diff_removed END,
                  state_since = CASE WHEN board_block_states.state = excluded.state
                      THEN COALESCE(board_block_states.state_since, board_block_states.updated_at)
                      ELSE excluded.updated_at END,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at, sends_again = excluded.sends_again
+             WHERE excluded.updated_at >= board_block_states.updated_at",
             params![
                 machine,
                 pane,
@@ -1399,16 +1499,15 @@ impl Db {
                 d.map(|d| d.files),
                 d.map(|d| d.added),
                 d.map(|d| d.removed),
-                at,
-                b.title
+                seen,
+                b.title,
+                sends_again
             ],
-        )?;
-        Ok(())
+        )? > 0)
     }
 
-    /// What `machine` last said of these `panes`, by pane, with the account
-    /// the machine reported for (the block's owner).
-    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState, String)>> {
+    /// What `machine` last said of these `panes`.
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<Reported>> {
         if panes.is_empty() {
             return Ok(vec![]);
         }
@@ -1416,7 +1515,7 @@ impl Db {
         c.query_map(
             &format!(
                 "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title,
-                        COALESCE(state_since, updated_at), account
+                        COALESCE(state_since, updated_at), account, updated_at, sends_again
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1431,12 +1530,13 @@ impl Db {
                     pushed: r.get(4)?,
                     uncommitted: r.get(5)?,
                     diffstat: match (files, r.get(7)?, r.get(8)?) {
-                        (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
+                        // No files: the last turn left no diff.
+                        (Some(files @ 1..), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
                         _ => None,
                     },
                     since: Some(r.get(10)?),
                 };
-                Ok((r.get(0)?, state, r.get(11)?))
+                Ok(Reported { pane: r.get(0)?, state, owner: r.get(11)?, seen: r.get(12)?, sends_again: r.get(13)? })
             },
         )
     }

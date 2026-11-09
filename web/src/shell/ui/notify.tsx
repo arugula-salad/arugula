@@ -25,6 +25,7 @@ import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStan
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
+import { CloseIcon, DotIcon, IconButton } from "../../shared/ui/icons";
 
 let push: PushState = "unsupported";
 /** What control pushes the account about; null off control, or not yet asked. */
@@ -258,7 +259,7 @@ export function NotifySection({ client, session }: { client: Client; session: nu
           typeof item === "object" &&
           "run" in item && (
             <button key={item.label} class="sheet-item sheet-toggle" aria-pressed={!!item.checked} onClick={item.run}>
-              <span class="sheet-check">{item.checked ? "●" : "○"}</span> {item.label}
+              <span class="sheet-check"><DotIcon on={!!item.checked} /></span> {item.label}
             </button>
           ),
       )}
@@ -315,7 +316,6 @@ export function InstallHint() {
     <div class="install-hint" role="status" data-install-hint>
       {installPrompt ? (
         <>
-          <span>Install it for a full screen and notifications.</span>
           <button
             class="primary"
             onClick={() => {
@@ -330,9 +330,9 @@ export function InstallHint() {
       ) : (
         <span>{HOME_SCREEN} (Share › Add to Home Screen), and open it from there.</span>
       )}
-      <button class="install-hint-close" aria-label="Dismiss" onClick={dismiss}>
-        ×
-      </button>
+      <IconButton label="Dismiss" class="install-hint-close" onClick={dismiss}>
+        <CloseIcon size="md" />
+      </IconButton>
     </div>
   );
 }

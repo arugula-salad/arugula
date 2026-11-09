@@ -644,7 +644,7 @@ export class TerminalView {
         this.host.append(this.chipEl);
       }
       const el = this.chipEl;
-      el.className = opts.error ? "term-chip error" : "term-chip";
+      el.className = opts.error ? "term-toast error" : "term-toast";
       el.dataset.chip = "";
       el.replaceChildren(Object.assign(document.createElement("span"), { textContent: text }));
       for (const a of opts.actions ?? []) {

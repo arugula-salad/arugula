@@ -49,14 +49,13 @@ export function ownUrl(url: string | URL, page: { href: string; host: string }):
   }
 }
 
-/** `url` if it is our daemon's API (`/api/…`, `/ws`), or its ways through
- * (the daemon strips other sites' redirects from the answer): what the key
- * goes to. */
+/** `url` if it is our daemon's API (`/api/…`, `/ws`): what the key goes
+ * to. Nothing else on our origin gets it. */
 export function ownApiUrl(url: string | URL, page: { href: string; host: string }): URL | null {
   const u = ownUrl(url, page);
   if (!u) return null;
   const p = u.pathname;
-  return /^\/(api\/|ws$)/.test(p) || /^\/(h|tunnel)\/[^/]+\/(api\/|ws$)/.test(p) ? u : null;
+  return /^\/(api\/|ws$)/.test(p) ? u : null;
 }
 
 /** A WebSocket URL with the key in it, when it is our daemon's. */

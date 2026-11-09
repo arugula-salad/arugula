@@ -9,7 +9,7 @@
 //! checkpoint, so a delete asked mid-create is done next.
 
 use anyhow::{Result, bail};
-use arugula_control_wire::hosted::{SetupReport, SetupStatus};
+use arugula_control_wire::hosted::{SetupReport, SetupStatus, clones_done};
 
 use super::{
     Db, Taken,
@@ -381,6 +381,41 @@ impl Db {
         Ok(self.c().execute(&sql, params![id, now])? == 1)
     }
 
+    /// Keep the hub's word that it removed workspace `id`'s machine
+    /// `machine` (`hosted::machine_removed`), and make the workspace due
+    /// now: whether it was kept. Only while it's `ready`, `paused` or
+    /// `waking` as that machine, with no delete or rebuild asked (either
+    /// makes the machine go anyway).
+    pub fn note_hosted_removed(&self, id: &str, machine: &str, now: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let due = tx.execute(
+            &format!(
+                "UPDATE hosted_workspaces SET {DUE_NOW}
+                 WHERE id = ?1 AND machine = ?2 AND deleted_at IS NULL AND state IN ('ready', 'paused', 'waking')
+                     AND COALESCE(asked, '') NOT IN ('delete', 'rebuild')"
+            ),
+            params![id, machine],
+        )? == 1;
+        if due {
+            tx.execute(
+                "INSERT INTO hosted_removed_machines (workspace, machine, at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (workspace) DO UPDATE SET machine = excluded.machine, at = excluded.at",
+                params![id, machine, now],
+            )?;
+        }
+        tx.commit()?;
+        Ok(due)
+    }
+
+    /// The machine the hub said it removed from workspace `id`, kept until
+    /// the worker fails it ([`Db::note_hosted_removed`]).
+    pub fn hosted_removed_machine(&self, id: &str) -> Result<Option<String>> {
+        self.c()
+            .query_row("SELECT machine FROM hosted_removed_machines WHERE workspace = ?1", params![id], |r| r.get(0))
+            .optional()
+    }
+
     /// Lease a workspace with something to do at `now`: one being made,
     /// enrolled or deleted, one with something asked, or a box whose state
     /// is due to be looked at. A failed one waits for a person.
@@ -438,7 +473,8 @@ impl Db {
     /// the ask it carried out, cleared unless it was asked again as
     /// something else; a delete asked meanwhile keeps the state `deleting`.
     /// A workspace deleted for good loses its secrets, its ports and its
-    /// thread (M196). What the step saw of its box is metered in the same
+    /// thread (M196); its run specs' schedules and event rules are turned
+    /// off, and a project that chose it for its agents chooses none. What the step saw of its box is metered in the same
     /// transaction ([`crate::hosted::usage`]).
     pub fn checkpoint_hosted(&self, job: &HostedJob, done: Option<Ask>, next: u64, now: u64) -> Result<()> {
         let mut c = self.c();
@@ -487,10 +523,32 @@ impl Db {
                 params![w.id],
             )?;
         }
+        // The hub's word that it removed the machine is done with once the
+        // workspace failed, or has another machine (a rebuild) or none.
+        tx.execute(
+            "DELETE FROM hosted_removed_machines
+             WHERE workspace = ?1 AND (?2 IN ('failed', 'deleting', 'deleted') OR machine <> COALESCE(?3, ''))",
+            params![w.id, w.state, w.machine],
+        )?;
         if job.deleted_at.is_some() {
             tx.execute("DELETE FROM hosted_workspace_secrets WHERE workspace_id = ?1", params![w.id])?;
             tx.execute("DELETE FROM hosted_ports WHERE workspace_id = ?1", params![w.id])?;
             super::objects::drop_workspace_thread(&tx, &w.id)?;
+            // What would start work on it stops, saying why (a schedule
+            // comes back when its spec moves, `Db::update_run_spec`; a
+            // rule is turned on again by hand), and its project's agents
+            // no longer run on it.
+            tx.execute(
+                "UPDATE run_schedules SET enabled = ?2, last_error = ?3, updated_at = ?4
+                 WHERE enabled AND spec_id IN (SELECT id FROM run_specs WHERE workspace_id = ?1)",
+                params![w.id, false, super::triggers::NO_WORKSPACE, now],
+            )?;
+            tx.execute(
+                "UPDATE run_rules SET enabled = ?2, updated_at = ?3
+                 WHERE enabled AND spec_id IN (SELECT id FROM run_specs WHERE workspace_id = ?1)",
+                params![w.id, false, now],
+            )?;
+            tx.execute("UPDATE projects SET agents_workspace = NULL WHERE agents_workspace = ?1", params![w.id])?;
         }
         tx.commit()
     }
@@ -563,13 +621,24 @@ impl Db {
     /// What a workspace's box says of its setup (M183), from `machine`: kept
     /// while that's the machine the box enrolled as, or before the worker has
     /// seen it enroll (a box may start its setup first). Whether it was kept.
+    /// A setup done cloning ([`clones_done`]) doesn't go back to cloning
+    /// until the box is rebuilt, which clears it.
     pub fn report_hosted_setup(&self, id: &str, machine: &str, r: &SetupReport, now: u64) -> Result<bool> {
         let reason = (r.status == SetupStatus::Failed).then_some(r.reason.as_str());
+        let forward = if clones_done(r.status, &r.step) {
+            ""
+        } else {
+            // As `clones_done` says it of what's kept.
+            " AND NOT (setup_status IS NOT NULL AND (setup_status <> 'setting_up'
+                 OR (COALESCE(setup_step, '') NOT IN ('', 'start') AND substr(COALESCE(setup_step, ''), 1, 6) <> 'clone ')))"
+        };
         Ok(self.c().execute(
-            "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
-                 setup_at = ?7
-             WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'waking', 'paused')
-                 AND (machine IS NULL OR machine = ?2)",
+            &format!(
+                "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
+                     setup_at = ?7
+                 WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'waking', 'paused')
+                     AND (machine IS NULL OR machine = ?2){forward}"
+            ),
             params![id, machine, r.status.as_str(), r.step, reason, r.pane, now],
         )? == 1)
     }
@@ -716,6 +785,71 @@ mod tests {
         db.checkpoint_hosted(&job, Some(Ask::Delete), 20, 20).unwrap();
         assert!(db.hosted_workspace("prj_a", "dev").unwrap().is_none());
         made(db.add_hosted_workspace("hw_6", "prj_a", "dev", &spec(), "alice", 2, 30).unwrap());
+    }
+
+    /// Deleted for good, a workspace's run specs' schedules and event rules
+    /// are turned off (a schedule saying why) and its project's agents stop
+    /// choosing it; another workspace's are left alone. Moved to another
+    /// workspace, a spec's schedule comes back on, due at its next tick;
+    /// its rule stays off for a person to turn on.
+    #[test]
+    fn a_deleted_workspace_stops_what_starts_work_on_it() {
+        use crate::db::triggers::{Operation, RuleEvent};
+        let db = Db::test();
+        db.c()
+            .execute(
+                "INSERT INTO projects (id, team_id, name, is_default, created_at) VALUES ('prj_a', 't', 'a', FALSE, 1)",
+                params![],
+            )
+            .unwrap();
+        made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 2, 10).unwrap());
+        made(db.add_hosted_workspace("hw_2", "prj_a", "two", &spec(), "alice", 2, 10).unwrap());
+        assert!(db.set_agents_run_on("prj_a", Some("hw_1")).unwrap());
+        let op = Operation { argv: vec!["ls".into()], ..Default::default() };
+        let made_on = |name: &str, workspace: &str| {
+            let spec = db.add_run_spec("prj_a", name, workspace, &op, "alice", 10).unwrap();
+            let s = db.add_run_schedule(&spec, "0 3 * * *", "UTC", 1_000, "alice", 10).unwrap();
+            let r = db.add_run_rule(&spec, RuleEvent::Push, None, None, false, 20, "alice", 10).unwrap();
+            (spec.id, s.id, r.id)
+        };
+        let (gone, gone_s, gone_r) = made_on("ci", "hw_1");
+        let (_, kept_s, kept_r) = made_on("other", "hw_2");
+
+        let mut job = db.claim_hosted(20).unwrap().unwrap();
+        assert_eq!(job.w.id, "hw_1");
+        job.w.state = "deleted".into();
+        job.deleted_at = Some(20);
+        db.checkpoint_hosted(&job, Some(Ask::Delete), 20, 20).unwrap();
+
+        let s = db.run_schedule(&gone_s).unwrap().unwrap();
+        assert_eq!((s.enabled, s.last_error.as_deref()), (false, Some("its cloud workspace is gone")));
+        assert!(!db.run_rule(&gone_r).unwrap().unwrap().enabled);
+        assert!(db.run_schedule(&kept_s).unwrap().unwrap().enabled);
+        assert!(db.run_rule(&kept_r).unwrap().unwrap().enabled);
+        let chosen: Option<String> = db
+            .c()
+            .query_row("SELECT agents_workspace FROM projects WHERE id = 'prj_a'", params![], |r| r.get(0))
+            .unwrap();
+        assert_eq!(chosen, None);
+
+        // Its job ended, as a turned-off schedule's does; the spec moves.
+        let job_of = |id: &str| -> (String, u64) {
+            db.c()
+                .query_row("SELECT state, next_at FROM platform_jobs WHERE id = ?1", params![id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .unwrap()
+        };
+        db.c().execute("UPDATE platform_jobs SET state = 'done' WHERE id = ?1", params![gone_s]).unwrap();
+        let now = 86_400_000;
+        db.update_run_spec(&gone, Some("ci2"), None, None, "alice", now).unwrap().unwrap();
+        assert!(!db.run_schedule(&gone_s).unwrap().unwrap().enabled, "a rename alone brings nothing back");
+        db.update_run_spec(&gone, None, Some("hw_2"), None, "alice", now).unwrap().unwrap();
+        let s = db.run_schedule(&gone_s).unwrap().unwrap();
+        assert_eq!((s.enabled, s.last_error.as_deref()), (true, None));
+        assert_eq!(s.next_at, now + 3 * 3_600_000, "its next tick after the move");
+        assert_eq!(job_of(&gone_s), ("pending".to_owned(), s.next_at));
+        assert!(!db.run_rule(&gone_r).unwrap().unwrap().enabled, "a rule is turned on by hand");
     }
 
     /// A claim leases one row at a time; a checkpoint frees it until it's

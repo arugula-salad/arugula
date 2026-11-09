@@ -146,7 +146,7 @@ test("every host's conversations in one picker, each opened and continued on its
   await expect.poll(() => page.evaluate(() => window.__arugula.client.connected)).toBe(true);
   const [term] = await panes(page);
   await menu(page, paneEl(page, term), "Claude Code conversations…");
-  await expect(row(page, "jake-mini").locator(".host-tag")).toHaveText(`%${block}`);
+  await expect(row(page, "jake-mini").locator(".chip-tag")).toHaveText(`%${block}`);
   await row(page, "jake-mini").click();
   await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("jake-mini");
   await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(block);
@@ -192,7 +192,7 @@ test.describe("phone", () => {
     await expect.poll(() => hostStates(page), { timeout: 15_000 }).toEqual({ geek: "connected", "jake-mini": "connected", laptop: "connected" });
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
-    await expect(picker(page).locator(".picker.phone")).toBeVisible();
+    await expect(picker(page)).toHaveClass(/\bphone\b/);
     await expect(picker(page).locator(".conv-host .conv-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
     await row(page, "laptop").click();
     await expect(picker(page)).toBeHidden();

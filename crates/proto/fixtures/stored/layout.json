@@ -1,0 +1,776 @@
+{
+  "version": 1,
+  "saved_at_ms": 1793800000000,
+  "mux": {
+    "sessions": [
+      {
+        "id": 7,
+        "name": "session 1",
+        "tabs": [
+          745,
+          735,
+          753,
+          771,
+          773
+        ]
+      },
+      {
+        "id": 12,
+        "name": "session 2",
+        "tabs": [
+          584,
+          695,
+          728
+        ]
+      },
+      {
+        "id": 42,
+        "name": "session 3",
+        "tabs": [
+          665
+        ]
+      },
+      {
+        "id": 46,
+        "name": "session 4",
+        "tabs": [
+          726
+        ]
+      },
+      {
+        "id": 47,
+        "name": "session 5",
+        "tabs": [
+          738
+        ]
+      }
+    ],
+    "tabs": {
+      "584": {
+        "id": 584,
+        "name": "tab 584",
+        "root": {
+          "type": "pane",
+          "pane": 748
+        },
+        "cols": 240,
+        "rows": 67,
+        "owner": null,
+        "zoom": null
+      },
+      "665": {
+        "id": 665,
+        "name": null,
+        "root": {
+          "type": "pane",
+          "pane": 828
+        },
+        "cols": 243,
+        "rows": 52,
+        "owner": null,
+        "zoom": null
+      },
+      "695": {
+        "id": 695,
+        "name": null,
+        "root": {
+          "type": "split",
+          "id": 330,
+          "dir": "row",
+          "children": [
+            {
+              "weight": 0.5,
+              "node": {
+                "type": "pane",
+                "pane": 879
+              }
+            },
+            {
+              "weight": 0.5,
+              "node": {
+                "type": "pane",
+                "pane": 881
+              }
+            }
+          ]
+        },
+        "cols": 240,
+        "rows": 67,
+        "owner": null,
+        "zoom": null
+      },
+      "726": {
+        "id": 726,
+        "name": null,
+        "root": {
+          "type": "pane",
+          "pane": 943
+        },
+        "cols": 275,
+        "rows": 56,
+        "owner": null,
+        "zoom": null
+      },
+      "728": {
+        "id": 728,
+        "name": null,
+        "root": {
+          "type": "pane",
+          "pane": 948
+        },
+        "cols": 243,
+        "rows": 52,
+        "owner": null,
+        "zoom": null
+      },
+      "735": {
+        "id": 735,
+        "name": "tab 735",
+        "root": {
+          "type": "split",
+          "id": 405,
+          "dir": "row",
+          "children": [
+            {
+              "weight": 0.5,
+              "node": {
+                "type": "pane",
+                "pane": 961
+              }
+            },
+            {
+              "weight": 0.5,
+              "node": {
+                "type": "split",
+                "id": 406,
+                "dir": "column",
+                "children": [
+                  {
+                    "weight": 0.5,
+                    "node": {
+                      "type": "pane",
+                      "pane": 834
+                    }
+                  },
+                  {
+                    "weight": 0.25,
+                    "node": {
+                      "type": "pane",
+                      "pane": 794
+                    }
+                  },
+                  {
+                    "weight": 0.25,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1049
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "cols": 324,
+        "rows": 63,
+        "owner": null,
+        "zoom": null
+      },
+      "738": {
+        "id": 738,
+        "name": null,
+        "root": {
+          "type": "pane",
+          "pane": 973
+        },
+        "cols": 243,
+        "rows": 52,
+        "owner": null,
+        "zoom": null
+      },
+      "745": {
+        "id": 745,
+        "name": null,
+        "root": {
+          "type": "split",
+          "id": 396,
+          "dir": "row",
+          "children": [
+            {
+              "weight": 0.6505376344086021,
+              "node": {
+                "type": "pane",
+                "pane": 999
+              }
+            },
+            {
+              "weight": 0.34946236559139787,
+              "node": {
+                "type": "pane",
+                "pane": 1006
+              }
+            }
+          ]
+        },
+        "cols": 292,
+        "rows": 69,
+        "owner": null,
+        "zoom": null
+      },
+      "753": {
+        "id": 753,
+        "name": null,
+        "root": {
+          "type": "split",
+          "id": 411,
+          "dir": "row",
+          "children": [
+            {
+              "weight": 0.7030567685589519,
+              "node": {
+                "type": "pane",
+                "pane": 1028
+              }
+            },
+            {
+              "weight": 0.1703056768558952,
+              "node": {
+                "type": "split",
+                "id": 425,
+                "dir": "column",
+                "children": [
+                  {
+                    "weight": 0.5,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1038
+                    }
+                  },
+                  {
+                    "weight": 0.5,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1040
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 0.12663755458515283,
+              "node": {
+                "type": "split",
+                "id": 424,
+                "dir": "column",
+                "children": [
+                  {
+                    "weight": 0.5,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1037
+                    }
+                  },
+                  {
+                    "weight": 0.5,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1029
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "cols": 292,
+        "rows": 68,
+        "owner": null,
+        "zoom": null
+      },
+      "771": {
+        "id": 771,
+        "name": "tab 771",
+        "root": {
+          "type": "split",
+          "id": 472,
+          "dir": "row",
+          "children": [
+            {
+              "weight": 0.7129186602870814,
+              "node": {
+                "type": "split",
+                "id": 475,
+                "dir": "column",
+                "children": [
+                  {
+                    "weight": 0.6140350877192983,
+                    "node": {
+                      "type": "split",
+                      "id": 491,
+                      "dir": "row",
+                      "children": [
+                        {
+                          "weight": 0.5,
+                          "node": {
+                            "type": "pane",
+                            "pane": 1050
+                          }
+                        },
+                        {
+                          "weight": 0.5,
+                          "node": {
+                            "type": "pane",
+                            "pane": 1119
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "weight": 0.38596491228070173,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1052
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 0.28708133971291866,
+              "node": {
+                "type": "split",
+                "id": 477,
+                "dir": "column",
+                "children": [
+                  {
+                    "weight": 0.33333333333333337,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1118
+                    }
+                  },
+                  {
+                    "weight": 0.33333333333333337,
+                    "node": {
+                      "type": "pane",
+                      "pane": 1075
+                    }
+                  },
+                  {
+                    "weight": 0.33333333333333337,
+                    "node": {
+                      "type": "split",
+                      "id": 488,
+                      "dir": "row",
+                      "children": [
+                        {
+                          "weight": 0.5,
+                          "node": {
+                            "type": "pane",
+                            "pane": 1115
+                          }
+                        },
+                        {
+                          "weight": 0.5,
+                          "node": {
+                            "type": "pane",
+                            "pane": 1116
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "cols": 287,
+        "rows": 63,
+        "owner": 33,
+        "zoom": null
+      },
+      "773": {
+        "id": 773,
+        "name": null,
+        "root": {
+          "type": "pane",
+          "pane": 1105
+        },
+        "cols": 287,
+        "rows": 66,
+        "owner": 33,
+        "zoom": null
+      }
+    },
+    "rev": 171158,
+    "options": {},
+    "next_session": 49,
+    "next_tab": 773,
+    "next_pane": 1119,
+    "next_node": 491
+  },
+  "panes": {
+    "748": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000748",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000748.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "794": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000794",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000794.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "828": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000828",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000828.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "834": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000834",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000834.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "879": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000879",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000879.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "881": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": null
+    },
+    "943": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000943",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000943.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "948": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000948",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000948.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "961": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000961",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000961.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "973": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000973",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000973.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "999": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000000999",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000000999.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "1006": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "board",
+      "config": {},
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1028": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000001028",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000001028.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "1029": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "doc",
+      "config": {
+        "title": "a block"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1037": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "forge",
+      "config": {
+        "kind": "pr"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1038": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "doc",
+      "config": {
+        "title": "a block"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1040": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "doc",
+      "config": {
+        "title": "a block"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1049": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000001049",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000001049.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "1050": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000001050",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000001050.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "1052": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "board",
+      "config": {},
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1075": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "agent",
+      "config": {
+        "title": "a block",
+        "agent": "claude"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1105": {
+      "policy": {
+        "kind": "resume"
+      },
+      "cwd": "/home/someone/src/app",
+      "command": "claude",
+      "session": {
+        "agent": "claude",
+        "id": "0b3c6a52-6f1e-4d6e-9d3e-000000001105",
+        "transcript": "/home/someone/.claude/projects/-home-someone-src-app/0b3c6a52-6f1e-4d6e-9d3e-000000001105.jsonl",
+        "cwd": "/home/someone/src/app",
+        "running": true
+      }
+    },
+    "1115": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "agent",
+      "config": {
+        "title": "a block",
+        "agent": "claude"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    },
+    "1116": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "forge",
+      "config": {
+        "kind": "pr"
+      },
+      "started_by": {
+        "by": "mcp:claude-code",
+        "block": 1115
+      }
+    },
+    "1118": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "forge",
+      "config": {
+        "kind": "pr"
+      },
+      "started_by": {
+        "by": "mcp:claude-code",
+        "block": 1082
+      }
+    },
+    "1119": {
+      "policy": {
+        "kind": "shell"
+      },
+      "cwd": null,
+      "command": null,
+      "type": "agent",
+      "config": {
+        "title": "a block",
+        "agent": "claude"
+      },
+      "started_by": {
+        "by": "mcp:claude-code"
+      }
+    }
+  },
+  "machines": {},
+  "next_machine": 23
+}

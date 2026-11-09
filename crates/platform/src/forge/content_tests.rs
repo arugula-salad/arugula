@@ -268,6 +268,9 @@ async fn world() -> World {
         &api,
         throwaway_key(),
     ));
+    // No full pass: it comes on a day's boundary, which these turns could
+    // cross by chance.
+    p.github.as_mut().unwrap().ingest.settings.full_every_ms = 0;
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

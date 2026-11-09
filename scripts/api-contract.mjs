@@ -11,9 +11,9 @@
 // - a handler's signature doesn't mention the types its operation names.
 //
 // It's a script, not part of crates/control-wire or a new crate, because
-// scripts/ci-hub-changed counts any change to control-wire, routes.toml or a
-// crate's Cargo.toml as a hub change, and a hub deploy drops every relayed
-// terminal.
+// the hub's release inputs (ops/src/control.component.ts) count any change to
+// control-wire, routes.toml or a crate's Cargo.toml as a hub change, and a
+// hub deploy drops every relayed terminal.
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

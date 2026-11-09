@@ -43,7 +43,7 @@ use tracing::info;
 use crate::{
     Platform,
     chat::session_card::threaded,
-    db::sessions::{Event, Kind, Role, Session, SessionDetail},
+    db::sessions::{AgentSession, Event, Kind, Role, SessionDetail},
 };
 
 /// The most characters of an answer the thread gets.
@@ -105,7 +105,7 @@ pub fn answer(d: &SessionDetail, link: &str) -> Option<String> {
 
 /// After session `s`'s box reported `events` (`session_live::report`):
 /// each turn's answer, posted in its thread (module docs).
-pub fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<()> {
+pub fn reported(app: &Platform, s: &AgentSession, events: &[Event]) -> Result<()> {
     if s.role == Role::Review {
         return Ok(());
     }

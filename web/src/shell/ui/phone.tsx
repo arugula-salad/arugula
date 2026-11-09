@@ -2,6 +2,7 @@
 // tabs and panes to switch between, and a key bar supplies the keys a phone
 // keyboard lacks.
 
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openSettings } from "./settings-route";
 import { openAgentsPage } from "./agents-route";
 import { openDocsPage } from "./docs-route";
@@ -20,6 +21,7 @@ import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
+import { confirmClosePane, confirmCloseTab } from "./close-tab";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -32,6 +34,8 @@ import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
+import { Chip } from "../../shared/ui/state-chip";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -46,8 +50,8 @@ export function PhoneHeader({ client }: { client: Client }) {
           {client.state?.panes.some(needsYou) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
-              <span class="crumb">{session.name}</span> ›{" "}
-              {tab && client.tabMachine(tab.id) && <span class="host-tag">VM</span>}
+              <span class="crumb">{session.name}</span> <ChevronIcon dir="right" />{" "}
+              {tab && client.tabMachine(tab.id) && <Chip kind="tag" class="chip-gap">VM</Chip>}
               <span class="crumb">{tab ? tabLabel(client, tab) : ""}</span>
             </>
           )}
@@ -129,7 +133,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     {n.kind === "grant_ask" ? (
                       <GrantActs n={n} sheet done={() => client.dismissNotice(n.key)} />
                     ) : (
-                      <button class="sheet-act" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
+                      <button class="sheet-act primary" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
                         Dismiss
                       </button>
                     )}
@@ -151,25 +155,25 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         </span>
                       </button>
                       {rerun && (
-                        <button class="sheet-act" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
+                        <button class="sheet-act primary" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
                           Rerun
                         </button>
                       )}
                       {gate && point && may && (
                         <PointChoices
                           point={point}
-                          cls="sheet-act"
+                          cls="sheet-act primary"
                           answer={(answer) => act(() => void client.act({ action: "answer", pane: p.id, id: gateKey(gate), content: { answer } }))()}
                         />
                       )}
                       {gate && !point && may && (
-                        <button class="sheet-act" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
+                        <button class="sheet-act primary" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
                           Approve
                         </button>
                       )}
                       {gate && may && p.reason?.actions.includes("expire") && (
                         <button
-                          class="sheet-act"
+                          class="sheet-act primary"
                           data-expire-gate={p.id}
                           title={EXPIRE_TITLE}
                           onClick={act(() => void client.act({ action: "expire", pane: p.id, id: gateKey(gate) }))}
@@ -180,6 +184,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     </div>
                   );
                 })}
+              </section>
+            )}
+            {wanting.length === 0 && notices.length === 0 && (
+              <section class="sheet-group sheet-needs-none" data-needs-none>
+                <h2>Needs you</h2>
+                <EmptyLine>Nothing right now.</EmptyLine>
               </section>
             )}
               {/* What a phone is opened for most: right at the top. */}
@@ -223,9 +233,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 return (
                   <div key={s.id} class={here ? "sheet-card sheet-session here" : "sheet-card sheet-session"}>
                     <button class="sheet-session-head" aria-expanded={open} data-session={s.id} onClick={() => fold(s.id)}>
-                      <span class="fold">{open ? "▾" : "▸"}</span>
+                      <span class="fold"><ChevronIcon open={open} /></span>
                       <span class="name">{s.name}</span>
-                      <span class="count">
+                      <span class="sheet-count">
                         {s.tabs.length} tab{s.tabs.length === 1 ? "" : "s"}
                       </span>
                     </button>
@@ -237,9 +247,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         return (
                           <div key={tid} class="sheet-tab">
                             <button class={tid === client.tab ? "sheet-item current" : "sheet-item"} onClick={act(() => client.selectTab(tid))}>
-                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <span class="host-tag">VM</span>}
+                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" class="chip-gap">VM</Chip>}
                               <span class="label">{tabLabel(client, t)}</span>
-                              {panes.length > 1 && <span class="count">{panes.length}</span>}
+                              {panes.length > 1 && <span class="sheet-count">{panes.length}</span>}
                               <ChatTabBadge client={client} panes={panes} />
                             </button>
                             {panes.length > 1 &&
@@ -260,6 +270,21 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </div>
                 );
               })}
+              {state.sessions.length === 0 && (
+                <EmptyState
+                  where="page"
+                  data-sheet-no-sessions
+                  title="No sessions yet."
+                  why="A session holds tabs, and each tab its panes."
+                  action={
+                    !state.roles && (
+                      <button class="primary" onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>
+                        New session
+                      </button>
+                    )
+                  }
+                />
+              )}
             </section>
             </>
           )}
@@ -294,12 +319,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         ),
                       )}
                     {active !== undefined && (
-                      <button class="danger" onClick={act(() => client.intent({ op: "close_pane", pane: active }))}>
+                      <button class="danger" onClick={act(() => confirmClosePane(client, active))}>
                         Close pane
                       </button>
                     )}
                     {closeTab && (
-                      <button class="danger" onClick={act(() => client.tab !== null && client.intent({ op: "close_tab", tab: client.tab }))}>
+                      <button class="danger" onClick={act(() => client.tab !== null && confirmCloseTab(client, client.tab))}>
                         {client.tabMachine(client.tab!) ? "Close tab and machine" : "Close tab"}
                       </button>
                     )}
@@ -384,7 +409,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             </>
           )}
         </div>
-        <div class="sheet-tabs" role="tablist" aria-label="Sheet">
+        <div class="seg touch sheet-tabs" role="tablist" aria-label="Sheet">
           {TABS.map(([id, label]) => (
             <button
               key={id}

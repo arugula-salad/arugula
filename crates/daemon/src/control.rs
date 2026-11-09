@@ -1137,13 +1137,39 @@ impl Enrolled {
     /// account is, yet still someone to name, as `account:<id>`. Only
     /// someone [`Enrolled::build`] admits as the owner: the roster's other
     /// owners, on a team or hosted machine, locked or not; nobody on a
-    /// deploy's box, where nobody gets in.
+    /// deploy's box, where nobody gets in. What they may do is theirs:
+    /// the Doc links' gate (`Cx::co_owner`, #1066) and the pushes by
+    /// account ([`Control::to_push`]) read this, and a hosted workspace's
+    /// editor isn't one ([`Self::as_owner`]).
     fn co_owner(&self, account: &str) -> Option<Principal> {
         if account == self.saved.cert.account || self.saved.purpose().is_some_and(Purpose::deploys) {
             return None;
         }
         let t = self.saved.team()?;
         let m = t.roster.as_ref()?.member(account).filter(|m| m.role == TeamRole::Owner)?;
+        let name = t.names.get(account).unwrap_or(&m.name).clone();
+        Some(Principal::User { id: format!("account:{account}"), name, pic: None })
+    }
+
+    /// Someone [`Enrolled::build`] admits as the owner who isn't this
+    /// machine's own account, named as themselves: a team's other owner
+    /// ([`Self::co_owner`]), or a hosted workspace's editor, who has full
+    /// use of it as its owners do, while its team isn't locked (native
+    /// #705). For what's said about them (who reads a pane's thread,
+    /// `crate::mux::People::as_owner`), not for what they may do, which
+    /// stays [`Self::co_owner`]'s.
+    fn as_owner(&self, account: &str) -> Option<Principal> {
+        if let Some(p) = self.co_owner(account) {
+            return Some(p);
+        }
+        if !self.saved.is_hosted()
+            || account == self.saved.cert.account
+            || self.saved.purpose().is_some_and(Purpose::deploys)
+        {
+            return None;
+        }
+        let t = self.saved.team().filter(|t| !t.locked)?;
+        let m = t.roster.as_ref()?.member(account).filter(|m| m.role == TeamRole::Editor)?;
         let name = t.names.get(account).unwrap_or(&m.name).clone();
         Some(Principal::User { id: format!("account:{account}"), name, pic: None })
     }
@@ -1173,6 +1199,15 @@ impl Enrolled {
         a.dedup();
         a
     }
+
+    /// Whether a read-only link's key or a guest's ssh invite gets in. A
+    /// deploy's box admits no one, as [`Enrolled::build`] admits no roster
+    /// there, and that includes links and guests: one made before the box
+    /// was told it's a deploy's stops working then (purposes only close).
+    /// The link or invite stays where it is.
+    fn admits_links_and_guests(&self) -> bool {
+        !self.saved.purpose().is_some_and(Purpose::deploys)
+    }
 }
 
 impl std::fmt::Debug for Control {
@@ -1192,6 +1227,10 @@ pub struct Control {
     /// `control.json`'s stamp as [`Control::reload`] last read it, taken
     /// before the read: where the watcher starts from.
     loaded: std::sync::Mutex<Option<std::time::SystemTime>>,
+    /// `control.json` is there and couldn't be read at the last
+    /// [`Control::reload`]: whether this machine is a team's, and who's in
+    /// it, isn't known.
+    unreadable: std::sync::atomic::AtomicBool,
     /// Bumped whenever the trusted set changes: open channels re-check
     /// their device and close if it's gone.
     pub changed: watch::Sender<u64>,
@@ -1394,6 +1433,52 @@ fn load_waiting(state_dir: &Path) -> Vec<Waiting> {
     old
 }
 
+/// What the access view (Arugula #681) reads of an enrollment:
+/// [`Control::roster_view`].
+#[derive(Debug, Clone, Default)]
+pub struct RosterView {
+    /// A hosted machine: who gets in is its project's people.
+    pub hosted: bool,
+    /// What a hosted machine is for (`people`, `deploy`, `snapshot`,
+    /// `both`); nothing on another kind.
+    pub purpose: Option<String>,
+    /// A deploy's box: nobody gets in, as [`Enrolled::build`] decides. A
+    /// snapshot's box admits its project's people as a workspace does;
+    /// only control's routing keeps them out of it.
+    pub nobody: bool,
+    /// A team machine's team (pinned at join), roster checked or not yet.
+    pub team_id: Option<String>,
+    /// This machine's own account (a hosted team machine's: the founder's).
+    pub account: String,
+    /// Its login on control, once control said.
+    pub login: String,
+    /// Its device id in control's directory.
+    pub device: String,
+    /// That control's URL.
+    pub url: String,
+    /// Its own team's roster, as last checked.
+    pub team: Option<RosterTeam>,
+    /// Teams sessions were shared with (M30), by id, as checked.
+    pub shared: BTreeMap<String, RosterTeam>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RosterTeam {
+    pub id: String,
+    pub name: String,
+    /// Locked: only its owners get in.
+    pub locked: bool,
+    pub members: Vec<RosterMember>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RosterMember {
+    pub account: String,
+    /// As they set it (#208), else the roster's word.
+    pub name: String,
+    pub role: TeamRole,
+}
+
 /// Someone a roster this daemon checked names (#233): its own team's, or
 /// a team's the owner pinned or shared with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1477,6 +1562,7 @@ impl Control {
             unsaved: Default::default(),
             now: RwLock::new(None),
             loaded: Default::default(),
+            unreadable: Default::default(),
             changed: watch::channel(0).0,
             direct_urls,
             default_url,
@@ -1754,6 +1840,12 @@ impl Control {
         self.send_signed(reqwest::Method::PUT, path, serde_json::to_vec(body)?, "application/json").await
     }
 
+    /// DELETE at control, signed as this machine, if it's in control (a
+    /// Doc's copy, once the Doc is gone): as [`Control::put_signed`].
+    pub async fn delete_signed<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+        self.send_signed(reqwest::Method::DELETE, path, Vec::new(), "application/json").await
+    }
+
     /// [`Control::put_signed`] with a body of bytes as they are (a Doc's
     /// picture).
     pub async fn put_signed_bytes<T: serde::de::DeserializeOwned>(
@@ -2020,8 +2112,73 @@ impl Control {
         out
     }
 
+    /// What the access view reads of this enrollment (Arugula #681): the
+    /// machine's kind, its own team's roster as this machine checked it
+    /// (a team machine's, or a hosted machine's project's), and the teams
+    /// sessions were shared with, each from a roster that checked out from
+    /// its pin. Nothing control said that this machine didn't check for
+    /// itself: a team control withheld (`held_teams`) isn't here, since
+    /// nobody gets in through it.
+    pub fn roster_view(&self) -> Option<RosterView> {
+        let e = self.enrolled()?;
+        let s = &e.saved;
+        let members = |r: &Roster, names: &BTreeMap<String, String>| -> Vec<RosterMember> {
+            r.members
+                .iter()
+                .map(|m| RosterMember {
+                    account: m.account.clone(),
+                    name: names.get(&m.account).unwrap_or(&m.name).clone(),
+                    role: m.role,
+                })
+                .collect()
+        };
+        let team = s.team().and_then(|t| {
+            t.roster.as_ref().map(|r| RosterTeam {
+                id: r.team.clone(),
+                name: r.name.clone(),
+                locked: t.locked,
+                members: members(r, &t.names),
+            })
+        });
+        let shared = s
+            .shared_teams
+            .iter()
+            .map(|(id, t)| {
+                let team = RosterTeam {
+                    id: id.clone(),
+                    name: t.roster.name.clone(),
+                    locked: t.locked,
+                    members: members(&t.roster, &t.names),
+                };
+                (id.clone(), team)
+            })
+            .collect();
+        Some(RosterView {
+            hosted: s.is_hosted(),
+            purpose: s.purpose().map(|p| {
+                match p {
+                    Purpose::People => "people",
+                    Purpose::Deploy => "deploy",
+                    Purpose::Snapshot => "snapshot",
+                    Purpose::Both => "both",
+                }
+                .to_owned()
+            }),
+            nobody: s.purpose().is_some_and(Purpose::deploys),
+            team_id: s.team_pin().map(|p| p.team.clone()),
+            account: s.cert.account.clone(),
+            login: s.login.clone(),
+            device: s.cert.device.clone(),
+            url: s.url.clone(),
+            team,
+            shared,
+        })
+    }
+
     /// Who `account` is, if they're a team's other owner here (#935): they
-    /// get in as `Owner`, and are still someone else.
+    /// get in as `Owner`, and are still someone else. Not a hosted
+    /// workspace's editor, who gets in as the owner too and keeps the
+    /// owner's full use (native #705).
     pub fn co_owner_of(&self, account: &str) -> Option<Principal> {
         self.enrolled()?.co_owner(account)
     }
@@ -2033,6 +2190,16 @@ impl Control {
         let Some(e) = self.enrolled() else { return Vec::new() };
         let Some(r) = e.saved.roster() else { return Vec::new() };
         r.members.iter().filter_map(|m| e.co_owner(&m.account)).collect()
+    }
+
+    /// Everyone who gets in as the owner and isn't this machine's own
+    /// account, by account, named as themselves: the team's other owners
+    /// (#386) and a hosted workspace's editors (native #705). Each reads
+    /// what the owner reads.
+    pub fn as_owner(&self) -> Vec<Principal> {
+        let Some(e) = self.enrolled() else { return Vec::new() };
+        let Some(r) = e.saved.roster() else { return Vec::new() };
+        r.members.iter().filter_map(|m| e.as_owner(&m.account)).collect()
     }
 
     /// The signing key of a device that may grant a block channel (M50,
@@ -2057,6 +2224,18 @@ impl Control {
         self.enrolled().is_some_and(|e| e.drivers.iter().any(|(c, _)| c.noise == key))
     }
 
+    /// Whether this machine lets in read-only links and ssh guests: not on
+    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine
+    /// with no `control.json` (joined to no control) does. One whose file is
+    /// there but didn't load doesn't: it could be a deploy's box's, and
+    /// [`Control::device`] refuses links then too.
+    pub fn admits_links_and_guests(&self) -> bool {
+        match self.enrolled() {
+            Some(e) => e.admits_links_and_guests(),
+            None => !self.state_dir.join(FILE).exists(),
+        }
+    }
+
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
         let e = self.enrolled()?;
         if let Some(c) = e.trusted.by_noise(noise).filter(|c| c.kind.connects()) {
@@ -2075,7 +2254,11 @@ impl Control {
         if let Some(found) = e.agent_callers.iter().find(|(c, _)| c.noise == key) {
             return Some(found.clone());
         }
-        // A read-only link's key (M19): a viewer of one session, while it lasts.
+        // A read-only link's key (M19): a viewer of one session, while it
+        // lasts, except on a deploy's box.
+        if !e.admits_links_and_guests() {
+            return None;
+        }
         let g = self.acl.link_by_key(&key)?;
         let cert = Cert {
             v: 1,
@@ -2125,9 +2308,13 @@ impl Control {
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
             Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents())))
         }) {
-            Ok(n) => n,
+            Ok(n) => {
+                self.unreadable.store(false, std::sync::atomic::Ordering::SeqCst);
+                n
+            }
             Err(e) => {
                 warn!(error = %e, "can't read the control enrollment; ignoring it");
+                self.unreadable.store(true, std::sync::atomic::Ordering::SeqCst);
                 None
             }
         };
@@ -2873,6 +3060,7 @@ impl Control {
                     // (#347). Cheap when there's nothing to remove.
                     if let Ok(true) = arugula_proto::flags::forget_control(&me.state_dir) {
                         info!("not in control: its Labs flags no longer apply here");
+                        crate::features::left_control(&me.state_dir);
                     }
                 }
                 tokio::select! {
@@ -3836,12 +4024,45 @@ impl crate::mux::People for Control {
         Control::owns_here(self, account)
     }
 
-    fn co_owners(&self) -> Vec<Principal> {
-        Control::co_owners(self)
+    fn as_owner(&self) -> Vec<Principal> {
+        Control::as_owner(self)
     }
 
     fn team_people(&self) -> Vec<Principal> {
         Control::team_people(self)
+    }
+
+    /// Known unless this machine is a team's and has no roster from it
+    /// yet, or its enrollment can't be read.
+    fn roster_known(&self) -> bool {
+        match self.enrolled() {
+            Some(e) => e.saved.team().is_none_or(|t| t.roster.is_some()),
+            None => !self.unreadable.load(std::sync::atomic::Ordering::SeqCst),
+        }
+    }
+
+    /// The members of this machine's team, and of teams sessions were
+    /// shared with (with the team), kept out only because their team is
+    /// locked: everyone but its owners.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
+        let Some(e) = self.enrolled() else { return Vec::new() };
+        let out_of = |r: &Roster, team: Option<&String>| -> Vec<(String, Option<String>)> {
+            r.members
+                .iter()
+                .filter(|m| m.role != TeamRole::Owner)
+                .map(|m| (format!("account:{}", m.account), team.cloned()))
+                .collect()
+        };
+        let mut out = Vec::new();
+        if let Some(t) = e.saved.team().filter(|t| t.locked)
+            && let Some(r) = &t.roster
+        {
+            out.extend(out_of(r, None));
+        }
+        for (team, t) in e.saved.shared_teams.iter().filter(|(_, t)| t.locked) {
+            out.extend(out_of(&t.roster, Some(team)));
+        }
+        out
     }
 }
 
@@ -4535,7 +4756,7 @@ pub(crate) mod tests {
     /// Native #677: a waiting list a daemon before this one left in
     /// `invites.json` is read once into its own file, so an upgrade loses
     /// none. The host list, which once kept its own invites there (removed
-    /// in 0.68) and opens after control, deletes the old copy only once the
+    /// since) and opens after control, deletes the old copy only once the
     /// move is done, and a file in its own shape at once.
     #[test]
     fn an_upgrade_keeps_the_waiting_invites_left_in_invites_json() {
@@ -5526,49 +5747,64 @@ pub(crate) mod tests {
         }
     }
 
-    /// Native #684: the co-owners a machine lists as thread readers are
-    /// exactly the roster's other owners it admits as the owner: none on a
-    /// personal machine; on a team machine, locked or not, and on a hosted
-    /// one, the roster's other owners (a hosted editor gets in as the
-    /// owner too, and isn't one: `team_people` doesn't name them either);
-    /// nobody on a deploy's box; and an owner the roster takes out or
-    /// demotes is gone from them.
+    /// Native #684 and #705: whom a machine lists as thread readers by the
+    /// owner's role (`as_owner`) is exactly whom [`Enrolled::build`]
+    /// admits as the owner, less its own account, on every kind of
+    /// machine: the roster's other owners on a team machine, locked or
+    /// not, and on a hosted one; a hosted workspace's editors too, who get
+    /// in as the owner (not on a locked team's, where only its owners get
+    /// in); nobody on a deploy's or a both-flags box, which admit nobody;
+    /// and on a snapshot's box the same people `build` admits for its
+    /// setup. A demoted owner is what the roster now says (an editor:
+    /// still the owner on a hosted box), an editor demoted to viewer
+    /// watches, and anyone taken out is in no list. A viewer is
+    /// `team_people`'s, by their role, never listed twice. The co-owners
+    /// (`co_owners`, `co_owner_of`) stay the roster's other owners alone:
+    /// a hosted editor is listed, and isn't one.
     #[test]
-    fn co_owners_are_the_rosters_other_owners_the_machine_admits() {
+    fn as_owner_is_whom_the_machine_admits_as_the_owner() {
+        use TeamRole::{Editor, Owner, Viewer};
         let (_, root) = device("m", Kind::Browser);
         let (_, daemon) = device("m", Kind::Daemon);
         let (_, owner) = device("o", Kind::Browser);
         let (_, editor) = device("e", Kind::Browser);
+        let (_, viewer) = device("v", Kind::Browser);
         let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
             account: account.into(),
             root: root.device.clone(),
             role,
             name: account.into(),
         };
-        let roster = |version: u64, o: TeamRole| Roster {
+        let roster = |version: u64, members: Vec<arugula_e2e::team::Member>| Roster {
             v: 1,
             team: "t1".into(),
             name: "Acme".into(),
             version,
             at: version,
-            members: vec![
-                member("m", &root, TeamRole::Owner),
-                member("o", &owner, o),
-                member("e", &editor, TeamRole::Editor),
-            ],
+            members,
             spent: vec![],
             redeem: None,
             by: String::new(),
             sig: String::new(),
         };
-        let team_certs: AccountCerts =
-            [("o".to_owned(), (vec![owner.clone()], vec![])), ("e".to_owned(), (vec![editor.clone()], vec![]))]
-                .into_iter()
-                .collect();
-        let in_team = |r: Roster, locked: bool| InTeam {
+        let all = |o: TeamRole, e: TeamRole| {
+            vec![
+                member("m", &root, Owner),
+                member("o", &owner, o),
+                member("e", &editor, e),
+                member("v", &viewer, Viewer),
+            ]
+        };
+        let in_team = |roster: Roster, locked: bool| InTeam {
             pin: TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() },
-            roster: Some(r),
-            certs: team_certs.clone(),
+            roster: Some(roster),
+            certs: [
+                ("o".to_owned(), (vec![owner.clone()], vec![])),
+                ("e".to_owned(), (vec![editor.clone()], vec![])),
+                ("v".to_owned(), (vec![viewer.clone()], vec![])),
+            ]
+            .into_iter()
+            .collect(),
             former: Default::default(),
             names: Default::default(),
             locked,
@@ -5589,7 +5825,7 @@ pub(crate) mod tests {
             login: String::new(),
             moved_at: 0,
         };
-        let team = Saved { kind: MachineKind::Team(in_team(roster(1, TeamRole::Owner), false)), ..personal.clone() };
+        let team = |r: Roster, locked: bool| Saved { kind: MachineKind::Team(in_team(r, locked)), ..personal.clone() };
         let key = arugula_e2e::hosted::HostedKey::generate();
         let d = arugula_e2e::hosted::Delegation {
             project: "prj_1".into(),
@@ -5599,50 +5835,207 @@ pub(crate) mod tests {
             by: root.device.clone(),
             sig: String::new(),
         };
-        let hosted = |purpose: Purpose| {
-            let pin = HostedPin {
+        let hosted = |r: Roster, locked: bool, purpose: Purpose| Saved {
+            kind: MachineKind::Hosted(HostedPin {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d.clone(),
                 revocations: vec![],
                 purpose,
-                team: team.team().cloned(),
+                team: Some(in_team(r, locked)),
                 legacy_app_children: None,
                 passkey_logs: Default::default(),
                 passkey_origins: None,
-            };
-            Saved { kind: MachineKind::Hosted(pin), ..team.clone() }
+            }),
+            ..personal.clone()
         };
         let dir = std::env::temp_dir().join(format!("arugula-co-owner-kinds-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        // The co-owners, and who among o and e gets in as the owner.
-        let look = |saved: &Saved| -> (Vec<String>, Vec<String>) {
+        let ids = |v: Vec<&str>| v.into_iter().map(|a| format!("account:{a}")).collect::<Vec<String>>();
+        // What `build` admits as the owner (less this machine's own
+        // account), and what the machine lists: as the owner, and by role.
+        // The co-owners are the roster's other owners among them.
+        let look = |saved: &Saved, what: &str| -> (Vec<String>, Vec<String>) {
             let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
-            let mut as_owner: Vec<String> =
-                e.others.iter().filter(|(_, p)| p.is_owner()).map(|(c, _)| c.account.clone()).collect();
-            as_owner.sort();
-            as_owner.dedup();
+            let mut admitted: Vec<String> =
+                e.others.iter().filter(|(_, p)| p.is_owner()).map(|(c, _)| format!("account:{}", c.account)).collect();
+            admitted.sort();
+            admitted.dedup();
+            let owners: Vec<String> = saved
+                .roster()
+                .map(|r| {
+                    r.members.iter().filter(|m| m.role == Owner).map(|m| format!("account:{}", m.account)).collect()
+                })
+                .unwrap_or_default();
             let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
             c.install(Some(e));
-            let co: Vec<String> = c.co_owners().iter().map(|p| p.id().to_owned()).collect();
-            (co, as_owner)
+            let mut listed: Vec<String> = c.as_owner().iter().map(|p| p.id().to_owned()).collect();
+            listed.sort();
+            let mut co: Vec<String> = c.co_owners().iter().map(|p| p.id().to_owned()).collect();
+            co.sort();
+            let mut people: Vec<String> = c.team_people().iter().map(|p| p.id().to_owned()).collect();
+            people.sort();
+            assert_eq!(listed, admitted, "{what}: listed as the owner's role is whom the machine admits as the owner");
+            assert!(listed.iter().all(|a| !people.contains(a)), "{what}: nobody is listed twice");
+            let listed_owners: Vec<String> = listed.iter().filter(|a| owners.contains(a)).cloned().collect();
+            assert_eq!(co, listed_owners, "{what}: the co-owners are the roster's other owners among them");
+            for a in &listed {
+                let account = a.strip_prefix("account:").unwrap();
+                assert_eq!(c.co_owner_of(account).is_some(), owners.contains(a), "{what}: {account} as a co-owner");
+            }
+            (listed, people)
         };
-        assert_eq!(look(&personal), (vec![], vec![]), "a personal machine has no roster");
-        assert_eq!(look(&team), (vec!["account:o".into()], vec!["o".into()]), "a team machine");
-        let locked = Saved { kind: MachineKind::Team(in_team(roster(1, TeamRole::Owner), true)), ..team.clone() };
-        assert_eq!(look(&locked), (vec!["account:o".into()], vec!["o".into()]), "locked");
+        assert_eq!(look(&personal, "personal"), (vec![], vec![]), "a personal machine has no roster");
+        let r1 = roster(1, all(Owner, Editor));
+        assert_eq!(look(&team(r1.clone(), false), "team"), (ids(vec!["o"]), ids(vec!["e", "v"])));
+        assert_eq!(look(&team(r1.clone(), true), "locked team"), (ids(vec!["o"]), vec![]));
+        // Hosted (#705): the editor gets in as the owner, and is listed as
+        // one; the viewer watches, by their role.
+        assert_eq!(look(&hosted(r1.clone(), false, Purpose::People), "hosted"), (ids(vec!["e", "o"]), ids(vec!["v"])));
+        assert_eq!(look(&hosted(r1.clone(), true, Purpose::People), "locked hosted"), (ids(vec!["o"]), vec![]));
+        // Demoted: an owner made an editor is one (on a hosted box, still
+        // the owner); an editor made a viewer watches.
+        let r2 = roster(2, all(Editor, Viewer));
+        assert_eq!(look(&team(r2.clone(), false), "team, demoted"), (vec![], ids(vec!["e", "o", "v"])));
+        assert_eq!(look(&hosted(r2, false, Purpose::People), "hosted, demoted"), (ids(vec!["o"]), ids(vec!["e", "v"])));
+        // Taken out: in no list.
+        let mut r3 = roster(3, all(Owner, Editor));
+        r3.members.retain(|m| m.account != "o" && m.account != "e");
+        assert_eq!(look(&team(r3.clone(), false), "team, taken out"), (vec![], ids(vec!["v"])));
+        assert_eq!(look(&hosted(r3, false, Purpose::People), "hosted, taken out"), (vec![], ids(vec!["v"])));
+        // A deploy's box, and one told it's a snapshot's too, admit nobody.
+        // A snapshot's box admits its project's people for its setup (it
+        // takes no sessions), and lists them as it admits them.
+        assert_eq!(look(&hosted(r1.clone(), false, Purpose::Deploy), "a deploy's box"), (vec![], vec![]));
+        assert_eq!(look(&hosted(r1.clone(), false, Purpose::Both), "a both-flags box"), (vec![], vec![]));
         assert_eq!(
-            look(&hosted(Purpose::People)),
-            (vec!["account:o".into()], vec!["e".into(), "o".into()]),
-            "hosted: e isn't an owner"
+            look(&hosted(r1, false, Purpose::Snapshot), "a snapshot's box"),
+            (ids(vec!["e", "o"]), ids(vec!["v"]))
         );
-        assert_eq!(look(&hosted(Purpose::Deploy)), (vec![], vec![]), "a deploy's box");
-        let demoted = Saved { kind: MachineKind::Team(in_team(roster(2, TeamRole::Editor), false)), ..team.clone() };
-        assert_eq!(look(&demoted), (vec![], vec![]), "a former owner, now an editor");
-        let mut gone = roster(3, TeamRole::Editor);
-        gone.members.retain(|m| m.account != "o");
-        let taken_out = Saved { kind: MachineKind::Team(in_team(gone, false)), ..team.clone() };
-        assert_eq!(look(&taken_out), (vec![], vec![]), "an owner taken out");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Native #705: a hosted workspace's editor keeps the owner's full use.
+    /// `co_owner_of` is what an HTTP call's `acting` is made of
+    /// (`ops::serve`), and `Cx::co_owner` on it is what refuses a team's
+    /// other owner the Doc link operations (`DocLinkGet`, `DocLinkDelete`)
+    /// and `DocDelete`, whose key is the machine's own account's. So the
+    /// editor is no co-owner here, and the roster's other owner still is;
+    /// both are listed as the owner. Pushes by account are as they were:
+    /// a co-owner's own devices are picked by `account:<id>`, and a hosted
+    /// editor's, being the owner's, only by the owner's.
+    #[test]
+    fn a_hosted_editor_is_no_co_owner_and_the_owner_only_gates_are_as_they_were() {
+        let (_, root) = device("m", Kind::Browser);
+        let (_, daemon) = device("m", Kind::Daemon);
+        let (_, owner) = device("o", Kind::Browser);
+        let (_, editor) = device("e", Kind::Browser);
+        let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: root.device.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![
+                member("m", &root, TeamRole::Owner),
+                member("o", &owner, TeamRole::Owner),
+                member("e", &editor, TeamRole::Editor),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let in_team = InTeam {
+            pin: TeamPin { team: "t1".into(), founder: "m".into(), founder_root: root.device.clone() },
+            roster: Some(roster),
+            certs: [("o".to_owned(), (vec![owner.clone()], vec![])), ("e".to_owned(), (vec![editor.clone()], vec![]))]
+                .into_iter()
+                .collect(),
+            former: Default::default(),
+            names: Default::default(),
+            locked: false,
+            lock: None,
+        };
+        let key = arugula_e2e::hosted::HostedKey::generate();
+        let d = arugula_e2e::hosted::Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: root.device.clone(),
+            sig: String::new(),
+        };
+        let saved = Saved {
+            url: String::new(),
+            trust: Trust { account: "m".into(), root: root.device.clone() },
+            cert: daemon,
+            certs: vec![root.clone()],
+            revocations: vec![],
+            kind: MachineKind::Hosted(HostedPin {
+                cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+                delegation: d,
+                revocations: vec![],
+                purpose: Purpose::People,
+                team: Some(in_team),
+                legacy_app_children: None,
+                passkey_logs: Default::default(),
+                passkey_origins: None,
+            }),
+            seen: Default::default(),
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            held_teams: Default::default(),
+            held_peers: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-hosted-editor-gates-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let mut e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false);
+        for (c, p) in &e.others {
+            assert_eq!(*p, Principal::Owner, "{} gets in as the owner", c.account);
+        }
+        let sub = |account: &str, device: &Cert| PushSub {
+            v: 1,
+            account: account.into(),
+            device: device.device.clone(),
+            endpoint: format!("https://push.test/{account}"),
+            p256dh: String::new(),
+            auth: String::new(),
+            at: 0,
+            sig: String::new(),
+        };
+        // Their devices subscribe as who they get in as: the owner.
+        e.push = vec![(Principal::Owner, sub("o", &owner)), (Principal::Owner, sub("e", &editor))];
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(e));
+
+        // Listed as the owner, both; a co-owner, the owner alone: the
+        // editor's calls aren't `acting`, so the owner-only gates let them
+        // through, and the other owner's are, so they don't.
+        let mut listed: Vec<String> = c.as_owner().iter().map(|p| p.id().to_owned()).collect();
+        listed.sort();
+        assert_eq!(listed, ["account:e", "account:o"]);
+        assert_eq!(c.co_owner_of("o").map(|p| p.id().to_owned()), Some("account:o".to_owned()));
+        assert_eq!(c.co_owner_of("e"), None, "a hosted editor keeps the owner's full use");
+        assert_eq!(c.co_owners().iter().map(|p| p.id().to_owned()).collect::<Vec<_>>(), ["account:o"]);
+
+        let to = |f: fn(&Principal) -> bool| -> Vec<String> {
+            c.to_push(1, "t", "b", None, f)
+                .map(|(_, s, _)| s.into_iter().map(|s| s.account).collect())
+                .unwrap_or_default()
+        };
+        assert_eq!(to(|p| p.is_owner()), ["o", "e"], "the owner's pushes reach both");
+        assert_eq!(to(|p| p.id() == "account:o"), ["o"], "a co-owner's own devices, by account");
+        assert!(to(|p| p.id() == "account:e").is_empty(), "a hosted editor's, by account: none, as before");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -6410,6 +6803,206 @@ pub(crate) mod tests {
                 Err(_) => "err".to_owned(),
             })
             .collect()
+    }
+
+    /// A read-only link's key on each kind of machine: a personal and a
+    /// team machine (just joined), a workspace and a snapshot's box let it
+    /// in; a deploy's box, of an account's project or a team's, and one
+    /// that is both, don't, and say they admit no guests either. A link
+    /// made while the box was a workspace stops working when it's told it's
+    /// a deploy's: the relay's channel, which waits on `changed` and then
+    /// asks `device` again, closes, and the link stays in `acl.json`.
+    #[test]
+    fn a_deploys_box_admits_no_links() {
+        let load = |name: &str| -> Saved {
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        let noise = [7u8; 32];
+        let key = hex::encode(noise);
+        let admitted = |saved: &Saved, tag: &str| {
+            let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-{tag}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
+            let got = c.device(&noise).map(|(_, p)| p);
+            (c, acl, dir, got)
+        };
+        for (name, want) in [
+            ("personal-joined", true),
+            ("team-joined", true),
+            ("hosted-team", true),
+            ("hosted-snapshot", true),
+            ("hosted-deploy", false),
+            ("hosted-deploy-team", false),
+            ("hosted-both", false),
+        ] {
+            let (c, _, dir, got) = admitted(&load(name), name);
+            assert_eq!(got.is_some(), want, "{name}: {got:?}");
+            assert_eq!(c.admits_links_and_guests(), want, "{name}: links and guests");
+            if let Some(p) = got {
+                assert!(p.id().starts_with("link:"), "{name}: {}", p.id());
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        // Made on a workspace, then the box is told it's a deploy's.
+        let mut saved = load("hosted-team");
+        let (c, acl, dir, before) = admitted(&saved, "switch");
+        let was = before.expect("a workspace lets the link in");
+        let mut changed = c.changed.subscribe();
+        changed.mark_unchanged();
+        saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
+        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        assert!(changed.has_changed().unwrap(), "the channel's loop is woken");
+        let now = c.device(&noise).map(|(_, p)| p);
+        assert!(now.is_none(), "the same key, once it's a deploy's box");
+        assert_eq!(crate::e2e::no_longer(now, &was), Some(crate::e2e::UNTRUSTED), "its open channel closes");
+        assert!(!c.admits_links_and_guests(), "nor a guest's invite");
+        assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Not enrolled: with no control.json, a machine of its own admits
+        // guests as it always has; with one that won't load, it doesn't.
+        let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-unloaded", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        assert!(c.enrolled().is_none() && c.admits_links_and_guests(), "no control.json");
+        std::fs::write(dir.join(FILE), "not json").unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl, false);
+        assert!(c.enrolled().is_none(), "the file doesn't load");
+        assert!(!c.admits_links_and_guests(), "a control.json that won't load");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The access view (Arugula #681) says exactly whom [`Enrolled::build`]
+    /// admits through control, as what, on every kind of machine and every
+    /// purpose the fixtures cover: the owner's account, the roster's people
+    /// by the role the machine gives them (a hosted editor as the owner,
+    /// nobody on a deploy's box, everyone on a snapshot's), and no one else.
+    #[test]
+    fn the_access_view_admits_whom_the_enrollment_admits() {
+        let names = std::fs::read_dir(FIXTURES).unwrap().filter_map(|e| {
+            let n = e.unwrap().file_name().into_string().unwrap();
+            n.strip_suffix(".json").filter(|n| !n.ends_with(".who") && !n.ends_with(".accept")).map(str::to_owned)
+        });
+        let mut seen = 0;
+        for name in names {
+            let dir = std::env::temp_dir().join(format!("arugula-access-fixtures-{}-{name}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            let saved: Saved = serde_json::from_str(&text).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+            // Whom control's routing admits, by account, as what: the
+            // account's own devices as the owner, and the others as their
+            // principal says.
+            let mut admits: BTreeMap<String, &str> = BTreeMap::new();
+            for c in e.trusted.devices.values() {
+                admits.insert(c.account.clone(), "owner");
+            }
+            for (c, p) in &e.others {
+                let role = match p {
+                    Principal::Owner => "owner",
+                    Principal::User { id, .. } => match e.team_roles.get(id) {
+                        Some(Role::Editor) => "editor",
+                        Some(Role::Viewer) => "viewer",
+                        other => panic!("{name}: {id} admitted with no team role: {other:?}"),
+                    },
+                };
+                admits.insert(c.account.clone(), role);
+            }
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(e));
+            // What the machine holds of its own, on every kind alike: a
+            // tailnet share, a session link, a pane link, an ssh guest and
+            // trust. None of them goes through `build`, so each is listed
+            // whatever the kind.
+            let link = crate::acl::Grant {
+                session: 1,
+                principal: "link:abc".into(),
+                name: "someone with a link".into(),
+                role: Role::Viewer,
+                by: "owner".into(),
+                at: 5,
+                from: None,
+                root: None,
+                key: Some("ab".repeat(32)),
+                expires: Some(u64::MAX),
+            };
+            let share = crate::acl::Grant {
+                session: 1,
+                principal: "tailnet:friend@example.com".into(),
+                name: "friend@example.com".into(),
+                role: Role::Editor,
+                key: None,
+                expires: None,
+                ..link.clone()
+            };
+            // Shares with an account and with a team: both admitted through
+            // `build` alone (the account's devices from `peers`, the team's
+            // members from its checked roster), so a deploy's box, which
+            // admits no one, must not list them.
+            let account_share = crate::acl::Grant {
+                principal: "account:z9".into(),
+                name: "zed".into(),
+                role: Role::Viewer,
+                root: Some("0".repeat(16)),
+                ..share.clone()
+            };
+            let team_share =
+                crate::acl::Grant { principal: "team:t9".into(), name: "Nine".into(), ..account_share.clone() };
+            let view = crate::ops::access::compose(crate::ops::access::Pieces {
+                name: "box".into(),
+                owner: "owner".into(),
+                roster: c.roster_view(),
+                grants: vec![share, account_share, team_share, link],
+                shares: vec![arugula_proto::api::Share {
+                    id: 1,
+                    pane: 1,
+                    created_ms: 1,
+                    expires_ms: u64::MAX,
+                    token: None,
+                    path: None,
+                    url: None,
+                }],
+                guests: Some(vec![
+                    serde_json::from_value(serde_json::json!({ "id": 1, "pane": 1, "expires_ms": u64::MAX })).unwrap(),
+                ]),
+                guest_ssh: true,
+                trust: vec![(1, "tailnet:friend@example.com".into(), u64::MAX)],
+                panes: vec![],
+            });
+            let mut says: BTreeMap<String, &str> = BTreeMap::new();
+            let mut held: Vec<&str> = Vec::new();
+            for r in &view.rows {
+                if !matches!(r.kind.as_str(), "owner" | "team_owner" | "team_role") {
+                    held.push(r.kind.as_str());
+                    continue;
+                }
+                let account = r
+                    .principal
+                    .as_deref()
+                    .and_then(|p| p.strip_prefix("account:"))
+                    .unwrap_or_else(|| panic!("{name}: {r:?}"));
+                says.insert(account.to_owned(), r.role.as_str());
+            }
+            assert_eq!(says, admits, "{name}: the view and the enrollment disagree");
+            let expect_held: &[&str] = if saved.purpose().is_some_and(Purpose::deploys) {
+                &["share", "link", "link", "guest", "trust"]
+            } else {
+                &["share", "share", "team_share", "link", "link", "guest", "trust"]
+            };
+            assert_eq!(held, expect_held, "{name}: what the machine holds");
+            let _ = std::fs::remove_dir_all(&dir);
+            seen += 1;
+        }
+        assert_eq!(seen, 12, "every fixture was read");
     }
 
     /// #672: `control.json` files written by the code before the kind was

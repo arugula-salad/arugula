@@ -78,7 +78,7 @@ test("an issue opens as a block in geek's workspace, read as Alice", async ({ br
   await expect(view.locator('[data-item-fact="labels"] .item-label')).toHaveText(["bug"]);
   await expect(view.locator("[data-item-tab]")).toHaveText(["Activity"]);
   await expect(view.locator("[data-issue-body]")).toContainText("dry-run finds nothing");
-  await expect(view.locator(".ws-tag")).toHaveCount(0);
+  await expect(view.locator(".chip-tag")).toHaveCount(0);
   await expect(view.locator("[data-issue-foot]")).toHaveCount(0);
   await expect(view.locator("[data-item-next]")).toHaveCount(0);
   await expect(view).not.toContainText("Read as you");
@@ -142,7 +142,8 @@ test("the phone and the platform page show the same view, and all three update l
   await expect(there.locator(".thread-msg").last()).toContainText("I can reproduce it on geek");
 
   // The title, changed on the platform page: the block and the phone have it.
-  await there.locator("[data-issue-edit-title]").click();
+  await there.locator("[data-page-more]").click();
+  await platform.getByRole("menuitem", { name: "Edit title" }).click();
   await there.locator("[data-issue-title-edit]").fill("Search misses words with hyphens");
   await there.locator("[data-issue-title-edit]").press("Enter");
   await expect(there.locator("[data-issue-title]")).toHaveText("Search misses words with hyphens");

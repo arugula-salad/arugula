@@ -147,6 +147,16 @@ test("two people at different companies join a team by invite", async ({ browser
   await alice.getByRole("button", { name: "Cancel" }).click();
   await expect(alice.locator("[data-lock-warning]")).toHaveCount(0);
   expect(await alice.evaluate(() => window.__arugula.control!.teams[0].locked)).toBe(false);
+  // Your Docs on the platform (native #673): the account's own word for its
+  // machines' copies, apart from chat, which it leaves alone; off is kept.
+  const flags = () => alice.evaluate(async () => ((await (await fetch("/api/flags")).json()) as { account: Record<string, boolean> }).account);
+  expect((await flags())["doc-copies"]).toBeUndefined();
+  await alice.locator("[data-account-docs] input").check();
+  await expect.poll(async () => (await flags())["doc-copies"]).toBe(true);
+  expect((await flags()).chat).toBeUndefined();
+  await alice.locator("[data-account-docs] input").uncheck();
+  await expect.poll(async () => (await flags())["doc-copies"]).toBe(false);
+  await expect(alice.locator("[data-account-docs]")).toContainText("Copies already there stay until you delete them.");
   // The invite's role is picked in the team's own section (default: drives).
   await expect(alice.locator(`[data-invite-role="${team}"]`)).toHaveValue("editor");
   // This one waits for her yes (the presigned kind is below).

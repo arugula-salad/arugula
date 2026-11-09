@@ -59,6 +59,11 @@ impl arugulad_base::features::Feature for Docs {
         docs::copies::start(control.clone());
     }
 
+    fn left_control(&self, state_dir: &Path) {
+        // Where each Doc's copy was is control's to know (native #673).
+        docs::library::forget_platform(state_dir);
+    }
+
     fn kinds(&self, kinds: &mut block::BlockKinds, _cx: &arugulad_base::features::KindsCx) {
         kinds.add(BlockType::Doc, docs::DocKind);
     }

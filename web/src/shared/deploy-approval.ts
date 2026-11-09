@@ -16,6 +16,24 @@
 // v1 (before DK4) named a signing device too. The platform no longer takes
 // one, and nothing here makes or checks one.
 //
+// v3 (#1985, aru-126) approves a chant-fly deploy: its bytes are chant's own
+// gate statement for the gate the deploy's plan stopped at (what `chant
+// approve --statement` prints, as `arugula_e2e::deploy::chant` makes it),
+// with a binding line naming the deploy, the operation's hash and the
+// expiry, so the one passkey assertion is chant's approval and Arugula's:
+//
+//   <op>                               (LF-joined, no final newline)
+//   <gate>
+//   <environment, or empty>
+//   <chant's plan digest>
+//   arugula:<approver's account>
+//   <time, ISO 8601 UTC with ms>
+//   relayed-by arugula
+//   checkpoint <digest>                (only when the gate resumes)
+//   binding arugula deploy <dep id> op <operation hash> expires <ms>
+//
+// A deny stays v2: chant has nothing to record.
+//
 // The platform sends the operation's bytes and their hash, and the deploy's
 // `planned` event as stored; the page hashes the bytes itself and reads
 // them, and hashes the event again (M217's `arugula deploy event v1`), so
@@ -42,15 +60,36 @@ export interface Operation {
   planned: string;
 }
 
+/** The gate a chant-fly deploy's plan stopped at (#1985): chant's pending
+ * fact, as the plan's box read it. */
+export interface ChantGate {
+  chant: string;
+  op: string;
+  gate: string;
+  environment?: string;
+  plan: string;
+  checkpoint?: string;
+  run: string;
+  recorded: string;
+}
+
 export interface Approval {
   deploy: string;
   op: string;
   account: string;
   decision: Decision;
   expires: number;
-  /** Always 2 (DK4). */
-  v: 2;
+  /** 2 (DK4), or 3 (#1985): chant's statement for `chant`, at `at`. */
+  v: 2 | 3;
+  chant?: ChantGate;
+  at?: string;
 }
+
+/** Who approves in chant: `arugula:` and the account. */
+export const chantPrincipal = (account: string) => `arugula:${account}`;
+
+/** A v3's binding line's text: the deploy, its operation, its expiry. */
+export const chantBinding = (a: Pick<Approval, "deploy" | "op" | "expires">) => `arugula deploy ${a.deploy} op ${a.op} expires ${a.expires}`;
 
 /** S37: an approval defaults to 24 hours. */
 export const DEFAULT_LIFE_MS = 24 * 60 * 60 * 1000;
@@ -95,10 +134,50 @@ export async function sha256Hex(text: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
 }
 
-/** The bytes an approval is over (v2, DK4). */
+/** The bytes an approval is over: v2's (DK4), or a v3's chant statement
+ * (#1985). */
 export function approvalBody(a: Approval): string {
+  if (a.v === 3) {
+    const g = a.chant;
+    if (!g || !a.at) throw new Error("a v3 approval names its chant gate and its time");
+    const lines = [g.op, g.gate, g.environment ?? "", g.plan, chantPrincipal(a.account), a.at, "relayed-by arugula"];
+    if (g.checkpoint) lines.push(`checkpoint ${g.checkpoint}`);
+    lines.push(`binding ${chantBinding(a)}`);
+    return lines.join("\n");
+  }
   return `arugula deploy approval v2\ndeploy ${a.deploy}\nop ${a.op}\naccount ${a.account}\ndecision ${a.decision}\nexpires ${a.expires}\n`;
 }
+
+/** A chant gate as a v3 signs it: one word each, a plan digest, chant's
+ * time, from a chant that checks a binding (0.124.64). */
+export function chantGateOk(g: unknown): g is ChantGate {
+  const w = (s: unknown) => typeof s === "string" && /^[!-~]{1,200}$/.test(s);
+  const x = g as ChantGate | null;
+  if (!x || typeof x !== "object" || ![x.op, x.gate, x.run].every(w)) return false;
+  if (x.environment !== undefined && !w(x.environment)) return false;
+  if (x.checkpoint !== undefined && !w(x.checkpoint)) return false;
+  if (!/^(jcs1-)?sha256:[0-9a-f]{64}$/.test(String(x.plan))) return false;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(String(x.recorded))) return false;
+  const v = String(x.chant).split(".").map(Number);
+  if (v.length !== 3 || v.some((n) => !Number.isInteger(n))) return false;
+  return v[0] > 0 || v[1] > 124 || (v[1] === 124 && v[2] >= 64);
+}
+
+/** The approval a page makes of deploy `d` for `account`, now (`now`, ms),
+ * good until `expires`: a chant-fly deploy's `once` is v3, over chant's
+ * statement for the gate its approval was asked for; anything else v2. */
+export function approvalFor(d: Pick<DeployToCheck, "id" | "operation" | "approval_v" | "chant">, account: string, decision: Decision, now: number, expires: number): Approval {
+  const base = { deploy: d.id, op: d.operation.hash, account, decision, expires };
+  if (decision !== "once" || d.approval_v !== 3) return { ...base, v: 2 };
+  const g = d.chant?.gate;
+  if (!chantGateOk(g)) throw new Error("chant hasn't planned this deploy, so there's no chant plan to approve");
+  // chant's time: not before its pending fact.
+  const at = new Date(Math.max(now, Date.parse(g.recorded))).toISOString();
+  return { ...base, v: 3, chant: g, at };
+}
+
+/** What the approve or deny route takes besides the passkey's assertion. */
+export const approvalPosted = (a: Approval) => ({ op: a.op, expires: a.expires, ...(a.v === 3 ? { at: a.at } : {}) });
 
 /** The WebAuthn challenge an approval's passkey signs: SHA-256 of its bytes. */
 export async function approvalChallenge(a: Approval): Promise<Uint8Array<ArrayBuffer>> {
@@ -147,6 +226,10 @@ export interface DeployToCheck {
   agent: { machine: string; machine_name: string } | null;
   operation: { body: string; hash: string };
   planned_event?: DeployEvent | null;
+  /** 3 for a chant-fly deploy (#1985), else 2. */
+  approval_v?: number;
+  /** A chant-fly deploy's plan: where it is, and its gate. */
+  chant?: { state: string; gate: ChantGate | null; why: string | null } | null;
 }
 
 /** What a page shows, read from hashed bytes: the operation, who planned
@@ -156,6 +239,9 @@ export interface Checked {
   planner: string;
   /** The plan's text, which hashes to the operation's `plan` (M220). */
   plan: CheckedPlan;
+  /** A chant-fly deploy's gate (#1985): what chant planned, which the
+   * passkey signs chant's statement of. */
+  chant: ChantGate | null;
 }
 
 /** The deploy's operation and its `planned` event check out: the bytes hash
@@ -196,7 +282,15 @@ export async function checkDeploy(d: DeployToCheck): Promise<Checked | string> {
   const plan = await checkPlan(d.plan_text, op.plan);
   if (typeof plan === "string") return plan;
   if (plan.driver !== d.environment.driver) return "its plan names another driver than its environment's";
-  return { op, plan, planner: plannerText(name, who.machine ? { machine: who.machine, machine_name: d.agent?.machine_name } : null) };
+  // A chant-fly deploy (#1985): chant's gate, for the op its plan names.
+  let chant: ChantGate | null = null;
+  if (d.approval_v === 3 && d.chant?.gate) {
+    if (!chantGateOk(d.chant.gate)) return "chant's plan, as the platform says it, can't be read";
+    const chantOp = /^setting chant_op (\S+)$/m.exec(plan.text)?.[1];
+    if (d.chant.gate.op !== chantOp) return "chant's plan is another op's than the deploy's";
+    chant = d.chant.gate;
+  }
+  return { op, plan, chant, planner: plannerText(name, who.machine ? { machine: who.machine, machine_name: d.agent?.machine_name } : null) };
 }
 
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));

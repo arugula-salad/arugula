@@ -969,6 +969,13 @@
             "null"
           ]
         },
+        "revoke": {
+          "description": "Where the box revokes `password` once its clones are done\n(`DELETE`, the token as its bearer): a `github_app` token's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "url": {
           "description": "An HTTPS clone URL, with no credentials in it.",
           "type": "string"

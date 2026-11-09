@@ -4,6 +4,7 @@
 // phone. It is the same message and the same composer the room has
 // (./room), so a reply has its reactions, edit, delete and mentions.
 
+import { BlockLoading } from "../ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
@@ -12,11 +13,17 @@ import { useSubscribe } from "../ui/hooks";
 import { RoomCompose, RoomMessage, roomLabel, threadComposeRef, useRoomTokens } from "./room";
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
+import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { useStickToBottom } from "./stick";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
+import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
+/** The head's width under which Follow goes into ⋯ (Close stays). Measured:
+ * the title (52px), Follow (75), Close (25), the gaps and padding fit in
+ * 200px, and 300 leaves about 100px for the room's name beside them. */
+const THREAD_FOLD = 300;
 
 export function ThreadPanel({ store, room, parent, phone, focus, close }: { store: ChatStore; room: ChatRoom; parent: number; phone: boolean; focus?: number; close: () => void }) {
   useSubscribe((fn) => store.subscribe(fn));
@@ -97,6 +104,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const label = room.kind === "channel" ? `#${room.name}` : roomLabel(room, api);
   const newest = last ?? first?.seq;
   const agents = useThreadAgents(room.id, parent, newest);
+  const follow = () => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message));
   const toNewest = () => list.current?.scrollTo({ top: list.current.scrollHeight });
   return (
     <aside
@@ -110,36 +118,50 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         close();
       }}
     >
-      <header class="chat-head">
-        {phone && (
-          <button class="chat-back" title={`Back to ${label}`} aria-label={`Back to ${label}`} data-thread-back onClick={close}>
-            ‹
-          </button>
-        )}
-        <div class="chat-title">
-          <strong>Thread</strong>
-          <span>{label}</span>
-        </div>
-        {first?.thread && (
-          <button
-            class={following ? "chat-info on thread-follow" : "chat-info thread-follow"}
-            aria-pressed={following}
-            title={following ? "You follow this thread: you hear its replies. Stop following" : "Follow this thread: hear its replies"}
-            data-thread-follow
-            onClick={() => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message))}
-          >
-            {following ? "Following" : "Follow"}
-          </button>
-        )}
-        {!phone && (
-          <button class="thread-close" title="Close the thread" aria-label="Close the thread" data-thread-close onClick={close}>
-            ✕
-          </button>
-        )}
-      </header>
+      <Bar
+        class="chat-head"
+        lead={
+          phone ? (
+            <IconButton label={`Back to ${label}`} class="chat-back" data-thread-back onClick={close}>
+              <ChevronIcon dir="left" size="md" />
+            </IconButton>
+          ) : undefined
+        }
+        title={<BarTitle class="chat-title">Thread</BarTitle>}
+        where={<BarWhere>{label}</BarWhere>}
+        foldBelow={THREAD_FOLD}
+        fold={
+          first?.thread
+            ? [
+                {
+                  key: "follow",
+                  node: (
+                    <button
+                      class={following ? "chat-info bar-btn on thread-follow" : "chat-info bar-btn thread-follow"}
+                      aria-pressed={following}
+                      title={following ? "You follow this thread: you hear its replies. Stop following" : "Follow this thread: hear its replies"}
+                      data-thread-follow
+                      onClick={follow}
+                    >
+                      {following ? "Following" : "Follow"}
+                    </button>
+                  ),
+                  item: { label: following ? "Stop following" : "Follow", run: follow },
+                },
+              ]
+            : []
+        }
+        actions={
+          !phone ? (
+            <IconButton label="Close the thread" class="thread-close" data-thread-close onClick={close}>
+              <CloseIcon size="sm" />
+            </IconButton>
+          ) : undefined
+        }
+      />
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <div class="thread-list thread-replies" ref={list} onScroll={onScroll}>
-        {t === undefined && !error && <p class="thread-empty">Loading…</p>}
+        {t === undefined && !error && <BlockLoading inline what="the thread" />}
         {error && <p class="thread-error">{error}</p>}
         {t?.older && (
           <button class="chat-older" data-thread-older onClick={() => void store.threads.older(room.id, parent)}>
@@ -185,7 +207,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         {!atBottom && (
           <div class="jump-newest">
             <button type="button" data-jump-newest onClick={toNewest}>
-              ↓ Jump to newest
+              <ArrowIcon dir="down" size="xs" /> Jump to newest
             </button>
           </div>
         )}

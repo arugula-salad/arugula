@@ -33,10 +33,10 @@
   box-sizing: border-box;
   border-right: 1px solid var(--line-strong);
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: .15em;
+  letter-spacing: var(--track-caps);
   white-space: nowrap;
   text-decoration: none;
 }

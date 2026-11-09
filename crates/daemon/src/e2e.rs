@@ -378,13 +378,13 @@ async fn serve_machine(
     r
 }
 
-const UNTRUSTED: &str = "device no longer trusted";
+pub(crate) const UNTRUSTED: &str = "device no longer trusted";
 
 /// Why a channel opened as `was` closes now that its device resolves to
 /// `now` (None: no longer trusted): it's gone, or it's someone else or has
 /// another standing here (an owner made a viewer, say). The client opens a
 /// new one as whoever it is now. None: it carries on.
-fn no_longer(now: Option<crate::acl::Principal>, was: &crate::acl::Principal) -> Option<&'static str> {
+pub(crate) fn no_longer(now: Option<crate::acl::Principal>, was: &crate::acl::Principal) -> Option<&'static str> {
     match now {
         None => Some(UNTRUSTED),
         Some(p) if p.id() != was.id() || p.is_owner() != was.is_owner() => Some("device's standing changed"),

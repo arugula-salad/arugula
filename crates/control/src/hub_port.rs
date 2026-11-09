@@ -56,7 +56,13 @@ fn account_of(app: &App, id: &str) -> HubResult<Option<Account>> {
 
 fn daemon_of(app: &App, id: &str) -> HubResult<Option<Daemon>> {
     let Some((account, row)) = app.db.daemon_row(id)? else { return Ok(None) };
-    Ok(Some(Daemon { id: row.id, account, team: app.db.daemon_team(id)?, name: row.name }))
+    Ok(Some(Daemon {
+        id: row.id,
+        account,
+        team: app.db.daemon_team(id)?,
+        name: row.name,
+        aliases: app.db.daemon_aliases(id)?,
+    }))
 }
 
 fn resolve(app: &App, p: &Principal) -> HubResult<Option<Resolved>> {

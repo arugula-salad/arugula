@@ -23,7 +23,7 @@ const SIZES: [&str; 2] = ["small", "large"];
 pub enum CloudCmd {
     /// Make a cloud workspace.
     ///
-    /// Its box is made from the current release's template of its size
+    /// Its machine is made from the current release's template of its size
     /// and enrolls into the project. Needs owner or editor on the project.
     Create {
         /// Its name in the project: letters, digits, `-`, `_` and `.`.
@@ -40,7 +40,7 @@ pub enum CloudCmd {
         /// The name of an env var it takes from its secrets. Repeatable.
         #[arg(long = "env")]
         env: Vec<String>,
-        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        /// Its machine's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
         #[arg(long, value_parser = SIZES, default_value = "small")]
         size: String,
         /// Wait until it's set up (or failed).
@@ -70,7 +70,7 @@ pub enum CloudCmd {
     /// Change what a cloud workspace is built from.
     ///
     /// Each flag given replaces that part of its spec; the rest stays. Its
-    /// box isn't touched: it shows "rebuild needed" until it's rebuilt,
+    /// machine isn't touched: it shows "rebuild needed" until it's rebuilt,
     /// except for the finish step, which its next turn runs.
     Edit {
         workspace: String,
@@ -103,7 +103,7 @@ pub enum CloudCmd {
         /// How long the finish step may run, in seconds (default: 15 min).
         #[arg(long, value_name = "SECONDS")]
         finish_timeout: Option<u64>,
-        /// Its box's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
+        /// Its machine's size: small (2 vCPU, 2 GiB) or large (8 vCPU, 8 GiB).
         ///
         /// It takes a rebuild.
         #[arg(long, value_parser = SIZES)]
@@ -111,7 +111,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// A cloud workspace's secrets, which its box reads on its next setup.
+    /// A cloud workspace's secrets, which its machine reads on its next setup.
     ///
     /// `GIT_TOKEN` (and `GIT_USERNAME`) clone repos the GitHub App doesn't;
     /// the rest are the env vars its spec's `--env` names.
@@ -119,22 +119,22 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: SecretCmd,
     },
-    /// Make a cloud workspace's box again from its spec.
+    /// Make a cloud workspace's machine again from its spec.
     ///
-    /// It asks the box first: a repo with changes or commits that aren't
+    /// It asks the machine first: a repo with changes or commits that aren't
     /// pushed stops it, unless `--download` saves them first or `--force`.
     Rebuild {
         workspace: String,
         /// Save a tarball of the repos with unpushed work here first.
         #[arg(long)]
         download: Option<std::path::PathBuf>,
-        /// Rebuild even if the box has unpushed work, or can't be asked.
+        /// Rebuild even if the machine has unpushed work, or can't be asked.
         #[arg(long)]
         force: bool,
         #[arg(long)]
         project: Option<String>,
     },
-    /// Delete a cloud workspace and its box.
+    /// Delete a cloud workspace and its machine.
     #[command(visible_alias = "rm")]
     Delete {
         workspace: String,
@@ -145,9 +145,9 @@ pub enum CloudCmd {
     ///
     /// `set anthropic` or `set openai` reads the key from stdin (asked for
     /// without echo on a terminal): an owner of the project. Control keeps
-    /// it sealed and puts it in each box's egress rules, so the compute
-    /// provider's proxy sets it on the box's requests to the provider: it's
-    /// never in the box, and never shown again. `clear` removes it; `ls`
+    /// it sealed and puts it in each hosted machine's egress rules, so the compute
+    /// provider's proxy sets it on the machine's requests to the provider: it's
+    /// never on the machine, and never shown again. `clear` removes it; `ls`
     /// says which are set.
     Key {
         #[command(subcommand)]
@@ -451,7 +451,7 @@ fn secret(e: &Enrolled, cmd: SecretCmd, json_out: bool) -> anyhow::Result<i32> {
             e.api("PUT", &format!("{}/secrets/{name}", path(&project, &w)), Some(&json!({ "value": value })))?;
             if !json_out {
                 println!(
-                    "Set {name} on {}: its box reads it on its next setup.",
+                    "Set {name} on {}: its machine reads it on its next setup.",
                     w["name"].as_str().unwrap_or_default()
                 );
             }

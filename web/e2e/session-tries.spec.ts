@@ -147,7 +147,7 @@ test("Try 3, then pick one of the three", async () => {
   const first = sessionOn(parent)!;
   const a = card(alice, first.id);
   runs(first.id, "claude", " web/login.ts | 4 ++--\n 1 file changed");
-  await expect(a.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(a.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
 
   // Try 3, with Claude Code and Codex for the two more (the default).
   await expect(a.locator("[data-session-try-with]")).toHaveValue("codex");
@@ -180,7 +180,7 @@ test("Try 3, then pick one of the three", async () => {
   expect(sessionOn(parent)!.state).toBe("stopped");
   // Its card, in the thread and the timeline: its PR is Alice's to send.
   const kept = card(alice, s3.id);
-  await expect(kept.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(kept.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   await expect(kept.locator("[data-session-parent]")).toContainText(": kept.");
   await expect(kept.locator("button[data-session-pr]")).toBeEnabled();
   await expect(kept.locator("button[data-session-pr]")).toHaveText("PR…");

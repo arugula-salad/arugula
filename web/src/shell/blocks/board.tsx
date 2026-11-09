@@ -19,6 +19,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { PlatformApiContext } from "../../shared/platform-api";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { BlockLoading, EmptyState } from "./block-states";
 import { shellPlatformApi } from "../platform-api";
 import { platformHref } from "../platform-links";
 import { getControlSession } from "../ui/people";
@@ -33,13 +34,15 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
-  if (!s) body = <p class="board-none dim">…</p>;
-  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser ↗", run: () => window.open(link, "_blank", "noopener") }]} />;
+  if (!s) body = <BlockLoading what="the board" />;
+  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser", external: true, run: () => window.open(link, "_blank", "noopener") }]} />;
   else
     body = (
-      <p class="board-none dim" data-board-needs-control>
-        A board is your project's, on Arugula cloud, and you read it as yourself. Open this machine in Arugula cloud, signed in, to see it here.
-      </p>
+      <EmptyState
+        data-board-needs-control
+        title="A board is on Arugula cloud."
+        why="It's your project's, and you read it as yourself. Open this machine in Arugula cloud, signed in, to see it here."
+      />
     );
   return (
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>

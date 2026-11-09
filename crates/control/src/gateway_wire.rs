@@ -492,6 +492,50 @@ async fn a_deletion_the_platform_missed_is_told_again() {
     assert!(s.hub.db.untold_deletions().unwrap().is_empty(), "taken, and forgotten");
 }
 
+/// A hosted machine an owner removes at the hub (Arugula #744): the
+/// platform is told, across the private network, and the hub forgets it
+/// once the platform takes it. One the platform didn't hear of is kept
+/// (`untold_hosted_removals`) and told again until it's taken.
+#[tokio::test]
+async fn a_hosted_removal_the_platform_missed_is_told_again() {
+    let remove = |app: &App, machine: &str| {
+        app.db.put_bare_hosted(machine, "hw_1").unwrap();
+        assert!(app.db.remove_hosted(machine, now_ms()).unwrap());
+    };
+    let (l, gone) = listener().await;
+    drop(l);
+    let (away, _) = hub(&gone).await;
+    remove(&away, "hm-1");
+    assert_eq!(crate::hosted::tell_untold_removals(&away).await, 0, "the platform is away");
+    let kept = away.db.untold_hosted_removals().unwrap();
+    assert_eq!(kept.iter().map(|r| (r.machine.as_str(), r.workspace.as_str())).collect::<Vec<_>>(), [("hm-1", "hw_1")]);
+
+    let s = split().await;
+    // The platform's workspace whose box hm-1 is, ready, as its worker
+    // leaves it.
+    let p = s.platform.db.team_project("t1", "t1", 1).unwrap();
+    s.platform.db.add_hosted_workspace("hw_1", &p, "dev", &Default::default(), "a", 10, 1).unwrap();
+    let mut job = s.platform.db.claim_hosted(2).unwrap().expect("being made");
+    (job.w.state, job.w.machine) = ("ready".into(), Some("hm-1".into()));
+    s.platform.db.checkpoint_hosted(&job, None, u64::MAX / 2, 2).unwrap();
+    remove(&s.hub, "hm-1");
+    assert!(!s.hub.db.remove_hosted("hm-1", now_ms()).unwrap(), "removed once");
+    remove(&s.hub, "hm-2");
+    assert_eq!(s.hub.db.untold_hosted_removals().unwrap().len(), 2);
+    // An owner's removal tells that machine's alone.
+    assert_eq!(crate::hosted::tell_removals(&s.hub, Some("hm-1")).await, 1);
+    assert_eq!(
+        s.platform.db.hosted_removed_machine("hw_1").unwrap().as_deref(),
+        Some("hm-1"),
+        "the platform keeps the hub's word for its worker"
+    );
+    let left = s.hub.db.untold_hosted_removals().unwrap();
+    assert_eq!(left.iter().map(|r| r.machine.as_str()).collect::<Vec<_>>(), ["hm-2"]);
+    // The round tells the rest.
+    assert_eq!(crate::hosted::tell_untold_removals(&s.hub).await, 1);
+    assert!(s.hub.db.untold_hosted_removals().unwrap().is_empty(), "taken, and forgotten");
+}
+
 /// Out of process, the platform page's host is answered by the platform:
 /// a page GET is forwarded with the hub's signed principal header and
 /// served from the platform's own build, under the page's headers; a

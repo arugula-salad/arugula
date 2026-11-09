@@ -25,8 +25,8 @@ import { queryOf, type IssueFilter } from "./text";
 
 export type { IssueFilter };
 
-/** A refusal from the issue routes: its status, and `reason` (`chat_off`
- * while chat's Labs flag is off) when it gave one. */
+/** A refusal from the issue routes: its status, and `reason` when it gave
+ * one. */
 export class IssueError extends Error {
   constructor(
     readonly status: number,

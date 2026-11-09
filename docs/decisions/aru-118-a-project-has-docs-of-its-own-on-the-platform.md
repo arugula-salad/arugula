@@ -67,7 +67,8 @@ one.
   Docs; viewers read. Anyone else gets 404, and a Doc is named with its
   project in every path, so one in another project is no Doc at all.
   Nothing shares one outside the project: there is no link but the page's.
-  Native Docs come with chat, as native issues do.
+  A person's chat setting doesn't decide who reads them, as it doesn't
+  for native issues (Arugula #746).
 - **An agent session** (aru-115) makes a Doc with its asker's rights, as
   itself: no maker, the session where an agent's machine would be, shown
   as `Agent session <id>`. It writes only the Docs it made (people who may

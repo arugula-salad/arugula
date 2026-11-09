@@ -57,18 +57,8 @@ pub trait FileWhy: Send + Sync {
 pub trait Hooks: Send + Sync + 'static {
     // ------------------------------------------------------------ start-up
 
-    /// The sandbox provider VM panes get their machines from: the Sprites
-    /// API at `url`, with the token in `token_file`. `given`: the flags
-    /// weren't left at their defaults.
-    fn open_provider(&self, url: &str, _token_file: &Path, given: bool) -> Option<Arc<dyn Provider>> {
-        if given {
-            tracing::warn!(url, "{}", not_built("VMs"));
-        }
-        None
-    }
-
-    /// The sandbox provider when it's loam: its API at `url`, with a
-    /// project key in `key_file`.
+    /// The sandbox provider VM panes get their machines from, loam: its
+    /// API at `url`, with a project key in `key_file`.
     fn open_loam(&self, url: &str, _key_file: &Path) -> Option<Arc<dyn Provider>> {
         tracing::warn!(url, "{}", not_built("VMs"));
         None
@@ -142,6 +132,13 @@ pub trait Hooks: Send + Sync + 'static {
     /// Whether this machine offers agents to its teams' members (#399).
     fn offers_agents(&self, _state_dir: &Path) -> bool {
         false
+    }
+
+    /// The owner's ssh invites that still work (Arugula #681: the access
+    /// view lists them as `GET /api/guests` does). `None` in a build
+    /// without guest ssh, or before its store is open.
+    fn guests(&self) -> Option<Vec<arugula_proto::api::GuestInvite>> {
+        None
     }
 
     /// What Labs tells control on the link's text channel (guest routes).

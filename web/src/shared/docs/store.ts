@@ -4,15 +4,17 @@
 // shape (a title, then sections of Markdown, pending until written), so the
 // page draws it with the Doc block's renderer.
 
-import type { NewProjectDoc, ProjectDoc, ProjectDocList, ProjectDocView, ProjectDocWrite } from "../proto";
+import type { NewProjectDoc, ProjectDoc, ProjectDocCopies, ProjectDocCopy, ProjectDocList, ProjectDocView, ProjectDocWrite } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
-/** A refusal from the Doc routes, with its status. */
+/** A refusal from the Doc routes, with its status and what else it said
+ * (a 409 names the Doc that is there, or that the team edited it). */
 export class DocError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly body: { id?: string; edited?: boolean } = {},
   ) {
     super(message);
   }
@@ -25,8 +27,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
-  const j = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new DocError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`));
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string; id?: string; edited?: boolean };
+  if (!res.ok) throw new DocError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), { id: j.id, edited: j.edited });
   return j;
 }
 
@@ -38,8 +40,9 @@ const titles = new Map<string, string>();
 
 /** A Doc as the page reads it: a platform before Arugula #678 sent no
  * `machine_name` (and one before #418 no `machine`), so a row from one
- * is a Doc made here, not a copy. */
-const doc = (d: ProjectDoc): ProjectDoc => ({ ...d, machine: d.machine ?? null, machine_name: d.machine_name ?? null });
+ * is a Doc made here, not a copy; and none says `made_from` before Share
+ * with…. */
+const doc = (d: ProjectDoc): ProjectDoc => ({ ...d, machine: d.machine ?? null, machine_name: d.machine_name ?? null, made_from: d.made_from ?? null });
 const view = (v: ProjectDocView): ProjectDocView => ({ ...v, doc: doc(v.doc) });
 
 export const projectDocs = {
@@ -66,6 +69,15 @@ export const projectDocs = {
     titles.set(id, v.doc.title);
     return view(v);
   },
+  /** The team Docs made from a copy of a machine's Doc (its owner's). */
+  copies: (project: string, id: string) => call<ProjectDocCopies>("GET", `${docPath(project, id)}/copies`),
+  /** Share with…: a team Doc in `to` from the copy as it is now. */
+  share: async (project: string, id: string, to: string): Promise<ProjectDocView> =>
+    view(await call<ProjectDocView>("POST", `${docPath(project, id)}/copies`, { to })),
+  /** Update copy: the team Doc in `to` takes the copy as it is now. A team
+   * that edited it since makes this a 409 with `body.edited`, unless `replace`. */
+  updateCopy: (project: string, id: string, to: string, replace: boolean) =>
+    call<ProjectDocCopy>("PUT", `${docPath(project, id)}/copies/${enc(to)}`, { replace }),
   remove: (project: string, id: string) => call<{ deleted: string }>("DELETE", docPath(project, id)),
   /** The Doc's thread (made the first time someone opens it): the room the
    * platform pushes a change on, so a page hears of it live. */

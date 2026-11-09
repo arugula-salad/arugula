@@ -5,7 +5,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl } from "./team-fixture";
+import { TeamControl, opened } from "./team-fixture";
 
 // The fake driver is the platform's only when it's asked for (testnet's switch).
 process.env.ARUGULA_PLATFORM_FAKE_DRIVER = "1";
@@ -30,16 +30,13 @@ const api = (p: Page, method: string, path: string, body?: unknown) =>
   );
 
 test("a click on a row opens its deploy, and the deploy goes back to Deploys", async ({ browser }) => {
-  // macOS's WebKit only (the desktop app's; CI's webkit job, rare-nightly.yml's, runs it).
-  // Playwright's Linux WebKit throws its own "Assertion error" here while
-  // the platform home loads, before any of this test's checks (#402).
-  test.skip(process.platform === "linux", "Playwright's Linux WebKit asserts on this page (#402)");
   test.setTimeout(180_000);
   await t.start(["--platform-host", "app.localhost", "--hosted-accounts", "*"]);
   const app = t.base.replace("//127.0.0.1", "//app.localhost");
-  const alice = await t.person(browser, "alice", { serviceWorkers: "block" });
+  let alice = await t.person(browser, "alice", { serviceWorkers: "block" });
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
-  await alice.goto(app);
+  // In a page of its own: Playwright's Linux WebKit asserts when an open page goes to the platform page's origin (#402).
+  alice = await opened(alice, app);
   await expect(alice.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);

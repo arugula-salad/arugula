@@ -34,7 +34,7 @@ import { Client } from "./client";
 import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
 import { App } from "./ui/app";
-import { openTeamChat, remotes } from "./blocks";
+import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
 import { LinkEnded, setReadOnlyLink, waitForLinkOpen } from "./ui/link-note";
@@ -608,8 +608,6 @@ Object.assign(window, {
       return client;
     },
     hosts: directory,
-    /** #17: the connections remote panes use, by host. */
-    remotes,
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,

@@ -18,7 +18,10 @@
 //! **Kept answers.** GitHub's answers are kept [`KEEP_MS`] (10 minutes) in
 //! `forge_access`, so every machine of the platform gives the same one
 //! ([`access`]: daemons' live updates and hosted boxes' tokens ask the
-//! same way). Answers and drops are timed by the database's clock, never
+//! same way). Only a clear one is kept: a no that only says GitHub
+//! couldn't be asked (an error, a 5xx, its rate limit) is withheld as
+//! [`Withheld::Unsure`] and asked again next time, and the inbox keeps
+//! that reader's entries as they were ([`readers_said`]). Answers and drops are timed by the database's clock, never
 //! a machine's.
 //! The App's `member`, `membership`, `organization`, `repository`, `team`,
 //! `team_add` and installation events ([`event`]) drop the answers they
@@ -86,9 +89,20 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    /// The account as a viewer, with its GitHub identity from the hub.
+    /// The account as a viewer, with its GitHub identity from the hub, as
+    /// the platform's cache keeps it: at most a cache tick old, and dropped
+    /// when the hub's feed says the account linked or unlinked GitHub
+    /// (`crate::cache`). [`check`] asks again before a kept "no" withholds
+    /// a private repo.
     pub async fn of(app: &Platform, account: &str) -> Result<Self, ApiError> {
-        Ok(Self { account: account.to_owned(), github: app.hub.github_user(account).await? })
+        Ok(Self { account: account.to_owned(), github: app.cache.github_user(&*app.hub, account).await? })
+    }
+
+    /// The account as a viewer, with its GitHub identity as the hub says
+    /// now: for what goes out to GitHub as them (a draft's send, a
+    /// session's PR), which a cache tick old identity mustn't decide.
+    pub async fn now(app: &Platform, account: &str) -> Result<Self, ApiError> {
+        Ok(Self { account: account.to_owned(), github: app.cache.github_user_now(&*app.hub, account).await? })
     }
 }
 
@@ -141,6 +155,8 @@ pub enum Withheld {
     Busy,
     /// A private repo, and this control has no GitHub App to ask with.
     NoApp,
+    /// A private repo, and GitHub couldn't be asked about it just now.
+    Unsure,
 }
 
 impl Withheld {
@@ -153,6 +169,7 @@ impl Withheld {
             Withheld::NoAccess => "no_access",
             Withheld::Busy => "busy",
             Withheld::NoApp => "no_app",
+            Withheld::Unsure => "unsure",
         }
     }
 }
@@ -175,15 +192,17 @@ async fn member(app: &Platform, account: &str, project: &str) -> Result<bool, Ap
 
 /// The one viewer check (module docs): which of `repos` the viewer may
 /// read now.
-pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
-    let kept = match &v.github {
-        Some(u) => app.db.kept_access(u.id, KEEP_MS)?,
-        None => HashMap::new(),
-    };
+///
+/// A viewer's "no GitHub" may be a cache tick old (`crate::cache`): once a
+/// private repo in one of their projects is reached, the hub is asked again
+/// before it's withheld (they may have just linked it), and what it says
+/// goes into `v`, so the rest of the request sees it too.
+pub async fn check(app: &Platform, v: &mut Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
     let mut members: HashMap<&str, bool> = HashMap::new();
     let mut readable = Vec::new();
     let mut withheld = Vec::new();
-    let mut asks = Vec::new();
+    // Private repos in the viewer's projects: GitHub decides.
+    let mut private = Vec::new();
     for r in repos {
         if r.unlinked_at.is_some() {
             withheld.push((r.repo_id, Withheld::Unlinked));
@@ -195,12 +214,22 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
         };
         if !m {
             withheld.push((r.repo_id, Withheld::NotMember));
-            continue;
-        }
-        if !r.private {
+        } else if !r.private {
             readable.push(r.repo_id);
-            continue;
+        } else {
+            private.push(r);
         }
+    }
+    if !private.is_empty() && v.github.is_none() {
+        v.github = app.cache.github_user_now(&*app.hub, &v.account).await?;
+    }
+    let v = &*v;
+    let kept = match (&v.github, private.is_empty()) {
+        (Some(u), false) => app.db.kept_access(u.id, KEEP_MS)?,
+        _ => HashMap::new(),
+    };
+    let mut asks = Vec::new();
+    for r in private {
         let Some(user) = &v.github else {
             withheld.push((r.repo_id, Withheld::NoGithub));
             continue;
@@ -216,9 +245,10 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
     }
     for (repo_id, says) in futures_util::future::join_all(asks).await {
         match says? {
-            Access::Yes => readable.push(repo_id),
-            Access::No(_) => withheld.push((repo_id, Withheld::NoAccess)),
-            Access::Busy => withheld.push((repo_id, Withheld::Busy)),
+            (Access::Yes, _) => readable.push(repo_id),
+            (Access::No(_), true) => withheld.push((repo_id, Withheld::NoAccess)),
+            (Access::No(_), false) => withheld.push((repo_id, Withheld::Unsure)),
+            (Access::Busy, _) => withheld.push((repo_id, Withheld::Busy)),
         }
     }
     readable.sort_unstable();
@@ -295,7 +325,8 @@ pub async fn check_connections(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Access {
     Yes,
-    /// Why not, for the person.
+    /// Why not, for the person: GitHub's no, or that it couldn't be asked
+    /// (which isn't kept).
     No(String),
     /// Not asked about lately, and the account asked about too many
     /// ([`FORGE_LOOKUPS`]).
@@ -319,12 +350,13 @@ pub async fn access(
     if let Some(why) = app.db.kept_access(user.id, KEEP_MS)?.remove(&repo.to_lowercase()) {
         return Ok(why.map_or(Access::Yes, Access::No));
     }
-    ask(app, gh, account, user, repo, limit).await
+    Ok(ask(app, gh, account, user, repo, limit).await?.0)
 }
 
-/// Ask GitHub now ([`GithubApp::may`], with a read token) and keep the
-/// answer, timed by the database's clock before asking: a drop that comes
-/// while it asks wins.
+/// Ask GitHub now ([`GithubApp::may_said`], with a read token), and keep a
+/// clear answer, timed by the database's clock before asking: a drop that
+/// comes while it asks wins. The answer, and whether it was clear (a no
+/// that only says GitHub couldn't be asked isn't kept).
 async fn ask(
     app: &Platform,
     gh: &GithubApp,
@@ -332,23 +364,27 @@ async fn ask(
     user: &GithubUser,
     repo: &str,
     limit: bool,
-) -> anyhow::Result<Access> {
+) -> anyhow::Result<(Access, bool)> {
     if limit && app.limits.check_account(FORGE_LOOKUPS, account).is_err() {
-        return Ok(Access::Busy);
+        return Ok((Access::Busy, false));
     }
     let asked = app.db.clock_ms()?;
-    let why = gh.may(&Caller::of(app, account), user, repo).await.err();
-    if let Some(why) = &why {
-        info!(repo, why, "no access to a repository");
+    let said = gh.may_said(&Caller::of(app, account), user, repo).await.err();
+    let clear = said.as_ref().is_none_or(|r| r.clear);
+    if let Some(r) = &said {
+        info!(repo, why = r.why, clear = r.clear, "no access to a repository");
     }
-    app.db.keep_access(user.id, repo, why.as_deref(), asked)?;
-    Ok(why.map_or(Access::Yes, Access::No))
+    let why = said.map(|r| r.why);
+    if clear {
+        app.db.keep_access(user.id, repo, why.as_deref(), asked)?;
+    }
+    Ok((why.map_or(Access::Yes, Access::No), clear))
 }
 
 /// The readable repos of one item, and its repo: what a read of an item
 /// starts with. `None` for an item that isn't there or that the viewer
 /// may not read, which is the same to them.
-pub async fn item(app: &Platform, v: &Viewer, id: &str) -> Result<Option<(Readable, LinkedRepo)>, ApiError> {
+pub async fn item(app: &Platform, v: &mut Viewer, id: &str) -> Result<Option<(Readable, LinkedRepo)>, ApiError> {
     let Some(repo_id) = app.db.forge_item_repo(id)? else { return Ok(None) };
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(None) };
     let c = check(app, v, std::slice::from_ref(&repo)).await?;
@@ -366,16 +402,33 @@ pub async fn title_readers(app: &Platform, item: &str, accounts: &[String]) -> R
 
 /// Which of `accounts` [`check`] lets read a repo's items, as viewers
 /// (with their GitHub identities): [`title_readers`] for every item of one
-/// repo at once (the inbox, M171).
+/// repo at once.
 pub async fn readers(app: &Platform, repo: &LinkedRepo, accounts: &[String]) -> Result<Vec<Viewer>, ApiError> {
+    Ok(readers_said(app, repo, accounts).await?.0)
+}
+
+/// [`readers`], and the accounts it couldn't tell about just now: GitHub
+/// couldn't be asked ([`Withheld::Unsure`]), or the account asked about
+/// too many repos lately ([`Withheld::Busy`]). The inbox (M171) leaves
+/// those accounts' entries as they are, so a hiccup never takes what they
+/// saw and did.
+pub async fn readers_said(
+    app: &Platform,
+    repo: &LinkedRepo,
+    accounts: &[String],
+) -> Result<(Vec<Viewer>, Vec<String>), ApiError> {
     let mut out = Vec::new();
+    let mut unsure = Vec::new();
     for a in accounts {
-        let v = Viewer::of(app, a).await?;
-        if check(app, &v, std::slice::from_ref(repo)).await?.readable.has(repo.repo_id) {
+        let mut v = Viewer::of(app, a).await?;
+        let c = check(app, &mut v, std::slice::from_ref(repo)).await?;
+        if c.readable.has(repo.repo_id) {
             out.push(v);
+        } else if c.withheld.iter().any(|(_, w)| matches!(w, Withheld::Unsure | Withheld::Busy)) {
+            unsure.push(v.account);
         }
     }
-    Ok(out)
+    Ok((out, unsure))
 }
 
 /// What an event of the App's could change about who may read a repo, as

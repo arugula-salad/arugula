@@ -111,11 +111,18 @@ async fn an_agent_never_writes_past_its_owners_role() {
     hub.daemon("xbox", "x", Some("t"));
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
-    for power in [ISSUES_WRITE, THREADS_READ, THREADS_POST] {
+    for power in [THREADS_READ, THREADS_POST] {
         let (st, g) =
             call(&base, "x", "POST", "/api/grants", give("xbox", power, json!({ "kind": "project", "id": t }))).await;
         assert_eq!(st, 200, "{g}");
     }
+    // A viewer's issues.write isn't given any more (Arugula #683); one from
+    // before, written as it was, is still refused at every write.
+    let (st, g) =
+        call(&base, "x", "POST", "/api/grants", give("xbox", ISSUES_WRITE, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!((st, g["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{g}");
+    app.db.give_grant("xbox", ISSUES_WRITE, ("project", &t), "x", 1).unwrap();
     let x = |method: &'static str, path: String, body: Option<Value>| {
         let base = base.clone();
         async move { signed(&base, "x xbox", method, &path, body).await }

@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
 fn start() -> Daemon {
-    arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").start()
+    arugulad!("lauth").no_provider().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").start()
 }
 
 /// One request over TCP with these headers: the response's head
@@ -171,8 +171,12 @@ fn after_an_upgrade_an_older_links_cookie_signs_a_browser_in_once() {
     let token = format!("ilt_{}", "ab".repeat(32));
     std::fs::write(state.join("local-token"), &token).unwrap();
     std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
-    let d =
-        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    let d = arugulad!("lauth")
+        .no_provider()
+        .no_tailscale()
+        .env_remove("ARUGULA_LOCAL_TOKEN_FILE")
+        .state_dir(&state)
+        .start();
     assert_eq!(d.token(), token);
     let old = format!("arugula_{}={token}", d.port);
     // Not a credential: the API refuses it.
@@ -197,8 +201,12 @@ fn after_an_upgrade_an_older_links_cookie_signs_a_browser_in_once() {
     std::fs::write(state.join("local-token"), &token).unwrap();
     std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
     std::fs::write(state.join("legacy-signin-until"), (now - 1).to_string()).unwrap();
-    let d =
-        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    let d = arugulad!("lauth")
+        .no_provider()
+        .no_tailscale()
+        .env_remove("ARUGULA_LOCAL_TOKEN_FILE")
+        .state_dir(&state)
+        .start();
     let old = format!("arugula_{}={token}", d.port);
     let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &old)]);
     assert_eq!(status, 401);

@@ -1,7 +1,7 @@
 # arugulad-labs
 
 Labs: the daemon's features that aren't part of the core. Studio apps with
-hud, chant workspaces, VMs (the Sprites and loam providers and the
+hud, chant workspaces, VMs (the loam provider and the
 sandboxes list), guest ssh, agent
 recipes with the agent catalog and delegating, and the Forgejo and GitLab
 forges. The runtime switches are Labs' flags in the state directory

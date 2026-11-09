@@ -223,6 +223,9 @@ struct DeployJson {
     deploy: String,
     driver: String,
     op: String,
+    /// A deploy's plan run (#1985): absent for an apply.
+    #[serde(default)]
+    plan: bool,
 }
 
 fn op_json(o: &Op) -> Value {
@@ -231,7 +234,13 @@ fn op_json(o: &Op) -> Value {
         "instruction": o.instruction,
         "agent": o.agent,
         "directory": o.directory,
-        "deploy": o.deploy.as_ref().map(|d| json!({ "deploy": d.deploy, "driver": d.driver, "op": d.op })),
+        "deploy": o.deploy.as_ref().map(|d| {
+            let mut v = json!({ "deploy": d.deploy, "driver": d.driver, "op": d.op });
+            if d.plan {
+                v["plan"] = true.into();
+            }
+            v
+        }),
     })
 }
 
@@ -250,7 +259,7 @@ fn run_op(_: &Ctx, v: &Value) -> anyhow::Result<Value> {
                 instruction: op.instruction,
                 agent: op.agent,
                 directory: op.directory,
-                deploy: op.deploy.map(|d| DeployApply { deploy: d.deploy, driver: d.driver, op: d.op }),
+                deploy: op.deploy.map(|d| DeployApply { deploy: d.deploy, driver: d.driver, op: d.op, plan: d.plan }),
             };
             json!({ "kind": o.kind(), "bytes": o.encode(&daemon) })
         }

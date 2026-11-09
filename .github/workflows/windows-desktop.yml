@@ -42,7 +42,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-chant-0.124.61
+          key: npm-chant-0.124.64
       - id: ask
         env:
           GH_TOKEN: ${{ github.token }}

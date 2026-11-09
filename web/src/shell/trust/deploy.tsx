@@ -26,6 +26,8 @@ import { api, type ControlSession } from "../control";
 import {
   DEFAULT_LIFE_MS,
   checkDeploy,
+  approvalFor,
+  approvalPosted,
   passkeyOver,
   type Approval,
   type Assertion,
@@ -85,11 +87,11 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
     setBusy(true);
     setErr("");
     try {
-      const a: Approval = { v: 2, deploy: d.id, op: d.operation.hash, account: s.account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const now = Date.now();
+      const a: Approval = approvalFor(d, s.account, decision, now, now + DEFAULT_LIFE_MS);
       const assertion = await passkey(a);
       const after = await api<Deploy>(`/api/deploys/${d.id}/${decision === "once" ? "approve" : "deny"}`, {
-        op: a.op,
-        expires: a.expires,
+        ...approvalPosted(a),
         passkey: assertion,
       });
       setD(after);
@@ -139,6 +141,12 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
               <pre class="deploy-op" data-deploy-plan>
                 {ok.plan.text}
               </pre>
+              {ok.chant ? (
+                <p class="dim" data-deploy-chant={ok.chant.plan}>
+                  chant planned it: op <code>{ok.chant.op}</code> stopped at gate <code>{ok.chant.gate}</code> with plan{" "}
+                  <code class="deploy-digest">{ok.chant.plan}</code>. Approving signs chant's own statement of that plan.
+                </p>
+              ) : null}
             </>
           ) : null}
           <p class="dim">The operation your passkey confirms:</p>

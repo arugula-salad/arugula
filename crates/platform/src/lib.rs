@@ -42,6 +42,7 @@ pub mod cache;
 pub mod chat;
 #[cfg(any(test, feature = "testing"))]
 pub mod chat_tests;
+pub mod ci_alerts;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
@@ -51,6 +52,8 @@ pub mod drivers;
 pub mod features;
 pub mod forge;
 pub mod grants;
+#[cfg(test)]
+mod grants_tests;
 pub mod hosted;
 pub use arugula_platform_api::hub;
 pub mod in_process;
@@ -64,6 +67,9 @@ pub mod planter;
 mod port;
 pub mod project_docs;
 pub mod project_docs_machine;
+pub mod project_grants;
+#[cfg(test)]
+mod project_grants_tests;
 pub mod project_roles;
 pub mod projects;
 pub use arugula_platform_api::remote;

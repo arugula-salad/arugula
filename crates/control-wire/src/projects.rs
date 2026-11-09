@@ -13,6 +13,34 @@ use serde::{Deserialize, Serialize};
 /// `GET /api/projects`: who's signed in, and their projects, theirs first.
 pub const PROJECTS: &str = "/api/projects";
 
+/// The write powers that do nothing at all for a viewer's agents (Arugula
+/// #683): the platform refuses to give one over a project its giver only
+/// views, 403 `viewer_write`, to a machine (`POST /api/grants`) or a
+/// token (`POST /api/agent-tokens`, which leaves it out per project). The
+/// one list: the platform's `WRITE_POWERS` says why each does nothing and
+/// a test there checks it against this; `arugula grants add` checks its
+/// list against it before giving anything; the web's `VIEWER_REFUSED`
+/// (web/src/platform/settings/grants.ts) is its copy, which
+/// [`tests::the_webs_refused_list_is_this_one`] keeps equal.
+pub const VIEWER_REFUSED: [&str; 5] = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
+
+#[cfg(test)]
+mod tests {
+    /// The web client can't read a Rust constant, so its copy is checked
+    /// here: the one line that defines it, as this list would write it.
+    #[test]
+    fn the_webs_refused_list_is_this_one() {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/platform/settings/grants.ts");
+        let ts = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let want = format!(
+            "export const VIEWER_REFUSED = [{}];",
+            super::VIEWER_REFUSED.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", ")
+        );
+        assert!(ts.lines().any(|l| l == want), "{} must have the line\n{want}", path.display());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformProjects"))]
@@ -176,8 +204,9 @@ pub struct WithheldRepo {
     pub repo: String,
     /// `no_github` (the reader didn't sign in to control with GitHub),
     /// `no_access` (GitHub doesn't give them access), `busy` (too many
-    /// lookups lately: it shows again within the hour) or `no_app` (this
-    /// control has no GitHub App to ask with).
+    /// lookups lately: it shows again within the hour), `unsure` (GitHub
+    /// couldn't be asked just now: it's asked again next time) or `no_app`
+    /// (this control has no GitHub App to ask with).
     pub why: String,
 }
 
@@ -348,6 +377,12 @@ pub struct ForgeRepo {
     /// GitHub of its own.
     #[serde(default)]
     pub login: Option<String>,
+    /// The reader's role in the project it's linked to (`owner`, `editor`
+    /// or `viewer`), when it's linked for them: a viewer's machine makes
+    /// no drafts on the platform, so its blocks raise only the owner's own.
+    /// Absent from a control before this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
     /// #427: the ways the repository lets a pull request be merged, in the
     /// `merge` method's words (`merge`, `squash`, `rebase`), read from
     /// GitHub with the App and kept an hour, for a block pinned to one of
@@ -679,6 +714,105 @@ pub struct TrackerConnections {
     /// The project's id (`personal` asked is answered with the real one).
     pub project: String,
     pub connections: Vec<TrackerConnection>,
+}
+
+/// `GET /api/projects/{project}/ci-alerts` ([`CiAlerts`], for its members)
+/// and `PATCH` ([`CiAlertsSettings`], an owner or editor): CI alerts as
+/// native issues (native #774).
+pub const PROJECT_CI_ALERTS: &str = "/api/projects/{project}/ci-alerts";
+
+/// `POST /api/projects/{project}/ci-alerts/key`: turn CI alerts on with a
+/// new key, or rotate it ([`CiAlertsKey`]). An owner or editor; the key is
+/// in this answer only.
+pub const PROJECT_CI_ALERTS_KEY: &str = "/api/projects/{project}/ci-alerts/key";
+
+/// `POST /ci/notify/{project}`: where chant's tick sends a project's
+/// `chant.notify/v1` events, signed with its key (native #774).
+pub const CI_NOTIFY: &str = "/ci/notify/{project}";
+
+/// A project's CI alerts (native #774): chant's signed CI events open,
+/// comment on and close a "main is red" native issue. Never the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlerts {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    /// On: a key is kept and events are taken.
+    pub on: bool,
+    /// The URL chant posts to: `ci.green.notify.webhook`'s variable.
+    pub url: String,
+    /// Who a new red issue mentions (accounts), in order.
+    pub people: Vec<String>,
+    /// They're assigned it as well.
+    pub assign: bool,
+    /// Who made the key in use (an account, empty once it's deleted), and
+    /// when. `None` while off.
+    pub key_made_by: Option<String>,
+    pub key_made_at: Option<u64>,
+    /// When the last signed event arrived.
+    pub last_event_at: Option<u64>,
+    /// Each branch's open red issue.
+    pub open: Vec<CiAlertOpen>,
+}
+
+/// A branch's open red issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertOpen {
+    pub branch: String,
+    /// The issue's id (`iss_`) and number.
+    pub issue: String,
+    pub number: u64,
+    pub opened_at: u64,
+}
+
+/// `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+/// assigns them, or `on: false` to turn alerts off (the key goes; the
+/// issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsSettings {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub on: Option<bool>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub people: Option<Vec<String>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub assign: Option<bool>,
+}
+
+/// The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+/// and the alerts as they are now. chant reads it from
+/// `ci.green.notify.key`'s variable.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsKey {
+    pub key: String,
+    pub alerts: CiAlerts,
+}
+
+impl std::fmt::Debug for CiAlertsKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CiAlertsKey").field("alerts", &self.alerts).finish_non_exhaustive()
+    }
+}
+
+/// What an issue or a comment CI wrote carries as its agent or `via` (native
+/// #774): `ci:chant`, whatever the event's `source`. Only the CI endpoint
+/// writes one, always with no author, so it names no person and no
+/// machine's agent.
+pub const CI_VIA: &str = "ci:";
+
+/// The name a CI writer is shown by: `chant CI` for `ci:chant`. `None` for
+/// anything else.
+pub fn ci_name(via: &str) -> Option<String> {
+    via.strip_prefix(CI_VIA).filter(|s| !s.is_empty()).map(|s| format!("{s} CI"))
 }
 
 /// What an agent's write to a tracker does, per kind: `allow` sends it at

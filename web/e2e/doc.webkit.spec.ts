@@ -22,7 +22,7 @@ test.use({ ...iphone, baseURL: async ({}, use) => use(url) });
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "ilg-e2e-doc-ios-"));
-  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {

@@ -608,14 +608,7 @@ fn an_app_block_comes_back_after_a_restart_with_no_link_kept() {
 #[test]
 fn asks_on_a_browser_block_and_who_may_answer() {
     let f = Fakes::start();
-    let d = Daemon::child_labs_with(&[
-        "--wisp-token-file",
-        "/nonexistent",
-        "--owner",
-        OWNER,
-        "--tailscale-socket",
-        "/nonexistent/sock",
-    ]);
+    let d = Daemon::child_labs_with(&["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]);
     f.login(&d);
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
@@ -737,14 +730,7 @@ fn asks_on_a_browser_block_and_who_may_answer() {
 #[test]
 fn a_box_gate_is_attention_approved_through_hud_as_whoever_clicked() {
     let f = Fakes::start();
-    let d = Daemon::child_labs_with(&[
-        "--wisp-token-file",
-        "/nonexistent",
-        "--owner",
-        OWNER,
-        "--tailscale-socket",
-        "/nonexistent/sock",
-    ]);
+    let d = Daemon::child_labs_with(&["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]);
     f.login(&d);
     let (status, _) = d.raw(
         "PUT",

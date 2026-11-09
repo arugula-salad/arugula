@@ -6,7 +6,7 @@ use arugula_core::SessionId;
 use arugula_proto::op::ops::{LinkRevoke, LinksList};
 use arugula_proto::{
     api::{AclSetRequest, LinkRequest},
-    op::ops::{AclGet, AclSet, LinkMint},
+    op::ops::{AccessGet, AclGet, AclSet, LinkMint},
 };
 use axum::{Router, http::StatusCode};
 use serde_json::{Value, json};
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::{api::ApiError, mux::Cmd, ops::OpRoutes, server::App};
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>()
+    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>().op::<AccessGet>()
 }
 
 /// Listing a session's read-only links and ending one.
@@ -30,6 +30,9 @@ fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {
 pub(crate) async fn link(app: &App, b: LinkRequest) -> Result<Value, ApiError> {
     if b.key.len() != 64 || !b.key.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(refuse(StatusCode::BAD_REQUEST, "key: 32 bytes of hex"));
+    }
+    if !app.control.admits_links_and_guests() {
+        return Err(refuse(StatusCode::CONFLICT, "a deploy's box admits no links"));
     }
     let from = if b.history {
         None

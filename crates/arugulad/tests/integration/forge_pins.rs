@@ -302,7 +302,7 @@ fn a_linked_repos_block_is_a_pin_and_calls_no_github() {
     let url = serve(&rt, f.clone());
     let recorded = fixture("item.json")["title"].as_str().unwrap().to_owned();
     let mut d = arugulad!("forgepins")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_FORGE_POLL_MS", "200,200")
         .env("ARUGULA_GITHUB_API", format!("{url}/github"))
@@ -401,7 +401,7 @@ fn a_pins_text_comes_from_content_and_its_failure_leaves_the_metadata() {
     *f.content.lock().unwrap() = true;
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("forgepinscontent")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_FORGE_POLL_MS", "200,200")
         .env("ARUGULA_GITHUB_API", format!("{url}/github"))

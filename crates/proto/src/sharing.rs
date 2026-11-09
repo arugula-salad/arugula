@@ -61,8 +61,8 @@ pub struct Sharing {
     /// (#577). `work` by default, since a thread's strip shows it (Jake,
     /// 2026-11-03, aru-133).
     #[serde(default)]
-    #[cfg_attr(feature = "ts", ts(as = "Option<AgentSessions>", optional))]
-    pub agent_sessions: AgentSessions,
+    #[cfg_attr(feature = "ts", ts(as = "Option<AgentListing>", optional))]
+    pub agent_sessions: AgentListing,
     /// Whether this build has guest ssh. A build without Labs keeps the
     /// setting, and nothing follows. Absent: it has.
     #[serde(default = "yes")]
@@ -81,7 +81,7 @@ fn yes() -> bool {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
-pub enum AgentSessions {
+pub enum AgentListing {
     /// No session is named to them.
     None,
     /// Each session's name, tab, how recently it was active and whether
@@ -93,21 +93,21 @@ pub enum AgentSessions {
     Work,
 }
 
-impl AgentSessions {
+impl AgentListing {
     /// The word `sharing.json` and `arugulad sharing` use.
     pub fn word(self) -> &'static str {
         match self {
-            AgentSessions::None => "none",
-            AgentSessions::Names => "names",
-            AgentSessions::Work => "work",
+            AgentListing::None => "none",
+            AgentListing::Names => "names",
+            AgentListing::Work => "work",
         }
     }
 
     pub fn from_word(w: &str) -> Option<Self> {
         match w {
-            "none" => Some(AgentSessions::None),
-            "names" => Some(AgentSessions::Names),
-            "work" => Some(AgentSessions::Work),
+            "none" => Some(AgentListing::None),
+            "names" => Some(AgentListing::Names),
+            "work" => Some(AgentListing::Work),
             _ => None,
         }
     }
@@ -126,7 +126,7 @@ pub struct SharingSetRequest {
     pub agent_mentions: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
-    pub agent_sessions: Option<AgentSessions>,
+    pub agent_sessions: Option<AgentListing>,
 }
 
 /// The file as it is: empty if there's none, or it doesn't parse (logged
@@ -157,17 +157,17 @@ pub fn agent_mentions(state_dir: &Path) -> bool {
 /// What teammates and their agents may learn of this machine's sessions
 /// (#577): the file's word, else the default. A word it doesn't know is
 /// names, the middle way, so a typo neither opens nor closes it.
-pub fn agent_sessions(state_dir: &Path) -> AgentSessions {
+pub fn agent_sessions(state_dir: &Path) -> AgentListing {
     match doc(state_dir).get("agent_sessions") {
-        None => AgentSessions::default(),
-        Some(w) => w.as_str().and_then(AgentSessions::from_word).unwrap_or(AgentSessions::Names),
+        None => AgentListing::default(),
+        Some(w) => w.as_str().and_then(AgentListing::from_word).unwrap_or(AgentListing::Names),
     }
 }
 
 /// What agents may learn of a machine's sessions, with the owner's two
 /// switches together (#576, #577): nothing when mentions are off.
-pub fn sessions_shown(state_dir: &Path) -> AgentSessions {
-    if agent_mentions(state_dir) { agent_sessions(state_dir) } else { AgentSessions::None }
+pub fn sessions_shown(state_dir: &Path) -> AgentListing {
+    if agent_mentions(state_dir) { agent_sessions(state_dir) } else { AgentListing::None }
 }
 
 /// Turns Guest SSH access on or off, keeping the rest of the file.
@@ -182,7 +182,7 @@ pub fn set_agent_mentions(state_dir: &Path, on: bool) -> io::Result<()> {
 
 /// Sets what agents may learn of the machine's sessions, keeping the rest
 /// of the file (#577).
-pub fn set_agent_sessions(state_dir: &Path, what: AgentSessions) -> io::Result<()> {
+pub fn set_agent_sessions(state_dir: &Path, what: AgentListing) -> io::Result<()> {
     write(state_dir, "agent_sessions", Value::String(what.word().into()))
 }
 
@@ -220,6 +220,20 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// A `sharing.json` a release wrote reads the same.
+    #[test]
+    fn release_sharing_loads() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/stored/sharing.json");
+        let d = dir("release");
+        fs::copy(&fixture, d.join(FILE)).unwrap();
+        assert!(guest_ssh(&d) && agent_mentions(&d));
+        assert_eq!(agent_sessions(&d), AgentListing::Names);
+        let text = fs::read_to_string(&fixture).unwrap();
+        let s: Sharing = serde_json::from_str(&text).unwrap();
+        assert_eq!((s.guest_ssh, s.agent_mentions, s.agent_sessions), (true, true, AgentListing::Names));
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
@@ -267,19 +281,19 @@ mod tests {
     #[test]
     fn agent_sessions_are_work_until_the_owner_says_otherwise() {
         let d = dir("sessions");
-        assert_eq!(agent_sessions(&d), AgentSessions::Work);
-        for what in [AgentSessions::Work, AgentSessions::None, AgentSessions::Names] {
+        assert_eq!(agent_sessions(&d), AgentListing::Work);
+        for what in [AgentListing::Work, AgentListing::None, AgentListing::Names] {
             set_agent_sessions(&d, what).unwrap();
             assert_eq!(agent_sessions(&d), what);
         }
         // Another key's write keeps it, an owner's own choice stays, and a
         // word it doesn't know is names.
-        set_agent_sessions(&d, AgentSessions::Work).unwrap();
+        set_agent_sessions(&d, AgentListing::Work).unwrap();
         set_agent_mentions(&d, false).unwrap();
-        assert_eq!(agent_sessions(&d), AgentSessions::Work);
-        assert_eq!(sessions_shown(&d), AgentSessions::None, "mentions off shows nothing");
+        assert_eq!(agent_sessions(&d), AgentListing::Work);
+        assert_eq!(sessions_shown(&d), AgentListing::None, "mentions off shows nothing");
         std::fs::write(d.join(FILE), r#"{"agent_sessions": "everything"}"#).unwrap();
-        assert_eq!(agent_sessions(&d), AgentSessions::Names);
+        assert_eq!(agent_sessions(&d), AgentListing::Names);
     }
 
     #[test]

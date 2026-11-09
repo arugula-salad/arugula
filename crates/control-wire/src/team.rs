@@ -52,10 +52,25 @@ pub const FLAG_ALIASES: &[(&str, &str)] = &[
 /// page offers the account's Labs flags only to people with such a machine.
 pub const DEV_SETTINGS: &str = "dev-settings";
 
+/// What a machine joined to the account alone is sent in `team` when any
+/// of the account's teams turned chat on (native #673): the platform reads
+/// chat per account that way, so the machine's reader lists and threads
+/// follow it. It is not `chat`, so an older daemon doesn't take it for its
+/// own account's word, and it never copies Docs.
+pub const CHAT_HEARD: &str = "chat-heard";
+
+/// An account's own word that its personal machines copy their Docs up to
+/// its personal project on the platform (native #673): "Your Docs on the
+/// platform" on the page. Separate from chat, which it neither needs nor
+/// turns on. Only an account sets it, and control sends it only to the
+/// account's personal machines: a team's machine never copies.
+pub const DOC_COPIES: &str = "doc-copies";
+
 /// Labs flags control sends a machine (#347): its account's, and its
 /// team's if it's a team's machine, by flag name. On or off; a flag
 /// neither names follows the machine's own default. The daemon's own
-/// `flags.json` wins over both, and account over team.
+/// `flags.json` wins over both, and account over team. A personal
+/// machine's `team` holds only [`CHAT_HEARD`], when it applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Flags {

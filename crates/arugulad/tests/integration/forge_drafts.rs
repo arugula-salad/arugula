@@ -166,7 +166,7 @@ fn a_linked_repos_drafts_go_up_once() {
     let f = Fake::default();
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("forgedrafts")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_FORGE_POLL_MS", "200,200")
         .env("ARUGULA_GITHUB_API", format!("{url}/github"))

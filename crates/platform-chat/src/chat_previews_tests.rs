@@ -133,11 +133,39 @@ async fn a_card_is_drawn_for_the_reader_and_nobody_else_gets_one() {
     assert_eq!(v["previews"][m.to_string()][0]["tone"], json!("off"));
 }
 
+/// A link to a cloud workspace is a card that names who made it only
+/// while they're in the project: one a former member made names nobody.
+#[tokio::test]
+async fn a_workspaces_card_names_its_maker_only_while_theyre_in() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (_, room) = seed(&app, &hub, &base).await;
+    let (st, _) = call(&base, "c", "PUT", "/api/chat/teams/u/previews", Some(json!({ "web": false }))).await;
+    assert_eq!(st, 200);
+    let project = app.db.team_project("t", "t", 1).unwrap();
+    let spec = crate::hosted::Spec::default();
+    for (id, name, by) in [("hw_aaaa1111", "mine", "a"), ("hw_bbbb2222", "gone", "zed")] {
+        assert!(
+            matches!(
+                app.db.add_hosted_workspace(id, &project, name, &spec, by, 10, 1).unwrap(),
+                crate::db::hosted::Added::Made(_)
+            ),
+            "{name}"
+        );
+    }
+    let mine = say(&base, "a", &room, &format!("https://app.arugula.io/p/{project}/workspaces/hw_aaaa1111")).await;
+    let gone = say(&base, "a", &room, &format!("https://app.arugula.io/p/{project}/workspaces/hw_bbbb2222")).await;
+    let v = previews(&base, "a", &room, &[mine, gone]).await;
+    let card = |m: i64| v["previews"][m.to_string()][0].clone();
+    assert_eq!((&card(mine)["what"], &card(mine)["who"]), (&json!("workspace"), &json!("a")), "{v}");
+    assert_eq!((&card(gone)["what"], &card(gone)["who"]), (&json!("workspace"), &Value::Null), "{v}");
+}
+
 /// A link to an agent session (M254) is a card of its state for its
 /// project's members, and nothing for anyone else.
 #[tokio::test]
 async fn a_sessions_link_is_a_card_of_its_state() {
-    use crate::db::sessions::{NewPrompt, NewSession, Source, State as SessionState};
+    use crate::db::sessions::{NewAgentSession, NewPrompt, Source, State as SessionState};
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let (_, room) = seed(&app, &hub, &base).await;
@@ -150,7 +178,7 @@ async fn a_sessions_link_is_a_card_of_its_state() {
     else {
         panic!("no workspace");
     };
-    let new = NewSession {
+    let new = NewAgentSession {
         project: &project,
         room: &room,
         parent_seq: 1,

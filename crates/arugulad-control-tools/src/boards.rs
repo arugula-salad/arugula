@@ -52,12 +52,12 @@
 
 use arugula_control_wire::boards::{
     self as wire, AGENT_BOARD_REACH, AddDoc, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard,
-    IssueRef, LeadBoard, Live, MoveEntry, NewAsk, NewBoard, NewRelation, Pointer, PutEntry, ResolveItems, Resolved,
-    Row, agent_board, agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc,
-    agent_board_docs, agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_lead,
-    agent_board_reopen, agent_board_resolve, agent_board_row_ask, agent_project_boards, agent_project_relation,
-    agent_project_relations,
+    IssueRef, LeadBoard, Live, MoveEntry, NewAsk, NewBoard, Pointer, PutEntry, ResolveItems, Resolved, Row,
+    agent_board, agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs,
+    agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_lead, agent_board_reopen,
+    agent_board_resolve, agent_board_row_ask, agent_project_boards,
 };
+use arugula_control_wire::issues::{NewIssue, agent_project_issues};
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
@@ -74,19 +74,21 @@ use crate::{control::CloudRefused, mux::Api};
 pub(crate) const READ_TOOL: &str = "board_read";
 pub(crate) const WRITE_TOOL: &str = "board_write";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land and the answer says why.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; the answer says what became of each). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread reaches the session leading it, wherever it runs. A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
+/// The most groups a new board takes.
+const GROUPS_MAX: usize = 20;
 /// The most item lines an answer lists; the rest are counted.
 const LINES_MAX: usize = 14;
 
 /// `board_read`.
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadBoardArgs {
-    /// The board (brd_…). Without it: the project's boards.
+    /// The board (brd_…, or its exact title). Without it: the project's boards.
     #[serde(default)]
     pub board: Option<String>,
     /// The project's id (prj_…) or personal, to list its boards. Default:
@@ -150,14 +152,53 @@ pub struct CreateBoardArgs {
     /// board with a goal is an epic. (A board has four lanes, made by no one.)
     #[serde(default)]
     pub goal: Option<String>,
+    /// The plan: groups in order, each with its items (the forms `add`
+    /// takes, new issues too). Up to 20 groups of up to 50 items. A group or
+    /// an item that fails doesn't stop the rest, and the board stays.
+    #[serde(default)]
+    pub groups: Vec<GroupArg>,
     /// The whole board in the answer. Default: a few lines.
     #[serde(default)]
     pub verbose: bool,
 }
 
+/// A group of a new board, with its items.
+#[derive(Deserialize, JsonSchema)]
+pub struct GroupArg {
+    /// One line, at most 120 characters.
+    pub title: String,
+    /// What goes in it, as `add` takes them.
+    #[serde(default)]
+    pub items: Vec<ItemArg>,
+}
+
+/// One thing to put on a board: an item that exists, or a new issue.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ItemArg {
+    /// #N (a native issue, else a GitHub one), owner/repo#N, IDENT-N
+    /// (Plane), or an iss_… / fi_… id.
+    Existing(String),
+    /// A native issue to file in the board's project first, under your
+    /// person's issues.write grant.
+    New(NewItemArg),
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct NewItemArg {
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Accounts, each a member of the project.
+    #[serde(default)]
+    pub assignees: Vec<String>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct EditBoardArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     #[serde(default)]
     pub title: Option<String>,
@@ -170,7 +211,7 @@ pub struct EditBoardArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CloseBoardArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// What a person can now do, not empty.
     pub done_note: String,
@@ -180,7 +221,7 @@ pub struct CloseBoardArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LeadBoardArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// Release the lead instead of taking it: only the machine of the
     /// session that leads, or a person, can.
@@ -192,7 +233,7 @@ pub struct LeadBoardArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct BoardArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     #[serde(default)]
     pub verbose: bool,
@@ -200,13 +241,14 @@ pub struct BoardArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct AddArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// Up to 50 issues or PRs: #N (a native issue, else a GitHub one),
-    /// owner/repo#N, IDENT-N (Plane), or an iss_… / fi_… id. Each becomes a
+    /// owner/repo#N, IDENT-N (Plane), or an iss_… / fi_… id; or a new issue,
+    /// `{title, body?, labels?, assignees?}`, filed first. Each becomes a
     /// row, or is attached to the row of the issue it names (a PR), or is
     /// there already. One that fails doesn't stop the rest.
-    pub items: Vec<String>,
+    pub items: Vec<ItemArg>,
     /// The group to put new rows in (its title, or zon_…). Default: none.
     #[serde(default)]
     pub group: Option<String>,
@@ -216,7 +258,7 @@ pub struct AddArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct AttachArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
     pub item: String,
@@ -250,7 +292,7 @@ pub enum AttachRoleArg {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DetachArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item.
     pub item: String,
@@ -263,7 +305,7 @@ pub struct DetachArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LinkDocArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The Doc: a project Doc (pdc_…, of the board's project), or a Doc kept
     /// on this machine (its id from doc list: 16 hex digits).
@@ -279,7 +321,7 @@ pub struct LinkDocArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct UnlinkDocArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// What to take off: a Doc's id (bdc_…), on the board's strip or on a
     /// row, as board_read shows it. One your machine linked.
@@ -290,7 +332,7 @@ pub struct UnlinkDocArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct AskArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item (an issue or a PR; one open ask per row). A note
     /// row is refused.
@@ -315,51 +357,8 @@ pub struct AskArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
-pub struct RelateArgs {
-    /// The board (brd_…): its project is the one the items are in.
-    pub board: String,
-    /// The first item of the relation: an issue or PR of the project, as
-    /// #N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row.
-    pub item: String,
-    /// The second item, written the same way. `item` blocks, relates to,
-    /// duplicates or was discovered from it. One item: a list of one is
-    /// taken as that item.
-    #[serde(deserialize_with = "single")]
-    #[schemars(with = "StringOrList")]
-    pub to: String,
-    /// blocks (the first must be closed before the second can start),
-    /// relates, duplicate_of or discovered_from. Only blocks gates. Not
-    /// `kind`: that names the op. Default blocks.
-    #[serde(default)]
-    pub relation: RelationKindArg,
-    #[serde(default)]
-    pub verbose: bool,
-}
-
-#[derive(Deserialize, JsonSchema, Clone, Copy, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationKindArg {
-    #[default]
-    Blocks,
-    Relates,
-    DuplicateOf,
-    DiscoveredFrom,
-}
-
-impl From<RelationKindArg> for wire::RelationKind {
-    fn from(k: RelationKindArg) -> Self {
-        match k {
-            RelationKindArg::Blocks => wire::RelationKind::Blocks,
-            RelationKindArg::Relates => wire::RelationKind::Relates,
-            RelationKindArg::DuplicateOf => wire::RelationKind::DuplicateOf,
-            RelationKindArg::DiscoveredFrom => wire::RelationKind::DiscoveredFrom,
-        }
-    }
-}
-
-#[derive(Deserialize, JsonSchema)]
 pub struct NoteArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item.
     pub item: String,
@@ -389,15 +388,6 @@ fn many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error>
     })
 }
 
-/// One string, or a list of exactly one.
-fn single<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    let mut v = many(d)?;
-    match (v.pop(), v.is_empty()) {
-        (Some(s), true) => Ok(s),
-        _ => Err(serde::de::Error::custom("`to` is one item: relate to one at a time")),
-    }
-}
-
 /// A field that is there, `null` or not, is `Some`: so `null` and absent
 /// differ.
 fn some<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
@@ -406,7 +396,7 @@ fn some<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>
 
 #[derive(Deserialize, JsonSchema)]
 pub struct GroupArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item.
     pub item: String,
@@ -421,7 +411,7 @@ pub struct GroupArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DropArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The row, by its item: one you added.
     pub item: String,
@@ -431,9 +421,10 @@ pub struct DropArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct AddGroupArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The group's title: one line, at most 120 characters. It goes last.
+    /// The answer gives its zon_… id.
     pub title: String,
     #[serde(default)]
     pub verbose: bool,
@@ -441,7 +432,7 @@ pub struct AddGroupArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct RenameGroupArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The group (its title, or zon_…).
     pub group: String,
@@ -452,7 +443,7 @@ pub struct RenameGroupArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct MoveGroupArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The group (its title, or zon_…).
     pub group: String,
@@ -465,7 +456,7 @@ pub struct MoveGroupArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DeleteGroupArgs {
-    /// The board (brd_…).
+    /// The board (brd_…, or its exact title).
     pub board: String,
     /// The group (its title, or zon_…): empty, or holding only rows you
     /// added.
@@ -509,18 +500,6 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "ask",
         description: "Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.",
         schema: schema_for_type::<AskArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "relate",
-        description: "Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).",
-        schema: schema_for_type::<RelateArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "unrelate",
-        description: "Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.",
-        schema: schema_for_type::<RelateArgs>,
         flag: None,
     },
     Kind {
@@ -622,11 +601,6 @@ fn text(v: &BoardView) -> String {
 
 /// `Title (brd_…): 3/11 done, 2 proven, 2 group(s)`; for a board with no
 /// issue or PR yet, `no issues yet`.
-/// How many rows can start now (the board's ready set).
-fn ready_line(v: &BoardView) -> String {
-    format!("{} ready.", v.ready.len())
-}
-
 fn progress(v: &BoardView) -> String {
     let (b, p) = (&v.board, v.board.progress);
     let state = match p.total {
@@ -776,20 +750,68 @@ fn find_row<'a>(v: &'a BoardView, item: &str) -> Result<&'a Row, String> {
     Err(format!("no row on this board has {item} (add puts it on)"))
 }
 
-/// A group by its title (any case) or `zon_…` id.
+/// A group by its `zon_…` id, or by its title (any case).
 fn find_group<'a>(v: &'a BoardView, group: &str) -> Result<&'a wire::Group, String> {
     let group = group.trim();
-    v.groups
-        .iter()
-        .find(|g| g.id == group)
-        .or_else(|| v.groups.iter().find(|g| g.title.eq_ignore_ascii_case(group)))
-        .ok_or_else(|| {
-            let titles: Vec<&str> = v.groups.iter().map(|g| g.title.as_str()).collect();
-            match titles.is_empty() {
-                true => format!("this board has no group {group:?}: add_group makes one"),
-                false => format!("no group {group:?} on this board (its groups: {})", titles.join(", ")),
-            }
-        })
+    let found = match group.starts_with("zon_") {
+        true => v.groups.iter().find(|g| g.id == group),
+        false => v.groups.iter().find(|g| g.title.eq_ignore_ascii_case(group)),
+    };
+    found.ok_or_else(|| {
+        let titles: Vec<&str> = v.groups.iter().map(|g| g.title.as_str()).collect();
+        match titles.is_empty() {
+            true => format!("this board has no group {group:?}: add_group makes one"),
+            false => format!("no group {group:?} on this board (its groups: {})", titles.join(", ")),
+        }
+    })
+}
+
+/// The group a new group made: the last, when it has that title.
+fn made_group<'a>(v: &'a BoardView, title: &str) -> Option<&'a wire::Group> {
+    v.groups.last().filter(|g| g.title.eq_ignore_ascii_case(title.trim()))
+}
+
+/// The id of the open board a title names among a project's boards, or what
+/// to write instead.
+fn board_titled(boards: &[wire::Board], project: &str, title: &str) -> Result<String, String> {
+    let title = title.trim();
+    let open: Vec<&wire::Board> = boards.iter().filter(|b| b.closed_at.is_none()).collect();
+    let same: Vec<&&wire::Board> = open.iter().filter(|b| b.title.trim().eq_ignore_ascii_case(title)).collect();
+    match same.as_slice() {
+        [one] => Ok(one.id.clone()),
+        [] if open.is_empty() => Err(format!("{title:?} isn't a board: project {project} has no open boards")),
+        [] => Err(format!(
+            "no open board in project {project} is titled {title:?} (its open boards: {})",
+            open.iter().map(|b| b.title.as_str()).collect::<Vec<_>>().join(", ")
+        )),
+        many => Err(format!(
+            "{} open boards in project {project} are titled {title:?}: {}; write the brd_ id of the one you mean",
+            many.len(),
+            many.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>().join(" and ")
+        )),
+    }
+}
+
+/// A board as given: its `brd_…` id as it is, else its title, matched among
+/// the default project's open boards.
+async fn board_named(c: &Call<'_>, board: &str) -> Result<String, String> {
+    let board = board.trim();
+    if board.is_empty() || board.starts_with("brd_") {
+        return Ok(board.to_owned());
+    }
+    let chosen = c.chosen_project(None).await?;
+    let v = boards_call(c, Method::GET, &agent_project_boards(&chosen.id), None).await?;
+    let list: BoardList =
+        serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
+    board_titled(&list.boards, &chosen.name, board)
+}
+
+/// `a` with its `board` named by an id.
+async fn with_board_id(c: &Call<'_>, mut a: Value) -> Result<Value, String> {
+    if let Some(b) = a["board"].as_str() {
+        a["board"] = Value::String(board_named(c, b).await?);
+    }
+    Ok(a)
 }
 
 /// A row's card, for an answer: its item, lane, rev and note; its marks; its
@@ -902,64 +924,97 @@ fn target(to: &str) -> Result<Target, String> {
     Ok(Target::Item(to.into()))
 }
 
-/// The `iss_` or `fi_` ids `item` and `to` name, in the board's project.
-async fn relation_ends(c: &Call<'_>, board: &str, item: &str, to: &str) -> Result<(String, String), String> {
-    let resolved = resolve(c, board, &[item.to_owned(), to.to_owned()]).await?;
-    let mut ends = vec![];
-    for (what, r) in [item, to].into_iter().zip(resolved.items) {
-        match r.pointer {
-            Some(Pointer::Issue { id } | Pointer::ForgeItem { id }) => ends.push(id),
-            _ => {
-                return Err(format!(
-                    "{what}: {}",
-                    r.why.unwrap_or_else(|| "control didn't resolve it to an issue or PR".into())
-                ));
-            }
-        }
-    }
-    let to = ends.pop().unwrap_or_default();
-    Ok((ends.pop().unwrap_or_default(), to))
+/// An item to put on a board, once it is a pointer or a reason it isn't.
+struct Entry {
+    /// What the answer calls it.
+    label: String,
+    pointer: Result<Pointer, String>,
+    /// The number of the issue filed for it.
+    filed: Option<u64>,
 }
 
-/// The id of the relation `from` `kind` `to` that a row of the board shows.
-fn relation_between(v: &BoardView, from: &str, to: &str, kind: wire::RelationKind) -> Option<String> {
-    rows(v).find_map(|r| {
-        let me = pointer_id(&r.pointer)?;
-        r.relations.iter().find_map(|x| {
-            let other = x.item.as_deref()?;
-            let (a, b) = if x.direction == wire::RelationDirection::Out { (me, other) } else { (other, me) };
-            (a == from && b == to && x.kind == kind).then(|| x.id.clone())
+/// Files a new item as a native issue in `project`, under the issues.write
+/// grant.
+async fn file(c: &Call<'_>, project: &str, n: NewItemArg) -> Entry {
+    let label = format!("{:?}", short(&n.title, 40));
+    if n.title.trim().is_empty() {
+        return Entry { label, pointer: Err("a new issue needs a title".into()), filed: None };
+    }
+    let new = NewIssue { title: n.title, body: n.body.unwrap_or_default(), labels: n.labels, assignees: n.assignees };
+    let made = async {
+        let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
+        c.issues_call(Method::POST, &agent_project_issues(project), Some(body)).await
+    };
+    match made.await {
+        Ok(i) => match i["id"].as_str() {
+            Some(id) => Entry { label, pointer: Ok(Pointer::Issue { id: id.to_owned() }), filed: i["number"].as_u64() },
+            None => Entry { label, pointer: Err("control filed it but named no issue".into()), filed: None },
+        },
+        Err(why) => Entry { label, pointer: Err(format!("not filed, {why}")), filed: None },
+    }
+}
+
+/// Puts `items` on the board, in order: new ones are filed, the others
+/// resolved by control in one call. `view` follows each write; `tally` gets
+/// a line for each item, led by `scope`. Only a failure before any item is
+/// an `Err`.
+async fn add_items(
+    c: &Call<'_>,
+    board: &str,
+    view: &mut BoardView,
+    group: Option<&str>,
+    items: Vec<ItemArg>,
+    scope: &str,
+    tally: &mut Tally,
+) -> Result<(), String> {
+    let refs: Vec<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            ItemArg::Existing(r) => Some(r.clone()),
+            ItemArg::New(_) => None,
         })
-    })
-}
-
-async fn add(c: &Call<'_>, a: AddArgs) -> Out {
-    if a.items.is_empty() || a.items.len() > BATCH_MAX {
-        return Err(format!("add takes 1 to {BATCH_MAX} items, not {}", a.items.len()));
+        .collect();
+    let mut resolved = match refs.is_empty() {
+        true => vec![],
+        false => resolve(c, board, &refs).await?.items,
     }
-    let mut view = read_view(c, &a.board).await?;
-    let group = a.group.as_deref().map(|g| find_group(&view, g).map(|g| g.id.clone())).transpose()?;
-    let resolved = resolve(c, &a.board, &a.items).await?;
-    let mut tally = Tally::default();
-    for (item, r) in a.items.iter().zip(resolved.items) {
-        let Some(pointer) = r.pointer else {
-            tally.did(
-                "failed",
-                format!("{item}: failed, {}", r.why.unwrap_or_else(|| "control didn't resolve it".into())),
-            );
-            continue;
+    .into_iter();
+    let project = view.board.project.clone();
+    let mut entries = vec![];
+    for item in items {
+        entries.push(match item {
+            ItemArg::New(n) => file(c, &project, n).await,
+            ItemArg::Existing(label) => {
+                let r = resolved.next();
+                let pointer = match r.as_ref().and_then(|r| r.pointer.clone()) {
+                    Some(p) => Ok(p),
+                    None => Err(r.and_then(|r| r.why).unwrap_or_else(|| "control didn't resolve it".into())),
+                };
+                Entry { label, pointer, filed: None }
+            }
+        });
+    }
+    for Entry { label: item, pointer, filed } in entries {
+        let item = format!("{scope}{item}");
+        let pointer = match pointer {
+            Ok(p) => p,
+            Err(why) => {
+                tally.did("failed", format!("{item}: failed, {why}"));
+                continue;
+            }
         };
+        let filed = filed.map(|n| format!("filed #{n}, ")).unwrap_or_default();
         let put = PutEntry {
             entry: Some(wire::EntryKind::Row),
-            zone: group.clone(),
+            zone: group.map(str::to_owned),
             pointer: Some(pointer.clone()),
             ..Default::default()
         };
         let body = given(put)?;
-        match boards_call(c, Method::PUT, &agent_board_entries(&a.board), Some(body)).await.and_then(view_of) {
-            Err(why) => tally.did("failed", format!("{item}: failed, {why}")),
+        match boards_call(c, Method::PUT, &agent_board_entries(board), Some(body)).await.and_then(view_of) {
+            Err(why) => tally.did("failed", format!("{item}: {filed}failed, {why}")),
             Ok(after) => {
-                match (row_with(&view, &pointer), row_with(&after, &pointer)) {
+                match (row_with(view, &pointer), row_with(&after, &pointer)) {
                     ((Some(r), _), _) => {
                         tally.did("already there", format!("{item}: already on the board as {}", r.item_label()))
                     }
@@ -970,21 +1025,72 @@ async fn add(c: &Call<'_>, a: AddArgs) -> Out {
                         let took = after.said.as_deref().filter(|s| s.contains("PR row(s)")).map(|s| format!("; {s}"));
                         tally.did(
                             "added",
-                            format!("{item}: added, {}{}", card(&after, r).remove(0), took.unwrap_or_default()),
+                            format!("{item}: {filed}added, {}{}", card(&after, r).remove(0), took.unwrap_or_default()),
                         )
                     }
                     (_, (None, Some(r))) => {
                         tally.did("attached", format!("{item}: attached to {} ({})", r.item_label(), r.lane.title()))
                     }
-                    _ => tally.did("failed", format!("{item}: control answered, but it isn't on the board")),
+                    _ => tally.did("failed", format!("{item}: {filed}control answered, but it isn't on the board")),
                 }
-                view = after;
+                *view = after;
             }
         }
     }
+    Ok(())
+}
+
+async fn add(c: &Call<'_>, a: AddArgs) -> Out {
+    if a.items.is_empty() || a.items.len() > BATCH_MAX {
+        return Err(format!("add takes 1 to {BATCH_MAX} items, not {}", a.items.len()));
+    }
+    let mut view = read_view(c, &a.board).await?;
+    let group = a.group.as_deref().map(|g| find_group(&view, g).map(|g| g.id.clone())).transpose()?;
+    let mut tally = Tally::default();
+    add_items(c, &a.board, &mut view, group.as_deref(), a.items, "", &mut tally).await?;
     let mut lines = tally.lines("Added");
     lines.push(progress(&view));
     answer(lines.join("\n"), &view, a.verbose)
+}
+
+/// The groups and items of a new board, made one group after another. A
+/// group or an item that fails is said, and the rest go on.
+async fn plan(c: &Call<'_>, view: &mut BoardView, groups: Vec<GroupArg>) -> Vec<String> {
+    let board = view.board.id.clone();
+    let (mut made, mut rows) = (Tally::default(), Tally::default());
+    for g in groups {
+        let put = PutEntry { entry: Some(wire::EntryKind::Zone), title: Some(g.title.clone()), ..Default::default() };
+        let after = put_entry(c, &board, &put).await.and_then(view_of);
+        let id = match &after {
+            Ok(v) => made_group(v, &g.title)
+                .map(|x| x.id.clone())
+                .ok_or("control answered, but it isn't on the board".to_owned()),
+            Err(why) => Err(why.clone()),
+        };
+        let (id, after) = match (id, after) {
+            (Ok(id), Ok(after)) => (id, after),
+            (Err(why), _) | (_, Err(why)) => {
+                let left = if g.items.is_empty() {
+                    String::new()
+                } else {
+                    format!("; its {} item(s) weren't added", g.items.len())
+                };
+                made.did("failed", format!("{}: failed, {why}{left}", g.title));
+                continue;
+            }
+        };
+        made.did("added", format!("{} ({id})", g.title));
+        *view = after;
+        let n = g.items.len();
+        if let Err(why) = add_items(c, &board, view, Some(&id), g.items, &format!("{} · ", g.title), &mut rows).await {
+            rows.did("failed", format!("{}: failed, {why}; its {n} item(s) weren't added", g.title));
+        }
+    }
+    let mut lines = made.lines("Groups");
+    if !rows.lines.is_empty() {
+        lines.extend(rows.lines("Items"));
+    }
+    lines
 }
 
 async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
@@ -1158,7 +1264,7 @@ fn listed(s: &Option<String>) -> Vec<String> {
 /// A board with only the rows `board_read` asked for (`q`, `lane`, `group`,
 /// `label`, `person`), and the line that says how many: `Showing 7 of 89 rows (q: "plane")`.
 /// `None` when it asked for none. A group with no row left is dropped, and
-/// the ready set keeps only the rows that are.
+/// the ready set and the steps' order keep only the rows that are.
 fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, String)>, String> {
     let given = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
     let (q, group) = (given(&a.q), given(&a.group));
@@ -1182,6 +1288,11 @@ fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, Strin
     }
     let left: Vec<&str> = out.zones.iter().flat_map(|z| &z.rows).map(|r| r.id.as_str()).collect();
     out.ready.retain(|id| left.contains(&id.as_str()));
+    out.sequence.retain(|id| left.contains(&id.as_str()));
+    // A chain with a row missing would read as a shorter one.
+    if !out.chain.iter().all(|id| left.contains(&id.as_str())) {
+        out.chain.clear();
+    }
     let held: Vec<Option<String>> = out.zones.iter().flat_map(|z| &z.rows).map(|r| r.group.clone()).collect();
     out.groups.retain(|g| held.contains(&Some(g.id.clone())));
     let shown = rows(&out).count();
@@ -1207,8 +1318,9 @@ fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, Strin
 /// `board_read`.
 pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     owners_boards(c, READ_TOOL).await?;
-    if let Some(id) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-        let view = read_view(c, id).await?;
+    if let Some(named) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        let id = board_named(c, named).await?;
+        let view = read_view(c, &id).await?;
         let docs = docs_line(&view).map(|l| format!("\n{l}")).unwrap_or_default();
         let head = progress(&view);
         let (view, showing) = match narrowed(&view, &a)? {
@@ -1262,20 +1374,28 @@ async fn own_session(c: &Call<'_>) -> Option<String> {
 /// `board_write`.
 pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     owners_boards(c, WRITE_TOOL).await?;
+    let a = with_board_id(c, a).await?;
     match kind {
         "create_board" => {
             let a: CreateBoardArgs = args(a)?;
+            if a.groups.len() > GROUPS_MAX || a.groups.iter().any(|g| g.items.len() > BATCH_MAX) {
+                return Err(format!("create_board takes up to {GROUPS_MAX} groups of up to {BATCH_MAX} items"));
+            }
             let chosen = c.chosen_project(a.project.as_deref()).await?;
             let session = own_session(c).await;
             let new = NewBoard { title: a.title, goal: a.goal, lead_session: session.clone() };
             let v = boards_call(c, Method::POST, &agent_project_boards(&chosen.id), Some(given(new)?)).await?;
-            let mut out = board_done("Made a board", v, a.verbose)?;
+            let mut view = view_of(v)?;
+            let planned = plan(c, &mut view, a.groups).await;
+            let said = view.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
+            let mut lines =
+                vec![format!("Made a board, now, as your person's agent on this machine. {}{said}", progress(&view))];
+            lines.extend(planned);
+            let mut summary = format!("{}. {}", chosen_line(c, &chosen).await, lines.join("\n"));
             if session.is_none() {
-                out["summary"] = format!("{} {NO_SESSION_NAME}", out["summary"].as_str().unwrap_or_default()).into();
+                summary = format!("{summary}\n{NO_SESSION_NAME}");
             }
-            out["summary"] =
-                format!("{}. {}", chosen_line(c, &chosen).await, out["summary"].as_str().unwrap_or_default()).into();
-            Ok(out)
+            answer(summary, &view, a.verbose)
         }
         "edit_board" => {
             let a: EditBoardArgs = args(a)?;
@@ -1342,41 +1462,6 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let v = boards_call(c, Method::POST, &agent_board_row_ask(&a.board, &row.id), Some(body)).await?;
             one_row(&view_of(v)?, &format!("Asked on {}.", row.item_label()), &row.id, a.verbose)
         }
-        "relate" => {
-            let a: RelateArgs = args(a)?;
-            let view = read_view(c, &a.board).await?;
-            let (from, to) = relation_ends(c, &a.board, &a.item, &a.to).await?;
-            let kind = wire::RelationKind::from(a.relation);
-            let body = given(NewRelation { from, to, kind })?;
-            boards_call(c, Method::POST, &agent_project_relations(&view.board.project), Some(body)).await?;
-            let after = read_view(c, &a.board).await?;
-            let words = kind.as_str().replace('_', " ");
-            answer(
-                format!("Related: {} {words} {}.\n{}", a.item.trim(), a.to.trim(), ready_line(&after)),
-                &after,
-                a.verbose,
-            )
-        }
-        "unrelate" => {
-            let a: RelateArgs = args(a)?;
-            let view = read_view(c, &a.board).await?;
-            let (from, to) = relation_ends(c, &a.board, &a.item, &a.to).await?;
-            let kind = wire::RelationKind::from(a.relation);
-            let rel = relation_between(&view, &from, &to, kind).ok_or_else(|| {
-                format!(
-                    "no such relation on a row of this board: {} and {} need a row with one of them as its item",
-                    a.item.trim(),
-                    a.to.trim()
-                )
-            })?;
-            boards_call(c, Method::DELETE, &agent_project_relation(&view.board.project, &rel), None).await?;
-            let after = read_view(c, &a.board).await?;
-            answer(
-                format!("Took off the relation between {} and {}.\n{}", a.item.trim(), a.to.trim(), ready_line(&after)),
-                &after,
-                a.verbose,
-            )
-        }
         "note" => {
             let a: NoteArgs = args(a)?;
             let view = read_view(c, &a.board).await?;
@@ -1407,7 +1492,8 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                 None => Some(None),
             };
             // Not `given`: a `zone` of null is the move out of a group.
-            let body = serde_json::to_value(MoveEntry { rev: None, zone, before: None }).map_err(|e| e.to_string())?;
+            let body = serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None })
+                .map_err(|e| e.to_string())?;
             let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &row.id), Some(body)).await?;
             one_row(&view_of(v)?, &format!("Moved {}.", row.item_label()), &row.id, a.verbose)
         }
@@ -1421,9 +1507,16 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
         }
         "add_group" => {
             let a: AddGroupArgs = args(a)?;
-            let put = PutEntry { entry: Some(wire::EntryKind::Zone), title: Some(a.title), ..Default::default() };
+            let put =
+                PutEntry { entry: Some(wire::EntryKind::Zone), title: Some(a.title.clone()), ..Default::default() };
             let v = put_entry(c, &a.board, &put).await?;
-            board_done("Added a group", v, a.verbose)
+            let mut out = board_done("Added a group", v.clone(), a.verbose)?;
+            if let Some(g) = view_of(v).ok().as_ref().and_then(|v| made_group(v, &a.title)) {
+                out["summary"] =
+                    format!("{} It is {} ({}).", out["summary"].as_str().unwrap_or_default(), g.title, g.id).into();
+                out["group"] = serde_json::json!({ "id": g.id, "title": g.title });
+            }
+            Ok(out)
         }
         "rename_group" => {
             let a: RenameGroupArgs = args(a)?;
@@ -1438,7 +1531,7 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let view = read_view(c, &a.board).await?;
             let g = find_group(&view, &a.group)?;
             let before = a.before.as_deref().map(|b| find_group(&view, b).map(|b| b.id.clone())).transpose()?;
-            let m = MoveEntry { rev: None, zone: None, before };
+            let m = MoveEntry { rev: None, zone: None, before, seen: None };
             let v = boards_call(c, Method::POST, &agent_board_entry_move(&a.board, &g.id), Some(given(m)?)).await?;
             board_done("Moved a group", v, a.verbose)
         }
@@ -1698,43 +1791,11 @@ mod tests {
         );
     }
 
-    /// What an agent sends: `relation` names the kind, `to` is a string or a list of one.
+    /// `to` is a string or a list of them.
     #[test]
-    fn relate_takes_relation_and_a_string_or_one_item_for_to() {
-        let a: RelateArgs =
-            serde_json::from_value(json!({ "board": "brd_1", "item": "#506", "relation": "relates", "to": "#507" }))
-                .unwrap();
-        assert!(matches!(a.relation, RelationKindArg::Relates) && a.to == "#507");
-        let a: RelateArgs =
-            serde_json::from_value(json!({ "board": "brd_1", "item": "#506", "to": ["#507"] })).unwrap();
-        assert!(matches!(a.relation, RelationKindArg::Blocks) && a.to == "#507");
-        let many = serde_json::from_value::<RelateArgs>(json!({ "board": "b", "item": "#1", "to": ["#2", "#3"] }));
-        assert!(many.err().unwrap().to_string().contains("one item"));
+    fn attach_takes_a_string_or_a_list_for_to() {
         let a: AttachArgs = serde_json::from_value(json!({ "board": "b", "item": "#1", "to": "#2" })).unwrap();
         assert_eq!(a.to, ["#2"]);
-    }
-
-    /// A relation is found from what a row shows of it, by its two ends.
-    #[test]
-    fn unrelate_finds_the_relation_on_a_row() {
-        let view: BoardView = serde_json::from_value(json!({
-            "board": { "id": "brd_1", "project": "prj_1", "title": "T", "goal": "", "done_note": "", "rev": 1,
-                       "created_by": "a", "progress": { "done": 0, "total": 0, "proven": 0 },
-                       "created_at": 0, "updated_at": 0 },
-            "zones": [{ "id": "lane_next", "rev": 0, "title": "Next", "rows": [
-                { "id": "row_b", "rev": 1, "pointer": { "kind": "issue", "id": "iss_b" }, "note": "",
-                  "status": "none", "created_at": 0, "updated_at": 0,
-                  "relations": [{ "id": "rel_1", "kind": "blocks", "direction": "in", "source": "agent",
-                                  "item": "iss_a", "removable": true }] }
-            ] }],
-            "groups": []
-        }))
-        .unwrap();
-        let k = wire::RelationKind::Blocks;
-        assert_eq!(relation_between(&view, "iss_a", "iss_b", k).as_deref(), Some("rel_1"));
-        assert_eq!(relation_between(&view, "iss_b", "iss_a", k), None);
-        assert_eq!(relation_between(&view, "iss_a", "iss_b", wire::RelationKind::Relates), None);
-        assert_eq!(ready_line(&view), "0 ready.");
     }
 
     /// A board's args take only a title, and leave out what isn't given.
@@ -1763,8 +1824,6 @@ mod tests {
                 "link_doc",
                 "unlink_doc",
                 "ask",
-                "relate",
-                "unrelate",
                 "note",
                 "group",
                 "drop",
@@ -1783,7 +1842,7 @@ mod tests {
         let stay: GroupArgs = serde_json::from_value(json!({ "board": "b", "item": "#1" })).unwrap();
         let into: GroupArgs = serde_json::from_value(json!({ "board": "b", "item": "#1", "group": "Wave 1" })).unwrap();
         assert_eq!((out.group, stay.group, into.group), (Some(None), None, Some(Some("Wave 1".into()))));
-        let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None }).unwrap();
+        let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None }).unwrap();
         assert_eq!(body(Some(None))["zone"], Value::Null, "out of its group goes out as null");
         assert!(body(None).get("zone").is_none(), "no zone: its own");
     }
@@ -1880,6 +1939,73 @@ mod tests {
         assert_eq!(find_group(&v, "wave 1").map(|g| g.id.as_str()), Ok("zon_1"));
         assert_eq!(find_group(&v, "zon_1").map(|g| g.id.as_str()), Ok("zon_1"));
         assert!(find_group(&v, "Wave 2").unwrap_err().contains("Wave 1"));
+    }
+
+    /// A `zon_` argument is an id and anything else a title, so a group may be
+    /// titled like an id; the group a new group made is the last.
+    #[test]
+    fn a_group_given_as_an_id_is_never_matched_by_title() {
+        let mut v = board(json!([]));
+        v.groups[0].title = "zon_9".into();
+        let mut second = v.groups[0].clone();
+        (second.id, second.title) = ("zon_2".into(), "Wave 2".into());
+        v.groups.push(second);
+        assert!(find_group(&v, "zon_9").is_err());
+        assert!(find_group(&v, "ZON_1").is_err(), "an id is exact");
+        assert_eq!(made_group(&v, "wave 2").map(|g| g.id.as_str()), Some("zon_2"));
+        assert!(made_group(&v, "zon_9").is_none(), "the first isn't the last");
+    }
+
+    /// `add` and a group take a reference or a new issue; an object with no
+    /// title isn't either.
+    #[test]
+    fn an_item_is_a_reference_or_a_new_issue() {
+        let a: AddArgs = serde_json::from_value(json!({
+            "board": "Launch",
+            "items": ["#12", { "title": "Fix it", "labels": ["bug"] }]
+        }))
+        .unwrap();
+        assert!(matches!(&a.items[0], ItemArg::Existing(r) if r == "#12"));
+        assert!(
+            matches!(&a.items[1], ItemArg::New(n) if n.title == "Fix it" && n.labels == ["bug"] && n.body.is_none())
+        );
+        assert!(serde_json::from_value::<AddArgs>(json!({ "board": "x", "items": [{ "body": "no title" }] })).is_err());
+        let c: CreateBoardArgs = serde_json::from_value(json!({
+            "title": "Epic",
+            "groups": [{ "title": "One", "items": ["#1"] }, { "title": "Two" }]
+        }))
+        .unwrap();
+        assert_eq!(c.groups.len(), 2);
+        assert!(c.groups[1].items.is_empty());
+    }
+
+    fn titled(id: &str, title: &str, closed: bool) -> wire::Board {
+        let mut b: wire::Board = serde_json::from_value(json!({
+            "id": id, "project": "prj_1", "title": title, "created_by": "a1", "created_at": 1, "updated_at": 1
+        }))
+        .unwrap();
+        b.closed_at = closed.then_some(2);
+        b
+    }
+
+    /// A title names one open board of the project, in any case; two with the
+    /// title are refused, both listed with their ids; none lists the open titles.
+    #[test]
+    fn a_board_is_named_by_its_title() {
+        let boards = [
+            titled("brd_1", "Launch", false),
+            titled("brd_2", "Launch", false),
+            titled("brd_3", "Docs", false),
+            titled("brd_4", "Old", true),
+            titled("brd_5", "Old", false),
+        ];
+        assert_eq!(board_titled(&boards, "Acme", " docs "), Ok("brd_3".into()));
+        assert_eq!(board_titled(&boards, "Acme", "old"), Ok("brd_5".into()), "a closed board isn't a match");
+        let both = board_titled(&boards, "Acme", "LAUNCH").unwrap_err();
+        assert!(both.contains("Launch (brd_1) and Launch (brd_2)") && both.contains("brd_ id"), "{both}");
+        let none = board_titled(&boards, "Acme", "Plan").unwrap_err();
+        assert!(none.contains("Launch, Launch, Docs, Old") && none.contains("Acme"), "{none}");
+        assert!(board_titled(&[], "Acme", "Plan").unwrap_err().contains("no open boards"));
     }
 
     /// A card is the item, its lane, rev and note, its marks and its ask; the

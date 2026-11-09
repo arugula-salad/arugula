@@ -50,18 +50,18 @@ use crate::{
     auth::Person,
     db::{
         hosted::HostedWorkspace,
-        sessions::{NewPrompt, Role, Session, Source, State},
+        sessions::{AgentSession, NewPrompt, Role, Source, State},
     },
 };
 
 /// Whether `s` may move now: its own thread's, queued or done.
-pub fn movable(s: &Session) -> bool {
+pub fn movable(s: &AgentSession) -> bool {
     s.role == Role::Thread && matches!(s.state, State::Queued | State::Done)
 }
 
 /// Where `s` may move: the project's other workspaces with its repo,
 /// best first.
-pub async fn places(app: &Platform, s: &Session) -> anyhow::Result<Vec<SessionPlace>> {
+pub async fn places(app: &Platform, s: &AgentSession) -> anyhow::Result<Vec<SessionPlace>> {
     if !movable(s) {
         return Ok(vec![]);
     }
@@ -123,7 +123,7 @@ pub async fn route(
 /// Before a done session leaves its box: ask the box, when it's up, to
 /// archive the session's own block's transcript now (module docs). The
 /// move goes ahead whatever it says.
-async fn archive_first(app: &Platform, s: &Session) {
+async fn archive_first(app: &Platform, s: &AgentSession) {
     let Some(block) = s.block.as_deref().and_then(|b| b.parse::<u64>().ok()) else { return };
     let Some(machine) = s.machine.as_deref() else { return };
     let up = app

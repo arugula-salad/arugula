@@ -53,6 +53,11 @@ export function mergeSpecs(tag: string) {
       let raw = "";
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
+        // A merge asks first whether the branch has a merge queue: this one hasn't.
+        if (req.method === "POST" && u.pathname === "/graphql") {
+          const pullRequest = { id: "PR_node", isInMergeQueue: false, isMergeQueueEnabled: false };
+          return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: { repository: { pullRequest } } }));
+        }
         if (req.method === "PUT" && p === `/pulls/${N}/merge`) {
           merges.push({ style: JSON.parse(raw).merge_method, auth: req.headers.authorization! });
           Object.assign(item, { state: "closed", merged: true, merged_at: "2026-10-03T02:00:00Z", merged_by: { login: "jhgaylor" } });
@@ -164,13 +169,13 @@ export function mergeSpecs(tag: string) {
     await expect(el.locator("[data-item-head] .item-number")).toHaveText(`#${N}`);
     await expect.poll(() => repoReads).toBeGreaterThan(1);
     await expect.poll(() => pullNotModified).toBeGreaterThan(1);
-    await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+    await el.locator("[data-item-foot]").getByRole("button", { name: "Merge", exact: true }).click();
     await expect(page.locator(".prompt-choices button")).toHaveText(["Squash"]);
     await page.keyboard.press("Escape");
     // After a reload, with the PR still unchanged: the same.
     await page.reload();
     await expect(el.locator("[data-item-head] .item-number")).toHaveText(`#${N}`);
-    await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+    await el.locator("[data-item-foot]").getByRole("button", { name: "Merge", exact: true }).click();
     await expect(page.locator(".prompt-choices button")).toHaveText(["Squash"]);
   });
 
@@ -180,7 +185,7 @@ export function mergeSpecs(tag: string) {
     const el = page.locator(`[data-forge-block="${block}"]`);
     const foot = el.locator("[data-item-foot]");
     await expect.poll(() => repoReads).toBeGreaterThan(0);
-    await foot.getByRole("button", { name: "Merge ▾" }).click();
+    await foot.getByRole("button", { name: "Merge", exact: true }).click();
     await page.locator(".prompt-choices button", { hasText: "Squash" }).click();
     // ONE click: the button asks, the PR is still open and nothing reached the fake.
     const confirm = foot.locator("[data-merge-confirm]");
@@ -201,7 +206,7 @@ export function mergeSpecs(tag: string) {
     const foot = el.locator("[data-item-foot]");
     await expect.poll(() => repoReads).toBeGreaterThan(0);
     const ask = async () => {
-      await foot.getByRole("button", { name: "Merge ▾" }).click();
+      await foot.getByRole("button", { name: "Merge", exact: true }).click();
       await page.locator(".prompt-choices button", { hasText: "Squash" }).click();
       await expect(foot.locator("[data-merge-confirm]")).toBeVisible();
     };
@@ -213,7 +218,7 @@ export function mergeSpecs(tag: string) {
     await expect(foot.locator("[data-merge-confirm]")).toHaveCount(0);
     await ask();
     await expect(foot.locator("[data-merge-confirm]")).toHaveCount(0, { timeout: 8000 });
-    await expect(foot.getByRole("button", { name: "Merge ▾" })).toBeVisible();
+    await expect(foot.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
     expect(merges).toEqual([]);
   });
 }
