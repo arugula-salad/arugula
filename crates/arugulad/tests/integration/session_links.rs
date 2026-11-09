@@ -7,7 +7,10 @@
 #![cfg(unix)]
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -31,9 +34,13 @@ type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<t
 type Told = Arc<Mutex<Vec<Value>>>;
 
 /// A control that trusts this device (the account's root) and this daemon,
-/// and keeps what it's told about links.
-async fn fake_control(certs: Vec<Cert>, told: Told) -> String {
+/// keeps what it's told about links and counts the machine's refreshes.
+async fn fake_control(certs: Vec<Cert>, told: Told, refreshes: Arc<AtomicUsize>) -> String {
     let trust = json!({ "certs": certs, "revocations": [] });
+    let trust = move || async move {
+        refreshes.fetch_add(1, Ordering::SeqCst);
+        Json(trust)
+    };
     let info = json!({ "control": true, "daemon_auth": 2 });
     let access = post(|State(told): State<Told>, Json(b): Json<Value>| async move {
         told.lock().unwrap().push(b["links_until"].clone());
@@ -41,7 +48,7 @@ async fn fake_control(certs: Vec<Cert>, told: Told) -> String {
     });
     let app = Router::new()
         .route("/control.json", get(move || async move { Json(info) }))
-        .route("/api/daemon/trust", get(move || async move { Json(trust) }))
+        .route("/api/daemon/trust", get(trust))
         .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
         .route("/api/daemon/access", access)
@@ -56,21 +63,28 @@ struct Rig {
     d: Daemon,
     daemon: DeviceKeys,
     told: Told,
+    refreshes: Arc<AtomicUsize>,
 }
 
-/// A machine joined to control, with a session.
-async fn rig() -> Rig {
+/// A machine joined to control, with a session, started with `args` too.
+async fn rig(args: &[&str]) -> Rig {
     let device = DeviceKeys::generate();
     let mut root = Cert::new(&device, "a1", Kind::Browser, "laptop");
     root.sign_with(&device);
-    let mut d =
-        arugulad!("links").no_wisp().no_tailscale().args(["--direct-url", "http://127.0.0.1:0"]).wait_secs(30).start();
+    let mut d = arugulad!("links")
+        .no_provider()
+        .no_tailscale()
+        .args(["--direct-url", "http://127.0.0.1:0"])
+        .args(args)
+        .wait_secs(30)
+        .start();
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&daemon, "a1", Kind::Daemon, "test");
     cert.sign_with(&device);
     let certs = vec![root, cert.clone()];
     let told = Told::default();
-    let control = fake_control(certs.clone(), told.clone()).await;
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let control = fake_control(certs.clone(), told.clone(), refreshes.clone()).await;
     let saved = json!({
         "url": control,
         "trust": { "account": "a1", "root": device.id() },
@@ -83,7 +97,7 @@ async fn rig() -> Rig {
     d.start();
     d.wait_for("joined", || d.get("/api/host")["control_state"]["state"] == "joined");
     d.wait_for("a session", || d.get("/api/panes")[0]["session"].is_u64());
-    Rig { d, daemon, told }
+    Rig { d, daemon, told, refreshes }
 }
 
 fn session(d: &Daemon) -> u64 {
@@ -147,7 +161,7 @@ async fn ask(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> u1
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn revoking_a_link_removes_it_and_closes_its_channel_at_once() {
-    let r = rig().await;
+    let r = rig(&[]).await;
     let s = session(&r.d);
     let (key, other) = (DeviceKeys::generate(), DeviceKeys::generate());
     let id = mint(&r.d, s, &key);
@@ -220,6 +234,42 @@ async fn revoking_a_link_removes_it_and_closes_its_channel_at_once() {
         .map(|e| e["action"].as_str().unwrap())
         .collect();
     assert_eq!(lines, ["link", "revoke"]);
+}
+
+/// A session closing takes its links with it: their viewers are hung up on
+/// at once, and control hears there's nothing left to let through. With no
+/// relay, the machine looks at control only every ten seconds unless told
+/// to, so neither waits for that.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn closing_a_session_ends_its_links_viewers_at_once() {
+    let r = rig(&["--no-relay"]).await;
+    let pane = r.d.post("/api/run", json!({ "command": "sleep 600", "session": "shown" }))["pane"].as_u64().unwrap();
+    let panes = r.d.get("/api/panes");
+    let s = panes.as_array().unwrap().iter().find(|p| p["id"] == pane).unwrap()["session"].as_u64().unwrap();
+    let key = DeviceKeys::generate();
+    let id = mint(&r.d, s, &key);
+    let (mut ws, ch, said) = open(&r, &key).await;
+    assert!(Welcome::decode(&said).is_some(), "welcomed");
+    r.d.wait_for("control told of the link", || r.told.lock().unwrap().last().is_some_and(|u| u.is_u64()));
+    // Just after a look at control, so the next on its own is far off.
+    let seen = r.refreshes.load(Ordering::SeqCst);
+    r.d.wait_for("a refresh", || r.refreshes.load(Ordering::SeqCst) > seen);
+
+    let (before, refreshed) = (std::time::Instant::now(), r.refreshes.load(Ordering::SeqCst));
+    r.d.post(&format!("/api/panes/{pane}/close"), json!({}));
+    let mut told_why = false;
+    while let Some(m) = next(&mut ws, &ch).await {
+        if let Msg::Text(t) = m {
+            told_why |= t.contains("your access was removed");
+        }
+    }
+    assert_eq!(r.refreshes.load(Ordering::SeqCst), refreshed, "closed by the machine, not a look at control");
+    assert!(told_why, "the viewer hears why");
+    r.d.wait_for("control told there's nothing left", || r.told.lock().unwrap().last().is_some_and(Value::is_null));
+    assert!(before.elapsed() < Duration::from_secs(5), "control told in {:?}", before.elapsed());
+    assert_eq!(r.d.get("/api/links"), json!([]));
+    let (_ws, _, said) = open(&r, &key).await;
+    assert_eq!(Refusal::decode(&said), Some(Refusal::unknown_device()), "link:{id} won't reopen");
 }
 
 /// Only the machine's owner: someone a session is shared with, whatever

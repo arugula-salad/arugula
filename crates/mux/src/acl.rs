@@ -448,14 +448,15 @@ impl Acl {
         self.commit(g, before, entry)
     }
 
-    /// A session closed: its grants go with it.
-    pub fn forget_session(&self, session: SessionId) {
+    /// A session closed: its grants go with it. Whether it had any.
+    pub fn forget_session(&self, session: SessionId) -> bool {
         let gone: Vec<Grant> = self.grants.read().unwrap().iter().filter(|g| g.session == session).cloned().collect();
-        for g in gone {
+        for g in &gone {
             if let Err(e) = self.set(session, &g.principal, &g.name, None, "session closed") {
                 warn!(error = %e, "can't drop a closed session's grant");
             }
         }
+        !gone.is_empty()
     }
 
     /// Something else worth auditing (M29: who answered an agent, who sent
@@ -508,8 +509,9 @@ mod tests {
         assert_eq!(again.role(&alice, 3), Some(Role::Editor));
         assert_eq!(again.role(&alice, 4), None);
         assert_eq!(again.role(&Principal::Owner, 4), Some(Role::Owner));
-        again.forget_session(3);
+        assert!(again.forget_session(3));
         assert!(!again.knows(&alice));
+        assert!(!again.forget_session(3));
         let log = again.audit();
         assert_eq!(log.iter().map(|e| e["action"].as_str().unwrap()).collect::<Vec<_>>(), ["grant", "grant", "revoke"]);
         std::fs::remove_dir_all(dir).unwrap();

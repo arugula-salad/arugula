@@ -1160,16 +1160,23 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         let _ = serve.set(pipe);
     }
     let _ = invite_hook.set(std::sync::Arc::downgrade(&app));
-    // Read-only links end on time (M19).
+    // Read-only links end on time (M19). A closed session's go with it in
+    // the mux, which can't reach control: control hears what's left here.
     {
         let (acl, mux, control) = (acl.clone(), mux.clone(), control.clone());
         crate::task::spawn(async move {
+            let mut told = acl.links_until();
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                if acl.prune_links() {
+                let pruned = acl.prune_links();
+                if pruned {
                     mux.send(mux::Cmd::AclChanged);
+                }
+                let until = acl.links_until();
+                if pruned || until != told {
                     control.poke();
                 }
+                told = until;
             }
         });
     }

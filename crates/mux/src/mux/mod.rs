@@ -1010,10 +1010,16 @@ impl Daemon {
     }
 
     pub(super) fn sessions_gone(&mut self, before: Vec<SessionId>) {
+        let mut shared = false;
         for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
             let readers = self.readers_at_close(gone, false);
             self.closed.session(gone, now_ms(), readers);
-            self.config.acl.forget_session(gone);
+            shared |= self.config.acl.forget_session(gone);
+        }
+        // Whoever it was shared with, a link's viewer say, and has nothing
+        // else here is hung up on now, as on a revoke.
+        if shared {
+            self.acl_changed();
         }
     }
 
