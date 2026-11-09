@@ -751,6 +751,14 @@ relations?: Array<BoardRowRelation>,
  */
 step?: number, 
 /**
+ * The column the row sits in on the Steps chart (Arugula #824): the
+ * same longest-path layout as [`Row::step`], but over every row with an
+ * issue or a PR, done ones included, using their ordering edges whether
+ * the other end is open or closed. So finishing work never moves a row.
+ * Absent for a row with no issue or PR.
+ */
+place?: number, 
+/**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */

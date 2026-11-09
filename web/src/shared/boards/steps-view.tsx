@@ -1,20 +1,22 @@
-// A board's Steps view (Arugula #763, #786): a sequence chart of the board's
-// phases (its groups). A row is one line: a title column (its lane's glyph,
-// its number and title) and a bar in its step's column; done rows have theirs
-// in ✓. Hovering a line (tapping it, on a phone) draws arrows for its links,
+// A board's Steps view (Arugula #763, #786, #824): a sequence chart of the
+// board's phases (its groups). A row is one line: a title column (its lane's
+// glyph, its number and title) and a bar in its place's column. Done rows
+// stay in their place, with the title struck through, so finishing work
+// doesn't move the chart; the arrows out of a done row are green, for what
+// they waited on is met. Which rows are ready now is the bars' look, not a
+// column: a ready row's bar is filled, a waiting row's outlined. Hovering a line (tapping it, on a phone) draws arrows for its links,
 // each kind its own way, and fades the rest; the drawer says them in words,
-// with the agent and the marks. Dragging a line inside its step moves it
+// with the agent and the marks. Dragging a line inside its column moves it
 // inside its group (the drawer's ↑ ↓ on a phone). Steps aren't stored: a
-// reorder changes a row's place in its group, and the step is worked out
+// reorder changes a row's position in its group, and the place is worked out
 // again from the links. The title column's right edge is a handle: drag it,
-// or use the arrow keys, and the step columns share the rest evenly.
+// or use the arrow keys, and the columns share the rest evenly.
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardRow, BoardView } from "../proto";
 import { usePhone } from "../ui/hooks";
-import { CheckIcon } from "../ui/icons";
 import { isCard, pointerLabel, rowGlyph } from "./text";
-import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, lastStep, linksOf, loadTitle, moreLine, phases, reorder, rowsOf, saveTitle, shown, groupOrder, titleRange, type Link, type Reorder } from "./steps";
+import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, lastPlace, linksOf, loadTitle, moreLine, phases, reorder, stepOf, rowsOf, saveTitle, shown, groupOrder, titleRange, type Link, type Reorder } from "./steps";
 import "./steps.css";
 
 /** One arrow, measured: where it runs, in the chart's own coordinates. */
@@ -32,6 +34,9 @@ interface Measured {
 
 /** The kinds that point (a head), and those that don't. */
 const HEADS = new Set(["before", "blocks", "discovered_from"]);
+
+/** The kinds that make a row wait on another: an arrow of these out of a done row is met, and drawn green. */
+const WAITS = new Set(["before", "blocks"]);
 
 /** How far the grip moves with an arrow key, in pixels. */
 const KEY_STEP = 16;
@@ -91,14 +96,14 @@ export function StepsView({
   const root = useRef<HTMLDivElement>(null);
   const chart = useRef<HTMLDivElement>(null);
   const ps = phases(view);
-  const last = lastStep(ps);
+  const last = lastPlace(ps);
   const everyRow = rowsOf(view);
-  /** The phases whose step 1 is unfolded. */
+  /** The phases whose column 1 is unfolded. */
   const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ id: string; phase: string; step: number } | null>(null);
-  const [over, setOver] = useState<{ id: string | null; phase: string; step: number; after: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; phase: string; place: number } | null>(null);
+  const [over, setOver] = useState<{ id: string | null; phase: string; place: number; after: boolean } | null>(null);
   const [drawn, setDrawn] = useState<Measured>({ paths: [], width: 0, height: 0 });
   const was = useRef("");
   /** The chart's width, and the title column's as the viewer set it (null: the default). */
@@ -110,11 +115,11 @@ export function StepsView({
   const lwNow = useRef(lw);
   lwNow.current = lw;
 
-  // The bars on screen, and the links of the row that is hovered or tapped among them. A done row is drawn in ✓ but has no arrows.
+  // The bars on screen, and the links of the row that is hovered or tapped among them. A done row has arrows too.
   const onScreen = new Set<string>();
   for (const p of ps) {
     const key = p.group?.id ?? "none";
-    for (const s of p.steps) for (const r of shown(s.step, s.rows, unfolded.has(key)).rows) onScreen.add(r.id);
+    for (const s of p.places) for (const r of shown(s.place, s.rows, unfolded.has(key)).rows) onScreen.add(r.id);
   }
   const active = hover ?? pinned;
   const row = active ? everyRow.find((r) => r.id === active) : undefined;
@@ -174,36 +179,38 @@ export function StepsView({
   };
 
   const orders = (group: string | null) => groupOrder(view, group);
-  const drop = (r: BoardRow, group: string | null, step: BoardRow[], target: string | null) => {
+  const drop = (r: BoardRow, group: string | null, column: BoardRow[], target: string | null) => {
     setDrag(null);
     setOver(null);
-    const m = reorder(orders(group), step.map((x) => x.id), r.id, target);
+    const m = reorder(orders(group), column.map((x) => x.id), r.id, target);
     if (m) move(r, m);
   };
   const dragged = drag ? everyRow.find((r) => r.id === drag.id) : undefined;
   const canDrag = write && !phone && (view.order?.length ?? 0) > 0;
-  const n = last + 1;
+  const n = last;
+  const done = new Set(everyRow.filter((r) => r.lane === "done").map((r) => r.id));
   const crit = new Set(view.chain ?? []);
 
-  const line = (r: BoardRow, key: string, step: number, rows: BoardRow[]) => (
+  /** `rows`: the open rows of the column, which a drag moves among. */
+  const line = (r: BoardRow, key: string, place: number, rows: BoardRow[]) => (
     <Line
       key={r.id}
       r={r}
-      step={step}
+      place={place}
       crit={crit.has(r.id)}
       faded={chain.size > 0 && !chain.has(r.id)}
       selected={active === r.id}
       opened={opened === r.id}
       dragging={drag?.id === r.id}
       drop={over?.id === r.id ? (over.after ? "after" : "before") : undefined}
-      draggable={canDrag && step > 0}
+      draggable={canDrag && r.lane !== "done"}
       said={behind === r.id}
       hover={setHover}
       tap={() => (phone && pinned !== r.id ? setPinned(r.id) : open(r.id))}
-      start={() => setDrag({ id: r.id, phase: key, step })}
+      start={() => setDrag({ id: r.id, phase: key, place })}
       end={() => (setDrag(null), setOver(null))}
-      over={(after) => setOver({ id: r.id, phase: key, step, after })}
-      accepts={step > 0 && drag?.phase === key && drag.step === step}
+      over={(after) => setOver({ id: r.id, phase: key, place, after })}
+      accepts={r.lane !== "done" && drag?.phase === key && drag.place === place}
       release={(after) => {
         if (!dragged) return;
         const at = rows.findIndex((x) => x.id === r.id);
@@ -211,6 +218,10 @@ export function StepsView({
       }}
     />
   );
+
+  /** An arrow out of a done row, of a kind that makes a row wait: what it waited on is met. */
+  const met = (l: Link) => WAITS.has(l.kind) && done.has(l.from);
+  const markerOf = (l: Link) => (met(l) ? `url(#${uid}-met)` : HEADS.has(l.kind) ? `url(#${uid}-${l.kind})` : undefined);
 
   return (
     <div class="steps" ref={root} data-steps data-steps-last={last} style={{ "--lw": `${lw}px`, "--n": String(n) }}>
@@ -221,29 +232,30 @@ export function StepsView({
               <path d="M0 0L8 4L0 8z" />
             </marker>
           ))}
+          <marker id={`${uid}-met`} class="step-head step-head-met" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0L8 4L0 8z" />
+          </marker>
         </defs>
         {drawn.paths.map(({ link, d }) => (
           <g key={link.key} data-link-from={link.from} data-link-to={link.to}>
-            <path class={`step-link step-link-${link.kind}`} d={d} data-link-kind={link.kind} marker-end={HEADS.has(link.kind) ? `url(#${uid}-${link.kind})` : undefined} />
+            <path class={`step-link step-link-${link.kind}${met(link) ? " step-link-met" : ""}`} d={d} data-link-kind={link.kind} data-link-met={met(link) ? "" : undefined} marker-end={markerOf(link)} />
             {link.kind === "duplicate_of" && <path class="step-link-gap" d={d} />}
           </g>
         ))}
       </svg>
       <div class="steps-chart" ref={chart} data-steps-chart>
-        <div class="steps-band" aria-hidden="true" data-steps-band />
         <div class="steps-head">
           <div class="steps-lab" />
           <div class="steps-trk">
             {Array.from({ length: n }, (_, i) => (
-              <div class="steps-col" key={i} style={{ "--s": String(i) }} data-steps-col={i} aria-label={i === 0 ? "Done" : undefined} data-steps-now={i === 1 ? "" : undefined}>
-                {i === 0 ? <CheckIcon size="xs" /> : i}
+              <div class="steps-col" key={i} style={{ "--s": String(i) }} data-steps-col={i}>
+                {i + 1}
               </div>
             ))}
           </div>
         </div>
         {ps.map((p) => {
           const key = p.group?.id ?? "none";
-          const finished = phone ? [] : p.finished;
           return (
             <section class="steps-phase" key={key} data-steps-phase={key}>
               {(p.group || ps.length > 1) && (
@@ -253,12 +265,13 @@ export function StepsView({
                   </div>
                 </div>
               )}
-              {p.steps.map((s) => {
-                const folded = shown(s.step, s.rows, unfolded.has(key));
+              {p.places.map((s) => {
+                const folded = shown(s.place, s.rows, unfolded.has(key));
+                const open = s.rows.filter((r) => r.lane !== "done");
                 return [
-                  ...folded.rows.map((r) => line(r, key, s.step, s.rows)),
+                  ...folded.rows.map((r) => line(r, key, s.place, open)),
                   folded.more > 0 && (
-                    <div class="steps-line" key={`more-${s.step}`}>
+                    <div class="steps-line" key={`more-${s.place}`}>
                       <div class="steps-lab">
                         <button type="button" class="secondary small" data-steps-more={key} onClick={() => setUnfolded(new Set(unfolded).add(key))}>
                           {moreLine(folded.more)}
@@ -268,7 +281,6 @@ export function StepsView({
                   ),
                 ];
               })}
-              {finished.map((r) => line(r, key, 0, finished))}
             </section>
           );
         })}
@@ -310,10 +322,10 @@ export function StepsView({
   );
 }
 
-/** One row's line: the title column (its lane's glyph, its number and title) and its bar, in its step's column (step 0 is ✓: a done row). */
+/** One row's line: the title column (its lane's glyph, its number and title; struck through when done) and its bar, in its place's column. */
 function Line({
   r,
-  step,
+  place,
   crit,
   faded,
   selected,
@@ -331,7 +343,8 @@ function Line({
   release,
 }: {
   r: BoardRow;
-  step: number;
+  /** The column the bar is in. */
+  place: number;
   /** On the longest open chain. */
   crit: boolean;
   /** Not on the chain of the row held, which is drawn. */
@@ -347,7 +360,7 @@ function Line({
   start: () => void;
   end: () => void;
   over: (after: boolean) => void;
-  /** Whether a drag in progress is of this line's step, so it may drop here. */
+  /** Whether a drag in progress is of this line's column, so it may drop here. */
   accepts: boolean;
   release: (after: boolean) => void;
 }) {
@@ -357,9 +370,9 @@ function Line({
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return e.clientY > at.top + at.height / 2;
   };
-  // A bar is its lane's colour in step 1 and outlined where the row waits on another; a done row's is faded green.
+  // A bar is its lane's colour when the row is ready (step 1) and outlined where it waits on an open row; a done row's is faded green. The column says where the row sits in the plan, not whether it is ready.
+  const step = stepOf(r);
   const kind = r.lane === "done" ? "done" : step > 1 && r.lane === "next" ? "wait" : r.lane;
-  const open = r.lane !== "done";
   return (
     <div
       class="steps-line steps-row"
@@ -367,6 +380,7 @@ function Line({
       data-board-row={r.id}
       data-lane={r.lane}
       data-step={step}
+      data-place={place}
       data-selected={selected ? "" : undefined}
       data-faded={faded ? "" : undefined}
       data-dragging={dragging ? "" : undefined}
@@ -375,10 +389,10 @@ function Line({
       role="button"
       tabIndex={0}
       draggable={draggable}
-      onPointerEnter={(e) => open && e.pointerType === "mouse" && hover(r.id)}
-      onPointerLeave={(e) => open && e.pointerType === "mouse" && hover(null)}
-      onFocus={(e) => open && (e.currentTarget as HTMLElement).matches(":focus-visible") && hover(r.id)}
-      onBlur={() => open && hover(null)}
+      onPointerEnter={(e) => e.pointerType === "mouse" && hover(r.id)}
+      onPointerLeave={(e) => e.pointerType === "mouse" && hover(null)}
+      onFocus={(e) => (e.currentTarget as HTMLElement).matches(":focus-visible") && hover(r.id)}
+      onBlur={() => hover(null)}
       onClick={() => tap()}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && (e.preventDefault(), tap())}
       onDragStart={(e) => {
@@ -415,7 +429,7 @@ function Line({
         )}
       </div>
       <div class="steps-trk">
-        <span class="step-bar" data-step-bar={r.id} data-bar={kind} data-crit={crit ? "" : undefined} style={{ "--s": String(step) }} />
+        <span class="step-bar" data-step-bar={r.id} data-bar={kind} data-crit={crit ? "" : undefined} style={{ "--s": String(place - 1) }} />
       </div>
     </div>
   );
