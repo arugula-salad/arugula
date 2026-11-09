@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The daemon's release on a timer (release-train.yml, #724): every few hours, the
-# newest commit CI passed goes out as a patch, if its pull requests have anything
+# The daemon's release on a train (release-train.yml, #724, Arugula #794): each time
+# chant's tick finishes on main, at most once every 2 hours, the newest commit CI
+# passed goes out as a patch, if its pull requests have anything
 # to tell people. Its notes come from them (docs/notes/, scripts/release-notes.mjs).
 # The rare jobs run on it first, and a release needs them, so one that fails holds
 # the release, and merges go on. Daemons don't install on their own: people get a
@@ -12,6 +13,8 @@
 # It goes out only when:
 #   ARUGULA_RELEASE_TRAIN is on (a repository variable)
 #   no release.yml run is going, and no `scripts/release bump` tagged the commit
+#   the last release.yml run (the train's or a hand cut's) started at least
+#   ARUGULA_TRAIN_GAP_MINUTES ago (default 120; the workflow's manual run passes 0)
 #   the commit is newer than the last v* tag, and something in between added a note
 #
 # Minor and major versions stay a person's: `just release minor COMMIT --notes FILE`.
@@ -35,10 +38,20 @@ say() {
   exit 0
 }
 
-going=$(gh run list -R "$repo" --workflow release.yml --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')
+# How many release.yml runs are going, and when the newest started.
+read -r going started < <(gh run list -R "$repo" --workflow release.yml --limit 20 --json status,createdAt \
+  --jq '"\([.[] | select(.status != "completed")] | length) \(.[0].createdAt // "")"')
 if [ "$going" != 0 ]; then
   say "a release is already going: not starting another"
   exit 0
+fi
+gap=${ARUGULA_TRAIN_GAP_MINUTES:-120}
+if [ -n "${started:-}" ] && [ "$gap" != 0 ]; then
+  ago=$(node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 60000))' "$started")
+  if [ "$ago" -lt "$gap" ]; then
+    say "the last release started ${ago}m ago: the next waits for ${gap}m"
+    exit 0
+  fi
 fi
 
 git fetch -q --tags --force origin
