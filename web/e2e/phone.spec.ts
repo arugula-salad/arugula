@@ -295,11 +295,13 @@ test("swipe sideways between a tab's panes", async ({ page }) => {
   await swipe(0, -250);
   await page.waitForTimeout(400);
   expect(await active(page)).toBe(third);
-  // Starting in something that scrolls sideways, a swipe is its own.
+  // Starting in something that scrolls sideways, a swipe is its own. It keeps
+  // its overscroll (contain): else desktop Chrome, at the scroller's left
+  // edge, takes the swipe as Back and leaves the page.
   await page.evaluate(() => {
     const wide = document.createElement("div");
     wide.id = "wide";
-    wide.style.cssText = "position:absolute;inset:0;overflow-x:auto;z-index:5";
+    wide.style.cssText = "position:absolute;inset:0;overflow-x:auto;overscroll-behavior-x:contain;z-index:5";
     wide.innerHTML = '<div style="width:3000px;height:10px"></div>';
     document.querySelector(".pane")!.append(wide);
   });
