@@ -303,14 +303,15 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
   expect(closed.status).toBe(200);
   await platform(alice, boardPath);
   const page = alice.locator("[data-board-page]");
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 0 proven", { timeout: 15_000 });
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done", { timeout: 15_000 });
   await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuenow", "1");
   // Nobody moved it: the closed issue is in Done, and the others stay in Next.
   await expect(zone(alice, "Done").locator(row(alice, FIRST))).toHaveCount(1);
   await expect(zone(alice, "Next").locator(row(alice, FIRST))).toHaveCount(0);
   await expect(zone(alice, "Next").locator("[data-board-row]")).toHaveCount(2);
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "not-proven");
-  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("not proven yet");
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("no proof");
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("title", "not proven yet");
   // There is no PROOFS zone to fold. The row's menu offers a move by hand
   // (#494), but nobody needed it: the lane followed the issue.
   await expect(alice.locator('[data-zone-kind="proofs"]')).toHaveCount(0);
@@ -323,9 +324,11 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
     pointer: { kind: "link", url: "https://ci.example.com/runs/1" },
   });
   expect(att.status).toBe(200);
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven", { timeout: 15_000 });
-  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "evidence");
-  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toContainText("ci.example.com/runs/1");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done", { timeout: 15_000 });
+  // The evidence is the row's one "Proof" link; the tag gives way to it.
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveCount(0);
+  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toHaveText("Proof");
+  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toHaveAttribute("title", "ci.example.com/runs/1");
 });
 
 test("Alice closes the board with a note, finds it under Done, and reopens it", async () => {
@@ -359,7 +362,7 @@ test("Alice closes the board with a note, finds it under Done, and reopens it", 
   await expect(alice.locator("[data-board-close]")).toBeVisible();
   await alice.locator("[data-platform-boards]").click();
   await expect(alice.locator("[data-boards] [data-board-link]", { hasText: "Launch" })).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
+  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 done");
   await expect(alice.locator("[data-boards-done]")).toHaveCount(0);
   // The note is kept when the board is open again.
   const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
@@ -375,7 +378,7 @@ test("a viewer on a phone sees the goal, progress and Done, with no buttons and 
   await platform(bob, boardPath);
   const page = bob.locator("[data-board-page]");
   await expect(page.locator("[data-board-goal]")).toHaveText(GOAL, { timeout: 15_000 });
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done");
   await expect(page.locator("[data-board-done]")).toContainText("Done");
   for (const hook of ["close", "reopen", "goal-edit", "rename"]) await expect(page.locator(`[data-board-${hook}]`)).toHaveCount(0);
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -716,8 +719,9 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
   await expect(row(alice, OPEN)).toHaveClass(/\bcard-muted\b/);
   await expect(row(alice, OPEN)).toHaveAttribute("data-needs-you", "");
-  await expect(card.locator("[data-board-attachment]")).toContainText("example.com/branch");
-  await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
+  await expect(card.locator("[data-board-attachment]")).toHaveText("Proof");
+  await expect(card.locator("[data-board-attachment]")).toHaveAttribute("title", "example.com/branch");
+  await expect(alice.locator("[data-board-stats]")).not.toContainText("done");
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you");
   await row(alice, OPEN).locator("[data-board-ask-option='Yes']").click();
   await expect(row(alice, OPEN)).toHaveClass(/\bcard-muted\b/, { timeout: 15_000 });
@@ -839,9 +843,10 @@ test("in a board 760px wide the lanes are two per row and every card title keeps
     expect(m.scroll).toBeLessThanOrEqual(0);
     for (const b of m.menus) (expect(b.right).toBeLessThanOrEqual(8), expect(b.top).toBeLessThanOrEqual(8));
   }
-  // The proof tag is on the sub line, not the head.
-  await expect(alice.locator(".board-card-head [data-board-proof]")).toHaveCount(0);
-  await expect(alice.locator(".board-sub [data-board-proof]")).toHaveCount(2);
+  // A proved row has one "Proof" (its link, or the tag where there is none), on the sub lines, not the head.
+  await expect(alice.locator(".board-card-head :is([data-attach-role=proof], [data-board-proof])")).toHaveCount(0);
+  await expect(alice.locator(":is([data-attach-role=proof], [data-board-proof])")).toHaveCount(2);
+  await expect(alice.locator("[data-board-proof]")).not.toHaveText(/proven/);
 });
 
 test("a card's title opens the drawer with the item's body, its comments and the PR's checks", async () => {
@@ -881,10 +886,11 @@ test("a card's title opens the drawer with the item's body, its comments and the
   await platform(alice, managed);
   const card = row(alice, SHIPPED);
   await expect(card).toHaveClass(/\bcard-accent\b/, { timeout: 15_000 });
-  // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
+  // One chip per agent: its title, and its state unless it is working (the Doing lane says that; the chip's title keeps it). Its branch and the rest come only when it has stopped, dim beside the chip.
   const working = card.locator('[data-board-block="working"]');
-  await expect(working).toHaveText(/^Lexer lane\s*working$/);
-  await expect(card.getByText("working", { exact: true })).toHaveCount(1);
+  await expect(working).toHaveText("Lexer lane");
+  await expect(working).toHaveAttribute("title", "working");
+  await expect(card.getByText("working", { exact: true })).toHaveCount(0);
   await expect(card).not.toContainText("640");
   await expect(card).not.toContainText("641");
   await expect(card.locator('[data-board-block="idle"]')).toHaveText(/^agent\s*idle$/);

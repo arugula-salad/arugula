@@ -294,7 +294,7 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await expect(phone.locator("[data-steps-col]")).toHaveCount(4);
   expect(await gripWidth(phone)).toBe(150);
   await expect(phone.locator('[data-step-row][data-lane="done"]')).toHaveCount(0);
-  await expect(phone.locator("[data-steps-done]")).toHaveText("1 done");
+  await expect(phone.locator("[data-steps-done]")).toHaveCount(0);
   expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   // A tap draws the row's arrows; another tap opens its drawer.
@@ -373,7 +373,7 @@ test("a line carries only its glyph, number and title, and nothing crosses its r
   // Phase C has one row, done: its head says so. On a phone no line is drawn under it; on a desktop its line has the bar in ✓.
   await page.setViewportSize({ width: 390, height: 900 });
   const c = page.locator("[data-steps-phase]", { has: page.locator("h2", { hasText: "Phase C" }) });
-  await expect(c.locator("[data-steps-done]")).toHaveText("1 done");
+  await expect(c.locator("[data-steps-done]")).toHaveCount(0);
   await expect(c.locator("[data-step-row]")).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(c.locator("[data-step-row]")).toHaveCount(1);

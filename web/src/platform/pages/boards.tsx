@@ -266,7 +266,6 @@ export function BoardPage({ project, board }: { project: string; board: string }
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const all = pathOf({ page: "boards", project }, names);
   return (
     <section class="platform-section" data-board-page={board}>
       <BoardPanel
@@ -276,11 +275,7 @@ export function BoardPage({ project, board }: { project: string; board: string }
         keepInUrl
         back={
           <p class="dim">
-            <a href={all} onClick={(e) => follow(e, all)}>
-              {p.name}'s boards
-            </a>
             {/* The swarm is the shell's, on control's page (#466). */}
-            {" · "}
             <a href={`${controlOrigin()}/#swarm=board:${board}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
               Workers
             </a>
@@ -333,7 +328,7 @@ function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoar
               ))}
             </div>
           )}
-          <span>{e.words}</span>
+          <span>{e.short}</span>
         </div>
       )}
     </Card>

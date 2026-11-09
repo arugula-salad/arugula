@@ -145,9 +145,6 @@ export function shown<T>(step: number, rows: T[], unfolded: boolean): { rows: T[
 /** "+M more". */
 export const moreLine = (n: number): string => `+${n} more`;
 
-/** A phase's header count, "3 done". */
-export const doneLine = (n: number): string => `${n} done`;
-
 /** A move for the platform: the row goes before `before` (null: last in its group), in the group whose rows are `seen`. */
 export interface Reorder {
   before: string | null;
