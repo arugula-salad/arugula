@@ -57,8 +57,15 @@ export function PhoneHeader({ client }: { client: Client }) {
           )}
         </button>
         {panes.length > 1 && (
-          <span class="pane-count">
-            {panes.indexOf(active ?? -1) + 1}/{panes.length}
+          <span class="pane-pos">
+            <span class="pane-dots" aria-hidden="true">
+              {panes.map((p) => (
+                <i key={p} class={p === active ? "on" : undefined} />
+              ))}
+            </span>
+            <span class="pane-count">
+              {panes.indexOf(active ?? -1) + 1}/{panes.length}
+            </span>
           </span>
         )}
       </header>
