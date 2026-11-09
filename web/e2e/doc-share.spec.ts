@@ -106,7 +106,8 @@ for (const mode of [DOMAIN, null] as const) {
           const v = await visitor(browser, { colorScheme: scheme, ...opts });
           await v.page.goto(url);
           await seeTheDoc(v.page, true);
-          await expect(v.page.locator("[data-doc-progress]")).toContainText("3 of 3 sections written");
+          // All three written: the progress line is gone.
+          await expect(v.page.locator("[data-doc-progress]")).toHaveCount(0);
           await branded(v.page, `Report ${MARK}`);
           // The page follows the system's colors.
           const bg = await v.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -611,7 +612,7 @@ test.describe("the owner's menus", () => {
     await shot("bar-unshared");
     await share.click();
     await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
-    await expect(dialog).toContainText("Anyone with this link can open the Doc, with no account");
+    await expect(dialog).toContainText("Anyone with the link can open it");
     await shot("bar-dialog-unshared");
     await expect(dialog.locator("[data-doc-link-url]")).toHaveCount(0);
     await cancel();

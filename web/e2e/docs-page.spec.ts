@@ -125,7 +125,8 @@ test("a Doc whose pane was closed is on the page, and Open shows it again with i
   await expect(r).toHaveCount(1);
   await expect(r.locator("[data-doc-shared]")).toHaveCount(0);
   const p = await preview(page, "Quarterly plan");
-  await expect(p).toContainText(/updated (just now|\d+m ago)/);
+  // The facts no longer say when it changed or its sections: the row has the age.
+  await expect(p).not.toContainText(/updated (just now|\d+m ago)/);
   // Who made it is the facts line's hover now (Arugula #659), not a word on the bar.
   await expect(p.locator(".list-preview-bar-facts")).toHaveAttribute("title", /made by/);
   await p.locator("[data-open-doc]").click();
@@ -323,7 +324,7 @@ test.describe("the list", () => {
     // A 34px column bar: the facts at the left, then the primary, link and ⋯, last.
     const bar = p.locator(".list-preview-bar");
     expect((await bar.boundingBox())!.height).toBe(34);
-    await expect(bar.locator(".list-preview-bar-facts")).toContainText(/updated .*\d+ sections?\d+ min read/);
+    await expect(bar.locator(".list-preview-bar-facts")).toHaveText(/^\d+ min read$/);
     const buttons = bar.locator("button");
     await expect(buttons.first()).toHaveAttribute("data-open-doc", /.*/);
     await expect(buttons.last()).toHaveAttribute("data-doc-more", /.*/);

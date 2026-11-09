@@ -83,7 +83,7 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   const page = alice.locator("[data-doc-page]");
   await expect(page.locator(".doc-title")).toHaveText("Release plan");
   await expect(page).toHaveAttribute("data-writer", "true");
-  await expect(page.locator("[data-doc-maker]")).toContainText("made by you");
+  await expect(page.locator("[data-doc-maker]")).toHaveText("you");
 
   // A first section, with a chart.
   await page.locator("[data-doc-heading-input]").fill("Goals");
@@ -93,22 +93,19 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   await expect(goals.locator(".doc-heading")).toHaveText("Goals");
   await expect(goals.locator(".doc-body strong")).toHaveText("0.64");
   await expect(goals.locator(".chart-box svg")).toBeVisible();
-  await expect(page.locator("[data-doc-progress]")).toHaveText("1 of 1 sections written");
+  await expect(page.locator("[data-doc-progress]")).toHaveCount(0);
 });
 
-test("the Doc's column and the lines above it widen with the page (Arugula #783)", async () => {
+test("the Doc's column widens with the page (Arugula #783)", async () => {
   await alice.goto(`${app}${docPath}`);
   const page = alice.locator("[data-doc-page]");
   await expect(page.locator(".doc-title")).toHaveText("Release plan");
-  const width = (sel: string) => alice.evaluate((s) => document.querySelector(s)!.getBoundingClientRect().width, sel);
   const was = alice.viewportSize()!;
   try {
     await alice.setViewportSize({ width: 900, height: 900 });
     expect(await measure(alice, "[data-doc-page]")).toBe(68);
-    expect(Math.abs((await width('.project-doc-head')) - (await width('.doc-page'))), 'the head is the column wide').toBeLessThan(1);
     await alice.setViewportSize({ width: 1600, height: 900 });
     expect(await measure(alice, "[data-doc-page]")).toBe(88);
-    expect(Math.abs((await width('.project-doc-head')) - (await width('.doc-page'))), 'the head is the column wide').toBeLessThan(1);
   } finally {
     await alice.setViewportSize(was);
   }
@@ -339,8 +336,7 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await expect(page.locator(".doc-title")).toHaveText("Geek's plan", { timeout: 15_000 });
   await expect(page).toHaveAttribute("data-writer", "false");
   await expect(page.locator("[data-doc-writer]")).toHaveCount(0);
-  await expect(page.locator("[data-doc-copy]")).toContainText("A copy of a Doc in geek's library");
-  await expect(page.locator("[data-doc-copy]")).toContainText("read-only");
+  await expect(page.locator("[data-doc-copy]")).toContainText("Copy from geek");
   await expect(page.locator("[data-doc-maker]")).toHaveText("a copy from geek");
   await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
 
@@ -378,7 +374,7 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await shot(alice, "share-with-modal-shared.png");
   await acme.locator("[data-share-with-open]").click();
   await expect(page).toHaveAttribute("data-writer", "true", { timeout: 15_000 });
-  await expect(page.locator("[data-doc-made-from]")).toHaveText("Made from your Doc on geek.");
+  await expect(page.locator("[data-doc-made-from]")).toHaveCount(0);
   await expect(page.locator("[data-doc-copy]")).toHaveCount(0);
   await expect(page.locator(".doc-section[data-section=s1] .doc-body")).toContainText("again");
   const teamDoc = /\/p\/(prj_[0-9a-f]+)[^/]*\/docs\/(pdc_[0-9a-f]{32})/.exec(new URL(alice.url()).pathname)!;
@@ -450,7 +446,7 @@ test("a page newer than the platform still writes a Doc made here", async () => 
     await expect(page).toHaveAttribute("data-writer", "true");
     await expect(page.locator("[data-doc-writer]")).toBeVisible();
     await expect(page.locator("[data-doc-copy]")).toHaveCount(0);
-    await expect(page.locator("[data-doc-maker]")).toHaveText("made by you");
+    await expect(page.locator("[data-doc-maker]")).toHaveText("you");
   } finally {
     // Waits for a `strip` still running: this is the spec's last test, and its
     // context closes next, which would dispose the response it's reading.

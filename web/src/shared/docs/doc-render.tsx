@@ -149,16 +149,21 @@ export function DocBlock({
           ) : (
             <h1 class="doc-title">{s.title || "Untitled"}</h1>
           )}
-          <p class="doc-meta">
-            {byline && <>{byline} · </>}
-            {s.entries.length === 0 ? (
-              <span class="doc-wait">Waiting for the outline…</span>
-            ) : (
-              <span class="doc-progress" data-doc-progress>
-                {done} of {s.entries.length} sections written
-              </span>
-            )}
-          </p>
+          {(byline || s.entries.length === 0 || done < s.entries.length) && (
+            <p class="doc-meta">
+              {byline}
+              {byline && (s.entries.length === 0 || done < s.entries.length) && " · "}
+              {s.entries.length === 0 ? (
+                <span class="doc-wait">Waiting for the outline…</span>
+              ) : (
+                done < s.entries.length && (
+                  <span class="doc-progress" data-doc-progress>
+                    {done} of {s.entries.length} sections written
+                  </span>
+                )
+              )}
+            </p>
+          )}
         </header>
         {s.entries.map((e) => (
           <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>

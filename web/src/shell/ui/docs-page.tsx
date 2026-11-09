@@ -32,7 +32,6 @@ import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
-import { directory } from "../hosts";
 import { closeDocsPage, docsRoute, openDoc, openDocPane } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
@@ -189,12 +188,10 @@ function Page({ client }: { client: Client }) {
     return out;
   }, [shown]);
 
-  const words = all.reduce((n, r) => n + wordsOf(r), 0);
   const counts: ListCount[] = [
     { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
     { key: "open", n: all.filter(isOpen).length, label: "open now", tone: "live" },
     { key: "shared", n: all.filter((r) => !!r.shared).length, label: "shared" },
-    { n: words < 1000 ? words : `${Math.round(words / 1000)}k`, label: "words" },
   ];
   const narrowed = filter !== "all" || !!q;
 
@@ -237,7 +234,6 @@ function Page({ client }: { client: Client }) {
         header={
           <PageHeader
             title="Docs"
-            sub={<span data-docs-machine>on {directory.current || "this machine"}</span>}
             stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
           />
         }
@@ -397,15 +393,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      facts={
-        <>
-          <span>
-            updated <Time at={doc.updated} on />
-          </span>
-          {doc.sections.length > 0 && <span>{plural(doc.sections.length, "section")}</span>}
-          {words > 0 && <span>{Math.max(1, Math.round(words / READ_WPM))} min read</span>}
-        </>
-      }
+      facts={words > 0 && <span>{Math.max(1, Math.round(words / READ_WPM))} min read</span>}
       factsTip={[plural(doc.sections.length, "section"), plural(words, "word"), figures > 0 && plural(figures, "figure"), madeBy(doc.by)].filter(Boolean).join(" · ")}
       hint={
         <span class="list-preview-hint" aria-hidden="true">

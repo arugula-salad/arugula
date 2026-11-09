@@ -107,7 +107,7 @@ export async function fillsInPlace(page: Page, post: Post, term: PaneId) {
   await expect(section("s1").locator(".doc-fresh")).toHaveCount(1);
 
   await fill(post, doc, "s3", "Few risks.");
-  await expect(block.locator("[data-doc-progress]")).toHaveText("3 of 3 sections written");
+  await expect(block.locator("[data-doc-progress]")).toHaveCount(0);
   await expect(block.locator("[data-pending]")).toHaveCount(0);
   // Nothing reloaded the page, and the viewer was never scrolled.
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
