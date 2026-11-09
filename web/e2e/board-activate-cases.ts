@@ -51,13 +51,24 @@ export function boardActivateCases(name: string, newPerson: (browser: Browser, t
       [boardPane, top] as const,
     );
 
+  /** The panes' grid fills the tab area to within a cell: the daemon has answered the window's new size. */
+  const laidOut = (p: Page) =>
+    p.evaluate(() => {
+      const area = document.querySelector<HTMLElement>(".tab-area");
+      const grid = area?.querySelector<HTMLElement>(".grid");
+      if (!area || !grid) return false;
+      const s = getComputedStyle(area);
+      const w = area.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+      const h = area.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom);
+      return w - grid.offsetWidth < 24 && h - grid.offsetHeight < 24;
+    });
+
   test("a board of many cards, pinned beside a terminal", async ({ browser }) => {
     test.setTimeout(240_000);
     await t.start(["--platform-host", "app.localhost"]);
     alice = await newPerson(browser, t);
     await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
     const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-    await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
     await home(alice);
     await t.addMachine(alice, "alices", team);
     await expect.poll(() => live(alice, ["alices"]), { timeout: 30_000 }).toBe(true);
@@ -87,6 +98,9 @@ export function boardActivateCases(name: string, newPerson: (browser: Browser, t
   test("a click on a card of an inactive board, scrolled down, keeps the scroll and opens the card", async () => {
     test.setTimeout(90_000);
     await alice.setViewportSize({ width: 1400, height: 700 });
+    // The panes move twice after the window does (its resize, then the daemon's answer): a card
+    // aimed at before that has a terminal under it by the time the pointer is down.
+    await expect.poll(() => laidOut(alice)).toBe(true);
     // The other pane has the keys; the board is scrolled with no click on it.
     await alice.evaluate((p) => window.__arugula.client.setActive(p), terminal);
     await expect(alice.locator(`[data-pane="${boardPane}"]`)).not.toHaveClass(/\bactive\b/);

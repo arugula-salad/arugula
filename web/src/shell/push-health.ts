@@ -49,9 +49,9 @@ export function healthOf(state: string, standing: PushStanding | null, permissio
       ? "This device has no push subscription: turn on Notify this device."
       : "This device has no push subscription, and notifications haven't been allowed here yet: turn on Notify this device.";
   if (state !== "on" || !standing) return null;
-  if (standing.this_device === "missing") return "Control doesn't have this device's subscription, so nothing reaches it: turn Notify this device off and on.";
+  if (standing.this_device === "missing") return "Arugula cloud doesn't have this device's subscription, so nothing reaches it: turn Notify this device off and on.";
   if (standing.this_device === "unusable")
-    return "This device's subscription is from a key control no longer approves, so deploy and project pushes skip it: turn Notify this device off and on.";
+    return "This device's subscription is from a key Arugula cloud no longer approves, so deploy and project pushes skip it: turn Notify this device off and on.";
   return null;
 }
 
@@ -60,7 +60,7 @@ export function standingSaid(s: PushStanding): string {
   if (s.subscriptions === 0) return "Your account has no push subscriptions.";
   const skipped = s.subscriptions - s.usable;
   const all = `Your account has ${plural(s.subscriptions, "push subscription")}`;
-  return skipped > 0 ? `${all}; deploy pushes skip ${skipped} of them (a device control no longer approves).` : `${all}.`;
+  return skipped > 0 ? `${all}; deploy pushes skip ${skipped} of them (a device Arugula cloud no longer approves).` : `${all}.`;
 }
 
 /** What became of a test notification. */

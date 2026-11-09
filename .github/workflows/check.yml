@@ -1,19 +1,25 @@
 # Every push to main, as parallel as it goes (#287):
-# - on GitHub's runners: lint, the quick checks, and e2e, the Playwright
-#   specs in twelve shards (build's binaries, from the pods);
-# - on the home cloud's runners (arugula-amd64: a fresh pod per job,
-#   docs/development.md):
-#   - build and static: the debug and the box's (static) binaries, once;
+# - on GitHub's runners:
+#   - lint, the quick checks, and e2e, the Playwright specs in twelve
+#     shards (build's binaries);
+#   - build: the debug binaries, once;
 #   - clippy: Linux, Apple silicon (cross; Intel's is macos-intel.yml's,
 #     weekly), each for both workspaces (the root's and the server's,
 #     server/Cargo.toml), the desktop app (when the push
 #     changes it: scripts/app-changed), the workspaces apart
 #     (`just workspace-guard`), and notices;
-#   - test: `just test` (the Rust tests under nextest), built beside static;
-#     the server's suite runs while static builds, the rest once static's
-#     binaries are in (scripts/ci-wait-job);
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
+# - on the home cloud's runners (arugula-amd64: a fresh pod per job,
+#   docs/development.md):
+#   - static: the box's (static) binaries, once. test, test-2 and desktop-xvfb
+#     wait for them, and on GitHub's runners it took up to 10.7 min after a
+#     change to the crates, against the pods' 2-5 (2026-11-03, #2131);
+#   - test: `just test` (the Rust tests under nextest), built beside static;
+#     the server's suite runs while static builds, the rest once static's
+#     binaries are in (scripts/ci-wait-job). These stayed: on GitHub's
+#     runners they took 20-32 min against the pods' 9-11 (2026-11-03,
+#     #2131), and would have been the run's longest path;
 # - macos (test): test on our Macs' Tart VMs (home-cloud's mac_runner;
 #   when the push changes what runs there: scripts/macos-changed; main
 #   always).
@@ -28,19 +34,21 @@
 # Those jobs start from nothing (.github/actions/setup): the toolchain,
 # GitHub's cache in place of kept build directories, and build's and
 # static's binaries as artifacts in place of a shared run directory
-# (scripts/ci-env). Each pod has Docker (a dind sidecar): the test stack
-# (testnet/README.md) and the ssh tests in `just test` fail without it.
-# Each boots systemd with a user manager for the runner (home-cloud's
+# (scripts/ci-env). Every runner has Docker (on a pod, a dind sidecar): the
+# test stack (testnet/README.md) and the ssh tests in `just test` fail
+# without it. Each pod boots systemd with a user manager for the runner (home-cloud's
 # images/gha-runner, target systemd: #735), so the tests that start the
 # daemon as a service run, and ARUGULA_REQUIRE_SYSTEMD fails them in test
 # and core if it's ever missing instead of letting them skip. Only main's pushes (never other branches or pull requests), since
 # most of it runs on our own machines; a branch runs by hand:
 # `gh workflow run check.yml --ref BRANCH`. And the merge queue's groups
-# (merge_group, once the queue is on: docs/development.md, "Merging through
-# the queue"): a pull request with main and whatever is queued ahead of it,
-# everything run (scripts/changed runs it all for any event but a push),
-# and chant-merge-queue.yml's chant-verdict judges the group from its check
-# runs (ci.green's mergeQueue, chant#4644). Only someone who may
+# (merge_group: docs/development.md, "Merging through the queue"): a pull
+# request with main and whatever is queued ahead of it, what that reaches
+# run (scripts/changed), and chant-merge-queue.yml's chant-verdict judges
+# the group from its check runs (ci.green's mergeQueue, chant#4644). The
+# push that lands a group's commit skips what the group passed
+# (scripts/queue-tested); main-full-run.yml runs everything on main each
+# night, which keeps the caches only main saves fresh. Only someone who may
 # merge queues a pull request, so its code reaches our machines no sooner
 # than a merge would bring it.
 name: check
@@ -103,7 +111,7 @@ jobs:
   build:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -153,7 +161,7 @@ jobs:
   clippy:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -182,6 +190,11 @@ jobs:
       - name: The desktop app
         if: needs.changes.outputs.app == 'true'
         run: just desktop-check
+      # A change to the wire crates that breaks the native clients' core
+      # shows up here, on every suite run. It's a workspace of its own.
+      - name: The native clients' core
+        if: needs.changes.outputs.suite == 'true'
+        run: just native-check
       - name: THIRD_PARTY.md is current
         run: just notices-check
       - name: sccache's hits
@@ -346,7 +359,7 @@ jobs:
   desktop-xvfb:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     permissions:
       # scripts/ci-wait-job reads the run's jobs.
       actions: read
@@ -375,7 +388,7 @@ jobs:
         run: ARUGULA_DESKTOP_BINARIES="$CI_RUNS/$GITHUB_RUN_ID/x86_64-unknown-linux-musl/release" just desktop-xvfb
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
-          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
+          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'merge_group') && '1' || '' }}
 
   # What changed since main's newest green commit (#868, #1675; on a
   # branch, since it left main): suite, the suites' inputs
@@ -384,6 +397,10 @@ jobs:
   # branch's only when it changes that).
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      # scripts/queue-tested reads this commit's merge_group runs.
+      actions: read
+      contents: read
     outputs:
       suite: ${{ steps.ask.outputs.suite }}
       app: ${{ steps.ask.outputs.app }}
@@ -394,7 +411,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-chant-0.124.61
+          key: npm-chant-0.124.64
       - id: ask
         run: |
           before="${{ github.event.before }}"

@@ -20,8 +20,6 @@ interface SearchHit {
   offset: number;
   line: string;
   command?: string | null;
-  /** A synced copy of another host's history: never asked for here. */
-  host?: string;
   doc?: string;
   at_ms?: number;
 }
@@ -63,7 +61,7 @@ export async function searchOutput(client: Client, text: string): Promise<{ hits
         const v = await res.json<{ error?: string }>().catch(() => null);
         return { asked: { machine, here: isHere, state: "error" as const, hits: 0, why: v?.error ?? `HTTP ${res.status}` }, hits: [] };
       }
-      const list = (await res.json<SearchHit[]>()).filter((h) => !h.host);
+      const list = await res.json<SearchHit[]>();
       return {
         asked: { machine, here: isHere, state: "ok" as const, hits: list.length },
         hits: list.map((h) => ({ ...h, machine, here: isHere })),

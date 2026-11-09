@@ -1,5 +1,5 @@
 {
-  "about": "The exact bytes of a hosted machine's papers. A delegation: an owner's device says control may enroll hosted machines into a project with its hosted key, until revoked; its sig is that device's over the body, and its id the first 16 bytes of SHA-256 over the body, hex. A revoke names the delegation by that id. A machine's certificate is signed with the key the delegation names. A machine signs an enroll proof with its own key: the SHA-256 (hex) of the ticket or sandbox id it enrolls with, so the proof can't move to another enrollment and the credential isn't in it.",
+  "about": "The exact bytes of a hosted machine's papers. A delegation: an owner's device says control may enroll hosted machines into a project with its hosted key, until revoked; its sig is that device's over the body, and its id the first 16 bytes of SHA-256 over the body, hex. A revoke names the delegation by that id. Control's word that a delegation ended is signed with the key the delegation names, and its at is control's. A machine's certificate is signed with that key too. A machine signs an enroll proof with its own key: the SHA-256 (hex) of the ticket or sandbox id it enrolls with, so the proof can't move to another enrollment and the credential isn't in it.",
   "cases": [
     {
       "about": "an account's project's delegation",
@@ -22,6 +22,13 @@
       "input": {"of": "revoke", "revoke": "revoke"},
       "output": {
         "body": "arugula project delegation revoke v1\nproject prj_1\ndelegation bf1386ae275f33c87c0d6cc4f2ec58ed\nat 4000\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "control's word that it ended",
+      "input": {"closed": "closed", "of": "closed"},
+      "output": {
+        "body": "arugula project delegation closed v1\nproject prj_1\ndelegation bf1386ae275f33c87c0d6cc4f2ec58ed\nat 4000\n"
       }
     },
     {
@@ -49,10 +56,11 @@
     "arugula_e2e::hosted::Delegation::body",
     "arugula_e2e::hosted::Delegation::id",
     "arugula_e2e::hosted::DelegationRevoke::body",
+    "arugula_e2e::hosted::DelegationClosed::body",
     "arugula_e2e::hosted::HostedCert::body",
     "arugula_e2e::hosted::enroll_proof_body"
   ],
-  "input": "of: delegation (delegation: a label), revoke (revoke), machine (cert), or enroll_proof (credential, noise, sign, ms)",
+  "input": "of: delegation (delegation: a label), revoke (revoke), closed (closed), machine (cert), or enroll_proof (credential, noise, sign, ms)",
   "keys": {
     "alice": {
       "device": "37f29b7074cf8b52",
@@ -83,6 +91,12 @@
       "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
       "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
       "v": 1
+    },
+    "closed": {
+      "at": 4000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "4c475e2d284d47c6f5979d62b8239823b4b5c3385df2680e0d66d61237398849c046da441f5db0a3d24b9746d4fc2123a4f840d985483e2600f14743edc5a60c"
     },
     "delegation": {
       "at": 2000,

@@ -113,6 +113,9 @@ pub enum ClientMsg {
     /// The pane this client is looking at, if its window has focus (`None`
     /// when it doesn't). Attention notifications skip panes someone sees.
     Focus { pane: Option<PaneId> },
+    /// Dismiss a machine-level notice, or open it (#551): the owner's
+    /// alone. A key nothing holds is ignored.
+    DismissNotice { key: String },
     /// Answered with [`ServerMsg::Pong`] once everything sent before it has
     /// been handled (and its `State` sent), so a client can wait for its
     /// own intents to land: an intent that failed answers with an `Error`
@@ -120,8 +123,9 @@ pub enum ClientMsg {
     Ping { id: u64 },
     /// What this client wants from now on (M23). `summary`: pane summaries
     /// only (the swarm, the fleet): it attaches to nothing, and pane
-    /// objects leave out `epoch`, `policy` and `integration`. Answered
-    /// with a fresh `State` in that shape.
+    /// objects leave out `epoch`, `policy` and `integration`, and it's sent
+    /// no block's state, when this is its first message. Answered with a
+    /// fresh `State` in that shape.
     Subscribe { summary: bool },
     /// Follow an editor (M28): its cursor, selection and the file it shows
     /// come as [`ServerMsg::Follow`] while `on`. Viewer access is enough.
@@ -308,6 +312,66 @@ pub enum ReasonKind {
     /// A release or an op waits at a gate for a person to approve it (M34:
     /// a chant gate in a workspace's member).
     Gate,
+}
+
+/// Attention that belongs to no pane (#551): the machine wants its owner for
+/// something no pane can show (a teammate's mention that no session took).
+/// Kept in the mux beside the panes' attention; the owner's `State` and
+/// `Delta`s carry it, and the web and the phone draw a card from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Notice {
+    /// One card per key: `mention:<room>`. Raised again, it updates.
+    pub key: String,
+    pub kind: NoticeKind,
+    /// When it was first raised.
+    pub since_ms: u64,
+    /// One line, for the latest: "<who> mentioned this machine in #room: <first line>".
+    #[serde(default)]
+    pub headline: String,
+    /// How many times it was raised since it last went ("2 mentions in #agents").
+    pub count: u32,
+    /// `mention`: the room to open (its id), and its name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub room: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub room_name: Option<String>,
+    /// `grant_ask` (#578): what the owner's Grant is a request for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub grant: Option<NoticeGrant>,
+}
+
+/// What a `grant_ask` card grants (#578): `threads.read` to `machine`'s
+/// agents over a scope, as `POST /api/grants` says it. The grant is the
+/// owner's, made from their own control session; the machine never makes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NoticeGrant {
+    /// This machine's id in control, and its name.
+    pub machine: String,
+    pub machine_name: String,
+    /// `project` (with `scope_id`) or `account`.
+    pub scope_kind: String,
+    #[serde(default)]
+    pub scope_id: String,
+    /// What the scope is called, for the card ("Acme", "your DMs"); empty
+    /// when the grant would be over just the room.
+    #[serde(default)]
+    pub scope_name: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum NoticeKind {
+    /// A teammate mentioned this machine in a room and no session took it.
+    Mention,
+    /// A teammate mentioned this machine in a room its agents can't read
+    /// (#578): the owner may let them, not now, or never for the room.
+    GrantAsk,
 }
 
 /// A gate that waits for someone (M34): an op stopped before a step until
@@ -513,6 +577,10 @@ pub enum Action {
     /// approving it (`chant approve <op> <gate> --expire`), so the next run
     /// stops there again.
     Expire,
+    /// Type a teammate's agent's mention, held on a session whose hooks
+    /// aren't listening, into the terminal and press Enter (#579). The
+    /// owner's alone.
+    Deliver,
 }
 
 /// A command the shell integration reported.
@@ -572,6 +640,15 @@ pub enum EventKind {
         /// Why (M24); none when it went idle or working.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<Reason>,
+    },
+    /// A notice that belongs to no pane was raised or updated (#551). Has
+    /// no `pane`: the owner's events carry it.
+    Notice {
+        notice: Notice,
+    },
+    /// A notice went: dismissed, opened, or what it was about was taken.
+    NoticeGone {
+        key: String,
     },
     /// Someone prompted the agent in the pane (#888): Claude Code's
     /// `UserPromptSubmit` hook (a prompt typed there, or `prompt_agent`'s),
@@ -706,11 +783,18 @@ pub struct Delta {
     pub machines: Option<Vec<Machine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence: Option<Vec<Presence>>,
+    /// Whole when present, like `presence` (#551).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notices: Option<Vec<Notice>>,
 }
 
 impl Delta {
     pub fn is_empty(&self) -> bool {
-        self.panes.is_empty() && self.gone.is_empty() && self.machines.is_none() && self.presence.is_none()
+        self.panes.is_empty()
+            && self.gone.is_empty()
+            && self.machines.is_none()
+            && self.presence.is_none()
+            && self.notices.is_none()
     }
 }
 
@@ -746,6 +830,9 @@ impl State {
         }
         if let Some(p) = &delta.presence {
             self.presence = p.clone();
+        }
+        if let Some(n) = &delta.notices {
+            self.notices = n.clone();
         }
     }
 }
@@ -823,18 +910,21 @@ pub struct State {
     /// client sees.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presence: Vec<Presence>,
+    /// Attention that belongs to no pane (#551): the owner's alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<Notice>,
 }
 
 pub type MachineId = u32;
 
-/// A machine that blocks can run on instead of this host: today a
-/// throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
-/// deleted when that pane closes.
+/// A machine that blocks can run on instead of this host: a throwaway
+/// sandbox from the provider (a loam microVM) owned by one pane or tab,
+/// and deleted when that closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Machine {
     pub id: MachineId,
-    /// Who runs it: `wisp`.
+    /// Who runs it: `loam`.
     #[serde(default)]
     pub provider: String,
     /// The provider's name for it.
@@ -924,9 +1014,10 @@ pub enum BlockType {
     Diff,
     /// A file on the block's machine, read-only, followed live (M11).
     File,
-    /// A pane that lives on another daemon in the host list (#17, M4's
-    /// option (a)): this layout holds its place, and clients reach its
-    /// terminal on that daemon directly. Its config is [`RemoteRef`].
+    /// From before remote blocks were removed: a place in this layout for
+    /// a pane on another daemon in the host list (#17). Still read, so a
+    /// stored layout parses; the daemon drops such a leaf as it restores
+    /// and keeps the rest.
     Remote,
     /// A chant workspace (M34): its members, records and the gates waiting
     /// in it, read through chant's read contract. Config `{root, env}`.
@@ -961,10 +1052,6 @@ pub enum BlockType {
     /// and zones, read through Arugula control as the person looking, and
     /// drawn only while shown. Config `{board}`; the daemon keeps no row.
     Board,
-    /// Who's around, live: a team's room on arugula.stream, joined with a
-    /// room token Arugula control signs for the person looking, drawn only
-    /// while shown. Config `{team}`; the daemon keeps nobody.
-    People,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.
@@ -980,15 +1067,6 @@ impl BlockType {
     pub fn prompted(self) -> bool {
         matches!(self, BlockType::Agent | BlockType::Chat)
     }
-}
-
-/// Where a remote block's pane lives (#17): a host in the home daemon's
-/// list, and the pane's id there.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct RemoteRef {
-    pub host: String,
-    pub pane: PaneId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1097,6 +1175,10 @@ pub struct PaneInfo {
     /// Getting started's "Use Claude Code with Arugula").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unhooked: bool,
+    /// The owner silenced teammates' agents' mentions for this session
+    /// (#579): `arugula mentions off %N`. It lasts as long as the pane.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mentions_off: bool,
     /// What Claude Code running in it says of its session from inside it
     /// (#450, the arugula-live mod, through `arugula session-signal`): the
     /// agent block's `context` shape, with `source: live`, its versions and
@@ -1517,6 +1599,7 @@ mod tests {
             options: Box::new(options),
             roles: Some(vec![(1, arugula_core::Role::Viewer), (4, arugula_core::Role::Editor)]),
             presence: vec![],
+            notices: vec![],
         };
         let msg = ServerMsg::State { state };
         let back: ServerMsg = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();

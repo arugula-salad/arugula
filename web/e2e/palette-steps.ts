@@ -39,7 +39,9 @@ async function paneMenu(page: Page, pane: number): Promise<string[]> {
   const n = await rows.count();
   for (let i = 0; i < n; i++) {
     const row = rows.nth(i);
-    const kind = await row.evaluate((el) => (el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : el.classList.contains("menu-parent") ? "parent" : "item"));
+    const kind = await row.evaluate((el) => (el.classList.contains("menu-filter-row") ? "filter" : el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : el.classList.contains("menu-parent") ? "parent" : "item"));
+    // A long menu's filter row (#770) is no action.
+    if (kind === "filter") continue;
     if (kind === "sep") under = null;
     else if (kind === "header") under = (await row.textContent())!.trim();
     else if (kind === "parent") {
@@ -149,13 +151,7 @@ export async function desktop(page: Page, mod: "Control" | "Meta" = "Control") {
   await page.keyboard.press(`${mod}+Shift+KeyP`);
   await expect(palette(page)).toBeHidden();
 
-  // And it's listed, with its chord, in the account menu, and is the
-  // bar's Commands button.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Command palette…" }).click();
-  await expect(palette(page)).toBeVisible();
-  await page.mouse.click(5, 300);
-  await expect(palette(page)).toBeHidden();
+  // And it's the bar's Commands button.
   await page.locator(".ws-head [data-open-palette]").click();
   await expect(palette(page)).toBeVisible();
   await page.keyboard.press("Escape");

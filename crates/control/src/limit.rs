@@ -68,8 +68,6 @@ pub const ENROLLS: (&str, usize) = ("enroll", 30);
 pub const TEAMS: (&str, usize) = ("team", 20);
 /// Invite links made, per account.
 pub const TEAM_INVITES: (&str, usize) = ("team-invite", 120);
-/// `forge.watch` messages, per daemon.
-pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
 // Repositories looked up at GitHub for the first time are counted by the
 // platform since M161 (`arugula_platform::forge::FORGE_LOOKUPS`).
 /// Shares offered to other accounts, per daemon (each shows a prompt).
@@ -81,6 +79,10 @@ pub const GIT: (&str, usize) = ("git", 3_000);
 /// Telemetry reports (M100), per client address: many installs can share
 /// one (an office, a NAT).
 pub const TELEMETRY: (&str, usize) = ("telemetry", 600);
+/// chant's CI events for the platform's CI alerts (native #774), per
+/// client address, counted here because only the hub knows the address: a
+/// repository's ticks send a few a day, from GitHub's runners.
+pub const CI_NOTIFY: (&str, usize) = ("ci-notify", 600);
 /// Telemetry reports per install id, or per daemon when signed: an
 /// install sends one when it starts and one a day, so this is plenty.
 pub const INSTALL_REPORTS: (&str, usize) = ("install-report", 30);

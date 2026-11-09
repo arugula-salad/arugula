@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, issues::Actor, sql::params},
 };
@@ -53,6 +52,12 @@ fn progress(v: &Value) -> (u64, u64, u64) {
     (p["done"].as_u64().unwrap(), p["total"].as_u64().unwrap(), p["proven"].as_u64().unwrap())
 }
 
+/// A board's Review and Doing rows, counted.
+fn in_flight(v: &Value) -> (u64, u64) {
+    let p = &v["progress"];
+    (p["review"].as_u64().unwrap(), p["doing"].as_u64().unwrap())
+}
+
 /// Progress counts the rows with an issue or a PR as their item, whoever
 /// reads: a lane follows the work, not the reader's access to the repo.
 #[tokio::test]
@@ -61,7 +66,6 @@ async fn progress_counts_the_rows_in_done_and_those_proven() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     {
         // Two more issues on each repo: an open and a closed one.
         let c = app.db.c();
@@ -144,13 +148,62 @@ async fn progress_counts_the_rows_in_done_and_those_proven() {
     assert_eq!(progress(&v["board"]), (5, 8, 1), "{v}");
 }
 
+/// A row in each lane counts in its own: Next in none, Doing, Review and
+/// Done each in theirs (two in Doing, so a count can't be taken for another).
+#[tokio::test]
+async fn progress_counts_the_rows_in_review_and_doing_too() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    hub.flag("team:t1", true);
+    {
+        let c = app.db.c();
+        c.execute(
+            "INSERT INTO tracker_connections (id, project_id, provider, workspace_slug, source_project_id, identifier,
+                 name, mirror_id, created_at)
+             VALUES ('trk_1', ?1, 'plane', 'acme', 'p1', 'ARUGU', 'Arugula', -1, 1)",
+            params![team],
+        )
+        .unwrap();
+        // Two Plane items that are started: Doing.
+        for (id, number) in [("fi_pl1", 1u64), ("fi_pl2", 2)] {
+            c.execute(
+                "INSERT INTO forge_items (id, repo_id, number, kind, state, title, provider, connection_id, state_name,
+                     state_group, created_at, updated_at, synced_at)
+                 VALUES (?1, -1, ?2, 'issue', 'open', 't', 'plane', 'trk_1', 'started', 'started', 1, 1, 1)",
+                params![id, number],
+            )
+            .unwrap();
+        }
+    }
+    let next = issue(&base, &app, &team, "Next", false).await;
+    let done = issue(&base, &app, &team, "Done", true).await;
+    let (_, b) =
+        call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "L" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    // fi_a1 is an open PR: Review.
+    for (kind, ptr) in [
+        ("issue", next.as_str()),
+        ("forge_item", "fi_pl1"),
+        ("forge_item", "fi_pl2"),
+        ("forge_item", "fi_a1"),
+        ("issue", done.as_str()),
+    ] {
+        row(&base, &id, kind, ptr).await;
+    }
+    let (_, v) = call(&base, "bob", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(progress(&v["board"]), (1, 5, 0), "{v}");
+    assert_eq!(in_flight(&v["board"]), (1, 2), "{v}");
+    let (_, l) = call(&base, "bob", "GET", &format!("/api/projects/{team}/boards"), None).await;
+    assert_eq!(in_flight(&l["boards"][0]), (1, 2), "the list says what the view does");
+}
+
 #[tokio::test]
 async fn a_goal_is_set_and_a_board_is_closed_and_opened_again() {
     let hub = Arc::new(TestHub::default());
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     let mk = |t: &'static str| {
         let (base, team) = (base.clone(), team.clone());
         async move {
@@ -235,7 +288,7 @@ async fn a_deleted_accounts_boards_keep_no_creator_or_closer() {
     let hub = Arc::new(TestHub::default());
     let (gh, app, _base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
-    let b = app.db.create_board(&team, "E", "", Actor::person("gone"), 1, 10).unwrap().unwrap();
+    let b = app.db.create_board(&team, "E", "", Actor::person("gone"), None, 1, 10).unwrap().unwrap();
     assert!(app.db.close_board(&b.id, "Shipped.", Actor::person("gone"), 2).unwrap());
     let d = crate::Deleted { account: "gone".into(), machines: vec![], disbanded: vec![] };
     crate::db::boards::erase_account(&app.db.c(), &d).unwrap();

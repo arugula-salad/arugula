@@ -118,7 +118,7 @@ pub fn native(s: &str) -> Result<Native, String> {
 /// What `draft` and `forge_draft` say to a native issue.
 pub fn not_drafted(s: &str) -> String {
     format!(
-        "{} is a native issue in Arugula control: those aren't drafted, issue_write writes to them at once (kind comment, edit, label, assign, close or reopen). Drafts are for GitHub, where a person sends them.",
+        "{} is a native issue in Arugula control: those aren't drafted, issue_write writes to them at once (kind comment, edit, label, assign, close or reopen). Drafts are for GitHub, where a person sends them: forge_draft kind open_on_github drafts opening it there.",
         s.trim()
     )
 }

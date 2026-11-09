@@ -9,9 +9,9 @@
 // stream and answers. Then she signs out on control's page, and the
 // platform page's session ends with it.
 
-import { expect, test, type Page } from "@playwright/test";
-import { closeContexts } from "./helpers";
-import { TeamControl, home } from "./team-fixture";
+import { devices, expect, test, type Page } from "@playwright/test";
+import { closeContexts, closeSettingsPage } from "./helpers";
+import { TeamControl, home, show } from "./team-fixture";
 
 const t = new TeamControl("platform");
 
@@ -116,6 +116,88 @@ test("chat on the platform page: Alice makes #general and mentions Bob, who answ
   await page.locator(".thread-msg").last().locator("[data-msg-link]").click();
   const copied = await alice.evaluate(() => navigator.clipboard.readText());
   expect(copied).toMatch(new RegExp(`^${app}/p/prj_[0-9a-f]+-acme/chat/ch_[0-9a-f]+-general\\?msg=\\d+$`));
+});
+
+test("on a phone, Back climbs chat one level at a time: thread, room, list (#817)", async () => {
+  test.setTimeout(120_000);
+  const { viewport } = devices["Pixel 7"];
+  // Alice's own page at a Pixel 7's size (a second sign-in as her stalls).
+  const before = alice.viewportSize()!;
+  await alice.setViewportSize(viewport);
+  const phone = alice;
+  // The seeding is control's page's (the platform page has no test handle).
+  await home(alice);
+  await expect.poll(() => alice.evaluate(() => window.__arugula.chat.on), { timeout: 15_000 }).toBe(true);
+  const ids = await alice.evaluate(async (tm) => {
+    const c = window.__arugula.chat;
+    const general = c.rooms.find((r) => r.name === "general")!.id;
+    const random = (await c.newChannel(tm, "random")).id;
+    const parent = (await c.post(general, "a thread starts here")).seq;
+    await c.reply(general, parent, "and goes on", false);
+    return { general, random, parent };
+  }, team);
+  const path = () => new URL(phone.url()).pathname;
+  const room = (id: string) => new RegExp(`/chat/${id}-[a-z]+$`);
+  await platform(phone, "/chat");
+  await phone.locator(`[data-chat-room="${ids.general}"]`).click();
+  await expect.poll(path).toMatch(room(ids.general));
+  // Sideways, to the other room and back: each replaces the room's entry, it adds none.
+  // (The phone shows no list beside a room, so the rooms are clicked at a desktop's width.)
+  await phone.setViewportSize(before);
+  await phone.locator(`[data-chat-room="${ids.random}"]`).click();
+  await expect.poll(path).toMatch(room(ids.random));
+  await phone.locator(`[data-chat-room="${ids.general}"]`).click();
+  await expect.poll(path).toMatch(room(ids.general));
+  await phone.setViewportSize(viewport);
+  // Down: its thread pushes.
+  await phone.locator(`[data-thread-footer="${ids.parent}"]`).click();
+  await expect(phone).toHaveURL(new RegExp(`/chat/${ids.general}-general\\?.*thread=${ids.parent}`));
+  const threadUrl = phone.url();
+  await phone.goBack();
+  await expect.poll(path).toMatch(room(ids.general));
+  await phone.goBack();
+  await expect.poll(path).toMatch(/\/chat$/);
+  await phone.screenshot({ path: "/tmp/claude-arugula-817/list.png" });
+
+  // A thread opened cold (a notification): the room and the list are put under it.
+  await phone.goto(threadUrl);
+  await expect(phone.getByText("and goes on")).toBeVisible({ timeout: 15_000 });
+  await phone.goBack();
+  await expect.poll(path).toMatch(room(ids.general));
+  await expect.poll(() => new URL(phone.url()).search).toBe("");
+  await phone.goBack();
+  await expect.poll(path).toMatch(/\/chat$/);
+  await phone.setViewportSize(before);
+});
+
+test("Settings is one page across both origins: each index links to the other's sections", async () => {
+  await t.addMachine(alice, "settingsbox");
+  await home(alice);
+  await show(alice, "settingsbox");
+  await alice.bringToFront();
+  // The machine menu has one row to the page, not the rows themselves.
+  await alice.getByTitle("Hosts").click();
+  await expect(alice.getByRole("menuitem", { name: "Developer settings…" })).toHaveCount(0);
+  await alice.getByRole("menuitem", { name: "Machine settings…" }).click();
+  await expect(alice).toHaveURL(/#settings=machine$/);
+  await closeSettingsPage(alice);
+  // The user menu is who you are: Settings goes to the page.
+  await alice.locator("[data-account-menu]").first().click();
+  await expect(alice.getByRole("menuitem", { name: "Appearance…" })).toHaveCount(0);
+  await expect(alice.getByRole("menuitem", { name: "Teams…" })).toBeVisible();
+  await alice.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  const shell = alice.locator("[data-settings-page]");
+  await expect(shell.locator('[data-settings-section="account"]').getByRole("button", { name: "Teams…" })).toBeVisible();
+  await expect(shell.locator("[data-settings-index-elsewhere] a, [data-settings-elsewhere] a").filter({ hasText: "Your agent tokens" }).first()).toHaveAttribute("href", `${app}/settings#tokens`);
+  await closeSettingsPage(alice);
+
+  // And back the other way, from `/settings`.
+  const page = await alice.context().newPage();
+  await page.goto(`${app}/settings`);
+  await expect(page.locator("section[data-platform-settings]")).toBeVisible({ timeout: 15_000 });
+  const links = page.locator("[data-settings-index-elsewhere] a, [data-settings-elsewhere] a").filter({ hasText: "This device" }).first();
+  await expect(links).toHaveAttribute("href", /\/#settings=device$/);
+  await page.close();
 });
 
 test("the account menu's Plan and usage opens the platform page, which draws it", async () => {

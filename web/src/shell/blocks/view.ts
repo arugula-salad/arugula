@@ -17,11 +17,9 @@ export interface BlockView {
   text(): string;
   focus(): void;
   dispose(): void;
-  /** Its place in the layout is `cols`×`rows` cells (#17: a remote pane
-   * passes it on to its host). */
+  /** Its place in the layout is `cols`×`rows` cells. */
   layout?(cols: number, rows: number): void;
-  /** It's being closed here: close what it stands for (#17: the pane on
-   * its host). */
+  /** It's being closed here: close what it stands for. */
   closing?(): void;
 }
 

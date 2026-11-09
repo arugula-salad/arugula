@@ -64,6 +64,9 @@ const STABLE_MS = 10_000;
 const PROBE_MS = 10_000;
 /** ...and drop a link whose probe is unanswered this long. */
 const LAG_MS = 30_000;
+/** How long the terminals loading behind the shown tab wait for a snapshot
+ * that may never come (a pane this person may not read sends none). */
+const SNAPSHOT_WAIT_MS = 1000;
 /** The probe's timings; a test sets `window.__arugulaLag` to shorten them. */
 function lagTimes() {
   const o = (globalThis as { __arugulaLag?: { probeMs: number; lagMs: number } }).__arugulaLag;
@@ -230,9 +233,8 @@ const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
    * page came from. Another daemon must list this page's origin as
-   * allowed (`--allow-origin`). A path (`/h/box`) is a dial-out host,
-   * reached through this page's own daemon. `e2e:<id>` with a target: a
-   * daemon reached through Arugula control. */
+   * allowed (`--allow-origin`). `e2e:<id>` with a target: a daemon reached
+   * through Arugula control. */
   constructor(
     readonly base = "",
     readonly e2e?: E2ETarget,
@@ -248,28 +250,6 @@ export class Client {
 
   /** How an end-to-end client is connected, for the host chip. */
   path: "direct" | "relayed" | null = null;
-
-  /** #17: a connection for another layout's remote panes: only these
-   * terminals are drawn and attached (`null`: every pane, as usual). */
-  only: Set<PaneId> | null = null;
-
-  /** #17: draw and attach `pane` too. */
-  want(pane: PaneId) {
-    this.only ??= new Set();
-    if (this.only.has(pane)) return;
-    this.only.add(pane);
-    if (this.connected && this.state) this.applyState(this.state, false);
-  }
-
-  /** #17: stop drawing `pane`. */
-  unwant(pane: PaneId) {
-    if (!this.only?.delete(pane)) return;
-    const entry = this.panes.get(pane);
-    if (entry) {
-      entry.view.dispose();
-      this.panes.delete(pane);
-    }
-  }
 
   /** M30: the daemon said this person's access was removed. */
   revoked = false;
@@ -490,6 +470,7 @@ export class Client {
 
   emit() {
     this.notePlace();
+    this.attachShown();
     for (const fn of this.listeners) fn();
   }
 
@@ -981,6 +962,12 @@ export class Client {
     return this.api("/api/attention/act", req, "couldn't do that");
   }
 
+  /** Take a machine-level notice away (#551): the owner opened or dismissed
+   * it. Every client sees it go. */
+  dismissNotice(key: string) {
+    this.send({ type: "dismiss_notice", key });
+  }
+
   paneOp(pane: PaneId, op: PaneOp) {
     this.send({ type: "pane", pane, op });
   }
@@ -1116,8 +1103,8 @@ export class Client {
   private closed = false;
   private asleep = false;
 
-  /** Let go of the connection while nobody is looking (a sandbox host:
-   * an open connection keeps it awake); `wake` reconnects. */
+  /** Let go of the connection until `wake`: nothing is sent or received
+   * meanwhile (a test freezes a layout against live deltas with it). */
   sleep() {
     if (this.closed || !this.link) return;
     this.asleep = true;
@@ -1244,6 +1231,8 @@ export class Client {
         // #713: a new link starts its probing afresh.
         this.probe = null;
         this.probedAt = this.helloAt;
+        this.loadingBehind.clear();
+        this.snapshotsDue.clear();
         if (this.summary) this.send({ type: "subscribe", summary: true });
         // #713: agent blocks' states as what changed, and (#739) only for
         // the ones the tab we view shows. A daemon from before ignores this
@@ -1360,6 +1349,7 @@ export class Client {
       panes: [...byId.values()].sort((a, b) => a.id - b.id),
       machines: d.machines ?? old.machines,
       presence: d.presence ?? old.presence,
+      notices: d.notices ?? old.notices,
     };
     if (added || d.gone?.length) return this.applyState(state, false);
     this.state = state;
@@ -1380,7 +1370,7 @@ export class Client {
     const created: PaneId[] = [];
     const live = new Set(state.panes.map((p) => p.id));
     for (const [id, entry] of this.panes) {
-      if (!live.has(id) || (this.only && !this.only.has(id))) {
+      if (!live.has(id)) {
         entry.view.dispose();
         this.panes.delete(id);
       }
@@ -1392,7 +1382,6 @@ export class Client {
       }
     }
     for (const info of state.panes) {
-      if (this.only && !this.only.has(info.id)) continue;
       if (info.type !== "terminal") {
         if (!this.blocks.has(info.id)) {
           const view = makeBlockView(info.type, this, info.id);
@@ -1428,7 +1417,7 @@ export class Client {
     this.fixSelection();
     this.applyFollow();
     // Show what we just made: a split's new pane, a new tab or session.
-    if (created.length && !this.only && Date.now() - this.lastMadeAt < 3000) {
+    if (created.length && Date.now() - this.lastMadeAt < 3000) {
       const tab = this.tabOfPane(created[0]);
       if (tab) {
         this.session = this.sessionOfTab(tab.id) ?? this.session;
@@ -1436,8 +1425,73 @@ export class Client {
         this.activePane.set(tab.id, created[0]);
       }
     }
-    if (attach.length) this.attach(attach);
+    // A new connection's history comes for the tab on screen first; the
+    // other terminals load behind it, or as soon as they're shown.
+    const later = reconnect ? attach.filter((a) => a.offset === null && !this.isShown(a.pane)) : [];
+    const now = attach.filter((a) => !later.includes(a));
+    for (const a of now) this.loadingBehind.delete(a.pane);
+    for (const a of later) this.loadingBehind.add(a.pane);
+    if (now.length) this.attachFirst(now);
+    this.loadNextBehind();
     this.emit();
+  }
+
+  // ---- terminals loading behind the shown tab
+
+  /** Terminals not asked for yet: each snapshot is written on this thread,
+   * without yielding unless it's in pieces, so asked for at once they hold up
+   * the page and the tab on screen waits its turn. */
+  private loadingBehind = new Set<PaneId>();
+  /** Snapshots asked for and not yet written: the next waits for these. */
+  private snapshotsDue = new Set<PaneId>();
+  private snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+  private nextBehindQueued = false;
+
+  private isShown(pane: PaneId): boolean {
+    return this.tab !== null && this.tabOfPane(pane)?.id === this.tab;
+  }
+
+  /** Ask for panes, counting those that bring a snapshot. */
+  private attachFirst(panes: AttachPane[]) {
+    const due = panes.filter((a) => a.offset === null).map((a) => a.pane);
+    for (const pane of due) this.snapshotsDue.add(pane);
+    if (due.length) {
+      clearTimeout(this.snapshotTimer);
+      this.snapshotTimer = setTimeout(() => {
+        this.snapshotsDue.clear();
+        this.loadNextBehind();
+      }, SNAPSHOT_WAIT_MS);
+    }
+    this.attach(panes);
+  }
+
+  /** A tab just shown doesn't wait its turn. */
+  private attachShown() {
+    if (!this.loadingBehind.size || !this.connected) return;
+    const shown = [...this.loadingBehind].filter((pane) => this.isShown(pane));
+    for (const pane of shown) this.loadingBehind.delete(pane);
+    if (shown.length) this.attachFirst(shown.map((pane) => ({ pane, offset: null })));
+  }
+
+  /** One more terminal, when the last is written and the page is idle. */
+  private loadNextBehind() {
+    if (this.nextBehindQueued || this.snapshotsDue.size || !this.loadingBehind.size) return;
+    this.nextBehindQueued = true;
+    whenIdle(() => {
+      this.nextBehindQueued = false;
+      if (!this.connected || this.closed || this.snapshotsDue.size) return;
+      const [pane] = this.loadingBehind;
+      if (pane === undefined) return;
+      this.loadingBehind.delete(pane);
+      if (this.panes.has(pane)) this.attachFirst([{ pane, offset: null }]);
+      else this.loadNextBehind();
+    });
+  }
+
+  private snapshotWritten(pane: PaneId) {
+    if (!this.snapshotsDue.delete(pane) || this.snapshotsDue.size) return;
+    clearTimeout(this.snapshotTimer);
+    this.loadNextBehind();
   }
 
   /** What a link in terminal output opens as: a PR or an issue block, or
@@ -1541,7 +1595,11 @@ export class Client {
       if (p.resync) p.view.skipGap();
       else p.view.reset();
       p.resync = false;
-      p.view.write(data);
+      const written = () => this.snapshotWritten(f.pane);
+      // Whole where it shows, or the page would scroll through it; in
+      // pieces behind, so the page stays responsive.
+      if (this.isShown(f.pane)) p.view.write(data, written);
+      else p.view.writeInPieces(data, written);
       p.offset = f.offset;
       // A snapshot isn't stream bytes: the daemon counts from its offset.
       p.acked = f.offset;
@@ -1564,6 +1622,13 @@ export class Client {
     p.view.write(data, () => this.drew(f.pane, p, end));
     p.offset = end;
   }
+}
+
+/** Run `fn` when the page has nothing better to do (Safari has only lately
+ * had `requestIdleCallback`). */
+function whenIdle(fn: () => void) {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 250 });
+  else setTimeout(fn, 16);
 }
 
 export function paneIds(tab: TabView): PaneId[] {

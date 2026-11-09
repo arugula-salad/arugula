@@ -52,7 +52,6 @@ listed is at the end.
 | `ARUGULA_PLATFORM_KEY` | the platform; Infisical `/illogical/control` | Operator |
 | `POSTHOG_API_KEY` (a public project key) | the platform | Operator |
 | `ARUGULA_PLATFORM`, `ARUGULA_PLATFORM_HOST`, `ARUGULA_PREVIEW_DOMAIN` (*config*) | | Operator |
-| `ARUGULA_PRESENCE_APP`, `ARUGULA_PRESENCE_RELAY` (*config*; People blocks: app `app_925b5637da9b20ce`, "Arugula People") | the platform | Operator. The hub uses them for its CSP alone |
 | The hub database's `settings`: VAPID key pair, hosted-machine signing key | Litestream only | Operator. M228's issuer keys will sit beside them; no escrow today |
 
 Unset from the hub on 2026-10-24 with the platform's old copies (Arugula #71):
@@ -75,7 +74,6 @@ their token, passkeys and devices keep public keys. They stay the hub's.
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG` (*config*), `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET` | the hub; Infisical (the key only) | Operator |
 | `ARUGULA_RUN_LOGS_ACCESS_KEY_ID`, `ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY` | Infisical `/illogical/run-logs` | Operator |
 | `ARUGULA_RUN_LOGS_BUCKET`, `ARUGULA_RUN_LOGS_ENDPOINT` (*config*) | | Operator |
-| `ARUGULA_PRESENCE_SECRET` (People blocks: the arugula.stream app's server secret, which signs room tokens), `ARUGULA_PRESENCE_APP`, `ARUGULA_PRESENCE_RELAY` (*config*) | Infisical `/illogical/control` | Operator. arugula.stream shows a secret once: `rotate_secret` makes a new one |
 | `ARUGULA_E2B_API_KEY` | Infisical `/illogical/control` (and `E2B_API_KEY` there) | Operator |
 | `PLANTER_APP_ID`, `PLANTER_APP_SLUG` (*config*), `PLANTER_APP_PRIVATE_KEY` (M233: planter's App, the deploy App; **not set yet**) | Infisical project `planter` (as planter's `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`) | Operator. Mints planter's drivers' tokens; planter's own copy goes with planter (M234) |
 | `POSTHOG_API_KEY` | the hub | Operator |
@@ -110,10 +108,10 @@ GitHub Actions on `arugula-salad/arugula`:
 | --- | --- | --- | --- |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_PROVISIONING_PROFILE` (D2: the Developer ID provisioning profile, base64; not secret, kept beside the others) | `app-release.yml` | Infisical `/illogical/release`; the certificate's files on the workstation | Operator |
 | `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `app-release.yml` | Infisical `/illogical/release` (with `TAURI_UPDATER_PUBKEY`, public) | Operator |
-| `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `release.yml` | none; Fly mints new ones | Operator |
+| `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `server-release.yml` | none; Fly mints new ones | Operator |
 | `E2B_API_KEY` | `release.yml` (the hosted template) | Infisical | Operator |
 | `HOMEBREW_TAP_KEY` | `release.yml` | none | Operator |
-| `CI_GREEN_TOKEN` | `app-release.yml`, `chant-ci-green.yml` | none | Operator |
+| `CI_GREEN_TOKEN` | `app-release.yml`, `auto-revert.yml`, `chant-ci-green.yml`, `server-release.yml` (pushes `chant/lifecycle`) | none | Operator |
 | `SCCACHE_WEBDAV_PASSWORD` | `check.yml`, `testnet-break.yml` | none | Operator |
 | `ARUGULA_GH_APP_PRIVATE_KEY` (the forge-test App) | `forges-nightly.yml` | Infisical `/illogical/forge-tests` (with `ARUGULA_GH_APP_ID`) | Operator |
 | `ARUGULA_GH_AUTHOR_TOKEN`, `ARUGULA_GH_REVIEWER_TOKEN` (the test bots') | `forges-nightly.yml` | none | Operator |
@@ -335,7 +333,7 @@ Copies in Jake's `~/.config`, each `0600`:
 
 - **Org-level Actions secrets and variables**: listing them needs a token
   with `admin:org`, which the agent's doesn't have. Workflows here read
-  `ARUGULA_RELEASE_SKIP_GREEN`, `ARUGULA_HUB_DEPLOY`, `ARUGULA_RED_MENTION`
+  `ARUGULA_RELEASE_SKIP_GREEN`, `ARUGULA_RED_MENTION`
   and `ARUGULA_RED_HOURS` as variables that no repo sets, so they may be
   there.
 - **Infisical `redone`**: not visible to Jake's account; its names above

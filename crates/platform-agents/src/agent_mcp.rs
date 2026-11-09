@@ -238,6 +238,28 @@ fn failed(why: impl Into<String>) -> Failure {
     Failure::Failed(why.into())
 }
 
+/// `a` with an argument's old name read as its new one (Arugula #668):
+/// both with the same value is one; with different values it's refused.
+fn old_name(a: &Value, old: &str, new: &str) -> Result<Value, Failure> {
+    let mut a = a.clone();
+    if let Some(o) = a.as_object_mut()
+        && let Some(v) = o.remove(old)
+    {
+        match o.get(new) {
+            None | Some(Value::Null) => {
+                o.insert(new.to_owned(), v);
+            }
+            Some(have) if *have == v || v.is_null() => {}
+            Some(_) => {
+                return Err(failed(format!(
+                    "start_run takes {new} ({old} is its old name), and both were given with different values: give one"
+                )));
+            }
+        }
+    }
+    Ok(a)
+}
+
 fn args<T: DeserializeOwned>(a: &Value) -> Result<T, Failure> {
     serde_json::from_value(a.clone()).map_err(|e| failed(format!("bad arguments: {e}")))
 }
@@ -324,7 +346,7 @@ impl Agent {
                 "Arugula's platform, for an agent with no machine of its own: you act as {}'s agent, labelled \
                  \"{}\", in the projects and with the powers their token gives you (capabilities says which). \
                  Native issues and their threads (issue_write, forge_read, read_thread, post_thread), runs on a \
-                 project's hosted boxes (start_run, read_run, wait), deploys (plan_deploy plans one and asks the \
+                 project's Cloud workspaces (start_run, read_run, wait), deploys (plan_deploy plans one and asks the \
                  project's owners to approve it; read_deploy follows it) and project secrets (set_secret, \
                  write-only). You never approve anything: an owner approves a deploy on their phone or in a \
                  browser.{}",
@@ -401,7 +423,7 @@ impl Agent {
             "search_threads" => self.search_threads(args(a)?).await,
             "issue_write" => self.issue_write(a).await,
             "forge_read" => self.forge_read(a).await,
-            "start_run" => self.start_run(args(a)?).await,
+            "start_run" => self.start_run(args(&old_name(a, "box", "cloud_workspace")?)?).await,
             "read_run" => self.read_run(args(a)?).await,
             "wait" => self.wait(args(a)?).await,
             "plan_deploy" => self.plan_deploy(args(a)?).await,
@@ -758,7 +780,7 @@ impl Agent {
         self.app.limits.check_account(ACCOUNT_RUN_STARTS, &self.token.account)?;
         let b = AgentRunStart {
             spec: a.spec,
-            workspace: a.on_box,
+            workspace: a.cloud_workspace,
             argv: a.command,
             instruction: a.instruction,
             agent: a.recipe,
@@ -1142,8 +1164,9 @@ struct StartRun {
     recipe: Option<String>,
     #[serde(default)]
     directory: Option<String>,
-    #[serde(default, rename = "box")]
-    on_box: Option<String>,
+    /// Was `box` (Arugula #668); both names, as the daemon's start_run.
+    #[serde(default, alias = "box")]
+    cloud_workspace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1318,18 +1341,18 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "start_run",
-            "Start a run on one of a project's hosted boxes: a run spec by name (runs.start), or a command or an \
-             instruction to an agent of your own (runs.command). It's recorded as your owner's, started by their \
-             agent, under the project's standing grant (without one it waits for an owner). Returns the run \
-             (run_…), pending.",
+            "Start a project run on one of its Cloud workspaces (not a command in a pane: that's a machine's run): \
+             a run spec by name (runs.start), or a command or an instruction to an agent of your own \
+             (runs.command). It's recorded as your owner's, started by their agent, under the project's standing \
+             grant (without one it waits for an owner). Returns the run (run_…), pending.",
             json!({
                 "project": prop("string", PROJECT),
                 "spec": prop("string", "A run spec of the project, by its name or id."),
                 "command": strings("Or a command: the program and its arguments, not through a shell."),
                 "instruction": prop("string", "Or an instruction to an agent (Claude Code, headless)."),
                 "recipe": prop("string", "With instruction: the agent recipe to run it as."),
-                "directory": prop("string", "An absolute directory on the box (default its home)."),
-                "box": prop("string", "Which of the project's hosted boxes: its name or id (hw_…)."),
+                "directory": prop("string", "An absolute directory on its machine (default its home)."),
+                "cloud_workspace": prop("string", "Which of the project's Cloud workspaces: its name or id (hw_…)."),
             }),
             &[],
             false,

@@ -3,12 +3,18 @@
 //! leaves it, and any block can open it again.
 //!
 //! - `<id>` is 16 lower-case hex digits, random. Nothing else is an id.
-//! - `meta.json`: `{id, title, made, updated, by}`. `by` is the `mcp:` agent
-//!   or the person's driver name that made it, or `migrated`. `updated`
-//!   moves on an outline, a fill and an asset.
+//! - `meta.json`: `{id, title, made, updated, by, shape}`. `by` is the `mcp:`
+//!   agent or the person's driver name that made it, or `migrated`. `updated`
+//!   moves on an outline, a fill and an asset, and `shape` ([`super::shape`],
+//!   what its row in the list shows) is worked out again then. A Doc from
+//!   before `shape` gets one the first time it's listed. `platform`, once
+//!   the Doc was copied up (#418, [`super::copies`]): where its copy is,
+//!   forgotten when the machine leaves control ([`forget_platform`]).
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
-//! Nothing here prunes: a Doc stays until the owner deletes it.
+//! Nothing here prunes: a Doc stays until the owner deletes it, and its
+//! copy on the platform goes with it ([`remove`], a tombstone in
+//! [`GONE`] until it's down).
 //!
 //! **The migration** ([`migrate`]) moves the Docs of the old layout, where a
 //! Doc's files were in its block's folder (`blocks/<id>/doc/`, or
@@ -21,8 +27,9 @@
 //! marker `docs/.migrated-1` says it is done.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use arugula_core::PaneId;
@@ -31,6 +38,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::shape::{self, Shape};
 use crate::store::{now_ms, private_dir, write_atomic};
 
 /// The library's folder, in the state directory.
@@ -51,7 +59,27 @@ pub struct Meta {
     pub made: u64,
     pub updated: u64,
     pub by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<OnPlatform>,
 }
+
+/// Where a Doc's copy on the platform is (#418), as its last put was
+/// answered, and the pictures it has: each one's `rev` here when it was put.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnPlatform {
+    pub project: String,
+    pub id: String,
+    pub link: String,
+    pub rev: u64,
+    #[serde(default)]
+    pub assets: BTreeMap<String, u64>,
+}
+
+/// Held while `meta.json` is read and written again: a change and a copy's
+/// answer each write their part of it.
+static META_LOCK: Mutex<()> = Mutex::new(());
 
 /// Whether `id` is what a Doc is called: 16 lower-case hex digits.
 pub fn is_id(id: &str) -> bool {
@@ -82,11 +110,20 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
         }
         private_dir(&dir).map_err(|e| format!("can't make the Doc's folder: {e}"))?;
         let now = now_ms();
-        let meta = Meta { id, title: title.trim().to_owned(), made: now, updated: now, by: by.to_owned() };
+        let meta = Meta {
+            id,
+            title: title.trim().to_owned(),
+            made: now,
+            updated: now,
+            by: by.to_owned(),
+            shape: Some(Shape::default()),
+            platform: None,
+        };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(e);
         }
+        super::copies::changed(&meta.id);
         return Ok(meta);
     }
     Err("can't find a free Doc id".into())
@@ -106,29 +143,116 @@ pub fn read_meta(dir: &Path) -> Option<Meta> {
 /// The Doc changed: `updated` moves (and the title, if it was set). A folder
 /// with no `meta.json` is left alone.
 pub fn touch(dir: &Path, title: Option<&str>) {
+    let _held = META_LOCK.lock().unwrap();
     let Some(mut meta) = read_meta(dir) else { return };
     meta.updated = now_ms().max(meta.updated);
     if let Some(t) = title {
         meta.title = t.trim().to_owned();
     }
+    meta.shape = Some(shape::of(dir));
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't update a Doc's meta.json");
     }
+    super::copies::changed(&meta.id);
+}
+
+/// Where the Doc's copy on the platform is now.
+pub fn set_platform(dir: &Path, on: OnPlatform) {
+    let _held = META_LOCK.lock().unwrap();
+    let Some(mut meta) = read_meta(dir) else { return };
+    if meta.platform.as_ref() == Some(&on) {
+        return;
+    }
+    meta.platform = Some(on);
+    if let Err(e) = write_meta(dir, &meta) {
+        warn!(doc = meta.id, error = e, "can't keep where a Doc's copy is");
+    }
+    super::moved(&meta.id, true);
+}
+
+/// This machine left control: where each Doc's copy was no longer holds
+/// (the next control it joins puts them again, and notes where).
+pub fn forget_platform(state_dir: &Path) {
+    let _held = META_LOCK.lock().unwrap();
+    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return };
+    for dir in entries.flatten().map(|e| e.path()) {
+        let Some(mut meta) = read_meta(&dir) else { continue };
+        if meta.platform.take().is_some()
+            && let Err(e) = write_meta(&dir, &meta)
+        {
+            warn!(doc = meta.id, error = e, "can't forget where a Doc's copy was");
+        }
+        super::moved(&meta.id, false);
+    }
+}
+
+/// The Doc's `meta.json`, with a shape: one from before `shape` gets it now.
+fn read_shaped(dir: &Path) -> Option<Meta> {
+    let meta = read_meta(dir)?;
+    if meta.shape.is_none() {
+        let _held = META_LOCK.lock().unwrap();
+        let mut meta = read_meta(dir)?;
+        if meta.shape.is_some() {
+            return Some(meta);
+        }
+        meta.shape = Some(shape::of(dir));
+        if let Err(e) = write_meta(dir, &meta) {
+            warn!(doc = meta.id, error = e, "can't keep a Doc's shape");
+        }
+        return Some(meta);
+    }
+    Some(meta)
 }
 
 /// Every Doc in the library, newest `updated` first. A folder without a
 /// `meta.json` of its own is left out (and left alone).
 pub fn list(state_dir: &Path) -> Vec<Meta> {
     let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
-    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_meta(&e.path())).collect();
+    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_shaped(&e.path())).collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated).then(b.made.cmp(&a.made)).then(a.id.cmp(&b.id)));
     out
 }
 
-/// The Doc, gone from disk.
+/// In the library: a file per deleted Doc, by id, until its copy on the
+/// platform is down ([`super::copies`]); its content counts the refusals.
+pub const GONE: &str = ".gone";
+
+/// Where the tombstones are.
+pub fn gone_dir(state_dir: &Path) -> PathBuf {
+    root(state_dir).join(GONE)
+}
+
+/// The Doc, gone from disk: its tombstone first, so a removal that fails
+/// partway still takes the copy down, then its folder, and its copy on the
+/// platform follows ([`super::copies::removed`]). A removal that fails
+/// before the Doc's files went takes the tombstone back: the Doc lives,
+/// and keeps its copy.
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"))
+    let gone = gone_dir(state_dir);
+    private_dir(&gone)
+        .and_then(|()| write_atomic(&gone.join(id), b"0"))
+        .map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
+    let removed = std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"));
+    if removed.is_err() && read_meta(&dir).is_some() {
+        let _ = std::fs::remove_file(gone.join(id));
+        return removed;
+    }
+    super::copies::removed(id);
+    removed
+}
+
+/// The Doc's `meta.json`, or `None` when it's gone for sure (no such
+/// file); one that can't be read or doesn't parse is an error, never an
+/// absence.
+pub fn read_meta_or_gone(dir: &Path) -> Result<Option<Meta>, String> {
+    let bytes = match std::fs::read(dir.join(META)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("can't read the Doc's meta.json: {e}")),
+    };
+    let meta: Meta = serde_json::from_slice(&bytes).map_err(|e| format!("the Doc's meta.json doesn't parse: {e}"))?;
+    Ok(Some(meta))
 }
 
 /// Lines of every Doc in the library matching `re` (a Doc that no block shows
@@ -159,7 +283,6 @@ pub fn search(
                 offset: n as u64,
                 line: line.to_owned(),
                 command: None,
-                host: None,
                 doc: Some(meta.id.clone()),
                 at_ms: Some(meta.updated),
             });
@@ -325,7 +448,18 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
         .filter(|t| !t.trim().is_empty())
         .or_else(|| layout_title.map(str::to_owned).filter(|t| !t.trim().is_empty()))
         .unwrap_or_else(|| "Untitled".to_owned());
-    write_meta(&to, &Meta { id: id.clone(), title, made, updated, by: "migrated".into() })?;
+    write_meta(
+        &to,
+        &Meta {
+            id: id.clone(),
+            title,
+            made,
+            updated,
+            by: "migrated".into(),
+            shape: Some(shape::of(&to)),
+            platform: None,
+        },
+    )?;
     Ok(id)
 }
 
@@ -498,7 +632,25 @@ mod tests {
         assert_eq!(read_meta(&dir(&state, &a.id).unwrap()), Some(a.clone()));
         // `updated` moves; the newest is first.
         std::thread::sleep(std::time::Duration::from_millis(5));
-        touch(&dir(&state, &a.id).unwrap(), Some("Renamed"));
+        let a_dir = dir(&state, &a.id).unwrap();
+        std::fs::write(a_dir.join("doc.json"), r#"{"title":"T","sections":[{"id":"s1","heading":"One"}]}"#).unwrap();
+        std::fs::write(a_dir.join("s1.md"), "Three plain words").unwrap();
+        touch(&a_dir, Some("Renamed"));
+        let shape = read_meta(&a_dir).unwrap().shape.unwrap();
+        assert_eq!(
+            (shape.summary.as_str(), shape.sections[0].words),
+            ("Three plain words", 3),
+            "a fill changes its row"
+        );
+        // A Doc from before `shape` gets one when it's listed, and keeps
+        // when it last changed.
+        let mut old = read_meta(&a_dir).unwrap();
+        old.shape = None;
+        write_meta(&a_dir, &old).unwrap();
+        assert!(!std::fs::read_to_string(a_dir.join("meta.json")).unwrap().contains("shape"));
+        let listed = list(&state).into_iter().find(|m| m.id == a.id).unwrap();
+        assert_eq!((listed.updated, listed.shape.unwrap().summary.as_str()), (old.updated, "Three plain words"));
+        assert!(read_meta(&a_dir).unwrap().shape.is_some(), "and it's kept");
         let ids: Vec<_> = list(&state).into_iter().map(|m| (m.id, m.title)).collect();
         assert_eq!(ids, [(a.id.clone(), "Renamed".into()), (b.id, "A title".into())]);
         // A folder with no meta.json of its own is left out and left alone.

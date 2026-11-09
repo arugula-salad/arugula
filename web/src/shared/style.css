@@ -1,3 +1,7 @@
+/* The block states (shared/ui/block-states.tsx) are drawn by the Doc
+   renderer too, so their styles ride in the app's stylesheet. */
+@import "./ui/block-states.css";
+
 :root {
   --bg: #1e1e2e;
   --fg: #cdd6f4;
@@ -15,6 +19,18 @@
   --line: var(--raised);
   --line-strong: color-mix(in srgb, var(--muted) 55%, var(--surface));
   --divider: var(--line);
+  /* The selected row (#756), the same on every shape: this tint (mixed over
+     transparent, so it sits on a page, a sidebar or a sheet alike), a 3px
+     accent bar and a 1px accent edge, both drawn inset so a row never moves.
+     `--selected-edge` is the box-shadow for a row with its own radius; a
+     flat row's bar is its ::before. */
+  --selected: color-mix(in srgb, var(--accent) 14%, transparent);
+  --selected-edge: inset 0 0 0 1px var(--accent);
+  --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
+  /* A place to drop on (#696): the dashed edge and the tint, the same on
+     every target (see `.drop-target`). */
+  --drop-edge: var(--accent);
+  --drop-fill: color-mix(in srgb, var(--accent) 10%, transparent);
   /* The rest of the palette (appearance.ts sets them all for the one
      picked): status colors, and text on a colored fill. */
   --ok: #a6e3a1;
@@ -27,10 +43,10 @@
   --muted: #585b70;
   --subtle: #a6adc8;
   --on-color: #11111b;
-  /* The shared mono stack (shared/fonts.css's "Arugula Mono"), for code and
+  /* One mono, `--f-mono` (shared/fonts.css's "Arugula Mono"), for code and
      ids outside a terminal; terminals keep their own (terminal-view.ts).
-     UI audit #152: var(--mono) was used but never defined. */
-  --mono: "Arugula Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+     `--mono` is the old name: an alias for one release, then it goes. */
+  --mono: var(--f-mono);
   /* The swarm's faces (shared/fonts.css): the swarm and the platform page
      are set in them, and control's own pages take their display face for
      a page's title (UI audit #198: once, here). */
@@ -46,6 +62,9 @@
   --shadow-sm: 0 2px 8px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
   --shadow-md: 0 6px 24px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
   --shadow-lg: 0 12px 40px rgb(0 0 0 / calc(0.6 * var(--shadow-k)));
+  /* What dims the page under a dialog, a picker, a menu sheet or a side
+     sheet (#690, #733): one value, in both schemes. Glass sets its own. */
+  --backdrop: rgb(0 0 0 / 0.4);
   /* The spacing scale (UI audit #180): padding, margin and gap in 4px
      steps. */
   --space-1: 4px;
@@ -54,6 +73,42 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  /* The icon scale (#691): beside text of 11 to 12px, 12 to 13px, 13 to 15px,
+     and the rail or a page header. `Svg` (shared/ui/icons.tsx) sets the size. */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
+  /* The type scale (#687): seven sizes, each with its line-height. 11 is a
+     caps label, a chip, an id or a time; 12 is meta and a button; 13 is
+     what you read; 15 is a title; 19 is a section's h2 and a stat; 32 is a
+     page's h1; 38 is the Doc's title. Components name a step, never a
+     number (scripts/check-type.mjs). */
+  --text-xs: 11px;
+  --lh-xs: 16px;
+  --text-sm: 12px;
+  --lh-sm: 16px;
+  --text-md: 13px;
+  --lh-md: 18px;
+  --text-lg: 15px;
+  --lh-lg: 20px;
+  --text-xl: 19px;
+  --lh-xl: 1.05;
+  --text-2xl: 32px;
+  --lh-2xl: 0.95;
+  --text-doc: 38px;
+  --lh-doc: 1.02;
+  --lh-prose: 1.45;
+  /* The two sizes that change with the device (below): body text is 15 on
+     touch, and a field is 16, because iOS zooms the page into a field
+     under 16px. */
+  --t-body: var(--text-md);
+  --t-field: var(--text-md);
+  /* Letter-spacing is four values: none, a display face's in caps, a section
+     h2's in the case it was written in, a caps label's. */
+  --track-display: 0.01em;
+  --track-section: 0.02em;
+  --track-caps: 0.08em;
   --bar-h: env(titlebar-area-height, 36px);
   --app-height: 100dvh;
   color-scheme: dark;
@@ -63,13 +118,20 @@ html[data-scheme="light"] {
   --shadow-k: 0.35;
 }
 
+@media (pointer: coarse), (max-width: 600px) {
+  :root {
+    --t-body: var(--text-lg);
+    --t-field: 16px; /* off-scale: iOS zooms into a field under 16px */
+  }
+}
+
 html,
 body {
   margin: 0;
   height: 100%;
   background: var(--letterbox);
   color: var(--fg);
-  font: 13px/1.3 system-ui, sans-serif;
+  font: var(--t-body)/1.3 var(--f-ui);
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -175,7 +237,47 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .caret {
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--text-xs);
+}
+
+/* A chevron beside text sits on the text's line, as the glyph did. */
+.caret .icon,
+.pt-caret .icon,
+.chat-caret .icon,
+.menu-chevron .icon,
+.fold .icon,
+.host-caret .icon,
+.thread-agents-sum .icon {
+  vertical-align: -2px;
+}
+
+/* An icon-only button's icon is a box, not a glyph on the text's baseline: it
+   fills the button's line, so the button is its padding and the icon. */
+.icon-btn > .icon:only-child {
+  display: block;
+  margin-inline: auto;
+}
+
+.icon-xs {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+  vertical-align: -2px; /* beside text of its size, as the glyph was */
+}
+
+.icon-sm {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  vertical-align: -3px;
+}
+
+.icon-md {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+.icon-lg {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
 }
 
 .tabbar {
@@ -216,17 +318,25 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
-.tab-close {
+/* The selected tab keeps room for its close button; the button is laid
+   over it from tab-strip.tsx, 24 by 24 so it can be hit. */
+.tab.closable::after {
+  content: "";
+  flex: none;
   width: 20px;
-  height: 20px;
-  border-radius: var(--tag-radius);
-  opacity: 0;
-  line-height: 1;
 }
 
-.tab:hover .tab-close,
-.tab.selected .tab-close {
+.tabstrip {
+  position: relative;
+}
+
+.tab-close {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--tag-radius);
   opacity: 0.7;
+  line-height: 1;
 }
 
 .tab-close:hover {
@@ -237,7 +347,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .new-tab-more {
   /* A target that can be hit (UI audit #171). */
   width: 24px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--dim);
   border-radius: var(--btn-radius);
   margin: 4px 0 0;
@@ -249,7 +359,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .new-tab {
   width: 32px;
-  font-size: 18px;
+  font-size: 18px; /* off-scale: glyph */
   color: var(--dim);
   border-radius: var(--btn-radius);
   margin: 4px 0 0;
@@ -285,7 +395,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 1px var(--space-1);
   border-radius: var(--tag-radius);
   background: var(--raised);
-  font: 11px system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
 }
 
 /* A narrow window keeps the bar's room for tabs (and, in the desktop
@@ -318,7 +428,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: 50%;
   background: var(--raised-hover);
   color: var(--fg);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
 }
 
@@ -430,7 +540,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 /* An upload into the pane (M70): its progress, then what became of it. */
-.term-chip {
+.term-toast {
   position: absolute;
   z-index: 5;
   top: 8px;
@@ -443,14 +553,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: var(--chip-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
-.term-chip.error {
+.term-toast.error {
   color: var(--danger);
 }
 
-.term-chip button:not(.link) {
+.term-toast button:not(.link) {
   white-space: nowrap;
 }
 
@@ -476,7 +586,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   height: 22px;
   display: grid;
   place-items: center;
-  font-size: 14px;
+  font-size: 14px; /* off-scale: glyph */
   color: var(--dim);
   background: var(--raised);
   border-radius: 0 0 0 var(--field-radius);
@@ -569,7 +679,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border: 1px solid var(--line);
   box-shadow: var(--shadow-md);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -598,7 +708,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   box-sizing: border-box;
   overflow: hidden;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
   background: var(--surface);
   pointer-events: none;
@@ -663,6 +773,25 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: none;
 }
 
+/* A popover (shared/ui/menu.tsx's Popover): the menu's box around content
+   that isn't a list of items. Its content pads itself. */
+.menu.popover {
+  /* It may be drawn inside a bar, which sets nowrap, a dim color and a size. */
+  color: var(--fg);
+  font-size: var(--text-md);
+  text-align: left;
+  white-space: normal;
+}
+
+.menu.popover:not(.sheet) {
+  width: min(320px, calc(100vw - 16px));
+  padding: 0;
+}
+
+.menu.popover:focus {
+  outline: none;
+}
+
 .menu-item {
   text-align: left;
   padding: 6px 10px;
@@ -682,7 +811,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .menu-detail {
   margin-left: 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .menu-item:hover:not(:disabled) {
@@ -702,7 +831,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
  * as jhgaylor", "This machine: geek"; UI audit #174, #175). */
 .menu-header {
   padding: 6px 10px 2px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--dim);
 }
@@ -718,30 +847,133 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   max-width: 260px;
   padding: 0 10px 4px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
-/* A checkable item's dot hangs in the item's left padding, so its label
-   lines up with the items around it. */
-.menu-check {
+/* The lead column, when any row has an icon or a mark: 16px, so the labels
+   line up. A mark is a ● for one of, a ✓ for several. */
+.menu-lead {
   display: inline-block;
-  width: 8px;
-  margin-left: -8px;
+  width: 16px;
+  margin-right: 8px;
+  color: var(--dim);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.menu-lead svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.menu-lead.menu-check {
   color: var(--accent);
-  font-size: 9px;
-  vertical-align: 1px;
+  font-size: var(--text-sm);
+}
+
+.menu-item.danger .menu-lead {
+  color: inherit;
+}
+
+/* A phone's menu: a sheet along the bottom over the one backdrop, its tap
+   closing it. Above the side sheet (85) a menu opened from it is over, and
+   below a dialog (95). */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: var(--backdrop);
+}
+
+.menu.sheet {
+  inset: auto 0 0;
+  width: auto;
+  max-width: none;
+  max-height: 85%;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+/* Under a finger: rows are 44px with 15px text and 20px icons. A coarse
+   pointer wider than a phone keeps the dropdown, at touch size. */
+@media (max-width: 600px), (pointer: coarse) {
+  .menu-item {
+    min-height: 44px;
+    font-size: var(--text-lg);
+  }
+
+  .menu-item:not(.menu-parent) {
+    display: flex;
+    align-items: center;
+  }
+
+  .menu-lead,
+  .menu-lead svg {
+    width: 20px;
+  }
+
+  .menu-lead svg {
+    height: 20px;
+  }
+
+  .menu-key {
+    display: none;
+  }
+}
+
+/* The filter row of a menu with 13 rows or more: the first row, kept in
+   view as the rows scroll under it. */
+.menu-filter-row {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: -4px -4px 4px;
+  padding: 4px;
+  background: var(--raised);
+}
+
+.menu-filter {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--t-field);
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
+  outline: none;
+}
+
+.menu-filter:focus {
+  border-color: var(--accent);
+}
+
+.menu-none {
+  padding: 6px 10px;
+  color: var(--dim);
+  font-size: var(--text-md);
 }
 
 /* A submenu's rows, under their parent and indented. */
 .menu-parent {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+}
+
+/* The chevron at the end, the label where every row's is: with the icon
+   column (`.menu-lead`) a third child, space-between centred the label,
+   and a gap would push it past the other rows' text. */
+.menu-parent > .menu-chevron {
+  margin-left: auto;
+  padding-left: 16px;
 }
 
 .menu-chevron {
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .menu-sub {
@@ -766,7 +998,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 4px 10px;
   border-radius: var(--chip-radius);
   background: var(--raised);
-  font-size: 12px;
+  font-size: var(--text-sm);
   pointer-events: none;
 }
 
@@ -794,6 +1026,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* ---- phone */
 
+/* The phone's bar is a finger's height (#686); the sheet hangs from it. */
+.app.phone {
+  --bar-h: 44px;
+}
+
 .phone-bar {
   padding: 0 4px;
   align-items: center;
@@ -801,7 +1038,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .sheet-button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 8px;
   text-align: left;
   overflow: hidden;
@@ -818,11 +1055,37 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 0 8px;
 }
 
+/* #815: where a swipe lands. Each dot is a fixed size, so the row never
+   shifts as the active one moves. */
+.pane-pos {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.pane-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.pane-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  opacity: 0.4;
+}
+
+.pane-dots i.on {
+  opacity: 1;
+  background: var(--fg);
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: #0008;
+  background: var(--backdrop);
 }
 
 /* The sheet's shell, its tabs and the sections inside: phone-sheet.css. */
@@ -852,11 +1115,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
-.sheet-item .count,
-.sheet-session-head .count {
+.sheet-item .sheet-count,
+.sheet-session-head .sheet-count {
   margin-left: auto;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -873,12 +1136,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .sheet-act {
   flex: none;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: var(--card-radius);
-  background: var(--accent);
-  color: var(--on-color);
-  font-weight: 600;
 }
 
 .att.acts {
@@ -937,8 +1194,8 @@ button.att {
   padding-left: 28px;
   margin-left: 26px;
   width: calc(100% - 26px);
-  min-height: 38px;
-  font-size: 14px;
+  min-height: 44px;
+  font-size: var(--t-body);
   color: var(--dim);
   border-left: 2px solid var(--line);
   border-radius: 0 var(--card-radius) var(--card-radius) 0;
@@ -952,14 +1209,30 @@ button.att {
 }
 
 .sheet-item.current {
-  background: var(--raised);
+  background: var(--selected);
   color: var(--fg);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--selected-mark);
 }
 
 .sheet-item.sheet-pane.current {
-  box-shadow: none;
   border-left-color: var(--accent);
+  /* The 2px guide line is the bar's first 2px: 1px more makes it 3. */
+  box-shadow: inset 1px 0 0 var(--accent), var(--selected-edge);
+}
+
+/* A drop target (#696). `.drop-target` marks a place a drag can land and
+   `.drop-over` is added while the pointer is over it. The edge is an
+   outline drawn inside the box and the tint a gradient over its own
+   background, so nothing moves or loses its fill when the drag arrives. */
+.drop-target.drop-over {
+  outline: 2px dashed var(--drop-edge);
+  outline-offset: -2px;
+  background-image: linear-gradient(var(--drop-fill), var(--drop-fill));
+}
+
+/* Pressed on the selected row keeps the selection: a deeper tint. */
+.sheet-item.current:active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .needs-you.sheet-card {
@@ -990,7 +1263,7 @@ button.att {
 .sheet-note {
   margin: 4px 12px 8px;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .sheet-notify .copy-text {
@@ -1017,11 +1290,15 @@ button.att {
   border-radius: var(--panel-radius);
   background: var(--raised);
   box-shadow: var(--shadow-md);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .install-hint > span {
   flex: 1;
+}
+
+.install-hint > .primary {
+  margin-left: auto;
 }
 
 /* With no key bar under it, it keeps clear of the home indicator. */
@@ -1033,7 +1310,7 @@ button.att {
   flex: none;
   min-width: 40px;
   min-height: 40px;
-  font-size: 18px;
+  font-size: 18px; /* off-scale: glyph */
   color: var(--dim);
 }
 
@@ -1045,34 +1322,36 @@ button.att {
   background: var(--surface);
 }
 
-/* The keys scroll sideways when they don't fit; the faded edge says there
-   are more. */
+/* The keys share the row's width, so none of them scrolls out of reach. */
 .keybar-keys {
   flex: 1;
   min-width: 0;
   display: flex;
   gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 .keybar .attach {
   flex: none;
+  width: 40px;
 }
 
 .key {
-  flex: 1 0 auto;
-  min-width: 40px;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 38px;
+  padding: 0;
+  font-size: 12px; /* off-scale: "Ctrl" fits a key of a 360px row */
   border-radius: var(--btn-radius);
   background: var(--raised);
   touch-action: manipulation;
 }
 
+/* Latched: the surface with the "on" tint and an accent edge (the tint
+   never sits on raised, where Latte's accent text is under 4.5:1). */
 .key.on {
-  background: var(--accent);
-  color: var(--on-color);
+  background: linear-gradient(var(--on-fill), var(--on-fill)), var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
 }
 
 /* ---- restored panes waiting to start */
@@ -1100,7 +1379,7 @@ button.att {
   display: grid;
   place-items: start center;
   padding-top: 15vh;
-  background: #0006;
+  background: var(--backdrop);
 }
 
 .prompt {
@@ -1127,7 +1406,7 @@ button.att {
 }
 
 .prompt input {
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
@@ -1146,12 +1425,15 @@ button.att {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+  /* A long list (dozens of boards) scrolls inside the screen, a phone's too. */
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
 }
 
 .prompt-choices button {
   min-height: 32px;
   padding: 4px 10px;
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--line-strong);
@@ -1159,6 +1441,7 @@ button.att {
 }
 
 .prompt-choices button:hover,
+.prompt-choices button.active,
 .prompt-choices button:focus-visible {
   border-color: var(--accent);
 }
@@ -1185,7 +1468,7 @@ button.att {
   padding: 8px;
   white-space: pre-wrap;
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--text-sm);
   background: var(--bg);
   border-radius: var(--field-radius);
 }
@@ -1219,7 +1502,7 @@ button.att {
 /* ---- attention */
 
 .att {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1;
 }
 
@@ -1250,50 +1533,19 @@ button.att {
   }
 }
 
-.pane-badge {
-  position: absolute;
-  z-index: 5;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 10px;
-  border-radius: var(--chip-radius);
-  font-size: 11px;
-  font-weight: 600;
-  pointer-events: none;
-  box-shadow: var(--shadow-sm);
-}
-
-.pane-badge.needs_input {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.pane-badge.done {
-  background: var(--ok);
-  color: var(--on-color);
-}
-
 .needs-you h2 {
   color: var(--accent);
 }
 
-/* Where a pane runs, when it's a throwaway VM rather than this host. */
-.host-badge {
+/* Where a pane runs, when it's a throwaway VM rather than this host (a
+   tag, shared/ui/state-chip.css). */
+.pane-host {
   position: absolute;
   z-index: 5;
   right: 6px;
   bottom: 4px;
-  padding: 1px var(--space-2);
-  border-radius: var(--tag-radius);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   pointer-events: auto;
   cursor: default;
-  background: var(--info)33;
-  color: var(--info);
-  border: 1px solid var(--info)66;
   opacity: 0.85;
 }
 
@@ -1308,58 +1560,14 @@ button.att {
   white-space: nowrap;
   padding: 1px var(--space-2);
   border-radius: var(--tag-radius);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   pointer-events: auto;
   cursor: default;
-  background: var(--accent)22;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
-  border: 1px solid var(--accent)66;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   opacity: 0.85;
-}
-
-.host-badge.starting {
-  color: var(--warn);
-  border-color: var(--warn)66;
-  background: var(--warn)22;
-}
-
-.host-badge.gone {
-  color: var(--danger);
-  border-color: var(--danger)66;
-  background: var(--danger)22;
-}
-
-.host-tag {
-  margin-right: var(--space-1);
-  padding: 0 4px;
-  border-radius: var(--tag-radius);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  vertical-align: 1px;
-  color: var(--info);
-  border: 1px solid var(--info)66;
-}
-
-.host-badge.local {
-  color: var(--subtle);
-  border-color: var(--subtle)66;
-  background: var(--subtle)22;
-}
-
-.host-tag.idle {
-  opacity: 0.55;
-}
-
-.host-tag.starting {
-  color: var(--warn);
-  border-color: var(--warn)66;
-}
-
-.host-tag.gone {
-  color: var(--danger);
-  border-color: var(--danger)66;
 }
 
 /* Non-terminal blocks fill their slot like a terminal does. */
@@ -1384,31 +1592,6 @@ button.att {
   opacity: 0.35;
 }
 
-.remote-badge {
-  position: absolute;
-  z-index: 5;
-  right: 6px;
-  bottom: 4px;
-  padding: 1px var(--space-2);
-  border-radius: var(--tag-radius);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  background: var(--teal)22;
-  color: var(--teal);
-  border: 1px solid var(--teal)66;
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-.block-remote[data-state="unreachable"] .remote-badge,
-.block-remote[data-state="gone"] .remote-badge,
-.block-remote[data-state="unknown"] .remote-badge {
-  color: var(--danger);
-  border-color: var(--danger)66;
-  background: var(--danger)22;
-}
-
 .remote-note {
   position: absolute;
   z-index: 4;
@@ -1422,11 +1605,6 @@ button.att {
   pointer-events: none;
 }
 
-.host-tag.remote {
-  color: var(--teal);
-  border-color: var(--teal)66;
-}
-
 .browser {
   position: relative;
   display: flex;
@@ -1435,16 +1613,6 @@ button.att {
   min-height: 0;
 }
 
-.browser-bar {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  padding: 4px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-
-.browser-bar button,
 .browser-open {
   min-width: 28px;
   height: 26px;
@@ -1475,14 +1643,14 @@ button.att {
   background: var(--letterbox);
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .browser-frame {
   flex: 1;
   width: 100%;
   border: 0;
-  background: #fff;
+  background: #fff; /* lint: literal — a web page is painted for white and sets nothing of its own */
 }
 
 .browser-card {
@@ -1538,7 +1706,7 @@ button.att {
 /* A block shown another way than asked (M50): a line above its frame. */
 .block-note {
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
   border-bottom: 1px solid var(--line);
 }
@@ -1571,12 +1739,12 @@ button.att {
   padding: 0 var(--space-1);
   border-radius: var(--tag-radius);
   color: var(--info);
-  border: 1px solid var(--info)66;
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
 }
 
 .host-seen {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .host-picker {
@@ -1600,23 +1768,7 @@ button.att {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  font-size: 13px;
-}
-
-.agent-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: var(--space-1) 8px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-.agent-bar button {
-  padding: 3px 10px;
-  border-radius: var(--btn-radius);
-  background: var(--raised);
+  font-size: var(--text-md);
 }
 
 .agent-name {
@@ -1630,21 +1782,6 @@ button.att {
 }
 
 /* #372: the issue a block or a session works on, and its board. */
-.work-chip {
-  flex: none;
-  padding: 1px 8px;
-  border: 1px solid var(--divider);
-  border-radius: 999px;
-  font-size: 0.85em;
-  color: inherit;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-a.work-chip:hover {
-  background: var(--raised);
-}
-
 /* M44: a worn recipe (once a Managoat agent too): what it brought, and
  * what didn't come. */
 .agent-worn {
@@ -1655,7 +1792,7 @@ a.work-chip:hover {
   padding: 4px 8px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-worn-as {
@@ -1676,7 +1813,7 @@ a.work-chip:hover {
   align-items: center;
   gap: 6px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1701,7 +1838,7 @@ a.work-chip:hover {
   border-radius: var(--btn-radius);
   background: none;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1769,7 +1906,7 @@ a.work-chip:hover {
 /* #398: the estimate, at API prices, and its parts. */
 .agent-estimate {
   display: inline-flex;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1786,7 +1923,7 @@ a.work-chip:hover {
   border: 1px solid transparent;
   background: none;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1820,7 +1957,7 @@ a.work-chip:hover {
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: normal;
 }
 
@@ -1853,14 +1990,14 @@ a.work-chip:hover {
 
 .agent-estimate-pop td.agent-estimate-tokens {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: normal;
 }
 
 .agent-estimate-kind {
   margin-left: 6px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .agent-estimate-total th,
@@ -1882,7 +2019,7 @@ a.work-chip:hover {
 .agent-status {
   padding: 1px 8px;
   border-radius: var(--chip-radius);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   background: var(--raised);
   color: var(--dim);
@@ -1907,6 +2044,15 @@ a.work-chip:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* A long transcript's older entries aren't laid out or painted until they
+   scroll into view. The newest stay as they are: the log holds its end by
+   scrollHeight, which they'd throw off by growing from the estimate once
+   drawn. So does a terminal, which measures itself as it opens. */
+.agent-log > :nth-last-child(n + 16):not(.agent-tool-term) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 .agent-user {
@@ -1934,13 +2080,13 @@ a.work-chip:hover {
 .agent-thought summary {
   cursor: pointer;
   font-style: normal;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .agent-note,
 .agent-working {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
@@ -1953,7 +2099,7 @@ a.work-chip:hover {
 .agent-forgotten > summary {
   cursor: pointer;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-forgotten > :not(summary) {
@@ -2004,7 +2150,7 @@ a.work-chip:hover {
 
 .agent-tool-icon {
   color: var(--dim);
-  font-family: ui-monospace, monospace;
+  font-family: var(--f-mono);
 }
 
 .agent-tool-title {
@@ -2013,12 +2159,12 @@ a.work-chip:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
 }
 
 .agent-tool-status {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -2031,7 +2177,7 @@ a.work-chip:hover {
 .agent-tool-locs {
   margin: 0;
   padding: 4px 8px 6px;
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--dim);
@@ -2042,6 +2188,11 @@ a.work-chip:hover {
   overflow: auto;
   color: var(--fg);
   background: var(--letterbox);
+}
+
+.agent-tool-tail {
+  display: flex;
+  flex-direction: column-reverse;
 }
 
 .agent-output {
@@ -2071,7 +2222,7 @@ a.work-chip:hover {
   padding: 6px 8px;
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   /* #421: a long command scrolls inside its box, not the buttons away. */
@@ -2113,21 +2264,21 @@ a.work-chip:hover {
 .agent-perm-standing select {
   min-width: 0;
   max-width: 100%;
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
 }
 
-.agent-perm-standing .hint {
+.agent-perm-standing :is(p, span).dim {
   margin: 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* #166: the standing rules dialog. */
 
-.rules .hint {
+.rules :is(p, span).dim {
   margin: 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .rules-list {
@@ -2146,7 +2297,7 @@ a.work-chip:hover {
 }
 
 .rules-list .rule-text {
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   overflow-wrap: anywhere;
 }
 
@@ -2160,7 +2311,41 @@ a.work-chip:hover {
 /* Where a rule applies, dim under it (UI audit #175). */
 .rule-where {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-xs);
+}
+
+/* Access (Arugula #681): one row per person, link or guest, with whose
+ * word it is as a chip at the right. */
+.access-rows li {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.access-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.access-row-head :is(p, span).dim {
+  font-size: var(--text-sm);
+}
+
+.access-word {
+  margin-left: auto;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.access-view h3 {
+  margin: 14px 0 0;
+  font-size: var(--text-md);
 }
 
 /* Shared Docs: a Doc's title over a dim sans line, its buttons on one
@@ -2171,7 +2356,7 @@ a.work-chip:hover {
 }
 
 .shared-docs-list .rule-text .dim {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .shared-docs-list button {
@@ -2212,14 +2397,14 @@ a.work-chip:hover {
   background: none;
   color: var(--dim);
   font-weight: normal;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-error {
   margin: 0 8px 8px;
   padding: 6px 10px;
   border-radius: var(--field-radius);
-  background: var(--danger)22;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
   color: var(--danger);
 }
 
@@ -2240,6 +2425,8 @@ a.work-chip:hover {
   resize: vertical;
   padding: 8px;
   font: inherit;
+  /* A field's size: 16 on touch, so iOS doesn't zoom into it (#772). */
+  font-size: var(--t-field);
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--line-strong);
@@ -2292,7 +2479,7 @@ a.work-chip:hover {
 
 .agent-attached-name {
   padding: 0 24px 0 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2312,7 +2499,7 @@ a.work-chip:hover {
 }
 
 .agent-attached-note {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -2331,7 +2518,7 @@ a.work-chip:hover {
 }
 
 .agent-image.missing {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -2340,18 +2527,14 @@ a.work-chip:hover {
   color: var(--dim);
 }
 
-.agent-dialog {
+.agent-dialog .agent-body {
   display: grid;
   gap: 10px;
 }
 
-.agent-dialog h2 {
-  margin: 0;
-}
-
 .agent-dialog select,
 .agent-dialog textarea {
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
@@ -2366,10 +2549,10 @@ a.work-chip:hover {
   font-weight: normal;
 }
 
-.agent-dialog .hint {
+.agent-dialog :is(p, span).dim {
   margin: 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* More: what `arugula agent` takes besides, folded (Discovery 10). */
@@ -2399,33 +2582,14 @@ a.work-chip:hover {
 }
 
 .chat-block .agent-msg {
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.55;
-}
-
-.chat-block-empty {
-  margin: 18vh auto 0;
-  max-width: 420px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.chat-block-empty h3 {
-  margin: 0 0 6px;
-  color: var(--fg);
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.chat-block-empty p {
-  margin: 0;
-  font-size: 13px;
 }
 
 .chat-block-model {
   max-width: 40%;
   padding: 2px 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--line);
@@ -2445,14 +2609,26 @@ a.work-chip:hover {
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
 }
 
+.sandboxes {
+  position: relative;
+}
+
+/* The × is no row of the grid (Modal draws it first): it sits at the corner. */
+.sandboxes > .modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0;
+}
+
 .sandboxes h2 {
   margin: 0;
 }
 
-.sandboxes .hint {
+.sandboxes :is(p, span).dim {
   margin: 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .sandboxes .error {
@@ -2477,14 +2653,14 @@ a.work-chip:hover {
 }
 
 .sandbox-name {
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sandbox-status {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -2497,12 +2673,6 @@ a.work-chip:hover {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
-}
-
-.host-badge.borrowed {
-  color: var(--peach);
-  border-color: var(--peach)66;
-  background: var(--peach)22;
 }
 
 /* ---- directory picker (M7) */
@@ -2525,13 +2695,13 @@ a.work-chip:hover {
   align-items: center;
   gap: 8px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .picker-path {
   display: flex;
   flex-wrap: wrap;
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
 }
 
 .crumb-button {
@@ -2548,7 +2718,7 @@ a.work-chip:hover {
 }
 
 .picker-filter {
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
   background: var(--letterbox);
@@ -2575,7 +2745,7 @@ a.work-chip:hover {
   gap: 8px;
   align-items: center;
   padding: var(--space-1) 8px;
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -2631,13 +2801,19 @@ a.work-chip:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   color: var(--dim);
 }
 
-.picker-backdrop:has(.picker.phone) {
+.prompt-backdrop:has(> .picker.phone) {
   padding-top: 0;
   place-items: stretch;
+}
+
+/* A picker is a Modal (shared/ui/modal.tsx) without its card: no ring when
+   it holds the focus itself. */
+.picker:focus {
+  outline: none;
 }
 
 /* A sheet on a phone: the whole screen above the keyboard, thumb-sized. */
@@ -2649,17 +2825,17 @@ a.work-chip:hover {
 
 .picker.phone .picker-row {
   padding: var(--space-3) 10px;
-  font-size: 15px;
+  font-size: var(--t-body);
 }
 
 .picker.phone .picker-filter {
-  font-size: 16px;
+  font-size: var(--t-field);
 }
 
 .picker.phone .picker-actions button {
   flex: 1 1 40%;
   padding: 12px;
-  font-size: 15px;
+  font-size: var(--t-body);
 }
 
 .picker.phone .picker-target {
@@ -2674,6 +2850,20 @@ a.work-chip:hover {
   height: min(460px, 70vh);
 }
 
+/* The palette's box, here so the platform page's room switcher draws it
+   too (the shell's interaction-chrome.css sizes the palette itself). */
+.picker.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
 .picker.palette.phone {
   width: auto;
   height: var(--app-height);
@@ -2686,10 +2876,10 @@ a.work-chip:hover {
 .palette-group {
   flex: none;
   min-width: 4.5em;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--track-caps);
 }
 
 .palette-row .picker-label {
@@ -2711,7 +2901,7 @@ a.work-chip:hover {
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -2722,7 +2912,7 @@ a.work-chip:hover {
 .menu-key {
   float: right;
   margin-left: 2em;
-  font: 11px ui-monospace, monospace;
+  font: var(--text-xs) var(--f-mono);
   color: var(--dim);
 }
 
@@ -2771,20 +2961,10 @@ a.work-chip:hover {
   font-weight: 600;
 }
 
-.ask-header {
-  padding: 1px 8px;
-  border-radius: var(--chip-radius);
-  background: var(--raised);
-  color: var(--dim);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
 .ask-hint {
   color: var(--dim);
   font-weight: normal;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ask-options {
@@ -2834,7 +3014,7 @@ a.work-chip:hover {
 
 .ask-desc {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ask-preview {
@@ -2842,7 +3022,7 @@ a.work-chip:hover {
   padding: 6px 8px;
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font: 12px/1.3 ui-monospace, monospace;
+  font: var(--text-sm)/1.3 var(--f-mono);
   white-space: pre;
   overflow-x: auto;
 }
@@ -2866,7 +3046,7 @@ a.work-chip:hover {
 
 .ask-field textarea {
   resize: vertical;
-  font: 13px/1.4 ui-monospace, monospace;
+  font: var(--text-md)/1.4 var(--f-mono);
 }
 
 .ask-field {
@@ -2894,7 +3074,7 @@ a.work-chip:hover {
   padding: 6px 8px;
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   overflow-wrap: anywhere;
 }
 
@@ -2938,7 +3118,7 @@ a.work-chip:hover {
   align-items: center;
   padding: 4px 12px 0;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .pane-ask-bar button.link {
@@ -3017,20 +3197,8 @@ a.work-chip:hover {
 }
 
 /* Control's own pages' titles (sign in, approve, no machines yet) are the
-   platform's page title (platform/swarm.css's .page-head h1): the display
-   face, in capitals. Theirs are sentences that wrap, so the lines get a
-   little more room, and a phone's are smaller (UI audit #198). */
-:is(.control-center, .control-page) h1 {
-  font: 800 32px/1 var(--f-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
-@media (max-width: 700px) {
-  :is(.control-center, .control-page) h1 {
-    font-size: 28px;
-  }
-}
+   page title too (shared/ui/page-header.css), set with the rule there
+   (UI audit #198). */
 
 /* The signed-out page's heading carries the mark (UI audit #179). */
 .control-brand {
@@ -3141,7 +3309,7 @@ a.work-chip:hover {
   height: 28px;
   margin: -6px -6px 0 8px;
   border-radius: var(--btn-radius);
-  font-size: 18px;
+  font-size: 18px; /* off-scale: glyph */
   line-height: 1;
   color: var(--dim);
   background: var(--raised);
@@ -3172,9 +3340,8 @@ a.work-chip:hover {
 /* Every dialog's title, one size: they were 15, 16 and 20px (UI audit
  * #174). Each dialog's own rule keeps only its margin. */
 .prompt h2,
-.telemetry-card h2,
-.add-pane-head h2 {
-  font-size: 16px;
+.telemetry-card h2 {
+  font-size: var(--text-lg);
   font-weight: 600;
 }
 
@@ -3223,7 +3390,7 @@ a.work-chip:hover {
   padding: 8px;
   border-radius: var(--field-radius);
   background: var(--surface);
-  font: 11px/1.4 ui-monospace, monospace;
+  font: var(--text-xs)/1.4 var(--f-mono);
   white-space: pre;
 }
 
@@ -3245,13 +3412,15 @@ a.work-chip:hover {
 }
 
 .fingerprint {
-  font: 600 18px ui-monospace, monospace;
-  letter-spacing: 0.04em;
+  font: 600 var(--text-xl) var(--f-mono);
+  letter-spacing: 0;
   color: var(--accent);
 }
 
 .fingerprint-inline {
-  font: 600 1em ui-monospace, monospace;
+  font-family: var(--f-mono);
+  font-size: inherit;
+  font-weight: 600;
   color: var(--accent);
 }
 
@@ -3268,7 +3437,7 @@ a.work-chip:hover {
   padding: 8px 10px;
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font: 13px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   white-space: pre-wrap;
   /* Breaks between words where it can, anywhere only when it must (UI
    * audit #174: "--tea|m"). */
@@ -3284,7 +3453,7 @@ a.work-chip:hover {
 }
 
 .control-code input {
-  font: 14px ui-monospace, monospace;
+  font: var(--t-field) var(--f-mono);
   padding: 6px 8px;
   color: var(--fg);
   background: var(--letterbox);
@@ -3308,7 +3477,7 @@ a.work-chip:hover {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  font: 14px ui-monospace, monospace;
+  font: var(--text-md) var(--f-mono);
   background: var(--letterbox);
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
@@ -3365,7 +3534,7 @@ a.work-chip:hover {
 }
 
 .control-name input {
-  font: 14px system-ui, sans-serif;
+  font: var(--t-field) var(--f-ui);
   width: 14rem;
   max-width: 100%;
 }
@@ -3380,7 +3549,7 @@ a.work-chip:hover {
  * style, in its case, not caps (UI audit #174). */
 .control-subgroup {
   margin: 14px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--dim);
 }
@@ -3388,12 +3557,6 @@ a.work-chip:hover {
 /* Devices nobody has used lately: marked, and offered for removal. */
 .control-devices li.unused > span:first-child {
   opacity: 0.7;
-}
-
-.unused-badge {
-  background: none;
-  color: var(--dim);
-  border: 1px solid var(--line-strong);
 }
 
 .control-unused {
@@ -3462,6 +3625,29 @@ a.work-chip:hover {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
+/* A passkey's details go under its name at every width: with a second
+   button (#641), three columns leave the name a word wide. */
+.control-devices.control-passkeys li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 2px;
+}
+.control-devices.control-passkeys li > :nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+.control-devices.control-passkeys li > :nth-child(3) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.control-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .control-devices li > button {
   justify-self: end;
 }
@@ -3485,7 +3671,7 @@ a.work-chip:hover {
 /* Devices and machines (#106): two groups, a team badge, what Remove does. */
 .control-prompt h3.control-group {
   margin: 14px 0 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .control-devices li .control-explain {
@@ -3497,7 +3683,7 @@ a.work-chip:hover {
    of its own, and its fingerprint behind Details. */
 .control-device-label {
   display: block;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .control-details {
@@ -3539,12 +3725,9 @@ a.work-chip:hover {
   font-weight: 400;
 }
 
-.control-badge {
+/* A tag (shared/ui/state-chip) beside a name in the trust UI. */
+.control-label {
   margin-left: 6px;
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  font-size: 11px;
-  background: var(--raised);
 }
 
 /* Deleting an account (#173): type its login to confirm. */
@@ -3630,7 +3813,7 @@ a.work-chip:hover {
 
 .control-legal {
   margin-top: 24px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .control-legal a {
@@ -3641,7 +3824,7 @@ a.work-chip:hover {
   margin-left: 6px;
   padding: 0 var(--space-1);
   border-radius: var(--tag-radius);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
   background: var(--raised);
 }
@@ -3680,13 +3863,13 @@ a.work-chip:hover {
   flex: none;
   padding: 4px 10px;
   border-radius: var(--btn-radius);
-  background: var(--raised-hover);
-  font-size: 12px;
+  background: var(--raised);
+  font-size: var(--text-sm);
 }
 
 .copy-text.inline .copy-button {
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* A finger on Copy (UI audit #199): the small size of the button set
@@ -3706,7 +3889,7 @@ a.work-chip:hover {
   height: 22px;
   border-radius: 50%;
   overflow: hidden;
-  font: 600 10px system-ui, sans-serif;
+  font: 600 10px var(--f-ui); /* off-scale: avatar initials */
   color: var(--on-color);
   background: var(--who);
   box-shadow: 0 0 0 2px var(--who);
@@ -3728,7 +3911,7 @@ a.work-chip:hover {
 }
 
 .following {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -3767,7 +3950,7 @@ a.work-chip:hover {
 .pane-driver {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 11px system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--who, var(--accent));
 }
@@ -3780,7 +3963,7 @@ a.work-chip:hover {
 .pane-take {
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  font: 600 11px system-ui, sans-serif;
+  font: 600 var(--text-xs) var(--f-ui);
   color: var(--on-color);
   background: var(--accent);
   pointer-events: auto;
@@ -3874,8 +4057,8 @@ a.work-chip:hover {
 }
 
 .share-verify-words {
-  font: 600 15px ui-monospace, monospace;
-  letter-spacing: 0.02em;
+  font: 600 var(--text-lg) var(--f-mono);
+  letter-spacing: 0;
   color: var(--accent);
 }
 
@@ -3886,12 +4069,12 @@ a.work-chip:hover {
 /* A team's name: a group heading, as h3.control-group (UI audit #174). */
 .team h3 {
   margin: 12px 0 4px;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .control-cmd-inline,
 .team code {
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   user-select: all;
 }
 
@@ -3990,8 +4173,8 @@ a.work-chip:hover {
 .answered-what {
   padding: 2px 12px 6px;
   color: var(--dim);
-  font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4011,7 +4194,7 @@ a.work-chip:hover {
 .followup-trust,
 .followup-sent {
   padding: 6px 12px 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -4024,20 +4207,20 @@ a.work-chip:hover {
 
 .ask-viewer {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-answered {
   padding: 4px 12px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .perm-diff {
   max-height: min(12em, 30vh);
   max-height: min(12em, 30dvh);
   overflow: auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 4px 0;
 }
 
@@ -4052,18 +4235,20 @@ a.work-chip:hover {
 /* ---- the swarm (M26): the prototype's look (archive/spikes:spikes/s16-swarm/canvas.html) */
 
 :where(.swarm, .start, .start-toast) {
-  /* The swarm's own dark set, whatever the palette: the swarm, the getting
-     started overlay and its toast (UI audit #180: once, here). The
-     canvases read it from the page (swarm/field.ts's readColors). */
-  --void: #06080d;
-  --ink: #e6ebf4;
-  --mute: #7c8698;
-  --line: #1a2030;
-  --panel: rgba(12, 16, 25, 0.86);
-  --s-ask: #b98cff;
-  --s-fail: #ff5468;
-  --s-done: #63e0a0;
-  --s-wait: #ffc04d;
+  /* The swarm's names for the palette's colors (#729): the swarm, the
+     getting started overlay and its toast, so Latte reaches them. The
+     canvases read them from the page (swarm/field.ts's readColors). An ask
+     is an agent live and waiting on you, so it takes the accent. */
+  --void: var(--letterbox);
+  --ink: var(--fg);
+  --mute: var(--dim);
+  --panel: color-mix(in srgb, var(--bg) 86%, transparent);
+  --s-ask: var(--accent);
+  --s-fail: var(--danger);
+  --s-done: var(--ok);
+  --s-wait: var(--warn);
+  /* What the rail and the tour tint with: a tile's kind, and a plain card. */
+  --s-plain: var(--subtle);
 }
 
 .swarm {
@@ -4073,7 +4258,7 @@ a.work-chip:hover {
   z-index: 20;
   background: var(--void);
   color: var(--ink);
-  font: 14px/1.4 var(--f-ui);
+  font: var(--text-md)/1.4 var(--f-ui);
   overflow: hidden;
 }
 .swarm * {
@@ -4114,8 +4299,8 @@ a.work-chip:hover {
 }
 .swarm-brand h1 {
   margin: 0;
-  font: 800 34px/0.9 var(--f-display);
-  letter-spacing: 0.01em;
+  font: 800 var(--text-2xl)/0.9 var(--f-display);
+  letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 .swarm-brand h1 span {
@@ -4125,13 +4310,13 @@ a.work-chip:hover {
 .swarm-stats {
   display: flex;
   gap: 16px;
-  font: 500 12px/1.2 var(--f-mono);
+  font: 500 var(--text-sm)/1.2 var(--f-mono);
   color: var(--mute);
   font-variant-numeric: tabular-nums;
 }
 .swarm-stats b {
   display: block;
-  font: 700 22px/1 var(--f-display);
+  font: 700 var(--text-xl)/1 var(--f-display);
   color: var(--ink);
 }
 .swarm-stats .needs b {
@@ -4140,32 +4325,20 @@ a.work-chip:hover {
 .swarm-spacer {
   flex: 1;
 }
+/* A segmented control (buttons.css's .seg), in words, like every other
+   (UI audit #172). */
 .swarm-seg {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  background: var(--panel);
-  padding: 3px;
-}
-/* Words, in sentence case like every other segmented control (UI audit
-   #172). */
-.swarm-seg button {
-  border: 0;
-  background: none;
-  padding: 6px 12px;
-  border-radius: var(--chip-radius);
-  font: 500 12px/1 var(--f-ui);
-  color: var(--mute);
-}
-.swarm-seg button[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--void);
+  /* The control's words are the swarm's dim, and its "on" is the accent's
+     tint over the page's bg, which legible() checks (not over the letterbox). */
+  --subtle: var(--mute);
+  --raised: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 .swarm-seg-l {
-  font: 500 11px/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--f-mono);
   color: var(--mute);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--track-caps);
   margin-bottom: 6px;
 }
 .swarm-tools {
@@ -4177,14 +4350,14 @@ a.work-chip:hover {
   background: var(--panel);
   padding: var(--space-2) 12px;
   border-radius: var(--chip-radius);
-  font: 500 12px/1 var(--f-mono);
+  font: 500 var(--text-sm)/1 var(--f-mono);
 }
 .swarm-notice {
   position: absolute;
   z-index: 5;
   top: 96px;
   left: 20px;
-  font: 500 11px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
   color: var(--s-wait);
 }
 /* The city's towers rise into the bar and the key: a backdrop behind
@@ -4212,7 +4385,7 @@ a.work-chip:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font: 500 11px/1 var(--f-ui);
+  font: 500 var(--text-xs)/1 var(--f-ui);
   color: var(--mute);
 }
 .swarm-legend i {
@@ -4229,7 +4402,7 @@ a.work-chip:hover {
   flex-wrap: wrap;
   gap: 4px 10px;
   margin-top: 6px;
-  font: 600 13px/1.2 var(--f-ui);
+  font: 600 var(--text-md)/1.2 var(--f-ui);
 }
 .swarm-lanes {
   flex-basis: 100%;
@@ -4242,7 +4415,7 @@ a.work-chip:hover {
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
   background: var(--panel);
-  font: 500 12px/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
   color: var(--ink);
 }
 .swarm-lane[data-workers="0"] {
@@ -4250,7 +4423,7 @@ a.work-chip:hover {
   border-style: dashed;
 }
 .swarm-hint {
-  font: 400 11px/1.4 var(--f-mono);
+  font: 400 var(--text-xs)/1.4 var(--f-mono);
   color: var(--mute);
   opacity: 0.7;
   margin-top: 6px;
@@ -4266,7 +4439,7 @@ a.work-chip:hover {
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
   background: var(--panel);
-  font: 500 13px/1.4 var(--f-ui);
+  font: 500 var(--text-md)/1.4 var(--f-ui);
   color: var(--ink);
 }
 .swarm-tip span {
@@ -4284,27 +4457,27 @@ a.work-chip:hover {
 }
 .swarm-key summary {
   cursor: pointer;
-  font: 500 11px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
   color: var(--mute);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--track-caps);
 }
 .swarm-key dl {
   margin: 8px 0 2px;
   display: grid;
   grid-template-columns: 6.2em 1fr;
   gap: 3px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.35;
 }
 .swarm-key dt {
-  font: 700 14px/1.25 var(--f-display);
+  font: 700 var(--text-md)/1.25 var(--f-display);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--track-display);
 }
 .swarm-key dd {
   margin: 0;
-  color: #b7c0d0;
+  color: var(--subtle);
   min-width: 0;
 }
 .swarm-rail {
@@ -4315,7 +4488,7 @@ a.work-chip:hover {
   bottom: 0;
   width: var(--rail);
   border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10, 13, 20, 0.92), rgba(6, 8, 13, 0.96));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--void) 96%, transparent));
   display: flex;
   flex-direction: column;
 }
@@ -4328,11 +4501,10 @@ a.work-chip:hover {
 }
 .swarm-rail h2 {
   margin: 0;
-  font: 800 26px/1 var(--f-display);
-  text-transform: uppercase;
+  font: 600 var(--text-lg)/20px var(--f-ui);
 }
 .swarm-rail header span {
-  font: 500 11px/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--f-mono);
   color: var(--mute);
 }
 .swarm-cards {
@@ -4343,14 +4515,10 @@ a.work-chip:hover {
   padding: 4px 14px 14px;
   overflow-y: auto;
 }
-.swarm-empty {
-  margin: 20px 4px;
-  color: var(--mute);
-}
 .swarm-waiting {
   padding: 10px 18px 16px;
   border-top: 1px solid var(--line);
-  font: 500 12px/1.4 var(--f-ui);
+  font: 500 var(--text-sm)/1.4 var(--f-ui);
   color: var(--mute);
 }
 .swarm-waiting b {
@@ -4360,7 +4528,7 @@ a.work-chip:hover {
   --c: var(--s-ask);
   position: relative;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  background: color-mix(in srgb, var(--c) 7%, #0b0e16);
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
   border-radius: var(--card-radius);
   padding: 10px 12px 10px 14px;
   flex: 0 0 auto;
@@ -4392,7 +4560,7 @@ a.work-chip:hover {
 }
 .swarm-card .ch b,
 .swarm-card .ch .ct {
-  font: 700 19px/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--f-display);
   text-transform: uppercase;
   color: var(--c);
 }
@@ -4409,14 +4577,14 @@ a.work-chip:hover {
 }
 .swarm-card .ch .n {
   margin-left: auto;
-  font: 700 12px/1 var(--f-mono);
+  font: 700 var(--text-sm)/1 var(--f-mono);
   color: var(--void);
   background: var(--c);
   border-radius: var(--chip-radius);
   padding: 3px var(--space-2);
 }
 .swarm-card .cm {
-  font: 500 11px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   color: var(--mute);
   margin: 3px 0 6px;
   white-space: nowrap;
@@ -4424,7 +4592,7 @@ a.work-chip:hover {
   text-overflow: ellipsis;
 }
 .swarm-card .cq {
-  font: 500 13px/1.35 var(--f-ui);
+  font: 500 var(--text-md)/1.35 var(--f-ui);
   margin-bottom: 6px;
   word-break: break-word;
   /* Two lines at most: the tooltip has the rest. */
@@ -4439,8 +4607,8 @@ a.work-chip:hover {
   font-weight: 600;
 }
 .swarm-card code {
-  font: 500 12px/1 var(--f-mono);
-  background: rgba(255, 255, 255, 0.06);
+  font: 500 var(--text-sm)/1 var(--f-mono);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
   padding: 1px 4px;
   border-radius: var(--tag-radius);
 }
@@ -4460,7 +4628,7 @@ a.work-chip:hover {
 .swarm-card :is(.primary, .secondary) {
   min-height: 24px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .swarm-card .ask {
   margin: 0;
@@ -4477,7 +4645,7 @@ a.work-chip:hover {
 }
 .swarm-card-err {
   margin-top: 6px;
-  font: 500 11px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   color: var(--s-fail);
 }
 .swarm-close {
@@ -4502,7 +4670,7 @@ a.work-chip:hover {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font: 600 11px/1.3 var(--f-mono);
+  font: 600 var(--text-xs)/1.3 var(--f-mono);
   margin-bottom: 4px;
 }
 .swarm-peek .ph span {
@@ -4511,8 +4679,8 @@ a.work-chip:hover {
 }
 .swarm-peek pre {
   margin: 0;
-  font: 400 11px/1.45 var(--f-mono);
-  color: #a9b3c4;
+  font: 400 var(--text-xs)/1.45 var(--f-mono);
+  color: var(--subtle);
   white-space: pre-wrap;
   word-break: break-word;
   min-height: 1em;
@@ -4527,22 +4695,18 @@ a.work-chip:hover {
     gap: 8px 14px;
   }
   .swarm-brand h1 {
-    font-size: 22px;
+    font-size: var(--text-xl);
   }
   .swarm-stats {
     gap: 10px;
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .swarm-stats b {
-    font-size: 16px;
+    font-size: var(--text-lg);
   }
   .swarm-seg-l,
   .swarm-spacer {
     display: none;
-  }
-  .swarm-seg button {
-    padding: var(--space-1) var(--space-2);
-    font-size: 11px;
   }
   .swarm-tools button {
     padding: var(--space-1) var(--space-2);
@@ -4557,9 +4721,6 @@ a.work-chip:hover {
   }
   .swarm-rail header {
     padding: 10px 16px 6px;
-  }
-  .swarm-rail h2 {
-    font-size: 20px;
   }
   .swarm-cards {
     flex-direction: row;
@@ -4602,7 +4763,6 @@ a.work-chip:hover {
 /* A finger on the swarm's chips (UI audit #186): the narrow bar's are
    21px tall, under any tap target. */
 @media (max-width: 760px) and (pointer: coarse) {
-  .swarm-seg button,
   .swarm-tools button {
     min-height: 32px;
   }
@@ -4631,7 +4791,7 @@ a.work-chip:hover {
 /* #1732: the same edit, as a vimdiff in the session's nvim. */
 .diff-nvim {
   margin: 2px 0 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 .diff-edit {
@@ -4641,7 +4801,7 @@ a.work-chip:hover {
   min-height: 10em;
   max-height: 40vh;
   margin: 4px 0;
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: var(--text-sm)/1.4 var(--f-mono);
   color: var(--fg);
   background: var(--surface);
   border: 1px solid var(--line-strong);
@@ -4684,7 +4844,7 @@ a.work-chip:hover {
 .follow-title {
   display: flex;
   flex-direction: column;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.25;
   flex: none;
 }
@@ -4697,7 +4857,7 @@ a.work-chip:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 12px/1.3 var(--f-mono);
+  font: var(--text-sm)/1.3 var(--f-mono);
 }
 .follow-at {
   color: var(--mute);
@@ -4719,7 +4879,7 @@ a.work-chip:hover {
 }
 .follow-note {
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--mute);
   border-bottom: 1px solid var(--line);
 }
@@ -4759,32 +4919,11 @@ a.work-chip:hover {
   min-height: 0;
 }
 
-.review-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 8px;
-  min-height: 34px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 /* Room for the pane's grip, at the top right of the pane: every block's
    bar ends short of it (UI audit #177 made them one fixed-height row, so
    a full bar's last items ran under it and the grip took their clicks). */
-.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) {
+.app:not(.phone) :is(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar, .chat.pinned .chat-head) {
   padding-right: 28px;
-}
-
-.review-bar button {
-  min-width: 28px;
-  height: 26px;
-  border: 0;
-  border-radius: var(--tag-radius);
-  background: var(--raised);
-  color: var(--fg);
 }
 
 .review-what,
@@ -4801,12 +4940,12 @@ a.work-chip:hover {
 }
 
 .review-path .forge-ref {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .review-live {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .review-live.on {
@@ -4860,7 +4999,7 @@ a.work-chip:hover {
   background: none;
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-md);
   text-align: left;
 }
 
@@ -4871,7 +5010,7 @@ a.work-chip:hover {
 /* #1731: Open in editor, under an open file's row. */
 .diff-file-acts {
   padding: 0 8px 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .diff-file.open > .diff-file-head {
@@ -4885,7 +5024,7 @@ a.work-chip:hover {
   width: 1.4em;
   text-align: center;
   border-radius: var(--tag-radius);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--f-mono);
   font-weight: 700;
   color: var(--warn);
 }
@@ -4912,11 +5051,11 @@ a.work-chip:hover {
 .diff-note {
   padding: 8px 12px;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .diff-hunks {
-  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: var(--text-sm)/1.5 var(--f-mono);
 }
 
 .diff-at {
@@ -4931,7 +5070,7 @@ a.work-chip:hover {
   flex-wrap: wrap;
   gap: 2px 10px;
   padding: 3px 8px;
-  font: 12px/1.4 system-ui, sans-serif;
+  font: var(--text-sm)/1.4 var(--f-ui);
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
@@ -5081,7 +5220,7 @@ button.diff-why-run {
 
 .conv-host-state {
   font-weight: normal;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -5092,7 +5231,7 @@ button.diff-why-run {
 
 .conv-folder {
   padding: 8px 8px 3px;
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
   color: var(--dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5113,19 +5252,19 @@ button.diff-why-run {
   flex: none;
   padding: 0 var(--space-1);
   border-radius: var(--tag-radius);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
   border: 1px solid var(--line-strong);
 }
 
 .conv-source.desktop {
   color: var(--accent);
-  border-color: var(--accent)66;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .conv-live {
   flex: none;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ok);
 }
 
@@ -5135,14 +5274,9 @@ button.diff-why-run {
   display: inline-flex;
 }
 
-.conv-cost-note {
-  color: var(--dim);
-  font-size: 11px;
-}
-
 .conv-cost {
   flex: none;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
@@ -5151,13 +5285,13 @@ button.diff-why-run {
   flex: none;
   width: 4.75em;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
 .agent-import {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
   border-bottom: 1px solid var(--line-strong);
 }
@@ -5174,10 +5308,10 @@ button.diff-why-run {
    (UI audit #155). */
 .review.ws:not(.agents) h4 {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--track-caps);
   color: var(--dim);
 }
 
@@ -5187,7 +5321,7 @@ button.diff-why-run {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-env {
@@ -5197,7 +5331,7 @@ button.diff-why-run {
   color: var(--fg);
   border: 0;
   border-radius: var(--tag-radius);
-  font-size: 12px;
+  font-size: var(--text-sm);
   height: 26px;
 }
 
@@ -5229,7 +5363,7 @@ button.diff-why-run {
    block, the swarm's card and the phone's sheet. */
 .gate-why {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.4;
 }
 
@@ -5257,17 +5391,17 @@ button.diff-why-run {
   margin-top: 8px;
   padding-top: 6px;
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
 .ws-why h5 {
   margin: 6px 0 2px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--dim);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-caps);
 }
 
 .ws-why p {
@@ -5285,11 +5419,11 @@ button.diff-why-run {
   background: none;
   color: var(--accent);
   font-weight: normal;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-gate-when {
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin-top: 2px;
 }
 
@@ -5338,12 +5472,11 @@ button.diff-why-run {
 }
 
 .ws-dir {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
-.ws-kind,
-.ws-tag {
-  font-size: 11px;
+.ws-kind {
+  font-size: var(--text-xs);
   padding: 0 6px;
   border-radius: var(--chip-radius);
   background: var(--raised);
@@ -5351,28 +5484,7 @@ button.diff-why-run {
   white-space: nowrap;
 }
 
-/* A chip with an icon and its word (the Docs page's "shared"). */
-.ws-tag:has(svg) {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.ws-tag svg {
-  width: 11px;
-  height: 11px;
-}
-
-.ws-tag.waits {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.ws-tag.bad {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
+/* The Doc bar's "Shared copy is older · Update" (#509): a chip you tap. */
 .ws-tags {
   display: flex;
   gap: 4px;
@@ -5394,7 +5506,7 @@ button.diff-why-run {
 }
 
 .ws-diag {
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 2px 0;
 }
 
@@ -5403,7 +5515,7 @@ button.diff-why-run {
 }
 
 .ws-note {
-  font-size: 11px;
+  font-size: var(--text-xs);
   margin: 0;
 }
 
@@ -5418,16 +5530,16 @@ button.diff-why-run {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-principals textarea {
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .phone .ws-gate .ws-actions button {
   padding: 8px 14px;
-  font-size: 14px;
+  font-size: var(--t-body);
 }
 
 /* M35: a studio box's gates, above its frame. */
@@ -5435,7 +5547,7 @@ button.diff-why-run {
   border-bottom: 1px solid var(--accent);
   padding: 4px 10px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .app-gate {
@@ -5452,12 +5564,12 @@ button.diff-why-run {
 }
 
 .app-gate-error {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* M36: forge (pull request) blocks, on the workspace block's layout. */
 .forge-meta {
-  font-size: 12px;
+  font-size: var(--text-sm);
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -5465,22 +5577,7 @@ button.diff-why-run {
 }
 
 .forge-link {
-  font-size: 12px;
-}
-
-.forge-state.open {
-  background: var(--ok);
-  color: var(--on-color);
-}
-
-.forge-state.merged {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.forge-state.closed {
-  background: var(--danger);
-  color: var(--on-color);
+  font-size: var(--text-sm);
 }
 
 .forge-row {
@@ -5497,49 +5594,6 @@ button.diff-why-run {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.forge-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.forge-chips .ws-tag {
-  font-size: 12px;
-  padding: 2px var(--space-2);
-  border-radius: var(--chip-radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--fg);
-}
-
-.forge-chips .forge-check.none,
-.forge-chips .forge-chip:not(.good, .bad, .wait) {
-  color: var(--dim);
-}
-
-.forge-chips .forge-check.failure,
-.forge-chips .forge-check.success {
-  border-color: transparent;
-}
-
-.forge-chip.good {
-  color: var(--ok);
-}
-
-.forge-chip.bad {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
-}
-
-.forge-chip.wait {
-  color: var(--warn);
-}
-
-.forge-chips .forge-check.running,
-.forge-chips .forge-check.queued {
-  color: var(--warn);
 }
 
 /* The description takes the block; the side column opens up at 720px. */
@@ -5575,7 +5629,7 @@ button.diff-why-run {
 }
 
 .forge-body {
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 3px 0 0 12px;
   padding-left: 8px;
   border-left: 2px solid var(--line);
@@ -5583,7 +5637,7 @@ button.diff-why-run {
 }
 
 .forge-body.forge-desc {
-  font-size: 13px;
+  font-size: var(--text-md);
   margin: 0;
   padding-left: 0;
   border-left: 0;
@@ -5601,7 +5655,7 @@ button.diff-why-run {
 
 .forge-more {
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 2px 0;
 }
 
@@ -5635,87 +5689,76 @@ button.diff-why-run {
 
 /* Doc blocks (#963): one scrolling column, title and sections.
 
-   A Doc wears Arugula's own look (#253), not the reader's app theme, so a
-   shared Doc reads the same for everyone: the site's warm paper and ink,
-   and leaf as its one accent. Two sets, dark here and light below; the
-   app's scheme picks (`html[data-scheme]`), and the share viewer sets that
-   from `prefers-color-scheme` (doc-view.tsx). The hues (leaf, pepper, sky,
-   plum) are a chart's series, `--c1..c4`, checked with the dataviz palette
-   validator against `--doc-paper` in each set. The named colours an agent
-   writes (#256: leaf, pepper, sky, plum, sun, stone, each with a `-soft`
-   fill, and ink and paper) are these tokens; their values are
-   shared/docs/colours.json's, which a spec holds equal to these. */
+   A Doc wears the house pair (#729): Slate in dark, Latte in light, whatever
+   palette the reader picked, so a shared Doc reads the same for everyone.
+   Its tokens, `--doc-*`, are set on the root, as the palette's are: by
+   appearance.ts's apply() in the app (houseColours), and for the share
+   viewer by the build, into doc-view.css. The hues (leaf, pepper, sky, plum)
+   are a chart's series, `--c1..c4`: the palette's ok, peach, info and merged.
+   The named colours an agent writes (#256: leaf, pepper, sky, plum, sun,
+   stone, each with a `-soft` fill, and ink and paper) are these tokens;
+   shared/docs/colours.json holds the same, which a spec checks. */
 .doc {
-  /* The page and its text. */
-  --doc-paper: #1a1b18;
-  --doc-sunken: #141512;
-  --doc-tint: #23241f;
-  --doc-ink: #ecebe4;
-  --doc-ink-soft: #b5b3a9;
-  --doc-ink-faint: #918f85;
-  --doc-line: #383a34;
-  --doc-line-quiet: #2e302b;
-  /* The accent: links, list markers, the header's rule, a fresh fill. */
-  --doc-link: #a9cf7a;
-  --doc-rule: #9cc36b;
-  /* The series hues, in their order. */
-  --doc-leaf: #7ca34d;
-  --doc-pepper: #a85a35;
-  --doc-sky: #4d97de;
-  --doc-plum: #9b5aa0;
-  --doc-sun: #b0801c;
-  --doc-stone: #68665e;
-  /* Each hue's soft fill, for a box with ink on it. */
-  --doc-leaf-soft: #354127;
-  --doc-pepper-soft: #422d20;
-  --doc-sky-soft: #283e4f;
-  --doc-plum-soft: #3e2d3e;
-  --doc-sun-soft: #443719;
-  --doc-stone-soft: #30302c;
-  /* What a drawing sits on in either scheme: the light set's paper. */
-  --doc-drawing: #f8f6f0;
   --c1: var(--doc-leaf);
   --c2: var(--doc-pepper);
   --c3: var(--doc-sky);
   --c4: var(--doc-plum);
+  container-type: inline-size;
+  container-name: doc;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   background: var(--doc-paper);
   color: var(--doc-ink);
   color-scheme: dark;
-  font: 15px/1.6 var(--f-ui);
+  font: var(--text-lg)/1.6 var(--f-ui);
 }
 
 html[data-scheme="light"] .doc {
-  --doc-paper: #f8f6f0;
-  --doc-sunken: #efebe1;
-  --doc-tint: #ebe7dc;
-  --doc-ink: #161a13;
-  --doc-ink-soft: #45483f;
-  --doc-ink-faint: #5d5c54;
-  --doc-line: #d6d0bd;
-  --doc-line-quiet: #e2ddcf;
-  --doc-link: #325a20;
-  --doc-rule: #3f6b2a;
-  --doc-leaf: #3f6b2a;
-  --doc-pepper: #c2714a;
-  --doc-sky: #2f7fc8;
-  --doc-plum: #80458a;
-  --doc-sun: #9a6e10;
-  --doc-stone: #525049;
-  --doc-leaf-soft: #dae0d0;
-  --doc-pepper-soft: #efe1d5;
-  --doc-sky-soft: #d8e3ea;
-  --doc-plum-soft: #e5dae0;
-  --doc-sun-soft: #e9e0cc;
-  --doc-stone-soft: #dddbd5;
   color-scheme: light;
+}
+
+/* The measure scales with the width of the Doc's container, not the window,
+   because a Doc sits in a pane (#783). A query can't restyle its own
+   container, so the property is set on what's inside: the page, and on the
+   platform the lines around it (docs.css's .project-doc is a `doc` container
+   too). Those are 13px type to the Doc's 15px, and a `ch` is the element's
+   own, so they read --lead-measure, the same width in their size, border-box
+   (the page's padding is outside its measure). */
+.doc-page {
+  --measure: calc(68ch + 32px);
+}
+
+.project-doc-copy,
+.project-doc-form {
+  --lead-measure: calc(68ch * 15 / 13 + 64px);
+}
+
+@container doc (inline-size >= 1100px) {
+  .doc-page {
+    --measure: calc(88ch + 32px);
+  }
+
+  .project-doc-copy,
+  .project-doc-form {
+    --lead-measure: calc(88ch * 15 / 13 + 64px);
+  }
+}
+
+@container doc (inline-size >= 1500px) {
+  .doc-page {
+    --measure: calc(100ch + 32px);
+  }
+
+  .project-doc-copy,
+  .project-doc-form {
+    --lead-measure: calc(100ch * 15 / 13 + 64px);
+  }
 }
 
 /* The measure: about 68 characters of body text, and a 16px gutter. */
 .doc-page {
-  max-width: calc(68ch + 32px);
+  max-width: var(--measure);
   margin: 0 auto;
   padding: 36px 16px 64px;
 }
@@ -5723,7 +5766,7 @@ html[data-scheme="light"] .doc {
 .doc-head {
   margin: 0 0 36px;
   padding-bottom: 14px;
-  border-bottom: 2px solid var(--doc-rule);
+  border-bottom: 1px solid var(--doc-line);
 }
 
 .doc-head-row {
@@ -5739,15 +5782,15 @@ html[data-scheme="light"] .doc {
 
 .doc-title {
   margin: 0;
-  font: 800 38px/1.02 var(--f-display);
-  letter-spacing: 0.005em;
+  font: 800 var(--text-doc)/1.02 var(--f-display);
+  letter-spacing: var(--track-display);
   text-wrap: balance;
 }
 
 .doc-meta {
   margin: 10px 0 0;
   color: var(--doc-ink-faint);
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.4;
 }
 
@@ -5758,7 +5801,7 @@ html[data-scheme="light"] .doc {
 .doc-heading {
   margin: 0 0 12px;
   font: 700 26px/1.1 var(--f-display);
-  letter-spacing: 0.005em;
+  letter-spacing: var(--track-display);
   text-wrap: balance;
 }
 
@@ -5788,7 +5831,7 @@ html[data-scheme="light"] .doc {
 
 @keyframes doc-fresh {
   from {
-    background: color-mix(in srgb, var(--doc-rule) 22%, transparent);
+    background: color-mix(in srgb, var(--doc-live) 22%, transparent);
   }
   to {
     background: transparent;
@@ -5833,15 +5876,15 @@ html[data-scheme="light"] .doc {
 }
 
 .md h1 {
-  font-size: 18px;
+  font-size: var(--text-lg);
 }
 
 .md h2 {
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 .md h3 {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .md ul,
@@ -5874,7 +5917,7 @@ html[data-scheme="light"] .doc {
 }
 
 .md code {
-  font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+  font: var(--text-sm) var(--f-mono);
   background: var(--raised);
   padding: 1px 4px;
   border-radius: var(--tag-radius);
@@ -5886,7 +5929,7 @@ html[data-scheme="light"] .doc {
   border-radius: var(--field-radius);
   padding: 8px 10px;
   overflow-x: auto;
-  font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  font: var(--text-sm)/1.45 var(--f-mono);
 }
 
 .md blockquote {
@@ -5912,7 +5955,7 @@ html[data-scheme="light"] .doc {
 .md table {
   overflow-wrap: normal;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .md th,
@@ -5971,7 +6014,7 @@ html[data-scheme="light"] .doc {
   max-width: 100%;
   height: auto;
   margin: 0 0 0.7em;
-  background: var(--doc-drawing, #fff);
+  background: var(--doc-drawing);
   border-radius: var(--field-radius);
 }
 
@@ -6024,11 +6067,11 @@ html[data-scheme="light"] .doc {
 }
 
 .doc .md h2 {
-  font: 700 19px/1.2 var(--f-display);
+  font: 700 var(--text-xl)/1.2 var(--f-display);
 }
 
 .doc .md h3 {
-  font: 600 15px/1.35 var(--f-ui);
+  font: 600 var(--text-lg)/1.35 var(--f-ui);
 }
 
 .doc .md ul,
@@ -6041,7 +6084,7 @@ html[data-scheme="light"] .doc {
 }
 
 .doc .md li::marker {
-  color: var(--doc-rule);
+  color: var(--doc-ink-faint);
 }
 
 .doc .md ol > li::marker {
@@ -6075,7 +6118,7 @@ html[data-scheme="light"] .doc {
   background: var(--doc-sunken);
   border: 1px solid var(--doc-line-quiet);
   border-radius: 8px;
-  font: 13px/1.55 var(--f-mono);
+  font: var(--text-md)/1.55 var(--f-mono);
 }
 
 .doc .md pre code {
@@ -6121,7 +6164,7 @@ html[data-scheme="light"] .doc {
   background: var(--doc-tint);
   color: var(--doc-ink-soft);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .doc .md details {
@@ -6213,8 +6256,8 @@ html[data-scheme="light"] .doc {
 
 .doc .md .md-callout-title {
   color: var(--doc-ink);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  font-size: var(--text-sm);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -6252,9 +6295,9 @@ html[data-scheme="light"] .doc {
 
 .doc .md .doc-stat dt {
   color: var(--doc-ink-faint);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -6272,7 +6315,7 @@ html[data-scheme="light"] .doc {
   --tone: var(--doc-ink-faint);
   margin-top: 4px;
   color: color-mix(in srgb, var(--tone) 60%, var(--doc-ink));
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -6313,26 +6356,6 @@ html[data-scheme="light"] .doc {
   background: var(--warn);
 }
 
-.forge-check.failure {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
-.forge-check.success {
-  background: var(--ok);
-  color: var(--on-color);
-}
-
-.forge-review.changes_requested {
-  background: var(--danger);
-  color: var(--on-color);
-}
-
-.forge-review.approved {
-  background: var(--ok);
-  color: var(--on-color);
-}
-
 .forge-draft {
   padding: 4px 0;
 }
@@ -6358,9 +6381,10 @@ html[data-scheme="light"] .doc {
 
 /* ---- Getting started (#110): five steps in the swarm's own look */
 
-.start-backdrop {
+/* Heavier than the other dialogs': a second --backdrop over the first. */
+.prompt-backdrop:has(> .start) {
   padding-top: 6vh;
-  background: rgba(3, 5, 9, 0.72);
+  background-image: linear-gradient(var(--backdrop), var(--backdrop));
   backdrop-filter: blur(3px);
 }
 
@@ -6369,12 +6393,12 @@ html[data-scheme="light"] .doc {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(720px, calc(100vw - 24px));
   height: min(640px, 86vh);
-  background: radial-gradient(120% 80% at 100% 0%, rgba(185, 140, 255, 0.08), transparent 60%), var(--void);
+  background: radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--s-ask) 8%, transparent), transparent 60%), var(--void);
   color: var(--ink);
-  font: 14px/1.45 var(--f-ui);
+  font: var(--text-md)/1.45 var(--f-ui);
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
-  box-shadow: 0 24px 80px #000c;
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   outline: none;
 }
@@ -6402,9 +6426,9 @@ html[data-scheme="light"] .doc {
 }
 
 .start-brand {
-  font: 800 26px/1 var(--f-display);
+  font: 800 var(--text-xl)/1 var(--f-display);
   text-transform: uppercase;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--track-display);
 }
 
 .start-brand span {
@@ -6448,9 +6472,9 @@ html[data-scheme="light"] .doc {
   background: none;
   padding: var(--space-2) 10px;
   border-radius: var(--chip-radius);
-  font: 500 11px/1 var(--f-mono) !important;
+  font: 500 var(--text-xs)/1 var(--f-mono) !important;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-caps);
   color: var(--mute) !important;
   white-space: nowrap;
 }
@@ -6480,23 +6504,23 @@ html[data-scheme="light"] .doc {
 }
 
 .start-kicker {
-  font: 500 11px/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--f-mono);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--track-caps);
   color: var(--mute);
   margin-bottom: 8px;
 }
 
 .start-step h2 {
   margin: 0 0 8px;
-  font: 800 40px/0.95 var(--f-display);
+  font: 800 var(--text-2xl)/0.95 var(--f-display);
   text-transform: uppercase;
-  letter-spacing: 0.005em;
+  letter-spacing: var(--track-display);
 }
 
 .start-step h3 {
   margin: 0 0 2px;
-  font: 600 14px/1.3 var(--f-ui);
+  font: 600 var(--text-md)/1.3 var(--f-ui);
 }
 
 .start-step p {
@@ -6504,13 +6528,13 @@ html[data-scheme="light"] .doc {
 }
 
 .start-lede {
-  color: #c4cbd8;
+  color: var(--subtle);
   max-width: 56ch;
 }
 
 .start-dim {
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .start-cards {
@@ -6527,19 +6551,19 @@ html[data-scheme="light"] .doc {
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-left: 3px solid rgb(138, 160, 190);
+  border-left: 3px solid var(--s-plain);
   border-radius: var(--card-radius);
   background: var(--panel);
 }
 
 .start-cards > li:has(.agent) {
-  border-left-color: rgb(185, 140, 255);
+  border-left-color: var(--s-ask);
 }
 
 .start-cards p {
   margin: 0 0 6px;
-  color: #c4cbd8;
-  font-size: 13px;
+  color: var(--subtle);
+  font-size: var(--text-md);
 }
 
 /* What your agent can do here (agent-can.tsx): "Ask it to …" lines, each
@@ -6551,13 +6575,13 @@ html[data-scheme="light"] .doc {
 
 .agent-can h3 {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .agent-can summary {
   cursor: pointer;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agent-can-lines {
@@ -6573,7 +6597,7 @@ html[data-scheme="light"] .doc {
   flex-wrap: wrap;
   gap: 2px 8px;
   align-items: baseline;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .agent-can-ask {
@@ -6588,21 +6612,21 @@ html[data-scheme="light"] .doc {
 .start-glyph {
   flex: none;
   width: 30px;
-  font: 600 18px/1.4 var(--f-mono);
-  color: rgb(138, 160, 190);
+  font: 600 var(--text-lg)/1.4 var(--f-mono);
+  color: var(--s-plain);
 }
 
 .start-glyph.agent {
-  color: rgb(185, 140, 255);
+  color: var(--s-ask);
 }
 
 .start kbd {
-  font: 500 11px/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--f-mono);
   padding: 2px var(--space-1);
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--tag-radius);
-  background: #0c1019;
+  background: var(--surface);
 }
 
 .start-checks {
@@ -6621,7 +6645,7 @@ html[data-scheme="light"] .doc {
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
   background: var(--panel);
-  font: 500 13px/1.3 var(--f-mono);
+  font: 500 var(--text-md)/1.3 var(--f-mono);
   color: var(--mute);
 }
 
@@ -6640,7 +6664,7 @@ html[data-scheme="light"] .doc {
 .start-check.done i {
   background: var(--s-done);
   border-color: var(--s-done);
-  box-shadow: 0 0 10px rgba(99, 224, 160, 0.6);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--s-done) 60%, transparent);
 }
 
 .start-check.wait i {
@@ -6656,18 +6680,18 @@ html[data-scheme="light"] .doc {
    one thing to do, louder still. */
 .start .primary.big {
   padding: 12px 20px;
-  font-size: 13px;
+  font-size: var(--text-md);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-caps);
 }
 
 .start-said {
   margin: 12px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 84, 104, 0.4);
+  border: 1px solid color-mix(in srgb, var(--s-fail) 40%, transparent);
   border-left: 3px solid var(--s-fail);
   border-radius: var(--card-radius);
-  background: rgba(255, 84, 104, 0.06);
+  background: color-mix(in srgb, var(--s-fail) 6%, transparent);
 }
 
 .start-said p:first-child {
@@ -6681,8 +6705,8 @@ html[data-scheme="light"] .doc {
 
 .start-together p {
   margin: 0 0 10px;
-  color: #c4cbd8;
-  font-size: 13px;
+  color: var(--subtle);
+  font-size: var(--text-md);
 }
 
 .start-together .start-confirm {
@@ -6718,15 +6742,15 @@ html[data-scheme="light"] .doc {
   margin: 14px 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-left: 3px solid rgb(185, 140, 255);
+  border-left: 3px solid var(--s-ask);
   border-radius: var(--panel-radius);
   background: var(--panel);
 }
 
 .start-offer p {
   margin: 0 0 10px;
-  color: #c4cbd8;
-  font-size: 13px;
+  color: var(--subtle);
+  font-size: var(--text-md);
 }
 
 .start-reach {
@@ -6758,32 +6782,32 @@ html[data-scheme="light"] .doc {
 .start-code {
   margin: 16px 0;
   padding: 18px;
-  border: 1px solid rgba(185, 140, 255, 0.35);
+  border: 1px solid color-mix(in srgb, var(--s-ask) 35%, transparent);
   border-radius: var(--panel-radius);
-  background: rgba(185, 140, 255, 0.05);
+  background: color-mix(in srgb, var(--s-ask) 5%, transparent);
   text-align: center;
 }
 
 .start-code-big {
   margin: 4px 0 16px;
-  font: 800 52px/1 var(--f-display);
-  letter-spacing: 0.18em;
+  font: 800 52px/1 var(--f-display); /* off-scale: the start code */
+  letter-spacing: 0.18em; /* off-scale: the start code */
   color: var(--s-ask);
-  text-shadow: 0 0 24px rgba(185, 140, 255, 0.35);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--s-ask) 35%, transparent);
 }
 
 /* A join secret (#760): after the code, smaller, on a line of its own. */
 .start-code-secret {
   display: block;
   margin-top: 8px;
-  font: 700 clamp(14px, 4vw, 22px)/1.2 ui-monospace, monospace;
-  letter-spacing: 0.08em;
+  font: 700 clamp(14px, 4vw, 22px)/1.2 var(--f-mono); /* off-scale: the start code */
+  letter-spacing: 0.08em; /* off-scale: the start code */
   overflow-wrap: anywhere;
 }
 
 .start-code-big.start-fp {
-  font: 700 clamp(18px, 6vw, 30px)/1.2 ui-monospace, monospace;
-  letter-spacing: 0.04em;
+  font: 700 clamp(18px, 6vw, 30px)/1.2 var(--f-mono); /* off-scale: the start code */
+  letter-spacing: 0.04em; /* off-scale: the start code */
   overflow-wrap: anywhere;
 }
 
@@ -6821,7 +6845,7 @@ html[data-scheme="light"] .doc {
 .start-hint {
   flex: 1;
   text-align: center;
-  font: 500 11px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   color: var(--mute);
 }
 
@@ -6836,12 +6860,12 @@ html[data-scheme="light"] .doc {
   border-radius: var(--chip-radius);
   background: var(--void);
   color: var(--ink);
-  font: 500 12px/1 var(--f-mono);
-  box-shadow: 0 12px 40px #000a;
+  font: 500 var(--text-sm)/1 var(--f-mono);
+  box-shadow: var(--shadow-lg);
 }
 
 @media (max-width: 600px) {
-  .start-backdrop {
+  .prompt-backdrop:has(> .start) {
     padding: 0;
   }
   .start {
@@ -6850,7 +6874,7 @@ html[data-scheme="light"] .doc {
     border-radius: 0;
   }
   .start-step h2 {
-    font-size: 32px;
+    font-size: var(--text-2xl);
   }
   .start-seg {
     padding: var(--space-2) 8px;
@@ -6875,7 +6899,7 @@ html[data-scheme="light"] .doc {
 .adapter-help {
   display: grid;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .adapter-help p {
@@ -6898,7 +6922,7 @@ html[data-scheme="light"] .doc {
  * Managoat catalog had them first). */
 .offer-said,
 .offer-empty {
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 4px 10px;
 }
 
@@ -6908,7 +6932,7 @@ html[data-scheme="light"] .doc {
   padding: 0;
   color: var(--accent);
   text-decoration: underline;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* #403: the Agents page, over everything like the chat page. Its tabs
@@ -6927,7 +6951,7 @@ html[data-scheme="light"] .doc {
   height: 26px;
   padding: 0 8px;
   border-radius: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
   border-bottom: 2px solid transparent;
 }
@@ -6942,59 +6966,14 @@ html[data-scheme="light"] .doc {
   border-bottom-color: var(--accent);
 }
 
-.agents-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px 16px 32px;
-}
-
-.agents-body > * {
-  max-width: 960px;
-  margin: 0 auto;
-}
-
-.agents-lead {
-  margin: 0 8px 14px;
-  max-width: 720px;
-  line-height: 1.5;
-  color: var(--dim);
-}
-
-.agents-lead b {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.agents-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 0 8px 16px;
-}
-
+/* What was just done, under the search. */
 .agents-said {
-  color: var(--accent);
-}
-
-.agents-empty {
-  margin: 0 8px 16px;
-  padding: 16px 18px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--card-radius);
-  line-height: 1.5;
-}
-
-.agents-empty p {
-  margin: 4px 0 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-5) 0;
   color: var(--dim);
+  font-size: var(--text-sm);
 }
 
-.agents-empty button {
-  margin-top: 10px;
-}
-
-.agents-empty b,
 .agents-none b {
   color: var(--fg);
 }
@@ -7005,59 +6984,9 @@ html[data-scheme="light"] .doc {
   text-decoration: underline;
 }
 
-.agents-section-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin: 20px 8px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  min-width: 0;
-}
-
-.agents-section-head .dim {
-  font-weight: normal;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.agents-remove {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--dim);
-  text-decoration: underline;
-}
-
-.agents-remove:hover {
-  color: var(--fg);
-}
-
 .agents-none {
   margin: 0 8px;
   color: var(--dim);
-}
-
-.agents-cards {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.agents-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  border: 1px solid var(--line);
 }
 
 /* What went wrong on the Agents and Docs pages, the same red. */
@@ -7069,10 +6998,6 @@ html[data-scheme="light"] .doc {
   margin: 0 8px;
 }
 
-.agents-card.waiting {
-  border-color: var(--accent);
-}
-
 /* Chat's sidebar: the machines it doesn't show, and why. */
 .chat-missing {
   margin-top: 12px;
@@ -7081,10 +7006,10 @@ html[data-scheme="light"] .doc {
 /* Chat's Activity: what needs you on every machine, above the messages. */
 .activity-head {
   margin: 12px 16px 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--track-caps);
   color: var(--dim);
 }
 
@@ -7122,91 +7047,59 @@ html[data-scheme="light"] .doc {
   color: var(--danger);
 }
 
-/* Recipes: which machine's, and the places with none yet, compact. */
-.agents-machine {
-  margin: 4px 8px 4px;
-  font-size: 15px;
-}
-
-.agents-empty-list {
-  list-style: none;
-  margin: 4px 0;
-  padding: 0 8px;
-}
-
-.agents-empty-list li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0;
-}
-
-.agents-empties > p {
-  margin: 4px 8px;
-}
-
-/* A secondary small button like the page's others (UI audit #173). */
-.agents-inline-new {
-  flex: none;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-.agents-inline-new + .agents-remove {
-  margin-left: 8px;
-}
-
-.agents-card-text {
-  flex: 1 1 280px;
-  min-width: 0;
-}
-
-.agents-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-}
-
-.agents-card-text p {
-  margin: 2px 0 0;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.agents-how {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 11px;
-}
-
-.agents-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+/* The recipe form, in the preview's place: its buttons stay in view. */
 .agents-form {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0 8px 16px;
-  padding: 12px 14px;
-  max-width: 760px;
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  min-height: 0;
   text-align: left;
 }
 
-.agents-form-title {
-  margin: 0;
-  font-size: 14px;
+.agents-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.agents-form > .dim {
+/* A preview's words: a heading, what the recipe says, and what it has. */
+.agents-words-head {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--dim);
+  font: 700 var(--text-md)/1 var(--f-display);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.agents-recipe-prompt {
   margin: 0;
-  font-size: 12px;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--bg);
+  font: var(--text-sm)/1.5 var(--f-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agents-facts {
+  margin: 0;
+}
+
+.agents-facts dt {
+  margin-top: var(--space-3);
+  color: var(--dim);
+  font: 700 var(--text-md)/1 var(--f-display);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.agents-facts dt:first-child {
+  margin-top: 0;
+}
+
+.agents-facts dd {
+  margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
 }
 
@@ -7237,7 +7130,7 @@ html[data-scheme="light"] .doc {
 
 .agents-field textarea {
   resize: vertical;
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .agents-prompt {
@@ -7246,11 +7139,6 @@ html[data-scheme="light"] .doc {
 
 .agents-prompt > span {
   padding-top: 4px;
-}
-
-.agents-form .ws-actions {
-  justify-content: flex-start;
-  padding-left: 120px;
 }
 
 .agents-shelf-head .dim {
@@ -7265,18 +7153,14 @@ html[data-scheme="light"] .doc {
   gap: 2px;
 }
 
-.phone .agents-form .ws-actions {
-  padding-left: 0;
-}
-
 .agents-recipe-list li code {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* M77: the agents block's machines, and the recipes to offer. */
 .agents-shelf-head {
   margin: 8px 8px 0;
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
   display: flex;
   gap: 6px;
@@ -7346,15 +7230,11 @@ html[data-scheme="light"] .doc {
 
 .offer-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.worn-mcp {
-  border: 1px solid var(--line);
 }
 
 .offer-actions {
@@ -7375,7 +7255,7 @@ html[data-scheme="light"] .doc {
 
 .phone .offer-actions button {
   padding: 8px 14px;
-  font-size: 14px;
+  font-size: var(--t-body);
 }
 
 /* A newer release (#176): a chip in the top bar, the command in a popover. */
@@ -7386,16 +7266,16 @@ html[data-scheme="light"] .doc {
   margin-right: 6px;
 }
 
-.update-chip {
+.update-button {
   padding: 2px 8px;
   border: 1px solid var(--accent);
   border-radius: var(--chip-radius);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
-.update-chip:hover {
+.update-button:hover {
   background: var(--raised);
 }
 
@@ -7458,14 +7338,14 @@ html[data-scheme="light"] .doc {
 
 .whats-new-head h2 {
   margin: 0;
-  font-size: 1em;
+  font-size: var(--text-lg);
 }
 
 .whats-new-close {
   padding: 0 6px;
   background: none;
   color: var(--dim);
-  font-size: 1.2em;
+  font-size: var(--text-lg);
 }
 
 .whats-new-close:hover {
@@ -7534,36 +7414,21 @@ html[data-scheme="light"] .doc {
 
 /* ---- threads (M61): the people's conversation beside a pane or session */
 
-.thread-badge {
+/* A pane's thread button, a count (shared/ui/state-chip) over its corner.
+   `.count.pane-thread`, to win over a touch button's `position: relative`. */
+.count.pane-thread {
   position: absolute;
   z-index: 5;
   top: 6px;
   left: 6px;
-  display: flex;
-  align-items: center;
   gap: 4px;
-  padding: 2px 6px;
-  border-radius: var(--chip-radius);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--dim);
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
   opacity: 0.7;
 }
 
-.thread-badge:hover {
+.count.pane-thread:hover,
+.count.pane-thread.count-you,
+.count.pane-thread.count-mention {
   opacity: 1;
-  color: var(--fg);
-}
-
-.thread-badge.unread {
-  opacity: 1;
-  color: var(--on-color);
-  background: var(--accent);
-}
-
-.thread-badge.mention {
-  background: var(--warn);
 }
 
 .thread-panel {
@@ -7607,6 +7472,7 @@ html[data-scheme="light"] .doc {
 }
 
 .thread-close {
+  min-height: 24px;
   padding: 4px 8px;
   border-radius: var(--btn-radius);
   color: var(--dim);
@@ -7623,7 +7489,6 @@ html[data-scheme="light"] .doc {
   padding: 8px 12px 12px;
 }
 
-.thread-empty,
 .thread-note {
   color: var(--dim);
   line-height: 1.45;
@@ -7739,7 +7604,7 @@ html[data-scheme="light"] .doc {
   border-radius: 8px;
   overflow: hidden;
   flex: none;
-  font: 700 13px system-ui, sans-serif;
+  font: 700 var(--text-md) var(--f-ui);
   color: var(--on-color);
 }
 
@@ -7752,7 +7617,7 @@ html[data-scheme="light"] .doc {
 .msg-hover-time {
   visibility: hidden;
   padding-top: 3px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   white-space: nowrap;
@@ -7781,25 +7646,17 @@ html[data-scheme="light"] .doc {
   font-weight: 700;
 }
 
-/* The session an agent's post came from (#429), after "<owner>'s agent on
-   <machine>": muted, and the first thing to give way in a narrow row. */
-.thread-session {
-  color: var(--dim);
-  font-size: 12px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .thread-head time {
-  font-size: 11px;
+  flex: none;
+  font-size: var(--text-xs);
   color: var(--dim);
+  white-space: nowrap;
 }
 
 .thread-text {
   margin: 1px 0;
-  line-height: 1.46;
+  font-size: var(--t-body);
+  line-height: var(--lh-prose);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -7810,7 +7667,7 @@ html[data-scheme="light"] .doc {
   border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
 }
 
 .thread-text a {
@@ -7849,7 +7706,7 @@ html[data-scheme="light"] .doc {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--letterbox);
-  font: 12px/1.4 ui-monospace, monospace;
+  font: var(--text-sm)/1.4 var(--f-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -7859,7 +7716,7 @@ html[data-scheme="light"] .doc {
   display: flex;
   align-items: center;
   margin: 14px 0 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -7890,7 +7747,7 @@ html[data-scheme="light"] .doc {
 
 .msg-new span {
   padding-left: 6px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* The hover toolbar, at the message's top right. */
@@ -7920,79 +7777,7 @@ html[data-scheme="light"] .doc {
 }
 
 .msg-tools .msg-quick {
-  font-size: 14px;
-}
-
-.msg-tools button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--fg);
-}
-
-/* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
-.msg-menu {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-}
-
-.msg-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: var(--field-radius);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.msg-item:hover,
-.msg-item:focus-visible {
-  background: var(--raised);
-}
-
-.msg-item[aria-pressed="true"] {
-  color: var(--accent);
-}
-
-.msg-item.danger {
-  color: var(--danger);
-}
-
-.msg-item-icon {
-  width: 16px;
-  text-align: center;
-  color: var(--dim);
-}
-
-.msg-item.danger .msg-item-icon {
-  color: inherit;
-}
-
-/* The long-press sheet's items sit under the emoji row. */
-.react-menu.with-items {
-  flex-wrap: wrap;
-}
-
-.react-menu-items {
-  display: flex;
-  flex: 1 0 100%;
-  flex-direction: column;
-}
-
-.react-menu.with-items > button + .react-menu-items,
-.react-menu.with-items > .react-menu-items:not(:first-child) {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
+  font-size: 14px; /* off-scale: emoji glyph */
 }
 
 /* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
@@ -8015,7 +7800,7 @@ html[data-scheme="light"] .doc {
   border-radius: var(--chip-radius);
   background: var(--accent);
   color: var(--on-color);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
@@ -8078,15 +7863,25 @@ html[data-scheme="light"] .doc {
 }
 
 .msg-tools button {
-  width: 28px;
-  height: 26px;
-  color: var(--dim);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
-.msg-tools button:hover {
-  background: var(--raised);
-  color: var(--fg);
+/* Where an @machine mention got to (#502): one dim line a machine. */
+.mention-status {
+  margin: 2px 0;
+}
+
+.mention-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+}
+
+/* The status chip wraps: a state can say a sentence. */
+.mention-line .chip {
+  white-space: normal;
+  text-align: left;
 }
 
 /* Reactions (#104): chips under a message, and the menu that adds one. */
@@ -8106,7 +7901,7 @@ html[data-scheme="light"] .doc {
   border-radius: var(--chip-radius);
   background: var(--raised);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 20px;
 }
 
@@ -8125,7 +7920,23 @@ html[data-scheme="light"] .doc {
 }
 
 .reaction-emoji {
-  font-size: 14px;
+  font-size: 14px; /* off-scale: emoji glyph */
+}
+
+/* The agents' share of a chip (#632): a teal divider after the people's
+   count, then the agent icon and the agents' count. */
+.reaction-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 0;
+  background: var(--teal);
+}
+
+.reaction-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--teal);
 }
 
 .reaction.add {
@@ -8156,7 +7967,7 @@ html[data-scheme="light"] .doc {
   width: 34px;
   height: 34px;
   border-radius: var(--btn-radius);
-  font-size: 18px;
+  font-size: 18px; /* off-scale: emoji glyph */
   line-height: 1;
 }
 
@@ -8173,19 +7984,6 @@ html[data-scheme="light"] .doc {
   color: var(--dim);
 }
 
-/* The picker opens below the menu, in the message's column, or above it
-   when there's no room below (the newest message). */
-.react-menu .emoji-picker {
-  top: calc(100% + 4px);
-  right: 0;
-  bottom: auto;
-}
-
-.react-menu .emoji-picker.above {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
-
 @media (pointer: coarse) {
   .thread-msg {
     -webkit-touch-callout: none;
@@ -8196,7 +7994,7 @@ html[data-scheme="light"] .doc {
   }
 }
 
-/* On a phone the menu is a sheet along the bottom, under a long-press. */
+/* On a phone the menu is a sheet along the bottom. */
 @media (max-width: 600px) {
   .react-menu {
     position: fixed;
@@ -8213,15 +8011,22 @@ html[data-scheme="light"] .doc {
   .react-menu > button {
     width: 44px;
     height: 44px;
-    font-size: 24px;
+    font-size: 24px; /* off-scale: emoji glyph */
   }
+}
 
-  /* Over the sheet, as the composer's is over its box. */
-  .react-menu .emoji-picker {
-    top: auto;
-    right: 0;
-    bottom: 0;
-  }
+/* The same row at the top of the message menu a long-press opens (its
+   `head`): part of that menu's sheet, not a sheet of its own. */
+.react-menu.react-row {
+  position: relative;
+  inset: auto;
+  justify-content: space-around;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .thread-quote {
@@ -8243,7 +8048,7 @@ button.thread-quote:hover {
   margin: 0;
   max-height: 12em;
   overflow: auto;
-  font: 12px/1.35 ui-monospace, monospace;
+  font: var(--text-sm)/1.35 var(--f-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -8251,7 +8056,7 @@ button.thread-quote:hover {
 .thread-quote-from {
   display: block;
   margin-bottom: 2px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -8298,7 +8103,9 @@ button.thread-quote:hover {
   min-height: 1.45em;
   padding: 10px 12px;
   font: inherit;
-  line-height: 1.45;
+  /* A field is 16 on touch: iOS zooms into anything smaller (#754). */
+  font-size: var(--t-field);
+  line-height: var(--lh-prose);
   color: var(--fg);
   background: none;
   border: 0;
@@ -8306,20 +8113,16 @@ button.thread-quote:hover {
 }
 
 .compose-send {
-  display: grid;
-  place-items: center;
   width: 32px;
-  height: 28px;
+  min-height: 28px;
   margin: 0 6px 6px 0;
-  border-radius: var(--btn-radius);
-  background: var(--accent);
-  color: var(--surface);
+  padding: 0;
 }
 
-.compose-send:disabled {
-  background: none;
-  color: var(--dim);
-  cursor: default;
+/* Send is a .primary, whose padding (shared/buttons.css) loads after this on
+   the platform and won at one class: 14px a side left the icon 2px. */
+.compose-send.primary {
+  padding: 0;
 }
 
 /* M123: control's chat. The composer's "Quote a pane" beside Send. */
@@ -8328,19 +8131,7 @@ button.thread-quote:hover {
 }
 
 .compose-tool {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
   margin: 0 2px 6px 0;
-  border-radius: var(--btn-radius);
-  color: var(--dim);
-}
-
-.compose-tool:hover,
-.compose-tool[aria-pressed="true"] {
-  background: var(--raised);
-  color: var(--fg);
 }
 
 /* Picking a pane to quote, and the lines to keep from it. */
@@ -8383,7 +8174,7 @@ button.thread-quote:hover {
 .chat-quote-text {
   width: 100%;
   box-sizing: border-box;
-  font: 12px/1.35 ui-monospace, monospace;
+  font: var(--text-sm)/1.35 var(--f-mono);
   color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--line-strong);
@@ -8396,8 +8187,8 @@ button.thread-quote:hover {
   cursor: default;
 }
 
-.chat-pane-chip {
-  font-family: ui-monospace, monospace;
+.chat-pane-ref {
+  font-family: var(--f-mono);
 }
 
 /* Its machine is asleep: it opens once it's back. */
@@ -8415,7 +8206,7 @@ button.thread-quote:hover {
   display: block;
   margin: 8px auto;
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
   border-radius: var(--chip-radius);
 }
@@ -8438,7 +8229,7 @@ button.thread-quote:hover {
 }
 
 .msg-edit span {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .chat-row.muted .chat-label {
@@ -8449,7 +8240,7 @@ button.thread-quote:hover {
 .chat-dnd {
   flex: none;
   margin-left: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1;
 }
 
@@ -8461,7 +8252,7 @@ button.thread-quote:hover {
   gap: 4px 10px;
   padding: 4px 12px;
   border-top: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .compose-paused button {
@@ -8482,7 +8273,7 @@ button.thread-quote:hover {
 
 .chat-sigil.chat-dm-pic .msg-avatar {
   border-radius: 4px;
-  font-size: 9px;
+  font-size: 9px; /* off-scale: avatar initials */
 }
 
 .mention-pick {
@@ -8561,7 +8352,7 @@ button.thread-quote:hover {
   height: 20px;
   border-radius: 4px;
   background: var(--divider);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -8577,7 +8368,7 @@ button.thread-quote:hover {
   margin: 0;
   padding: 0 12px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.4em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8586,7 +8377,7 @@ button.thread-quote:hover {
 
 .mention-pick .msg-avatar {
   border-radius: 4px;
-  font-size: 9px;
+  font-size: 9px; /* off-scale: avatar initials */
 }
 
 /* The drawer is narrow: smaller pictures. */
@@ -8687,25 +8478,6 @@ button.thread-quote:hover {
 /* The chat page (ui/chat.tsx, M73): every thread, on a page of its own
    with its own bar, over the panes (which stay laid out under it). */
 
-.chat-count {
-  display: inline-block;
-  min-width: 16px;
-  margin-left: 6px;
-  padding: 1px var(--space-1);
-  border-radius: var(--chip-radius);
-  box-sizing: border-box;
-  background: var(--accent);
-  color: var(--surface);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 14px;
-  text-align: center;
-}
-
-.chat-count.mention {
-  background: var(--warn);
-}
-
 .chat {
   position: fixed;
   /* Over the panes, their bar and the thread drawer, under menus (50). */
@@ -8743,13 +8515,6 @@ button.thread-quote:hover {
   padding: 0;
 }
 
-.chat-block-bar {
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--line);
-}
-
 .chat-block-bar .chat-search {
   flex: 1;
   min-width: 0;
@@ -8772,10 +8537,6 @@ button.thread-quote:hover {
 .chat-block-needs h3 {
   margin: 0 0 8px;
   color: var(--fg);
-}
-
-.tab .chat-count {
-  flex: none;
 }
 
 .chat-search {
@@ -8825,7 +8586,7 @@ input.chat-search {
 
 .chat.phone input.chat-search {
   height: 36px;
-  font-size: 16px;
+  font-size: var(--t-field);
 }
 
 /* M75: Activity and search results, and the switcher. */
@@ -8864,7 +8625,7 @@ input.chat-search {
   gap: 8px;
   margin-bottom: 6px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .chat-hit.unread .chat-hit-where span {
@@ -8890,24 +8651,10 @@ input.chat-search {
   border-radius: 2px;
 }
 
-.chat-switcher-back {
-  position: fixed;
-  inset: 0;
-  z-index: 49;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 12vh;
-  background: rgb(0 0 0 / 0.4);
-}
-
-.chat-switcher {
+/* The room switcher is the palette's box (a Modal, .picker.palette) at 560px. */
+.picker.palette.chat-switcher {
   width: min(560px, calc(100vw - 32px));
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  height: auto;
 }
 
 .chat-switcher input {
@@ -8919,7 +8666,7 @@ input.chat-search {
   background: none;
   color: var(--fg);
   font: inherit;
-  font-size: 15px;
+  font-size: var(--text-lg);
   outline: none;
 }
 
@@ -8956,7 +8703,7 @@ input.chat-search {
 
 .chat-switcher-host {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .chat-body {
@@ -8975,43 +8722,13 @@ input.chat-search {
   border-right: 1px solid var(--line);
 }
 
+/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169): a
+   bar (shared/ui/bar.css, #686). */
 .chat-side-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 49px;
-  padding: 0 8px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--line);
+  border-bottom-color: var(--line);
 }
 
-/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169). */
-.chat-side-name {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  font-size: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-side-head .chat-workspace {
-  flex: none;
-  padding: 2px 8px;
-  border-radius: var(--field-radius);
-  color: var(--dim);
-  font-size: 16px;
-  line-height: 1.2;
-}
-
-.chat-side-head .chat-workspace:hover {
-  color: var(--fg);
-  background: var(--raised);
-}
-
-/* Drawn icons (./chat/icons.tsx) sit on the text's line. */
+/* Drawn icons (shared/ui/icons.tsx) sit on the text's line. */
 .chat-sigil svg,
 .chat-section .chat-new svg {
   display: inline-block;
@@ -9050,7 +8767,7 @@ input.chat-search {
 .chat-section {
   margin: 12px 6px 2px;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
 }
 
@@ -9076,7 +8793,7 @@ input.chat-search {
 
 .chat-caret {
   width: 12px;
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .chat-none {
@@ -9089,6 +8806,7 @@ input.chat-search {
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
+  min-height: 26px;
   width: calc(100% - 12px);
   margin: 0 6px;
   padding: 4px 10px;
@@ -9101,10 +8819,11 @@ input.chat-search {
 
 .chat.phone .chat-row {
   width: 100%;
+  min-height: 44px;
   margin: 0;
-  padding: 10px 16px;
+  padding: 0 16px;
   border-radius: 0;
-  font-size: 15px;
+  font-size: var(--t-body);
 }
 
 .chat-row.sub {
@@ -9129,13 +8848,8 @@ input.chat-search {
 }
 
 .chat-row.selected {
-  background: var(--accent);
-  color: var(--surface);
-}
-
-.chat-row.selected .chat-sigil,
-.chat-row.selected.unread .chat-label {
-  color: inherit;
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .chat-sigil {
@@ -9170,8 +8884,13 @@ input.chat-search {
   flex-direction: column;
 }
 
-.chat-title strong {
-  font-size: 15px;
+/* A chat head's name may be as long as someone chose, in a room as narrow
+   as a block or one with a thread beside it: it shrinks to its ellipsis
+   (the bar's own title only stops at 60%). */
+.chat-head > .hbar-title {
+  flex-shrink: 1;
+  /* ...but not to a few letters: below this the head folds a button. */
+  min-width: 8ch;
 }
 
 .chat-title-sigil {
@@ -9202,7 +8921,7 @@ input.chat-search {
 
 .chat-members .msg-avatar {
   border-radius: 5px;
-  font-size: 9px;
+  font-size: 9px; /* off-scale: avatar initials */
   box-shadow: 0 0 0 2px var(--bg);
 }
 
@@ -9211,30 +8930,13 @@ input.chat-search {
   margin-left: 10px;
 }
 
-.chat-members:hover,
-.chat-info:hover,
-.chat-info.on {
+.chat-members:hover {
   background: var(--raised);
   color: var(--fg);
 }
 
 .chat-info {
-  width: 30px;
-  height: 28px;
-  border-radius: var(--btn-radius);
-  color: var(--dim);
-  font-size: 15px;
-}
-
-/* The header's bell, in the room: yellow while it notifies you. */
-.chat-info.chat-bell {
-  display: grid;
-  place-items: center;
-  color: var(--warn);
-}
-
-.chat-info.chat-bell.quiet {
-  color: var(--dim);
+  font-size: var(--text-lg);
 }
 
 .chat-details {
@@ -9255,7 +8957,7 @@ input.chat-search {
 .chat-details h3 {
   margin: 14px 0 6px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -9274,7 +8976,7 @@ input.chat-search {
   border-bottom: 1px solid var(--line);
   text-align: left;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .chat-peek-title:hover {
@@ -9286,7 +8988,7 @@ input.chat-search {
   padding: 6px 8px;
   max-height: 22em;
   overflow: auto;
-  font: 11px/1.35 ui-monospace, monospace;
+  font: var(--text-xs)/1.35 var(--f-mono);
   white-space: pre;
 }
 
@@ -9318,7 +9020,7 @@ input.chat-search {
 .chat-section .chat-new {
   width: auto;
   padding: 0 6px;
-  font-size: 15px;
+  font-size: var(--text-lg);
   line-height: 1.2;
 }
 
@@ -9387,14 +9089,14 @@ input.chat-search {
 
 .chat-people li .dim {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .conv-remove {
   padding: 2px 8px;
   border-radius: var(--btn-radius);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .conv-remove:hover {
@@ -9416,94 +9118,6 @@ input.chat-search {
   margin-right: 8px;
 }
 
-.chat-empty {
-  align-items: center;
-  justify-content: center;
-  color: var(--dim);
-}
-
-.chat-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.chat-head > strong {
-  flex: 1;
-}
-
-.chat-title {
-  flex: 1;
-  /* The name truncates last: the buttons wrap under it first (below). */
-  min-width: min(8em, 100%);
-  display: flex;
-  flex-direction: column;
-}
-
-/* A room too narrow for its name and its buttons in one row (the Details
-   or a thread panel open beside it, a narrow window or block): the name
-   keeps the first row, the buttons take a row of their own under it, as
-   a phone's do. The room's width, not the window's (UI audit #156). */
-.chat-thread {
-  container: chat-room / inline-size;
-}
-
-.chat-thread > .chat-head > :not(.chat-title) {
-  flex: none;
-}
-
-@container chat-room (max-width: 600px) {
-  .chat-head {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-
-  .chat-head .chat-title {
-    flex: 1 1 100%;
-  }
-
-  /* Less the back button and the gap: a finger's 40px (UI audit #199). */
-  .chat-head .chat-back + .chat-title {
-    flex-basis: calc(100% - 56px);
-  }
-
-  .chat-head .chat-title + * {
-    margin-left: auto;
-  }
-}
-
-/* A phone's room header has more buttons than width (pins, about, star,
-   move, bell, leave): the back button and the room's name keep the first
-   row, and the buttons wrap onto a row of their own under it. */
-.chat.phone .chat-head {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.chat.phone .chat-head .chat-title {
-  flex: 1 1 calc(100% - 56px);
-}
-
-.chat.phone .chat-head > :not(.chat-back):not(.chat-title):first-of-type,
-.chat.phone .chat-head .chat-title + * {
-  margin-left: auto;
-}
-
-.chat-title strong,
-.chat-title span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-title span {
-  color: var(--dim);
-  font-size: 12px;
-}
-
 .chat-go {
   flex: none;
   padding: var(--space-1) 10px;
@@ -9517,8 +9131,9 @@ input.chat-search {
 
 .chat-back {
   flex: none;
+  min-height: 24px;
   padding: 0 8px;
-  font-size: 22px;
+  font-size: var(--text-xl);
   line-height: 1;
   color: var(--dim);
 }
@@ -9534,6 +9149,15 @@ input.chat-search {
   .compose-send {
     min-width: 40px;
     min-height: 40px;
+  }
+}
+
+/* A computer's bar is 34px: a touch screen's wide window keeps the bar's
+   24 there (#686). */
+@media (pointer: coarse) and (min-width: 701px) {
+  .hbar :is(.chat-back, .chat-info, .thread-close) {
+    min-width: 24px;
+    min-height: 0;
   }
 }
 
@@ -9669,7 +9293,7 @@ input.chat-search {
 }
 
 /* A terminal Claude whose hooks aren't heard: its questions could be cards. */
-.hooks-chip {
+.hooks-offer {
   position: absolute;
   z-index: 6;
   top: 8px;
@@ -9682,15 +9306,15 @@ input.chat-search {
   border-radius: var(--chip-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
-.hooks-chip button {
+.hooks-offer button {
   flex-shrink: 0;
   padding: 3px 10px;
 }
 
-.hooks-chip button.link {
+.hooks-offer button.link {
   background: none;
   color: var(--dim);
   padding: 3px 6px;
@@ -9708,19 +9332,19 @@ input.chat-search {
 }
 
 /* Or the plugin: its lines under the chip's, the whole width. */
-.hooks-chip:has(.claude-plugin) {
+.hooks-offer:has(.claude-plugin) {
   flex-wrap: wrap;
   padding-bottom: 8px;
 }
 
-.hooks-chip .claude-plugin {
+.hooks-offer .claude-plugin {
   flex-basis: 100%;
   display: grid;
   gap: 4px;
   padding-right: 8px;
 }
 
-.hooks-chip .claude-plugin p {
+.hooks-offer .claude-plugin p {
   margin: 0;
   color: var(--dim);
 }
@@ -9763,7 +9387,7 @@ input.chat-search {
 
 .forge-new-who {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .forge-new-who b {
@@ -9772,7 +9396,7 @@ input.chat-search {
 
 .forge-new-title {
   margin: 0 0 10px;
-  font-size: 16px;
+  font-size: var(--text-lg);
   line-height: 1.3;
   text-wrap: pretty;
 }
@@ -9782,7 +9406,7 @@ input.chat-search {
 }
 
 .forge-status {
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
@@ -9808,16 +9432,6 @@ input.chat-search {
   overflow-wrap: anywhere;
 }
 
-.forge-state.draft {
-  background: color-mix(in srgb, var(--accent) 22%, var(--raised));
-  color: var(--fg);
-}
-
-.forge-state.revising {
-  background: color-mix(in srgb, var(--warn) 25%, var(--raised));
-  color: var(--fg);
-}
-
 .forge-field {
   display: flex;
   flex-direction: column;
@@ -9825,10 +9439,10 @@ input.chat-search {
 }
 
 .forge-field > span {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--track-caps);
   color: var(--dim);
 }
 
@@ -9846,12 +9460,12 @@ input.chat-search {
 }
 
 .forge-field input {
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 600;
 }
 
 .forge-field textarea {
-  font: 12px/1.5 var(--mono, ui-monospace, monospace);
+  font: var(--text-sm)/1.5 var(--f-mono);
   min-height: 320px;
   resize: vertical;
 }
@@ -9869,7 +9483,7 @@ input.chat-search {
 }
 
 .forge-tabs button {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
   border-bottom: 2px solid transparent;
   padding: 2px 8px 4px;
@@ -9894,7 +9508,7 @@ input.chat-search {
 }
 
 .forge-as {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .forge-compose {
@@ -9907,11 +9521,11 @@ input.chat-search {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .forge-compose textarea {
-  font-size: 13px;
+  font-size: var(--text-md);
   border-color: var(--accent);
   resize: vertical;
 }
@@ -9921,7 +9535,7 @@ input.chat-search {
   .forge-new-foot .forge-actions button {
     flex: 1 1 auto;
     padding: var(--space-2) 10px;
-    font-size: 13px;
+    font-size: var(--text-md);
   }
 
   .forge-new-foot .forge-actions button.forge-drop {
@@ -9947,30 +9561,11 @@ input.chat-search {
   flex: 2 1 0;
 }
 
-.ws-graph-bar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 3px 8px;
-  font-size: 12px;
-  background: var(--surface);
-  white-space: nowrap;
-}
-
 .ws-graph-bar > span {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.ws-graph-bar button {
-  border: 0;
-  border-radius: var(--tag-radius);
-  background: var(--raised);
-  color: var(--fg);
-  min-width: 24px;
-  height: 22px;
 }
 
 /* ---- appearance: the picker, the finishes and the corners (appearance.ts) */
@@ -9992,14 +9587,14 @@ input.chat-search {
 
 .appearance h3 {
   margin: 16px 0 8px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--track-caps);
   color: var(--dim);
 }
 
-.appearance .hint {
+.appearance :is(p, span).dim {
   margin: 0;
   color: var(--dim);
 }
@@ -10038,7 +9633,7 @@ input.chat-search {
   overflow: hidden;
   border: 1px solid;
   border-radius: var(--field-radius);
-  font: 10px/1.2 ui-monospace, monospace;
+  font: var(--text-xs)/1.2 var(--f-mono);
 }
 
 .palette-sample-bar {
@@ -10075,7 +9670,7 @@ input.chat-search {
 }
 
 .palette-hint {
-  font-size: 11px;
+  font-size: var(--text-xs);
   margin-top: -3px;
 }
 
@@ -10095,7 +9690,7 @@ input.chat-search {
 }
 
 .appearance-finish .dim {
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.35;
 }
 
@@ -10112,7 +9707,7 @@ input.chat-search {
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   text-align: left;
 }
-.appearance-control-look span { font-size: 12px; color: var(--subtle); }
+.appearance-control-look span { font-size: var(--text-sm); color: var(--subtle); }
 
 /* Each finish's card shows it whatever the page wears. */
 .appearance-finish-sample {
@@ -10132,7 +9727,7 @@ input.chat-search {
 .sample-button {
   place-self: center;
   padding: 2px 14px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   border-radius: 5px;
   background: var(--accent);
@@ -10305,6 +9900,32 @@ html[data-corners="round"] {
   --tag-radius: 6px;
 }
 
+/* A card (#698, shared/ui/card.css): its padding, the gap between cards,
+   and the bar a tone draws. */
+:root {
+  --card-pad: 10px 12px;
+  --card-pad-dense: 6px 12px;
+  --card-gap: 10px;
+  --card-bar: 3px;
+}
+
+/* A toned card's edge and fill, from its own --c, so they're set on the
+   card, not on :root, where --c isn't known. On a dark palette a tone is
+   45% of its color in the edge and 7% in the fill. On a light one that
+   draws a brownish grey (7% of a darkened amber over grey), so Latte takes
+   the tone's hue at a light card's lightness instead. */
+.card-tone {
+  --card-edge: color-mix(in srgb, var(--c) 45%, var(--line));
+  --card-tint: color-mix(in srgb, var(--c) 7%, var(--surface));
+}
+
+@supports (color: oklch(from red l c h)) {
+  html[data-scheme="light"] .card-tone {
+    --card-edge: oklch(from var(--c) 0.8 min(calc(c * 0.7), 0.1) h);
+    --card-tint: oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h);
+  }
+}
+
 /* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
       blue-lit selection */
 
@@ -10442,8 +10063,11 @@ html[data-finish="glass"] .prompt {
   box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, var(--shadow-lg);
 }
 
+html[data-finish="glass"] {
+  --backdrop: #0003;
+}
+
 html[data-finish="glass"] .prompt-backdrop {
-  background: #0003;
   backdrop-filter: blur(3px);
 }
 
@@ -10454,8 +10078,8 @@ html[data-finish="glass"] .prompt-backdrop {
 }
 
 .control-device-code .control-cmd {
-  font-size: 15px;
-  letter-spacing: 0.03em;
+  font-size: var(--text-lg);
+  letter-spacing: 0;
 }
 
 .control-older {
@@ -10479,7 +10103,7 @@ html[data-finish="glass"] .prompt-backdrop {
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: var(--field-radius);
-  background: #000;
+  background: #000; /* lint: literal — a camera frame is letterboxed in black in every scheme */
 }
 
 .conv-teammates {
@@ -10586,7 +10210,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-rail-label {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1;
 }
 
@@ -10600,7 +10224,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border-radius: var(--chip-radius);
   background: var(--raised-hover);
   color: var(--fg);
-  font-size: 9px;
+  font-size: var(--text-xs);
   line-height: 14px;
 }
 
@@ -10646,10 +10270,22 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
-.ws-head .host-button {
+/* Every shell bar on a computer is the panes' size and looks the same
+   (Arugula #637), so moving between a machine's places doesn't move the bar. */
+.frame .app-bar,
+.swarm-shell .app-bar {
+  height: var(--head-h);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ws-head .host-button,
+.frame .app-bar .host-button,
+.swarm-shell .app-bar .host-button {
   height: 28px;
   padding: 0 8px;
   border: 0;
@@ -10658,7 +10294,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-weight: 600;
 }
 
-.ws-head .host-button:hover {
+.ws-head .host-button:hover,
+.frame .app-bar .host-button:hover {
   background: var(--raised);
 }
 
@@ -10676,7 +10313,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border: 1px solid var(--line);
   border-radius: var(--chip-radius);
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -10740,7 +10377,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   min-width: 0;
   padding: 0 8px;
   border-radius: var(--btn-radius);
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
 }
 
@@ -10836,9 +10473,9 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-sidebar-head h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--subtle);
 }
@@ -10846,7 +10483,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-sidebar-count {
   flex: 1;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-icon-button {
@@ -10911,7 +10548,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: center;
   gap: 6px;
   margin: 10px 8px 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--dim);
 }
@@ -10933,14 +10570,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border: 1px solid transparent;
 }
 
-.ws-session:hover,
-.ws-session.hi {
+.ws-session:hover {
   background: var(--raised);
 }
 
+/* The search's active row is the keyboard's: the focus outline, not hover's look. */
+.ws-session.hi {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .ws-session.current {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-session-main {
@@ -10980,7 +10622,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   align-items: center;
   gap: 3px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -10992,7 +10634,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   justify-content: space-between;
   padding-left: 14px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-session-context {
@@ -11003,7 +10645,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--f-mono);
 }
 
 /* "Multiple repos": words, in the sidebar's own face (UI audit #171). */
@@ -11032,16 +10674,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-session .rename {
   flex: 1;
   margin: 6px;
-}
-
-.ws-empty {
-  padding: 20px 12px;
-  color: var(--dim);
-  text-align: center;
-}
-
-.ws-empty button {
-  color: var(--accent);
 }
 
 .ws-sidebar-resize {
@@ -11117,7 +10749,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   min-height: 0;
   background: var(--surface);
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-activity-resize {
@@ -11156,7 +10788,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 8px;
   border-radius: var(--btn-radius);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-activity-bar button:hover,
@@ -11184,7 +10816,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-activity-count {
   color: var(--subtle);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-activity-fill {
@@ -11232,7 +10864,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border-radius: var(--field-radius);
   text-align: left;
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-activity-row:hover:not(:disabled) {
@@ -11254,9 +10886,9 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex: none;
   min-width: 46px;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-caps);
 }
 
 .ws-activity-kind.agent,
@@ -11278,14 +10910,14 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-activity-row[data-activity-kind="command"] .ws-activity-text,
 .ws-activity-row[data-activity-kind="action"] .ws-activity-text {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--f-mono);
 }
 
 .ws-activity-status {
   flex: none;
   width: 7ch;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--dim);
 }
 
@@ -11319,7 +10951,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-activity-note {
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-activity-empty.error,
@@ -11359,7 +10991,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   background: var(--surface);
   border-top: 1px solid var(--line);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -11376,7 +11008,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-foot-repo {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--f-mono);
 }
 
 .ws-foot-needs {
@@ -11402,7 +11034,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 0 var(--space-1);
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: 11px system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
 
@@ -11415,6 +11047,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-crumb-caret {
+  /* 24px or more across: a target that can be hit (#457). */
+  min-width: 24px;
   height: 26px;
   padding: 0 4px;
   border-radius: var(--btn-radius);
@@ -11456,7 +11090,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   border-radius: var(--chip-radius);
   background: var(--warn);
   color: var(--on-color);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   line-height: 15px;
   text-align: center;
@@ -11477,38 +11111,28 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   background: var(--raised);
 }
 
-/* The drawer: on the right, between the header and the footer, over the
-   panes (which keep running, and their size). */
-.ws-att {
-  position: absolute;
-  z-index: 40;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(440px, 100vw);
+/* The drawer is a side sheet (side-sheet.tsx, #690): its count is the sheet's
+   subtitle, its note the foot's. */
+.ws-att .side-sheet-sub {
+  color: var(--warn);
+}
+
+.ws-att-quiet .side-sheet-sub {
+  color: var(--dim);
+}
+
+.ws-att .side-sheet-body {
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border-left: 1px solid var(--line);
-  box-shadow: var(--shadow-md);
+  padding: 0;
+  overflow: hidden;
 }
 
-.ws-att-head {
-  display: flex;
+.ws-att .side-sheet-foot {
   align-items: center;
-  gap: 8px;
-  padding: 12px 10px 8px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.ws-att-head h2 {
-  margin: 0;
-}
-
-.ws-att-count {
-  flex: 1;
+  justify-content: space-between;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* The rows, with the open one's detail under it: one scroll. */
@@ -11546,8 +11170,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-att-item.selected {
-  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
 }
 
 .ws-att-item-text {
@@ -11563,7 +11187,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-att-item-sub {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -11584,7 +11208,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-att-detail h3 {
   margin: 0 0 6px;
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 .ws-att-headline {
@@ -11611,7 +11235,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-att-facts dt {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .ws-att-facts dd {
@@ -11623,8 +11247,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-att-facts dd.mono {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
 }
 
 .ws-att-answer .ask {
@@ -11644,40 +11268,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: 8px;
 }
 
-/* The empty drawer's steps (Discovery 5): Set up, Notify this device. */
-.ws-att-empty p {
-  margin: 0 0 6px;
-}
-
-.ws-att-empty .ws-att-acts {
-  justify-content: center;
-  margin-top: 12px;
-}
-
-.ws-att-empty .ws-att-acts .primary {
-  color: var(--on-color);
-}
-
-.ws-att-empty .ws-att-acts .secondary {
-  color: var(--fg);
-}
-
 /* The activity drawer's first-open line: what it keeps. */
 .ws-activity-intro {
   padding: 8px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-
-.ws-att-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 16px;
-  border-top: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* The overview: over the tab strip and the panes, which stay laid out. */
@@ -11709,7 +11304,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-ov-head h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-xl);
 }
 
 .ws-ov-sum {
@@ -11771,7 +11366,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin-left: -6px;
   border-radius: var(--field-radius);
   color: var(--fg);
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
 }
 
@@ -11782,7 +11377,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-ov-counts {
   margin-left: auto;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -11792,7 +11387,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   gap: var(--space-1);
   margin: 2px 0 0;
   color: var(--dim);
-  font: 12px ui-monospace, Menlo, monospace;
+  font: var(--text-sm) var(--f-mono);
 }
 
 .ws-ov-tab {
@@ -11810,7 +11405,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   margin-left: -6px;
   border-radius: var(--field-radius);
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -11849,7 +11444,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex: none;
   min-width: 42px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .ws-ov-pane-name {
@@ -11860,7 +11455,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   flex: 0 4 auto;
   max-width: 45%;
   color: var(--dim);
-  font: 11px ui-monospace, Menlo, monospace;
+  font: var(--text-xs) var(--f-mono);
 }
 
 /* What needs you is amber in the workspace, as #1018 has it (a phone
@@ -11913,7 +11508,7 @@ html[data-wall] .swarm[data-wall] {
   background: var(--panel);
   padding: var(--space-2) 12px;
   border-radius: var(--chip-radius);
-  font: 500 12px/1 var(--f-mono);
+  font: 500 var(--text-sm)/1 var(--f-mono);
 }
 .swarm[data-wall-idle],
 .swarm[data-wall-idle] * {
@@ -12015,7 +11610,7 @@ html[data-workspace="new"] .thread-panel {
   border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--subtle);
-  font: 600 10px/13px ui-monospace, Menlo, monospace;
+  font: 600 var(--text-xs)/13px var(--f-mono);
   text-align: center;
 }
 
@@ -12027,9 +11622,9 @@ html[data-workspace="new"] .thread-panel {
 .pane-header-type {
   flex: none;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-caps);
 }
 
 .pane-header.active .pane-header-type {
@@ -12093,8 +11688,8 @@ html[data-workspace="new"] .thread-panel {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11px;
+  font-family: var(--f-mono);
+  font-size: var(--text-xs);
 }
 
 .pane-header-branch .icon {
@@ -12103,31 +11698,6 @@ html[data-workspace="new"] .thread-panel {
 
 .pane-header-fill {
   flex: 1;
-}
-
-.pane-header-button {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: calc(100% - 2px);
-  border-radius: var(--tag-radius);
-  color: var(--dim);
-  cursor: pointer;
-}
-
-.pane-header-button:hover {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.pane-header-button.on {
-  color: var(--accent);
-}
-
-.pane-header-button:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* A narrow pane's header keeps its number, title, status and buttons:
@@ -12169,30 +11739,8 @@ html[data-workspace="new"] .thread-panel {
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
-}
-
-.pane-toolbar > button,
-.pt-presets > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--btn-radius);
-  color: var(--subtle);
-}
-
-.pane-toolbar > button:hover:not(:disabled),
-.pt-presets > button:hover:not(:disabled) {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.pane-toolbar button:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 .pt-count strong {
@@ -12202,7 +11750,7 @@ html[data-workspace="new"] .thread-panel {
 
 .pt-caret {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .pt-sep {
@@ -12223,11 +11771,6 @@ html[data-workspace="new"] .thread-panel {
   stroke-width: 1;
 }
 
-.pane-toolbar > button.on {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-}
-
 .pt-note {
   margin-left: 6px;
   color: var(--warn);
@@ -12239,16 +11782,11 @@ html[data-workspace="new"] .thread-panel {
   flex: 1;
 }
 
-.pane-toolbar > .pt-add {
-  border: 1px solid var(--line);
-  color: var(--fg);
-}
-
 .pt-add kbd {
   padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--tag-radius);
-  font: 10px system-ui, sans-serif;
+  font: var(--text-xs) var(--f-ui);
   color: var(--muted);
 }
 
@@ -12259,28 +11797,7 @@ html[data-workspace="new"] .thread-panel {
   }
 }
 
-/* + Pane's drawer, over the panes under its button. */
-.add-pane {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: 30;
-  width: 400px;
-  max-width: calc(100% - 20px);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  box-shadow: var(--shadow-lg);
-  color: var(--fg);
-  font-size: 12px;
-  white-space: normal;
-}
-
+/* + Pane's drawer is a side sheet (side-sheet.tsx, #690). */
 .add-pane-row {
   display: flex;
   align-items: center;
@@ -12344,7 +11861,7 @@ html[data-workspace="new"] .thread-panel {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--f-mono);
 }
 
 .add-pane-choose {
@@ -12382,13 +11899,6 @@ html[data-workspace="new"] .thread-panel {
   color: var(--danger);
 }
 
-.add-pane-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-
 /* ---- M113 (#1028): the workspace's states and accessibility. */
 
 /* Many tabs scroll sideways (the tabs alone: + and ▾ stay beside them),
@@ -12422,7 +11932,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 var(--space-2);
   border-radius: var(--btn-radius);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -12475,7 +11985,7 @@ html[data-workspace="new"] .thread-panel {
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--warn) 12%, var(--surface));
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* M141: a maintenance window is announced and short: calmer than stale. */
@@ -12494,7 +12004,7 @@ html[data-workspace="new"] .thread-panel {
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: color-mix(in srgb, var(--info) 14%, var(--surface));
-  font-size: 13px;
+  font-size: var(--text-md);
   text-align: left;
   cursor: pointer;
 }
@@ -12524,21 +12034,10 @@ html[data-workspace="new"] .thread-panel {
   font-weight: 400;
 }
 
-/* An empty machine says what a session is, and how to make one. */
-.empty .empty-title {
-  margin: 0 0 4px;
-  color: var(--fg);
-  font-size: 15px;
-}
-
 .empty .dim {
   margin: 0 0 14px;
   max-width: 420px;
   text-align: center;
-}
-
-.empty [data-no-sessions-host] {
-  margin: 0 0 14px;
 }
 
 /* Disabled with a reason (the title says it): it looks it. */
@@ -12565,38 +12064,32 @@ html[data-workspace="new"] .thread-panel {
   }
 }
 
-/* A pane with a header says there what it wants (needs you, done, failed):
-   no pill over its terminal's first lines as well. */
-.grid.with-headers .pane-badge {
-  display: none;
-}
-
-/* An agent's message (M197): its owner's, labelled "<owner>'s agent on
-   <machine>", set apart with its own rule and badge; and the line a room
-   shows when an agent grant reaches it. */
-.thread-msg.by-agent .msg-body {
-  border-left: 2px solid var(--teal);
-  padding-left: 8px;
-}
-
-.thread-msg.by-agent .thread-name,
-.chat-hit-text.by-agent > b {
+/* An agent's message (M197): its owner's, named by its tab, `machine/tab`,
+   in teal (#632); and the line a room shows when an agent grant reaches it.
+   No rule down its left for now. */
+.chat-agent-name {
   color: var(--teal);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.chat-agent-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.chat-agent-name:hover {
+  text-decoration: underline;
 }
 
 .thread-msg.by-agent .msg-avatar {
   border-radius: 50%;
-}
-
-.msg-badge.agent-badge {
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  border: 1px solid var(--teal);
-  color: var(--teal);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 /* A line the platform wrote in a room (#122): an agent grant reached it.
@@ -12608,18 +12101,17 @@ html[data-workspace="new"] .thread-panel {
   margin: 6px 0;
   padding: 0 20px;
   color: var(--teal);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.4;
 }
 
 .msg-system time {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* Whose agents reach a room (#122): one chip in its header, and a popover. */
-.agents-chip {
-  position: relative;
+.agents-slot {
   flex: none;
 }
 
@@ -12630,7 +12122,7 @@ html[data-workspace="new"] .thread-panel {
   width: auto;
   padding: 0 8px;
   color: var(--teal);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -12638,32 +12130,21 @@ html[data-workspace="new"] .thread-panel {
   display: none;
 }
 
+/* Its content, in the shared popover's box (shared/ui/menu.tsx). */
 .agents-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  width: 320px;
-  max-width: calc(100vw - 24px);
-  max-height: 60vh;
-  overflow-y: auto;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .agents-pop-lede {
   margin: 0 0 8px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .agents-pop h3 {
   margin: 8px 0 2px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .agents-pop ul {
@@ -12757,11 +12238,11 @@ html[data-workspace="new"] .thread-panel {
 }
 
 .md.md-chat table {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .md.md-chat.md-jumbo > p {
-  font-size: 32px;
+  font-size: var(--text-2xl);
   line-height: 1.2;
 }
 
@@ -12821,25 +12302,16 @@ html[data-workspace="new"] .thread-panel {
 
 /* Emoji (#105): the autocomplete reuses the mention list's box. */
 .emoji-pick .emoji-char {
-  font-size: 18px;
+  font-size: 18px; /* off-scale: emoji glyph */
   line-height: 1;
 }
 
+/* Its content, in the shared popover's box (shared/ui/menu.tsx). */
 .emoji-picker {
-  position: absolute;
-  right: 12px;
-  bottom: calc(100% + 4px);
-  z-index: 3;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-width: calc(100vw - 24px);
   height: 340px;
   max-height: 60dvh;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
 }
 
 .emoji-search {
@@ -12870,7 +12342,7 @@ html[data-workspace="new"] .thread-panel {
   flex: none;
   /* 7px, off the 4px scale: the categories fit the picker's 320px without scrolling (UI audit #198). */
   padding: 4px 7px;
-  font-size: 16px;
+  font-size: 16px; /* off-scale: emoji glyph */
   line-height: 1.3;
   border-bottom: 2px solid transparent;
   opacity: 0.6;
@@ -12893,35 +12365,27 @@ html[data-workspace="new"] .thread-panel {
 
 .emoji-grid button {
   height: 36px;
-  font-size: 22px;
+  font-size: 22px; /* off-scale: emoji glyph */
   line-height: 1;
   border-radius: var(--btn-radius);
 }
 
 .emoji-grid button:hover,
 .emoji-grid button:focus-visible {
-  background: var(--raised);
+  background: var(--raised-hover);
 }
 
 .emoji-note {
   grid-column: 1 / -1;
   margin: 8px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
-/* On a phone the picker is a sheet along the bottom of the screen. */
+/* On a phone the popover is a sheet along the bottom of the screen. */
 @media (max-width: 600px) {
   .emoji-picker {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    max-width: none;
     height: 45dvh;
-    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .emoji-grid button {
@@ -12983,9 +12447,9 @@ html[data-workspace="new"] .thread-panel {
 
 .link-card-what {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-caps);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12999,7 +12463,7 @@ html[data-workspace="new"] .thread-panel {
 .link-card-desc,
 .link-card-meta {
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .link-card-desc {
@@ -13023,7 +12487,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 0 6px;
   border: 1px solid currentColor;
   border-radius: var(--chip-radius);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -13047,12 +12511,22 @@ html[data-workspace="new"] .thread-panel {
   color: var(--dim);
 }
 
+.link-card.board-link .board-bar {
+  display: flex;
+  margin: 4px 0 2px;
+}
+
+.link-card-needs {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .link-card-remove {
   padding: 0;
   border: 0;
   background: none;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 
@@ -13112,28 +12586,35 @@ html[data-workspace="new"] .thread-panel {
   border-color: var(--dim);
 }
 
-/* An agent: its owner's picture, round, with the machine's badge. */
+/* An agent: its owner's picture, round, with the agent icon in a teal-ringed
+   circle on its corner (#632). */
 .avatar-wrap.by-agent .msg-avatar {
   border-radius: 50%;
 }
 
-.avatar-badge {
+/* A mark on an avatar's corner: round, drawn over the avatar. The chat's
+   agent mark and an item block's reviewer state both take it (item-block.css
+   sets the item's). */
+.avatar-mark {
   position: absolute;
-  left: -3px;
-  bottom: -3px;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid var(--bg);
-  background: var(--teal);
-  color: var(--on-color);
-  font-size: 9px;
+  box-sizing: border-box;
+  border-radius: 50%;
   line-height: 1;
 }
 
-.chat-sigil.chat-dm-pic .avatar-badge {
+.avatar-wrap > .avatar-mark {
+  left: -4px;
+  bottom: -4px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--teal);
+  background: var(--bg);
+  color: var(--teal);
+}
+
+.chat-sigil.chat-dm-pic .avatar-mark {
   display: none;
 }
 
@@ -13151,40 +12632,9 @@ html[data-workspace="new"] .thread-panel {
   border-radius: 50%;
 }
 
-/* The message menu and Saved for later (#116). */
-.msg-menu-wrap {
-  position: relative;
-  display: flex;
-}
-
+/* Saved for later (#116). */
 .msg-tools .msg-saved.on {
   color: var(--warn, var(--accent));
-}
-
-.msg-menu {
-  position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.msg-tools .msg-menu button {
-  width: auto;
-  height: auto;
-  padding: 6px 10px;
-  border-radius: var(--tag-radius);
-  color: var(--fg);
-  font-size: 13px;
-  text-align: left;
-  white-space: nowrap;
 }
 
 .saved-item {
@@ -13201,7 +12651,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 6px;
   align-items: center;
   padding: 2px 12px 8px 46px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .saved-actions button {
@@ -13238,35 +12688,28 @@ html[data-workspace="new"] .thread-panel {
   list-style: none;
 }
 
-.attach-chip {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
-  max-width: 100%;
+.attach-chips .chip-object {
   padding: 4px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--chip-radius);
+  border-color: var(--line-strong);
   background: var(--surface);
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow: hidden;
 }
 
-.attach-chip img {
+.attach-chips img {
   border-radius: var(--tag-radius);
   object-fit: cover;
 }
 
-.attach-chip.failed {
+.attach-chips .failed {
   border-color: var(--danger);
 }
 
-.attach-chip.failed .attach-size {
+.attach-chips .failed .attach-size {
   color: var(--danger);
 }
 
-.attach-chip .attach-name {
+.attach-chips .attach-name {
   min-width: 0;
   max-width: 180px;
   overflow: hidden;
@@ -13279,7 +12722,7 @@ html[data-workspace="new"] .thread-panel {
   white-space: nowrap;
 }
 
-.attach-chip progress {
+.attach-chips progress {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -13292,25 +12735,16 @@ html[data-workspace="new"] .thread-panel {
   accent-color: var(--accent);
 }
 
-.attach-chip progress::-webkit-progress-bar {
+.attach-chips progress::-webkit-progress-bar {
   background: none;
 }
 
-.attach-chip progress::-webkit-progress-value {
+.attach-chips progress::-webkit-progress-value {
   background: var(--accent);
 }
 
-.attach-chip progress::-moz-progress-bar {
+.attach-chips progress::-moz-progress-bar {
   background: var(--accent);
-}
-
-.attach-chip button {
-  color: var(--dim);
-  padding: 0 2px;
-}
-
-.attach-chip button:hover {
-  color: var(--fg);
 }
 
 .attach-kind {
@@ -13324,9 +12758,9 @@ html[data-workspace="new"] .thread-panel {
   border-radius: var(--tag-radius);
   background: var(--raised);
   color: var(--subtle);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
 }
 
 .msg-files {
@@ -13387,7 +12821,7 @@ html[data-workspace="new"] .thread-panel {
 .msg-media figcaption {
   margin-top: 2px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13425,7 +12859,7 @@ html[data-workspace="new"] .thread-panel {
 
 .msg-file-text span {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .msg-file-get {
@@ -13442,26 +12876,36 @@ html[data-workspace="new"] .thread-panel {
   color: var(--fg);
 }
 
-.image-viewer {
-  position: fixed;
-  inset: 0;
+/* A picture full size is a Modal with the whole window for its backdrop
+   (shared/chat/files-ui.tsx): the picture and its bar alone are the dialog,
+   so a click anywhere round them is a click on the backdrop. */
+.prompt-backdrop.image-viewer-backdrop {
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  place-items: center;
   padding: 16px;
   background: color-mix(in srgb, var(--letterbox) 88%, transparent);
   cursor: zoom-out;
 }
 
+.prompt.image-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  cursor: default;
+}
+
 .image-viewer img {
   min-height: 0;
-  max-width: 100%;
-  max-height: calc(100% - 48px);
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px - 48px);
   object-fit: contain;
-  cursor: default;
 }
 
 .image-viewer-bar {
@@ -13485,23 +12929,21 @@ html[data-workspace="new"] .thread-panel {
 /* A channel's topic and its pins (#119): the header's topic and the cards
  * under its buttons, and the dim centered line a topic change or a pin
  * leaves in the room. */
-.chat-title .chat-topic {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
+.chat-topic-line .chat-topic {
+  display: inline;
   padding: 0;
-  color: var(--dim);
-  font-size: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.chat-title .chat-topic:hover {
+.chat-topic-line .chat-topic:hover {
   color: var(--fg);
 }
 
-.chat-title .chat-topic.add {
+.chat-topic-line .chat-topic.add {
   display: inline;
   color: var(--accent);
 }
@@ -13511,17 +12953,17 @@ html[data-workspace="new"] .thread-panel {
    ellipsis), so the line takes the room as padding, given back as
    margin. */
 @media (pointer: coarse) {
-  .chat-title > [data-chat-topic]:has(> .chat-topic.add) {
+  .chat-topic-line > [data-chat-topic]:has(> .chat-topic.add) {
     padding-block: 12px;
     margin-block: -12px;
   }
 
-  .chat-title .chat-topic.add {
+  .chat-topic-line .chat-topic.add {
     position: relative;
     overflow: visible;
   }
 
-  .chat-title .chat-topic.add::before {
+  .chat-topic-line .chat-topic.add::before {
     content: "";
     position: absolute;
     inset: -12px -8px;
@@ -13531,19 +12973,6 @@ html[data-workspace="new"] .thread-panel {
 .chat-pop-wrap {
   position: relative;
   flex: none;
-}
-
-.chat-pop-wrap .chat-info {
-  width: auto;
-  min-width: 30px;
-  padding: 0 var(--space-2);
-}
-
-/* A finger's, as the header's other icons (UI audit #199). */
-@media (pointer: coarse) {
-  .chat-pop-wrap .chat-info {
-    min-width: 40px;
-  }
 }
 
 .chat-pop {
@@ -13559,7 +12988,7 @@ html[data-workspace="new"] .thread-panel {
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .chat-pop p {
@@ -13583,7 +13012,7 @@ html[data-workspace="new"] .thread-panel {
   padding: 3px var(--space-2);
   border-radius: var(--btn-radius);
   background: var(--raised);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .chat-pop-buttons button:hover {
@@ -13603,7 +13032,7 @@ html[data-workspace="new"] .thread-panel {
 
 .chat-pin-who {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .chat-pin-text {
@@ -13622,7 +13051,7 @@ html[data-workspace="new"] .thread-panel {
   gap: 0 var(--space-1);
   padding: 6px 16px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -13683,4 +13112,147 @@ html[data-workspace="new"] .thread-panel {
   display: flex;
   gap: 6px;
   min-width: 0;
+}
+
+/* A prototype in a Doc (#506): a frame on the page's width, as tall as the
+   fence line says. It has no background of its own: the page inside is its own,
+   in the Doc's colour scheme, and the border shows where it ends. */
+.md .doc-prototype-box {
+  position: relative;
+  margin: 0 0 0.7em;
+}
+
+.md .doc-prototype-bar {
+  /* A strip above the frame, never over it (Arugula #620): a prototype's own
+     controls in its corners are the frame's pixels, so nothing sits on them. */
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 3px;
+}
+
+.md .doc-prototype-label {
+  font-size: var(--text-xs);
+  color: var(--dim, inherit);
+}
+
+.md .doc-prototype-full {
+  order: 1;
+  margin-left: auto;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--dim, inherit);
+  background: var(--raised);
+  border: 0;
+  border-radius: var(--field-radius);
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .md .doc-prototype-full {
+    min-height: 34px;
+    padding: 4px 12px;
+  }
+}
+
+/* Full window (#507): the box is a popover, drawn in the top layer. A popover
+ * is display: none until it is open, and the box is the section: show it. */
+.md .doc-prototype-box[popover] {
+  display: block;
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+}
+
+.md .doc-prototype-box[popover]:popover-open,
+.doc-prototype-box[popover]:popover-open {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  background: var(--bg, canvas);
+  /* The close button's strip, then the page in what is left (Arugula #620). */
+  display: flex;
+  flex-direction: column;
+}
+
+.md .doc-prototype-box:popover-open .doc-prototype {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.doc-prototype-box:popover-open .doc-prototype-bar {
+  margin: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-prototype-box:popover-open .doc-prototype-full {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: var(--text-lg);
+  color: inherit;
+  background: var(--raised);
+  border: 0;
+  cursor: pointer;
+}
+
+.md .doc-prototype-copied {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  z-index: 1;
+  padding: 1px 8px;
+  font-size: var(--text-xs);
+  color: var(--dim, inherit);
+  background: var(--raised);
+  border-radius: var(--field-radius) 0 0 0;
+  pointer-events: none;
+}
+
+.md .doc-prototype-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  margin: 0 0 0.7em;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+}
+
+.md .doc-prototype-run-title {
+  font-weight: 600;
+}
+
+.md .doc-prototype {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  margin: 0 0 0.7em;
+  background: transparent;
+}
+
+.doc .md .doc-prototype-box,
+.doc .md .doc-prototype-run {
+  margin: 0 0 1em;
+}
+
+.md .doc-prototype-box .doc-prototype {
+  margin: 0;
 }

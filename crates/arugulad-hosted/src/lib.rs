@@ -62,7 +62,7 @@ use tracing::{info, warn};
 // What the code here names as `crate::…`: the mux's modules and the daemon's,
 // as it named them when it was the daemon's.
 use arugula_mux::{mux, pane, store};
-use arugulad_base::{api, control, features, hosted, server, subcommands, task, work};
+use arugulad_base::{api, control, features, hosted, roots, server, subcommands, task, work};
 
 use crate::server::App;
 

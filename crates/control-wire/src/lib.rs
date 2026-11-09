@@ -78,6 +78,7 @@ pub mod hosted;
 pub mod internal;
 pub mod issues;
 pub mod join;
+pub mod machine;
 pub mod maintenance;
 pub mod project_docs;
 pub mod projects;
@@ -95,8 +96,8 @@ pub mod work;
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};
 pub use team::{
-    AccessList, DEV_SETTINGS, FLAG_ALIASES, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery, SharedTeamAnswer,
-    TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
+    AccessList, CHAT_HEARD, DEV_SETTINGS, DOC_COPIES, FLAG_ALIASES, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts,
+    PeersQuery, SharedTeamAnswer, TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
 };
 
 /// What control says about itself, to browsers, the CLI and daemons.
@@ -190,6 +191,10 @@ pub struct ControlInfo {
     /// `<doc_viewer>/<id>#k=<key>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_viewer: Option<String>,
+    /// Where a Doc's prototypes run (#506, `https://proto.<block_domain>`),
+    /// which the page frames; `None` without a block domain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proto: Option<String>,
     /// The platform page's origin (M151, `https://app.arugula.io`), where
     /// projects, chat and Cloud workspaces are. `None`: control doesn't
     /// serve it.

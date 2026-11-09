@@ -9,27 +9,31 @@
 // Claude Code's hooks where they're missing, and this device's
 // notifications where they're off (Discovery 5).
 
+import { EmptyState } from "../../../shared/ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
-import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
+import { gateKey, type ActRequest, type Notice, type PaneInfo } from "../../../shared/proto";
 import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
 import { editDiff } from "../term-ask";
-import { BellIcon } from "../../../shared/ui/bell";
+import { BellIcon } from "../../../shared/ui/icons";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { agentNotifyItems, notificationItems, pushNow, subscribePush, toggleNotify } from "../notify";
 import { hooksInstalled, setUpClaude } from "../agents-setup";
 import { addPane } from "./add-pane";
-import { closePlace, currentPlace } from "../places";
+import { closePlace, currentPlace, openRoom } from "../places";
+import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../../../shared/notice";
+import { GrantActs } from "../grant-acts";
+import { SideSheet } from "../../../shared/ui/side-sheet";
 
 // ---- the items
 
@@ -101,9 +105,48 @@ export function attentionItems(client: Client): AttentionItem[] {
   return sortNeedsYou(out, (i) => placeOf(i.p.info, i.p.key));
 }
 
+/** A card that belongs to no pane (#551): a teammate's mention no session
+ * took, on a machine. */
+export interface NoticeItem {
+  n: Notice;
+  host: string;
+  /** On the machine this page shows. */
+  here: boolean;
+}
+
+/** The notices of the shown machine's own state and every other machine's
+ * summary, oldest first. They are the owner's alone: a guest's state has
+ * none. */
+export function attentionNotices(client: Client): NoticeItem[] {
+  const out: NoticeItem[] = [];
+  const current = directory.current;
+  for (const n of client.state?.notices ?? []) out.push({ n, host: current, here: true });
+  for (const h of getFleet()?.list ?? []) {
+    if (h.name === current) continue;
+    for (const n of h.summary?.notices ?? []) out.push({ n, host: h.name, here: false });
+  }
+  return sortNotices(out);
+}
+
 /** How many need you, on every machine: the bell's and the footer's. */
 export function waitingCount(client: Client): number {
-  return attentionItems(client).length;
+  return attentionItems(client).length + attentionNotices(client).length;
+}
+
+/** Open the card's room in chat and take the card away: opening it is
+ * reading it (#551). On another machine the card goes through its own
+ * summary connection. */
+export function openNotice(client: Client, i: NoticeItem) {
+  const room = noticeRoom(i.n);
+  dismissNotice(client, i);
+  if (!room) return;
+  closeAttention(false);
+  openRoom(room);
+}
+
+/** Dismiss the card without opening anything. */
+export function dismissNotice(client: Client, i: NoticeItem) {
+  (i.here ? client : getFleet()?.clientOf(i.host))?.dismissNotice(i.n.key);
 }
 
 /** Re-render on the shown machine's state and the fleet's. */
@@ -229,14 +272,12 @@ export function AttentionDrawer({ client }: { client: Client }) {
   }, [open]);
   if (!open) return null;
   const items = attentionItems(client);
+  const notices = attentionNotices(client);
   const chosen = items.find((i) => i.p.key === sel) ?? items[0];
-  const waiting = items.filter((i) => i.waiting).length;
+  const waiting = items.filter((i) => i.waiting).length + notices.length;
+  // Escape and the backdrop are the sheet's (side-sheet.tsx).
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      closeAttention();
-    } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).matches(".ws-att-list, .ws-att-item")) {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).matches(".ws-att-list, .ws-att-item")) {
       // On the rows only: the open one's answer, under its row, keeps its keys.
       e.preventDefault();
       if (!items.length) return;
@@ -256,21 +297,48 @@ export function AttentionDrawer({ client }: { client: Client }) {
     openMenu({ clientX: r.left, clientY: r.top - 4, preventDefault: () => e.preventDefault() }, items);
   };
   return (
-    <div class="ws-att" role="dialog" aria-label="Needs you" data-attention-drawer onKeyDown={onKey}>
-      <header class="ws-att-head">
-        <h2>Needs you</h2>
-        <span class="ws-att-count">
-          {waiting ? `${waiting} waiting` : "nothing waiting"}
-          {items.length > waiting ? `, ${items.length - waiting} failed` : ""}
-        </span>
-        <button class="ws-icon-button" aria-label="Close" title="Close (Escape); nothing is answered" onClick={() => closeAttention()} data-close-attention>
-          ✕
-        </button>
-      </header>
-      <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1}>
-        {items.length === 0 && (
+    <SideSheet
+      class={waiting || items.length ? "ws-att" : "ws-att ws-att-quiet"}
+      title="Needs you"
+      subtitle={`${waiting ? `${waiting} waiting` : "nothing waiting"}${items.length > waiting ? `, ${items.length - waiting} failed` : ""}`}
+      close={() => closeAttention()}
+      root={{ "data-attention-drawer": true }}
+      closeAttrs={{ title: "Close (Escape); nothing is answered", "data-close-attention": true }}
+      foot={
+        <>
+          <span class="ws-att-note">Looking here answers nothing.</span>
+          <button class="link" data-attention-prefs onClick={prefs}>
+            Notifications…
+          </button>
+        </>
+      }
+    >
+      <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1} onKeyDown={onKey}>
+        {items.length === 0 && notices.length === 0 && (
           <Empty client={client} />
         )}
+        {notices.map((i) => (
+          <section class="ws-att-item ws-att-notice" key={i.n.key + i.host} data-att-notice={i.n.key} data-att-notice-kind={i.n.kind}>
+            <span class="ws-dot needs_input" aria-hidden="true" />
+            <span class="ws-att-item-text">
+              <span class="ws-att-item-title" title={i.n.headline}>
+                {noticeTitle(i.n)}
+              </span>
+              <span class="ws-att-item-sub">{shortHost(i.host)}</span>
+            </span>
+            <div class="ws-att-acts">
+              {i.n.kind === "grant_ask" && <GrantActs n={i.n} done={() => dismissNotice(client, i)} />}
+              {noticeRoom(i.n) && (
+                <button class="primary" data-notice-open onClick={() => openNotice(client, i)} title="Open the room in chat; this clears the card">
+                  {noticeOpenLabel(i.n)}
+                </button>
+              )}
+              <button class="secondary" data-notice-dismiss onClick={() => dismissNotice(client, i)} title="Dismiss the card; the mention stays in the machine's inbox">
+                Dismiss
+              </button>
+            </div>
+          </section>
+        ))}
         {items.map((i) => (
           <Fragment key={i.p.key}>
             <button
@@ -296,13 +364,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
           </Fragment>
         ))}
       </div>
-      <footer class="ws-att-foot">
-        <span>Looking here answers nothing.</span>
-        <button class="link" data-attention-prefs onClick={prefs}>
-          Notifications…
-        </button>
-      </footer>
-    </div>
+    </SideSheet>
   );
 }
 
@@ -325,29 +387,34 @@ function Empty({ client }: { client: Client }) {
   };
   const push = pushNow() === "off";
   return (
-    <div class="ws-empty ws-att-empty" role="status" data-attention-empty>
-      <p>Nothing needs you on any machine.</p>
-      <p class="dim">Claude in a terminal? Its questions land here, to answer from any device.</p>
+    <EmptyState
+      where="page"
+      data-attention-empty
+      title="Nothing needs you on any machine."
+      why="Claude in a terminal? Its questions land here, to answer from any device."
+      action={
+        (hooks === "missing" || hooks === "busy" || push) && (
+          <>
+            {(hooks === "missing" || hooks === "busy") && (
+              <button class="primary" disabled={hooks === "busy"} onClick={() => void setUp()} data-attention-setup title="Install Arugula's hooks in Claude Code's settings">
+                {hooks === "busy" ? "Setting up…" : "Set up"}
+              </button>
+            )}
+            {push && (
+              <button class="secondary" onClick={() => void toggleNotify(client)} data-attention-notify title="Notifications on this device when something needs you">
+                Notify this device
+              </button>
+            )}
+          </>
+        )
+      }
+    >
       {typeof hooks === "object" && hooks !== null && (
         <p class={hooks.ok ? "dim" : "control-error"} data-attention-setup-said={hooks.ok ? "done" : "failed"}>
           {hooks.ok ? `${hooks.said} A Claude started from now on asks here.` : hooks.said}
         </p>
       )}
-      {(hooks === "missing" || hooks === "busy" || push) && (
-        <div class="ws-att-acts">
-          {(hooks === "missing" || hooks === "busy") && (
-            <button class="primary" disabled={hooks === "busy"} onClick={() => void setUp()} data-attention-setup title="Install Arugula's hooks in Claude Code's settings">
-              {hooks === "busy" ? "Setting up…" : "Set up"}
-            </button>
-          )}
-          {push && (
-            <button class="secondary" onClick={() => void toggleNotify(client)} data-attention-notify title="Notifications on this device when something needs you">
-              Notify this device
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+    </EmptyState>
   );
 }
 

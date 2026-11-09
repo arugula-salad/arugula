@@ -1,5 +1,5 @@
 // #171, #180: a machine set up for nothing optional (no --block-listen, no
-// wisp, no studio) offers nothing that would fail for setup nobody
+// sandbox provider, no studio) offers nothing that would fail for setup nobody
 // mentioned. VM, sandbox and studio items aren't in its menus; Open a
 // port… and Open in editor say how to turn block sites on, with a link,
 // instead of failing.
@@ -27,7 +27,6 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       ARUGULA_STATE_DIR: labs(state),
-      ARUGULA_WISP_TOKEN_FILE: "/nonexistent",
     },
   });
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
@@ -53,7 +52,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards", "live-presence"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Open a studio app…"];
@@ -83,7 +82,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   // Sharing says nothing about VMs it has no way to make (#208).
   await page.getByRole("button", { name: "Share session" }).click();
   await expect(page.locator("[data-share-note]")).toHaveText(
-    "People you share with see its panes but can't open their own here. Unless this machine is in their team, even people who drive ask you before typing in one of its panes.",
+    "People you share with see its panes but can't open their own here. Unless this machine is in their team, even people who drive ask you before typing in its panes. An owner here owns the session, not the machine.",
   );
   // Escape closes it (#551).
   await page.keyboard.press("Escape");

@@ -9,7 +9,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { SessionSettings } from "../../shared/proto";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {

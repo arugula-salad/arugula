@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Writes DECISIONS.md, the index of the decision records in docs/decisions/,
 // grouped by their `area` in the order the areas first appear by id. With
-// --check, fails instead when DECISIONS.md isn't what it would write.
+// --check, fails instead when DECISIONS.md isn't what it would write, or when
+// a record that still stands names a path that isn't there.
 //
 // The records are chant decision records (docs/decisions/decision.kind.mjs):
 // Markdown files whose front matter is the JSON subset of YAML, so the
 // top-level fields read here are one line each.
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,8 +35,21 @@ const records = readdirSync(join(root, dir))
       title: field(front, "title", file),
       area: field(front, "area", file) ?? "Other",
       state: field(front, "state", file),
+      paths: [...front.matchAll(/^  - "path:(.+)"$/gm)].map((m) => m[1]),
     };
   });
+
+if (check) {
+  const dead = records
+    .filter((r) => r.state !== "superseded" && r.state !== "withdrawn")
+    .flatMap((r) => r.paths.filter((p) => !existsSync(join(root, p))).map((p) => `${r.id}: ${p}`));
+  if (dead.length) {
+    console.error(
+      `Decision records name paths that aren't there. Point constrains (and the body's "Where:") at where the code is now, or supersede the record:\n  ${dead.join("\n  ")}`,
+    );
+    process.exit(1);
+  }
+}
 
 const areas = [];
 for (const r of records) if (!areas.includes(r.area)) areas.push(r.area);

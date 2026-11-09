@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { closeContexts, controlPanel, pasteFile, ready, run, text, uploadedPath } from "./helpers";
+import { closeContexts, closeSettingsPage, controlPanel, pasteFile, ready, run, text, uploadedPath, settingsRow } from "./helpers";
 import { ANY, controlPort, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
 
@@ -301,6 +301,39 @@ test("two machines join by code; one direct, one only through the relay", async 
   expect(readFileSync(await uploadedPath(laptop, pane))).toEqual(png);
   // The path waits on the prompt line: clear it for what's typed next.
   await laptop.evaluate((p) => window.__arugula.client.input(p, new TextEncoder().encode("\x15")), pane);
+});
+
+test("a machine is renamed in Settings, and the switcher and the page follow; a taken name is refused (#500)", async () => {
+  await showHost(laptop, "box");
+  const rename = async (name: string) => {
+    await settingsRow(laptop, "Rename machine…");
+    await laptop.locator(".prompt input").fill(name);
+    await laptop.keyboard.press("Enter");
+  };
+  const current = () => laptop.evaluate(() => window.__arugula.hosts.current);
+  await rename("Mini Box");
+  // The page follows the machine it showed: no reconnect, no new pick.
+  await expect.poll(current).toBe("Mini Box");
+  await expect.poll(() => hostNames(laptop)).toEqual(["Mini Box", "mac"]);
+  await expect(laptop.locator(".ws-head .host-button")).toHaveText(/Mini Box/);
+  await expect(laptop.locator("[data-settings-page]").getByRole("heading", { name: "This machine: Mini Box" })).toBeVisible();
+  expect(await connected(laptop)).toBe(true);
+  // The switcher lists it by the new name only.
+  await laptop.locator("[data-settings-page] .host-button").click();
+  await expect(laptop.getByRole("menuitem", { name: /^\s*Mini Box\s/ })).toBeVisible();
+  await expect(laptop.getByRole("menuitem", { name: /^\s*box\s/ })).toHaveCount(0);
+  await laptop.keyboard.press("Escape");
+  // Another of the account's machines has "mac": refused, and nothing changes.
+  await rename("MAC");
+  await expect.poll(() => laptop.evaluate(() => window.__arugula.client.error)).toContain("already called mac");
+  expect(await hostNames(laptop)).toEqual(["Mini Box", "mac"]);
+  // Back, as the next tests found it.
+  await rename("box");
+  await expect.poll(current).toBe("box");
+  await expect.poll(() => hostNames(laptop)).toEqual(["box", "mac"]);
+  // And the page as the next test found it: the panes of mac.
+  await closeSettingsPage(laptop);
+  await showHost(laptop, "mac");
 });
 
 test("a relayed page that goes leaves the machine's clients (presence) too", async () => {
@@ -835,7 +868,7 @@ test("with no sessions on the machine shown, control's page still has the host a
   await expect.poll(none).toBe(0);
   // It says which machine this is and where to switch.
   await expect(laptop.locator("[data-no-sessions-host]")).toHaveText("Not the machine you meant? Switch from the machine's name at the top left.");
-  await expect(laptop.locator("[data-no-sessions] .empty-title")).toHaveText("No sessions on box.");
+  await expect(laptop.locator("[data-no-sessions] .empty-state-title")).toHaveText("No sessions on box.");
   await expect(laptop.locator(".ws-head .host-button")).toHaveText(/box/);
   // The account's items are the account menu's, on the right, not the
   // host menu's.
@@ -900,8 +933,7 @@ test("Getting started joins as soon as a device approves: nothing to compare (#7
   await expect(page.locator(".session-button")).toBeVisible();
   const start = page.getByRole("dialog", { name: "Getting started" });
   if (!(await start.isVisible())) {
-    await page.locator(".ws-head [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Getting started" }).click();
+    await settingsRow(page, "Getting started");
   }
   await start.locator('[data-start-seg="cloud"]').click();
   await start.locator("[data-start-connect]").click();
@@ -948,8 +980,7 @@ test("an older daemon: Getting started asks to check the account's fingerprint b
   const start = page.getByRole("dialog", { name: "Getting started" });
   const cloud = async () => {
     if (!(await start.isVisible())) {
-      await page.locator(".ws-head [data-account-menu]").click();
-      await page.getByRole("menuitem", { name: "Getting started" }).click();
+      await settingsRow(page, "Getting started");
     }
     await start.locator('[data-start-seg="cloud"]').click();
   };
@@ -1233,7 +1264,7 @@ test("the app's Link GitHub opens the browser, and the window asks again when it
 test("Sign-in and account has the account's email for notices (#1609)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.locator("[data-email-address]")).toHaveText("No email");
-  await expect(laptop.locator("[data-email]")).toContainText("this control doesn't send email");
+  await expect(laptop.locator("[data-email]")).toContainText("this server doesn't send email");
   await expect(laptop.locator("[data-email-change]")).toHaveCount(0);
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
 

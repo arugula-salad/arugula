@@ -7,6 +7,8 @@
 // store has them.
 
 import type {
+  DraftSent,
+  ForgeDraft,
   IssueAgent,
   IssueEvent,
   IssueEvents,
@@ -23,8 +25,8 @@ import { queryOf, type IssueFilter } from "./text";
 
 export type { IssueFilter };
 
-/** A refusal from the issue routes: its status, and `reason` (`chat_off`
- * while chat's Labs flag is off) when it gave one. */
+/** A refusal from the issue routes: its status, and `reason` when it gave
+ * one. */
 export class IssueError extends Error {
   constructor(
     readonly status: number,
@@ -113,3 +115,16 @@ export const issues = {
   /** Where the project's export downloads from. */
   exportUrl: (project: string, format: "json" | "md") => `/api/projects/${enc(project)}/issues/export?format=${format}`,
 };
+
+/** Open on GitHub (M205): the draft that sends issue `id` to `repo`, and
+ * its send as the reader. GitHub's authorization in this browser comes
+ * back to this page (`authorize`), or one of their machines sends it. Only
+ * the platform page offers it: GitHub comes back there. */
+export async function openOnGithub(id: string, repo: string): Promise<DraftSent> {
+  const made = await call<{ draft: ForgeDraft }>("POST", "/api/forge/drafts", { repo, kind: "issue", native_issue: id });
+  const back = location.pathname + location.search;
+  return call<DraftSent>("POST", `/api/forge/drafts/${enc(made.draft.id)}/send`, { via: "browser", back });
+}
+
+/** The repos linked to a project: where its issues may be opened on GitHub. */
+export const linkedRepos = (project: string) => issues.home(project).then((h) => h.repos);

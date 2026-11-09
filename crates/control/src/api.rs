@@ -220,6 +220,12 @@ pub struct Enroll {
     /// a code, and the device that approves it answers with a MAC.
     #[serde(default)]
     features: String,
+    /// #641: this page's device, which signed `cert`, is adding the device
+    /// a passkey's PRF keys are, not asking for itself: this sign-in stays
+    /// the device it was, and a certificate that doesn't check out is
+    /// refused, not left waiting.
+    #[serde(default)]
+    passkey_device: bool,
     /// Approving: the approving device's MAC under the code the waiting
     /// device shows (#761), passed on to it: control never sees the code's
     /// secret.
@@ -233,7 +239,45 @@ pub struct Enroll {
 /// approval, unless they come already signed by a device the account
 /// trusts. The app's window, signed in by a browser's hand-over, asks as an
 /// `app` device only.
+/// #641: a device of the account certifies the device a passkey's PRF keys
+/// are, so a new computer with that passkey needs no other device. Only a
+/// browser all the way back may (`approval_ok`), as for any browser: control
+/// holds no key, and every machine checks the chain itself.
+fn enroll_passkey_device(app: &Arc<App>, account: &str, c: Cert) -> R {
+    if c.account != account || c.kind != Kind::Browser {
+        refused("enroll", account, &c, "a passkey's device is a browser of this account");
+        return Err(err(StatusCode::BAD_REQUEST, "a passkey's device is a browser of your account"));
+    }
+    if c.approver.is_empty() || c.approver == c.device {
+        refused("enroll", account, &c, "a passkey's device is signed by another device");
+        return Err(err(StatusCode::BAD_REQUEST, "a passkey's device is signed by another of your devices"));
+    }
+    if let Err(e) = c.check_form() {
+        refused("enroll", account, &c, &e.to_string());
+        return Err(err(StatusCode::BAD_REQUEST, &e.to_string()));
+    }
+    if let Some((have, true)) = app.db.device(account, &c.device)? {
+        return Ok(Json(json!({ "approved": true, "cert": have })));
+    }
+    app.limits.check_account(crate::limit::ENROLLS, account)?;
+    approval_ok(app, account, &c, "enroll")?;
+    app.db.put_device(&c, true, now_ms())?;
+    nudge(app, account);
+    app.analytics.capture(
+        account,
+        "device enrolled",
+        json!({ "kind": c.kind.as_str(), "first": false, "presigned": true, "passkey": true }),
+    );
+    Ok(Json(json!({ "approved": true, "cert": c })))
+}
+
 pub async fn enroll(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<Enroll>) -> R {
+    if b.passkey_device {
+        // Refused by `approval_ok` too: a browser's chain never runs through
+        // the app. Said first, as the app's other page-only actions are.
+        s.not_app(&app)?;
+        return enroll_passkey_device(&app, &s.account, b.cert);
+    }
     let c = b.cert;
     // The sign-in that asked is this device's (Sign-in and Devices say so).
     if c.account == s.account {
@@ -464,6 +508,9 @@ pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<Stri
 #[derive(Deserialize)]
 pub struct Pin {
     pin: String,
+    /// #641: the passkey these keys come from, for the page to say so.
+    #[serde(default)]
+    passkey: Option<String>,
 }
 
 /// `POST /api/devices/{id}/pin` (#764): a browser whose keys come from a
@@ -481,6 +528,11 @@ pub async fn pin(State(app): State<Arc<App>>, s: PageSession, Path(id): Path<Str
         return Err(err(StatusCode::BAD_REQUEST, "that isn't this device's signature over the account's root"));
     }
     app.db.set_device_pin(&s.account, &id, &b.pin)?;
+    if let Some(passkey) = &b.passkey
+        && !app.db.set_passkey_device(&s.account, passkey, &id)?
+    {
+        return Err(err(StatusCode::NOT_FOUND, "no such passkey"));
+    }
     Ok(Json(json!({})))
 }
 
@@ -664,6 +716,13 @@ pub async fn join(
         Kind::Cli => {
             return Err(err(StatusCode::BAD_REQUEST, "a CLI joins with its key's proof and nothing else"));
         }
+        // A native app (aru-131) pairs the CLI's way, as a `browser` device.
+        Kind::Browser
+            if app.cfg.native_clients
+                && !b.cert.from_app()
+                && b.urls.is_empty()
+                && b.team.is_none()
+                && b.proof.is_some() => {}
         _ => return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate")),
     }
     check_urls(&b.urls)?;
@@ -826,16 +885,24 @@ pub async fn join_approve(
         return Err(err(StatusCode::BAD_REQUEST, "that's not the daemon that asked"));
     }
     approval_ok(&app, &s.account, &c, "join_approve")?;
-    // The CLI (M49): one of the account's devices from now on, like a
-    // browser it approved. The account's machines learn of it now.
-    if c.kind == Kind::Cli {
+    // The CLI (M49), or a native app (aru-131): one of the account's devices
+    // from now on, like a browser it approved. The account's machines learn
+    // of it now.
+    if matches!(c.kind, Kind::Cli | Kind::Browser) {
         if b.team.is_some() {
-            return Err(err(StatusCode::BAD_REQUEST, "a CLI joins your account, not a team"));
+            return Err(err(StatusCode::BAD_REQUEST, "a device joins your account, not a team"));
+        }
+        if c.kind == Kind::Browser && !app.cfg.native_clients {
+            return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate"));
         }
         app.db.put_device(&c, true, now_ms())?;
+        if c.kind == Kind::Browser {
+            app.db.put_native_device(&s.account, &c.device, now_ms())?;
+        }
         app.db.approve_join(&code, &c, None, b.mac.as_deref())?;
         nudge(&app, &s.account);
-        app.analytics.capture(&s.account, "cli joined", json!({ "with_code": b.mac.is_some() }));
+        let event = if c.kind == Kind::Cli { "cli joined" } else { "native app joined" };
+        app.analytics.capture(&s.account, event, json!({ "with_code": b.mac.is_some() }));
         return Ok(Json(json!({ "approved": true, "device": c.device })));
     }
     let known = app.db.device_known(&c.device)?;
@@ -930,6 +997,44 @@ fn in_team(app: &App, account: &str, id: &str, owner: bool, no: &str) -> Result<
 
 /// How far a move's time may be from control's clock.
 const MOVE_SKEW_MS: u64 = 10 * 60 * 1000;
+
+/// *Rename* on a machine (#500): its owner's, or, for a team's machine, its
+/// team's owners'. The name is a display name (its id is who it is, and
+/// nothing authorizes by name), so no device signs it. Its old name keeps
+/// working in `@mentions`; a name another machine of its owner or team goes
+/// by is refused.
+pub async fn rename_daemon(
+    State(app): State<Arc<App>>,
+    s: Session,
+    Path(id): Path<String>,
+    Json(b): Json<wire::machine::MachineRename>,
+) -> R {
+    let (owner, d) = app.db.daemon_row(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
+    if owner != s.account {
+        let team = app.db.daemon_team(&id)?;
+        let Some(t) = team else {
+            return Err(err(StatusCode::FORBIDDEN, "only the machine's owner renames it"));
+        };
+        in_team(&app, &s.account, &t, true, "only the machine's owner and the team's owners rename it")?;
+    }
+    let name = wire::machine::clean_name(&b.name).map_err(|why| err(StatusCode::BAD_REQUEST, why))?;
+    match app.db.rename_daemon(&id, &name)? {
+        crate::db::Renamed::Done => {}
+        crate::db::Renamed::Gone => return Err(err(StatusCode::NOT_FOUND, "no such machine")),
+        crate::db::Renamed::Taken(other) => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                &format!(
+                    "another machine here is already called {other}: @{} would reach both",
+                    wire::machine::handle(&name)
+                ),
+            ));
+        }
+    }
+    app.relay.nudge(std::slice::from_ref(&id));
+    app.analytics.capture(&s.account, "machine renamed", json!({ "own": owner == s.account }));
+    Ok(Json(json!({ "id": id, "name": name, "was": d.name })))
+}
 
 /// *Move to…* on a machine (#100): its own account moves it into a team
 /// it's in, between them, or back to the account (#332: members too).

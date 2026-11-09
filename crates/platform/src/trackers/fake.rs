@@ -87,6 +87,7 @@ pub fn default_fields() -> Fields {
             Named { id: "lb-agent".into(), name: "agent".into() },
             Named { id: "lb-bug".into(), name: "bug".into() },
         ],
+        epic_types: vec!["Epic".into()],
     }
 }
 
@@ -209,6 +210,7 @@ pub fn item(sequence_id: u64, title: &str, group: &str, updated_at: u64) -> Item
         parent_id: None,
         created_at: 1_000,
         updated_at,
+        description: None,
     }
 }
 
@@ -466,13 +468,6 @@ impl TrackerProvider for Keyed {
                 return Err(TrackerError::NotFound);
             }
             s.items.iter().find(|i| i.sequence_id == sequence).cloned().ok_or(TrackerError::NotFound)
-        })
-    }
-
-    fn children<'a>(&'a self, workspace: &'a str, _: &'a str, epic: &'a str) -> BoxFuture<'a, Result<Vec<Item>>> {
-        Box::pin(async move {
-            let s = self.check(workspace)?;
-            Ok(s.items.iter().filter(|i| i.parent_id.as_deref() == Some(epic)).cloned().collect())
         })
     }
 }

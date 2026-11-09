@@ -13,6 +13,34 @@ use serde::{Deserialize, Serialize};
 /// `GET /api/projects`: who's signed in, and their projects, theirs first.
 pub const PROJECTS: &str = "/api/projects";
 
+/// The write powers that do nothing at all for a viewer's agents (Arugula
+/// #683): the platform refuses to give one over a project its giver only
+/// views, 403 `viewer_write`, to a machine (`POST /api/grants`) or a
+/// token (`POST /api/agent-tokens`, which leaves it out per project). The
+/// one list: the platform's `WRITE_POWERS` says why each does nothing and
+/// a test there checks it against this; `arugula grants add` checks its
+/// list against it before giving anything; the web's `VIEWER_REFUSED`
+/// (web/src/platform/settings/grants.ts) is its copy, which
+/// [`tests::the_webs_refused_list_is_this_one`] keeps equal.
+pub const VIEWER_REFUSED: [&str; 5] = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
+
+#[cfg(test)]
+mod tests {
+    /// The web client can't read a Rust constant, so its copy is checked
+    /// here: the one line that defines it, as this list would write it.
+    #[test]
+    fn the_webs_refused_list_is_this_one() {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/platform/settings/grants.ts");
+        let ts = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let want = format!(
+            "export const VIEWER_REFUSED = [{}];",
+            super::VIEWER_REFUSED.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", ")
+        );
+        assert!(ts.lines().any(|l| l == want), "{} must have the line\n{want}", path.display());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "PlatformProjects"))]
@@ -176,8 +204,9 @@ pub struct WithheldRepo {
     pub repo: String,
     /// `no_github` (the reader didn't sign in to control with GitHub),
     /// `no_access` (GitHub doesn't give them access), `busy` (too many
-    /// lookups lately: it shows again within the hour) or `no_app` (this
-    /// control has no GitHub App to ask with).
+    /// lookups lately: it shows again within the hour), `unsure` (GitHub
+    /// couldn't be asked just now: it's asked again next time) or `no_app`
+    /// (this control has no GitHub App to ask with).
     pub why: String,
 }
 
@@ -348,6 +377,12 @@ pub struct ForgeRepo {
     /// GitHub of its own.
     #[serde(default)]
     pub login: Option<String>,
+    /// The reader's role in the project it's linked to (`owner`, `editor`
+    /// or `viewer`), when it's linked for them: a viewer's machine makes
+    /// no drafts on the platform, so its blocks raise only the owner's own.
+    /// Absent from a control before this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
     /// #427: the ways the repository lets a pull request be merged, in the
     /// `merge` method's words (`merge`, `squash`, `rebase`), read from
     /// GitHub with the App and kept an hour, for a block pinned to one of
@@ -413,6 +448,13 @@ pub struct NewDraft {
     /// machine gives one.
     #[serde(default)]
     pub import_key: Option<String>,
+    /// Open on GitHub (M205): a native issue (`iss_…`) to send as a new
+    /// issue, with `kind` `issue`. Its title and body are the issue's, read
+    /// again when it's sent, and `repo` may be empty for its project's one
+    /// linked repo. Sending it sets the issue's GitHub origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub native_issue: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +525,11 @@ pub struct ForgeDraft {
     pub sent_url: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// The native issue it's for (M205): the issue itself (Open on
+    /// GitHub, `kind` `issue`), or one of its comments (`kind` `comment`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub native_issue: Option<String>,
 }
 
 /// The inbox (M171): the PRs and issues that want something of the
@@ -499,13 +546,8 @@ pub struct ForgeDraft {
 ///   `done=true`; `limit` up to 500.
 /// - `POST /api/inbox/{item}` ([`InboxMark`]): mark its entries (one
 ///   reason's, or all) seen or done, or not; answered [`InboxMarked`].
-/// - `POST /api/inbox/shadow` ([`InboxShadow`]): an opted-in machine's
-///   forge blocks' attention, which the platform compares with its own
-///   inbox for the machine's owner and logs (the shadow period). Answered
-///   [`ShadowCompared`].
 pub const INBOX: &str = "/api/inbox";
 pub const INBOX_ITEM: &str = "/api/inbox/{item}";
-pub const INBOX_SHADOW: &str = "/api/inbox/shadow";
 
 /// Why an item is in an inbox: a review is requested from you, your PR's
 /// checks failed, changes are requested on your PR, you're mentioned, an
@@ -595,42 +637,6 @@ pub struct InboxMarked {
     pub marked: u32,
 }
 
-/// What an opted-in machine's forge blocks want of its owner (the shadow
-/// period, M171): items and reasons, never a title.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct InboxShadow {
-    pub blocks: Vec<ShadowBlock>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ShadowBlock {
-    /// `OWNER/NAME` on github.com.
-    pub repo: String,
-    pub number: u64,
-    /// What the block's attention rules find now, as [`INBOX_REASONS`]
-    /// (`draft` aside), whether or not the person looked.
-    pub reasons: Vec<String>,
-    /// The platform's waiting drafts the block shows (`dft_` ids): its
-    /// `draft` reason, when one is the owner's.
-    #[serde(default)]
-    pub drafts: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ShadowCompared {
-    /// Blocks on items the platform has, and how many agreed.
-    pub compared: u32,
-    pub agree: u32,
-    pub disagree: u32,
-    /// Differences the platform can't help by design (a mention where
-    /// content isn't mirrored): not in `compared`.
-    #[serde(default)]
-    pub explained: u32,
-}
-
 /// `POST /api/forge/drafts/{id}/send` ([`SendDraft`], M168): a person sends
 /// a waiting (or failed) draft of their own, as themselves on GitHub: a
 /// person or a CLI device, never a machine ("Agents draft, people send").
@@ -710,6 +716,105 @@ pub struct TrackerConnections {
     pub connections: Vec<TrackerConnection>,
 }
 
+/// `GET /api/projects/{project}/ci-alerts` ([`CiAlerts`], for its members)
+/// and `PATCH` ([`CiAlertsSettings`], an owner or editor): CI alerts as
+/// native issues (native #774).
+pub const PROJECT_CI_ALERTS: &str = "/api/projects/{project}/ci-alerts";
+
+/// `POST /api/projects/{project}/ci-alerts/key`: turn CI alerts on with a
+/// new key, or rotate it ([`CiAlertsKey`]). An owner or editor; the key is
+/// in this answer only.
+pub const PROJECT_CI_ALERTS_KEY: &str = "/api/projects/{project}/ci-alerts/key";
+
+/// `POST /ci/notify/{project}`: where chant's tick sends a project's
+/// `chant.notify/v1` events, signed with its key (native #774).
+pub const CI_NOTIFY: &str = "/ci/notify/{project}";
+
+/// A project's CI alerts (native #774): chant's signed CI events open,
+/// comment on and close a "main is red" native issue. Never the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlerts {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    /// On: a key is kept and events are taken.
+    pub on: bool,
+    /// The URL chant posts to: `ci.green.notify.webhook`'s variable.
+    pub url: String,
+    /// Who a new red issue mentions (accounts), in order.
+    pub people: Vec<String>,
+    /// They're assigned it as well.
+    pub assign: bool,
+    /// Who made the key in use (an account, empty once it's deleted), and
+    /// when. `None` while off.
+    pub key_made_by: Option<String>,
+    pub key_made_at: Option<u64>,
+    /// When the last signed event arrived.
+    pub last_event_at: Option<u64>,
+    /// Each branch's open red issue.
+    pub open: Vec<CiAlertOpen>,
+}
+
+/// A branch's open red issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertOpen {
+    pub branch: String,
+    /// The issue's id (`iss_`) and number.
+    pub issue: String,
+    pub number: u64,
+    pub opened_at: u64,
+}
+
+/// `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+/// assigns them, or `on: false` to turn alerts off (the key goes; the
+/// issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsSettings {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub on: Option<bool>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub people: Option<Vec<String>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub assign: Option<bool>,
+}
+
+/// The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+/// and the alerts as they are now. chant reads it from
+/// `ci.green.notify.key`'s variable.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CiAlertsKey {
+    pub key: String,
+    pub alerts: CiAlerts,
+}
+
+impl std::fmt::Debug for CiAlertsKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CiAlertsKey").field("alerts", &self.alerts).finish_non_exhaustive()
+    }
+}
+
+/// What an issue or a comment CI wrote carries as its agent or `via` (native
+/// #774): `ci:chant`, whatever the event's `source`. Only the CI endpoint
+/// writes one, always with no author, so it names no person and no
+/// machine's agent.
+pub const CI_VIA: &str = "ci:";
+
+/// The name a CI writer is shown by: `chant CI` for `ci:chant`. `None` for
+/// anything else.
+pub fn ci_name(via: &str) -> Option<String> {
+    via.strip_prefix(CI_VIA).filter(|s| !s.is_empty()).map(|s| format!("{s} CI"))
+}
+
 /// What an agent's write to a tracker does, per kind: `allow` sends it at
 /// once, `approve` keeps it for a person. An edit that is several kinds goes
 /// at once only if every one of them allows.
@@ -770,6 +875,18 @@ pub struct TrackerConnection {
     pub items: u64,
     /// Agents' writes waiting for a person to approve.
     pub waiting_writes: u64,
+    /// Moves to Done Arugula gave up on after a merged PR (#441), which a
+    /// person may retry ([`TRACKER_MOVE_RETRY`]).
+    #[serde(default)]
+    pub failed_moves: u64,
+    /// Whether each open epic has a board that follows it (#483). On unless
+    /// turned off; off, the boards stay and stop following.
+    #[serde(default = "yes")]
+    pub epics_as_boards: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// `POST /api/projects/{project}/trackers`: connect a Plane project. A
@@ -818,6 +935,9 @@ pub struct TrackerSettings {
     pub attribution: Option<String>,
     #[serde(default)]
     pub webhook_secret: Option<String>,
+    /// Whether each open epic has a board that follows it.
+    #[serde(default)]
+    pub epics_as_boards: Option<bool>,
 }
 
 impl std::fmt::Debug for TrackerSettings {
@@ -827,6 +947,7 @@ impl std::fmt::Debug for TrackerSettings {
             .field("write_policy", &self.write_policy)
             .field("attribution", &self.attribution)
             .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
+            .field("epics_as_boards", &self.epics_as_boards)
             .finish()
     }
 }
@@ -847,6 +968,55 @@ pub const PROJECT_TRACKER_WRITES: &str = "/api/projects/{project}/tracker-writes
 pub const PROJECT_TRACKER_WRITE: &str = "/api/projects/{project}/tracker-writes/{write}";
 pub const PROJECT_TRACKER_WRITE_APPROVE: &str = "/api/projects/{project}/tracker-writes/{write}/approve";
 pub const PROJECT_TRACKER_WRITE_DROP: &str = "/api/projects/{project}/tracker-writes/{write}/drop";
+
+/// `GET /api/projects/{project}/trackers/{connection}/history`: what Arugula
+/// changed in a connected Plane project lately ([`TrackerHistory`]), for
+/// anyone who reads the project's connections.
+pub const TRACKER_HISTORY: &str = "/api/projects/{project}/trackers/{connection}/history";
+
+/// `POST /api/projects/{project}/trackers/{connection}/moves/{job}/retry`: queue
+/// a failed move to Done again, for an owner or editor. Answers the
+/// connection's new [`TrackerHistory`]. A job that isn't that connection's
+/// failed move is a 404.
+pub const TRACKER_MOVE_RETRY: &str = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry";
+
+/// What Arugula changed in a connection's Plane project: the newest changes
+/// and the moves that failed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerHistory {
+    /// The newest 20 changes, newest first, other than a failed move.
+    pub entries: Vec<TrackerEvent>,
+    /// The connection's failed moves (`move_failed`), newest first, up to 100:
+    /// each has its `job` for a retry.
+    #[serde(default)]
+    pub failed: Vec<TrackerEvent>,
+}
+
+/// One change in a [`TrackerHistory`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerEvent {
+    /// When it happened.
+    pub at: u64,
+    /// `moved` (a merged PR moved an item to Done), `move_failed` (it gave
+    /// up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
+    /// `write_failed`.
+    pub kind: String,
+    /// What happened, in a sentence.
+    pub line: String,
+    /// Who decided it, for a write.
+    #[serde(default)]
+    pub by: Option<String>,
+    /// Why it failed.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// A failed move's job, for the retry.
+    #[serde(default)]
+    pub job: Option<String>,
+}
 
 /// `POST /api/daemon/projects/{project}/tracker-writes` ([`TrackerWrite`], answered with a
 /// [`TrackerWriteDone`]): a machine's agent writes to a tracker, with `trackers.write` over the

@@ -5,16 +5,15 @@
 //!
 //! - **Webhooks** ([`webhook`]): `POST /github/webhook` stays on control's
 //!   site (aru-076), forwarded by the hub's gateway. Signature and dedupe
-//!   are here; the pokes go to the hub, which relays them to daemons.
-//! - **Who may hear about a repository** ([`standing`]): the account signed
+//!   are here, and a linked repo's events become the mirror's rows. The
+//!   hub relayed them to daemons as pokes until M174.
+//! - **Who may read a repository** ([`viewer::access`]): the account signed
 //!   in to control with GitHub, the App is installed where the repository
 //!   lives, and that installation is the person's own account, or GitHub
-//!   says they're a collaborator on it ([`GithubApp::may`], kept by
-//!   [`viewer::access`] in the database, which GitHub's events drop on
-//!   every machine). Both by the
-//!   person's numeric GitHub id. The hub asks it for each daemon's
-//!   `forge.watch` and heartbeat (`PlatformPort::forge_standing`): it keeps
-//!   the subscriptions, which live as long as a daemon's relay socket.
+//!   says they're a collaborator on it ([`GithubApp::may`], kept in the
+//!   database, which GitHub's events drop on every machine). Both by the
+//!   person's numeric GitHub id. Hubs before M174 asked it for each
+//!   daemon's `forge.watch` and heartbeat.
 //! - **Hosted boxes** ([`token`]): the hub's `POST /api/daemon/github/token`
 //!   asks for a read-only installation token for one repository
 //!   (`PlatformPort::github_token`), for an account the same rule allows.
@@ -42,13 +41,16 @@
 //!   and read through the same check.
 //! - **Sends** ([`send`], M168): a person sends a draft as themselves, with
 //!   a one-use user token or through one of their machines.
+//! - **Open on GitHub** ([`export`], M205): a native issue a person sends
+//!   to a linked repo as a draft, and the comments that cross once it's
+//!   there.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
 
 use std::sync::Arc;
 
-use arugula_control_wire::forge::{GithubToken, Standing};
+use arugula_control_wire::forge::GithubToken;
 use axum::http::StatusCode;
 use tracing::info;
 
@@ -70,6 +72,7 @@ pub mod drafts;
 mod drafts_tests;
 #[cfg(test)]
 mod epic_tests;
+pub mod export;
 pub mod inbox;
 #[cfg(test)]
 mod inbox_tests;
@@ -77,6 +80,8 @@ pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;
 pub mod items;
+#[cfg(test)]
+mod lane_set_tests;
 #[cfg(test)]
 mod lanes_tests;
 pub mod links;
@@ -108,7 +113,7 @@ pub use app::{
     Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes,
     epoch_of, parse_pem,
 };
-pub use webhook::{pokes, signed, signed_hex, webhook};
+pub use webhook::{signed, signed_hex, webhook};
 
 /// Repositories looked up at GitHub for the first time in a while (not
 /// the heartbeat's re-checks), per account per hour: what a burst of
@@ -248,40 +253,6 @@ impl Args {
 
 /// `OWNER/NAME`, as GitHub spells them (the hub checks them too).
 pub use arugula_platform_api::good_repo;
-
-/// Where each repository stands for an account's daemon: live (pokes come)
-/// or why not. `github`: the account's GitHub identity, if it signed in
-/// with GitHub. `fresh`: a daemon just asked (not the heartbeat), so
-/// lookups GitHub hasn't answered lately count against the account's
-/// limit.
-pub async fn standing(
-    p: &Platform,
-    account: &str,
-    github: Option<&GithubUser>,
-    repos: &[String],
-    fresh: bool,
-) -> Vec<Standing> {
-    let mut out = Vec::new();
-    for repo in repos {
-        let why = match (&p.github, github) {
-            (None, _) => Some(format!("{NO_APP}: the block polls")),
-            (Some(_), None) => Some("sign in to control with GitHub for live updates from GitHub".to_owned()),
-            (Some(gh), Some(u)) => match viewer::access(p, gh, account, u, repo, fresh).await {
-                Ok(viewer::Access::Yes) => None,
-                Ok(viewer::Access::No(why)) => Some(why),
-                Ok(viewer::Access::Busy) => {
-                    Some("too many repositories asked about lately: live updates resume within the hour".to_owned())
-                }
-                Err(e) => {
-                    tracing::warn!(error = format!("{e:#}"), "checking access to a repository");
-                    Some("couldn't check your access to it".to_owned())
-                }
-            },
-        };
-        out.push(Standing { repo: repo.clone(), live: why.is_none(), why });
-    }
-    out
-}
 
 pub use arugula_control_wire::internal::TokenAnswer;
 

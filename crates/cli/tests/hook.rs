@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_proto::flags::{DOCS_STEERING, ISSUES_STEERING};
+use arugula_proto::flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING};
 use serde_json::{Value, json};
 
 /// How the fake daemon treats a request.
@@ -109,7 +109,8 @@ fn session_start_adds_the_context_for_every_source() {
             said,
             json!({ "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": format!("{DOCS_STEERING} {ISSUES_STEERING}"),
+                // A session in a pane is told how a teammate's message arrives (#644).
+                "additionalContext": format!("{DOCS_STEERING} {ISSUES_STEERING} {MENTIONS_STEERING}"),
             } }),
             "{source}"
         );
@@ -124,7 +125,8 @@ fn session_start_with_an_older_daemons_docs_off_adds_only_the_issues_context() {
     let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out:?}"));
     assert_eq!(
         said,
-        json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": ISSUES_STEERING } })
+        json!({ "hookSpecificOutput": { "hookEventName": "SessionStart",
+            "additionalContext": format!("{ISSUES_STEERING} {MENTIONS_STEERING}") } })
     );
 }
 

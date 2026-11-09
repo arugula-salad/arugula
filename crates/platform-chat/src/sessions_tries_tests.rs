@@ -30,7 +30,7 @@ use crate::{
     db::{
         Db,
         chat::Room,
-        sessions::{Kind, NOT_PICKED, PromptState, Role, Session, State},
+        sessions::{AgentSession, Kind, NOT_PICKED, PromptState, Role, State},
         sql::{Sql as _, params},
     },
     forge::{
@@ -166,7 +166,7 @@ impl World {
         assert_eq!(self.says(ses, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
     }
 
-    fn session(&self, id: &str) -> Session {
+    fn session(&self, id: &str) -> AgentSession {
         self.app.db.session(id).unwrap().unwrap()
     }
 
@@ -202,7 +202,7 @@ fn told(db: &Db, ses: &str) -> usize {
 }
 
 /// `a` asks `@arugula` in #general: the thread's number and its session.
-async fn asked(w: &World, text: &str) -> (i64, Session) {
+async fn asked(w: &World, text: &str) -> (i64, AgentSession) {
     let m = post_in(&w.base, "ch_general", "a", text, None).await;
     let p = m["seq"].as_i64().unwrap();
     let s = w.app.db.session_on_thread("ch_general", p as u64).unwrap().expect("a session");

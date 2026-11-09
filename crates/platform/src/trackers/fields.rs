@@ -162,6 +162,15 @@ pub fn label_names(app: &Platform, connection: &str, ids: &[Vec<String>]) -> Res
     Ok(ids.iter().map(|of| of.iter().filter_map(name).collect()).collect())
 }
 
+/// Whether each of `items` has a type Plane flags as an epic, by the fields
+/// kept for the connection (however old: before any, none is).
+pub fn epic_flags(app: &Platform, connection: &str, items: &[super::Item]) -> Result<Vec<bool>, ApiError> {
+    let kept = app.db.tracker_fields(connection)?;
+    let fields: Option<Fields> = kept.and_then(|(json, _)| serde_json::from_str(&json).ok());
+    let epics = fields.map(|f| f.epic_types).unwrap_or_default();
+    Ok(items.iter().map(|it| it.item_type.as_ref().is_some_and(|t| epics.contains(t))).collect())
+}
+
 /// The kept fields when they are fresh.
 fn kept(app: &Platform, connection: &str) -> Result<Option<Fields>, ApiError> {
     let Some((json, at)) = app.db.tracker_fields(connection)? else { return Ok(None) };

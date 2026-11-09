@@ -32,7 +32,10 @@ runs:
     - name: The contract's JSON Schema is current (contract/schema/)
       shell: bash
       run: just contract-schema check
-    - name: DECISIONS.md lists the decision records (docs/decisions/)
+    - name: The native client's OpenAPI document is current (contract/openapi/)
+      shell: bash
+      run: just api-contract check
+    - name: DECISIONS.md lists the decision records (docs/decisions/), and docs/data-model.md matches the code
       shell: bash
       run: just decisions check
     - name: docs/gotchas/README.md lists the gotchas
@@ -41,3 +44,6 @@ runs:
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new
+    - name: ops/ builds its Fly plans (#1983)
+      shell: bash
+      run: just ops-check

@@ -1,0 +1,370 @@
+{
+  "url": "https://control.example",
+  "trust": {
+    "account": "a",
+    "root": "2fd78ba2a5780271"
+  },
+  "cert": {
+    "v": 1,
+    "account": "a",
+    "device": "c95b41d8598649c5",
+    "kind": "daemon",
+    "name": "geek",
+    "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+    "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+    "created": 1793773139410,
+    "approver": "2fd78ba2a5780271",
+    "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
+  },
+  "certs": [
+    {
+      "v": 1,
+      "account": "a",
+      "device": "2fd78ba2a5780271",
+      "kind": "browser",
+      "name": "x",
+      "noise": "a8cf8feab8f91e4547d41833ddea8c95efa2121495ffa296ebcfe5b11678171f",
+      "sign": "e07043aab33b8e513c219a3fab18e2ad1c252613136f9a58d96bd42d076d102f",
+      "created": 1793773139403,
+      "approver": "2fd78ba2a5780271",
+      "sig": "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600"
+    },
+    {
+      "v": 1,
+      "account": "a",
+      "device": "c95b41d8598649c5",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+      "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+      "created": 1793773139410,
+      "approver": "2fd78ba2a5780271",
+      "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
+    },
+    {
+      "v": 1,
+      "account": "a",
+      "device": "fc05fb621ffbc559",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "d888c9352555ba42456624445c732495bdb1d17c4ff2f4d01ad09b00a4415566",
+      "sign": "f7f129a8affcdddff50898210aff9f8f23f2ff2d1eda7aea8d1924108fa7af22",
+      "created": 1793773139416,
+      "approver": "2fd78ba2a5780271",
+      "sig": "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09"
+    },
+    {
+      "v": 1,
+      "account": "a",
+      "device": "733fb5b7a3e45491",
+      "kind": "browser",
+      "name": "old laptop",
+      "noise": "ef02685c0707364b574379d923dbe698c971cafbb6f1f385181d659bb83cae6d",
+      "sign": "89b2135b596db08871510f14c4573e261706a240907032d6a50e99a2ad2763a7",
+      "created": 1793773139423,
+      "approver": "2fd78ba2a5780271",
+      "sig": "e15fdc6137155c7143bbcff5be25e3a09918dc412e89e1af7d176c6854b7f7bdfb90054c0663453ccba787aa844510dac5bde0ec58c53312f3ea205f4f8b5907"
+    },
+    {
+      "v": 1,
+      "account": "a",
+      "device": "9c48b675829a24e5",
+      "kind": "daemon",
+      "name": "jake-air",
+      "noise": "7195e235d9fa337972fa982c909e2865397b8d9c615aed4d0956065c34f82c3f",
+      "sign": "8426725c9ede7a4f83c2fd0869dbeedc1232efc705adac87a5d347f53bf17ff8",
+      "created": 1793773139429,
+      "approver": "2fd78ba2a5780271",
+      "sig": "bd0493895bf91f4441b56ed7960279857cf6b9c7d84cda93c60feecb474b79419048e8fdb5611e7f0ea8d4d7ddc3ec1e2e7db1158f533205ad167cde31138308"
+    }
+  ],
+  "revocations": [
+    {
+      "v": 1,
+      "account": "a",
+      "device": "733fb5b7a3e45491",
+      "at": 1793773139429,
+      "by": "2fd78ba2a5780271",
+      "sig": "309f2a613fdb8d55de3125d147275574d991e68156d9f52aa2fa6ad65eb0791dd673cfa2d9ef0d5084b875b9fb0d56e058f771d22c6b48e65bfb45ce6e387d08"
+    }
+  ],
+  "team": {
+    "team": "t1",
+    "founder": "o",
+    "founder_root": "54cc8bcf23f1bda2"
+  },
+  "locked": false,
+  "seen": {
+    "round": 1,
+    "at": {
+      "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600": 1,
+      "309f2a613fdb8d55de3125d147275574d991e68156d9f52aa2fa6ad65eb0791dd673cfa2d9ef0d5084b875b9fb0d56e058f771d22c6b48e65bfb45ce6e387d08": 1,
+      "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b": 1,
+      "b3ce2e21c04a3da0ba377fcc21e334ef8ac6d73d7865d774f3ceb428cbb8fc30d67b0c06089142db43139082b6cf7e4421cc13f4f1cb8c87deb5ed39493cfa09": 1,
+      "bd0493895bf91f4441b56ed7960279857cf6b9c7d84cda93c60feecb474b79419048e8fdb5611e7f0ea8d4d7ddc3ec1e2e7db1158f533205ad167cde31138308": 1,
+      "e15fdc6137155c7143bbcff5be25e3a09918dc412e89e1af7d176c6854b7f7bdfb90054c0663453ccba787aa844510dac5bde0ec58c53312f3ea205f4f8b5907": 1
+    }
+  },
+  "peers": {
+    "s": {
+      "name": "Sam",
+      "certs": [
+        {
+          "v": 1,
+          "account": "s",
+          "device": "40ef365d45873fc6",
+          "kind": "browser",
+          "name": "x",
+          "noise": "dd1d0ca2b675d379c20bd86bef38bfb49285896021c7d0219ea085396161756f",
+          "sign": "f58ba022737f036851652db763b5ded5e0da19d4b302d3524f55576424ec2cd2",
+          "created": 1793773139474,
+          "approver": "40ef365d45873fc6",
+          "sig": "8984602f37220eab00f18f654774b4543dc69a8d99741ec5af87dcf2d111cb62048d872487e449a8e237ab214bdc5970ea3b3f4eb6420a9ecdaeef4628700300"
+        },
+        {
+          "v": 1,
+          "account": "s",
+          "device": "59d7051e5c22a558",
+          "kind": "browser",
+          "name": "s-phone",
+          "noise": "991453febb1851e6b3d1d0bedb69b8674ae54b65cf996e1b454799b3692d070f",
+          "sign": "5726dc29adb9f72acbd9ff86b2e1ff21b8c4a671ea9f59544eef3c5794e5892e",
+          "created": 1793773139481,
+          "approver": "40ef365d45873fc6",
+          "sig": "f8ee01878b7d08ddd3bbb7f702dd37e1a8b33d3f1c175b113bc1e5d75feb5e1a2b8b76d1c5a54c8ab87ee46668f515df846d4f23bf847cef2c9367b06cc9d806"
+        }
+      ],
+      "revocations": []
+    }
+  },
+  "shared_teams": {
+    "t2": {
+      "roster": {
+        "v": 1,
+        "team": "t2",
+        "name": "Beta",
+        "version": 2,
+        "at": 2,
+        "members": [
+          {
+            "account": "p",
+            "root": "6a330f42647017f0",
+            "role": "owner",
+            "name": "p"
+          },
+          {
+            "account": "q",
+            "root": "c88fd0f838ac3623",
+            "role": "editor",
+            "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
+          }
+        ],
+        "by": "6a330f42647017f0",
+        "sig": "ce368ffbb5b3e157b2d662348581ec5d6facc24e0305d703588c04058d3b8e435248ea9c1a8a5414f6164f252e3bcf0b635719971c098548b44c6812a89b0d09"
+      },
+      "certs": {
+        "p": [
+          [
+            {
+              "v": 1,
+              "account": "p",
+              "device": "6a330f42647017f0",
+              "kind": "browser",
+              "name": "x",
+              "noise": "b18cbfe88057cf49858db92765c161fe2b103a85488e75bb43ae15ff84b9b879",
+              "sign": "c2a3fdf6d4c7bdc969021bbcc82c1a8e93a7e364b97482648b2474da838cd5e5",
+              "created": 1793773139501,
+              "approver": "6a330f42647017f0",
+              "sig": "76de06991780abcf92fa71045955477262b96cde349923224042e36a808bbc86eaa5fe524429a3e10f6e5cec1195696356b2bec8d6870ee4541328d19eca960d"
+            },
+            {
+              "v": 1,
+              "account": "p",
+              "device": "d06da3aed6e92ea7",
+              "kind": "daemon",
+              "name": "p-box",
+              "noise": "7e18720d526f49f36a14e1df2ade251968dc524be39668d1c9cc90bc80307647",
+              "sign": "46c8a050b17746a18f282da19556aaeb86ff8eb2546e46654b071ed22b1642ee",
+              "created": 1793773139507,
+              "approver": "6a330f42647017f0",
+              "sig": "69b29375fd11c20ac84e2a37063a9ee750e8c33b6d2037fcf3920ead2d419dc9a281bd908908d09282d4b4b75e0c3376ff26b6c436e7075c36e9cecb20a1020e"
+            }
+          ],
+          []
+        ],
+        "q": [
+          [
+            {
+              "v": 1,
+              "account": "q",
+              "device": "c88fd0f838ac3623",
+              "kind": "browser",
+              "name": "x",
+              "noise": "9cf81f31ccbcd55a3e33f2f87f269bbb74e0404e001e9f23aea6960b2cae5e0e",
+              "sign": "ee959ef39dd8e7f1787179f1c5a1ad5a035ea3a522b4dff6971b5bcccf849748",
+              "created": 1793773139514,
+              "approver": "c88fd0f838ac3623",
+              "sig": "e08db9537214b11543b263a332febaea536522e84fc727f60b884b8a35880890a05e5baca5711341291ca1258dd63403fb0b15c937fa8d4ecc9efe8e5dfbc70d"
+            }
+          ],
+          []
+        ]
+      },
+      "names": {
+        "q": "Quinn"
+      },
+      "locked": false,
+      "pin": {
+        "team": "t2",
+        "founder": "p",
+        "founder_root": "6a330f42647017f0"
+      }
+    },
+    "t3": {
+      "roster": {
+        "v": 1,
+        "team": "t3",
+        "name": "Gamma",
+        "version": 3,
+        "at": 3,
+        "members": [
+          {
+            "account": "r",
+            "root": "0fe891b6ffa4c9a8",
+            "role": "owner",
+            "name": "r"
+          },
+          {
+            "account": "q",
+            "root": "c88fd0f838ac3623",
+            "role": "editor",
+            "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
+          }
+        ],
+        "by": "0fe891b6ffa4c9a8",
+        "sig": "5f8afac6ff27da1c56815d706d2f2d0f7e36ba09661db412452c1f79771d6f364d8362da41e54bcb1463a658ef0fc5d0f4db08e1932467d67ff862fc92b51f0a"
+      },
+      "certs": {
+        "q": [
+          [
+            {
+              "v": 1,
+              "account": "q",
+              "device": "c88fd0f838ac3623",
+              "kind": "browser",
+              "name": "x",
+              "noise": "9cf81f31ccbcd55a3e33f2f87f269bbb74e0404e001e9f23aea6960b2cae5e0e",
+              "sign": "ee959ef39dd8e7f1787179f1c5a1ad5a035ea3a522b4dff6971b5bcccf849748",
+              "created": 1793773139514,
+              "approver": "c88fd0f838ac3623",
+              "sig": "e08db9537214b11543b263a332febaea536522e84fc727f60b884b8a35880890a05e5baca5711341291ca1258dd63403fb0b15c937fa8d4ecc9efe8e5dfbc70d"
+            }
+          ],
+          []
+        ],
+        "r": [
+          [
+            {
+              "v": 1,
+              "account": "r",
+              "device": "0fe891b6ffa4c9a8",
+              "kind": "browser",
+              "name": "x",
+              "noise": "3aaafdce45e55a4983949e1b0cffd5ce3c42e0da0537685350d3c5eb484d6005",
+              "sign": "1f76ec782c6be13256ddf08480be8390ad0ee2e95662d556b0b9d6a140aa8385",
+              "created": 1793773139521,
+              "approver": "0fe891b6ffa4c9a8",
+              "sig": "56e8faf360a8b5997e47399726301dd2e41e4b20c0d71827c4103461879efcdd1810760dce2dac341fec398cbf5ebbd9d281fd3f76e0fc9d3b4c841a2545c709"
+            },
+            {
+              "v": 1,
+              "account": "r",
+              "device": "1979f8d48a54d8cc",
+              "kind": "daemon",
+              "name": "r-box",
+              "noise": "5857513a3ba401b2afe0f8e9692d7a81d12766b5bf2c49b980f0678322244477",
+              "sign": "f471a40add21bf0a080fc2ab9073b48f075215471501fa1491423f526c74822b",
+              "created": 1793773139526,
+              "approver": "0fe891b6ffa4c9a8",
+              "sig": "2e346e45b9d4c85eb4821f3124c430904a5f607b768b0dc6351b04cb657b3d7cd9aecae2dc365c89bf78e15ca451293140e4ff4fe50e3793da4df075ce42fa07"
+            }
+          ],
+          []
+        ]
+      },
+      "names": {
+        "r": "Robin"
+      },
+      "locked": true,
+      "lock": {
+        "team": "t3",
+        "locked": true,
+        "version": 3,
+        "at": 30,
+        "by": "0fe891b6ffa4c9a8",
+        "sig": "1a2ef85de63ab9dcb64fda4129bf0fb9c308ffc8a1e8c740ab4fa7211a9fc7314e4e3dbded32643e10b6bb26d39ef8055d24a681b6bb744afe1c13bb102ed600"
+      },
+      "pin": {
+        "team": "t3",
+        "founder": "r",
+        "founder_root": "0fe891b6ffa4c9a8"
+      }
+    }
+  },
+  "held_teams": {
+    "t9": {
+      "roster": {
+        "v": 1,
+        "team": "t9",
+        "name": "Held",
+        "version": 2,
+        "at": 2,
+        "members": [
+          {
+            "account": "p",
+            "root": "6a330f42647017f0",
+            "role": "owner",
+            "name": "p"
+          },
+          {
+            "account": "q",
+            "root": "c88fd0f838ac3623",
+            "role": "editor",
+            "name": "q"
+          },
+          {
+            "account": "a",
+            "root": "2fd78ba2a5780271",
+            "role": "editor",
+            "name": "a"
+          }
+        ],
+        "by": "6a330f42647017f0",
+        "sig": "ce368ffbb5b3e157b2d662348581ec5d6facc24e0305d703588c04058d3b8e435248ea9c1a8a5414f6164f252e3bcf0b635719971c098548b44c6812a89b0d09"
+      },
+      "certs": {},
+      "locked": false
+    }
+  },
+  "held_peers": {
+    "h": {
+      "name": "",
+      "certs": [],
+      "revocations": []
+    }
+  },
+  "login": "jake",
+  "moved_at": 1700000000001
+}

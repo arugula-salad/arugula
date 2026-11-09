@@ -1,0 +1,153 @@
+{
+  "accounts": [
+    "a",
+    "o"
+  ],
+  "agent_accounts": [
+    "o",
+    "p",
+    "r"
+  ],
+  "agent_callers": [
+    "116952298439d2ae:User { id: \"account:o\", name: \"o\", pic: None }",
+    "1979f8d48a54d8cc:User { id: \"account:r\", name: \"Robin\", pic: None }",
+    "9c48b675829a24e5:User { id: \"account:a\", name: \"jake\", pic: None }",
+    "d06da3aed6e92ea7:User { id: \"account:p\", name: \"p\", pic: None }"
+  ],
+  "already_in": [
+    "this machine is already in the team Acme on https://control.example. To move it, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again.",
+    "this machine is already in the team Acme on https://control.example",
+    "this machine is already in the team Acme on https://control.example, and a machine is in one team at a time. To work with the team Beta and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, use Team … beside it in Devices and machines… (the account menu). `arugulad leave`, then join again, also moves it, but takes it off control until it's approved again."
+  ],
+  "co_owner": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": "User { id: \"account:o\", name: \"o\", pic: None }",
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owner_of": {
+    "a": null,
+    "acct1": null,
+    "e": null,
+    "m": null,
+    "o": "User { id: \"account:o\", name: \"o\", pic: None }",
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": null,
+    "x": null
+  },
+  "co_owners": [
+    "User { id: \"account:o\", name: \"o\", pic: None }"
+  ],
+  "drivers": [],
+  "hosted": false,
+  "is_me": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": false,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "is_team": true,
+  "kind_name": [
+    "team",
+    "Acme"
+  ],
+  "known": [
+    "Known { account: \"e\", root: \"ddb304a78f3174b9\", name: \"e\", role: Editor }",
+    "Known { account: \"o\", root: \"54cc8bcf23f1bda2\", name: \"o\", role: Owner }",
+    "Known { account: \"p\", root: \"6a330f42647017f0\", name: \"p\", role: Owner }",
+    "Known { account: \"q\", root: \"c88fd0f838ac3623\", name: \"q\", role: Editor }",
+    "Known { account: \"r\", root: \"0fe891b6ffa4c9a8\", name: \"r\", role: Owner }",
+    "Known { account: \"v\", root: \"7a6968289d341618\", name: \"v\", role: Viewer }"
+  ],
+  "known_roots": {
+    "a": "2fd78ba2a5780271",
+    "acct1": null,
+    "e": "ddb304a78f3174b9",
+    "m": null,
+    "o": "54cc8bcf23f1bda2",
+    "p": "6a330f42647017f0",
+    "q": "c88fd0f838ac3623",
+    "r": "0fe891b6ffa4c9a8",
+    "s": null,
+    "v": "7a6968289d341618",
+    "x": null
+  },
+  "legacy_app_children": {},
+  "name_of_account": {
+    "a": "jake",
+    "acct1": null,
+    "e": "Erin",
+    "m": null,
+    "o": "o",
+    "p": null,
+    "q": null,
+    "r": null,
+    "s": null,
+    "v": "v",
+    "x": null
+  },
+  "others": [
+    "2fd78ba2a5780271:Owner",
+    "54cc8bcf23f1bda2:Owner",
+    "fc05fb621ffbc559:Owner"
+  ],
+  "owners": null,
+  "owns_here": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "reaches": {
+    "a": true,
+    "acct1": false,
+    "e": false,
+    "m": false,
+    "o": true,
+    "p": false,
+    "q": false,
+    "r": false,
+    "s": false,
+    "v": false,
+    "x": false
+  },
+  "shared_roles": [],
+  "signers": null,
+  "state": [
+    "team",
+    "Acme"
+  ],
+  "team_people": [],
+  "team_roles": [],
+  "trusted": [
+    "2fd78ba2a5780271",
+    "9c48b675829a24e5",
+    "c95b41d8598649c5",
+    "fc05fb621ffbc559"
+  ],
+  "whose": "the team Acme"
+}

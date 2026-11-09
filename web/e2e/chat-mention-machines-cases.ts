@@ -108,9 +108,13 @@ export function mentionMachinesTests(what: string, context: { serviceWorkers?: "
     await compose(aliceChat).pressSequentially("what is the board for");
     const posted = aliceChat.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith(`/api/chat/rooms/${general}/messages`));
     await compose(aliceChat).press("Enter");
-    const body = (await (await posted).json()) as { pushed: { account: string }[]; mentions: string[] };
+    const body = (await (await posted).json()) as { mentions: string[] };
     expect(body.mentions).toContain(`machine:${machine}`);
-    expect(body.pushed.map((p) => p.account)).toContain(`machine:${machine}`);
+    // The post returns before the machine is told (#419): its status line
+    // says when the daemon took it. This harness's sessions are names only,
+    // so the daemon routes it to its inbox.
+    const line = aliceChat.locator(`.thread-msg .mention-line[data-machine='${machine}']`);
+    await expect(line).toHaveAttribute("data-mention-status", /^(delivered|fell_back|waiting|no_such_session)$/, { timeout: 15_000 });
     const chip = aliceChat.locator(".thread-msg .mention-machine", { hasText: "@alices/ux-improvements" });
     await expect(chip).toBeVisible();
     await expect(chip.locator(".machine-icon")).toBeVisible();

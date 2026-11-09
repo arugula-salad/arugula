@@ -1,5 +1,5 @@
 # Nightly: forge blocks against real forges (#93). Never on pull requests:
-# these run on our own machines.
+# github has the test organization's secrets.
 #
 # - github: crates/daemon/tests/integration/forges_github_real.rs against github.com,
 #   with a test organization's repository, two bot accounts and a copy of
@@ -14,7 +14,7 @@ on:
 
 jobs:
   github:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     env:
       ARUGULA_GH_TEST_REPO: ${{ vars.ARUGULA_GH_TEST_REPO }}
       ARUGULA_GH_AUTHOR_TOKEN: ${{ secrets.ARUGULA_GH_AUTHOR_TOKEN }}
@@ -49,7 +49,7 @@ jobs:
         run: "mise exec -- cargo test -p arugulad --test integration forges_github_real:: -- --nocapture"
 
   forges:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

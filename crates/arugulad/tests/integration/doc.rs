@@ -30,7 +30,7 @@ const EDITOR: &str = "pal@example.com";
 /// A daemon with its owner, FRIEND a viewer and EDITOR an editor of its
 /// session, and the first terminal pane.
 fn shared() -> (Daemon, u64, u64) {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_with(&args);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
@@ -285,6 +285,50 @@ fn a_page_that_doesnt_show_the_doc_is_sent_nothing_of_it() {
 }
 
 #[test]
+fn a_summaries_only_connection_is_sent_no_blocks() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+
+    // As the fleet connects: it says so first, then takes patches.
+    let mut summary = Page::connect_plain(&d, None);
+    summary.send(json!({ "type": "subscribe", "summary": true }));
+    summary.send(json!({ "type": "block_patches" }));
+    summary.sync();
+    let mut page = Page::connect(&d, None);
+    page.show(pane);
+    page.settled(doc);
+
+    // Not the one it could have had on connecting, nor what changes after.
+    m.call("doc", fill(doc, "s1", "One.")).unwrap();
+    assert_eq!(bodies(&page.block(doc))[0].as_deref(), Some("One."));
+    let made = d.post("/api/blocks", json!({ "type": "browser", "config": { "url": "http://localhost:1" } }));
+    let other = made["block"].as_u64().expect("a block anyone is sent, shown or not");
+    page.block(other);
+    let quiet = Duration::from_secs(2);
+    let mut blocks = vec![];
+    while let Some(msg) = summary.recv(quiet) {
+        if msg["type"] == "block" {
+            blocks.push(msg);
+        }
+    }
+    assert_eq!(blocks, Vec::<Value>::new(), "a summaries-only connection reads no block");
+
+    // Asking for everything again brings them.
+    summary.send(json!({ "type": "subscribe", "summary": false }));
+    summary.block(doc);
+
+    // A client that says nothing gets them too, and one that says anything
+    // else gets them first.
+    Page::connect_plain(&d, None).block(doc);
+    let mut asks = Page::connect_plain(&d, None);
+    asks.send(json!({ "type": "ping", "id": 1 }));
+    let first = asks.until("a block or the pong", |m| m["type"] == "block" || m["type"] == "pong");
+    assert_eq!(first["type"], "block", "{first}");
+    drop(m);
+}
+
+#[test]
 fn an_idle_doc_sends_and_writes_nothing() {
     let (d, pane, _) = shared();
     let m = Mcp::bridge(&d, Some(pane));
@@ -409,7 +453,7 @@ fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
 /// the Doc, filled.
 #[test]
 fn a_doc_needs_no_flag_and_a_restart_keeps_it() {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let mut d = Daemon::child_with(&args);
     std::fs::write(d.state.join("flags.json"), r#"{ "flags": { "docs": false } }"#).unwrap();
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();

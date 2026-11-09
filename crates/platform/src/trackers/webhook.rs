@@ -6,8 +6,7 @@
 //!   ([`signed_hex`]). A connection that is unknown, disconnected, or kept no
 //!   secret is a 404, the same answer for all three; a bad or missing
 //!   signature is a 401, and it comes before anything is read or written,
-//!   the delivery's id included. Behind the boards Labs flag of whoever
-//!   connected it.
+//!   the delivery's id included.
 //! - **Deduplicated** by `X-Plane-Delivery` in the GitHub webhook's table
 //!   ([`Db::first_delivery`], key `plane:<delivery>`). A failure after that
 //!   forgets it, so Plane's retry is taken.
@@ -141,14 +140,9 @@ pub async fn webhook(
 }
 
 /// The live connection `id` and its webhook secret, opened; `None` unless
-/// the connection is live, it kept a secret, and boards are on for whoever
-/// connected it.
+/// the connection is live and it kept a secret.
 async fn checked(app: &Platform, id: &str) -> anyhow::Result<Option<(Connection, String)>> {
     let Some(c) = app.db.live_tracker_connection(id)? else { return Ok(None) };
-    let Some(who) = &c.linked_by else { return Ok(None) };
-    if !crate::chat::flag_on(app, who, crate::boards::FLAG).await? {
-        return Ok(None);
-    }
     let Some(master) = app.secret_key.as_deref() else { return Ok(None) };
     let secret = keys::open(&app.db, master, &c.project_id, &webhook_name(&c.id))?;
     Ok(secret.map(|s| (c, s)))
@@ -158,7 +152,7 @@ async fn checked(app: &Platform, id: &str) -> anyhow::Result<Option<(Connection,
 async fn apply(app: &Platform, c: &Connection, what: &Change<'_>) -> anyhow::Result<usize> {
     let now = now_ms();
     match what {
-        Change::Remove(item) => remove(app, c, item),
+        Change::Remove(item) => remove(app, c, item).await,
         Change::Read(item) => {
             let master = app.secret_key.as_deref().ok_or_else(|| anyhow::anyhow!("this platform keeps no secrets"))?;
             let key = keys::open(&app.db, master, &c.project_id, &key_name(&c.id))?
@@ -169,10 +163,11 @@ async fn apply(app: &Platform, c: &Connection, what: &Change<'_>) -> anyhow::Res
                     let changed = super::connect::ingest_page(app, &c.id, c.mirror_id, None, &[it], now)?;
                     let changed = changed.unwrap_or_default();
                     crate::boards::items_changed(app, &changed);
+                    crate::boards::epics::from_epics(app, &c.id, &changed).await;
                     Ok(changed.len())
                 }
                 // Gone by the time it was read: the same as deleted.
-                Err(TrackerError::NotFound) => remove(app, c, item),
+                Err(TrackerError::NotFound) => remove(app, c, item).await,
                 Err(e) => Err(e.into()),
             }
         }
@@ -180,13 +175,14 @@ async fn apply(app: &Platform, c: &Connection, what: &Change<'_>) -> anyhow::Res
 }
 
 /// Remove the row for `item`, and tell the boards that pointed at it.
-fn remove(app: &Platform, c: &Connection, item: &str) -> anyhow::Result<usize> {
+async fn remove(app: &Platform, c: &Connection, item: &str) -> anyhow::Result<usize> {
     let Some(row) = app.db.tracker_item_id(&c.id, item)? else { return Ok(0) };
     // The boards are found before the row goes: they join on it.
     let boards = app.db.boards_on_item_ids(std::slice::from_ref(&row))?;
     let gone = app.db.tracker_mirror(&c.id, None, |tx| rows::delete_item(tx, &c.id, item))?.flatten();
     if gone.is_some() {
         crate::boards::boards_changed(app, &boards);
+        crate::boards::epics::from_epics(app, &c.id, std::slice::from_ref(&row)).await;
     }
     Ok(usize::from(gone.is_some()))
 }

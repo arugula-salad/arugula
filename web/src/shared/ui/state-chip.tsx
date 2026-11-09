@@ -1,12 +1,14 @@
-// One chip (UI audit #183): a state, a label or a badge, in one look with
-// tone variants, on the platform page and on control's. A state (a run's,
-// a deploy's, an issue's, a workspace's) is a `StateChip`: the chip with a
-// dot, in the tone its card's bar takes in a list (../states.ts), its word
-// capitalised wherever it shows. A label is a muted chip and an agent's
-// badge a teal one, without the dot. The look is ./state-chip.css.
+// Chips, in five shapes (UI audit #183, #730), on the platform page, the
+// shell and control's. A state (a run's, a deploy's, an issue's, a
+// workspace's) is a `StateChip`: the chip with a dot, in the tone its
+// card's bar takes in a list (../states.ts), its word capitalised wherever
+// it shows. A label is a `Chip kind="tag"`, a number a `Count`, a thing
+// with an id (an issue, a board, a setting, a file) an `ObjectChip`, and a
+// tip about a pane a `HintChip`. The looks are ./state-chip.css.
 
 import type { ComponentChildren } from "preact";
 import "./state-chip.css";
+import { CloseIcon, IconButton } from "./icons";
 
 /** A chip's tone, by the palette color it takes (as a card's bar does,
  * platform/swarm.css). */
@@ -14,11 +16,13 @@ export type Tone = "accent" | "ok" | "warn" | "danger" | "info" | "teal" | "merg
 
 type Data = { [data: `data-${string}`]: unknown };
 
-/** A chip: `tone` colors it (muted when none), `dot` marks a state. With
- * `onClick` it's a button. Anything else (`data-*`, a title) lands on it. */
+/** A chip: `tone` colors it (muted when none), `dot` marks a state, and
+ * `kind="tag"` makes it a label: a raised box, with no edge. With `onClick`
+ * it's a button. Anything else (`data-*`, a title) lands on it. */
 export function Chip({
   tone,
   dot,
+  kind,
   class: cls,
   title,
   onClick,
@@ -27,12 +31,13 @@ export function Chip({
 }: {
   tone?: Tone | null;
   dot?: boolean;
+  kind?: "tag";
   class?: string;
   title?: string;
   onClick?: (e: MouseEvent) => void;
   children: ComponentChildren;
 } & Data) {
-  const c = `chip chip-${tone ?? "muted"}${dot ? " chip-dot" : ""}${cls ? ` ${cls}` : ""}`;
+  const c = `chip chip-${tone ?? "muted"}${kind === "tag" ? " chip-tag" : ""}${dot ? " chip-dot" : ""}${cls ? ` ${cls}` : ""}`;
   return onClick ? (
     <button type="button" class={c} title={title} onClick={onClick} {...attrs}>
       {children}
@@ -50,5 +55,142 @@ export function StateChip({ tone, children, ...rest }: { tone: Tone | null; clas
     <Chip tone={tone} dot {...rest}>
       {children}
     </Chip>
+  );
+}
+
+/** A count: neutral, `for="you"` when it's unread or yours (accent), and
+ * `for="mention"` when it names you (warn). With `onClick` it's a button. */
+export function Count({
+  for: who,
+  class: cls,
+  title,
+  onClick,
+  onPointerDown,
+  children,
+  ...attrs
+}: {
+  for?: "you" | "mention";
+  class?: string;
+  title?: string;
+  onClick?: (e: MouseEvent) => void;
+  onPointerDown?: (e: PointerEvent) => void;
+  children: ComponentChildren;
+} & Data) {
+  const c = `count${who ? ` count-${who}` : ""}${cls ? ` ${cls}` : ""}`;
+  return onClick ? (
+    <button type="button" class={c} title={title} onClick={onClick} onPointerDown={onPointerDown} {...attrs}>
+      {children}
+    </button>
+  ) : (
+    <span class={c} title={title} onPointerDown={onPointerDown} {...attrs}>
+      {children}
+    </span>
+  );
+}
+
+/** A thing with an id: `id` in mono, then its title (the children), then a
+ * `fact` in its tone. `proof` draws it dashed, `pair` as two cells (`id`,
+ * then `fact`), `onRemove` adds a ✕. It's a link with `href` (`target` and
+ * `rel` are the caller's), a button with
+ * `onClick` (keyboard-reachable, `pressed` and `disabled` as a toggle's),
+ * else plain; anything else (`data-*`, drag handlers) lands on it. */
+export function ObjectChip({
+  id,
+  fact,
+  proof,
+  pair,
+  href,
+  onClick,
+  onRemove,
+  removeLabel,
+  removeAttrs,
+  pressed,
+  disabled,
+  class: cls,
+  title,
+  children,
+  ...attrs
+}: {
+  id?: ComponentChildren;
+  fact?: { tone: Tone | null; text: ComponentChildren } | null;
+  proof?: boolean;
+  pair?: boolean;
+  href?: string;
+  onClick?: (e: MouseEvent) => void;
+  onRemove?: (e: MouseEvent) => void;
+  /** The ✕'s accessible name. */
+  removeLabel?: string;
+  /** `data-*` on the ✕. */
+  removeAttrs?: Data;
+  pressed?: boolean;
+  disabled?: boolean;
+  class?: string;
+  title?: string;
+  children?: ComponentChildren;
+} & Data &
+  Record<string, unknown>) {
+  const c = `chip-object${proof ? " proof" : ""}${pair ? " pair" : ""}${cls ? ` ${cls}` : ""}`;
+  const body = (
+    <>
+      {id != null && <code class="chip-object-id">{id}</code>}
+      {children}
+      {fact && <span class={`chip-object-fact chip-${fact.tone ?? "muted"}`}>{fact.text}</span>}
+      {onRemove && (
+        <IconButton label={removeLabel ?? "Remove"} class="chip-object-x" data-chip-remove onClick={onRemove} {...removeAttrs}>
+          <CloseIcon size="xs" />
+        </IconButton>
+      )}
+    </>
+  );
+  if (href) {
+    return (
+      <a class={c} href={href} title={title} {...attrs}>
+        {body}
+      </a>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" class={c} title={title} onClick={onClick} aria-pressed={pressed} disabled={disabled} {...attrs}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <span class={c} title={title} {...attrs}>
+      {body}
+    </span>
+  );
+}
+
+/** A tip about a pane: its `copy`, an action and ×. The shell says where it
+ * shows (hints.tsx); `class` places it. */
+export function HintChip({
+  id,
+  copy,
+  action,
+  onAct,
+  onDismiss,
+  class: cls,
+}: {
+  id: string;
+  copy: ComponentChildren;
+  action?: string;
+  onAct: () => void;
+  onDismiss: () => void;
+  class?: string;
+}) {
+  return (
+    <span class={`hint${cls ? ` ${cls}` : ""}`} role="status" data-hint={id}>
+      <span class="hint-copy">{copy}</span>
+      {action && (
+        <button class="hint-act" data-hint-act onClick={onAct}>
+          {action}
+        </button>
+      )}
+      <IconButton label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" class="hint-dismiss" data-hint-dismiss onClick={onDismiss}>
+        <CloseIcon size="sm" />
+      </IconButton>
+    </span>
   );
 }

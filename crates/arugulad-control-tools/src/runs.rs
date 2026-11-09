@@ -1,6 +1,8 @@
 //! Runs for agents (M216, platform step 7): `start_run`, `read_run`, and
 //! `wait` with `run`, over a project's runs in Arugula control. A run
-//! executes on one of the project's hosted boxes (M212), never here.
+//! executes on one of the project's Cloud workspaces (M212), never here.
+//! `start_run`'s `cloud_workspace` was `box`, which it still takes
+//! (`arugulad-mcp`'s `ARG_ALIASES`, Arugula #668).
 //!
 //! - **Through the owner's grants.** Each call is a machine-signed route on
 //!   the platform (`/api/daemon/projects/{project}/runs`,
@@ -20,7 +22,7 @@
 //!   again. Once it ends, it reads the log's tail.
 //! - **The log** is the platform's durable copy (M213), paged by byte
 //!   offset. Until the platform keeps one, a read says where the output is:
-//!   the run's pane on its box, which the project's people watch end to
+//!   the run's pane on its machine, which the project's people watch end to
 //!   end, and which `arugula runs logs` reads from a person's CLI. This
 //!   machine's agents can't read that pane: a machine reaches another only
 //!   for its agents (`/api/a2a/`).
@@ -49,7 +51,7 @@ pub(crate) const START_TOOL: &str = "start_run";
 const BACK_OFF: Duration = Duration::from_secs(5);
 pub(crate) const READ_TOOL: &str = "read_run";
 
-pub(crate) const START_DESCRIPTION: &str = "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
+pub(crate) const START_DESCRIPTION: &str = "Start a project run on one of its Cloud workspaces in Arugula control (not a command in a pane here: that's run): a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
 
@@ -58,7 +60,7 @@ pub struct StartRunArgs {
     /// The project in Arugula control: its id (prj_…), or personal.
     pub project: String,
     /// A run spec of the project, by its name or id: what it runs and on
-    /// which box.
+    /// which Cloud workspace.
     #[serde(default)]
     pub spec: Option<String>,
     /// Or a command: the program and its arguments, not through a shell
@@ -71,13 +73,14 @@ pub struct StartRunArgs {
     /// With instruction: the agent recipe to run it as.
     #[serde(default)]
     pub recipe: Option<String>,
-    /// Where it runs: an absolute directory on the box (default its home).
+    /// Where it runs: an absolute directory on its machine (default its
+    /// home).
     #[serde(default)]
     pub directory: Option<String>,
-    /// Which of the project's cloud workspaces: its name or id (hw_…). Needed
-    /// when it has more than one.
-    #[serde(default, rename = "box")]
-    pub on_box: Option<String>,
+    /// Which of the project's Cloud workspaces: its name or id (hw_…).
+    /// Needed when it has more than one.
+    #[serde(default, alias = "box")]
+    pub cloud_workspace: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -216,7 +219,7 @@ pub(crate) async fn start_run(c: &Call<'_>, a: StartRunArgs) -> Out {
     }
     let body = AgentRunStart {
         spec: a.spec,
-        workspace: a.on_box,
+        workspace: a.cloud_workspace,
         argv: a.command,
         instruction: a.instruction,
         agent: a.recipe,
@@ -349,6 +352,19 @@ fn log_text(log: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `start_run` names a Cloud workspace by `cloud_workspace`, and by
+    /// `box`, its old name (Arugula #668).
+    #[test]
+    fn a_start_names_its_workspace_by_the_new_name_or_the_old() {
+        for name in ["cloud_workspace", "box"] {
+            let a: StartRunArgs =
+                serde_json::from_value(json!({ "project": "personal", "spec": "ci", name: "dev" })).unwrap();
+            assert_eq!(a.cloud_workspace.as_deref(), Some("dev"), "{name}");
+        }
+        let a: StartRunArgs = serde_json::from_value(json!({ "project": "personal", "spec": "ci" })).unwrap();
+        assert_eq!(a.cloud_workspace, None);
+    }
 
     #[test]
     fn runs_and_projects_are_named_by_id() {

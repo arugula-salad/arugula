@@ -13,6 +13,8 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   The Apache License 2.0 text is below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
+- **Lucide** (the web client's icons for chevrons, check, close, expand, external link, command, copy, pencil, star, reload, back, trash and arrows: paths copied into `web/src/shared/ui/icons.tsx`, not a dependency): ISC, Copyright (c) 2026 Lucide Icons and Contributors. <https://lucide.dev>
+  Some of those icons derive from Feather, MIT, Copyright (c) 2013-present Cole Bemis. Both licences are below.
 - **Rust crates**, by license:
 
 - Apache License 2.0 (297)
@@ -5260,7 +5262,7 @@ Used by:
 - [ring 0.17.14](https://github.com/briansmith/ring)
 - [rustix 1.1.5](https://github.com/bytecodealliance/rustix)
 - [rustls-native-certs 0.8.4](https://github.com/rustls/rustls-native-certs)
-- [rustls 0.23.45](https://github.com/rustls/rustls)
+- [rustls 0.23.46](https://github.com/rustls/rustls)
 - [scopeguard 1.2.0](https://github.com/bluss/scopeguard)
 - [security-framework-sys 2.17.0](https://github.com/kornelski/rust-security-framework)
 - [security-framework 3.7.0](https://github.com/kornelski/rust-security-framework)
@@ -8412,7 +8414,7 @@ Apache License
 
 Used by:
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula-desktop 0.32.1](https://crates.io/crates/arugula-desktop)
+- [arugula-desktop 0.32.4](https://crates.io/crates/arugula-desktop)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)
@@ -8474,7 +8476,7 @@ Used by:
 - [tauri-plugin-fs 2.6.0](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-plugin-global-shortcut 2.4.0](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-plugin-single-instance 2.5.2](https://github.com/tauri-apps/plugins-workspace)
-- [tauri-plugin-updater 2.13.1](https://github.com/tauri-apps/plugins-workspace)
+- [tauri-plugin-updater 2.14.1](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-runtime-wry 2.12.1](https://github.com/tauri-apps/tauri)
 - [tauri-runtime 2.12.1](https://github.com/tauri-apps/tauri)
 - [tauri-utils 2.10.1](https://github.com/tauri-apps/tauri)
@@ -10444,7 +10446,7 @@ Used by:
 - [dlopen2 0.8.2](https://github.com/OpenByteDev/dlopen2)
 - [dlopen2_derive 0.4.3](https://github.com/OpenByteDev/dlopen2)
 - [dpi 0.1.2](https://github.com/rust-windowing/winit)
-- [minisign-verify 0.2.5](https://github.com/jedisct1/rust-minisign-verify)
+- [minisign-verify 0.3.0](https://github.com/jedisct1/rust-minisign-verify)
 - [objc2-encode 4.1.0](https://github.com/madsmtm/objc2)
 - [objc2-foundation 0.3.2](https://github.com/madsmtm/objc2)
 - [objc2 0.6.4](https://github.com/madsmtm/objc2)
@@ -12342,6 +12344,52 @@ libghostty-vt, built from <https://github.com/ghostty-org/ghostty> into the bina
 MIT License
 
 Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Lucide: ISC License
+
+```
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+## Feather: MIT License (the Lucide icons derived from it)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2013-present Cole Bemis
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

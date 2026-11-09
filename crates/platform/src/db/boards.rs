@@ -36,7 +36,10 @@
 
 use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{AttachRole, BlockState, BlockWord, Board, Category, Diffstat, EntryKind, Pointer, Status},
+    boards::{
+        AttachRole, BLOCK_STATE_STALE_MS, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat,
+        EntryKind, Lane, Pointer, Status,
+    },
     chat::ChatAgent,
 };
 
@@ -61,7 +64,7 @@ fn new_board_id() -> String {
 }
 
 /// A new row's id: `row_` and 32 hex characters.
-fn new_row_id() -> String {
+pub(super) fn new_row_id() -> String {
     format!("row_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
@@ -82,6 +85,9 @@ pub enum Refused {
     Missing(&'static str),
     /// The entry's rev isn't the one named: read the board again.
     Stale { rev: u64 },
+    /// The group's rows aren't in the order the move read them: they are,
+    /// now, these (row ids).
+    Order { rows: Vec<String> },
     /// The change isn't allowed; why.
     Bad(String),
     /// The change is something its author may not do; why.
@@ -113,6 +119,74 @@ pub struct Entry {
     /// The work item of the row's issue (`work_item_refs`); none for a note,
     /// a PR and the rest.
     pub work_item: Option<String>,
+    /// `plane` for a row the epic's sync added; none: a person's (or their
+    /// agent's).
+    pub source: Option<String>,
+    /// The lane a person moved the row to, if one did (#494).
+    pub lane_set: Option<LaneSet>,
+}
+
+/// What a machine last said of one of its blocks ([`Db::block_states`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub pane: String,
+    pub state: BlockState,
+    /// The account the machine reported for: the block's owner.
+    pub owner: String,
+    /// When the machine saw the state, in milliseconds.
+    pub seen: u64,
+    /// The machine sends each live block's state again (Arugula #745), so
+    /// an old report means it lost the block, or control lost it.
+    pub sends_again: bool,
+}
+
+impl Reported {
+    /// Unknown at `now`: older than [`BLOCK_STATE_STALE_MS`] from a machine
+    /// that sends again, and not a close (a close is final).
+    pub fn stale(&self, now: u64) -> bool {
+        self.sends_again
+            && self.state.state != BlockWord::Closed
+            && now.saturating_sub(self.seen) > BLOCK_STATE_STALE_MS
+    }
+}
+
+/// A lane a person set on a row: `lane` (never Done), the lane the work
+/// derived when they set it (`basis`), who and when. It shows only while the
+/// derived lane is still the basis ([`LaneSet::holds`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaneSet {
+    pub lane: Lane,
+    pub basis: Lane,
+    pub by: String,
+    pub at: u64,
+}
+
+impl LaneSet {
+    /// Whether the override still applies to a row whose work derives
+    /// `derived`: the work hasn't changed its lane since.
+    pub fn holds(&self, derived: Lane) -> bool {
+        derived == self.basis && derived != Lane::Done
+    }
+}
+
+fn lane_word(l: Lane) -> &'static str {
+    match l {
+        Lane::Next => "next",
+        Lane::Doing => "doing",
+        Lane::Review => "review",
+        Lane::Done => "done",
+    }
+}
+
+fn lane_of(s: &str) -> Option<Lane> {
+    Lane::ALL.into_iter().find(|l| lane_word(*l) == s)
+}
+
+/// The override in `lane_set`, `lane_set_basis`, `lane_set_by` and
+/// `lane_set_at`. A word this build doesn't know reads as none.
+fn lane_set_of(set: Option<String>, basis: Option<String>, by: Option<String>, at: Option<u64>) -> Option<LaneSet> {
+    let lane = lane_of(&set?).filter(|l| *l != Lane::Done)?;
+    Some(LaneSet { lane, basis: lane_of(&basis?)?, by: by?, at: at? })
 }
 
 /// One group as stored.
@@ -177,15 +251,21 @@ pub struct Move<'a> {
     pub before: Option<&'a str>,
     /// The rev it must still have.
     pub rev: Option<u64>,
+    /// The row ids of the group a row goes to, as its caller read them: the
+    /// group's whole order, not part of it.
+    pub seen: Option<&'a [String]>,
 }
 
-const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
-                          closed_by, created_by_agent, closed_by_agent";
-pub(super) const ENTRY_COLS: &str =
-    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item";
+pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
+                          closed_at, closed_by, created_by_agent, closed_by_agent, source_key, source_url, \
+                          source_name, source_left_out, \
+                          (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item), \
+                          lead_machine, lead_session, lead_at";
+pub(super) const ENTRY_COLS: &str = "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source, \
+     lane_set, lane_set_basis, lane_set_by, lane_set_at";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
-fn board_row(r: &Row) -> Result<Board> {
+pub(super) fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
         id: r.get(0)?,
         project: r.get(1)?,
@@ -201,7 +281,34 @@ fn board_row(r: &Row) -> Result<Board> {
         created_by_agent: machine_of(r.get(10)?),
         closed_by_agent: machine_of(r.get(11)?),
         progress: Default::default(),
+        source: source_of(r)?,
+        lead: lead_of(r)?,
     })
+}
+
+/// The board's lead, from its `lead_*` columns (17 to 19); the machine's
+/// name is filled in by the reader (`crate::boards`).
+fn lead_of(r: &Row) -> Result<Option<BoardLead>> {
+    let (machine, session, at): (Option<String>, Option<String>, Option<u64>) = (r.get(17)?, r.get(18)?, r.get(19)?);
+    Ok(match (machine, session) {
+        (Some(machine), Some(session)) => {
+            Some(BoardLead { machine, machine_name: String::new(), session, at: at.unwrap_or_default() })
+        }
+        _ => None,
+    })
+}
+
+/// The epic a board follows, from its `source_*` columns (12 to 15, and 16: the epic's state).
+fn source_of(r: &Row) -> Result<Option<BoardSource>> {
+    let Some(key) = r.get::<Option<String>>(12)? else { return Ok(None) };
+    Ok(Some(BoardSource {
+        provider: "plane".to_owned(),
+        key,
+        url: r.get::<Option<String>>(13)?.unwrap_or_default(),
+        connection: r.get::<Option<String>>(14)?.unwrap_or_default(),
+        left_out: r.get::<u64>(15)?.min(u64::from(u32::MAX)) as u32,
+        started: r.get::<Option<bool>>(16)?.unwrap_or(false),
+    }))
 }
 
 /// A machine stored on a board, not yet named.
@@ -261,6 +368,8 @@ pub(super) fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, 
         Pointer::Workspace { id } => (Some("workspace"), Some(id), None),
         Pointer::Block { machine, pane } => (Some("block"), Some(machine), Some(pane)),
         Pointer::Link { url } => (Some("link"), Some(url), None),
+        // A Doc is linked to a board or a row (`board_docs`), never a pointer of one.
+        Pointer::Doc { .. } | Pointer::MachineDoc { .. } => (None, None, None),
     }
 }
 
@@ -295,6 +404,8 @@ pub(super) fn entry_row(r: &Row) -> Result<Entry> {
         agent: r.get(9)?,
         zone: r.get(10)?,
         work_item: r.get(11)?,
+        source: r.get(12)?,
+        lane_set: lane_set_of(r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?),
     })
 }
 
@@ -413,6 +524,8 @@ pub struct Thing {
     /// `None`: the row's own pointer.
     pub role: Option<AttachRole>,
     pub pointer: Pointer,
+    /// On a row's own pointer: the lane a person set on the row.
+    pub lane_set: Option<LaneSet>,
 }
 
 /// What a lane needs of a mirrored item, and nothing a reader couldn't be
@@ -447,18 +560,23 @@ pub struct IssueState {
     pub category: Category,
     /// Accounts; a list that doesn't parse reads as none.
     pub assignees: Vec<String>,
+    /// Its labels; a list that doesn't parse reads as none.
+    pub labels: Vec<String>,
 }
 
 impl Db {
     /// Make a board in `project` as `by` (a person, or their agent on a
-    /// machine), with `goal` if any. `None`: the project
+    /// machine), with `goal` if any, and led by `lead` (a session of the
+    /// agent's machine) if any. `None`: the project
     /// already has `max` boards. The project is the caller's to have checked.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_board(
         &self,
         project: &str,
         title: &str,
         goal: &str,
         by: Actor<'_>,
+        lead: Option<&str>,
         at: u64,
         max: u64,
     ) -> Result<Option<Board>> {
@@ -481,10 +599,22 @@ impl Db {
         }
         let board = tx.query_row(
             &format!(
-                "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) RETURNING {BOARD_COLS}"
+                "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at,
+                                     lead_machine, lead_session, lead_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10) RETURNING {BOARD_COLS}"
             ),
-            params![new_board_id(), project, title, goal, by.account, by.agent, at],
+            params![
+                new_board_id(),
+                project,
+                title,
+                goal,
+                by.account,
+                by.agent,
+                at,
+                lead.and(by.agent),
+                lead,
+                lead.and(by.agent).map(|_| at)
+            ],
             board_row,
         )?;
         tx.commit()?;
@@ -531,7 +661,7 @@ impl Db {
         let mut rows = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(12)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(17)?)),
         )?;
         // By group, in the groups' order (a row with none, or in a group that
         // isn't there, last), then as the board has them.
@@ -573,6 +703,27 @@ impl Db {
             tx.execute("UPDATE boards SET goal = ?2 WHERE id = ?1", params![id, g])?;
         }
         touch(&tx, id, at)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Set the session that leads a board: `lead` is its machine and name,
+    /// none clears it. `false`: no such board. The board's `updated_at` is
+    /// left alone: a lead is not a change to the work.
+    pub fn set_board_lead(&self, id: &str, lead: Option<(&str, &str)>, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, id)? {
+            return Ok(false);
+        }
+        let (machine, session, since) = match lead {
+            Some((m, s)) => (Some(m), Some(s), Some(at)),
+            None => (None, None, None),
+        };
+        tx.execute(
+            "UPDATE boards SET lead_machine = ?2, lead_session = ?3, lead_at = ?4 WHERE id = ?1",
+            params![id, machine, session, since],
+        )?;
         tx.commit()?;
         Ok(true)
     }
@@ -621,7 +772,8 @@ impl Db {
     pub fn project_things(&self, project: &str) -> Result<Vec<Thing>> {
         let c = self.c();
         let mut out: Vec<Thing> = c.query_map(
-            "SELECT e.board_id, e.id, e.target_kind, e.target, e.pane FROM board_entries e
+            "SELECT e.board_id, e.id, e.target_kind, e.target, e.pane,
+                    e.lane_set, e.lane_set_basis, e.lane_set_by, e.lane_set_at FROM board_entries e
              JOIN boards b ON b.id = e.board_id
              WHERE b.project_id = ?1 AND e.kind = 'row' AND e.target_kind IS NOT NULL",
             params![project],
@@ -631,6 +783,7 @@ impl Db {
                     row: r.get(1)?,
                     role: None,
                     pointer: pointer_of(r.get(2)?, r.get(3)?, r.get(4)?)?,
+                    lane_set: lane_set_of(r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?),
                 })
             },
         )?;
@@ -645,10 +798,49 @@ impl Db {
                     row: r.get(1)?,
                     role: Some(role),
                     pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
+                    lane_set: None,
                 })
             },
         )?);
         Ok(out)
+    }
+
+    /// Set the lane a person chose for a row (`None`: take it off), and
+    /// the row's rev with it. `false`: no such row.
+    pub fn set_lane(&self, board: &str, row: &str, set: Option<&LaneSet>, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let n = tx.execute(
+            "UPDATE board_entries SET lane_set = ?3, lane_set_basis = ?4, lane_set_by = ?5, lane_set_at = ?6,
+                                      rev = rev + 1, updated_at = ?7
+             WHERE board_id = ?1 AND id = ?2 AND kind = 'row'",
+            params![
+                board,
+                row,
+                set.map(|s| lane_word(s.lane)),
+                set.map(|s| lane_word(s.basis)),
+                set.map(|s| s.by.as_str()),
+                set.map(|s| s.at),
+                at
+            ],
+        )?;
+        if n > 0 {
+            touch(&tx, board, at)?;
+        }
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
+    /// Take off the override set at `set_at` that the work has since
+    /// outgrown; one set again meanwhile stays. The rev is left alone: this
+    /// is the board tidying up, not an edit.
+    pub fn clear_stale_lane(&self, board: &str, row: &str, set_at: u64) -> Result<()> {
+        self.c().execute(
+            "UPDATE board_entries SET lane_set = NULL, lane_set_basis = NULL, lane_set_by = NULL, lane_set_at = NULL
+             WHERE board_id = ?1 AND id = ?2 AND kind = 'row' AND lane_set_at = ?3",
+            params![board, row, set_at],
+        )?;
+        Ok(())
     }
 
     /// Add a row or a group last, or change one (see [`Put`]); its id.
@@ -803,6 +995,7 @@ impl Db {
                         )?;
                     }
                     tx.execute("UPDATE board_attachments SET row_id = ?2 WHERE row_id = ?1", params![from, id])?;
+                    super::boards_docs::fold_rows(&tx, &id, from)?;
                     super::boards_asks::absorb(&tx, from, &id)?;
                     tx.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
                 }
@@ -820,7 +1013,7 @@ impl Db {
     /// goes to), or last in it. `rev`, if named, must be the row's or
     /// group's.
     pub fn move_entry(&self, board: &str, id: &str, m: &Move, at: u64) -> Result<std::result::Result<(), Refused>> {
-        let Move { zone, before, rev } = *m;
+        let Move { zone, before, rev, seen } = *m;
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
@@ -867,6 +1060,15 @@ impl Db {
                 params![board],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            if let Some(seen) = seen {
+                // The destination group's whole order, the row itself in it
+                // if it's there already.
+                let now: Vec<&str> = all.iter().filter(|(_, z)| *z == to).map(|(i, _)| i.as_str()).collect();
+                if now.len() != seen.len() || now.iter().zip(seen).any(|(a, b)| *a != b.as_str()) {
+                    let rows = now.into_iter().map(str::to_owned).collect();
+                    return Ok(Err(Refused::Order { rows }));
+                }
+            }
             all.retain(|(i, _)| i != id);
             let index = match before {
                 Some(b) => match all.iter().position(|(i, z)| i == b && *z == to) {
@@ -920,6 +1122,25 @@ impl Db {
                     )));
                 }
             }
+            // A row the epic's sync added goes only with its epic, in a
+            // group as on its own.
+            let synced: Vec<String> = tx.query_map(
+                "SELECT id FROM board_entries
+                 WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 AND source IS NOT NULL
+                 ORDER BY position",
+                params![board, id],
+                |r| r.get(0),
+            )?;
+            if let Some(row) = synced.first().map(|r| entry(&tx, board, r)).transpose()?.flatten() {
+                let why = super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?;
+                return bad(match synced.len() {
+                    1 => format!("this group holds a row its epic adds: move it out of the group first ({why})"),
+                    n => format!(
+                        "this group holds {n} rows its epic adds: move them out of the group first (the first: {why})"
+                    ),
+                });
+            }
+            super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
                 "DELETE FROM board_attachments WHERE row_id IN
                      (SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2)",
@@ -937,9 +1158,11 @@ impl Db {
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
             renumber(&tx, &group_ids(&tx, board)?)?;
         } else {
-            if entry(&tx, board, id)?.is_none() {
-                return Ok(Err(Refused::Missing("no such row")));
+            let Some(row) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such row"))) };
+            if row.source.is_some() {
+                return bad(super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?);
             }
+            super::boards_docs::delete_of_rows(&tx, &[id.to_owned()])?;
             tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
@@ -1063,6 +1286,27 @@ impl Db {
         )
     }
 
+    /// For each of these item ids (`iss_` or `fi_`) that a row of one of
+    /// `project`'s boards points at, the item and that board, boards in the
+    /// order [`Self::boards`] lists them.
+    pub fn boards_holding(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                 WHERE e.kind = 'row' AND e.target_kind IN ('issue', 'forge_item') AND b.project_id = ?2
+                   AND {}
+                 ORDER BY b.closed_at IS NOT NULL, b.created_at, b.id",
+                in_json(&c, "e.target", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The native issues among `ids` in `project`, as (id, number, title,
     /// closed, assignees): one read for any number (a board's rows).
     pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {
@@ -1072,7 +1316,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason FROM issues
+                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason, labels FROM issues
                  WHERE project_id = ?1 AND {}",
                 in_json(&c, "id", 2)
             ),
@@ -1086,6 +1330,7 @@ impl Db {
                     closed,
                     category: native_category(closed, r.get::<Option<String>>(5)?.as_deref()),
                     assignees: serde_json::from_str(&r.get::<String>(4)?).unwrap_or_default(),
+                    labels: serde_json::from_str(&r.get::<String>(6)?).unwrap_or_default(),
                 })
             },
         )
@@ -1204,22 +1449,44 @@ impl Db {
         )
     }
 
-    /// Keep what `machine` says of its block `pane`, replacing the last.
-    pub fn put_block_state(&self, machine: &str, account: &str, pane: &str, b: &BlockState, at: u64) -> Result<()> {
+    /// Keep what `machine` says of its block `pane`, as it saw it at `seen`,
+    /// replacing the last unless that was seen later (a report that waited
+    /// out an outage never undoes a newer one): whether it was kept. A field
+    /// the report leaves out keeps what was said before (a daemon that
+    /// restarted knows the state but not yet the branch). `sends_again`:
+    /// the machine sends each live block's state again, so this one can go
+    /// stale (Arugula #745).
+    pub fn put_block_state(
+        &self,
+        machine: &str,
+        account: &str,
+        pane: &str,
+        b: &BlockState,
+        seen: u64,
+        sends_again: bool,
+    ) -> Result<bool> {
         let d = b.diffstat;
-        self.c().execute(
+        Ok(self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at, title, state_since)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
+                 diff_files, diff_added, diff_removed, updated_at, title, state_since, sends_again)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?14)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
                  title = COALESCE(excluded.title, board_block_states.title),
-                 branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
-                 uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
-                 diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
+                 branch = COALESCE(excluded.branch, board_block_states.branch),
+                 head = COALESCE(excluded.head, board_block_states.head),
+                 pushed = COALESCE(excluded.pushed, board_block_states.pushed),
+                 uncommitted = COALESCE(excluded.uncommitted, board_block_states.uncommitted),
+                 diff_files = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_files ELSE excluded.diff_files END,
+                 diff_added = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_added ELSE excluded.diff_added END,
+                 diff_removed = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_removed ELSE excluded.diff_removed END,
                  state_since = CASE WHEN board_block_states.state = excluded.state
                      THEN COALESCE(board_block_states.state_since, board_block_states.updated_at)
                      ELSE excluded.updated_at END,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at, sends_again = excluded.sends_again
+             WHERE excluded.updated_at >= board_block_states.updated_at",
             params![
                 machine,
                 pane,
@@ -1232,16 +1499,15 @@ impl Db {
                 d.map(|d| d.files),
                 d.map(|d| d.added),
                 d.map(|d| d.removed),
-                at,
-                b.title
+                seen,
+                b.title,
+                sends_again
             ],
-        )?;
-        Ok(())
+        )? > 0)
     }
 
-    /// What `machine` last said of these `panes`, by pane, with the account
-    /// the machine reported for (the block's owner).
-    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState, String)>> {
+    /// What `machine` last said of these `panes`.
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<Reported>> {
         if panes.is_empty() {
             return Ok(vec![]);
         }
@@ -1249,7 +1515,7 @@ impl Db {
         c.query_map(
             &format!(
                 "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title,
-                        COALESCE(state_since, updated_at), account
+                        COALESCE(state_since, updated_at), account, updated_at, sends_again
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1264,12 +1530,13 @@ impl Db {
                     pushed: r.get(4)?,
                     uncommitted: r.get(5)?,
                     diffstat: match (files, r.get(7)?, r.get(8)?) {
-                        (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
+                        // No files: the last turn left no diff.
+                        (Some(files @ 1..), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
                         _ => None,
                     },
                     since: Some(r.get(10)?),
                 };
-                Ok((r.get(0)?, state, r.get(11)?))
+                Ok(Reported { pane: r.get(0)?, state, owner: r.get(11)?, seen: r.get(12)?, sends_again: r.get(13)? })
             },
         )
     }
@@ -1344,6 +1611,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
         params![],
     )?;
     c.execute(
+        "DELETE FROM board_docs WHERE board_id IN
+             (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
         "DELETE FROM board_asks WHERE board_id IN
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
@@ -1361,6 +1633,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM work_items WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
+    super::boards_docs::erase_account(c, d)?;
     c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;
@@ -1373,10 +1646,12 @@ impl Db {
     /// The `fi_` and `iss_` ids that any row of any board of `project` points
     /// at: what makes an issue triaged.
     pub fn project_board_targets(&self, project: &str) -> Result<std::collections::HashSet<String>> {
+        // A board made from an epic counts its epic as triaged (#483).
         let rows: Vec<String> = self.c().query_map(
             &format!(
                 "SELECT DISTINCT e.target FROM {POINTED} e JOIN boards b ON b.id = e.board_id
-                 WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')"
+                 WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')
+                 UNION SELECT source_item FROM boards WHERE project_id = ?1 AND source_item IS NOT NULL"
             ),
             params![project],
             |r| r.get(0),

@@ -11,7 +11,6 @@
 use futures_util::future::BoxFuture;
 
 use arugula_control_wire::{
-    forge::Standing,
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
@@ -51,18 +50,25 @@ pub trait PlatformPort: Send + Sync {
     /// for Stripe, as the roster's route always has.
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
 
-    /// Where each repository a daemon watches stands (M161: the App's
-    /// `may()` is the platform's): live, so its pokes come, or why not.
-    /// `github` is the account's GitHub identity, if it signed in with
-    /// GitHub; `fresh`, that a daemon just asked, not the heartbeat. One
-    /// per repository, in the order asked.
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>>;
+    /// A machine's daemon just connected to the relay (#419): what the
+    /// platform held back for it goes now (chat's mentions it missed while
+    /// it was offline). The hub doesn't wait on the answer, and a platform
+    /// from before this has nothing to send.
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        let _ = daemon;
+        Box::pin(async { Ok(()) })
+    }
+
+    /// The hub removed hosted machine `machine`, `workspace`'s box (its
+    /// owner did, at control; Arugula #744). This is the hub's word, and
+    /// the only way the platform learns of it: the platform fails the
+    /// workspace, which ends its runs and stops waking its sessions. The
+    /// hub keeps saying it until the platform answers. Taking it twice
+    /// changes nothing; a platform from before this doesn't have it.
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        let _ = (workspace, machine);
+        Box::pin(async { Ok(()) })
+    }
 
     /// A read-only installation token for one repository, for a hosted
     /// box's `POST /api/daemon/github/token` (M161: the App's key is the

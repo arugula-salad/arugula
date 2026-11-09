@@ -97,6 +97,7 @@ impl Moves {
             Ok(live) if finished(&live.state_group) => {
                 if let Some(ids) = ingest_page(app, &c.id, c.mirror_id, None, &[live], now_ms())? {
                     crate::boards::items_changed(app, &ids);
+                    crate::boards::epics::from_epics(app, &c.id, &ids).await;
                 }
                 return Ok(Step::Done);
             }

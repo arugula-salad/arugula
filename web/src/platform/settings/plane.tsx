@@ -6,10 +6,12 @@
 // is cleared after the form is sent. A connection's Webhook cell (#417) shows
 // the URL to give Plane and takes the webhook's secret after the connection
 // exists, as Plane makes the secret only once it has the URL; the secret is
-// never shown back. A team's viewers see the list only.
+// never shown back. A team's viewers see the list only. Under the table each
+// connected project has its recent changes (#441): what Arugula moved or
+// wrote in Plane, and the moves to Done that failed for good, with a Retry.
 
 import { useEffect, useState } from "preact/hooks";
-import type { TrackerConnection, TrackerConnections } from "../../shared/proto.gen";
+import type { TrackerConnection, TrackerConnections, TrackerEvent, TrackerHistory } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { ago } from "../../shared/time";
 import { ConfirmRemove } from "../../shared/ui/confirm";
@@ -17,7 +19,8 @@ import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
-import { Section } from "./section";
+import { useBoards } from "../pages/boards";
+import { Section } from "../../shared/ui/settings-section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -110,6 +113,52 @@ function WebhookCell({ c, changes, busy, save }: { c: TrackerConnection; changes
   );
 }
 
+/** How many epics a connection's boards follow. */
+export function epicsLine(n: number): string {
+  return n === 0 ? "No epics yet" : `Following ${n} ${n === 1 ? "epic" : "epics"}`;
+}
+
+/** One entry of a connection's history: what happened, when, and who decided it. */
+export function eventLine(e: Pick<TrackerEvent, "line" | "at" | "by">, now = Date.now()): string {
+  return `${e.line} · ${ago(e.at, now)}${e.by ? ` by ${e.by}` : ""}`;
+}
+
+/** A connection's recent changes: failed moves first, as errors with a Retry for those who change things, then the history. */
+function RecentChanges({ c, history, changes, busy, retry }: { c: TrackerConnection; history: TrackerHistory | undefined; changes: boolean; busy: boolean; retry: (job: string) => void }) {
+  const failed = history?.failed ?? [];
+  const rest = history?.entries ?? [];
+  return (
+    <section class="plane-history" aria-label={`${c.identifier}: recent changes`} data-plane-history={c.id}>
+      <h3>{c.identifier}: recent changes</h3>
+      {failed.map((e) => (
+        <p class="control-error plane-failed" data-plane-failed-move={e.job ?? undefined}>
+          <span>
+            {e.line}
+            {e.error ? `: ${e.error}` : ""}
+          </span>
+          {changes && e.job && (
+            <button type="button" class="secondary small" data-plane-retry={e.job} disabled={busy} onClick={() => retry(e.job!)}>
+              Retry
+            </button>
+          )}
+        </p>
+      ))}
+      {rest.length > 0 && (
+        <ul class="plane-events">
+          {rest.map((e) => (
+            <li data-plane-event={e.kind}>{eventLine(e)}</li>
+          ))}
+        </ul>
+      )}
+      {history && failed.length === 0 && rest.length === 0 && (
+        <p class="dim" data-plane-history-none>
+          Nothing yet
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [conns, setConns] = useState<TrackerConnection[] | null>(null);
   const [workspace, setWorkspace] = useState("");
@@ -118,6 +167,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [disconnecting, setDisconnecting] = useState<TrackerConnection | null>(null);
+  const [histories, setHistories] = useState<Record<string, TrackerHistory>>({});
   const base = `/api/projects/${encodeURIComponent(p.id)}/trackers`;
   const changes = !p.team || p.team.role !== "viewer";
   const load = () =>
@@ -126,6 +176,17 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), [p.id]);
+  // A connection's history is read again when what it counts changes.
+  const stamp = (conns ?? []).map((c) => `${c.id}:${c.purge_after === null}:${c.failed_moves}:${c.waiting_writes}`).join(",");
+  useEffect(() => {
+    for (const c of conns ?? []) {
+      if (c.purge_after !== null) continue;
+      call<TrackerHistory>("GET", `${base}/${c.id}/history`).then(
+        (h) => setHistories((all) => ({ ...all, [c.id]: h })),
+        () => {},
+      );
+    }
+  }, [p.id, stamp]);
   const act = async (f: () => Promise<unknown>) => {
     setBusy(true);
     setErr("");
@@ -148,8 +209,12 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       setProject("");
     });
   };
+  const list = useBoards(p.id);
+  // The open boards each connection's epics made; a connection's name is what the board's source carries.
+  const following = (c: TrackerConnection) => (Array.isArray(list) ? list.filter((b) => b.closed_at == null && b.source?.connection === c.name).length : null);
   const connected = (conns ?? []).filter((c) => c.purge_after === null).length;
   const waiting = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.waiting_writes : 0), 0);
+  const failedMoves = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.failed_moves : 0), 0);
   const triage = pathOf({ page: "triage", project: p.id }, names);
   return (
     <Section
@@ -161,7 +226,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       more={
         <>
           <p>
-            Connecting takes a Plane API key from the person who connects it. Control reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
+            Connecting takes a Plane API key from the person who connects it. Arugula reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
             reading the project at once and removes the key; what was read of it goes within a day.
           </p>
           <p>
@@ -181,9 +246,14 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
         <p data-plane-waiting>
           {waiting} agent {waiting === 1 ? "write is" : "writes are"} waiting for approval in{" "}
           <a href={triage} onClick={(e) => follow(e, triage)}>
-            Triage
+            Not on a board
           </a>
           .
+        </p>
+      )}
+      {failedMoves > 0 && (
+        <p class="control-error" data-plane-failed>
+          {failedMoves} failed: Arugula couldn't move {failedMoves === 1 ? "an item" : "items"} to Done. Retry {failedMoves === 1 ? "it" : "them"} under recent changes.
         </p>
       )}
       <div data-plane-connections>
@@ -200,6 +270,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                 <th scope="col">Items</th>
                 <th scope="col">Agent writes</th>
                 <th scope="col">Webhook</th>
+                <th scope="col">Epics</th>
                 <th scope="col">
                   <span class="settings-hidden">Disconnect</span>
                 </th>
@@ -279,6 +350,33 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                       <WebhookCell c={c} changes={changes} busy={busy} save={(webhook_secret) => act(() => call("PATCH", `${base}/${c.id}`, { webhook_secret }))} />
                     )}
                   </td>
+                  <td data-col="Epics">
+                    {c.purge_after === null && (
+                      <div class="plane-epics" data-plane-epics={c.id}>
+                        <label class="settings-switch">
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            class="sw-switch"
+                            data-plane-epics-switch={c.id}
+                            checked={c.epics_as_boards}
+                            disabled={busy || !changes}
+                            onChange={(e) => {
+                              const epics_as_boards = e.currentTarget.checked;
+                              void act(() => call("PATCH", `${base}/${c.id}`, { epics_as_boards }));
+                            }}
+                          />
+                          <span>Epics become boards</span>
+                        </label>
+                        <span class="dim">Each open epic in this Plane project gets a board that keeps itself up to date. Off, the boards stay but stop following.</span>
+                        {following(c) !== null && (
+                          <span class="dim" data-plane-epics-count>
+                            {epicsLine(following(c)!)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td class="settings-row-act">
                     {changes && c.purge_after === null && (
                       <button class="secondary danger small" data-plane-disconnect={c.id} disabled={busy} onClick={() => setDisconnecting(c)}>
@@ -292,6 +390,23 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
           </table>
         ) : null}
       </div>
+      {(conns ?? [])
+        .filter((c) => c.purge_after === null)
+        .map((c) => (
+          <RecentChanges
+            key={c.id}
+            c={c}
+            history={histories[c.id]}
+            changes={changes}
+            busy={busy}
+            retry={(job) =>
+              void act(async () => {
+                const h = await call<TrackerHistory>("POST", `${base}/${c.id}/moves/${job}/retry`);
+                setHistories((all) => ({ ...all, [c.id]: h }));
+              })
+            }
+          />
+        ))}
       {changes ? (
         <form class="plane-connect" aria-label="Connect a Plane project" data-plane-form onSubmit={submit}>
           <h3>Connect a Plane project</h3>

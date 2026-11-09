@@ -19,6 +19,8 @@ export function shellTitle(place: Place, machine: string | null | undefined, ses
       return parts("Agents", machine);
     case "docs":
       return parts("Docs", machine);
+    case "settings":
+      return parts("Settings");
     case "overview":
       return parts("Sessions", machine);
     case "panes":

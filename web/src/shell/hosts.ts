@@ -4,40 +4,23 @@
 // directly; the home daemon never relays. The last list (and which host was
 // shown) is kept in localStorage, so known hosts stay reachable while the
 // home daemon is down.
-//
-// A resident daemon in a sandbox (M4b, a "provider" host) is reached
-// through the home daemon's tunnel (`/tunnel/<name>`), which wakes it. If
-// it also has a tailnet URL, that's tried once it's awake, and used when it
-// answers within about 5s (S4: wake through the provider first, because
-// tailnet packets don't wake a sleeping sandbox).
 import { opPath } from "./ops";
 import type { HostInfo } from "../shared/proto";
-
-export interface ProviderRef {
-  provider: string;
-  sandbox: string;
-  port: number;
-}
 
 export interface Host {
   name: string;
   urls: string[];
   /** A daemon in Arugula control's directory: its device id. */
   id?: string;
-  /** How it's reached: `tailnet`, straight to its URLs; `dial_out` (M4c),
-   * it dials the home daemon and is reached through it at `/h/<name>/…`;
-   * `provider` (M4b), a resident daemon in a sandbox, through the home
-   * daemon's provider tunnel at `/tunnel/<name>/…` (both on this page's
-   * own origin); `ssh` (M51), reached by a terminal's own ssh, never from
-   * a page. */
-  transport: "tailnet" | "dial_out" | "provider" | "control" | "ssh";
-  provider?: ProviderRef;
+  /** How it's reached: `tailnet`, straight to its URLs; `control`, through
+   * control's directory; `ssh` (M51), reached by a terminal's own ssh,
+   * never from a page. */
+  transport: "tailnet" | "control" | "ssh";
   /** An ssh host's destination (`user@box`). */
   ssh?: string;
   added_ms: number;
   last_seen_ms: number | null;
-  /** A provider host's sandbox state, from the provider (never by
-   * connecting): running, warm, cold, gone. */
+  /** A control host's state in the directory: online, offline. */
   status?: string;
 }
 
@@ -75,7 +58,6 @@ export class HostDirectory {
   /** The host shown; `null` is the home daemon (this page's own). */
   shown: string | null = load<string>(SHOWN_KEY);
   /** Provider hosts whose tailnet URL answered: used instead of the tunnel. */
-  private upgraded = new Set<string>();
   /** The page is Arugula control's (M17): the list comes from control,
    * and there's no home daemon. */
   control = false;
@@ -97,9 +79,14 @@ export class HostDirectory {
     // A link to a machine (`?machine=geek`) shows it, over the one this
     // browser showed last.
     const asked = linkedMachine();
-    if (asked !== null && this.find(asked)) this.shown = asked;
-    if (this.shown !== null && !this.find(this.shown)) this.shown = null;
-    if (this.shown !== null) void this.upgrade(this.shown);
+    if (asked !== null && this.reaches(asked)) this.shown = asked;
+    if (this.shown !== null && !this.reaches(this.shown)) this.shown = null;
+  }
+
+  /** Whether `name` is a host this page can show. */
+  private reaches(name: string): boolean {
+    const h = this.find(name);
+    return !!h && reachable(h);
   }
 
   /** Keep the address on the machine shown (`?machine=NAME`), so the view
@@ -131,11 +118,13 @@ export class HostDirectory {
 
   /** Every host, the home daemon first. */
   /** The hosts this page can switch to. ssh hosts aren't among them: only
-   * a terminal reaches those (`sshOnly`). */
+   * a terminal reaches those (`sshOnly`). Nor is an entry of a kind since
+   * removed (`dial_out`, `provider`), which a cached list may still hold:
+   * it's gone, not this page's daemon. */
   get names(): string[] {
-    const reachable = (this.list?.hosts ?? []).filter((h) => h.transport !== "ssh").map((h) => h.name);
-    if (this.control) return reachable;
-    return this.list ? [this.list.this, ...reachable] : [];
+    const shown = (this.list?.hosts ?? []).filter(reachable).map((h) => h.name);
+    if (this.control) return shown;
+    return this.list ? [this.list.this, ...shown] : [];
   }
 
   /** ssh hosts (M51): listed so they aren't a surprise, reached from a
@@ -147,14 +136,22 @@ export class HostDirectory {
   /** Control mode: the daemons this browser checked, from control. */
   setControl(hosts: Host[], stale: boolean) {
     const first = !this.control;
+    // The shown machine by its id, to follow it if it was renamed (#500).
+    const shownId = this.shown !== null ? this.find(this.shown)?.id : undefined;
     this.control = true;
     this.list = { this: "", hosts };
+    const now = shownId ? hosts.find((h) => h.id === shownId) : undefined;
+    if (now && now.name !== this.shown) {
+      this.shown = now.name;
+      save(CONTROL_SHOWN_KEY, now.name);
+      this.syncUrl();
+    }
     this.stale = stale;
     if (first) {
       const asked = linkedMachine();
       this.shown = asked !== null && this.find(asked) ? asked : load<string>(CONTROL_SHOWN_KEY);
     }
-    if (this.shown !== null && !this.find(this.shown)) this.shown = null;
+    if (this.shown !== null && !this.reaches(this.shown)) this.shown = null;
     if (hosts.length) this.syncUrl();
     this.emit();
   }
@@ -171,36 +168,10 @@ export class HostDirectory {
     }
     if (name === null || name === this.home) return "";
     const h = this.find(name);
-    // The one place a host's URL is chosen.
-    if (h?.transport === "dial_out") return `/h/${encodeURIComponent(h.name)}`;
-    if (h?.transport === "provider" && !this.upgraded.has(name)) return `/tunnel/${encodeURIComponent(h.name)}`;
-    return h?.urls[0] ?? "";
-  }
-
-  /** Whether the shown host lives in a sandbox that sleeps. */
-  get sleeps(): boolean {
-    return this.shown !== null && this.find(this.shown)?.transport === "provider";
-  }
-
-  /** A provider host with a tailnet URL: once the tunnel has woken it,
-   * switch to the tailnet if it answers within about 5s. */
-  private async upgrade(name: string) {
-    const url = this.find(name)?.transport === "provider" ? this.find(name)?.urls[0] : undefined;
-    if (!url || this.upgraded.has(name)) return;
-    const until = Date.now() + 5000;
-    while (Date.now() < until && this.shown === name) {
-      try {
-        const res = await fetch(`${url}${opPath("host.get")}`, { signal: AbortSignal.timeout(1500) });
-        if (res.ok) {
-          this.upgraded.add(name);
-          this.emit();
-          return;
-        }
-      } catch {
-        // not up yet
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    // The one place a host's URL is chosen. A host of a kind since
+    // removed has no URL to go to: never this page's daemon in its stead.
+    if (h && !reachable(h)) throw new Error(`${name} is gone from the host list`);
+    return h?.urls?.[0] ?? "";
   }
 
   /** The shown host's name ("" until the home daemon's is known). */
@@ -215,7 +186,6 @@ export class HostDirectory {
     save(this.control ? CONTROL_SHOWN_KEY : SHOWN_KEY, shown);
     this.syncUrl();
     this.emit();
-    if (shown !== null) void this.upgrade(shown);
   }
 
   /** Fetch the list from the home daemon; on failure keep the cached one. */
@@ -228,13 +198,13 @@ export class HostDirectory {
       this.stale = false;
       save(LIST_KEY, this.list);
       // A host that left the list can't stay shown.
-      if (this.shown !== null && !this.find(this.shown)) {
+      if (this.shown !== null && !this.reaches(this.shown)) {
         this.shown = null;
         save(SHOWN_KEY, null);
       }
       // A link to a machine the cached list didn't have yet.
       const asked = linkedMachine();
-      if (asked !== null && asked !== this.shown && this.find(asked)) this.shown = asked;
+      if (asked !== null && asked !== this.shown && this.reaches(asked)) this.shown = asked;
       this.syncUrl();
     } catch {
       this.stale = true;
@@ -247,6 +217,14 @@ export class HostDirectory {
     }
     this.emit();
   }
+}
+
+/** A host this page can show: one in control's directory, or a tailnet
+ * host (the daemon lists one only with a URL). An ssh host is a
+ * terminal's; an entry of a kind the daemon no longer makes (`dial_out`,
+ * `provider`, kept by an older cached list) is nobody's. */
+function reachable(h: Host): boolean {
+  return h.transport === "control" || h.transport === "tailnet";
 }
 
 /** The machine the address names (`?machine=NAME`), if any. */

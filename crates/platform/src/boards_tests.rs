@@ -8,7 +8,6 @@ use std::sync::Arc;
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
-use super::FLAG;
 use crate::{
     chat_tests::{TestHub, call, serve},
     db::{
@@ -17,20 +16,18 @@ use crate::{
     },
 };
 
-/// Team t: a owns it, v views. Chat is on for it, and boards when `boards`
-/// is. c is in team u, which has neither. t's project id. (The platform
-/// caches flags, so a test sets them before its first request.)
-fn seed(app: &crate::Platform, hub: &TestHub, boards: bool) -> String {
+/// Team t: a owns it, v views. Chat is on for it. c is in team u, which has
+/// no flags. t's project id. (The platform caches flags, so a test sets them
+/// before its first request.)
+fn seed(app: &crate::Platform, hub: &TestHub) -> String {
     hub.team("t", &[("a", TeamRole::Owner), ("v", TeamRole::Viewer)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
     hub.flag("team:t", true);
-    hub.flag_named("team:t", FLAG, boards);
     hub.flag("team:u", true);
-    hub.flag_named("team:u", FLAG, boards);
     app.db.team_project("t", "t", 1).unwrap()
 }
 
-async fn put(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
+pub(super) async fn put(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
     call(base, who, "PUT", &format!("/api/boards/{board}/entries"), Some(body)).await
 }
 
@@ -38,7 +35,7 @@ async fn mv(base: &str, who: &str, board: &str, entry: &str, body: Value) -> (u1
     call(base, who, "POST", &format!("/api/boards/{board}/entries/{entry}/move"), Some(body)).await
 }
 
-async fn attach(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
+pub(super) async fn attach(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
     call(base, who, "POST", &format!("/api/boards/{board}/attachments"), Some(body)).await
 }
 
@@ -112,7 +109,7 @@ fn run_in(app: &crate::Platform, project: &str, state: &str) -> String {
 async fn a_board_from_creation_to_a_stale_write() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
 
     let (st, b) =
         call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "Launch" }))).await;
@@ -158,7 +155,11 @@ async fn a_board_from_creation_to_a_stale_write() {
         (v["zones"][0]["rows"][1]["pointer"]["id"].as_str(), v["zones"][0]["rows"][1]["lane"].as_str()),
         (Some(login.as_str()), Some("next"))
     );
-    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "a note is never counted");
+    assert_eq!(
+        v["board"]["progress"],
+        json!({ "done": 0, "total": 1, "proven": 0, "review": 0, "doing": 0 }),
+        "a note is never counted"
+    );
     // A run, an agent block or a workspace is attached, not a row's item.
     for ptr in [
         json!({ "kind": "run", "id": "run_ab12" }),
@@ -210,7 +211,7 @@ async fn a_board_from_creation_to_a_stale_write() {
 async fn lanes_follow_the_work_and_refuse_the_rest() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
@@ -243,6 +244,14 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(shape(&v), lanes(&["the plan"], &[], &[], &[]), "nothing moved, nothing was made");
     assert_eq!(v["groups"], json!([]), "{v}");
+    // A status an old row kept from before lanes reads as none.
+    use crate::db::Sql as _;
+    app.db
+        .c()
+        .execute("UPDATE board_entries SET status = 'done' WHERE id = ?1", crate::db::sql::params![plan])
+        .unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(row_in(&v, &plan)["status"], json!("none"), "{v}");
 }
 
 /// The notes of every row in the lane `next`, in order: a board's rows as it
@@ -265,7 +274,7 @@ fn group(v: &Value, title: &str) -> String {
 async fn groups_are_the_authors_to_set() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
 
@@ -306,6 +315,13 @@ async fn groups_are_the_authors_to_set() {
     assert_eq!((st, order(&v)), (200, vec!["d1".into(), "loose".into(), "b1".into(), "b2".into()]), "{v}");
     let (_, v) = mv(&base, "a", &id, &b2, json!({ "before": b1 })).await;
     assert_eq!(order(&v), ["d1", "loose", "b2", "b1"], "within its group: {v}");
+    // A move that names the group's order it read is refused when it has changed, with the order now.
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "before": b2, "seen": [b1, b2] })).await;
+    assert_eq!((st, v["reason"].as_str(), v["rows"].clone()), (409, Some(super::STALE_ORDER), json!([b2, b1])), "{v}");
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "before": b2, "seen": [b2, b1] })).await;
+    assert_eq!((st, order(&v)), (200, vec!["d1".into(), "loose".into(), "b1".into(), "b2".into()]), "{v}");
+    let (_, v) = mv(&base, "a", &id, &b2, json!({ "before": b1, "seen": [b1, b2] })).await;
+    assert_eq!(order(&v), ["d1", "loose", "b2", "b1"], "{v}");
     let (_, v) = mv(&base, "a", &id, &d1, json!({ "zone": null })).await;
     assert_eq!(order(&v), ["loose", "b2", "b1", "d1"], "out of its group: {v}");
     assert!(on(&v, "d1").get("group").is_none(), "{v}");
@@ -342,8 +358,16 @@ async fn groups_are_the_authors_to_set() {
         json!({ "entry": "row", "zone": decide, "note": "shut", "pointer": { "kind": "issue", "id": shut } }),
     )
     .await;
-    assert_eq!(v["groups"][0]["progress"], json!({ "done": 1, "total": 1, "proven": 0 }), "{v}");
-    assert_eq!(v["groups"][1]["progress"], json!({ "done": 0, "total": 0, "proven": 0 }), "{v}");
+    assert_eq!(
+        v["groups"][0]["progress"],
+        json!({ "done": 1, "total": 1, "proven": 0, "review": 0, "doing": 0 }),
+        "{v}"
+    );
+    assert_eq!(
+        v["groups"][1]["progress"],
+        json!({ "done": 0, "total": 0, "proven": 0, "review": 0, "doing": 0 }),
+        "{v}"
+    );
     assert_eq!(lane(&v, on(&v, "shut")["id"].as_str().unwrap()), "done", "a lane is the work's, in any group");
 
     // Deleting a group takes its rows with it (loose and shut were in
@@ -372,8 +396,7 @@ async fn an_agent_plans_with_groups_under_aru_123() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::{agent_board_entries, agent_board_entry, agent_board_entry_move};
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -427,7 +450,7 @@ async fn an_agent_plans_with_groups_under_aru_123() {
 async fn work_and_proof_attach_to_a_row() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let login = issue(&base, "a", &p, "Fix login").await;
@@ -549,7 +572,7 @@ async fn work_and_proof_attach_to_a_row() {
 async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "proof" })).await;
@@ -590,41 +613,35 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     assert_eq!(kept, ("from_a_newer_build".to_owned(), "x_1".to_owned()));
 }
 
-/// With the flag off for an account (chat on doesn't turn it on), every
-/// route answers 404 as if boards weren't there, a board that exists
-/// included.
+/// Boards left Labs (#191): a team that never touched its flags can make a
+/// board and read it, and so can one whose old `boards` flag says off, which
+/// nothing reads any more.
 #[tokio::test]
-async fn with_the_flag_off_there_are_no_boards() {
+async fn boards_are_there_without_any_labs_flag() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, false);
-    let id = app.db.create_board(&p, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
-
-    for (method, path, body) in [
-        ("GET", format!("/api/projects/{p}/boards"), None),
-        ("POST", format!("/api/projects/{p}/boards"), Some(json!({ "title": "More" }))),
-        ("GET", format!("/api/boards/{id}"), None),
-        ("PUT", format!("/api/boards/{id}/entries"), Some(json!({ "entry": "row", "note": "x" }))),
-        ("POST", format!("/api/boards/{id}/entries/row_0123/move"), Some(json!({}))),
-        ("DELETE", format!("/api/boards/{id}/entries/row_0123"), None),
-        (
-            "POST",
-            format!("/api/boards/{id}/attachments"),
-            Some(
-                json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } }),
-            ),
-        ),
-        ("DELETE", format!("/api/boards/{id}/attachments/att_0123"), None),
-    ] {
-        assert_eq!(call(&base, "a", method, &path, body).await.0, 404, "{method} {path}");
+    hub.team("n", &[("a", TeamRole::Owner)]);
+    hub.team("o", &[("b", TeamRole::Owner)]);
+    hub.flag_named("team:o", "boards", false);
+    for (team, who) in [("n", "a"), ("o", "b")] {
+        let p = app.db.team_project(team, team, 1).unwrap();
+        let (st, list) = call(&base, who, "GET", &format!("/api/projects/{p}/boards"), None).await;
+        assert_eq!(st, 200, "{team}: {list}");
+        let (st, made) =
+            call(&base, who, "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "Launch" }))).await;
+        assert_eq!(st, 200, "{team}: {made}");
+        let id = made["board"]["id"].as_str().unwrap();
+        let (st, read) = call(&base, who, "GET", &format!("/api/boards/{id}"), None).await;
+        assert_eq!((st, &read["board"]["title"]), (200, &json!("Launch")), "{team}: {read}");
+        let (st, list) = call(&base, who, "GET", &format!("/api/projects/{p}/boards"), None).await;
+        assert_eq!((st, list["boards"].as_array().map(Vec::len)), (200, Some(1)), "{team}: {list}");
     }
-    assert_eq!(app.db.boards(&p).unwrap().len(), 1, "nothing was made");
 }
 
 // ---------------------------------------------------------------- agents
 
 /// A call signed by `who`'s machine, as the hub's gate vouches for it.
-async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub(super) async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let mut req =
         reqwest::Client::new().request(method.parse().unwrap(), format!("{base}{path}")).header("x-test-daemon", by);
     if let Some(b) = body {
@@ -634,7 +651,7 @@ async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Val
     (r.status().as_u16(), r.json().await.unwrap_or_default())
 }
 
-async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub(super) async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     signed(base, "a geek", method, path, body).await
 }
 
@@ -651,7 +668,6 @@ async fn an_agent_with_boards_write_works_the_rows() {
     };
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
 
     // A person's board: two rows.
     let (_, b) =
@@ -796,7 +812,7 @@ async fn geek_put(base: &str, board: &str, body: Value) -> (u16, Value) {
 }
 
 /// Give `machine` `boards.write` over project `t`, as its owner `who`.
-async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
+pub(super) async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
     let g = call(
         base,
         who,
@@ -815,8 +831,7 @@ async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
 async fn an_agent_makes_and_runs_a_board() {
     use arugula_control_wire::boards::{agent_board, agent_board_close, agent_board_reopen, agent_project_boards};
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     grant_write(&base, "a", "geek", &t).await;
     let who = json!({ "machine": "geek", "machine_name": "geek-box" });
 
@@ -871,6 +886,84 @@ async fn an_agent_makes_and_runs_a_board() {
     assert!(b["board"].get("created_by_agent").is_none(), "{b}");
 }
 
+/// A session leads a board (#414): the one an agent makes it with, or the one
+/// that takes it; the board names its machine. Another session takes it over,
+/// and only the lead's machine or a person lets it go. A name is needed, and a
+/// person's board takes none.
+#[tokio::test]
+async fn a_session_leads_a_board() {
+    use arugula_control_wire::boards::{LeadBoard, agent_board_lead, agent_project_boards};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("mini", "a", Some("t"));
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "a", "mini", &t).await;
+    let boards = agent_project_boards(&t);
+    let mk = |body: Value| geek(&base, "POST", &boards, Some(body));
+
+    let (st, b) = mk(json!({ "title": "Epic", "lead_session": "  ux-improvements " })).await;
+    assert_eq!(st, 200, "{b}");
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let lead = &b["board"]["lead"];
+    assert_eq!(
+        (&lead["machine"], &lead["machine_name"], &lead["session"]),
+        (&json!("geek"), &json!("geek-box"), &json!("ux-improvements")),
+        "{b}"
+    );
+    assert!(lead["at"].as_u64().unwrap() > 0, "{b}");
+
+    // No name, a blank one, or a person's make: no lead.
+    for body in [json!({ "title": "A" }), json!({ "title": "B", "lead_session": "  " })] {
+        let (_, b) = mk(body).await;
+        assert!(b["board"].get("lead").is_none(), "{b}");
+    }
+    let body = Some(json!({ "title": "Mine", "lead_session": "ux" }));
+    let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), body).await;
+    assert!(b["board"].get("lead").is_none(), "{b}");
+
+    // A person reads it, in the list too.
+    let (_, v) = call(&base, "x", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["board"]["lead"]["session"], "ux-improvements", "{v}");
+    let (_, v) = call(&base, "x", "GET", &format!("/api/projects/{t}/boards"), None).await;
+    assert_eq!(v["boards"][0]["lead"]["machine_name"], "geek-box", "{v}");
+
+    // Taking needs a name (and says so); another machine's session takes over.
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({}))).await;
+    assert_eq!(st, 400, "{v}");
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({ "session": "Docs" }))).await;
+    assert_eq!(
+        (st, &v["board"]["lead"]["machine"], &v["board"]["lead"]["session"]),
+        (200, &json!("mini"), &json!("Docs")),
+        "{v}"
+    );
+
+    // Only the lead's machine lets go; geek can't.
+    let release = json!({ "release": true });
+    let (st, v) = geek(&base, "POST", &agent_board_lead(&id), Some(release.clone())).await;
+    assert_eq!(st, 403, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["board"]["lead"]["session"], "Docs", "{v}");
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(release.clone())).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["board"].get("lead").is_none(), "{v}");
+
+    // A person lets go of any.
+    let (_, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({ "session": "Docs" }))).await;
+    assert_eq!(v["board"]["lead"]["session"], "Docs", "{v}");
+    let by = Actor::person("a");
+    let released = LeadBoard { session: None, release: true };
+    let v = crate::boards::lead(&app, by, &id, &released).await.unwrap();
+    assert!(v.board.lead.is_none());
+    // And a person can't take one: it is a session's.
+    let took = LeadBoard { session: Some("Docs".into()), release: false };
+    assert!(crate::boards::lead(&app, by, &id, &took).await.is_err());
+
+    // Without boards.write the machine leads nothing.
+    hub.daemon("ro", "a", Some("t"));
+    let (st, v) = signed(&base, "a ro", "POST", &agent_board_lead(&id), Some(json!({ "session": "S" }))).await;
+    assert_eq!(st, 403, "{v}");
+}
+
 async fn xbox(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     signed(base, "x xbox", method, path, body).await
 }
@@ -884,10 +977,19 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
     };
 
     let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.daemon("xbox", "x", Some("t"));
-    grant_write(&base, "x", "xbox", &t).await;
-    let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
+    // A viewer's boards.write is given, since it still reads (Arugula
+    // #683), and says so; every write is refused.
+    let (st, g) = call(
+        &base,
+        "x",
+        "POST",
+        "/api/grants",
+        crate::agents_tests::give("xbox", "boards.write", json!({ "kind": "project", "id": t })),
+    )
+    .await;
+    assert_eq!((st, &g["limited"]["label"]), (200, &json!("reads only")), "{g}");
+    let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
 
     let (st, v) = xbox(&base, "POST", &agent_project_boards(&t), Some(json!({ "title": "Mine" }))).await;
     assert_eq!(st, 403, "make a board: {v}");
@@ -911,8 +1013,7 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
 async fn an_agent_repoints_only_its_own_rows() {
     use arugula_control_wire::boards::agent_board_entries;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     grant_write(&base, "a", "geek", &t).await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
@@ -933,24 +1034,6 @@ async fn an_agent_repoints_only_its_own_rows() {
     assert_eq!(row_in(&v, &theirs)["pointer"], json!({ "kind": "none" }), "{v}");
 }
 
-/// With the `boards` flag off for the owner, an agent's routes are 404
-/// whatever it was granted.
-#[tokio::test]
-async fn an_agent_finds_no_boards_with_the_flag_off() {
-    use crate::agents_tests::give;
-    use arugula_control_wire::boards::agent_project_boards;
-
-    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    let (st, _) =
-        call(&base, "a", "POST", "/api/grants", give("geek", "boards.read", json!({ "kind": "project", "id": t })))
-            .await;
-    assert_eq!(st, 200);
-    let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
-    assert_eq!(st, 404, "{v}");
-    let (st, v) = geek(&base, "GET", arugula_control_wire::boards::AGENT_BOARD_REACH, None).await;
-    assert_eq!(st, 404, "{v}");
-}
-
 /// A machine asks which projects its board grants reach: none is an empty
 /// list (not an error), and a grant names the project with its powers and
 /// its boards.
@@ -959,8 +1042,7 @@ async fn an_agent_asks_which_boards_its_grants_reach() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BOARD_REACH;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (st, v) = geek(&base, "GET", AGENT_BOARD_REACH, None).await;
     assert_eq!((st, &v["projects"]), (200, &json!([])), "{v}");
 
@@ -987,7 +1069,6 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
 
     // A board with a row on an issue, geek's pane 7 attached to it.
     let (_, b) =
@@ -1073,8 +1154,7 @@ async fn a_replaced_agent_is_marked_earlier_and_comes_last() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -1134,9 +1214,7 @@ async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
     use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
 
     let (hub, _app, base, t, u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.flag("team:u", true);
-    hub.flag_named("team:u", FLAG, true);
 
     // Two issues, #1 and #2; two boards with a row for #1, one with #2. Team
     // u has an issue #1 of its own, and a board on it.
@@ -1208,8 +1286,7 @@ async fn a_block_attached_as_percent_n_is_pane_n() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -1248,7 +1325,6 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     };
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.daemon("bmac", "b", Some("t"));
     let one = issue(&base, "a", &t, "Parser").await;
     let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
@@ -1347,6 +1423,236 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     assert_eq!(st, 200, "a closed block holds nothing: {v}");
 }
 
+/// A person attaches only a block on a machine they may reach, asked of the
+/// hub every time and refused while the hub can't answer; an agent only its
+/// own machine's. A block's state, and its machine's id, show to a reader
+/// who may reach the machine, and to everyone when its own machine's agent
+/// attached it; an attachment from before the check shows nothing to the
+/// rest. A hub that fails on a read shows less and the board still reads.
+#[tokio::test]
+async fn a_block_shows_to_those_who_reach_its_machine_or_by_its_own_agent() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, AttachRole, Pointer, agent_board_attachments};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("apad", "a", None);
+    hub.daemon("xbox", "c", Some("u"));
+    crate::cache::catch_up(&app).await.unwrap();
+    grant_write(&base, "a", "apad", &t).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    let block = |machine: &str, pane: &str| json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": machine, "pane": pane } });
+    let read = |who: &'static str| {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, who, "GET", &format!("/api/boards/{board}"), None).await }
+    };
+    // The attachment on `pane`: its machine as the reader is told it, and the title it reported.
+    let seen = |v: &Value, pane: &str| -> (String, Option<String>) {
+        let at = row_in(v, &row)["attachments"].as_array().unwrap();
+        let a = at.iter().find(|a| a["pointer"]["pane"] == pane).unwrap_or_else(|| panic!("pane {pane}: {v}"));
+        (a["pointer"]["machine"].as_str().unwrap().to_owned(), a["block"]["title"].as_str().map(str::to_owned))
+    };
+    let told = |m: &str, title: &str| (m.to_owned(), Some(title.to_owned()));
+    let untold = || (String::new(), None);
+
+    // A person: not another's machine nor one that isn't there, asked each
+    // time; not while the hub can't say.
+    let (st, v) = attach(&base, "b", &board, block("apad", "1")).await;
+    assert_eq!(st, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("a machine they can reach"), "{v}");
+    assert_eq!(attach(&base, "a", &board, block("xbox", "1")).await.0, 403);
+    assert_eq!(attach(&base, "a", &board, block("nobox", "1")).await.0, 403);
+    let asked = hub.calls_of("may_reach");
+    assert_eq!(attach(&base, "a", &board, block("xbox", "1")).await.0, 403);
+    assert_eq!(hub.calls_of("may_reach"), asked + 1, "a check asks again");
+    hub.reach_down(true);
+    let (st, v) = attach(&base, "a", &board, block("apad", "1")).await;
+    assert!(st >= 500, "the hub down: nothing attached: {st} {v}");
+    hub.reach_down(false);
+    let (_, v) = read("a").await;
+    assert_eq!(row_in(&v, &row)["attachments"], json!([]), "{v}");
+
+    // An agent: only its own machine's blocks.
+    let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(block("apad", "1"))).await;
+    assert_eq!(st, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("its own machine"), "{v}");
+    let (st, v) = signed(&base, "a apad", "POST", &agent_board_attachments(&board), Some(block("apad", "2"))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // a attaches apad's pane 1 (theirs) and geek's pane 3 (the team's);
+    // each machine reports.
+    assert_eq!(attach(&base, "a", &board, block("apad", "1")).await.0, 200);
+    assert_eq!(attach(&base, "b", &board, block("geek", "3")).await.0, 200, "b reaches the team's machine");
+    let report = |pane: &str, title: &str| json!({ "pane": pane, "block": { "state": "working", "title": title } });
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("1", "by a"))).await.0, 200);
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("2", "by apad"))).await.0, 200);
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("3", "on geek"))).await.0, 200);
+
+    // a reaches both machines; b and x reach geek only, and are told apad's
+    // block only where apad's own agent attached it.
+    let (_, v) = read("a").await;
+    assert_eq!(
+        (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+        (told("apad", "by a"), told("apad", "by apad"), told("geek", "on geek")),
+        "{v}"
+    );
+    for who in ["b", "x"] {
+        let (st, v) = read(who).await;
+        assert_eq!(st, 200, "{v}");
+        assert_eq!(
+            (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+            (untold(), told("apad", "by apad"), told("geek", "on geek")),
+            "{who}: {v}"
+        );
+        assert_eq!(lane(&v, &row), "doing", "the lane is the same whoever reads: {v}");
+    }
+
+    // An attachment from before the check: b's of apad's pane 4, and geek's
+    // agent's of apad's pane 5. Only a, who reaches apad, is told either.
+    let pane = |p: &str| Pointer::Block { machine: "apad".to_owned(), pane: p.to_owned() };
+    let now = arugula_e2e::now_ms();
+    app.db.attach(&board, &row, AttachRole::Work, &pane("4"), None, now, 50).unwrap().unwrap();
+    app.db.attach(&board, &row, AttachRole::Work, &pane("5"), Some("geek"), now, 50).unwrap().unwrap();
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("4", "old"))).await.0, 200);
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("5", "older"))).await.0, 200);
+    let (_, v) = read("b").await;
+    assert_eq!((seen(&v, "4"), seen(&v, "5")), (untold(), untold()), "{v}");
+    let (_, v) = read("a").await;
+    assert_eq!((seen(&v, "4"), seen(&v, "5")), (told("apad", "old"), told("apad", "older")), "{v}");
+
+    // A share reaches what the read shows.
+    hub.share("apad", "b", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(seen(&read("b").await.1, "1"), told("apad", "by a"), "shared with b now");
+    hub.share("apad", "b", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(seen(&read("b").await.1, "1"), untold(), "and no longer");
+
+    // While the hub can't say, the board still reads, showing only what its
+    // own agents attached; then it shows again.
+    hub.reach_down(true);
+    app.cache.advance(crate::cache::CACHE_TICK);
+    let (st, v) = read("a").await;
+    assert_eq!(st, 200, "the hub down: {v}");
+    assert_eq!(
+        (seen(&v, "1"), seen(&v, "2"), seen(&v, "3")),
+        (untold(), told("apad", "by apad"), untold()),
+        "the hub down: {v}"
+    );
+    hub.reach_down(false);
+    assert_eq!(seen(&read("a").await.1, "1"), told("apad", "by a"), "nothing kept of the failure");
+}
+
+/// What a reader isn't told of a block stays untold everywhere: a block its
+/// own agent attached hides once the machine's grant is revoked, from a
+/// reader who can't reach the machine; a row stalls only on blocks the
+/// reader is told; a claim held by a block a person attached names neither
+/// its title nor its machine. A read asks the hub once for its Docs and
+/// blocks together, and waits on it two seconds at most.
+#[tokio::test]
+async fn what_a_reader_isnt_told_of_a_block_stays_untold() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_board_attachments, agent_project_claim_check};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("apad", "a", None);
+    hub.daemon("bmac", "b", Some("t"));
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, granted) =
+        call(&base, "a", "POST", "/api/grants", give("apad", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{granted}");
+    grant_write(&base, "b", "bmac", &t).await;
+    let (first, second) = (issue(&base, "a", &t, "Parser").await, issue(&base, "a", &t, "Lexer").await);
+    let (one, row1) = board_on(&base, "a", &t, "Launch", &first).await;
+    let (two, row2) = board_on(&base, "a", &t, "Later", &second).await;
+    let block = |row: &str, pane: &str| json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": "apad", "pane": pane } });
+    let read = |who: &'static str, board: &str| {
+        let (base, board) = (base.clone(), board.to_owned());
+        async move { call(&base, who, "GET", &format!("/api/boards/{board}"), None).await }
+    };
+    // The attachment on `row`: its machine as the reader is told it, and its state.
+    let seen = |v: &Value, row: &str| -> (String, Value) {
+        let a = &row_in(v, row)["attachments"][0];
+        (a["pointer"]["machine"].as_str().unwrap().to_owned(), a.get("block").cloned().unwrap_or(Value::Null))
+    };
+    let report = |pane: &str, state: &str| json!({ "pane": pane, "block": { "state": state, "title": "Secret lane" } });
+    let tick = || app.cache.advance(crate::cache::CACHE_TICK);
+
+    // a attaches apad's pane 1, idle for 42 minutes: stalled to a, who
+    // reaches apad; to b the row is in Doing with no stall.
+    assert_eq!(attach(&base, "a", &one, block(&row1, "1")).await.0, 200);
+    let idle = report("1", "idle");
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(idle.clone())).await.0, 200);
+    let long_ago = arugula_e2e::now_ms() - 42 * 60_000;
+    app.db.c().execute("UPDATE board_block_states SET state_since = ?1", params![long_ago]).unwrap();
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(idle)).await.0, 200);
+    let (_, v) = read("a", &one).await;
+    assert_eq!(row_in(&v, &row1)["marks"], json!([{ "kind": "stalled", "since": long_ago }]), "{v}");
+    let (_, v) = read("b", &one).await;
+    assert_eq!((row_in(&v, &row1)["marks"].clone(), lane(&v, &row1)), (Value::Null, "doing".to_owned()), "{v}");
+    assert_eq!(seen(&v, &row1), (String::new(), Value::Null), "{v}");
+
+    // bmac asks who holds #1: an agent on another machine, nothing more.
+    let held_of = |issue: &'static str| {
+        let (base, path) = (base.clone(), agent_project_claim_check(&t));
+        async move {
+            let check = json!({ "issue": issue, "machine": "bmac" });
+            let (st, v) = signed(&base, "b bmac", "POST", &path, Some(check)).await;
+            assert_eq!(st, 200, "{v}");
+            v["held"].as_str().unwrap_or_default().to_owned()
+        }
+    };
+    let held = held_of("#1").await;
+    assert!(held.contains("an agent on another machine"), "{held}");
+    assert!(!held.contains("Secret lane") && !held.contains("apad"), "{held}");
+
+    // apad's own agent attaches its pane 2: b is told while apad writes the
+    // project. A machine Doc a linked and the block cost one hub call a read.
+    let (st, v) = signed(&base, "a apad", "POST", &agent_board_attachments(&two), Some(block(&row2, "2"))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(signed(&base, "a apad", "PUT", AGENT_BLOCK_STATE, Some(report("2", "working"))).await.0, 200);
+    let doc = json!({ "kind": "machine_doc", "machine": "apad", "doc": "d1", "title": "notes" });
+    let (st, v) = call(&base, "a", "POST", &format!("/api/boards/{two}/docs"), Some(json!({ "pointer": doc }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(attach(&base, "a", &two, block(&row2, "3")).await.0, 200);
+    tick();
+    let asked = hub.calls_of("may_reach");
+    let (_, v) = read("b", &two).await;
+    assert_eq!(hub.calls_of("may_reach"), asked + 1, "one label call for Docs and blocks: {v}");
+    assert_eq!(seen(&v, &row2).0, "apad", "{v}");
+    assert_eq!(seen(&v, &row2).1["title"], "Secret lane", "{v}");
+    assert_eq!(v["docs"][0]["machine_name"], "a machine", "{v}");
+    let held = held_of("#2").await;
+    assert!(held.contains("Secret lane on apad-box"), "its own agent's, while apad writes: {held}");
+
+    // Revoked: b isn't told the block; a, who reaches apad, is told the
+    // machine but no state, as nothing apad reported shows now.
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/grants/{}/revoke", granted["id"].as_str().unwrap()), None).await;
+    assert_eq!(st, 200);
+    let (_, v) = read("b", &two).await;
+    assert_eq!(seen(&v, &row2), (String::new(), Value::Null), "{v}");
+    let (_, v) = read("a", &two).await;
+    assert_eq!(seen(&v, &row2), ("apad".to_owned(), Value::Null), "{v}");
+    let held = held_of("#2").await;
+    assert!(held.contains("an agent on another machine") && !held.contains("apad"), "revoked: {held}");
+
+    // A hub slower than two seconds: the read answers within them, telling
+    // a nothing it would have asked about.
+    hub.reach_slow(Some(std::time::Duration::from_secs(5)));
+    tick();
+    let started = std::time::Instant::now();
+    let (st, v) = read("a", &one).await;
+    let took = started.elapsed();
+    assert_eq!(st, 200, "{v}");
+    assert!(took < std::time::Duration::from_millis(4_000), "the read waited {took:?}");
+    assert_eq!(seen(&v, &row1).0, "", "{v}");
+    hub.reach_slow(None);
+    tick();
+    assert_eq!(seen(&read("a", &one).await.1, &row1).0, "apad", "told again");
+}
+
 /// Stalled: a Doing row whose open blocks have all been idle longer than the
 /// project's `stall_minutes`, with no PR on it. It is a mark for every
 /// reader, in Needs you only for the person who owns the block, and a reader
@@ -1356,8 +1662,7 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
 async fn a_doing_row_with_only_idle_blocks_is_stalled_past_n_minutes() {
     use arugula_control_wire::boards::{AGENT_BLOCK_STATE, PROJECT_BOARD_SETTINGS};
 
-    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
     let one = issue(&base, "a", &t, "Parser").await;
     let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
     let (st, granted) = call(
@@ -1425,4 +1730,314 @@ async fn a_doing_row_with_only_idle_blocks_is_stalled_past_n_minutes() {
     let v = read("b").await;
     assert_eq!((marks(&v), asked(&v)), (Value::Null, None), "{v}");
     assert_eq!(lane(&v, &row), "next", "{v}");
+}
+
+/// A report from a daemon that sends again (it says its age) is unknown to
+/// lanes and claims once it is older than `BLOCK_STATE_STALE_MS`: the row
+/// leaves Doing and another machine's block may take it, while the chip
+/// still shows what was last said. A report older than the one kept
+/// doesn't replace it (Arugula #745).
+#[tokio::test]
+async fn a_stale_report_is_unknown_to_lanes_and_claims() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BLOCK_STATE_STALE_MS, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |machine: &str, pane: &str| json!({ "issue": "#1", "machine": machine, "pane": pane });
+    let read = || {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7"))).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    assert_eq!(lane(&read().await, &row), "doing");
+
+    // A close seen a minute before the working that was kept: older, so the
+    // working stands.
+    let late = json!({ "pane": "7", "block": { "state": "closed" }, "age_ms": 60_000 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(late)).await.0, 200);
+    let v = read().await;
+    assert_eq!(row_in(&v, &row)["attachments"][0]["block"]["state"], json!("working"), "{v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 409, "geek's block holds it: {v}");
+
+    // Nothing heard for longer than the stale line: unknown.
+    let long_ago = arugula_e2e::now_ms() - BLOCK_STATE_STALE_MS - 60_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![long_ago]).unwrap();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(row_in(&v, &row)["attachments"][0]["block"]["state"], json!("working"), "still shown: {v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 200, "a stale block holds nothing: {v}");
+
+    // Heard from again: known again, and a report without the branch (a
+    // daemon that restarted) keeps the one said before.
+    let branch = json!({ "pane": "7", "block": { "state": "working", "branch": "feat/x" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(branch)).await.0, 200);
+    let bare = json!({ "pane": "7", "block": { "state": "idle" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(bare)).await.0, 200);
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "doing", "a fresh report brings it back: {v}");
+    let geeks = |v: &Value| {
+        row_in(v, &row)["attachments"].as_array().unwrap().iter().find(|a| a["pointer"]["machine"] == "geek").cloned()
+    };
+    assert_eq!(geeks(&v).unwrap()["block"]["branch"], json!("feat/x"), "{v}");
+
+    // A close never goes stale: an old one still says closed, so the block
+    // is an earlier agent of the row.
+    let closed = json!({ "pane": "7", "block": { "state": "closed" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(closed)).await.0, 200);
+    app.db
+        .c()
+        .execute("UPDATE board_block_states SET updated_at = ?1 WHERE machine = 'geek'", params![long_ago])
+        .unwrap();
+    let v = read().await;
+    let earlier = geeks(&v).unwrap()["id"].clone();
+    let marks = row_in(&v, &row)["marks"].clone();
+    assert!(marks.as_array().unwrap().iter().any(|m| m["attachment"] == earlier), "{v}");
+}
+
+/// A person's lane outlasts a block that went stale: the row shows the lane
+/// its other work derives while the block is unknown, and the person's lane
+/// again once the block is heard from (Arugula #745).
+#[tokio::test]
+async fn a_persons_lane_outlasts_a_stale_block() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BLOCK_STATE_STALE_MS, agent_project_attach_block as route};
+
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working.clone())).await.0, 200);
+    let lane_path = format!("/api/boards/{board}/rows/{row}/lane");
+    let (st, v) = call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "review" }))).await;
+    assert_eq!((st, lane(&v, &row)), (200, "review".to_owned()), "{v}");
+
+    let long_ago = arugula_e2e::now_ms() - BLOCK_STATE_STALE_MS - 60_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![long_ago]).unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "next", "the block is unknown for now: {v}");
+
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "review", "the person's lane is back: {v}");
+    assert_eq!(row_in(&v, &row)["lane_set"]["lane"], json!("review"), "{v}");
+}
+
+/// A daemon from before Arugula #745 says no age: its report is as of now
+/// and never goes stale, as before. A machine that left control holds
+/// nothing, whatever it last said.
+#[tokio::test]
+async fn an_old_daemons_report_holds_until_its_machine_leaves() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |machine: &str, pane: &str| json!({ "issue": "#1", "machine": machine, "pane": pane });
+
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7"))).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let day_ago = arugula_e2e::now_ms() - 86_400_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![day_ago]).unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "doing", "{v}");
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 409, "an old daemon's block still holds it: {v}");
+
+    // Attached just now, so a block with no report would hold the row too:
+    // only its machine having left lets it go.
+    crate::cache::catch_up(&app).await.unwrap();
+    hub.leave("geek");
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, v) = signed(&base, "b bmac", "POST", &route(&t), Some(body("bmac", "3"))).await;
+    assert_eq!(st, 200, "geek left control: {v}");
+}
+
+/// A person's lane isn't cleared on a read that couldn't look up a block's
+/// grant: that read can't tell the work's lane (Arugula #745).
+#[tokio::test]
+async fn a_grant_that_cant_be_read_keeps_a_persons_lane() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let lane_path = format!("/api/boards/{board}/rows/{row}/lane");
+    let (st, v) = call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "review" }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row), "review", "set by hand over Doing: {v}");
+
+    app.db.c().execute("ALTER TABLE grants RENAME TO grants_away", params![]).unwrap();
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row), "review", "the person's lane holds: {v}");
+    let (st, _) = call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "next" }))).await;
+    assert_eq!(st, 503, "no lane is set against a basis it can't read");
+    app.db.c().execute("ALTER TABLE grants_away RENAME TO grants", params![]).unwrap();
+
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "review", "and wasn't cleared: {v}");
+    assert_eq!(row_in(&v, &row)["lane_set"]["lane"], json!("review"), "{v}");
+}
+
+/// A machine whose grant can't be read leaves the rows of other machines'
+/// blocks alone: their lanes follow their work, and a person's lane there
+/// is cleared once the work outgrows it (Arugula #745).
+#[tokio::test]
+async fn an_unsure_machine_leaves_other_rows_lanes_alone() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    if std::env::var_os("ARUGULA_TEST_POSTGRES_URL").is_some() {
+        // The lookup is made to fail with a value SQLite keeps and Postgres
+        // refuses.
+        return eprintln!("skipped: SQLite only");
+    }
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let two = issue(&base, "a", &t, "Lexer").await;
+    let (board, row_one) = board_on(&base, "a", &t, "Launch", &one).await;
+    let (_, v) =
+        put(&base, "a", &board, json!({ "entry": "row", "note": "lexer", "pointer": { "kind": "issue", "id": two } }))
+            .await;
+    let row_two =
+        rows_in(&v).iter().find(|r| r["pointer"]["id"] == two.as_str()).unwrap()["id"].as_str().unwrap().to_owned();
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+    let body = |n: &str, machine: &str, pane: &str| json!({ "issue": n, "machine": machine, "pane": pane });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("#1", "geek", "7"))).await.0, 200);
+    assert_eq!(signed(&base, "b bmac", "POST", &route(&t), Some(body("#2", "bmac", "3"))).await.0, 200);
+    let working = |pane: &str| json!({ "pane": pane, "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working("7"))).await.0, 200);
+    assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(working("3"))).await.0, 200);
+    for row in [&row_one, &row_two] {
+        let path = format!("/api/boards/{board}/rows/{row}/lane");
+        let (st, v) = call(&base, "a", "PUT", &path, Some(json!({ "lane": "review" }))).await;
+        assert_eq!((st, lane(&v, row)), (200, "review".to_owned()), "{v}");
+    }
+
+    // bmac's grant can't be read, and geek's block closes.
+    app.db.c().execute("UPDATE grants SET granted_by = x'ff' WHERE subject_id = 'bmac'", params![]).unwrap();
+    let closed = json!({ "pane": "7", "block": { "state": "closed" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(closed)).await.0, 200);
+    let (st, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(lane(&v, &row_two), "review", "bmac's row is left as it is: {v}");
+    assert_eq!(lane(&v, &row_one), "next", "geek's row follows its work: {v}");
+    assert_eq!(row_in(&v, &row_one)["lane_set"], Value::Null, "and its outgrown lane is cleared: {v}");
+
+    app.db.c().execute("UPDATE grants SET granted_by = 'b' WHERE subject_id = 'bmac'", params![]).unwrap();
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row_two), "review", "{v}");
+    assert_eq!(row_in(&v, &row_two)["lane_set"]["lane"], json!("review"), "{v}");
+}
+
+/// A report that says again what a fresh one said counts against the larger
+/// limit alone, and pushes no change to readers; one that changes something
+/// counts against the 2,400 too. A turn's empty diffstat clears the last
+/// one, and a report that leaves the diffstat out keeps it (Arugula #745).
+#[tokio::test]
+async fn a_repeated_report_skips_the_change_limit_and_pushes_nothing() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    // The board's thread, so a change has somewhere to go.
+    let thread = crate::testing::hub::room("ch_board", &format!("project:{t}"), "object", None, Some(&board));
+    app.db.add_chat_room(&thread, &["a"], Some(&t)).unwrap();
+    let report = |state: &str, diffstat: Value| {
+        let mut b = json!({ "pane": "7", "block": { "state": state }, "age_ms": 0 });
+        if !diffstat.is_null() {
+            b["block"]["diffstat"] = diffstat;
+        }
+        b
+    };
+    let stat = json!({ "files": 3, "added": 40, "removed": 2 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", stat.clone()))).await.0, 200);
+    let pushed = app.chat.last();
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("working", Value::Null))).await.0, 200);
+    assert!(app.chat.last() > pushed, "a change is pushed");
+
+    // An idle turn that left no diff clears the stat; said again, it is a
+    // repeat.
+    let zero = json!({ "files": 0, "added": 0, "removed": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", zero.clone()))).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    let block = row_in(&v, &row)["attachments"][0]["block"].clone();
+    assert_eq!((block["state"].as_str(), block.get("diffstat")), (Some("idle"), None), "{v}");
+    let pushed = app.chat.last();
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", zero))).await.0, 200);
+    assert_eq!(app.chat.last(), pushed, "an empty stat said again is a repeat");
+
+    // The change limit used up: a repeat goes through, a change doesn't.
+    for _ in 0..2_400 {
+        let _ = app.limits.check_daemon(("board-block-state", 2_400), "geek");
+    }
+    let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("idle", Value::Null))).await;
+    assert_eq!(st, 200, "a repeat isn't held to the change limit: {v}");
+    assert_eq!(app.chat.last(), pushed, "and pushes nothing");
+    let (st, _) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report("working", stat))).await;
+    assert_eq!(st, 429, "a change is");
+}
+
+/// A stale block whose machine left control is released: the row reads it
+/// as an earlier agent, and a person's lane it outgrew is cleared, even
+/// before control has read the leave's grants (Arugula #745).
+#[tokio::test]
+async fn a_stale_block_from_a_machine_that_left_is_released() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BLOCK_STATE_STALE_MS, agent_project_attach_block as route};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let pick = json!({ "issue": "#1", "machine": "geek", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(pick)).await.0, 200);
+    let working = json!({ "pane": "7", "block": { "state": "working" }, "age_ms": 0 });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let lane_path = format!("/api/boards/{board}/rows/{row}/lane");
+    assert_eq!(call(&base, "a", "PUT", &lane_path, Some(json!({ "lane": "review" }))).await.0, 200);
+    let long_ago = arugula_e2e::now_ms() - BLOCK_STATE_STALE_MS - 60_000;
+    app.db.c().execute("UPDATE board_block_states SET updated_at = ?1", params![long_ago]).unwrap();
+    let read = || {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+    let kept =
+        || app.db.board_stored(&board).unwrap().unwrap().rows.iter().find(|r| r.id == row).unwrap().lane_set.clone();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "the block is unknown for now: {v}");
+    assert_eq!(kept().map(|s| s.lane), Some(arugula_control_wire::boards::Lane::Review), "stale: kept");
+
+    crate::cache::catch_up(&app).await.unwrap();
+    hub.leave("geek");
+    crate::cache::catch_up(&app).await.unwrap();
+    let v = read().await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(kept(), None, "outgrown, and nothing in doubt: {v}");
+    let earlier = row_in(&v, &row)["attachments"][0]["id"].clone();
+    assert_eq!(row_in(&v, &row)["marks"], json!([{ "kind": "earlier", "attachment": earlier }]), "{v}");
 }

@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
+arugula-control-wire = { workspace = true }
 arugula-core = { workspace = true }
 arugula-mux = { workspace = true }
 arugula-proto = { workspace = true, features = ["schema"] }

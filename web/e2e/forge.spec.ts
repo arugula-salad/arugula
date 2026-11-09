@@ -169,7 +169,7 @@ test("a description is drawn as Markdown, with the status chips and the actions 
   await expect(desc.locator("details")).toHaveCount(1);
   await expect(desc).toContainText("<details onclick=alert(1)>");
   // Where it stands, in the facts row: icons and counts, no words.
-  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✓ 2");
+  await expect(el.locator('[data-item-fact="checks"] .item-ok')).toHaveText("2");
   await expect(el.locator('[data-item-fact="reviewers"] [data-item-avatar][data-ring="asked"]')).toHaveCount(1);
   await expect(el.locator('[data-item-fact="mergeable"]')).toHaveAttribute("data-mergeable", "clean");
   await expect(el.locator("[data-item-source]")).toHaveAttribute("title", /tea login e2e/);

@@ -24,7 +24,7 @@ pub mod parse;
 mod token;
 pub mod util;
 
-pub use client::{EtagCache, Github};
+pub use client::{EtagCache, Github, UNREADABLE, unreadable};
 pub use token::{Purpose, Token, TokenSource};
 
 use model::{Check, Item};
@@ -64,6 +64,10 @@ pub struct Polled {
     /// What changes when reviews or the timeline might have.
     pub fingerprint: String,
 }
+
+/// What [`Sent::said`] holds when a merge went in the branch's merge queue:
+/// it hasn't merged, and may yet not.
+pub const QUEUED: &str = "queued to merge";
 
 /// What a write did.
 pub struct Sent {

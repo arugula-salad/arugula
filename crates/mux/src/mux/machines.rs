@@ -14,7 +14,7 @@ impl Daemon {
         crate::labs::flag(self.store.root(), arugula_proto::flags::SANDBOX_PROVIDERS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
-                "VM panes aren't set up: arugulad found no sandbox provider (a wisp token, or --loam-url and its key)",
+                "VM panes aren't set up: arugulad found no sandbox provider (--loam-url and its key)",
             ));
         }
         let id = self.next_machine;
@@ -28,7 +28,7 @@ impl Daemon {
         crate::labs::flag(self.store.root(), arugula_proto::flags::SANDBOX_PROVIDERS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
-                "no sandbox provider: arugulad found none (a wisp token, or --loam-url and its key)",
+                "no sandbox provider: arugulad found none (--loam-url and its key)",
             ));
         }
         if sprite.starts_with(&self.config.sprite_prefix()) || sprite.starts_with(&self.config.old_sprite_prefix()) {
@@ -40,7 +40,7 @@ impl Daemon {
     fn add_machine(&mut self, sprite: String, image: Option<String>, borrowed: bool) -> MachineId {
         let id = self.next_machine;
         self.next_machine += 1;
-        let provider = self.config.provider.as_ref().map_or("wisp", |p| p.name()).to_owned();
+        let provider = self.config.provider.as_ref().map_or("loam", |p| p.name()).to_owned();
         let owner = Owner::Pane(0);
         // Ours get a name to show; a borrowed sandbox has its own.
         let name = (!borrowed).then(|| {

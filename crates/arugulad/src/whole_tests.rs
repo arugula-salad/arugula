@@ -21,6 +21,12 @@ fn the_tool_list_and_each_schema_are_unchanged() {
 }
 
 #[test]
+fn every_description_and_the_instructions_fit_the_cut() {
+    register();
+    tools::every_description_and_the_instructions_fit_the_cut();
+}
+
+#[test]
 fn annotations_are_honest() {
     register();
     tools::annotations_are_honest();
@@ -66,4 +72,10 @@ fn every_tool_and_kind_is_placed() {
 fn a_guests_agent_is_refused_every_owners_tool() {
     register();
     tools::a_guests_agent_is_refused_every_owners_tool();
+}
+
+#[test]
+fn old_argument_and_kind_names_are_read_as_the_new() {
+    register();
+    tools::old_argument_and_kind_names_are_read_as_the_new();
 }

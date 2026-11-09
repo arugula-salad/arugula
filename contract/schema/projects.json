@@ -1,5 +1,148 @@
 {
   "$defs": {
+    "CiAlertOpen": {
+      "description": "A branch's open red issue.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "issue": {
+          "description": "The issue's id (`iss_`) and number.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opened_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "branch",
+        "issue",
+        "number",
+        "opened_at"
+      ],
+      "type": "object"
+    },
+    "CiAlerts": {
+      "description": "A project's CI alerts (native #774): chant's signed CI events open,\ncomment on and close a \"main is red\" native issue. Never the key.",
+      "properties": {
+        "assign": {
+          "description": "They're assigned it as well.",
+          "type": "boolean"
+        },
+        "key_made_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "key_made_by": {
+          "description": "Who made the key in use (an account, empty once it's deleted), and\nwhen. `None` while off.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_event_at": {
+          "description": "When the last signed event arrived.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "On: a key is kept and events are taken.",
+          "type": "boolean"
+        },
+        "open": {
+          "description": "Each branch's open red issue.",
+          "items": {
+            "$ref": "#/$defs/CiAlertOpen"
+          },
+          "type": "array"
+        },
+        "people": {
+          "description": "Who a new red issue mentions (accounts), in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL chant posts to: `ci.green.notify.webhook`'s variable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "on",
+        "url",
+        "people",
+        "assign",
+        "open"
+      ],
+      "type": "object"
+    },
+    "CiAlertsKey": {
+      "description": "The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,\nand the alerts as they are now. chant reads it from\n`ci.green.notify.key`'s variable.",
+      "properties": {
+        "alerts": {
+          "$ref": "#/$defs/CiAlerts"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "alerts"
+      ],
+      "type": "object"
+    },
+    "CiAlertsSettings": {
+      "description": "`PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it\nassigns them, or `on: false` to turn alerts off (the key goes; the\nissues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].",
+      "properties": {
+        "assign": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "on": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "people": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "ConnectTracker": {
       "description": "`POST /api/projects/{project}/trackers`: connect a Plane project. A\nproject's owner or editor may. `project` is Plane's project id or its\nidentifier. Control reads the project with the key first: a key Plane\nrefuses or a project it doesn't know is a 422 and nothing is kept. The\nkey and the webhook secret are sealed and never come back.",
       "properties": {
@@ -259,6 +402,13 @@
         },
         "machine_name": {
           "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
           "type": [
             "string",
             "null"
@@ -633,6 +783,13 @@
             "null"
           ]
         },
+        "role": {
+          "description": "The reader's role in the project it's linked to (`owner`, `editor`\nor `viewer`), when it's linked for them: a viewer's machine makes\nno drafts on the platform, so its blocks raise only the owner's own.\nAbsent from a control before this.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "why": {
           "default": null,
           "type": [
@@ -879,21 +1036,6 @@
       ],
       "type": "object"
     },
-    "InboxShadow": {
-      "description": "What an opted-in machine's forge blocks want of its owner (the shadow\nperiod, M171): items and reasons, never a title.",
-      "properties": {
-        "blocks": {
-          "items": {
-            "$ref": "#/$defs/ShadowBlock"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "blocks"
-      ],
-      "type": "object"
-    },
     "LinkRepo": {
       "description": "`POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project\nmember who is an admin or maintainer of it on GitHub may. When the\nGitHub App isn't installed where it lives, the answer is a 409 with\n`reason: \"install_app\"` and `install_url`, GitHub's page to install it,\nwhich brings them back to the project's settings.",
       "properties": {
@@ -1069,6 +1211,13 @@
           "description": "`comment`, `review` or `issue`.",
           "type": "string"
         },
+        "native_issue": {
+          "description": "Open on GitHub (M205): a native issue (`iss_…`) to send as a new\nissue, with `kind` `issue`. Its title and body are the issue's, read\nagain when it's sent, and `repo` may be empty for its project's one\nlinked repo. Sending it sets the issue's GitHub origin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "default": null,
           "description": "The PR or issue; `None` for a new issue.",
@@ -1228,73 +1377,6 @@
       },
       "type": "object"
     },
-    "ShadowBlock": {
-      "properties": {
-        "drafts": {
-          "default": [],
-          "description": "The platform's waiting drafts the block shows (`dft_` ids): its\n`draft` reason, when one is the owner's.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reasons": {
-          "description": "What the block's attention rules find now, as [`INBOX_REASONS`]\n(`draft` aside), whether or not the person looked.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "description": "`OWNER/NAME` on github.com.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo",
-        "number",
-        "reasons"
-      ],
-      "type": "object"
-    },
-    "ShadowCompared": {
-      "properties": {
-        "agree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "compared": {
-          "description": "Blocks on items the platform has, and how many agreed.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "disagree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "explained": {
-          "default": 0,
-          "description": "Differences the platform can't help by design (a mention where\ncontent isn't mirrored): not in `compared`.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "compared",
-        "agree",
-        "disagree"
-      ],
-      "type": "object"
-    },
     "TrackerClose": {
       "description": "How a tracker item is closed.",
       "enum": [
@@ -1324,6 +1406,18 @@
           ]
         },
         "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epics_as_boards": {
+          "default": true,
+          "description": "Whether each open epic has a board that follows it (#483). On unless\nturned off; off, the boards stay and stop following.",
+          "type": "boolean"
+        },
+        "failed_moves": {
+          "default": 0,
+          "description": "Moves to Done Arugula gave up on after a merged PR (#441), which a\nperson may retry ([`TRACKER_MOVE_RETRY`]).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -1446,6 +1540,55 @@
       ],
       "type": "object"
     },
+    "TrackerEvent": {
+      "description": "One change in a [`TrackerHistory`].",
+      "properties": {
+        "at": {
+          "description": "When it happened.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "default": null,
+          "description": "Who decided it, for a write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "default": null,
+          "description": "Why it failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job": {
+          "default": null,
+          "description": "A failed move's job, for the retry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`moved` (a merged PR moved an item to Done), `move_failed` (it gave\nup: in `failed`), or an agent's write a person decided: `sent`, `dropped` or\n`write_failed`.",
+          "type": "string"
+        },
+        "line": {
+          "description": "What happened, in a sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "line"
+      ],
+      "type": "object"
+    },
     "TrackerFieldName": {
       "description": "A module, a type or a label of a Plane project.",
       "properties": {
@@ -1539,6 +1682,30 @@
         "types",
         "labels",
         "read_at"
+      ],
+      "type": "object"
+    },
+    "TrackerHistory": {
+      "description": "What Arugula changed in a connection's Plane project: the newest changes\nand the moves that failed.",
+      "properties": {
+        "entries": {
+          "description": "The newest 20 changes, newest first, other than a failed move.",
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        },
+        "failed": {
+          "default": [],
+          "description": "The connection's failed moves (`move_failed`), newest first, up to 100:\neach has its `job` for a retry.",
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
       ],
       "type": "object"
     },
@@ -1707,6 +1874,14 @@
           "default": null,
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "epics_as_boards": {
+          "default": null,
+          "description": "Whether each open epic has a board that follows it.",
+          "type": [
+            "boolean",
             "null"
           ]
         },
@@ -2016,7 +2191,7 @@
           "type": "string"
         },
         "why": {
-          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour), `unsure` (GitHub\ncouldn't be asked just now: it's asked again next time) or `no_app`\n(this control has no GitHub App to ask with).",
           "type": "string"
         }
       },

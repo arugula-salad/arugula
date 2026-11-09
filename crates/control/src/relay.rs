@@ -19,6 +19,7 @@ use std::{
 
 use arugula_control_wire::forge::{DaemonOp, OpAnswer, OpAsk, OpDone, Ops};
 use arugula_e2e::{channel::MAX_WIRE, mux::Mux, now_ms};
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     extract::{
         Path, Query, State,
@@ -201,7 +202,7 @@ struct Live {
     stop: Arc<tokio::sync::Notify>,
     /// Tells the daemon to fetch its account's certificates now.
     nudge: Arc<tokio::sync::Notify>,
-    /// Text messages for the daemon (M40: forge pokes and heartbeats).
+    /// Text messages for the daemon (ops, guest routes, `forge.watching`).
     text: tokio::sync::mpsc::UnboundedSender<String>,
     /// The typed ops it said it knows (M168).
     ops: Vec<String>,
@@ -540,9 +541,10 @@ pub async fn dial(
 }
 
 /// A machine on the relay was heard from: a hosted one (M178) is kept
-/// apart from daemons.
+/// apart from daemons, and is reached only through the relay, so any
+/// direct URLs it sent aren't kept.
 fn seen(app: &App, id: &str, hosted: bool, urls: Option<&[String]>) -> anyhow::Result<()> {
-    if hosted { app.db.hosted_seen(id, urls, now_ms()) } else { app.db.seen(id, urls, now_ms()) }
+    if hosted { app.db.hosted_seen(id, now_ms()) } else { app.db.seen(id, urls, now_ms()) }
 }
 
 async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, ticket: Ticket) {
@@ -569,6 +571,16 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
         old.mux.close();
     }
     app.relay.came.notify_waiters();
+    // What the platform held back for this machine goes now (#419): off the
+    // socket's task, and a failure is only logged.
+    {
+        let (app, id) = (app.clone(), id.clone());
+        tokio::spawn(async move {
+            if let Err(e) = app.platform.daemon_came(&id).await {
+                warn!(daemon = %id, error = %e, "the platform didn't take a daemon's connect");
+            }
+        });
+    }
     if app.relay.renudge.lock().unwrap().remove(&id) {
         nudge.notify_one();
     }
@@ -603,7 +615,7 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                             && !app.relay.op_text(&id, t.as_str())
                             && !app.relay.activity.heard(&id, generation, t.as_str())
                         {
-                            crate::forge::from_daemon(&app, &id, generation, t.as_str());
+                            crate::forge::from_daemon(&app, &id, t.as_str());
                         }
                     }
                     Some(Ok(_)) => heard = Instant::now(),
@@ -628,7 +640,6 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
         live.remove(&id);
     }
     drop(live);
-    app.forge.drop_daemon(&id, generation);
     app.guest_routes.drop_daemon(&id, generation);
     app.relay.activity.drop_daemon(&id, generation);
     let _ = seen(&app, &id, hosted, None);

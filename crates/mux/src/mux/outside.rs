@@ -1,8 +1,8 @@
 //! What the mux calls out to and must not name: notifications, the people
-//! behind accounts, an agent's conversations and what a closed pane leaves
-//! behind, each a trait in `Config`, and the cards that make a terminal wait
-//! (`PaneCards`), which `start` takes. The binary hands the mux its
-//! implementations.
+//! behind accounts, an agent's conversations, what a closed pane leaves
+//! behind and the follow-ups it tagged, each a trait in `Config`, and the
+//! cards that make a terminal wait (`PaneCards`), which `start` takes. The
+//! binary hands the mux its implementations.
 
 use crate::acl::Principal;
 use arugula_proto::{DiffInfo, Driver, PaneId, Reason, ask::Answered};
@@ -34,14 +34,30 @@ pub trait People: Send + Sync + Debug {
     fn is_team(&self) -> bool;
     /// Whether this daemon's own team has `account` as an owner.
     fn owns_here(&self, account: &str) -> bool;
-    /// The team's other owners (#386), by account.
-    fn co_owners(&self) -> Vec<Principal>;
+    /// Everyone who gets in as the owner and isn't the owner's own
+    /// account, named as themselves: the team's other owners (#386), and
+    /// a hosted workspace's editors (native #705). What's said about them
+    /// (that they read what the owner reads), not what they may do.
+    fn as_owner(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
     fn team_people(&self) -> Vec<Principal>;
+    /// Whether the team's roster is known here yet (a machine in no team
+    /// knows it has none), so who of the team reads what can be said.
+    fn roster_known(&self) -> bool {
+        true
+    }
+    /// People kept out for now only because their team is locked: by
+    /// principal id, with the team when it's one a session was shared with
+    /// (`None`: this machine's own team). A lock is lifted, so what their
+    /// team gives them they haven't lost, though they're refused it while
+    /// it lasts.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
+        Vec::new()
+    }
 }
 
 /// The Claude Code conversations on this machine (#146).
-pub trait AgentSessions: Send + Sync + Debug {
+pub trait Conversations: Send + Sync + Debug {
     /// The transcript of a conversation, by id or a unique prefix.
     fn transcript(&self, id: &str) -> Option<PathBuf>;
     /// The conversation each of our panes' Claude Code holds now, by pane,
@@ -54,6 +70,13 @@ pub trait AgentSessions: Send + Sync + Debug {
     fn through(&self, client: u32) -> Option<u32> {
         let _ = client;
         None
+    }
+    /// Whether a conversation was started by an SDK or `claude -p` run
+    /// (inside a pane's Claude Code, #512), not by a person at its prompt.
+    /// A hook from it says nothing of the pane's own conversation.
+    fn nested(&self, id: &str) -> bool {
+        let _ = id;
+        false
     }
 }
 
@@ -115,4 +138,52 @@ pub trait Usage: Send + Sync + Debug {
     /// A new block that isn't a terminal was made (not one restored), from
     /// `config`.
     fn block_opened(&self, kind: arugula_proto::BlockType, config: &Value);
+}
+
+/// What the binary pins to a follow-up it wants told about (#675): its own
+/// words, serialized, which the mux never reads and gives back as they
+/// came in every report ([`Followups::turn`]); and what the card says while
+/// the follow-up is held for a session with no hooks (#579). A follow-up
+/// without a tag (a person's) is told of to no one, and never held.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Tag {
+    /// The binary's own, opaque here.
+    pub data: String,
+    /// The held card's headline. Empty for one that is never held.
+    pub card: String,
+}
+
+/// Where the turn that took a tagged follow-up is (#540).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turn {
+    /// Claude Code took the follow-up: its turn has started.
+    Started,
+    /// That turn ended: the pane's next `Stop` hook.
+    Ended,
+    /// The follow-up never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a tagged follow-up was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
+}
+
+/// What the mux tells, and asks, of the follow-ups the binary tagged
+/// (#675). Told as it happens, on the mux task, so it must not block.
+pub trait Followups: Send + Sync + Debug {
+    /// Where the turn that took the follow-up tagged `tag` is.
+    fn turn(&self, pane: PaneId, tag: &Tag, turn: Turn);
+    /// Whether the follow-up tagged `next` goes in with the ones tagged
+    /// `tags` (oldest first), as one (#580): the text for all of them, or
+    /// `None` when it waits for a take of its own. What makes them one, and
+    /// the words, are the binary's. `tags` is never empty.
+    fn joined(&self, tags: &[Tag], next: &Tag) -> Option<String> {
+        let _ = (tags, next);
+        None
+    }
 }

@@ -22,10 +22,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { houseColours } from "../src/shared/appearance";
 import { hex, type Scheme } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, widths } from "./doc-steps";
-import { closeContexts, open, panes, ready, reset } from "./helpers";
+import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, measure, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, watchAssetCalls, widths } from "./doc-steps";
+import { closeContexts, open, panes, ready, reset, tabsInSession } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
 const SHOTS = process.env.DOC_SHOTS;
@@ -54,7 +55,7 @@ async function seeCallouts(page: Page, doc: number) {
   await expect(block.locator("[data-section=s1] blockquote")).toHaveText("A plain quote stays a quote.");
   const tiles = block.locator("[data-section=s2] .doc-stat");
   await expect(tiles).toHaveCount(3);
-  await expect(tiles.nth(0)).toContainText("Sessions1,284↑ +12%");
+  await expect(tiles.nth(0)).toContainText("Sessions1,284 +12%");
   await expect(tiles.nth(1).locator("[data-tone]")).toHaveAttribute("data-tone", "down");
   await expect(tiles.nth(1).locator("[role=img]")).toHaveAttribute("aria-label", "down");
   await expect(tiles.nth(2).locator("[data-tone]")).toHaveCount(0);
@@ -108,6 +109,25 @@ test("a Doc is a block beside the pane, with its title for a name", async ({ pag
   await expect
     .poll(() => page.evaluate((d) => window.__arugula.client.state!.panes.find((p) => p.id === d)?.type, doc))
     .toBe("doc");
+});
+
+test("the column widens with the pane's width, not the window's (Arugula #783)", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  const made = await post(page)("/api/blocks", { type: "doc", config: { title: "Notes" }, split: term, local: true });
+  await expect(page.locator(`[data-doc-block="${made.block!}"] .doc-page`)).toBeVisible();
+  // The pane keeps its width as the window grows, so the test sets the pane's
+  // own: 456px is what it is, 1200px a wide one, and 1600px a wider.
+  const at = async (width: number) => {
+    await page.evaluate(
+      ([d, w]) => document.querySelector<HTMLElement>(`[data-doc-block="${d}"]`)!.closest<HTMLElement>("[data-pane]")!.style.setProperty("width", `${w}px`, "important"),
+      [made.block!, width] as const,
+    );
+    return measure(page, `[data-doc-block="${made.block!}"]`);
+  };
+  expect(await at(456)).toBe(68);
+  expect(await at(1200)).toBe(88);
+  expect(await at(1600)).toBe(100);
 });
 
 test.describe("on a Pixel 7", () => {
@@ -177,6 +197,39 @@ test("a picture shows, a replaced one shows with no reload, and other images sta
   const [term] = await panes(page);
   const doc = await newDoc(post(page), term);
   await imagesInPlace(page, post(page), doc);
+});
+
+test("a Doc in a tab nobody has opened fetches no picture until it's shown", async ({ page }) => {
+  await reset(page);
+  const [first] = await panes(page);
+  await page.evaluate(() => {
+    const c = window.__arugula.client;
+    c.intent({ op: "new_tab", session: c.session!, from_pane: null });
+  });
+  await expect.poll(() => tabsInSession(page).then((t) => t.length)).toBe(2);
+  const tabs = await tabsInSession(page);
+  await page.evaluate((t) => window.__arugula.client.selectTab(t), tabs[1]);
+  const [term] = await panes(page);
+  await ready(page, term);
+  const doc = await newDoc(post(page), term);
+  await putAsset(post(page), doc, "flow.png", png(2, 2));
+  await fill(post(page), doc, "s1", "![The flow](assets/flow.png)");
+  // Shown here, it fetches the picture: done before anything counts, or
+  // this page's own fetch is taken for the next one's.
+  await expect(page.locator(`[data-doc-block="${doc}"] img.doc-image`)).toBeVisible({ timeout: 15_000 });
+  await page.evaluate((p) => window.__arugula.client.setActive(p), first);
+
+  const calls = watchAssetCalls(page);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected && window.__arugula.client.blocks.size)).toBeGreaterThan(0);
+  await ready(page, first);
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 500)));
+  expect(calls).toEqual([]);
+  await expect(page.locator(`[data-doc-block="${doc}"]`)).toHaveCount(0);
+
+  await bring(page, doc);
+  await expect(page.locator(`[data-doc-block="${doc}"] img.doc-image`)).toBeVisible({ timeout: 15_000 });
+  expect(calls).toHaveLength(1);
 });
 
 // What a person reads: the Doc's own colours (#253), in both schemes.
@@ -301,7 +354,7 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
     // The hex drawing: its own text, on the light backing.
     await expect(old).not.toHaveAttribute("data-named");
     expect(await old.evaluate((i: HTMLImageElement) => decodeURIComponent(i.src))).toContain('fill="#e8f0fe" stroke="#335"');
-    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(248, 246, 240)");
+    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(239, 241, 245)");
     const strokes = await block.locator('[data-section="s3"] svg.chart path[data-line]').evaluateAll((ps) => ps.map((p) => getComputedStyle(p).stroke));
     const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
     expect(strokes).toEqual([rgb(hex("leaf", scheme)!), rgb(hex("stone", scheme)!)]);
@@ -312,9 +365,14 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   await shoot(page, doc, "block-named-colours-mocha");
 
   // The scheme changes under it: the drawing is redrawn, no reload.
-  await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
+  const wear = (scheme: Scheme) =>
+    page.evaluate(([s, vars]) => {
+      document.documentElement.dataset.scheme = s as string;
+      for (const [k, v] of Object.entries(vars as Record<string, string>)) document.documentElement.style.setProperty(`--doc-${k}`, v);
+    }, [scheme, houseColours(scheme)] as const);
+  await wear("light");
   await look("light");
-  await page.evaluate(() => (document.documentElement.dataset.scheme = "dark"));
+  await wear("dark");
   await look("dark");
 
   await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
@@ -323,6 +381,15 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("light");
   await look("light");
   await shoot(page, doc, "block-named-colours-latte");
+
+  // The house pair is the scheme's, not the picked palette's: Gruvbox is a
+  // dark palette, and the Doc is still Slate's paper under the viewer's chrome.
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "gruvbox", finish: "flat", corners: "square" })));
+  await page.reload();
+  await expect(named).toBeVisible({ timeout: 15_000 });
+  await look("dark");
+  expect(await block.evaluate((d) => getComputedStyle(d).backgroundColor)).toBe("rgb(12, 17, 24)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe("rgb(12, 17, 24)");
 });
 
 test.describe("a viewer", () => {
@@ -335,7 +402,7 @@ test.describe("a viewer", () => {
 
   test.beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "ilg-e2e-doc-view-"));
-    ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+    ({ proc, url } = await daemon(join(dir, "state"), ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]));
   });
 
   test.afterAll(async ({ browser }) => {

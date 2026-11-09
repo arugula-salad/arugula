@@ -1,0 +1,143 @@
+---
+schema: 1
+id: "aru-129"
+title: "A Doc's prototype runs in a frame on control's proto origin"
+state: "decided"
+area: "Federation and control"
+source:
+  via: "cli"
+  issue: "arugula-salad/arugula#506"
+question: "A ```prototype fence in a Doc runs its own inline scripts in a sandboxed frame. A srcdoc frame inherits its parent page's CSP, so under control's platform pages and the shared Doc viewer (script-src 'self') its scripts never run. Where does the frame load from there, and who may run one?"
+options:
+  - id: "a"
+    label: "A dedicated origin on control, proto.<block domain>, serving one static runner page under its own CSP"
+    how: "Host::Proto (crates/control/src/blocks.rs) serves web/src/shared/ui/runner.html at / and 404s everything else, with sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors <control's sites, the platform page, the docs viewer>. The parents gain only frame-src <proto origin>. The same page is the frame's srcdoc where the page has no script CSP (the daemon's own app). On a shared link nothing is framed until the reader clicks Run prototype."
+    tradeoff: "Needs a block domain; with none the section shows a one-line note on control's pages. One more host for control to route."
+  - id: "b"
+    label: "Loosen the parents: script-src 'unsafe-inline' for the frame"
+    how: "Allow inline scripts in the platform page's and the viewer's CSP so srcdoc frames run."
+    tradeoff: "It lets inline script run in the page itself, which is the one thing those CSPs exist to stop."
+  - id: "c"
+    label: "blob: or data: frames"
+    how: "Load the page from a blob: or data: URL."
+    tradeoff: "The parents' frame-src would have to allow blob: or data:, and the frame still inherits script-src in some engines."
+choice:
+  option: "a"
+  reason: "Tested in Chromium and WebKit (#506): a frame from a different origin, named in the parent's frame-src and carrying its own CSP header, runs its inline scripts; srcdoc, blob: and data: frames don't under script-src 'self'. The parents change by one frame-src, and nothing about their scripts. The owner settled the fence name (prototype, so html fences stay code), the proto origin and click to run on shared links."
+rejected:
+  - option: "b"
+    why: "It weakens the page that holds the account's session to run a stranger's prototype."
+  - option: "c"
+    why: "Blocked by the parents' frame-src today, and no better isolated."
+supersedes: []
+evidence:
+  - title: "#506"
+    url: "https://github.com/arugula-salad/arugula/issues/506"
+decided_by: "alecraso"
+decided_on: "2026-11-01"
+reviews: []
+constrains:
+  - "path:crates/control/src/blocks.rs"
+  - "path:crates/control/src/doc_links.rs"
+  - "path:crates/platform-api/src/page.rs"
+  - "path:web/src/shared/ui/runner.html"
+  - "path:web/src/shared/ui/prototype-frame.tsx"
+---
+
+# A Doc's prototype runs in a frame on control's proto origin
+
+A ```prototype fence in a Doc section is a page with its own inline
+scripts and styles, drawn in `<iframe sandbox="allow-scripts">`. An
+```html fence stays a code block. There is never `allow-same-origin`,
+`allow-top-navigation*`, `allow-popups`, `allow-forms` or `allow-modals`,
+so the frame's origin is opaque: no cookies or storage, no reaching the
+page above, the machine or the account, and no moving the window. The
+iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
+`loading="lazy"`, and a "Prototype · sandboxed" label on its edge.
+
+- **One runner page, two ways to load it.** `runner.html` is static. It
+  posts `arugula.ready` to its parent, waits for one `arugula.html`
+  message from it, then replaces itself with the prototype by
+  `document.open/write/close`, the frame CSP (`default-src 'none';
+  script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:
+  blob:; font-src data:`) and the Doc's `color-scheme` written first. It
+  takes the message only from `parent`, once; the parent sends it only to
+  the frame it made, once, and only after `ready`.
+- **Full window is the top layer, not a move (#507).** The frame's box is a
+  manual popover, shown over the window with the same iframe in the same
+  place in the DOM: moving an iframe reloads it. The one other message the
+  page sends is `arugula.escape`, for Esc pressed inside the frame (a
+  keydown there never reaches the Doc), which closes Full window.
+- **Where the page has no script CSP** (the daemon's own app, the desktop
+  app), the frame is that page by `srcdoc`, and it runs at once.
+- **Where it has** (control's platform pages, `script-src 'self'`, and the
+  shared viewer on `docs.<block domain>`), a srcdoc frame inherits the
+  parent's CSP and its scripts don't run. The frame loads the same page
+  from `proto.<block domain>`: `Host::Proto`, which serves it at `/` and
+  nothing else (a 404 for any other path), sets no cookie, and carries the
+  CSP in the first option. Its `sandbox` directive keeps it opaque even
+  opened on its own.
+- **A shared link is click to run.** On the viewer nothing is framed, and
+  the proto origin is not asked for anything, until the reader clicks
+  "Run prototype" on a card with the title. In the Doc block and on
+  project Docs it runs at once.
+- **A prototype that navigates itself** (the frame loads a third time) is
+  replaced by "This prototype tried to leave the page. Reload it." and a
+  Reload button.
+- **The parents change by one directive.** The platform page's
+  `frame-src 'none'` becomes `frame-src <proto origin>`, and the viewer's
+  CSP gains the same `frame-src`. Nothing else in either moves. Control
+  says where the proto origin is the way it says where the hub is: the
+  platform host's answers carry `X-Arugula-Proto`, and the viewer derives
+  it from its own host (`docs.` becomes `proto.`).
+- **No block domain, no proto origin.** The section shows "Prototypes need
+  a block domain on this page." on those pages.
+- **Bridge (#508).** The frame has no clipboard or storage, so
+  `runner.html` writes a shim, `window.arugula = {copy, store: {get, set,
+  all}}`, after the CSP and before the page. Each call is a `postMessage`
+  with an id (`prototype-messages.ts`), answered by `arugula.reply`. The Doc
+  answers only its own frame's `contentWindow` and only those shapes.
+  `copy` (at most 16 KB) is honoured only during a click
+  (`navigator.userActivation.isActive`; a click in the frame activates the
+  page above it), else `needs a click`. The store is the viewer's own
+  `localStorage` on the parent's origin, `arugula.proto.<doc>.<section>`
+  (the Doc's id; a share link's id on the viewer): a key of at most 128
+  characters, a value of at most 8 KB as JSON, 64 KB a section, else
+  `store full`. Nothing is shared between viewers or Docs. On a shared
+  link the store is memory only: it works for the visit and resets on
+  reload, because the page behind a link holds no browser storage in its
+  chunks (#1064). The default backend is memory (`prototype-bridge.ts`);
+  only the app and the platform page set the browser's
+  (`prototype-storage.ts`).
+- **Fonts** are `data:` only, and there are no Google Fonts: a font request
+  would be the frame's one network call, and the CSP holds the line at
+  none. Inline the font as a `data:` URL.
+- **A refill reloads the frame; a share changes only on Update (#509).**
+  The frame is keyed on its page, so a refill replaces it for everyone with
+  the Doc open. A shared link is a snapshot and a refill never republishes
+  it: the Doc block says "Shared copy is older · Update" and one tap makes
+  the next version on the same link. The viewer looks at the link's
+  version every 30 s while visible (5 min after an hour with no change)
+  and swaps a newer one in place; a reader's click to run is kept per
+  section across the swap.
+- **A kit of the house look is in the page (#699).** The frame loads
+  nothing, so `runner.html` carries the kit itself, a `<style>` in a
+  `<template>` that it writes after the policy and before the prototype's
+  own styles. Everything is opt-in: custom properties on `:root` and
+  classes that start `ar-`, no element selectors, so a prototype that uses
+  none renders as before. The colors are `light-dark(Latte, Slate)` and
+  follow the `color-scheme` the runner sets and moves; `scripts/prototype-kit.test.mjs`
+  checks each against `appearance.ts`.
+  - Tokens: `--ar-bg`, `-surface`, `-raised`, `-raised-hover`, `-text`,
+    `-muted`, `-subtle`, `-faint`, `-border`, `-accent`, `-on-accent`,
+    `-danger`, `-ok`, `-warn`; sizes `--ar-text-xs` 11px, `-sm` 12px,
+    `-md` 13px, `-lg` 15px (style.css's most used, until #687 settles the
+    scale); `--ar-space-1…4`, `--ar-radius-sm`, `--ar-radius`,
+    `--ar-radius-lg`, `--ar-shadow`, `--ar-font` and `--ar-mono`.
+  - Classes: `ar-btn` (`ar-btn-primary`, `ar-btn-ghost`), `ar-chip`
+    (`ar-chip-accent`, `-ok`, `-warn`, `-danger`), `ar-header` (a title,
+    and an `ar-toolbar` that keeps right), `ar-row` (a title, a value, and
+    an `ar-row-sub` line), `ar-dialog`, `ar-menu` with `ar-menu-item`,
+    `ar-empty` (a heading and a `p`) and `ar-toolbar`. The dialog and menu
+    are drawn in place, not fixed over the page, so a prototype can show
+    them beside what they belong to.

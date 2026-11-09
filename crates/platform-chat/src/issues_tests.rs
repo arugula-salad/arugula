@@ -141,15 +141,70 @@ async fn a_personal_projects_issues_are_its_accounts() {
     assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(0)), "{v}");
 }
 
-/// Issues are a Labs feature, with chat.
+/// Membership and roles alone decide (Arugula #746): an editor with chat
+/// off opens, reads and changes issues, and a viewer with chat off reads
+/// them and changes nothing. Someone outside the project gets 404 with chat
+/// on, and so does someone with no team at all.
 #[tokio::test]
-async fn issues_come_with_chat() {
+async fn chat_off_changes_nothing_about_issues() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let (p, _) = seed(&app, &hub);
     hub.flag("account:e", false);
-    let (st, v) = get(&base, "e", &format!("/api/projects/{p}/issues")).await;
+    hub.flag("account:v", false);
+    hub.flag("account:z", true);
+    app.cache.drop_all();
+    let (st, i) = new_issue(&base, "e", &p, json!({ "title": "no chat here" })).await;
+    assert_eq!(st, 200, "{i}");
+    let id = i["id"].as_str().unwrap();
+    assert_eq!(patch(&base, "e", id, json!({ "labels": { "add": ["p1"] } })).await.0, 200);
+    for who in ["e", "v"] {
+        let (st, v) = get(&base, who, &format!("/api/projects/{p}/issues")).await;
+        assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(1)), "{who}: {v}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}/events")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issue-home")).await.0, 200, "{who}");
+    }
+    assert_eq!(patch(&base, "v", id, json!({ "title": "theirs" })).await.0, 403, "a viewer still changes nothing");
+    for who in ["c", "z"] {
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issues")).await.0, 404, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 404, "{who}");
+        assert_eq!(patch(&base, who, id, json!({ "title": "theirs" })).await.0, 404, "{who}");
+    }
+    // An agent acting for e, with no grant over the project, reaches nothing.
+    let agent = Actor { account: "e", agent: Some("geek") };
+    assert!(read(&app, agent, id).await.is_err());
+    // Its comments are still chat's: e's thread is refused while chat is off.
+    let (st, v) = call(&base, "e", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
     assert_eq!((st, &v["reason"]), (403, &json!(crate::chat::CHAT_OFF)), "{v}");
+}
+
+/// Issue comments stay with chat (Arugula #746): a member with chat off
+/// exports the issues without their comments, and the export says so, in
+/// JSON and in Markdown. With chat on, the same export has them.
+#[tokio::test]
+async fn an_export_leaves_comments_out_while_chat_is_off() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, i) = new_issue(&base, "a", &p, json!({ "title": "talked about" })).await;
+    let id = i["id"].as_str().unwrap();
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let room = room["id"].as_str().unwrap();
+    let post = Some(json!({ "text": "a word in the thread" }));
+    assert_eq!(call(&base, "a", "POST", &format!("/api/chat/rooms/{room}/messages"), post).await.0, 200);
+
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    assert_eq!((x.issues[0].comments.len(), x.comments_in_chat), (1, false));
+    hub.flag("account:v", false);
+    app.cache.drop_all();
+    let (st, v) = get(&base, "v", &format!("/api/projects/{p}/issues/export")).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((&v["issues"][0]["comments"], &v["comments_in_chat"]), (&json!([]), &json!(true)), "{v}");
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    let md = markdown(&x);
+    assert!(md.contains("comments are left out") && !md.contains("a word in the thread"), "{md}");
 }
 
 /// What a patch takes and what it refuses; lists filter and page.
@@ -406,8 +461,10 @@ async fn an_agent_acts_through_its_grant_and_is_labelled() {
     assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some(AGENT_UNGRANTED)), "threads.read isn't issues.write: {}", e.1);
     assert_eq!(list(&app, geek, &p, &Default::default()).await.unwrap().issues.len(), 1);
 
-    // A viewer's agent never writes, granted or not.
-    assert_eq!(give("v", "vbox", "issues.write").await.0, 200);
+    // A viewer's agent never writes, granted or not: the grant isn't given
+    // any more (Arugula #683), and one from before is refused at the write.
+    assert_eq!(give("v", "vbox", "issues.write").await.0, 403);
+    app.db.give_grant("vbox", "issues.write", ("project", &p), "v", 1).unwrap();
     let e = create(&app, Actor { account: "v", agent: Some("vbox") }, &p, &new).await.unwrap_err();
     assert_eq!(e.0, StatusCode::FORBIDDEN, "{}", e.1);
 

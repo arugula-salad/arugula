@@ -42,29 +42,26 @@ export function DeveloperLayer() {
 
 const onOff = (on: boolean) => (on ? "on" : "off");
 
-/** Whether control has a word on it for this machine (#347). */
-const controlSays = (f: FlagInfo) => f.account !== undefined || f.team !== undefined;
-
 /** Taking this machine's word back: one action, named by what it leaves
  * (UI audit #175: "Follow control" and "Reset" were the same). */
-const followLabel = (f: FlagInfo) => (controlSays(f) ? "Use control's" : "Use the default");
+const followLabel = (f: FlagInfo) => (f.account !== undefined ? "Use your account's" : f.team !== undefined ? "Use your team's" : "Use the default");
 
 /** Where a flag's state comes from (#347): this machine, the account or
  * the team on control, or its default. A daemon from before says nothing. */
 function FlagSource({ f }: { f: FlagInfo }) {
   if (!f.source) return null;
   const control = f.account !== undefined ? `${onOff(f.account)} for your account` : f.team !== undefined ? `${onOff(f.team)} for your team` : null;
-  // One pattern, as the Teams dialog's folds say it: "Set for … on control".
+  // One pattern, as the Teams dialog's folds say it: "Set for …".
   const text =
     f.source === "machine"
-      ? `Set on this machine${control ? `; control has it ${control}` : ""}`
+      ? `Set on this machine${control ? `; it's ${control}` : ""}`
       : f.source === "account"
-        ? "Set for your account on control"
+        ? "Set for your account"
         : f.source === "team"
-          ? "Set for your team on control"
+          ? "Set for your team"
           : null;
   return text ? (
-    <span class="hint flag-source" data-flag-source={f.source}>
+    <span class="dim flag-source" data-flag-source={f.source}>
       {text}
     </span>
   ) : null;
@@ -101,12 +98,12 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   return (
     <Modal close={close} label="Developer settings" class="rules developer">
         <h2>Developer settings</h2>
-        <p class="hint">
+        <p class="dim">
           Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
-          switches. What you set here wins over what control sets for your account or team.
+          switches. What you set here wins over what's set for your account or team.
         </p>
         {error && <p class="error">{error}</p>}
-        {flags?.some((f) => f.built === false) && <p class="hint">This daemon was built without Labs: the switches turn nothing on.</p>}
+        {flags?.some((f) => f.built === false) && <p class="dim">This daemon was built without Labs: the switches turn nothing on.</p>}
         <ul class="rules-list">
           {(flags ?? []).map((f) => (
             <li key={f.name}>
@@ -114,11 +111,11 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
                 <input type="checkbox" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
                 <span>
                   <b>{f.title || f.name}</b>
-                  <span class="hint">{f.about}</span>
+                  <span class="dim">{f.about}</span>
                   <FlagSource f={f} />
                   {f.local_only ? (
-                    <span class="hint flag-source" data-flag-local-only>
-                      Only this machine sets it, never control
+                    <span class="dim flag-source" data-flag-local-only>
+                      Only this machine sets it, never your account or team
                     </span>
                   ) : null}
                 </span>

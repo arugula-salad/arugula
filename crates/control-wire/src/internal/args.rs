@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::{Deleted, GithubUser, HostedMachine, Principal, PushOptions, UserToken};
 use crate::{
-    forge::{DaemonOp, Poke},
+    forge::DaemonOp,
     hosted::SetupReport,
     run_logs::Upload,
     transcripts::TranscriptPost,
@@ -92,6 +92,21 @@ pub struct TeamArgs {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DaemonArgs {
+    pub daemon: String,
+}
+
+/// `hosted_removed`: the hosted machine the hub removed, and the
+/// workspace whose box it was.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct HostedRemovedArgs {
+    pub workspace: String,
+    pub machine: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BlockersArgs {
     pub account: String,
     pub start: bool,
@@ -106,21 +121,6 @@ pub struct DeletedArgs {
 #[derive(Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NoArgs {}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct PokesArgs {
-    pub pokes: Vec<Poke>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct StandingArgs {
-    pub account: String,
-    pub github: Option<GithubUser>,
-    pub repos: Vec<String>,
-    pub fresh: bool,
-}
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

@@ -15,7 +15,7 @@ use crate::{
         chat::Room,
         issues::{Actor, NewIssue},
         jobs::{JobEnd, JobKind},
-        sessions::{DaemonReport, Kind, Move, PromptState, Session, State},
+        sessions::{AgentSession, DaemonReport, Kind, Move, PromptState, State},
         sql::{Sql as _, params},
     },
     jobs::{Clock, Handler as _, Step},
@@ -125,7 +125,7 @@ pub(crate) async fn lines(base: &str, room: &str, thread: Option<i64>) -> Vec<St
         .collect()
 }
 
-pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<Session> {
+pub(crate) fn sessions(app: &Platform, project: &str) -> Vec<AgentSession> {
     app.db.project_sessions(project, 50).unwrap()
 }
 
@@ -520,7 +520,7 @@ async fn a_rebuilt_boxs_sessions_start_again_from_the_thread() {
 /// and finished. Arugula #209.
 async fn rebuild_rig(
     archive_wait: Option<std::time::Duration>,
-) -> (Arc<TestHub>, Arc<Platform>, String, String, DeviceKeys, Session) {
+) -> (Arc<TestHub>, Arc<Platform>, String, String, DeviceKeys, AgentSession) {
     let fake = Arc::new(crate::hosted::tests::Fake::default());
     let (hub, app, base, t, _u, old) = platform_with(&["https://github.com/o/app"], |p| {
         p.compute = Some(fake);
@@ -540,7 +540,7 @@ async fn rebuild_rig(
 
 /// Rebuild `hw_dev` through the worker, its new box enrolling as `new`:
 /// the session's prompt on the new box.
-async fn rebuild(hub: &TestHub, app: &Platform, s: &Session, new: &DeviceKeys) -> String {
+async fn rebuild(hub: &TestHub, app: &Platform, s: &AgentSession, new: &DeviceKeys) -> String {
     assert!(crate::hosted::ask(app, "hw_dev", crate::hosted::Ask::Rebuild).unwrap());
     let now = arugula_e2e::now_ms();
     crate::hosted::tests::drive(app, now).await;
@@ -584,7 +584,7 @@ async fn a_rebuild_archives_the_old_boxs_conversation_first() {
                 text: body.into(),
             };
             match app.hosted_transcript("hw_dev", &machine, &post).await.unwrap() {
-                crate::Archived::Kept { .. } => OpAnswer::Done { url: None },
+                crate::Archived::Kept { .. } => OpAnswer::Done { url: None, routed: None },
                 refused => OpAnswer::Failed { error: format!("{refused:?}") },
             }
         })
@@ -710,4 +710,174 @@ async fn an_issues_thread_names_the_issue_by_its_link() {
     let p = post_in(&base, "ch_general", "b", "@arugula tidy the README", None).await["seq"].as_i64().unwrap();
     let s = sessions(&app, &t).into_iter().find(|s| s.parent_seq == p as u64).expect("its session");
     assert!(!app.db.session_prompts(&s.id).unwrap()[0].text.contains("Arugula issue"));
+}
+
+/// Every session job due at `now`, stepped once each, as the worker would.
+async fn follow_all(app: &Arc<Platform>, now: u64) {
+    let follow = crate::sessions::job::Follow { app: app.clone() };
+    while let Some(mut job) = app.db.claim_job(&[JobKind::Session], now).unwrap() {
+        match follow.step(&app.db, &mut job, &Clock::new(move || now)).await.unwrap() {
+            Step::Again(next) => app.db.release_job(&job, next.max(now + 1), now).unwrap(),
+            _ => app.db.finish_job(&job, JobEnd::Done, None, now).unwrap(),
+        }
+    }
+}
+
+/// A session's card's reason, as its page reads it, and its timeline's
+/// last line.
+async fn reason(base: &str, s: &str) -> (Value, Value) {
+    let (st, view) = call(base, "b", "GET", &format!("/api/sessions/{s}"), None).await;
+    assert_eq!(st, 200, "{view}");
+    (view["card"]["reason"].clone(), view["events"].as_array().unwrap().last().unwrap()["text"].clone())
+}
+
+/// Sessions of each kind on `hw_dev`, as `keys`' box has them: queued
+/// (never taken), working, gone quiet (`unresponsive`, as of the time
+/// returned) and done. In that order.
+async fn one_of_each(app: &Arc<Platform>, base: &str, t: &str, keys: &DeviceKeys) -> (Vec<String>, u64) {
+    let mut ids = Vec::new();
+    for ask in ["one", "two", "three", "four"] {
+        post_in(base, "ch_general", "b", &format!("@arugula {ask}"), None).await;
+        ids.push(sessions(app, t).into_iter().find(|s| !ids.contains(&s.id)).unwrap().id);
+    }
+    for id in &ids[1..] {
+        take(app, keys, id);
+    }
+    box_says(app, keys, &ids[3], 2, State::Working, State::Done, "{}");
+    let heard = app.db.session(&ids[2]).unwrap().unwrap().heard_at.unwrap();
+    let quiet = heard + crate::db::sessions::QUIET_MS + 1;
+    // Only the third goes quiet: the second is heard from just before.
+    box_says(app, keys, &ids[1], 2, State::Working, State::NeedsInput, r#"{"question":"which?"}"#);
+    box_says(app, keys, &ids[1], 3, State::NeedsInput, State::Working, "{}");
+    app.db.c().execute("UPDATE agent_sessions SET heard_at = ?2 WHERE id = ?1", params![ids[1], quiet]).unwrap();
+    for id in &ids {
+        app.db.nudge_session(id, quiet).unwrap();
+    }
+    follow_all(app, quiet).await;
+    let states: Vec<State> = ids.iter().map(|id| app.db.session(id).unwrap().unwrap().state).collect();
+    assert_eq!(states, [State::Queued, State::Working, State::Unresponsive, State::Done]);
+    (ids, quiet)
+}
+
+/// A failed workspace (Arugula #744) keeps its machine, and waking its
+/// box answers the same each time: its sessions aren't woken for, and a
+/// queued one isn't failed as not taken. They wait, whatever their state,
+/// for a rebuild to move them; a day on, with none, each stops, saying
+/// why in words.
+#[tokio::test]
+async fn a_failed_workspaces_sessions_wait_a_day_for_a_rebuild() {
+    use crate::sessions::job::{FAILED_END_MS, WORKSPACE_FAILED};
+    let (_hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
+    let (ids, at) = one_of_each(&app, &base, &t, &keys).await;
+    app.db.c().execute("UPDATE hosted_workspaces SET state = 'failed' WHERE id = 'hw_dev'", params![]).unwrap();
+    // Forget the wakes asked while it was ready.
+    for id in &ids {
+        app.db.nudge_session(id, at).unwrap();
+        app.db.c().execute("UPDATE platform_jobs SET checkpoint = NULL WHERE id = ?1", params![id]).unwrap();
+    }
+    follow_all(&app, at).await;
+    follow_all(&app, at + crate::work::TAKE_MS + crate::work::WAITING_MS).await;
+    let states: Vec<State> = ids.iter().map(|id| app.db.session(id).unwrap().unwrap().state).collect();
+    // Waiting, none failed or stopped: the turn under way went quiet, as
+    // its silent box makes it.
+    assert_eq!(states, [State::Queued, State::Unresponsive, State::Unresponsive, State::Done], "waiting, not failed");
+    for id in &ids {
+        let cp = app.db.platform_job(id).unwrap().unwrap().checkpoint.unwrap_or_default();
+        assert!(cp.get("woke_at").is_none(), "its box isn't woken: {cp}");
+    }
+
+    follow_all(&app, at + FAILED_END_MS + crate::work::WAITING_MS).await;
+    for id in &ids {
+        assert_eq!(app.db.session(id).unwrap().unwrap().state, State::Stopped, "{id}");
+    }
+    let (said, line) = reason(&base, &ids[0]).await;
+    assert_eq!(said, json!(WORKSPACE_FAILED));
+    // In words: the code is for the page.
+    assert_eq!(
+        line,
+        "Stopped: its cloud workspace failed and wasn't rebuilt within a day. Ask again in the thread to start a new session"
+    );
+}
+
+/// A failed workspace rebuilt: each session it kept, done, working, gone
+/// quiet or never taken, moves to the new box (Arugula #744). One asked
+/// more than 15 minutes before the rebuild, while the workspace was
+/// failed, isn't failed as not taken at the first look after it.
+#[tokio::test]
+async fn a_failed_workspace_rebuilt_moves_its_sessions() {
+    let fake = Arc::new(crate::hosted::tests::Fake::default());
+    let (hub, app, base, t, _u, old) = platform_with(&["https://github.com/o/app"], |p| {
+        p.compute = Some(fake);
+        p.hosted.template = Some("tpl".into());
+    })
+    .await;
+    hub.delegate(&t);
+    let (ids, at) = one_of_each(&app, &base, &t, &old).await;
+    app.db
+        .c()
+        .execute("UPDATE hosted_workspaces SET state = 'failed', error = 'gone' WHERE id = 'hw_dev'", params![])
+        .unwrap();
+    follow_all(&app, at + 1).await;
+    // Failed for 20 minutes, looked at all the while.
+    let later = at + 20 * 60_000;
+    for id in &ids {
+        app.db.nudge_session(id, later).unwrap();
+    }
+    follow_all(&app, later).await;
+    let s = app.db.session(&ids[3]).unwrap().unwrap();
+    let new = DeviceKeys::generate();
+    rebuild(&hub, &app, &s, &new).await;
+    for id in &ids {
+        let after = app.db.session(id).unwrap().unwrap();
+        assert_eq!((after.state, after.machine.as_deref()), (State::Queued, Some(new.id().as_str())), "{id}");
+    }
+    // The first look after the rebuild: each waits for the new box.
+    for id in &ids {
+        app.db.nudge_session(id, later + 1_000).unwrap();
+    }
+    follow_all(&app, later + 1_000).await;
+    for id in &ids {
+        assert_eq!(app.db.session(id).unwrap().unwrap().state, State::Queued, "not failed as not taken: {id}");
+    }
+}
+
+/// A rebuild moves its sessions to the new box once, as it enrolls; one
+/// whose move didn't go through is left on the old machine, which the
+/// new box won't take (Arugula #744). The session's job moves it again;
+/// one that still hasn't moved after the 15 minutes fails, saying why.
+#[tokio::test]
+async fn a_session_left_on_the_old_box_moves_at_its_next_look() {
+    use crate::sessions::job::NOT_MOVED;
+    let (_hub, app, base, t, _u, old) = platform(&["https://github.com/o/app"]).await;
+    post_in(&base, "ch_general", "b", "@arugula one", None).await;
+    let s = sessions(&app, &t).pop().unwrap();
+    take(&app, &old, &s.id);
+    box_says(&app, &old, &s.id, 2, State::Working, State::Done, "{}");
+    post_in(&base, "ch_general", "b", "@arugula two", None).await;
+    let stuck = sessions(&app, &t).into_iter().find(|x| x.id != s.id).unwrap();
+    take(&app, &old, &stuck.id);
+    // Its thread can't be read: its move can't be written.
+    app.db.c().execute("UPDATE agent_sessions SET room_id = 'ch_gone' WHERE id = ?1", params![stuck.id]).unwrap();
+    // The workspace's new box: neither moved.
+    let new = DeviceKeys::generate();
+    app.db.c().execute("UPDATE hosted_workspaces SET machine = ?1 WHERE id = 'hw_dev'", params![new.id()]).unwrap();
+
+    let now = arugula_e2e::now_ms() + 1;
+    for x in [&s.id, &stuck.id] {
+        app.db.nudge_session(x, now).unwrap();
+    }
+    follow_all(&app, now).await;
+    let moved = app.db.session(&s.id).unwrap().unwrap();
+    assert_eq!((moved.state, moved.machine.as_deref()), (State::Queued, Some(new.id().as_str())));
+    assert!(app.db.session_work("hw_dev").unwrap().iter().any(|w| w.session == s.id), "the new box takes it");
+    let left = app.db.session(&stuck.id).unwrap().unwrap();
+    assert_eq!((left.state, left.machine.as_deref()), (State::Working, Some(old.id().as_str())), "tried, not moved");
+
+    follow_all(&app, now + crate::work::TAKE_MS).await;
+    assert_eq!(app.db.session(&stuck.id).unwrap().unwrap().state, State::Working, "not yet");
+    follow_all(&app, now + crate::work::TAKE_MS + crate::work::WAITING_MS + 1).await;
+    let left = app.db.session(&stuck.id).unwrap().unwrap();
+    assert_eq!(left.state, State::Failed);
+    let last = app.db.session_events(&stuck.id).unwrap().pop().unwrap();
+    assert!(last.detail.contains(NOT_MOVED), "{}", last.detail);
 }

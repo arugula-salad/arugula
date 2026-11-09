@@ -5,13 +5,11 @@
 //! platform's board page), so no machine keeps a copy and this daemon
 //! never sees a row. What it keeps is the layout entry: `{board}`.
 //!
-//! Behind the `boards` Labs flag, which gates making one (a saved block
-//! comes back with the flag off, and draws nothing until it is on).
-//! Methods: `state`.
+//! Boards are on for everyone (native #191). Methods: `state`.
 
 use std::sync::Arc;
 
-use arugula_proto::{BlockType, flags};
+use arugula_proto::BlockType;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -40,9 +38,6 @@ pub struct BoardKind;
 
 impl BlockKind for BoardKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
-        if !ctx.restoring {
-            arugula_mux::labs::flag(&ctx.state_dir, flags::BOARDS)?;
-        }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("board config: {e}"))?;
         let b = Arc::new(BoardBlock { ctx, config: config.checked()? });
         // Pages already connected hear of a new block's state only when it

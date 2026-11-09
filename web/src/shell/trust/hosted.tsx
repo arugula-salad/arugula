@@ -12,10 +12,11 @@ import { machineState } from "../ui/hosts";
 import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL } from "../../shared/hosted";
 import type { PlatformProjects } from "../../shared/proto.gen";
+import { Chip } from "../../shared/ui/state-chip";
 
 interface Listed {
   key: string;
-  delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null }[];
+  delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; ended?: boolean }[];
   projects: { id: string; name: string; owner: string }[];
   /** Hosted workspaces are open to this account: Allow is offered. */
   open: boolean;
@@ -36,7 +37,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
   const hosted = s.daemons.filter((d) => d.hosted);
   const live = (p: Listed["projects"][number]) =>
-    list?.delegations.find((x) => x.delegation.project === p.id && x.delegation.owner === p.owner && x.delegation.key === list.key && !x.revoke);
+    list?.delegations.find((x) => x.delegation.project === p.id && x.delegation.owner === p.owner && x.delegation.key === list.key && !x.revoke && !x.ended);
   // Where hosted workspaces are open, every project owned; elsewhere only
   // those already delegated, to stop.
   const projects = list ? list.projects.filter((p) => list.open || live(p)) : [];
@@ -57,7 +58,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
       {/* One noun, and the label as a dim chip (UI audit #184). */}
       <h3 class="control-group">Cloud workspaces</h3>
       <p class="dim">
-        Cloud workspaces run Arugula in a box Arugula's operator runs, so they're labelled <span class="control-badge">{HOSTED_LABEL}</span>:
+        Cloud workspaces run Arugula in a box Arugula's operator runs, so they're labelled <Chip kind="tag" class="control-label">{HOSTED_LABEL}</Chip>:
         whoever runs a VM can read its memory. Only a project's people reach its cloud workspaces.
       </p>
       {hosted.length ? (
@@ -70,9 +71,9 @@ export function HostedMachines({ s }: { s: ControlSession }) {
                   {" · "}
                   {machineState(d.name)}
                 </span>
-                <span class="control-badge" data-hosted-label>
+                <Chip kind="tag" class="control-label" data-hosted-label>
                   {HOSTED_LABEL}
-                </span>
+                </Chip>
               </span>
               <span />
             </li>
@@ -87,7 +88,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
               <li key={p.id} data-project={p.id} data-delegated={d ? "yes" : "no"}>
                 <span>
                   {p.name}
-                  <span class="dim">{d ? " · control may enroll cloud workspaces into it" : " · no cloud workspaces"}</span>
+                  <span class="dim">{d ? " · Arugula may enroll cloud workspaces into it" : " · no cloud workspaces"}</span>
                 </span>
                 {d ? (
                   <button class="secondary danger small" disabled={!!busy} onClick={act(p.id, () => s.undelegate(d.delegation))}>
@@ -105,7 +106,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
       ) : null}
       {projects.length ? (
         <p class="dim control-explain">
-          <b>Allow</b> signs, with this device, that control may enroll cloud workspaces into the project until you stop it. Stopping ends new
+          <b>Allow</b> signs, with this device, that Arugula may enroll cloud workspaces into the project until you stop it. Stopping ends new
           ones; the ones there stay until they're removed.
         </p>
       ) : null}

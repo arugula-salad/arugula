@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Did the merge queue already pass this workflow on the commit main was just
+# pushed to? The queue lands the commit its group tested, so main's push run
+# would only repeat it: scripts/changed and scripts/macos-changed skip its jobs,
+# and chant keeps the group's verdict over a skipped job (chant#4644).
+#
+#   scripts/queue-tested
+#
+# Exits 0 only when this is a push to main and a merge_group run of this
+# workflow succeeded on this very commit. Anything else, a failed look at the
+# API included, is 1: the jobs run.
+#
+# Takes GITHUB_EVENT_NAME, GITHUB_REF, GITHUB_REPOSITORY, GITHUB_SHA and
+# GITHUB_WORKFLOW from Actions; gh needs `actions: read` on the job's token.
+set -uo pipefail
+[ "${GITHUB_EVENT_NAME:-}" = push ] && [ "${GITHUB_REF:-}" = refs/heads/main ] || exit 1
+[ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GITHUB_SHA:-}" ] && [ -n "${GITHUB_WORKFLOW:-}" ] || exit 1
+n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&event=merge_group&status=success&per_page=100" \
+  --jq "[.workflow_runs[] | select(.name == \"$GITHUB_WORKFLOW\")] | length" 2>/dev/null) || exit 1
+[ "${n:-0}" -gt 0 ]

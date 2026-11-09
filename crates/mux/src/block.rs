@@ -274,6 +274,14 @@ impl BlockCtx {
         }
     }
 
+    /// Say where the turn that took a tagged follow-up is (#611): the mux
+    /// tells the same place a terminal's turns go (#540).
+    pub fn followup_turn(&self, tag: crate::mux::Tag, turn: crate::mux::Turn) {
+        if let Some(cmds) = &self.cmds {
+            let _ = cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowupTurn(self.id, tag, turn)));
+        }
+    }
+
     /// Open another block (M36: a diff beside a PR), as the owner.
     pub async fn open(&self, req: arugula_proto::api::OpenRequest) -> Result<PaneId, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't open others")?;
@@ -326,7 +334,7 @@ impl BlockCtx {
             return Ok(true);
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
-        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, tx)))
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, None, tx)))
             .map_err(|_| "the daemon is stopping".to_owned())?;
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
     }

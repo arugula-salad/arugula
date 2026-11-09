@@ -40,7 +40,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
       .map((x) => ({ id: x.id, name: x.team ? x.name : "Personal", owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
     const out: Row[] = [];
     for (const x of owned) {
-      const live = d.delegations.find((l) => l.delegation.project === x.id && l.delegation.owner === x.owner && l.delegation.key === d.key && !l.revoke);
+      const live = d.delegations.find((l) => l.delegation.project === x.id && l.delegation.owner === x.owner && l.delegation.key === d.key && !l.revoke && !l.ended);
       if (!live) continue;
       out.push({ id: x.id, name: x.name, delegation: live.delegation, delegationId: live.id, view: await s.runGrant(x.id).catch(() => null) });
     }
@@ -143,7 +143,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
         })}
       </ul>
       <p class="dim control-explain">
-        <b>Allow runs</b> asks for one of your passkeys to confirm a standing grant: for as long as you pick, the platform may start runs and
+        <b>Allow runs</b> asks for one of your passkeys to confirm a standing grant: for as long as you pick, Arugula may start runs and
         instruct them on every cloud workspace of the project, running whatever command the project's runs start, with none of your devices
         awake. Each workspace checks your passkey against your account's published passkeys. <b>Renew</b> confirms a new one in its place.
         Deploys still ask you every time. <b>Revoke</b> (a passkey too) stops new runs; the ones going finish unless you stop them too. A

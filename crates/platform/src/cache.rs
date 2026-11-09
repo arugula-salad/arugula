@@ -34,8 +34,17 @@
 //!   change names it. While the last feed read that worked began less than
 //!   [`GRACE`] ago, these are kept however old they are.
 //! - **What it doesn't** (billing's meters: the feed says nothing of
-//!   usage): at most [`CACHE_TICK`]. So is everything else while the feed
-//!   isn't being read.
+//!   usage; and whether a reader may reach a machine as a label asks it,
+//!   [`Cache::may_reach_label`], a "no" included): at most [`CACHE_TICK`].
+//!   So is everything else while the feed isn't being read.
+//! - **An account's GitHub identity** ([`Cache::github_user`], which the
+//!   forge's viewer check reads, a "no" included): at most [`CACHE_TICK`]
+//!   too, and the feed drops it sooner. Signing in with a new login,
+//!   linking GitHub and unlinking it each write `account.name` for the
+//!   account, so a change shows within a feed tick while the feed is read,
+//!   and at once on a call the hub passes on after it ([`SEQ_HEADER`]). A
+//!   kept "no" is asked again ([`Cache::github_user_now`]) before it
+//!   withholds a private repo.
 //!
 //! Each map holds at most [`CAP`] answers; past that the least recently
 //! used quarter goes.
@@ -74,6 +83,7 @@ use std::{
 
 use crate::{
     Platform,
+    forge::GithubUser,
     hub::{Account, Change, ChangeKind, Daemon, Flags, HubPort, HubResult, Meter, Team},
 };
 
@@ -239,9 +249,16 @@ pub struct Cache {
     machines_for: Map<String, Vec<String>>,
     /// (account, machine): whether control routes the account there.
     reach: Map<(String, String), bool>,
+    /// The same for a label ([`Cache::may_reach_label`]): a "no" is kept
+    /// too, for a tick.
+    reach_label: Map<(String, String), bool>,
     /// (account, the month's start): what it used, for billing's page. The
     /// feed says nothing of usage, so this is only ever a cache tick old.
     meters: Map<(String, u64), Meter>,
+    /// Each account's GitHub identity (`None`: it didn't sign in with
+    /// GitHub), a "no" included: at most a cache tick old, and dropped by
+    /// the account's `account.name` (module docs).
+    github: Map<String, Option<GithubUser>>,
 }
 
 impl Default for Cache {
@@ -269,7 +286,9 @@ impl Cache {
             flags: Map::new(Kept::Feed, any),
             machines_for: Map::new(Kept::Feed, some),
             reach: Map::new(Kept::Feed, yes),
+            reach_label: Map::new(Kept::Tick, any),
             meters: Map::new(Kept::Tick, any),
+            github: Map::new(Kept::Tick, any),
         }
     }
 
@@ -482,6 +501,27 @@ impl Cache {
         self.may_reach_asked(hub, account, machines, true).await
     }
 
+    /// [`Cache::may_reach`] for a label, not a check: a "no" is kept too,
+    /// for a tick, so what a label hides from a reader costs one hub call a
+    /// tick, not one a read. A check stays with [`Cache::may_reach`], where
+    /// a "no" is asked again every time.
+    pub async fn may_reach_label(
+        &self,
+        hub: &dyn HubPort,
+        account: &str,
+        machines: &[String],
+    ) -> HubResult<HashSet<String>> {
+        let keys: Vec<(String, String)> = machines.iter().map(|m| (account.to_owned(), m.clone())).collect();
+        let got = self
+            .fill(&self.reach_label, &keys, false, |miss| async move {
+                let asked: Vec<String> = miss.iter().map(|(_, m)| m.clone()).collect();
+                let yes: HashSet<String> = hub.may_reach(account, &asked).await?.into_iter().collect();
+                Ok(miss.into_iter().map(|k| (k.clone(), yes.contains(&k.1))).collect())
+            })
+            .await?;
+        Ok(got.into_iter().filter(|(_, ok)| *ok).map(|((_, m), _)| m).collect())
+    }
+
     async fn may_reach_asked(
         &self,
         hub: &dyn HubPort,
@@ -533,6 +573,30 @@ impl Cache {
         Ok(got.into_iter().map(|((a, _), m)| (a, m)).collect())
     }
 
+    /// The account's GitHub identity, as [`HubPort::github_user`]: at most a
+    /// cache tick old, a "no" included. The forge's viewer check reads it on
+    /// every forge and board read, so a slow hub doesn't hold each one up.
+    pub async fn github_user(&self, hub: &dyn HubPort, account: &str) -> HubResult<Option<GithubUser>> {
+        self.github_asked(hub, account, false).await
+    }
+
+    /// [`Cache::github_user`] as the hub says now, kept for next time: to
+    /// confirm a "no" before it withholds anything.
+    pub async fn github_user_now(&self, hub: &dyn HubPort, account: &str) -> HubResult<Option<GithubUser>> {
+        self.github_asked(hub, account, true).await
+    }
+
+    async fn github_asked(&self, hub: &dyn HubPort, account: &str, now: bool) -> HubResult<Option<GithubUser>> {
+        let got = self
+            .fill(&self.github, &[account.to_owned()], now, |miss| async move {
+                let a = miss.into_iter().next().unwrap_or_default();
+                let user = hub.github_user(&a).await?;
+                Ok(vec![(a, user)])
+            })
+            .await?;
+        Ok(got.into_iter().next().and_then(|(_, u)| u))
+    }
+
     fn dropped(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
@@ -548,7 +612,9 @@ impl Cache {
         self.flags.clear();
         self.machines_for.clear();
         self.reach.clear();
+        self.reach_label.clear();
         self.meters.clear();
+        self.github.clear();
     }
 
     /// Forget what a change names. Whether it may change who sees what in
@@ -557,10 +623,12 @@ impl Cache {
         use ChangeKind::*;
         let s = &c.subject;
         match c.kind {
+            // A login, or a GitHub identity linked or unlinked.
             AccountName => {
                 self.dropped();
                 self.accounts.forget(s);
                 self.called.clear();
+                self.github.forget(s);
                 false
             }
             // A device's revocation changes nothing kept here, but a
@@ -570,6 +638,7 @@ impl Cache {
                 self.daemons.forget(s);
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             TeamRoster => {
@@ -578,12 +647,14 @@ impl Cache {
                 self.teams_of.clear();
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             TeamLocked => {
                 self.dropped();
                 self.teams.forget(s);
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             DaemonJoined | DaemonMoved | DaemonLeft => {
@@ -591,12 +662,14 @@ impl Cache {
                 self.daemons.forget(s);
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             DaemonAccess => {
                 self.dropped();
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             LabsFlag => {
@@ -969,6 +1042,44 @@ mod tests {
         assert!(cache.follow(&hub).await.unwrap());
         assert!(cache.may_reach(&hub, "c", &m1).await.unwrap().is_empty());
         assert!(cache.machines_for(&hub, "c").await.unwrap().is_empty());
+    }
+
+    /// A GitHub identity, "no" included, is kept a cache tick at most, even
+    /// with the feed read; linking and unlinking drop it through the feed;
+    /// and `github_user_now` asks.
+    #[tokio::test]
+    async fn a_github_identity_is_kept_a_tick_and_the_feed_drops_it() {
+        let hub = TestHub::default();
+        hub.github("a", 1001, "a-gh");
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        let ask = |who: &'static str| {
+            let (cache, hub) = (&cache, &hub);
+            async move { cache.github_user(hub, who).await.unwrap().map(|u| u.id) }
+        };
+        assert_eq!(ask("a").await, Some(1001));
+        assert_eq!(ask("b").await, None);
+        let calls = hub.calls_of("github_user");
+        assert_eq!((ask("a").await, ask("b").await), (Some(1001), None));
+        assert_eq!(hub.calls_of("github_user"), calls, "a yes and a no, kept");
+
+        // b links GitHub, a unlinks: kept until the feed says so.
+        hub.github("b", 1002, "b-gh");
+        hub.unlink_github("a");
+        assert_eq!((ask("a").await, ask("b").await), (Some(1001), None));
+        assert_eq!(cache.github_user_now(&hub, "b").await.unwrap().map(|u| u.id), Some(1002), "now asks");
+        assert_eq!(hub.calls_of("github_user"), calls + 1);
+        cache.follow(&hub).await.unwrap();
+        assert_eq!((ask("a").await, ask("b").await), (None, Some(1002)));
+
+        // With the feed read throughout, still a tick at most.
+        let calls = hub.calls_of("github_user");
+        for _ in 0..CACHE_TICK.as_secs() {
+            cache.advance(FEED_TICK);
+            cache.follow(&hub).await.unwrap();
+        }
+        assert_eq!((ask("a").await, ask("b").await), (None, Some(1002)));
+        assert_eq!(hub.calls_of("github_user"), calls + 2, "asked again at the tick");
     }
 
     /// Only what's there is kept: an empty list, a missing id or a "no" is

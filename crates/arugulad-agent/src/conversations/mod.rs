@@ -82,6 +82,9 @@ pub struct Live {
     /// The directory it runs in (#146: where to resume it).
     #[serde(skip)]
     pub cwd: Option<String>,
+    /// When it started, in ms since the epoch (`startedAt`; 0 if unsaid).
+    #[serde(skip)]
+    pub started: u64,
 }
 
 impl Live {
@@ -361,11 +364,11 @@ pub fn transcript_of(dirs: &Dirs, session: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// The mux's `AgentSessions`: the conversations in Claude Code's folders.
+/// The mux's `Conversations`: the conversations in Claude Code's folders.
 #[derive(Debug)]
-pub struct Sessions;
+pub struct ClaudeConversations;
 
-impl crate::mux::AgentSessions for Sessions {
+impl crate::mux::Conversations for ClaudeConversations {
     fn transcript(&self, id: &str) -> Option<PathBuf> {
         let mut ix = Index::new(Dirs::from_env());
         ix.find(id).ok().map(|c| c.path)
@@ -378,12 +381,71 @@ impl crate::mux::AgentSessions for Sessions {
     fn through(&self, client: u32) -> Option<u32> {
         signals::tmux_pane(client)
     }
+
+    fn nested(&self, id: &str) -> bool {
+        nested(&Dirs::from_env().claude.join("sessions"), id)
+    }
 }
 
 /// The conversation each of our panes' Claude Code holds now, by pane
 /// (#146: the session to resume when its hooks didn't say).
+///
+/// A pane can have several live session files under it: the Claude Code
+/// the person runs, and the ones that one starts (a `claude -p` or SDK
+/// session of a tool or a workflow, #512). The pane's is the one that isn't
+/// under another of its sessions; of those, the newest.
 pub fn live_in_panes(dirs: &Dirs, ours: &Ours) -> HashMap<PaneId, (String, Option<String>)> {
-    live(&dirs.claude.join("sessions"), ours).into_iter().filter_map(|(sid, l)| Some((l.pane?, (sid, l.cwd)))).collect()
+    newest_in_panes(live(&dirs.claude.join("sessions"), ours), is_under)
+}
+
+/// [`live_in_panes`]'s choice, given the live sessions and whether one
+/// process descends from another. A process with no pane (found by neither
+/// the ancestor walk nor a scope) is on none, however new (#512).
+fn newest_in_panes(
+    live: HashMap<String, Live>,
+    under: impl Fn(u32, u32) -> bool,
+) -> HashMap<PaneId, (String, Option<String>)> {
+    let mut by_pane: HashMap<PaneId, Vec<(String, Live)>> = HashMap::new();
+    for (sid, l) in live {
+        if let Some(pane) = l.pane {
+            by_pane.entry(pane).or_default().push((sid, l));
+        }
+    }
+    by_pane
+        .into_iter()
+        .filter_map(|(pane, all)| {
+            let pids: Vec<u32> = all.iter().map(|(_, l)| l.pid).collect();
+            all.into_iter()
+                .filter(|(_, l)| !pids.iter().any(|p| *p != l.pid && under(l.pid, *p)))
+                // The session id breaks a tie in the start time, so the
+                // pick doesn't depend on the directory's order.
+                .max_by(|(a, x), (b, y)| (x.started, a).cmp(&(y.started, b)))
+                .map(|(sid, l)| (pane, (sid, l.cwd)))
+        })
+        .collect()
+}
+
+/// Did an SDK or `claude -p` run start this session (#512), not a person at
+/// Claude Code's prompt? Its session file says so in `entrypoint`
+/// (`sdk-cli`, `sdk-ts`). Unknown (no file yet): no.
+fn nested(dir: &Path, session: &str) -> bool {
+    std::fs::read_dir(dir).into_iter().flatten().flatten().any(|f| {
+        let v = std::fs::read(f.path()).map(|b| serde_json::from_slice::<Value>(&b).unwrap_or_default());
+        v.is_ok_and(|v| v["sessionId"] == session && v["entrypoint"].as_str().is_some_and(|e| e.starts_with("sdk")))
+    })
+}
+
+/// Does `pid` descend from `ancestor`?
+fn is_under(pid: u32, ancestor: u32) -> bool {
+    let mut p = pid;
+    for _ in 0..64 {
+        match crate::procinfo::ppid(p).filter(|p| *p > 1) {
+            Some(parent) if parent == ancestor => return true,
+            Some(parent) => p = parent,
+            None => return false,
+        }
+    }
+    false
 }
 
 /// Is a conversation on the default list (`all`: everything)? Terminal,
@@ -525,6 +587,7 @@ fn live(dir: &Path, ours: &Ours) -> HashMap<String, Live> {
             block,
             place: String::new(),
             cwd: v["cwd"].as_str().map(str::to_owned),
+            started: v["startedAt"].as_u64().unwrap_or(0),
         };
         l.place = l.place();
         out.insert(session.to_owned(), l);
@@ -656,6 +719,7 @@ mod tests {
             block: None,
             place: String::new(),
             cwd: None,
+            started: 0,
         };
         let theirs = l.clone().ours(|p| p == 3);
         assert_eq!((theirs.pane, theirs.block), (None, None));
@@ -909,6 +973,111 @@ mod tests {
         assert_eq!(l["in-pane"].pane.filter(|p| *p == 7), None);
         crate::procinfo::kill(claude);
         shell.wait().unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    // Unix: starts processes with sh and reads their ancestry.
+    #[cfg(unix)]
+    #[test]
+    fn a_pane_resolves_to_the_conversation_running_in_it() {
+        // Spawns `sh -c <script>` and reads the pids it prints, one per line.
+        fn spawn(script: &str, n: usize) -> (std::process::Child, Vec<u32>) {
+            let mut sh = std::process::Command::new("sh")
+                .args(["-c", script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let mut out = std::io::BufReader::new(sh.stdout.take().unwrap());
+            let pids = (0..n)
+                .map(|_| {
+                    let mut line = String::new();
+                    std::io::BufRead::read_line(&mut out, &mut line).unwrap();
+                    line.trim().parse().unwrap()
+                })
+                .collect();
+            (sh, pids)
+        }
+        let root = tmp("panes");
+        let dirs = Dirs { claude: root.clone(), ..Dirs::from_env() };
+        let sessions = root.join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let put_at = |name: &str, pid: u32, start: &str, sid: &str, started: u64| {
+            let v = json!({"pid": pid, "sessionId": sid, "procStart": start, "kind": "interactive",
+                "entrypoint": "cli", "status": "idle", "startedAt": started, "cwd": "/w"});
+            std::fs::write(sessions.join(name), v.to_string()).unwrap();
+        };
+        let put = |name: &str, pid: u32, sid: &str, started: u64| put_at(name, pid, &proc_start(pid), sid, started);
+        // Pane 1: a conversation that ended there (its file stays), then
+        // the one running now, which started a newer one of its own (a
+        // `claude -p`) that is under it.
+        let (gone_shell, gone) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
+        // Read before it's killed: once it's reaped, /proc has no record of it.
+        let gone_start = proc_start(gone[0]);
+        crate::procinfo::kill(gone[0]);
+        let (one, p1) = spawn("sh -c 'echo $$; sh -c \"echo \\$\\$; sleep 30; true\"; true' & wait", 2);
+        // Pane 2: one conversation.
+        let (two, p2) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
+        put_at("ended.json", gone[0], &gone_start, "ended-in-one", 500);
+        put("one.json", p1[0], "running-in-one", 1000);
+        put("child.json", p1[1], "child-of-one", 9000);
+        put("two.json", p2[0], "running-in-two", 2000);
+        let ours = Ours { panes: [(one.id(), 1), (two.id(), 2), (gone_shell.id(), 1)].into(), ..Default::default() };
+        let got = live_in_panes(&dirs, &ours);
+        assert_eq!(got[&1].0, "running-in-one");
+        assert_eq!(got[&2].0, "running-in-two");
+        assert_eq!(got.len(), 2);
+        for pid in [p1[0], p1[1], p2[0]] {
+            crate::procinfo::kill(pid);
+        }
+        let (mut one, mut two, mut gone_shell) = (one, two, gone_shell);
+        for sh in [&mut one, &mut two, &mut gone_shell] {
+            sh.wait().unwrap();
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn live_at(pid: u32, pane: Option<PaneId>, started: u64) -> Live {
+        Live {
+            pid,
+            kind: "interactive".into(),
+            entrypoint: "cli".into(),
+            status: "idle".into(),
+            pane,
+            block: None,
+            place: String::new(),
+            cwd: None,
+            started,
+        }
+    }
+
+    #[test]
+    fn a_newer_process_in_no_pane_lands_on_none() {
+        // #512, with fakes: no /proc, no real processes. Two panes each hold
+        // a conversation; a third, newer one is in neither (geek's other
+        // conversations), and a fourth is under pane 1's.
+        let live = HashMap::from([
+            ("in-one".to_owned(), live_at(10, Some(1), 100)),
+            ("in-two".to_owned(), live_at(20, Some(2), 200)),
+            ("child-of-one".to_owned(), live_at(11, Some(1), 900)),
+            ("nowhere".to_owned(), live_at(30, None, 9000)),
+        ]);
+        let got = newest_in_panes(live, |pid, of| (pid, of) == (11, 10));
+        assert_eq!(got[&1].0, "in-one");
+        assert_eq!(got[&2].0, "in-two");
+        assert_eq!(got.len(), 2);
+    }
+
+    #[test]
+    fn an_sdk_session_is_nested() {
+        let root = tmp("nested");
+        for (name, sid, entry) in [("a.json", "top", "cli"), ("b.json", "inner", "sdk-cli")] {
+            std::fs::write(root.join(name), json!({"pid": 1, "sessionId": sid, "entrypoint": entry}).to_string())
+                .unwrap();
+        }
+        assert!(!nested(&root, "top"));
+        assert!(nested(&root, "inner"));
+        assert!(!nested(&root, "unknown"));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

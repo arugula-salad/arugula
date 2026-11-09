@@ -85,7 +85,7 @@ impl Daemon {
         Self::child_with(&[])
     }
 
-    /// With extra daemon arguments (`--wisp-token-file …`).
+    /// With extra daemon arguments (`--owner …`).
     pub fn child_with(args: &[&str]) -> Self {
         Self::child_env(args, &[])
     }
@@ -141,7 +141,7 @@ impl Daemon {
         setup(&state);
         let sessions = sessions();
         let b = build(Self::builder(&sessions).state_dir(state));
-        let b = if args.is_empty() { b.no_wisp() } else { b.args(args) };
+        let b = b.no_provider().args(args);
         Self { d: b.envs(env.iter().copied()).start(), sessions }
     }
 
@@ -153,7 +153,7 @@ impl Daemon {
     /// ...with extra environment.
     pub fn service_env(env: &[(&str, &str)]) -> Option<Self> {
         let sessions = sessions();
-        let Some(d) = Self::builder(&sessions).no_wisp().envs(env.iter().copied()).service() else {
+        let Some(d) = Self::builder(&sessions).no_provider().envs(env.iter().copied()).service() else {
             let _ = std::fs::remove_dir_all(&sessions);
             return None;
         };
@@ -164,7 +164,7 @@ impl Daemon {
     #[cfg(feature = "labs")]
     pub fn service_labs_env(env: &[(&str, &str)]) -> Option<Self> {
         let sessions = sessions();
-        let Some(d) = Self::builder(&sessions).labs().no_wisp().envs(env.iter().copied()).service() else {
+        let Some(d) = Self::builder(&sessions).labs().no_provider().envs(env.iter().copied()).service() else {
             let _ = std::fs::remove_dir_all(&sessions);
             return None;
         };

@@ -8,6 +8,7 @@
 // alone. Someone signed in on the hub sees no prompt.
 
 import { platformFetch, refusalOf } from "../shared/maintenance";
+import { forgetLastPage } from "./router";
 
 const KEPT = "arugula.platform-signin";
 /** Signed out of this page on purpose: no hop by itself until they ask. */
@@ -92,6 +93,7 @@ export async function finishSignIn(): Promise<boolean> {
 /** Sign this page out (the hub's session stays), and stay out until the
  * visitor signs in again here. */
 export async function signOut() {
+  forgetLastPage();
   try {
     sessionStorage.setItem(OUT, "1");
   } catch {

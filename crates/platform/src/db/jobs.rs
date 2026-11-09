@@ -66,6 +66,13 @@ pub const RETRY_MAX_MS: u64 = 3_600_000;
 /// kind says otherwise.
 pub const MAX_ATTEMPTS: u32 = 8;
 
+/// The `LIKE` pattern for the ids of a connection's `plane_done` jobs, with
+/// the `_` and `%` of the connection's id taken literally.
+fn move_pattern(connection: &str) -> String {
+    let literal = connection.replace('\\', r"\\").replace('%', r"\%").replace('_', r"\_");
+    format!("planedone:%:{literal}:%")
+}
+
 /// How long a job waits after its `attempts`th claim in a row failed.
 pub fn backoff(attempts: u32) -> u64 {
     (RETRY_MS << attempts.saturating_sub(1).min(16)).min(RETRY_MAX_MS)
@@ -82,11 +89,21 @@ pub enum JobKind {
     Session,
     /// A merged PR's move of a Plane item to Done (#437).
     PlaneDone,
+    /// A chant→Fly deploy's plan (#1985): its box and its plan run, before
+    /// anyone approves it. Its id is `plan:<deploy>`.
+    DeployPlan,
 }
 
 impl JobKind {
-    pub const ALL: [JobKind; 6] =
-        [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule, JobKind::Session, JobKind::PlaneDone];
+    pub const ALL: [JobKind; 7] = [
+        JobKind::Workspace,
+        JobKind::Run,
+        JobKind::Deploy,
+        JobKind::Schedule,
+        JobKind::Session,
+        JobKind::PlaneDone,
+        JobKind::DeployPlan,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -96,6 +113,7 @@ impl JobKind {
             JobKind::Schedule => "schedule",
             JobKind::Session => "session",
             JobKind::PlaneDone => "plane_done",
+            JobKind::DeployPlan => "deploy_plan",
         }
     }
 
@@ -533,6 +551,56 @@ impl Db {
         Ok(changed == 1)
     }
 
+    /// A connection's `plane_done` jobs (#441) that moved an item, newest
+    /// first: done, with a checkpoint (a job left alone has none and isn't
+    /// here). Its id is `planedone:{pr}:{connection}:{number}`; the `LIKE`
+    /// narrows to the connection and the caller checks the payload.
+    pub fn plane_moves(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
+        self.c().query_map(
+            &format!(
+                r"SELECT {COLUMNS} FROM platform_jobs
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='done' AND checkpoint IS NOT NULL
+                  ORDER BY updated DESC, id LIMIT {limit}"
+            ),
+            params![move_pattern(connection)],
+            job_row,
+        )
+    }
+
+    /// A connection's `plane_done` jobs that ended `failed`, newest first.
+    pub fn plane_moves_failed(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
+        self.c().query_map(
+            &format!(
+                r"SELECT {COLUMNS} FROM platform_jobs
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='failed'
+                  ORDER BY updated DESC, id LIMIT {limit}"
+            ),
+            params![move_pattern(connection)],
+            job_row,
+        )
+    }
+
+    /// How many of a connection's `plane_done` jobs ended `failed`.
+    pub fn plane_moves_failed_count(&self, connection: &str) -> Result<u64> {
+        self.c().query_row(
+            r"SELECT count(*) FROM platform_jobs WHERE kind='plane_done' AND state='failed' AND id LIKE ?1 ESCAPE '\'",
+            params![move_pattern(connection)],
+            |r| r.get(0),
+        )
+    }
+
+    /// Queue a connection's failed `plane_done` job `id` again: pending, with
+    /// no attempts, no error and no lease, due now. `false` if it isn't that
+    /// connection's, or isn't failed (a claim or another retry got there).
+    pub fn retry_plane_move(&self, connection: &str, id: &str, now: u64) -> Result<bool> {
+        let changed = self.c().execute(
+            r"UPDATE platform_jobs SET state='pending',attempts=0,error=NULL,next_at=?3,updated=?3,lease=NULL,lease_until=0
+              WHERE id=?1 AND kind='plane_done' AND state='failed' AND id LIKE ?2 ESCAPE '\'",
+            params![id, move_pattern(connection), now],
+        )?;
+        Ok(changed == 1)
+    }
+
     pub fn platform_job(&self, id: &str) -> Result<Option<JobRow>> {
         self.c().query_row(&format!("SELECT {COLUMNS} FROM platform_jobs WHERE id=?1"), params![id], job_row).optional()
     }
@@ -618,6 +686,21 @@ fn end_work_in(tx: &impl Sql, id: &str, kind: JobKind, why: &str, now: u64) -> R
                 let detail = serde_json::json!({ "reason": why }).to_string();
                 let _ = move_session_in(tx, id, &Move::Control { from, to: State::Failed, at: now, detail: &detail })?;
             }
+        }
+        JobKind::DeployPlan => {
+            // Its run fails, the plan ends saying why, and its box goes.
+            let Some(deploy) = super::deploy_plans::deploy_of_job(id) else { return Ok(()) };
+            let run: Option<Option<String>> = tx
+                .query_row("SELECT run_id FROM deploy_plans WHERE deploy_id = ?1", params![deploy], |r| r.get(0))
+                .optional()?;
+            if let Some(r) = run.flatten() {
+                fail_run(&r)?;
+            }
+            tx.execute(
+                "UPDATE deploy_plans SET failed = ?2, ended_at = ?3 WHERE deploy_id = ?1 AND ended_at IS NULL",
+                params![deploy, format!("its plan's job gave up: {why}"), now],
+            )?;
+            super::hosted::ask_delete_deploy_box_in(tx, &super::deploy_plans::box_name(deploy), now)?;
         }
         JobKind::Workspace | JobKind::Schedule | JobKind::PlaneDone => {}
     }

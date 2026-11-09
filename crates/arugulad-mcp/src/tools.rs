@@ -218,8 +218,9 @@ pub enum Until {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WaitArgs {
-    /// The pane or block. Or, instead, a Cloud workspace's tab
-    /// (cloud_workspace and tab).
+    /// The pane or block here. Or, instead, one of a Cloud workspace's
+    /// agent blocks (cloud_workspace and agent_block), a run, or agent
+    /// sessions.
     #[serde(default)]
     pub pane: Option<PaneArg>,
     pub until: Until,
@@ -229,22 +230,22 @@ pub struct WaitArgs {
     /// Seconds before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
-    /// A Cloud workspace (its hw_… id or its name): with tab (one of its
-    /// agent blocks), or with pane to wait on its machine.
+    /// A Cloud workspace (its hw_… id or its name): with agent_block (one
+    /// of its agent blocks), or with pane to wait on its machine.
     #[serde(default)]
     pub cloud_workspace: Option<String>,
-    /// A Cloud workspace's tab (an agent block on its machine, by pane
-    /// number), to wait until idle or needs_input.
-    #[serde(default)]
-    pub tab: Option<String>,
+    /// One of a Cloud workspace's agent blocks, by pane number (list kind
+    /// cloud_agents), to wait until idle or needs_input.
+    #[serde(default, alias = "tab")]
+    pub agent_block: Option<String>,
     /// Or a run in Arugula control (run_…, from start_run), not pane: until
     /// it ends (until command_end).
     #[serde(default)]
     pub run: Option<String>,
     /// Or agent sessions in Arugula control (ses_…, several separated by
     /// spaces), not pane: until done, when any of them finishes its turn.
-    #[serde(default)]
-    pub session: Option<String>,
+    #[serde(default, alias = "session")]
+    pub agent_session: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -371,7 +372,7 @@ pub struct StartAgentArgs {
     /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
     #[serde(default)]
     pub worktree: Option<WorktreeArgs>,
-    /// The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.
+    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
     /// With issue: take the row over when another machine's agent already works it. Without it, an issue another machine's agent holds refuses the start, naming who holds it; with it, that agent is folded under "earlier agents" and this one holds the row.
@@ -538,6 +539,9 @@ pub struct OpenPrArgs {
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+    /// Hold its merge while you finish: why, in a few words (shown as "Held by you: …"). Shows the block and holds it in one call; draft kind merge or release lets it go.
+    #[serde(default)]
+    pub hold: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -632,6 +636,20 @@ pub struct PrMergeArgs {
     pub style: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct PrHoldArgs {
+    /// The PR block (from show).
+    pub block: PaneArg,
+    /// Why the merge waits, in a few words: the user reads it where the Merge button was.
+    pub reason: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PrReleaseArgs {
+    /// The PR block (from show).
+    pub block: PaneArg,
+}
+
 /// `delegate`'s jobs.
 const DELEGATE: &[Kind] = &[
     Kind {
@@ -721,9 +739,9 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "board",
-        description: "A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+        description: "A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
         schema: schema_for_type::<ShowBoardArgs>,
-        flag: Some(flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "app",
@@ -755,8 +773,20 @@ const DRAFT: &[Kind] = &[
     },
     Kind {
         name: "merge",
-        description: "Merging a PR block's pull request.",
+        description: "Merging a PR block's pull request. It also lets go of your hold on it.",
         schema: schema_for_type::<PrMergeArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "hold",
+        description: "Hold a PR block's merge until you say it's ready (you're mid-turn, or waiting on other CI): the block shows \"Held by you: reason\" in place of its Merge button, on the user's screen only; nothing goes to the forge. The user can still choose Merge anyway. It ends when you draft the merge or release, your pane closes, 24 hours pass, or the PR is merged or closed.",
+        schema: schema_for_type::<PrHoldArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "release",
+        description: "Let go of your hold on a PR block's merge. Drafting the merge does this too.",
+        schema: schema_for_type::<PrReleaseArgs>,
         flag: None,
     },
     Kind {
@@ -809,6 +839,79 @@ const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
 
 /// The kinds daemon-side Managoat had (#942, `fountain_*` before the
 /// rename), removed with it: naming one says where cloud agents went.
+/// An argument's old name, by tool, accepted for good (Arugula #668): a
+/// call made with it is read as the new one, and the tool list says only
+/// the new. `wait`, `session_reply`, `session_stop` and `read_session`'s
+/// `session` (an agent session, `ses_…`) is `agent_session`, since
+/// `session` means the group of tabs on `run` and `start_agent`;
+/// `start_run`'s `box` is `cloud_workspace`, as on every other tool; a
+/// Cloud workspace's `tab` (an agent block, by pane number) is
+/// `agent_block` (not `agent`, which on `cloud` kind `open_agent` is the
+/// program to run: [`MISNAMED`]).
+pub const ARG_ALIASES: &[(&str, &str, &str)] = &[
+    ("wait", "session", "agent_session"),
+    ("session_reply", "session", "agent_session"),
+    ("session_stop", "session", "agent_session"),
+    ("read_session", "session", "agent_session"),
+    ("start_run", "box", "cloud_workspace"),
+    ("wait", "tab", "agent_block"),
+    ("read_cloud", "tab", "agent_block"),
+    ("cloud", "tab", "agent_block"),
+];
+
+/// A name a caller might guess for an argument, by tool, and the name
+/// it has: refused with the right name, never read as it (Arugula #668).
+/// `wait` has no `agent`: an agent block there is `agent_block`. (On the
+/// grouped tools, `pick_kind` says the same for a kind that takes
+/// `agent_block`.)
+pub const MISNAMED: &[(&str, &str, &str)] = &[("wait", "agent", "agent_block")];
+
+/// A kind's old name, by tool, accepted for good (Arugula #668): `list`
+/// kind `sessions` (a project's agent sessions) is `agent_sessions`, and
+/// `cloud_tabs` (a Cloud workspace's agent blocks) is `cloud_agents`;
+/// `cloud`'s `open_tab` and `close_tab` are `open_agent` and `close_agent`.
+pub const KIND_ALIASES: &[(&str, &str, &str)] = &[
+    ("list", "sessions", "agent_sessions"),
+    ("list", "cloud_tabs", "cloud_agents"),
+    ("cloud", "open_tab", "open_agent"),
+    ("cloud", "close_tab", "close_agent"),
+];
+
+/// Reads a call's old argument and kind names as the new ones
+/// ([`ARG_ALIASES`], [`KIND_ALIASES`]), before anything looks at the
+/// arguments. Both names with the same value is one; with different
+/// values it's refused, rather than guessed at.
+pub fn old_names(tool: &str, args: &mut Value) -> Result<(), String> {
+    let Some(o) = args.as_object_mut() else { return Ok(()) };
+    for (_, old, new) in ARG_ALIASES.iter().filter(|(t, _, _)| *t == tool) {
+        let Some(v) = o.remove(*old) else { continue };
+        match o.get(*new) {
+            None | Some(Value::Null) => {
+                o.insert((*new).to_owned(), v);
+            }
+            Some(have) if *have == v || v.is_null() => {}
+            Some(_) => {
+                return Err(format!(
+                    "{tool} takes {new} ({old} is its old name), and both were given with different values: give one"
+                ));
+            }
+        }
+    }
+    if let Some(k) = o.get("kind").and_then(Value::as_str)
+        && let Some((_, _, new)) = KIND_ALIASES.iter().find(|(t, old, _)| *t == tool && *old == k)
+    {
+        o.insert("kind".into(), json!(new));
+    }
+    for (_, wrong, right) in MISNAMED.iter().filter(|(t, _, _)| *t == tool) {
+        if o.get(*wrong).is_some_and(|v| !v.is_null()) {
+            return Err(format!(
+                "{tool} has no {wrong}: one of a Cloud workspace's agent blocks is {right}, its pane number"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn managoat_kind(tool: &str, kind: &str) -> bool {
     matches!(
         (tool, kind),
@@ -987,7 +1090,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Or agent sessions in Arugula control (session: ses_… ids, not pane) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1371,6 +1474,7 @@ pub fn listed_names(scope: Scope, on: On) -> Vec<String> {
 /// Every kind answers, listed or not; `on` only says which ones an error
 /// names.
 fn route(name: &str, mut args: Value, on: On) -> Result<(Def, Option<&'static str>, Value), String> {
+    old_names(name, &mut args)?;
     let def = all_defs().into_iter().find(|d| d.name == name).ok_or_else(|| format!("no tool {name}"))?;
     let kind = match &def.args {
         Args::One(_) => None,
@@ -1409,6 +1513,13 @@ fn pick_kind(
     let takes = kind_args(k);
     for key in args.as_object().into_iter().flatten().map(|(n, _)| n) {
         if !takes.iter().any(|t| t.trim_end_matches('?') == key) {
+            // A guessed name for the agent block (Arugula #668): say its name.
+            if key == "agent" && takes.iter().any(|t| t == "agent_block") {
+                return Err(format!(
+                    "{tool} kind {} has no agent: one of a Cloud workspace's agent blocks is agent_block, its pane number",
+                    k.name
+                ));
+            }
             let takes = match takes.is_empty() {
                 true => "it takes nothing else".to_owned(),
                 false => format!("it takes {}", takes.join(", ")),
@@ -1428,6 +1539,11 @@ pub(crate) fn read_only_tool(tool: &str) -> bool {
 impl ToolCall<'_, '_> {
     pub async fn dispatch(&self, name: &str, mut args: Value) -> CallToolResult {
         let fail = |e: String| CallToolResult::error(vec![ContentBlock::text(e)]);
+        // An old name of an argument or a kind is the new one (#668),
+        // before anything reads the arguments.
+        if let Err(e) = old_names(name, &mut args) {
+            return fail(e);
+        }
         // An agent a guest stands behind: its tab's tools only, before
         // anything runs or is forwarded (`guests.rs`).
         if let Some(why) = self.guests_refusal(name, &args).await {
@@ -1540,7 +1656,7 @@ impl ToolCall<'_, '_> {
                 Err(e) => Err(e),
             },
             ("show", Some("pr")) => match parse::<OpenPrArgs>(args) {
-                Ok(a) => self.open_forge(ForgeOpen { pr: Some(a.pr), ..Default::default() }, a.dir, a.beside).await,
+                Ok(a) => self.show_pr(a).await,
                 Err(e) => Err(e),
             },
             ("show", Some("issue")) => match parse::<OpenIssueArgs>(args) {
@@ -1584,6 +1700,14 @@ impl ToolCall<'_, '_> {
             },
             ("draft", Some("merge")) => match parse::<PrMergeArgs>(args) {
                 Ok(a) => self.pr_write(&a.block, Write::Merge { style: a.style }).await,
+                Err(e) => Err(e),
+            },
+            ("draft", Some("hold")) => match parse::<PrHoldArgs>(args) {
+                Ok(a) => self.pr_hold(&a.block, a.reason).await,
+                Err(e) => Err(e),
+            },
+            ("draft", Some("release")) => match parse::<PrReleaseArgs>(args) {
+                Ok(a) => self.pr_release(&a.block).await,
                 Err(e) => Err(e),
             },
             ("draft", Some("issue")) => match parse::<IssueNewArgs>(args) {
@@ -2052,11 +2176,8 @@ impl ToolCall<'_, '_> {
         }
         let handle =
             self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
-        let mut data = a.text.clone().unwrap_or_default().into_bytes();
-        if a.text.is_some() && a.enter.unwrap_or(true) {
-            data.push(b'\r');
-        }
         let modes = handle.status().modes;
+        let mut data = Vec::new();
         for k in &a.keys {
             let bytes = crate::keys::key(k, modes);
             if bytes.is_empty() {
@@ -2064,9 +2185,15 @@ impl ToolCall<'_, '_> {
             }
             data.extend(bytes);
         }
-        handle.mark_input();
         let offset = handle.status().end;
-        self.app.mux.send(crate::mux::Cmd::Api(Api::InputBy(pane, data, self.by())));
+        // The text and its Enter first (#573), then the keys.
+        if let Some(text) = &a.text {
+            crate::ops::input::send_text(self.app, pane, &handle, text, a.enter.unwrap_or(true), Some(self.by())).await;
+        }
+        if !data.is_empty() {
+            handle.mark_input();
+            self.app.mux.send(crate::mux::Cmd::Api(Api::InputBy(pane, data, self.by())));
+        }
         done(
             format!("Typed into %{pane}; its output from here starts at offset {offset}"),
             results::Typed { pane, next_offset: offset },
@@ -2177,51 +2304,61 @@ impl ToolCall<'_, '_> {
 
     async fn wait(&self, a: WaitArgs) -> Out {
         // Fleet 5: agent sessions, in control.
-        if let Some(ses) = &a.session {
-            if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
-                return Err("give a pane, a Cloud workspace's tab, a run, or sessions: one of them".into());
+        if let Some(ses) = &a.agent_session {
+            if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
+                return Err(
+                    "give a pane, a Cloud workspace's agent block, a run, or agent sessions: one of them".into()
+                );
             }
             if !matches!(a.until, Until::Done | Until::Idle) {
-                return Err("a session waits until its turn is done: until done".into());
+                return Err("an agent session waits until its turn is done: until done".into());
             }
             return crate::mcp::registry::wait_sessions(self, ses, Call::limit(a.timeout)).await;
         }
         if matches!(a.until, Until::Done) {
-            return Err("until done is for sessions (session: ses_…); a pane waits until idle or command_end".into());
+            return Err(
+                "until done is for agent sessions (agent_session: ses_…); a pane waits until idle or command_end"
+                    .into(),
+            );
         }
         // M216: a run, in control.
         if let Some(run) = &a.run {
-            if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() {
-                return Err("give a pane, a Cloud workspace's tab, or a run: one of them".into());
+            if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() {
+                return Err("give a pane, a Cloud workspace's agent block, or a run: one of them".into());
             }
             if !matches!(a.until, Until::CommandEnd | Until::Exit) {
                 return Err("a run waits until it ends: until command_end".into());
             }
             return crate::mcp::registry::wait_run(self, run, Call::limit(a.timeout)).await;
         }
-        // #1094: a Cloud workspace's tab, in control.
-        if let Some(tab) = &a.tab {
+        // #1094: a Cloud workspace's agent block, in control.
+        if let Some(block) = &a.agent_block {
             if a.pane.is_some() {
-                return Err("give a pane, or a Cloud workspace's tab (cloud_workspace and tab), not both".into());
+                return Err(
+                    "give a pane, or a Cloud workspace's agent block (cloud_workspace and agent_block), not both"
+                        .into(),
+                );
             }
             let workspace = a
                 .cloud_workspace
                 .as_deref()
                 .map(str::trim)
                 .filter(|w| !w.is_empty())
-                .ok_or("a Cloud workspace's tab needs its cloud_workspace (hw_… or its name) too")?;
+                .ok_or("a Cloud workspace's agent block needs its cloud_workspace (hw_… or its name) too")?;
             let until = match a.until {
                 Until::Idle => "idle",
                 Until::NeedsInput => "needs_input",
-                _ => return Err("a Cloud workspace's tab waits until idle or needs_input".into()),
+                _ => return Err("a Cloud workspace's agent block waits until idle or needs_input".into()),
             };
-            return self.hosted_wait(workspace, tab, until, Some(Call::limit(a.timeout).as_secs_f64())).await;
+            return self.hosted_wait(workspace, block, until, Some(Call::limit(a.timeout).as_secs_f64())).await;
         }
         if a.cloud_workspace.is_some() {
-            return Err("cloud_workspace goes with tab (a Cloud workspace's tab) or pane".into());
+            return Err("cloud_workspace goes with agent_block (one of its agent blocks) or pane".into());
         }
-        let pane =
-            a.pane.ok_or("wait for what? give a pane, or a Cloud workspace's tab (cloud_workspace and tab)")?.id()?;
+        let pane = a
+            .pane
+            .ok_or("wait for what? give a pane, or a Cloud workspace's agent block (cloud_workspace and agent_block)")?
+            .id()?;
         let p = self.readable(pane).await?;
         let until = match a.until {
             Until::CommandEnd => "command-end",
@@ -2787,6 +2924,57 @@ impl ToolCall<'_, '_> {
         )
     }
 
+    /// `show` kind `pr`, held in the same call when `hold` is given.
+    async fn show_pr(&self, a: OpenPrArgs) -> Out {
+        let hold = a.hold.filter(|h| !h.trim().is_empty());
+        let what = ForgeOpen { pr: Some(a.pr), ..Default::default() };
+        let mut out = self.open_forge(what, a.dir, a.beside).await?;
+        if let (Some(reason), Some(block)) = (hold, out["block"].as_u64().and_then(|b| PaneId::try_from(b).ok())) {
+            let b = self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or("the block closed")?;
+            self.hold_on(block, &b, reason).await?;
+            let said = out["summary"].as_str().unwrap_or_default().to_owned();
+            out["summary"] = json!(format!("{said} (held: draft kind merge or release lets it go)"));
+        }
+        Ok(out)
+    }
+
+    /// The caller holds a PR block's merge.
+    async fn pr_hold(&self, block: &PaneArg, reason: String) -> Out {
+        let (id, b) = self.forge(block).await?;
+        let out = self.hold_on(id, &b, reason).await?;
+        done(
+            format!(
+                "Held %{id}'s merge: the user sees why instead of Merge, and can still choose Merge anyway. draft kind merge or release lets it go"
+            ),
+            out,
+        )
+    }
+
+    async fn hold_on(&self, id: PaneId, b: &Arc<dyn crate::block::Block>, reason: String) -> Result<Value, String> {
+        let pane = self.own_pane().ok_or("a hold is an agent's: call it from your own agent block or pane")?;
+        let by = self.holder_title(pane).await;
+        let args = json!({ "pane": pane, "reason": reason, "by": by });
+        b.call_by("hold", args, Some(&self.by())).await.map_err(|e| format!("holding %{id}: {e}"))
+    }
+
+    /// What "Held by …" calls the caller: its block's title, else its kind.
+    async fn holder_title(&self, pane: PaneId) -> String {
+        let block = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+        let title = block.and_then(|b| {
+            let t = b.config()["title"].as_str().map(str::to_owned).or_else(|| b.summary().title);
+            t.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty() && t.chars().count() <= 80)
+        });
+        title.unwrap_or_else(|| format!("%{pane}"))
+    }
+
+    /// The caller lets go of a PR block's merge.
+    async fn pr_release(&self, block: &PaneArg) -> Out {
+        let (id, b) = self.forge(block).await?;
+        let out = b.call_by("release", json!({}), Some(&self.by())).await?;
+        let word = if out["released"] == true { "Released" } else { "Nothing was held on" };
+        done(format!("{word} %{id}'s merge"), out)
+    }
+
     /// A new issue drafted again, on its block, after the user asked for
     /// changes.
     async fn redraft_issue(&self, block: &PaneArg, title: String, body: String) -> Out {
@@ -2800,7 +2988,7 @@ impl ToolCall<'_, '_> {
         )
     }
 
-    async fn start_agent(&self, a: StartAgentArgs) -> Out {
+    async fn start_agent(&self, mut a: StartAgentArgs) -> Out {
         if a.prompt.trim().is_empty() {
             return Err("give the agent a prompt".into());
         }
@@ -2827,7 +3015,10 @@ impl ToolCall<'_, '_> {
         }
         let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
             Some(i) => {
-                IssueRef::parse(i).ok_or_else(|| format!("issue {i:?}: an issue is #N, owner/repo#N or IDENT-N"))?;
+                if !i.starts_with("iss_") {
+                    IssueRef::parse(i)
+                        .ok_or_else(|| format!("issue {i:?}: an issue is #N, owner/repo#N, IDENT-N or iss_…"))?;
+                }
                 Some(i.to_owned())
             }
             None => None,
@@ -2844,9 +3035,16 @@ impl ToolCall<'_, '_> {
             AgentKind::Codex => "codex",
             AgentKind::Acp => "acp",
         };
+        // #430: the project the row is in is the issue's, not the caller's.
+        let (issue, project, inferred) = self.issue_of_start(&a, issue).await?;
+        a.issue = issue.clone();
         let owned = match &a.worktree {
             Some(w) => Some(self.make_worktree(&a, w, host.is_some()).await?),
             None => None,
+        };
+        let home = match (&issue, &inferred) {
+            (None, None) => None,
+            _ => project.or(self.current_project(None).await.ok()),
         };
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
@@ -2904,11 +3102,10 @@ impl ToolCall<'_, '_> {
         };
         // A row another machine's agent holds refuses the start before a pane
         // opens; the 409 at attach still catches a race.
-        if let (Some(i), false) = (&issue, a.take) {
-            let home = self.current_project(None).await.ok();
-            if let Some(held) = arugulad_base::board_attach::held(self.app, home, i).await {
-                return Err(format!("{held}; no agent was started"));
-            }
+        if let (Some(i), false) = (&issue, a.take)
+            && let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i).await
+        {
+            return Err(format!("{held}; no agent was started"));
         }
         let block = match self.open(req).await {
             Ok(b) => b,
@@ -2923,8 +3120,8 @@ impl ToolCall<'_, '_> {
         };
         let mut tail =
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
-        let on = match &issue {
-            Some(i) => match self.on_issue(i, block, a.take).await {
+        let on = match (&issue, &inferred) {
+            (Some(i), _) => match self.on_issue(i, block, a.take, home).await {
                 Ok(on) => Some(on),
                 Err(held) => {
                     // The row is held: this agent isn't started.
@@ -2932,7 +3129,8 @@ impl ToolCall<'_, '_> {
                     return Err(held);
                 }
             },
-            None => None,
+            (None, Some((i, branch))) => self.on_inferred(i, branch, block, home).await,
+            (None, None) => None,
         };
         if let Some(on) = &on {
             tail.push_str(&format!(". {}", on.said));
@@ -2954,24 +3152,16 @@ impl ToolCall<'_, '_> {
         issue: &str,
         block: arugula_proto::PaneId,
         take: bool,
+        home: Option<String>,
     ) -> Result<results::StartedOn, String> {
         use arugulad_base::board_attach::NotKept;
-        let home = self.current_project(None).await.ok();
         Ok(match arugulad_base::board_attach::keep(self.app, home, issue, block, take).await {
             Ok(boards) if boards.is_empty() => results::StartedOn {
                 issue: issue.to_owned(),
                 boards: vec![],
                 said: format!("It is on {issue}, but no board of the project has a row for it, so it is on none."),
             },
-            Ok(boards) => {
-                let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
-                let said = format!("It is on {issue}: attached to its row on {}.", names.join(", "));
-                let boards = boards
-                    .into_iter()
-                    .map(|b| results::StartedBoard { board: b.board, title: b.title, row: b.row })
-                    .collect();
-                results::StartedOn { issue: issue.to_owned(), boards, said }
-            }
+            Ok(boards) => started_on(issue, "", boards),
             Err(NotKept::Claimed(why)) => return Err(format!("{why}; no agent was started")),
             Err(NotKept::Why(why)) => results::StartedOn {
                 issue: issue.to_owned(),
@@ -2979,6 +3169,61 @@ impl ToolCall<'_, '_> {
                 said: format!("It is on {issue}, but not attached to a row: {why}."),
             },
         })
+    }
+
+    /// `start_agent` with no `issue`: the issue a worktree's branch names
+    /// (`feat/357-…`), attached if a board has a row for it. Nothing is said
+    /// of one that isn't, or that can't be attached.
+    async fn on_inferred(
+        &self,
+        issue: &str,
+        branch: &str,
+        block: arugula_proto::PaneId,
+        home: Option<String>,
+    ) -> Option<results::StartedOn> {
+        let boards = arugulad_base::board_attach::keep_inferred(self.app, home, issue, block).await;
+        (!boards.is_empty()).then(|| started_on(issue, &format!(" (from the branch {branch})"), boards))
+    }
+
+    /// `start_agent`'s issue, resolved (#430): `iss_…` becomes `#N`; the
+    /// project that holds it, if one does, else the one linked to the
+    /// agent's repo (its `cwd`), which also holds the project of the issue a
+    /// worktree's branch names, when there is no `issue` and a project holds
+    /// that issue.
+    async fn issue_of_start(
+        &self,
+        a: &StartAgentArgs,
+        issue: Option<String>,
+    ) -> Result<(Option<String>, Option<String>, Option<(String, String)>), String> {
+        if issue.is_none() && a.worktree.is_none() {
+            return Ok((None, None, None));
+        }
+        let dir = match (&a.cwd, self.own_pane()) {
+            (Some(c), _) => Some(c.clone()),
+            (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
+            (None, None) => None,
+        };
+        let repo_project = match &dir {
+            Some(d) => self.native_home_of(d).await,
+            None => None,
+        };
+        let by = async |issue: &str| {
+            arugulad_base::board_attach::issue_project(self.app, issue, repo_project.as_deref()).await
+        };
+        match issue {
+            Some(i) => match by(&i).await? {
+                Some((p, n)) => Ok((Some(n), Some(p), None)),
+                None => Ok((Some(i), repo_project, None)),
+            },
+            None => {
+                let branch = a.worktree.as_ref().map(|w| w.branch.trim()).unwrap_or_default();
+                let Some(n) = issue_of_branch(branch) else { return Ok((None, None, None)) };
+                Ok(match by(&format!("#{n}")).await {
+                    Ok(Some((p, i))) => (None, Some(p), Some((i, branch.to_owned()))),
+                    _ => (None, None, None),
+                })
+            }
+        }
     }
 
     /// `start_agent {worktree}`: the new branch's worktree, in the repo that
@@ -3347,6 +3592,24 @@ fn run_lands_on_machine(req: &RunRequest) -> bool {
 
 /// Whether `start_agent` may start this agent ([`confine`]), and a worn
 /// recipe on this host only.
+/// The issue a branch name says it is on (#430): `feat/357-…`, with `feat`,
+/// `fix`, `docs`, `chore`, `perf` or `refactor` before the number.
+fn issue_of_branch(branch: &str) -> Option<u64> {
+    let (kind, rest) = branch.split_once('/')?;
+    ["feat", "fix", "docs", "chore", "perf", "refactor"].contains(&kind).then_some(())?;
+    let (n, _) = rest.split_once('-')?;
+    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| n.parse().ok()).flatten().filter(|n| *n > 0)
+}
+
+/// A start on `issue` that is on `boards`; `how` says where the issue came from.
+fn started_on(issue: &str, how: &str, boards: Vec<arugulad_base::board_attach::WorkBoard>) -> results::StartedOn {
+    let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
+    let said = format!("It is on {issue}{how}: attached to its row on {}.", names.join(", "));
+    let boards =
+        boards.into_iter().map(|b| results::StartedBoard { board: b.board, title: b.title, row: b.row }).collect();
+    results::StartedOn { issue: issue.to_owned(), boards, said }
+}
+
 /// The branch a worktree is made on when `start_agent` is given an issue and
 /// no branch: `feat/357-` and up to six words of `text` (the title, else the
 /// prompt).
@@ -3551,6 +3814,14 @@ mod tests {
         assert!(e.contains("it takes nothing else"), "{e}");
         let (k, a) = kind("draft", json!({ "kind": "merge", "block": 4 })).unwrap();
         assert_eq!((k, a), (Some("merge"), json!({ "block": 4 })), "kind is taken out");
+        // #495: hold and release are draft's kinds, and show pr takes a hold.
+        let (k, a) = kind("draft", json!({ "kind": "hold", "block": 4, "reason": "e2e" })).unwrap();
+        assert_eq!((k, a), (Some("hold"), json!({ "block": 4, "reason": "e2e" })));
+        let (k, a) = kind("draft", json!({ "kind": "release", "block": 4 })).unwrap();
+        assert_eq!((k, a), (Some("release"), json!({ "block": 4 })));
+        assert!(kind("show", json!({ "kind": "pr", "pr": "o/r#1", "hold": "e2e" })).is_ok());
+        let e = kind("draft", json!({ "kind": "release", "block": 4, "reason": "x" })).unwrap_err();
+        assert!(e.contains("reason isn't an argument of draft kind release"), "{e}");
         // history isn't a group: its kind is its own argument, passed on.
         let (k, a) = kind("history", json!({ "kind": "answer" })).unwrap();
         assert_eq!((k, a), (None, json!({ "kind": "answer" })));
@@ -3646,7 +3917,6 @@ mod tests {
                 "workspace",
                 "throwaway vm",
                 "sandbox",
-                "wisp",
                 "open_app",
                 "@agent",
                 "\"vm\"",

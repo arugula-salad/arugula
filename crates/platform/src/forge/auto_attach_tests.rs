@@ -137,7 +137,6 @@ async fn a_pr_never_reaches_another_projects_board() {
     let (team, eve) = world(&hub, &gh, &app).await;
     for owner in ["team:t1", "account:eve"] {
         hub.flag(owner, true);
-        hub.flag_named(owner, crate::boards::FLAG, true);
     }
     let board = |who: &str, project: &str| {
         let (who, project) = (who.to_owned(), project.to_owned());
@@ -220,14 +219,23 @@ async fn another_board(base: &str, team: &str) -> String {
     b["board"]["id"].as_str().unwrap().to_owned()
 }
 
-/// The pointers attached to the row of `item`.
+/// The pointers attached to the row of `item`, sorted: a row lists them by
+/// their millisecond and then a random id, so two made in one millisecond
+/// come in either order. `sorted` makes the side to compare with.
 fn attached_to(v: &Value, item: &str) -> Vec<String> {
-    on(v, item).1["attachments"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a["pointer"]["id"].as_str().unwrap().to_owned())
-        .collect()
+    sorted(
+        on(v, item).1["attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["pointer"]["id"].as_str().unwrap().to_owned())
+            .collect(),
+    )
+}
+
+fn sorted(mut ids: Vec<String>) -> Vec<String> {
+    ids.sort();
+    ids
 }
 
 /// A board with a native #n and an unrelated GitHub #n of acme/site (88):
@@ -255,7 +263,8 @@ async fn a_bare_number_is_the_prs_repos_issue_and_arugula_is_the_native_one() {
 
     hook(&app, 77, "opened", 72, &format!("Closes #{n}"), "x/c", 12, false);
     let v = read(&base, "bob", &id).await;
-    assert_eq!(attached_to(&v, &nat), vec![pr_id(&app, 88, 71), pr_id(&app, 77, 72)], "another repo's PR: native: {v}");
+    let both = sorted(vec![pr_id(&app, 88, 71), pr_id(&app, 77, 72)]);
+    assert_eq!(attached_to(&v, &nat), both, "another repo's PR: native: {v}");
     assert_eq!(attached_to(&v, "fi_g").len(), 1, "{v}");
 
     // A hand add of the same three PRs, on a board of its own.
@@ -324,13 +333,9 @@ async fn an_exported_issue_is_one_row_and_listed_once() {
     // A PR finds the row by the GitHub number or by the native one.
     hook(&app, 88, "opened", 90, "Closes #500", "x/g", 10, false);
     hook(&app, 88, "opened", 91, &format!("Arugula #{n}"), "x/h", 11, false);
-    let (a, b) = (pr_id(&app, 88, 90), pr_id(&app, 88, 91));
-    assert_eq!(attached_to(&read(&base, "bob", &id).await, &nat), [a.clone(), b.clone()]);
-    assert_eq!(
-        attached_to(&read(&base, "bob", &two).await, "fi_x"),
-        [a, b],
-        "the other board's row points at the copy"
-    );
+    let both = sorted(vec![pr_id(&app, 88, 90), pr_id(&app, 88, 91)]);
+    assert_eq!(attached_to(&read(&base, "bob", &id).await, &nat), both);
+    assert_eq!(attached_to(&read(&base, "bob", &two).await, "fi_x"), both, "the other board's row points at the copy");
 }
 
 /// The trap: two work items that turn out to be one, both on boards. The

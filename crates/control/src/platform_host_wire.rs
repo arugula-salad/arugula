@@ -208,27 +208,30 @@ async fn platform_routes_reach_the_gateway_on_the_platform_host() {
     assert_eq!(c.get(APP, Method::DELETE, "/api/projects").await.status, 404);
 }
 
-/// With an arugula.stream app (live presence, #342), the platform page's
-/// CSP lets the relay's scripts, `blob:` workers and worklets, WebAssembly
-/// and the relay's and LiveKit's sockets in; without one it's unchanged.
+/// A Doc's prototype on the platform page (#506) runs in a frame on
+/// control's proto origin, which the page's CSP names as its one frame in
+/// place of `'none'`; nothing else in the CSP moves. The hub says where it is,
+/// as it says where it is itself. With no block domain there is no such place:
+/// `frame-src 'none'` stays and nothing is said.
 #[tokio::test]
-async fn the_platform_page_lets_arugula_stream_in_only_with_an_app() {
-    let c = control(|_| {}).await;
-    assert_eq!(
-        c.get(APP, Method::GET, "/p/prj_1/chat/ch_1").await.header("content-security-policy"),
-        arugula_platform_api::page::CSP
-    );
-    let c = control(|a| a.cfg.presence_origin = Some("https://arugula.stream".into())).await;
+async fn the_platform_page_frames_only_the_proto_origin() {
+    let c = control(|a| a.cfg.block_domain = Some("blocks.test".into())).await;
     let a = c.get(APP, Method::GET, "/p/prj_1/chat/ch_1").await;
-    let csp = a.header("content-security-policy");
-    assert!(csp.contains("script-src 'self' https://arugula.stream blob: 'wasm-unsafe-eval';"), "{csp}");
-    assert!(csp.contains("connect-src 'self' wss: https:;"), "{csp}");
-    assert!(
-        csp.contains("frame-ancestors 'none'") && csp.contains("object-src 'none'"),
-        "the rest is as it was: {csp}"
-    );
-    let scripts = csp.split(';').find(|d| d.trim_start().starts_with("script-src")).unwrap();
-    assert!(!scripts.contains("'unsafe-inline'") && !scripts.contains("'unsafe-eval'"), "{csp}");
+    let want = arugula_platform_api::page::CSP.replacen("frame-src 'none';", "frame-src http://proto.blocks.test;", 1);
+    assert_eq!(a.header("content-security-policy"), want);
+    assert_eq!(a.header("x-arugula-proto"), "http://proto.blocks.test");
+    let scripts = want.split(';').find(|d| d.trim_start().starts_with("script-src")).unwrap();
+    assert_eq!(scripts.trim(), "script-src 'self'", "scripts are as they were");
+    // The API answers say it too, where the page reads it.
+    let a = c.get(APP, Method::GET, "/api/projects").await;
+    assert_eq!(a.header("x-arugula-proto"), "http://proto.blocks.test");
+    assert!(a.header("content-security-policy").contains("frame-src http://proto.blocks.test;"));
+
+    let off = control(|_| {}).await;
+    let a = off.get(APP, Method::GET, "/p/prj_1/chat/ch_1").await;
+    assert_eq!(a.header("content-security-policy"), arugula_platform_api::page::CSP);
+    assert!(a.header("content-security-policy").contains("frame-src 'none';"));
+    assert!(!a.headers.contains_key("x-arugula-proto"));
 }
 
 /// Control's own site is as it was: the shell's page under control's CSP,

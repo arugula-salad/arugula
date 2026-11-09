@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, paneEl, panes, ready, reset, text } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, ready, reset, text, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -161,7 +161,9 @@ test("over a terminal: only its pane, drawing underneath, deaf until Escape; Esc
   expect(await tip(page, term).evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
   const inner = (await tip(page, term).locator(".pane-tip-inner").boundingBox())!;
   expect(Math.abs(inner.x + inner.width / 2 - (panel.x + panel.width / 2))).toBeLessThan(2);
-  expect(Math.abs(inner.y + inner.height / 2 - (panel.y + panel.height / 2))).toBeLessThan(3);
+  // Centred above the footer, which is Modal's and stays pinned at the bottom (#690).
+  const body = (await tip(page, term).locator(".pane-tip-scroll").boundingBox())!;
+  expect(Math.abs(inner.y + inner.height / 2 - (body.y + body.height / 2))).toBeLessThan(3);
   await expect(page.locator(`[data-pane-header="${term}"]`)).toBeVisible();
   // Seen on answer, not on show.
   expect(await seenHere(page)).not.toHaveProperty("seen:test-tip-term");
@@ -327,10 +329,10 @@ test("Don't show tips like this again: every pane modal stops, chips don't; Sett
   await page.locator(`[data-pane-header="${term}"] [data-hint-dismiss]`).click();
 
   // Settings › Big tips says it's off, and turns them on again.
-  await page.locator("[data-account-menu]").click();
-  const big = await menuItem(page, "Big tips", { exact: true });
-  await expect(big).toHaveAttribute("aria-checked", "false");
+  const big = (await openSettingsPage(page)).getByRole("switch", { name: "Big tips", exact: true });
+  await expect(big).not.toBeChecked();
   await big.click();
+  await closeSettingsPage(page);
   expect(await seenHere(page)).not.toHaveProperty("tips.modal");
   // The agent's, unanswered, shows; its button acts (and answers it).
   await expect(tip(page, block)).toBeVisible();

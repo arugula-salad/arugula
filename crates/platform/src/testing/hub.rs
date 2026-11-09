@@ -66,8 +66,6 @@ struct State {
     pushes: Vec<(String, Value, PushOptions)>,
     /// Accounts signed in with GitHub, by account.
     github: BTreeMap<String, crate::forge::GithubUser>,
-    /// The forge pokes it was handed, to relay.
-    pokes: Vec<arugula_control_wire::forge::Poke>,
     /// What each machine answers an op (M168; else it's away), and the
     /// ops asked, in order.
     op_answers: BTreeMap<String, arugula_control_wire::forge::OpAnswer>,
@@ -90,6 +88,8 @@ struct State {
     enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
+    /// `hosted_enrolled` fails.
+    enrolled_down: bool,
     gone: Vec<String>,
     /// Whether each hosted machine says it's working (M180), and whether
     /// the hub can't say.
@@ -99,6 +99,10 @@ struct State {
     online: BTreeSet<String>,
     /// `machines_online` fails.
     online_down: bool,
+    /// `may_reach` fails.
+    reach_down: bool,
+    /// `may_reach` answers only after this long.
+    reach_slow: Option<std::time::Duration>,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -154,6 +158,18 @@ impl TestHub {
         self.change(ChangeKind::TeamRoster, id);
     }
 
+    /// The team locks (or unlocks): its roster's next version, as the
+    /// hub's `teams` answers it, with only its owners reading it.
+    pub fn lock(&self, id: &str, locked: bool) {
+        {
+            let mut s = self.state.lock().unwrap();
+            let t = s.teams.get_mut(id).expect("a team made with team()");
+            t.locked = locked;
+            t.version += 1;
+        }
+        self.change(ChangeKind::TeamRoster, id);
+    }
+
     /// `account` let `client` sign it in, and links its user `user` (M229).
     pub fn product(&self, account: &str, client: &str, user: &str) {
         let link = crate::hub::ProductLink {
@@ -177,8 +193,26 @@ impl TestHub {
     pub fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
         self.state.lock().unwrap().daemons.insert(
             id.into(),
-            Daemon { id: id.into(), account: account.into(), team: team.map(Into::into), name: format!("{id}-box") },
+            Daemon {
+                id: id.into(),
+                account: account.into(),
+                team: team.map(Into::into),
+                name: format!("{id}-box"),
+                aliases: vec![],
+            },
         );
+        self.change(ChangeKind::DaemonJoined, id);
+    }
+
+    /// `id` renamed (#500): its old handle stays as an alias.
+    pub fn rename_daemon(&self, id: &str, name: &str) {
+        if let Some(d) = self.state.lock().unwrap().daemons.get_mut(id) {
+            let old = arugula_control_wire::machine::handle(&d.name);
+            if !old.is_empty() && old != arugula_control_wire::machine::handle(name) {
+                d.aliases.push(old);
+            }
+            d.name = name.into();
+        }
         self.change(ChangeKind::DaemonJoined, id);
     }
 
@@ -222,6 +256,16 @@ impl TestHub {
         self.state.lock().unwrap().online_down = down;
     }
 
+    /// Whether the hub can say whom it routes to a machine.
+    pub fn reach_down(&self, down: bool) {
+        self.state.lock().unwrap().reach_down = down;
+    }
+
+    /// The hub takes `by` to say whom it routes to a machine (none: at once).
+    pub fn reach_slow(&self, by: Option<std::time::Duration>) {
+        self.state.lock().unwrap().reach_slow = by;
+    }
+
     /// The hub can't say which machines are working until one says again.
     pub fn activity_down(&self) {
         self.state.lock().unwrap().activity_down = true;
@@ -233,6 +277,17 @@ impl TestHub {
         let mut s = self.state.lock().unwrap();
         s.enrolled.insert(workspace.into(), machine.into());
         s.online.insert(machine.into());
+    }
+
+    /// The hub no longer lists `workspace`'s machine as enrolled (an owner
+    /// removed it, or the hub lost its rows).
+    pub fn remove(&self, workspace: &str) {
+        self.state.lock().unwrap().enrolled.remove(workspace);
+    }
+
+    /// Whether the hub can say which workspaces' boxes enrolled.
+    pub fn enrolled_down(&self, down: bool) {
+        self.state.lock().unwrap().enrolled_down = down;
     }
 
     /// Someone tried the enrollment of `workspace`'s box again.
@@ -253,21 +308,27 @@ impl TestHub {
     }
 
     /// The account signed in with GitHub as `login`, GitHub's user `id`.
-    /// The forge pokes it was handed.
-    pub fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
-        self.state.lock().unwrap().pokes.clone()
-    }
-
     /// A product's user linked to an account by GitHub id (M229).
     pub fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
         let mut s = self.state.lock().unwrap();
         s.product_links.insert((client.into(), user.into()), (account.into(), github_id));
     }
 
+    /// The account signs in with GitHub, or links it: as the hub does, its
+    /// `account.name` is news.
     pub fn github(&self, account: &str, id: u64, login: &str) {
-        let mut s = self.state.lock().unwrap();
-        s.accounts.insert(account.into());
-        s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
+        {
+            let mut s = self.state.lock().unwrap();
+            s.accounts.insert(account.into());
+            s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
+        }
+        self.change(ChangeKind::AccountName, account);
+    }
+
+    /// The account unlinks GitHub (its `account.name` is news too).
+    pub fn unlink_github(&self, account: &str) {
+        self.state.lock().unwrap().github.remove(account);
+        self.change(ChangeKind::AccountName, account);
     }
 
     /// How a machine answers ops from now on (M168).
@@ -457,7 +518,17 @@ impl HubPort for TestHub {
     fn may_reach<'a>(&'a self, account: &'a str, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
         self.called("may_reach");
         let s = self.state.lock().unwrap();
-        done(machines.iter().filter(|m| Self::reaches(&s, account, m)).cloned().collect())
+        if s.reach_down {
+            return Box::pin(async { anyhow::bail!("the hub is down") });
+        }
+        let yes: Vec<String> = machines.iter().filter(|m| Self::reaches(&s, account, m)).cloned().collect();
+        match s.reach_slow {
+            Some(by) => Box::pin(async move {
+                tokio::time::sleep(by).await;
+                Ok(yes)
+            }),
+            None => done(yes),
+        }
     }
     fn push<'a>(&'a self, account: &'a str, message: &'a Value) -> BoxFuture<'a, HubResult<Pushed>> {
         self.push_with(account, message, PushOptions::default())
@@ -515,12 +586,6 @@ impl HubPort for TestHub {
         let there = self.state.lock().unwrap().teams.contains_key(team);
         done(there.then(|| format!("prj_{team}")))
     }
-    fn forge_pokes<'a>(&'a self, pokes: &'a [arugula_control_wire::forge::Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        self.called("forge_pokes");
-        self.state.lock().unwrap().pokes.extend_from_slice(pokes);
-        done(pokes.len() as u32)
-    }
-
     fn linked_account<'a>(
         &'a self,
         client: &'a str,
@@ -612,6 +677,9 @@ impl HubPort for TestHub {
     ) -> BoxFuture<'a, HubResult<Vec<crate::hosted::enroll::Enrolled>>> {
         self.called("hosted_enrolled");
         let s = self.state.lock().unwrap();
+        if s.enrolled_down {
+            return Box::pin(async { Err(anyhow::anyhow!("the hub is away")) });
+        }
         done(
             workspaces
                 .iter()
@@ -700,7 +768,7 @@ pub async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<
     (r.status().as_u16(), r.json().await.unwrap_or_default())
 }
 
-fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option<&str>) -> Room {
+pub fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option<&str>) -> Room {
     Room {
         id: id.into(),
         scope: scope.into(),

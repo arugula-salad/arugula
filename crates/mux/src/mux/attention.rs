@@ -2,7 +2,7 @@
 //! that make a terminal wait, questions asked in a terminal, hooks and
 //! follow-ups.
 
-use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
+use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, Tag, agent_in, plain_reason};
 use crate::{acl::Principal, store::now_ms};
 use arugula_proto::{
     Action, AskRef, AskWhat, Attention, BlockType, Driver, EventKind, PaneId, Policy, Reason, ReasonKind,
@@ -35,6 +35,20 @@ pub(super) struct TermAsk {
 }
 
 /// Claude Code's session and subagent, from a hook's input: `session/agent`.
+/// The conversation a hook names, if it is the pane's own (#512). A
+/// subagent's hook (`agent_id`) and one from a `claude -p` or SDK run
+/// started inside the pane (it inherits the pane's environment, so its
+/// hooks reach the pane too) say nothing of the person's conversation.
+/// The hook's input doesn't tell a nested run apart, so the session
+/// file does (`nested`), asked only when the id isn't the one already kept.
+fn top_level<'a>(hook: &'a serde_json::Value, kept: Option<&str>, nested: impl Fn(&str) -> bool) -> Option<&'a str> {
+    let id = hook["session_id"].as_str()?;
+    if hook["agent_id"].as_str().is_some() || (kept != Some(id) && nested(id)) {
+        return None;
+    }
+    Some(id)
+}
+
 fn session_key(hook: &serde_json::Value) -> String {
     format!("{}/{}", hook["session_id"].as_str().unwrap_or(""), hook["agent_id"].as_str().unwrap_or(""))
 }
@@ -188,13 +202,18 @@ impl Daemon {
     /// needs input, else what was recorded when its state changed.
     pub(super) fn live_reason(&self, pane: PaneId) -> Option<Reason> {
         let state = self.attention.get(&pane).copied().unwrap_or_default();
-        if !matches!(state, Attention::NeedsInput | Attention::Done) {
-            return None;
-        }
         if state == Attention::NeedsInput
             && let Some(r) = self.card_of.get(&pane).map(|c| c.0.clone()).or_else(|| self.ask_reason(pane))
         {
             return Some(r);
+        }
+        // A follow-up held for a session with no hooks (#579) stays while the
+        // screen says it's working.
+        if let Some(r) = self.held.get(&pane) {
+            return Some(r.clone());
+        }
+        if !matches!(state, Attention::NeedsInput | Attention::Done) {
+            return None;
         }
         self.reasons.get(&pane).cloned()
     }
@@ -510,8 +529,8 @@ impl Daemon {
         let block = self.blocks.get(&pane).map(|b| b.kind());
         match block {
             None if !self.panes.contains_key(&pane) => return Err(format!("no pane %{pane}")),
-            Some(BlockType::Agent | BlockType::Chat | BlockType::Remote) => {
-                return Err(format!("%{pane} is an agent, chat or remote block: it asks through its own methods"));
+            Some(BlockType::Agent | BlockType::Chat) => {
+                return Err(format!("%{pane} is an agent or chat block: it asks through its own methods"));
             }
             _ => {}
         }
@@ -682,10 +701,12 @@ impl Daemon {
     /// The conversation Claude Code in a pane holds, from any of its hooks
     /// (#146): every hook's input names it.
     fn note_session(&mut self, pane: PaneId, hook: &serde_json::Value) {
-        let Some(id) = hook["session_id"].as_str() else { return };
         if !self.panes.contains_key(&pane) {
             return;
         }
+        let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+        let sessions = self.config.sessions.clone();
+        let Some(id) = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id)) else { return };
         if !crate::resume::valid_id(id) {
             warn!(pane, "a hook gave a session id that isn't one; not keeping it");
             return;
@@ -717,7 +738,7 @@ impl Daemon {
         info!(pane, agent, session = id, "agent conversation");
         // Its hooks speak while it runs.
         m.session =
-            Some(crate::store::AgentSession { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
+            Some(crate::store::PaneConversation { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
         // A pane running Claude Code resumes it, unless someone said
         // otherwise.
         if !m.policy_set && m.policy == Policy::Shell {
@@ -738,7 +759,22 @@ impl Daemon {
     pub(super) fn hook(&mut self, pane: PaneId, hook: &serde_json::Value) {
         self.heard_hook(pane);
         self.note_session(pane, hook);
+        if hook[arugula_proto::api::HOOK_MENTIONS_TOLD] == true {
+            let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+            let sessions = self.config.sessions.clone();
+            if let Some(id) = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id)) {
+                self.midturn_told.insert(pane, id.to_owned());
+            }
+        }
         let event = hook["hook_event_name"].as_str().unwrap_or_default();
+        // #645: the tool it last ran, for a thread's strip. The name alone,
+        // of the session's own calls and not a subagent's.
+        if event == "PreToolUse"
+            && hook["agent_id"].is_null()
+            && let Some(tool) = hook["tool_name"].as_str()
+        {
+            self.last_tools.insert(pane, tool.to_owned());
+        }
         let session = session_key(hook);
         let open = self
             .asks
@@ -773,6 +809,11 @@ impl Daemon {
         if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
             self.emit(Some(pane), EventKind::Prompted);
         }
+        // #540: the turn a tagged follow-up started ends with the pane's
+        // `Stop`.
+        if event == "Stop" {
+            self.queued.stopped(pane, &*self.config.followups);
+        }
         if event == "PreToolUse" {
             let pre = self.pre.entry(pane).or_default();
             pre.push_back(hook.clone());
@@ -798,9 +839,10 @@ impl Daemon {
         let (tx, rx) = oneshot::channel();
         let token = self.next_ask;
         self.next_ask += 1;
-        if let Some((text, by)) = self.queued.get_mut(&pane).and_then(|q| q.pop_front()) {
+        if let Some((text, by)) = self.queued.take(pane, &*self.config.followups) {
             let _ = tx.send(InboxReply::FollowUp { text, by });
             self.emit(Some(pane), EventKind::Prompted);
+            self.refresh_held(pane);
             return Ok((token, rx));
         }
         if let Some(old) = self.inbox.insert(pane, Waiter { token, reply: tx }) {
@@ -811,13 +853,44 @@ impl Daemon {
         Ok((token, rx))
     }
 
+    /// `arugula hook` on a tool call's end (#644): a tagged follow-up
+    /// waiting for this pane goes in now, rather than at the end of the
+    /// turn. Only into the pane's own conversation: not a subagent's tool
+    /// call, which would take it to a conversation that ends with the
+    /// subagent, and not a `claude -p` run inside the pane.
+    pub(super) fn take_tagged(&mut self, pane: PaneId, hook: &serde_json::Value) -> Option<(String, Driver)> {
+        let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+        let sessions = self.config.sessions.clone();
+        let id = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id))?;
+        // A session that started before it was told how these arrive could
+        // read one as injected text: it keeps getting them between turns.
+        if self.midturn_told.get(&pane).map(String::as_str) != Some(id) {
+            return None;
+        }
+        let taken = self.queued.take_tagged(pane, &*self.config.followups)?;
+        self.refresh_held(pane);
+        self.touch(pane);
+        Some(taken)
+    }
+
     /// A follow-up for Claude Code in a terminal (M29), recorded as input
     /// from whoever sent it.
-    pub(super) fn follow_up(&mut self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
+    pub(super) fn follow_up(
+        &mut self,
+        pane: PaneId,
+        text: String,
+        by: Driver,
+        tag: Option<Tag>,
+    ) -> Result<bool, String> {
         let Some(p) = self.panes.get(&pane) else { return Err(format!("no terminal %{pane}")) };
         let text = text.trim().to_owned();
         if text.is_empty() {
             return Err("an empty follow-up".into());
+        }
+        // The owner silenced this session (#579): no tagged follow-up comes
+        // in, held or not. The binary routes around it; this is the backstop.
+        if tag.is_some() && self.tagged_off.contains(&pane) {
+            return Err(format!("%{pane}'s owner silenced teammates' follow-ups for this session"));
         }
         info!(pane, who = by.who, "follow-up");
         p.note(format!("follow-up: {text}"), by.name.clone(), HistoryKind::Answer);
@@ -828,25 +901,71 @@ impl Daemon {
             Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
                 Ok(()) => {
                     self.emit(Some(pane), EventKind::Prompted);
+                    self.queued.started(pane, tag, &*self.config.followups);
                     true
                 }
                 Err(InboxReply::FollowUp { text, by }) => {
-                    self.queued.entry(pane).or_default().push_back((text, by));
+                    self.queued.push(pane, text, by, tag);
                     false
                 }
                 Err(_) => false,
             },
             None => {
-                let q = self.queued.entry(pane).or_default();
-                if q.len() >= MAX_QUEUED {
+                if self.queued.full(pane, MAX_QUEUED) {
                     return Err("too many follow-ups waiting: is Claude Code's inbox hook set up?".into());
                 }
-                q.push_back((text, by));
+                self.queued.push(pane, text, by, tag);
                 false
             }
         };
+        self.refresh_held(pane);
         self.touch(pane);
         Ok(now)
+    }
+
+    /// Keep the card for follow-ups held on `pane` true to its queue
+    /// (#579). A tagged follow-up queued for a terminal whose hooks aren't
+    /// listening is never typed: it waits behind a card ("deliver" types
+    /// it, "dismiss" drops it). Once the hooks speak, the inbox hook takes
+    /// it as for any session, and the card goes.
+    pub(super) fn refresh_held(&mut self, pane: PaneId) {
+        let held = match self.panes.get(&pane) {
+            Some(p) if self.pane_info(p).unhooked => self.queued.held(pane),
+            _ => None,
+        };
+        match held {
+            Some((headline, n)) => {
+                let more = if n > 1 { format!(" (+{} more)", n - 1) } else { String::new() };
+                let mut reason = plain_reason(ReasonKind::Input, &format!("{headline}{more}"));
+                reason.actions = vec![Action::Deliver, Action::Dismiss];
+                // The card holds whatever the screen says next: a session
+                // mid-turn flips to working, and the follow-up is still held.
+                if self.held.insert(pane, reason.clone()).is_none() {
+                    let why = reason.headline.clone();
+                    self.set_attention_with(pane, Attention::NeedsInput, &why, Some(reason));
+                } else {
+                    let state = self.attention.get(&pane).copied().unwrap_or_default();
+                    self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                    self.touch(pane);
+                }
+            }
+            None => {
+                if self.held.remove(&pane).is_none() {
+                    return;
+                }
+                let stale = self.reasons.get(&pane).is_some_and(|r| r.actions.contains(&Action::Deliver));
+                if stale && self.attention.get(&pane) == Some(&Attention::NeedsInput) {
+                    self.set_attention(pane, Attention::Idle, "held follow-up gone");
+                } else {
+                    if stale {
+                        self.reasons.remove(&pane);
+                    }
+                    let state = self.attention.get(&pane).copied().unwrap_or_default();
+                    self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                    self.touch(pane);
+                }
+            }
+        }
     }
 }
 
@@ -897,7 +1016,25 @@ impl super::CardsCx for Daemon {
 
 #[cfg(test)]
 mod tests {
-    use super::push_reason;
+    use super::{push_reason, top_level};
+
+    #[test]
+    fn a_nested_run_in_the_pane_is_not_the_panes_conversation() {
+        use serde_json::json;
+        let nested = |id: &str| id == "inner";
+        let hook = |id: &str| json!({"session_id": id, "hook_event_name": "PreToolUse"});
+        // The first hook of the pane's own conversation, then of a `claude -p`
+        // it started: the second is turned away, the first kept.
+        assert_eq!(top_level(&hook("top"), None, nested), Some("top"));
+        assert_eq!(top_level(&hook("inner"), Some("top"), nested), None);
+        // The kept one isn't looked up again.
+        assert_eq!(top_level(&hook("top"), Some("top"), |_| panic!("asked")), Some("top"));
+        // A person's new conversation in the pane replaces it.
+        assert_eq!(top_level(&hook("next"), Some("top"), nested), Some("next"));
+        // A subagent's hook names the same session but isn't it.
+        let sub = json!({"session_id": "top", "agent_id": "a1"});
+        assert_eq!(top_level(&sub, None, nested), None);
+    }
 
     /// What the daemon's `gate::reason` makes of these gates (kept in step by
     /// hand: the daemon's tests build the same one): the first gate, with how

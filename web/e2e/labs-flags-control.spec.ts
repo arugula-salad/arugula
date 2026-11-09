@@ -136,10 +136,10 @@ test("a team's and an account's flags reach the machine, each saying where it co
 
   await reopen(page);
   await expect(row(page, "additional-forges").locator("input")).toBeChecked();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team on control");
+  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team");
   // The account's word beats the team's.
   await expect(row(page, "chant-workspaces").locator("input")).not.toBeChecked();
-  await expect(row(page, "chant-workspaces").locator("[data-flag-source]")).toHaveText("Set for your account on control");
+  await expect(row(page, "chant-workspaces").locator("[data-flag-source]")).toHaveText("Set for your account");
   await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveCount(0);
   // The agent catalog is the machine's alone: control won't take it, and
   // the dialog says so. Nor guest ssh, a sharing setting now (native #205).
@@ -158,16 +158,16 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await setOnControl("studio", null);
 });
 
-test("the machine overrides control, and Use control's takes its word back", async ({ page }) => {
+test("the machine overrides control, and Use your team's takes its word back", async ({ page }) => {
   await reopen(page);
   await row(page, "additional-forges").locator("input").uncheck();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set on this machine; control has it on for your team");
+  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set on this machine; it's on for your team");
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { "additional-forges": false } });
   await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("additional-forges"))).toBe(false);
 
-  await row(page, "additional-forges").getByRole("button", { name: "Use control's for GitLab and Forgejo" }).click();
+  await row(page, "additional-forges").getByRole("button", { name: "Use your team's for GitLab and Forgejo" }).click();
   await expect(row(page, "additional-forges").locator("input")).toBeChecked();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team on control");
+  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team");
   await expect(row(page, "additional-forges").getByRole("button")).toHaveCount(0);
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: {} });
 });

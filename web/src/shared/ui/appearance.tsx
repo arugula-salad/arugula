@@ -2,9 +2,9 @@
 // account menu and Settings, M150): this device's palette, finish and
 // corners. Each choice applies at once, so the page behind is the preview.
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "./modal";
-import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "./modal";
+import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, legible, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
 let shown = false;
 const listeners = new Set<() => void>();
@@ -35,20 +35,35 @@ export function AppearanceLayer() {
 }
 
 function AppearanceDialog({ close }: { close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const a = appearance();
   const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
   // Nothing picked yet: the default's card is the one on.
   const picked = a.palette === "default" ? darkDefault() : a.palette;
   return (
-    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Appearance" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={ref} class="prompt appearance" data-appearance>
-        <h2>Appearance</h2>
-        <p class="hint">On this device. The terminals follow the palette.</p>
+    <Modal
+      class="appearance"
+      title="Appearance"
+      close={close}
+      root={{ "data-appearance": true }}
+      buttons={
+        <>
+          <button
+            class="secondary"
+            type="button"
+            onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
+            disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
+          >
+            Reset
+          </button>
+          <button class="secondary" type="button" onClick={close}>
+            Done
+          </button>
+        </>
+      }
+    >
+        <p class="dim">On this device. The terminals follow the palette.</p>
         <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
-          <strong>Use Control look</strong>
+          <strong>Use the Slate look</strong>
           <span>Near-black Slate, cyan focus, soft pane corners</span>
         </button>
         <h3>Palette</h3>
@@ -117,28 +132,16 @@ function AppearanceDialog({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
-        <p class="hint">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
-        <div class="prompt-buttons">
-          <button class="secondary"
-            type="button"
-            onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
-            disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
-          >
-            Reset
-          </button>
-          <button class="secondary" type="button" onClick={close}>
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
+        <p class="dim">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
+    </Modal>
   );
 }
 
 /** A palette as a tiny window: its bar, its background with text, and its
  * colors in a row. */
 function PaletteCard({ p, id, name, hint, on }: { p: Palette; id: string; name: string; hint?: string; on: boolean }) {
-  const u = p.ui;
+  // The colours the page will paint (legible()), not the raw palette's.
+  const u = legible(p);
   return (
     <button
       role="radio"

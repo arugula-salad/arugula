@@ -2,23 +2,29 @@
    drawn only when it has something to say. Colour is the one scale: ok
    green, warn yellow, danger red, merged purple, muted grey. */
 
+/* The frame is a Card's (shared/ui/card.css): its edge, radius and surface,
+   a head (.item-head) and a body of sections. The sections keep a hairline
+   between them. */
 .item-block {
   --item-pad: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  background: var(--surface);
   color: var(--fg);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
-.item-block > * {
+.item-block > .card-body {
+  gap: 0;
+  padding: 0;
+}
+
+.item-block > .card-body:not(:empty) {
+  border-top: 1px solid var(--line);
+}
+
+.item-block .card-body > * {
   padding: var(--space-2) var(--item-pad);
 }
 
-.item-block > * + * {
+.item-block .card-body > * + * {
   border-top: 1px solid var(--line);
 }
 
@@ -26,11 +32,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) var(--item-pad);
   background: var(--raised);
-}
-
-.item-block > .item-head {
-  border-radius: var(--btn-radius) var(--btn-radius) 0 0;
 }
 
 .item-kind {
@@ -115,7 +118,7 @@
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
-.item-block > .item-next {
+.item-block .card-body > .item-next {
   border-top-color: var(--c);
 }
 
@@ -129,6 +132,12 @@
 
 .item-next-ok {
   --c: var(--ok);
+}
+
+/* Held (#495): a note, not a call to act, so it's dim. */
+.item-next-info {
+  --c: var(--muted);
+  color: var(--dim);
 }
 
 .item-next-icon {
@@ -162,7 +171,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-4);
-  font: 12px/1.4 var(--mono);
+  font: var(--text-sm)/1.4 var(--f-mono);
   color: var(--subtle);
 }
 
@@ -216,7 +225,7 @@
   border-radius: 50%;
   background: var(--raised-hover);
   color: var(--fg);
-  font: 600 10px/1 var(--mono);
+  font: 600 10px/1 var(--f-mono); /* off-scale: avatar initials */
 }
 
 .item-avatar[data-ring="asked"] {
@@ -229,19 +238,20 @@
   opacity: 0.5;
 }
 
-.item-avatar-badge {
-  position: absolute;
+/* Its state mark, an .avatar-mark (style.css) on the corner. */
+.item-avatar > .avatar-mark {
   right: -5px;
   top: -5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 11px;
   height: 11px;
-  border-radius: 50%;
   background: var(--c);
   color: var(--on-color);
-  font-size: 8px;
+  font-size: 8px; /* off-scale: avatar mark */
+}
+
+.item-avatar > .avatar-mark .icon {
+  width: 8px; /* off-scale: a tick or cross in the 11px mark */
+  height: 8px;
 }
 
 .item-avatar-ok {
@@ -274,7 +284,7 @@
 .item-more {
   margin-top: var(--space-1);
   padding: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .item-tabs {
@@ -324,7 +334,7 @@
 }
 
 .item-tab-count {
-  font: 11px var(--mono);
+  font: var(--text-xs) var(--f-mono);
   opacity: 0.85;
 }
 

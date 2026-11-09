@@ -21,6 +21,39 @@
 //!   history (reviews of a PR updated again) is written, not counted, and
 //!   so is a check run that started: GitHub sends `check_run` when one is
 //!   made and when it completes, never when it starts.
+//! - **The full pass**, about once a day per repo, after a reconcile
+//!   ([`full_due`]; each repo's time of day is its own, so an
+//!   installation's repos don't all go at once). A reconcile only sees
+//!   what GitHub says was updated, and a deleted or transferred item never
+//!   is, so this lists what's open on GitHub and reads again each open row
+//!   it doesn't list (at the next turn, through `forge_refetch`; none when
+//!   they're over [`FULL_MISSING`] or a quarter of the open rows, which
+//!   says the list is wrong, not the rows). Then it reads the
+//!   [`FULL_READS`] rows written or read longest ago again, with their
+//!   text for a repo that mirrors it, so a comment deleted or edited while
+//!   its webhook was lost catches up. The reconcile and the pass's start
+//!   (`linked_repos.full_at`) are recorded before it runs, and it's best
+//!   effort: however it stops, the reconcile stands and the next pass is a
+//!   day off. Its cost, per repo per day: one list page per 100 open items
+//!   (at most [`FULL_PAGES`]); for each open row GitHub didn't list, one
+//!   read (two for a PR, with its reviews); and for the stalest rows, one
+//!   read per issue and two per PR (its reviews), at most 60. A repo that
+//!   mirrors text reads each of those whole as well: an issue again and
+//!   its comments, a PR again with its comments, reviews and review
+//!   comments, so at most 180. These rows were last read a day or more
+//!   ago, so the ETag cache mostly won't make them free. A repo with under
+//!   100 open items and none missing: at most 61 reads a day, or 181 with
+//!   text, against an installation's 5,000 an hour or more. All of it
+//!   within the rate reserve, as the rest.
+//! - **An item read again** is gone when GitHub answers
+//!   404 or 410, or with an item that names another number or repo (a
+//!   transfer's redirect; one that names only another repo name is checked
+//!   against the repo's name read again, as a rename mid-turn looks the
+//!   same), and the repo itself still reads as this one.
+//!   It then goes from the mirror with its text. An answer that names no
+//!   item (an empty or garbled body) and any other refusal of one item or
+//!   head (422 for a commit GitHub no longer has, say) are logged and
+//!   left: neither deletes a row nor stops the repo's turn.
 //! - A turn reads at most `Settings::pages` list pages. One with more
 //!   keeps a cursor (`linked_repos.poll_cursor`), and the next turn, at
 //!   once, carries on from it: nothing is dropped.
@@ -59,17 +92,24 @@
 //!   and `Db::renew_poll` check the link), and M163's purge waits for the
 //!   lease to run out.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Context as _, bail};
 use arugula_e2e::now_ms;
-use arugula_forge_github::{Error as GhError, Github, Purpose as GhPurpose, Token, TokenSource};
+use arugula_forge_github::{Error as GhError, Github, Purpose as GhPurpose, Token, TokenSource, unreadable};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use super::{Caller, GithubApp, Purpose, Repo, content, ingest};
+use super::{
+    Caller, GithubApp, Purpose, Repo, content,
+    ingest::{self, Answer},
+};
 use crate::{
     Platform,
     db::{
@@ -105,6 +145,46 @@ pub const MERGE_CHECKS: usize = 10;
 /// How old a green PR's row is before its merge state is read again (its
 /// base may have moved).
 pub const MERGE_RECHECK_MS: u64 = 15 * 60_000;
+
+/// About how often each repo gets a full pass.
+pub const FULL_EVERY_MS: u64 = 86_400_000;
+/// Most pages of open items a full pass lists: past it, it compares
+/// nothing that day, and says so.
+pub const FULL_PAGES: usize = 50;
+/// How many of the stalest rows a full pass reads again.
+pub const FULL_READS: usize = 30;
+/// Most open rows GitHub didn't list that a full pass reads again: past
+/// it, or past a quarter of the open rows, it reads none and says so.
+pub const FULL_MISSING: usize = 100;
+
+/// Whether a reconcile at `now` of a repo whose last full pass started at
+/// `last` (`linked_repos.full_at`, else its backfill) is followed by one,
+/// one `every` ms ([`FULL_EVERY_MS`]; 0, never): the first since the
+/// repo's own point in that period passed. Never after a backfill (it
+/// lists what's open itself), nor before one (`last` none).
+pub fn full_due(repo_id: u64, last: Option<u64>, now: u64, every: u64) -> bool {
+    if every == 0 {
+        return false;
+    }
+    // Each repo's point in the period, spread by its id.
+    let offset = repo_id.wrapping_mul(2_654_435_761) % every;
+    let period = |t: u64| (t + offset) / every;
+    last.is_some_and(|last| period(last) < period(now))
+}
+
+/// GitHub says it isn't there: 404, or 410 (deleted).
+fn not_there(e: &GhError) -> bool {
+    matches!(e, GhError::NotFound(_)) || matches!(e, GhError::Http(m) if m.starts_with("410"))
+}
+
+/// GitHub refused this one read for itself (a 4xx but 401, 403 and 429),
+/// as for a commit it no longer has (422): nothing about the repo or the
+/// token, so the turn goes on.
+fn refused_one(e: &GhError) -> bool {
+    let GhError::Http(m) = e else { return false };
+    let code: Option<u16> = m.get(..3).and_then(|c| c.parse().ok());
+    code.is_some_and(|c| (400..500).contains(&c) && !matches!(c, 401 | 403 | 429))
+}
 
 /// Which open PRs (not drafts) a turn at `now` reads again for their merge
 /// state, in order: every one whose state the row doesn't know (none, or
@@ -219,6 +299,9 @@ struct Poll<'p> {
     /// The PRs it wrote or fixed, for the boards to attach (#368) once
     /// their content is in.
     prs: Vec<u64>,
+    /// The issues whose rows it changed: an exported one's comments are
+    /// read (M205).
+    issues: Vec<u64>,
 }
 
 impl<'p> Poll<'p> {
@@ -342,6 +425,7 @@ impl<'p> Poll<'p> {
         let changed: Vec<&ItemRow> =
             items.iter().zip(&wrote).filter(|(_, (w, ..))| w.fixed()).map(|(it, _)| it).collect();
         self.prs.extend(changed.iter().filter(|it| it.kind == "pr").map(|it| it.number));
+        self.issues.extend(changed.iter().filter(|it| it.kind == "issue").map(|it| it.number));
         crate::features::chat().merged_seen(self.p, self.job.repo_id, &changed);
         let before = now.saturating_sub(GRACE_MS);
         for (wrote, at, which, kind, started) in wrote {
@@ -415,8 +499,15 @@ impl<'p> Poll<'p> {
     /// The checks on every open PR's head, and checks on no head pruned.
     async fn checks(&mut self) -> Result<(), Stop> {
         let id = self.job.repo_id;
-        for (_, sha) in self.p.db.open_heads(id)? {
-            let rows = self.head(&sha).await?;
+        for (n, sha) in self.p.db.open_heads(id)? {
+            let rows = match self.head(&sha).await {
+                Ok(rows) => rows,
+                Err(Stop::Gh { path, error, .. }) if not_there(&error) || refused_one(&error) => {
+                    warn!(repo = id, number = n, path, error = %error, "forge mirror: reading a head's checks");
+                    continue;
+                }
+                Err(s) => return Err(s),
+            };
             self.write(&[], &rows, &[], Source::Pushed)?;
         }
         let before = self.now.saturating_sub(KEEP_UNHEADED_MS);
@@ -447,40 +538,163 @@ impl<'p> Poll<'p> {
         Ok(())
     }
 
-    /// What two answers tied on, read again: GitHub's answer now is taken.
+    /// What two answers tied on, or the full pass found open here and not
+    /// on GitHub, read again: GitHub's answer now is taken.
     async fn refetch(&mut self) -> Result<(), Stop> {
-        let (id, name) = (self.job.repo_id, self.job.full_name.clone());
+        let id = self.job.repo_id;
         for (kind, key) in self.p.db.refetches(id)? {
             match kind.as_str() {
-                "pr" => {
-                    let v = self.read(&format!("repositories/{id}/pulls/{key}")).await?;
-                    let rows: Vec<ItemRow> = ingest::pr_row(id, &name, &v).into_iter().collect();
-                    let numbers: Vec<u64> = rows.iter().map(|r| r.number).collect();
-                    self.write(&rows, &[], &[], Source::Fetched)?;
-                    self.reviews(&numbers, Source::Fetched).await?;
-                }
-                "issue" => match self.read(&format!("repositories/{id}/issues/{key}")).await {
-                    Ok(v) => {
-                        let rows: Vec<ItemRow> = ingest::issue_row(id, &v).into_iter().collect();
-                        self.write(&rows, &[], &[], Source::Fetched)?;
+                "pr" | "issue" => {
+                    if let Ok(n) = key.parse() {
+                        self.again(&kind, n, false).await?;
                     }
-                    // Deleted (410), or moved to another repo (404).
-                    Err(Stop::Gh { error, .. })
-                        if matches!(&error, GhError::NotFound(_))
-                            || matches!(&error, GhError::Http(m) if m.starts_with("410")) =>
-                    {
-                        let n: u64 = key.parse().unwrap_or(0);
-                        self.tx(|tx| mirror::delete_item(tx, id, n))?;
+                }
+                "head" => match self.head(&key).await {
+                    Ok(rows) => self.write(&[], &rows, &[], Source::Fetched)?,
+                    Err(Stop::Gh { path, error, .. }) if not_there(&error) || refused_one(&error) => {
+                        warn!(repo = id, path, error = %error, "forge mirror: reading a head's checks again");
                     }
                     Err(s) => return Err(s),
                 },
-                "head" => {
-                    let rows = self.head(&key).await?;
-                    self.write(&[], &rows, &[], Source::Fetched)?;
-                }
                 _ => {}
             }
             self.tx(|tx| mirror::refetched(tx, id, &kind, &key))?;
+        }
+        Ok(())
+    }
+
+    /// Read item `n` (`kind` `pr` or `issue`) again, taking GitHub's answer
+    /// now, and with `whole` its text too, for a repo that mirrors it. Gone
+    /// from GitHub ([`Poll::gone`]: 404, 410, or an answer that names
+    /// another number or repo, as a transfer's redirect does), it goes from
+    /// the mirror. An answer that names nothing (an empty or garbled body),
+    /// or a refusal of this one item, is logged and left.
+    async fn again(&mut self, kind: &str, n: u64, whole: bool) -> Result<(), Stop> {
+        let id = self.job.repo_id;
+        let mut pr = kind == "pr";
+        let mut v = None;
+        let mut renamed = false;
+        // An issue's read that answers with a PR is read again as one, and
+        // one that names the repo otherwise once the repo's name is read
+        // again (it may have been renamed since the turn began).
+        for _ in 0..3 {
+            let path = format!("repositories/{id}/{}/{n}", if pr { "pulls" } else { "issues" });
+            let a = match self.read(&path).await {
+                Ok(a) => a,
+                Err(Stop::Gh { error, .. }) if not_there(&error) => return self.gone(n, "not there").await,
+                Err(Stop::Gh { path, error, .. }) if refused_one(&error) || unreadable(&error) => {
+                    warn!(repo = id, number = n, path, error = %error, "forge mirror: reading an item again");
+                    return Ok(());
+                }
+                Err(s) => return Err(s),
+            };
+            match ingest::answer_for(&a, id, &self.job.full_name, n) {
+                Answer::Same if !pr && a["pull_request"].is_object() => pr = true,
+                Answer::Same => {
+                    v = Some(a);
+                    break;
+                }
+                Answer::Other => return self.gone(n, "another repo's or number's item").await,
+                Answer::OtherName if !renamed => {
+                    renamed = true;
+                    self.repo().await?;
+                }
+                Answer::OtherName => return self.gone(n, "another repo's item").await,
+                Answer::Unclear => {
+                    warn!(repo = id, number = n, path, "forge mirror: an item's read named no item, left");
+                    return Ok(());
+                }
+            }
+        }
+        let Some(v) = v else { return Ok(()) };
+        let name = self.job.full_name.clone();
+        if pr {
+            let rows: Vec<ItemRow> = ingest::pr_row(id, &name, &v).into_iter().collect();
+            self.write(&rows, &[], &[], Source::Fetched)?;
+            self.reviews(&[n], Source::Fetched).await?;
+        } else {
+            let rows: Vec<ItemRow> = ingest::issue_row(id, &v).into_iter().collect();
+            self.write(&rows, &[], &[], Source::Fetched)?;
+        }
+        if whole {
+            self.content(&[n], pr).await?;
+        }
+        Ok(())
+    }
+
+    /// Item `n` is gone from GitHub: from the mirror too, with its text,
+    /// and from this machine's read cache. Only once the repo itself still
+    /// reads as this one, so a repo GitHub briefly won't show (or one the
+    /// App just lost) never loses its rows one by one.
+    async fn gone(&mut self, n: u64, why: &str) -> Result<(), Stop> {
+        let id = self.job.repo_id;
+        match self.read(&format!("repositories/{id}")).await {
+            Ok(v) if v["id"].as_u64() == Some(id) => {}
+            Ok(_) => {
+                warn!(repo = id, number = n, why, "forge mirror: the repo didn't read as itself, the item stays");
+                return Ok(());
+            }
+            Err(Stop::Gh { path, error, .. }) => {
+                warn!(repo = id, number = n, why, path, error = %error, "forge mirror: the repo didn't read, the item stays");
+                return Ok(());
+            }
+            Err(s) => return Err(s),
+        }
+        if self.tx(|tx| mirror::delete_item(tx, id, n))? {
+            info!(repo = id, number = n, why, "forge mirror: an item gone from GitHub went");
+            self.fixed += 1;
+        }
+        if let Some(gh) = &self.p.github {
+            gh.bodies.forget(id, n);
+        }
+        Ok(())
+    }
+
+    /// The full pass (module docs), after a reconcile that's recorded: each
+    /// open row GitHub doesn't list as open is read again at the next turn
+    /// (unless that's a large share of them: then none is, and it's
+    /// logged), then the stalest rows are read again now, whole.
+    async fn full(&mut self) -> Result<(), Stop> {
+        let (id, now) = (self.job.repo_id, self.now);
+        let mut listed = HashSet::new();
+        let mut next = Some(format!("repositories/{id}/issues?state=open&per_page=100"));
+        let mut whole = true;
+        for _ in 0..FULL_PAGES {
+            let Some(path) = next.take() else { break };
+            let (page, n) = self.page(&path).await?;
+            let Some(items) = page.as_array() else {
+                warn!(repo = id, "forge mirror: a full pass's list page wasn't a list, none compared");
+                whole = false;
+                break;
+            };
+            listed.extend(items.iter().filter_map(|v| v["number"].as_u64()));
+            next = n;
+        }
+        if next.is_some() {
+            warn!(repo = id, pages = FULL_PAGES, "forge mirror: more open items than a full pass lists, none compared");
+        } else if whole {
+            let open = self.p.db.open_items(id)?;
+            let missing: Vec<&(String, u64)> = open.iter().filter(|(_, n)| !listed.contains(n)).collect();
+            if missing.len() > FULL_MISSING || (missing.len() > 10 && missing.len() * 4 > open.len()) {
+                warn!(
+                    repo = id,
+                    missing = missing.len(),
+                    open = open.len(),
+                    "forge mirror: too many open rows GitHub didn't list, none read again"
+                );
+            } else if !missing.is_empty() {
+                info!(repo = id, missing = missing.len(), "forge mirror: open here and not on GitHub, read again");
+                self.tx(|tx| {
+                    for (kind, n) in &missing {
+                        mirror::refetch(tx, id, kind, &n.to_string(), now)?;
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+        for (kind, n) in self.p.db.stalest_items(id, FULL_READS)? {
+            self.again(&kind, n, true).await?;
+            self.tx(|tx| mirror::merge_checked(tx, id, n, now))?;
         }
         Ok(())
     }
@@ -713,12 +927,39 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     // repo linked again missed its webhooks while it wasn't), from then on.
     let drift_from = job.reconciled_at.filter(|r| job.backfilled_at.is_some() && *r >= job.linked_at);
     let pages = gh.ingest.settings.pages.max(1);
-    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0, prs: vec![] };
+    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0, prs: vec![], issues: vec![] };
     let out = poll.run().await;
+    // A reconcile done, and the repo's full pass due: the reconcile is
+    // recorded first (and the pass's start, so it's tried once a day), and
+    // the pass is best effort: however it stops, the reconcile stands.
+    let every = gh.ingest.settings.full_every_ms;
+    let last_full = poll.job.full_at.or(poll.job.backfilled_at);
+    if matches!(out, Ok(Finish::Reconciled(false))) && full_due(repo, last_full, now, every) {
+        match p.db.start_full_pass(&poll.job, now) {
+            Ok(true) => match poll.full().await {
+                Ok(()) => info!(repo, fixed = poll.fixed, "forge mirror: full pass"),
+                Err(Stop::Budget(reset)) => {
+                    gh.ingest.stats.backed_off(poll.job.installation_id, reset);
+                    info!(repo, reset, "forge mirror: a full pass left the rate reserve be, done for the day");
+                }
+                Err(Stop::Lost) => info!(repo, "forge mirror: a full pass lost its lease"),
+                Err(Stop::Gh { path, error, .. }) => {
+                    warn!(repo, path, error = %error, "forge mirror: a full pass stopped, done for the day");
+                }
+                Err(Stop::Failed(e)) => {
+                    warn!(repo, error = format!("{e:#}"), "forge mirror: a full pass stopped, done for the day");
+                }
+            },
+            Ok(false) => {}
+            Err(e) => warn!(repo, error = format!("{e:#}"), "forge mirror: recording a full pass's start"),
+        }
+    }
     // Whatever it wrote before it stopped, as a turn that ran out of pages did.
     crate::boards::auto::auto_attach_prs(p, repo, &poll.prs);
     let bodies = poll.merged_bodies().await;
     super::closes::merged_with(p, repo, &poll.prs, &bodies).await;
+    // M205: an exported issue's comments whose webhook never came.
+    super::export::polled(p, (repo, poll.job.installation_id, &poll.job.full_name), &poll.issues).await;
     let (job, fixed, drift) = (poll.job, poll.fixed, poll.drift);
     gh.ingest.stats.drift(repo, now, drift);
     match out {

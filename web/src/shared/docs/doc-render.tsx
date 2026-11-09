@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
+import { ProtoScope } from "../ui/prototype-bridge";
 import { BlockError, BlockLoading } from "../ui/block-states";
 
 export interface Section {
@@ -39,9 +40,17 @@ export interface DocState {
   entries: Section[];
   assets?: Asset[];
   rev: number;
+  /** The Doc's id in the library (a block's number isn't stable); the
+   * daemon's block has it, a snapshot doesn't (#508). */
+  doc?: string;
   /** When it was shared with a link, and last updated (#1066); the link
    * itself is the owner's to ask for (`doc_shares`). */
   shared?: { made: number; updated: number } | null;
+  /** A section was written after the link was last updated (#509). */
+  shared_older?: boolean;
+  /** The machine has put a copy of it on the platform (Arugula #708); the
+   * page is the owner's to ask for (`doc_shares`). */
+  platform?: boolean;
   error?: string;
 }
 
@@ -100,6 +109,7 @@ export function DocBlock({
   byline,
   foot,
   share,
+  docKey,
 }: {
   id: PaneId;
   s: DocState | null;
@@ -111,6 +121,9 @@ export function DocBlock({
   foot?: ComponentChildren;
   /** At the header's right: the Copy link button (#411). */
   share?: ComponentChildren;
+  /** What names this Doc to a prototype's kept settings (#508): the block's
+   * id by default, a project Doc's id or a share link's id where `id` is 0. */
+  docKey?: string;
 }) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
@@ -136,16 +149,21 @@ export function DocBlock({
           ) : (
             <h1 class="doc-title">{s.title || "Untitled"}</h1>
           )}
-          <p class="doc-meta">
-            {byline && <>{byline} · </>}
-            {s.entries.length === 0 ? (
-              <span class="doc-wait">Waiting for the outline…</span>
-            ) : (
-              <span class="doc-progress" data-doc-progress>
-                {done} of {s.entries.length} sections written
-              </span>
-            )}
-          </p>
+          {(byline || s.entries.length === 0 || done < s.entries.length) && (
+            <p class="doc-meta">
+              {byline}
+              {byline && (s.entries.length === 0 || done < s.entries.length) && " · "}
+              {s.entries.length === 0 ? (
+                <span class="doc-wait">Waiting for the outline…</span>
+              ) : (
+                done < s.entries.length && (
+                  <span class="doc-progress" data-doc-progress>
+                    {done} of {s.entries.length} sections written
+                  </span>
+                )
+              )}
+            </p>
+          )}
         </header>
         {s.entries.map((e) => (
           <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>
@@ -153,7 +171,9 @@ export function DocBlock({
             {e.body !== null ? (
               // A refill is a new element, so its highlight plays again.
               <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <Markdown text={e.body} refs={null} embeds image={image} />
+                <ProtoScope.Provider value={{ doc: docKey ?? s.doc ?? String(id), section: e.id }}>
+                  <Markdown text={e.body} refs={null} embeds image={image} />
+                </ProtoScope.Provider>
               </div>
             ) : (
               <div class="doc-pending">

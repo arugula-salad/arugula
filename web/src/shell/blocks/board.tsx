@@ -19,6 +19,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
 import { PlatformApiContext } from "../../shared/platform-api";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { BlockLoading, EmptyState } from "./block-states";
 import { shellPlatformApi } from "../platform-api";
 import { platformHref } from "../platform-links";
 import { getControlSession } from "../ui/people";
@@ -33,13 +34,15 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
-  if (!s) body = <p class="board-none dim">…</p>;
-  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser ↗", run: () => window.open(link, "_blank", "noopener") }]} />;
+  if (!s) body = <BlockLoading what="the board" />;
+  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser", external: true, run: () => window.open(link, "_blank", "noopener") }]} />;
   else
     body = (
-      <p class="board-none dim" data-board-needs-control>
-        A board is your project's, on Arugula control, and you read it as yourself. Open this machine through control's page, signed in, to see it here.
-      </p>
+      <EmptyState
+        data-board-needs-control
+        title="A board is on Arugula cloud."
+        why="It's your project's, and you read it as yourself. Open this machine in Arugula cloud, signed in, to see it here."
+      />
     );
   return (
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
@@ -56,7 +59,9 @@ export function boardIdIn(typed: string): string | null {
   return /\bbrd_[0-9a-f]{32}\b/i.exec(typed)?.[0].toLowerCase() ?? null;
 }
 
-/** Every board in the reader's projects, as choices: "Project · Board". */
+/** The open boards in the reader's projects, as choices: "Project · Board".
+ * Those people made come first, then those from Plane epics (started ones
+ * first), marked with the epic's key: "Project · ARUGU-10 · Launch". */
 async function boardChoices(): Promise<PromptChoice[]> {
   const r = await platformFetch("/api/projects", { credentials: "same-origin" });
   if (!r.ok) return [];
@@ -65,20 +70,25 @@ async function boardChoices(): Promise<PromptChoice[]> {
     projects.map((p) =>
       boards
         .list(p.id)
-        .then((l) => l.boards.map((b) => ({ value: b.id, label: `${p.name} · ${b.title}` })))
+        .then((l) =>
+          l.boards
+            .filter((b) => b.closed_at == null)
+            .map((b) => ({ value: b.id, label: `${p.name} · ${b.source ? `${b.source.key} · ` : ""}${b.title}`, rank: b.source ? (b.source.started ? 1 : 2) : 0 })),
+        )
         .catch(() => []),
     ),
   );
-  return lists.flat();
+  // A stable sort keeps each group in the order the projects gave.
+  return lists.flat().sort((a, b) => a.rank - b.rank);
 }
 
-/** "Pin a board…": a block for one of the reader's boards, beside `from`. */
+/** "Board…": a block for one of the reader's boards, beside `from`. */
 export async function pinBoard(client: Client, o: { from: PaneId }) {
   if (getControlSession()?.phase !== "ready") {
-    return client.toast("A board is read as you, through Arugula control: open this machine through control's page, signed in");
+    return client.toast("A board is read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const choices = boardChoices();
-  const v = (await askText("Pin a board", "", "board, or its link", choices))?.trim();
+  const v = (await askText("Board", "", "board, or its link", choices))?.trim();
   if (!v) return;
   const typed = v.toLowerCase();
   const all = await choices.catch(() => []);

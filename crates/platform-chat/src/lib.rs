@@ -43,6 +43,8 @@ mod agent_grants_tests;
 #[cfg(test)]
 mod agent_issues_tests;
 #[cfg(test)]
+mod agent_replies_tests;
+#[cfg(test)]
 mod agent_sessions_tests;
 #[cfg(test)]
 mod agent_threads_tests;
@@ -52,13 +54,21 @@ mod boards_tests;
 mod boxes_tests;
 pub mod chat;
 #[cfg(test)]
+mod chat_code_tests;
+#[cfg(test)]
 mod chat_files_tests;
+#[cfg(test)]
+mod chat_grant_ask_tests;
+#[cfg(test)]
+mod chat_machine_rename_tests;
+#[cfg(test)]
+mod chat_mention_redeliver_tests;
+#[cfg(test)]
+mod chat_mention_status_tests;
 #[cfg(test)]
 mod chat_people_tests;
 #[cfg(test)]
 mod chat_pins_tests;
-#[cfg(test)]
-mod chat_presence_room_tests;
 #[cfg(test)]
 mod chat_previews_tests;
 #[cfg(test)]
@@ -70,6 +80,10 @@ mod chat_tests;
 #[cfg(test)]
 mod chat_threads_tests;
 #[cfg(test)]
+mod chat_wants_tests;
+#[cfg(test)]
+mod ci_alerts_tests;
+#[cfg(test)]
 mod forge_mentions_tests;
 #[cfg(test)]
 mod forge_viewer_tests;
@@ -77,6 +91,8 @@ mod forge_viewer_tests;
 mod hosted_wake_tests;
 #[cfg(test)]
 mod hub_calls_tests;
+#[cfg(test)]
+mod issue_github_tests;
 #[cfg(test)]
 mod issues_tests;
 #[cfg(test)]
@@ -117,7 +133,6 @@ impl features::Feature for Feature {
             .route("/api/chat/live/open", post(chat::open))
             .route("/api/chat/search", get(chat::search))
             .route("/api/chat/presence", post(chat::people::beat))
-            .route("/api/chat/presence/token", post(chat::presence_room::token))
             .route("/api/chat/avatar/{account}", get(chat::people::avatar))
             .route("/api/chat/sidebar", get(chat::sidebar::get).put(chat::sidebar::put))
             .route("/api/chat/targets", post(chat::open_target))
@@ -151,7 +166,9 @@ impl features::Feature for Feature {
             .route("/api/chat/rooms/{id}/members", post(chat::members::add))
             .route("/api/chat/rooms/{id}/members/{account}", axum::routing::delete(chat::members::remove))
             .route("/api/chat/rooms/{id}/read", post(chat::read))
+            .route("/api/chat/rooms/{id}/grant-never", post(chat::grant_ask::never))
             .route("/api/chat/threads", get(chat::threads::followed))
+            .route("/api/chat/rooms/{id}/threads/{seq}/agents", get(chat::thread_agents::agents))
             .route("/api/chat/rooms/{id}/threads/{seq}/read", post(chat::threads::read))
             .route("/api/chat/rooms/{id}/threads/{seq}/follow", post(chat::threads::follow))
             .route("/api/chat/rooms/{id}/mute", post(chat::mute))
@@ -169,11 +186,15 @@ impl features::Feature for Feature {
             )
             .route("/api/chat/rooms/{id}/level", post(chat::level))
             .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
+            .route(arugula_control_wire::chat::MENTION_STATE, axum::routing::put(chat::daemon_mention_state))
             .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))
+            .route(arugula_control_wire::chat::AGENT_REPLIES, get(chat::agent_threads::replies))
             .route(
                 "/api/daemon/chat/rooms/{id}/messages",
                 get(chat::agent_threads::messages).post(chat::agent_threads::post),
             )
+            .route("/api/daemon/chat/rooms/{id}/threads/{seq}/agents", get(chat::agent_threads::thread_agents))
+            .route("/api/daemon/chat/rooms/{id}/agents/{machine}/sessions", get(chat::agent_threads::machine_sessions))
             .route(
                 "/api/daemon/chat/rooms/{id}/files",
                 post(chat::agent_threads::upload)
@@ -213,6 +234,7 @@ impl features::Feature for Feature {
             // A person's agent starts and replies to sessions, by grant (aru-121).
             .route(arugula_control_wire::sessions::AGENT_SESSIONS, post(crate::chat::agent_sessions::start))
             .route(arugula_control_wire::sessions::AGENT_SESSION_REPLY, post(crate::chat::agent_sessions::reply))
+            .route(arugula_control_wire::sessions::AGENT_SESSION_STOP, post(crate::chat::agent_sessions::stop))
             // A wave of sessions, a session's whole answer, and a wait (Fleet 5).
             .route(arugula_control_wire::sessions::PROJECT_SESSIONS, get(crate::sessions::wave::list))
             .route(arugula_control_wire::sessions::AGENT_PROJECT_SESSIONS, get(crate::sessions::wave::agent_list))
@@ -228,6 +250,8 @@ impl features::Feature for Feature {
         // Saved messages' reminders (the base follows the hub's change
         // feed and the live bus: `arugula_platform::chat::start`).
         chat::start_reminders(p);
+        // Mentions lost mid-delivery by a restart (#419).
+        chat::start_stale_mentions(p);
     }
 
     fn jobs(&self, p: &Arc<Platform>, w: jobs::Worker) -> jobs::Worker {
@@ -296,7 +320,7 @@ impl features::Chat for Hooks {
     fn after_rebuild<'a>(
         &'a self,
         app: &'a Platform,
-        s: &'a db::sessions::Session,
+        s: &'a db::sessions::AgentSession,
     ) -> BoxFuture<'a, anyhow::Result<features::Rebuilt>> {
         Box::pin(sessions::hydrate::after_rebuild(app, s))
     }
@@ -319,6 +343,10 @@ impl features::Chat for Hooks {
         sessions::feedback::route(app, seen, v, now)
     }
 
+    fn daemon_came<'a>(&'a self, app: &'a Platform, machine: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(chat::redeliver(app, machine))
+    }
+
     fn box_post<'a>(
         &'a self,
         app: &'a Platform,
@@ -334,6 +362,27 @@ impl features::Chat for Hooks {
             let posted = chat::post_full(app, author, None, Some(via), &room, b).await?;
             Ok((room, posted.seq))
         })
+    }
+
+    fn github_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        login: &'a str,
+        text: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<i64>> {
+        Box::pin(async move { chat::github_comment(app, issue, login, text) })
+    }
+
+    fn ci_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        via: &'a str,
+        text: &'a str,
+        mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async move { chat::ci_comment(app, issue, via, text, mark) })
     }
 
     fn grant_notice<'a>(
@@ -360,6 +409,8 @@ impl features::Chat for Hooks {
                 let (rooms, before) = *n;
                 chat::agent_notice::announce(app, &rooms, &before).await;
             }
+            // Mentions that waited for this grant are delivered (#578).
+            chat::grant_ask::granted(app).await;
         })
     }
 

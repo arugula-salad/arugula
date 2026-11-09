@@ -112,8 +112,9 @@ export class TeamControl {
   }
 
   /** `arugulad join` (for a team with `team`), approved from `page`; then
-   * the daemon runs, reachable only through the relay. */
-  async addMachine(page: Page, name: string, team?: string) {
+   * the daemon runs, reachable only through the relay. Returns its state
+   * directory (its port is recorded there, for a spec that calls it). */
+  async addMachine(page: Page, name: string, team?: string): Promise<string> {
     const state = this.temp(name);
     const joining = spawn("../target/debug/arugulad", ["join", this.base, "--name", name, "--state-dir", state, ...(team ? ["--team", team] : [])], {
       stdio: ["pipe", "pipe", "ignore"],
@@ -141,6 +142,7 @@ export class TeamControl {
     const proc = spawn("../target/debug/arugulad", args, { stdio: "ignore" });
     this.procs.push(proc);
     this.machines.set(name, { proc, args });
+    return state;
   }
 
   /** Stop a machine's daemon (by its PID) and wait for it to exit. */
@@ -167,6 +169,15 @@ export class TeamControl {
 export async function home(page: Page) {
   await page.goto("/");
   await page.waitForFunction(() => window.__arugula?.control?.phase === "ready");
+}
+
+/** `url` in a new page of `page`'s context (so signed in as it is). Playwright's
+ * Linux WebKit throws its own "Assertion error" when an open page moves to
+ * another origin, such as the platform page's (#402); a new page doesn't. */
+export async function opened(page: Page, url: string): Promise<Page> {
+  const next = await page.context().newPage();
+  await next.goto(url);
+  return next;
 }
 
 /** Show `host` in the tab view, connected. */

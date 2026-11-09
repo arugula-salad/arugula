@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Does this pull request say what it means for people using Arugula (#722)?
+# binaries.yml's notes job. Passes when:
+#   it changes only what nobody using Arugula sees (docs, tests, CI, scripts)
+#   it adds a valid note in docs/notes/ (docs/notes/README.md)
+# Any note it adds or edits must read, whatever else it changes.
+#   one of its commits says `Release-note: none, WHY`
+# Otherwise it fails, saying how to do one or the other.
+#
+#   scripts/pr-notes-check BASE HEAD
+#
+# Reads git alone: no API, no secrets, so a fork's pull request runs it too.
+set -uo pipefail
+base=${1:?usage: pr-notes-check BASE HEAD}
+head=${2:?usage: pr-notes-check BASE HEAD}
+here=$(cd "$(dirname "$0")" && pwd)
+
+from=$(git merge-base "$base" "$head") || {
+  echo "notes: can't find where this left its base: not checking"
+  exit 0
+}
+files=$(git diff --name-only "$from" "$head") || exit 1
+
+# Every note it adds or edits has to read as the release train reads it
+# (#795), even on a pull request that changes nothing else: the train builds
+# a release's notes from them, and one it can't read holds every release.
+notes=$(git diff --name-only --diff-filter=AM "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
+if [ -n "$notes" ]; then
+  while IFS= read -r f; do
+    # An edited note may already be in a release: only a new one's id must be new.
+    how=new
+    git cat-file -e "$from:$f" 2>/dev/null && how=edited
+    if ! git show "$head:$f" | node "$here/release-note-check.mjs" "${f##*/}" "$how"; then exit 1; fi
+  done <<<"$notes"
+fi
+added=$(git diff --name-only --diff-filter=A "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
+
+# Nothing anyone using Arugula sees.
+seen=$(printf '%s\n' "$files" | grep -vE '^(docs/|spikes/|scripts/|\.github/|\.config/|testnet/|web/e2e/|crates/[^/]+/tests/|crates/e2e/|[A-Z][A-Z_-]*\.md$|justfile$|chant\.workspace\.json$|\.gitignore$)' || true)
+if [ -z "$seen" ]; then
+  echo "notes: only docs, tests, CI and scripts changed: no note needed"
+  exit 0
+fi
+
+if [ -n "$added" ]; then
+  echo "notes: $(printf '%s\n' "$added" | wc -l | tr -d ' ') note(s) added"
+  exit 0
+fi
+
+messages=$(git log --format=%B "$from..$head")
+if printf '%s\n' "$messages" | grep -qiE '^Release-note: *none[,: ] *[^ ]'; then
+  echo "notes: a commit says this needs none"
+  exit 0
+fi
+
+cat >&2 <<'HELP'
+notes: this changes what people using Arugula get, and doesn't say what it means for them.
+
+Either add a file in docs/notes/ (docs/notes/README.md has the format), or, if
+nobody would notice this change, put a line in a commit message saying why:
+
+    Release-note: none, the tests' fake forge only
+HELP
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  # shellcheck disable=SC2016 # markdown, not commands
+  printf 'Add a note in `docs/notes/` (`docs/notes/README.md`), or say `Release-note: none, WHY` in a commit message.\n' >>"$GITHUB_STEP_SUMMARY"
+fi
+exit 1

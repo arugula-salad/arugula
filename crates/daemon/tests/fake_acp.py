@@ -7,6 +7,7 @@ session/resume work from a new process.
 Prompts:
   hello          a reply, a usage_update (cost grows by 0.01 per turn)
   run CMD        a tool call that asks permission, then "prints" its output
+  plain CMD      run, but 40 lines of plain text with no escape codes
   perm TOOL      a tool call named TOOL (an MCP tool, say) that asks
                  permission; the reply says "Allowed." or "Not allowed."
   read PATH      a Read tool call with no command that fails (not a shell command)
@@ -16,8 +17,9 @@ Prompts:
                  and says "done" (AR-1, #1475)
   slow           streams for ~10s unless cancelled
   slowly…        slow, with anything after it (a session's notes)
+                 A mention ("Message from … : slowly") is slow too (#611).
   remember WORD  remembers WORD; "recall" says it (across processes)
-  crash          exits with code 3 mid-turn
+  crash          exits with code 3 mid-turn (a mention "…: crash" too, #613)
   env NAME       says NAME from its environment ("ENV NAME=value", or
                  "ENV NAME unset"), #379
   expired        fails the turn as claude-agent-acp does on a stale login:
@@ -583,8 +585,9 @@ def prompt(mid, p):
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed",
                             "rawOutput": "User refused permission to run tool"})
             msg("Not allowed.")
-    elif text.startswith("run "):
-        cmd = text[4:]
+    elif text.startswith("run ") or text.startswith("plain "):
+        plain = text.startswith("plain ")
+        cmd = text.split(" ", 1)[1]
         tid = f"tool{n}"
         update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": "Terminal", "kind": "execute",
                         "status": "pending", "_meta": {"terminal_info": {"terminal_id": tid}}})
@@ -596,7 +599,7 @@ def prompt(mid, p):
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "in_progress"})
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid,
                             "_meta": {"terminal_output": {"terminal_id": tid,
-                                                          "data": f"\x1b[32mran: {cmd}\x1b[0m\r\n"}}})
+                                                          "data": "".join(f"line {i}\n" for i in range(1, 41)) if plain else f"\x1b[32mran: {cmd}\x1b[0m\r\n"}}})
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed",
                             "_meta": {"terminal_exit": {"terminal_id": tid, "exit_code": 0}}})
             msg("Ran it.")
@@ -613,7 +616,7 @@ def prompt(mid, p):
                         "kind": "read", "status": "pending"})
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
         msg("Couldn't read it.")
-    elif text == "slow" or text.startswith("slowly"):
+    elif text == "slow" or text.startswith("slowly") or (text.startswith("Message from ") and ": slowly\n" in text):
         for i in range(50):
             if sid in cancelled:
                 cancelled.discard(sid)
@@ -697,7 +700,7 @@ def prompt(mid, p):
         update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"bg{n}", "title": "Monitor",
                         "kind": "other", "status": "in_progress"})
         msg("All done; the report is above.")
-    elif text == "crash":
+    elif text == "crash" or (text.startswith("Message from ") and ": crash\n" in text):
         msg("bye")
         os._exit(3)
     elif text.startswith("env "):

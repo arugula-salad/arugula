@@ -4,7 +4,7 @@
 // deliberate.
 
 import { expect, test, type Page } from "@playwright/test";
-import { active, panes, reset, tab, tabsInSession } from "./helpers";
+import { active, panes, reset, tab, tabsInSession, settingsRow, closeSettingsPage } from "./helpers";
 
 async function newWorkspace(page: Page) {
   await reset(page);
@@ -40,8 +40,7 @@ test.describe("on a computer", () => {
     const beta = await session(page, "beta");
     await row(page, "beta").locator(".ws-session-main").click();
     await expect.poll(() => shownSession(page)).toBe(beta);
-    await expect(page.locator(".ws-crumb")).toContainText("beta");
-    await expect(row(page, "beta")).toHaveAttribute("aria-selected", "true");
+    await expect(row(page, "beta").locator(".ws-session-main")).toHaveAttribute("aria-current", "true");
 
     // Back: the tab that was shown, not the session's first.
     const firstName = await page.evaluate((s) => window.__arugula.client.state!.sessions.find((x) => x.id === s)!.name, first);
@@ -83,6 +82,23 @@ test.describe("on a computer", () => {
     }
   });
 
+  test("the bar is the machine, then its places, on the panes and its Docs (Arugula #637)", async ({ page }) => {
+    await newWorkspace(page);
+    const places = page.locator("[data-machine-places]");
+    await expect(page.locator(".ws-wordmark")).toHaveCount(0);
+    await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
+    await places.locator("[data-machine-docs]").click();
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
+    await expect(page.locator(".app-bar [data-machine-docs]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".app-bar [data-open-attention]")).toBeVisible();
+    await page.locator(".app-bar [data-machine-panes]").click();
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    // The sidebar says which session this is; without it, the bar does.
+    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
+    await page.locator("[data-open-sessions]").click();
+    await expect(page.locator(".ws-crumb-name")).toBeVisible();
+  });
+
   test("macOS reserves the native controls strip once, including with native tabs", async ({ page }) => {
     await newWorkspace(page);
     expect((await page.locator(".ws-head").boundingBox())!.y).toBe(0);
@@ -91,7 +107,7 @@ test.describe("on a computer", () => {
     const brand = (await page.locator(".ws-brand").boundingBox())!;
     expect(header.y).toBe(28);
     expect(brand.y).toBe(header.y);
-    expect((await page.locator(".ws-wordmark").boundingBox())!.y).toBeGreaterThanOrEqual(28);
+    expect((await page.locator(".ws-crumbs").first().boundingBox())!.y).toBeGreaterThanOrEqual(28);
     await page.evaluate(() => {
       document.documentElement.dataset.nativeTabs = "";
       document.documentElement.style.setProperty("--native-tabs", "64px");
@@ -105,6 +121,10 @@ test.describe("on a computer", () => {
     const t = (await tab(page)).id;
     const pane = await active(page);
     const rail = page.locator(".ws-rail");
+    // A machine on its own has no platform page: no Projects, and no team Docs
+    // (its Docs are its bar's, Arugula #418).
+    await expect(rail.locator("[data-open-projects]")).toHaveCount(0);
+    await expect(rail.locator("[data-open-docs-all]")).toHaveCount(0);
 
     await rail.locator("[data-open-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
@@ -134,10 +154,11 @@ test.describe("on a computer", () => {
     await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toBeVisible();
 
-    // Settings opens this device's settings.
+    // Settings opens its page, marked in the rail, and Panes comes back.
     await rail.locator("[data-open-settings]").click();
-    await expect(page.getByRole("menuitem", { name: "Appearance…" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-settings-page]").getByRole("button", { name: "Appearance…" })).toBeVisible();
+    await expect(rail.locator("[data-open-settings]")).toHaveAttribute("aria-current", "page");
+    await closeSettingsPage(page);
   });
 
   test("sidebar search: filters, arrows and Enter pick, an empty result says so", async ({ page }) => {
@@ -212,11 +233,10 @@ test.describe("on a computer", () => {
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
     expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square", density: "cozy" });
     // Appearance has no switch any more.
-    await page.locator("[data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    await settingsRow(page, "Appearance…");
     await expect(page.locator("[data-appearance]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
-    await page.getByRole("button", { name: "Use Control look" }).click();
+    await page.getByRole("button", { name: "Use the Slate look" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
     await expect(page.locator("html")).toHaveAttribute("data-finish", "flat");
     await expect(page.locator("html")).toHaveAttribute("data-corners", "soft");
@@ -260,7 +280,7 @@ test.describe("states", () => {
       for (const s of c.state!.sessions) c.intent({ op: "close_session", session: s.id });
     });
     const empty = page.locator("[data-no-sessions]");
-    await expect(empty.locator(".empty-title")).toHaveText(/^No sessions on /);
+    await expect(empty.locator(".empty-state-title")).toHaveText(/^No sessions on /);
     await expect(page.locator("[data-session-empty]")).toBeVisible();
     // Nothing that needs a session: no tab strip, toolbar or activity.
     await expect(page.locator(".ws-tabs, [data-pane-toolbar], [data-activity-toggle]")).toHaveCount(0);
@@ -345,13 +365,15 @@ test.describe("states", () => {
     await page.mouse.wheel(0, -400);
     await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeLessThan(before);
 
-    // The long name: cut with an ellipsis in the crumb and the row, whole
-    // where the pointer rests.
+    // The long name: cut with an ellipsis in the row and, with the sidebar
+    // closed, the crumb, whole where the pointer rests.
+    await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
+    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
+    await page.locator("[data-open-sessions]").click();
     const crumb = page.locator(".ws-crumb-name");
     await expect(crumb).toHaveText(long);
     expect(await crumb.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
     await expect(page.locator(".ws-crumb")).toHaveAttribute("title", new RegExp(`^${long}`));
-    await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
   });
 });
 
@@ -375,6 +397,8 @@ test.describe("accessibility", () => {
     await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
     await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
     await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\(Ctrl\+Shift\+P\)$/);
+    // Named by what it shows: the label, a space, the chord (#458).
+    await expect(page.getByRole("button", { name: /^Commands Ctrl\+Shift\+P$/ })).toBeVisible();
   });
 
   test("from the keyboard: out of the terminal by the palette, along the tabs, and back", async ({ page }) => {
@@ -422,8 +446,7 @@ test.describe("accessibility", () => {
 
   test("on every palette the chrome's words read at 4.5:1", async ({ page }) => {
     await newWorkspace(page);
-    await page.locator("[data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    await settingsRow(page, "Appearance…");
     const ids = await page.locator("[data-palette-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-palette-choice")!));
     expect(ids.length).toBeGreaterThan(5);
     for (const id of ids) {
@@ -456,8 +479,7 @@ test.describe("accessibility", () => {
 
   test("terminal text contrasts with explicit program backgrounds after a palette change", async ({ page }) => {
     await newWorkspace(page);
-    await page.locator("[data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    await settingsRow(page, "Appearance…");
     for (const palette of ["latte", "slate"]) {
       await page.locator(`[data-palette-choice="${palette}"]`).click();
       await expect(page.locator("html")).toHaveAttribute("data-palette", palette);

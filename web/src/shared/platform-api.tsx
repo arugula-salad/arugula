@@ -63,6 +63,11 @@ export interface PlatformApi {
    * when it can't. */
   goToPane(machine: string, pane: string, quote: string | null): void;
   goToSession(machine: string): void;
+  /** The pane an agent's tab (`session`, as its post named it) is, on a
+   * machine this page reaches; undefined when the page can't open it (not
+   * the reader's, not shared with them, or no such tab now). `up` says
+   * whether the machine answers. */
+  agentPane(machine: string, session: string): { pane: string; up: boolean } | undefined;
   /** The page's bar, with what a view puts in it. */
   Bar: ComponentType<{ children?: ComponentChildren }>;
   /** Pick lines from one of the reader's panes to quote, where the page
@@ -77,17 +82,20 @@ export interface PlatformApi {
   controlHref?(hash: string): string;
   /** An agent session's own page (M257), where the page has one. */
   sessionHref?(project: string, ses: string): string;
+  /** Docs kept on a machine (#517): the shell opens one in a block when it is on that machine (`here`), and the platform page omits this. */
+  machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string): void };
 }
 
 const none = () => () => {};
 
 /** A page with no machines: what the platform page has, and the default. */
-export const noMachines: Pick<PlatformApi, "machine" | "paneTitle" | "sessionName" | "goToPane" | "goToSession"> = {
+export const noMachines: Pick<PlatformApi, "machine" | "paneTitle" | "sessionName" | "goToPane" | "goToSession" | "agentPane"> = {
   machine: () => undefined,
   paneTitle: () => "",
   sessionName: () => "",
   goToPane: () => {},
   goToSession: () => {},
+  agentPane: () => undefined,
 };
 
 export const PlatformApiContext = createContext<PlatformApi>({

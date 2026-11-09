@@ -12,160 +12,22 @@
 // name to loopback, so control's one listener answers `docs.blocks.localhost`
 // with no DNS or certificate.
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { Device } from "../fixtures/device.ts";
-import { fakeGithub } from "../fixtures/fakes.ts";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test, type Page } from "@playwright/test";
 import { hex } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { newDoc, png, putAsset, fill, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, newDoc, png, putAsset, fill, measure, prototype, prototypeRan, seeEmbeds, type Post } from "./doc-steps";
+import { DOMAIN, prototypeInViewer, rig, share, visitor, type Rig } from "./doc-share-rig";
 import { closeContexts, menu, reset, panes, paneEl } from "./helpers";
-import { labs } from "./labs";
 import { pixel7 } from "./phones";
-import { ANY, controlPort, daemonPort } from "./ports";
 import "./local-token";
 
 test.afterAll(closeContexts);
 
-const DOMAIN = "blocks.localhost";
 const MARK = "ZEBRA-QUARTZ-4471";
 const SHOTS = process.env.DOC_LINK_SHOTS;
-
-interface Rig {
-  control: string;
-  mini: string;
-  state: string;
-  /** The account's headless device; none for a rig the page signed in. */
-  me: Device;
-  post: Post & ((path: string, data: unknown) => Promise<{ block?: number; url?: string }>);
-  /** Where a link is opened: the viewer's base. */
-  viewer: string;
-  /** Where control's database and its logs' files are. */
-  dbDir: string;
-  daemon: ChildProcess;
-  dispose: () => Promise<void>;
-}
-
-async function up(url: string) {
-  for (let i = 0; i < 100; i++) {
-    try {
-      if ((await fetch(url)).status < 500) return;
-    } catch {
-      // not yet
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`${url} didn't come up`);
-}
-
-/** A control (with a block domain or without), a machine joined to it,
- * and the owner's headless device. */
-async function rig(blockDomain: string | null, browser?: Page): Promise<Rig> {
-  const procs: ChildProcess[] = [];
-  const dirs: string[] = [];
-  const temp = (what: string) => {
-    const d = mkdtempSync(join(tmpdir(), `arugula-e2e-docshare-${what}-`));
-    dirs.push(d);
-    return d;
-  };
-  const gh = fakeGithub(0);
-  await new Promise((r) => gh.once("listening", r));
-  const github = `http://127.0.0.1:${(gh.address() as AddressInfo).port}`;
-  const db = join(temp("db"), "control.db");
-  mkdirSync(join(db, ".."), { recursive: true });
-  procs.push(
-    spawn(
-      "../target/debug/arugula-control",
-      [
-        ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db, ...(blockDomain ? ["--block-domain", blockDomain] : [])],
-        ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
-        ...["--github-url", github, "--github-api", github],
-        // The database is on the machine's disk, which a CI pod shares
-        // with its node, and other pods can fill that past the guard's 80%.
-        "--no-disk-guard",
-      ],
-      { stdio: process.env.E2E_CONTROL_LOG ? "inherit" : "ignore" },
-    ),
-  );
-  const port = await controlPort(db, procs.at(-1));
-  const control = `http://127.0.0.1:${port}`;
-  await up(`${control}/control.json`);
-
-  // The account is a headless device's, or (with `browser`) the one the page
-  // signs in as, which approves the machine as a person would.
-  const me = browser ? undefined : await Device.signIn({ control, login: "jake" });
-  if (browser) {
-    await browser.goto(`${control}/`);
-    await browser.locator("[data-signin=github]").click();
-    await browser.locator("[data-stored-codes]").check();
-    await browser.locator("[data-saved-codes]").click();
-  }
-  const state = labs(temp("mini"));
-  const joining = spawn("../target/debug/arugulad", ["join", control, "--name", "mini", "--state-dir", state, ...(me ? ["--account", me.keys.id] : [])], {
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  procs.push(joining);
-  const code = await new Promise<string>((res) => {
-    let out = "";
-    joining.stdout!.on("data", (d) => {
-      out += d;
-      const m = out.match(me ? /#join=([A-Z0-9.-]+)\s/ : /(http\S+#join=[A-Z0-9.-]+)/);
-      if (m) res(m[1]);
-    });
-  });
-  const exited = new Promise<number | null>((r) => joining.on("exit", r));
-  if (me) await me.approveJoin(code);
-  else {
-    await browser!.goto(code);
-    await browser!.locator("[data-approve-join]").click();
-  }
-  expect(await exited).toBe(0);
-  const d = spawn(
-    "../target/debug/arugulad",
-    [
-      ...["--listen", ANY, "--name", "mini", "--state-dir", state],
-      ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock", "--no-claude-ide"],
-    ],
-    { stdio: "ignore" },
-  );
-  procs.push(d);
-  const mini = `http://127.0.0.1:${await daemonPort(state, d)}`;
-  await up(`${mini}/api/host`);
-  if (me) await me.waitOnline("mini");
-  else {
-    await expect
-      .poll(async () => ((await (await browser!.context().request.get(`${control}/api/directory`)).json()) as { daemons: { online: boolean }[] }).daemons.map((x) => x.online), { timeout: 30_000 })
-      .toEqual([true]);
-  }
-
-  const post: Rig["post"] = async (path, data) => {
-    const r = await fetch(mini + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`${path}: ${r.status} ${text}`);
-    return JSON.parse(text);
-  };
-  const viewer = blockDomain ? `http://docs.${blockDomain}:${port}` : `${control}/d`;
-  return {
-    control,
-    mini,
-    state,
-    me: me as Device,
-    post,
-    daemon: d,
-    viewer,
-    dbDir: dirname(db),
-    dispose: async () => {
-      for (const p of procs) p.kill("SIGKILL");
-      gh.close();
-      for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
-    },
-  };
-}
 
 /** A Doc with a title, text and a picture (s1), a chart (s2), and a drawing
  * (s3) left for later. */
@@ -178,20 +40,6 @@ async function doc(r: Rig): Promise<number> {
   await fill(r.post, d, "s1", `Findings ${MARK}\n\n![a red square](assets/red.png)`);
   await fill(r.post, d, "s2", example("bar-chart.md"));
   return d;
-}
-
-const share = (r: Rig, d: number, method = "doc_share") => r.post(`/api/blocks/${d}/call/${method}`, {}).then((v) => v.url!);
-
-/** The link in a fresh context: nothing carried over, so what shows is
- * what the link gives anyone. */
-async function visitor(browser: Browser, opts: Parameters<Browser["newContext"]>[0] = {}): Promise<{ ctx: BrowserContext; page: Page; seen: string[]; violations: string[] }> {
-  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] }, extraHTTPHeaders: {}, ...opts });
-  const page = await ctx.newPage();
-  const seen: string[] = [];
-  const violations: string[] = [];
-  page.on("request", (q) => seen.push(q.url()));
-  page.on("console", (m) => /Content Security Policy|Refused to/i.test(m.text()) && violations.push(m.text()));
-  return { ctx, page, seen, violations };
 }
 
 /** What the page draws: its title, text, picture, chart and (when filled) drawing. */
@@ -258,19 +106,20 @@ for (const mode of [DOMAIN, null] as const) {
           const v = await visitor(browser, { colorScheme: scheme, ...opts });
           await v.page.goto(url);
           await seeTheDoc(v.page, true);
-          await expect(v.page.locator("[data-doc-progress]")).toContainText("3 of 3 sections written");
+          // All three written: the progress line is gone.
+          await expect(v.page.locator("[data-doc-progress]")).toHaveCount(0);
           await branded(v.page, `Report ${MARK}`);
           // The page follows the system's colors.
           const bg = await v.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-          expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(17, 17, 27)");
-          // The Doc wears its own paper in each (#253).
+          expect(bg, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(6, 9, 13)");
+          // The Doc wears the house pair's paper in each (#729): the page's own.
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
-          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(12, 17, 24)");
           // The named drawing in this scheme's colours, on that paper; the hex one on its light backing (#256).
           const [old, named] = await v.page.locator('[data-section="s3"] img.doc-drawing').evaluateAll((is) =>
             is.map((i) => ({ src: decodeURIComponent((i as HTMLImageElement).src), named: i.hasAttribute("data-named"), bg: getComputedStyle(i).backgroundColor })),
           );
-          expect(old, scheme).toMatchObject({ named: false, bg: "rgb(248, 246, 240)" });
+          expect(old, scheme).toMatchObject({ named: false, bg: "rgb(239, 241, 245)" });
           expect(old.src).toContain('fill="#e8f0fe"');
           expect(named, scheme).toMatchObject({ named: true, bg: "rgba(0, 0, 0, 0)" });
           expect(named.src).toContain(`fill="${hex("leaf-soft", scheme)}" stroke="${hex("leaf", scheme)}"`);
@@ -299,7 +148,33 @@ for (const mode of [DOMAIN, null] as const) {
       }
     });
 
+    // #506: a ```prototype section needs a frame that runs its inline script, which
+    // the page's `script-src 'self'` would stop in a srcdoc frame (it inherits
+    // it): the frame is the proto origin's page, which the page's CSP names.
+    // With no block domain there is none, and the section says so.
+    for (const scheme of ["light", "dark"] as const) {
+      test(`a prototype runs in a frame on the proto origin and gets out of nowhere, ${scheme}`, async ({ browser }) => {
+        const a = await attacker();
+        try {
+          await prototypeInViewer(r, browser, a, scheme);
+        } finally {
+          a.close();
+        }
+      });
+    }
+
     // #254: callouts and stat tiles, through the link, light and dark.
+    test("the link's column is 68 characters wide at 900px, 88 at 1200px and 100 at 1600px (Arugula #783)", async ({ browser }) => {
+      const url = await share(r, await doc(r));
+      for (const [width, chars] of [[900, 68], [1200, 88], [1600, 100]] as const) {
+        const v = await visitor(browser, { viewport: { width, height: 900 } });
+        await v.page.goto(url);
+        await expect(v.page.locator(".doc-title")).toBeVisible();
+        expect(await measure(v.page), `${width}px`).toBe(chars);
+        await v.ctx.close();
+      }
+    });
+
     test("the link draws callouts and stat tiles in either scheme", async ({ browser }) => {
       const d = await doc(r);
       await fill(r.post, d, "s3", `> [!TIP]\n> Share it.\n\n> [!CAUTION]\n> Not the key.\n\n${example("stats.md")}`);
@@ -335,7 +210,7 @@ for (const mode of [DOMAIN, null] as const) {
           await expect(noticeOf(v.page, "gone")).toContainText("This Doc isn't shared any more");
           await branded(v.page, "This Doc isn't shared any more");
           const paper = await v.page.evaluate(() => getComputedStyle(document.querySelector(".doc")!).backgroundColor);
-          expect(paper, scheme).toBe(scheme === "light" ? "rgb(248, 246, 240)" : "rgb(26, 27, 24)");
+          expect(paper, scheme).toBe(scheme === "light" ? "rgb(239, 241, 245)" : "rgb(12, 17, 24)");
           expect(v.violations, "the page's CSP refused nothing").toEqual([]);
           expect(v.seen.some((u) => u.includes("og.jpg")), "the page never loads the card").toBe(false);
           if (SHOTS && mode) {
@@ -519,18 +394,102 @@ test.describe("the owner's menus", () => {
     await r?.dispose();
   });
 
+  test("Copy link copies a Doc's copy on the platform at once, with no dialog and no public link (Arugula #708)", async ({ page }) => {
+    const d = await doc(r);
+    const made: string[] = [];
+    page.on("request", (req) => req.url().endsWith("/call/doc_share") && made.push(req.url()));
+    await page.goto(r.mini);
+    await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
+    const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
+    // The machine notes where the copy is after a put (#418); a block opened
+    // now has it.
+    const link = "http://127.0.0.1:1/p/prj_0123/docs/pdc_00000000000000000000000000000000";
+    const file = join(r.state, "docs", lib, "meta.json");
+    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    meta.platform = { project: "prj_0123", id: "pdc_0", link, rev: 1, assets: {} };
+    writeFileSync(file, JSON.stringify(meta));
+    const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+    const again = (await r.post("/api/blocks", { type: "doc", config: { doc: lib }, split: term, local: true })).block!;
+    const bar = page.locator(`[data-doc-bar="${again}"]`);
+    const button = bar.locator("[data-doc-bar-link]");
+    await expect(button).toBeEnabled({ timeout: 20_000 });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+
+    await button.click();
+    await expect(button).toContainText("Copied");
+    await expect(button).toHaveAttribute("title", /only you can open it until it's shared/);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    await expect(page.locator("[data-doc-share-dialog]")).toHaveCount(0);
+    await expect(button).not.toContainText("Copied", { timeout: 5_000 });
+
+    // The block menu's Copy link does the same, and Share link… is gone.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    await menuHas(page, page.locator(`[data-doc-block="${again}"]`), "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "Copy link", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+
+    expect(made, "no doc_share call: a public link needs the dialog's confirm").toEqual([]);
+    expect(((await (await fetch(`${r.mini}/api/docs`)).json()) as { shared?: object | null }[]).some((x) => x.shared)).toBe(false);
+
+    // The panes go, so the next test has room.
+    for (const id of [again, d]) {
+      await menu(page, page.locator(`[data-doc-block="${id}"]`), "Close pane");
+      await expect(page.locator(`[data-doc-block="${id}"]`)).toHaveCount(0);
+    }
+  });
+
+  test("a Doc that is shared and also has a copy on the platform copies its public link (Arugula #708)", async ({ page }) => {
+    const d = await doc(r);
+    const url = await share(r, d);
+    await page.goto(r.mini);
+    await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
+    const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
+    // Until a copy can be shared (#418 E) it opens only for its owner, so a
+    // Doc with a public link hands that out.
+    const platform = "http://127.0.0.1:1/p/prj_0123/docs/pdc_00000000000000000000000000000000";
+    const file = join(r.state, "docs", lib, "meta.json");
+    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    meta.platform = { project: "prj_0123", id: "pdc_0", link: platform, rev: 1, assets: {} };
+    writeFileSync(file, JSON.stringify(meta));
+    const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+    const again = (await r.post("/api/blocks", { type: "doc", config: { doc: lib }, split: term, local: true })).block!;
+    await expect.poll(() => page.evaluate((id) => JSON.stringify(window.__arugula.client.blocks.get(id)?.state), again)).toMatch(/"platform":true.*"shared":\{|"shared":\{.*"platform":true/);
+    const button = page.locator(`[data-doc-bar="${again}"] [data-doc-bar-link]`);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+    await button.click();
+    await expect(button).toContainText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    expect(url).not.toContain("/p/");
+    await expect(button).toHaveAttribute("title", "Copy link");
+
+    // Later tests expect nothing shared and room for their panes.
+    await r.post(`/api/blocks/${d}/call/doc_unshare`, {});
+    for (const id of [again, d]) {
+      await menu(page, page.locator(`[data-doc-block="${id}"]`), "Close pane");
+      await expect(page.locator(`[data-doc-block="${id}"]`)).toHaveCount(0);
+    }
+  });
+
   test("a Doc block's menu shares, copies, updates and unshares", async ({ page }) => {
     const d = await doc(r);
     await page.goto(r.mini);
     const block = page.locator(`[data-doc-block="${d}"]`);
     await expect(block.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
 
-    // Not shared: Share link…, and none of the others.
-    await menuHas(page, block, "Share link…");
-    for (const gone of ["Copy link", "Update shared copy", "Unshare"]) await expect(page.getByRole("menuitem", { name: gone, exact: true })).toHaveCount(0);
-    await page.getByRole("menuitem", { name: "Share link…" }).click();
+    // Not shared, and no copy on the platform: Copy link, off, and none of
+    // the others. The bar's Share button opens the dialog (Arugula #708).
+    await menuHas(page, block, "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeDisabled();
+    for (const gone of ["Share link…", "Update shared copy", "Unshare"]) await expect(page.getByRole("menuitem", { name: gone, exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.locator(`[data-doc-bar="${d}"] [data-doc-bar-share]`).click();
     const dialog = page.locator("[data-doc-link-dialog]");
     await expect(dialog).toBeVisible();
+    // Arugula #650: the dialog makes the link on its confirm.
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "shared");
     const url = (await dialog.locator("[data-doc-link-url]").textContent())!;
     expect(url).toMatch(new RegExp(`^${r.viewer}/[0-9a-f]{32}#k=[A-Za-z0-9_-]{43}$`));
     if (SHOTS) {
@@ -545,7 +504,7 @@ test.describe("the owner's menus", () => {
 
     // Shared: the other three.
     await menuHas(page, block, "Unshare");
-    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeEnabled();
     await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveCount(0);
     if (SHOTS) await page.screenshot({ path: join(SHOTS, "block-menu-shared.png") });
     await page.keyboard.press("Escape");
@@ -582,7 +541,126 @@ test.describe("the owner's menus", () => {
     await expect(page.locator("[data-confirm-remove]")).toBeEnabled();
     await page.locator("[data-confirm-remove]").click();
     await expect.poll(async () => (await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
-    await menuHas(page, block, "Share link…");
+    await menuHas(page, block, "Copy link");
+    await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toBeDisabled();
+    await expect(page.getByRole("menuitem", { name: "Unshare", exact: true })).toHaveCount(0);
+  });
+
+  test("a Doc's bar: link and share are icon buttons, and nothing makes a public link until the dialog's confirm (Arugula #650, #708)", async ({ page }) => {
+    const d = await doc(r);
+    const made: string[] = [];
+    page.on("request", (req) => req.url().endsWith("/call/doc_share") && made.push(req.url()));
+    await page.goto(r.mini);
+    const block = page.locator(`[data-doc-block="${d}"]`);
+    await expect(block.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
+    // The bar is the block's header, beside it.
+    const bar = page.locator(`[data-doc-bar="${d}"]`);
+    const link = bar.locator("[data-doc-bar-link]");
+    const share = bar.locator("[data-doc-bar-share]");
+
+    // Icon only: a title and an aria-label each, no text, no ▾.
+    await expect(link).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    await expect(link).toHaveAttribute("aria-label", "Copy link");
+    await expect(share).toHaveAttribute("title", "Share with a link");
+    await expect(share).toHaveAttribute("aria-label", "Share with a link");
+    await expect(link).toHaveText("");
+    await expect(share).toHaveText("");
+    await expect(bar.locator("[data-copy-link-more]")).toHaveCount(0);
+    await expect(bar.locator("[data-doc-bar-shared]")).toHaveCount(0);
+
+    // The third action, Open in browser, is off with no link, and says why.
+    const outside = bar.locator("[data-doc-open-browser]");
+    await expect(outside).toBeDisabled();
+    await expect(outside).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    await expect(outside).toHaveAttribute("aria-label", "Open in browser");
+
+    // At the bar's right edge, in a full-width pane and in a 320px one with a long title (Arugula #782).
+    // (The bar keeps its padding clear of the pane's grip; the buttons end there.)
+    const flush = async () => {
+      const edge = async (sel: string) => (await bar.locator(sel).boundingBox())!;
+      const b = (await bar.boundingBox())!;
+      const pad = await bar.evaluate((el) => parseFloat(getComputedStyle(el).paddingRight));
+      const last = await edge("[data-doc-open-browser]");
+      const gap = b.x + b.width - pad - (last.x + last.width);
+      expect(gap, "Open in browser ends the bar").toBeLessThanOrEqual(8);
+      expect(gap, "without running under the grip").toBeGreaterThanOrEqual(-1);
+      expect((await edge("[data-doc-bar-link]")).x, "the three buttons are together, not mid-bar").toBeGreaterThan(b.x + b.width / 2);
+    };
+    await flush();
+    await bar.evaluate((el) => {
+      (el as HTMLElement).style.width = "320px";
+      el.querySelector(".review-path b")!.textContent = "A very long Doc title that has to be cut short to leave room for the three buttons at the right";
+    });
+    await flush();
+    await expect(bar.locator("[data-doc-bar-link]")).toBeVisible();
+    await bar.evaluate((el) => (el as HTMLElement).style.removeProperty("width"));
+
+    // Unshared with no copy on the platform, Copy link is off and says why;
+    // the Share dialog opens from Share, and none makes a link.
+    await expect(link).toBeDisabled();
+    await expect(link).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    const dialog = page.locator("[data-doc-share-dialog]");
+    const cancel = async () => {
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+    };
+    const shot = async (name: string) => {
+      if (!SHOTS) return;
+      mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: join(SHOTS, `${name}.png`) });
+    };
+    await shot("bar-unshared");
+    await share.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await expect(dialog).toContainText("Anyone with the link can open it");
+    await shot("bar-dialog-unshared");
+    await expect(dialog.locator("[data-doc-link-url]")).toHaveCount(0);
+    await cancel();
+    await share.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    expect(made, "no doc_share call before the confirm").toEqual([]);
+    expect(((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; shared?: object | null }[]).some((x) => x.shared)).toBe(false);
+
+    // The confirm makes the link, once.
+    await share.click();
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(dialog.locator("[data-doc-link-url]")).toBeVisible();
+    expect(made).toHaveLength(1);
+    const url = (await dialog.locator("[data-doc-link-url]").textContent())!;
+    await dialog.getByRole("button", { name: "Done" }).click();
+
+    // Shared: link copies in place; share shows the link and the rest.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+        await expect.poll(() => page.evaluate((id) => JSON.stringify(window.__arugula.client.blocks.get(id)?.state), d)).toContain('"shared":{');
+    await link.click();
+    await expect(link).toContainText("Copied");
+    await shot("bar-shared-copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    await expect(dialog).toHaveCount(0);
+    await expect(link).not.toContainText("Copied", { timeout: 5_000 });
+    await share.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "shared");
+    await expect(dialog.locator("[data-doc-link-url]")).toHaveText(url);
+    await expect(dialog.getByRole("button", { name: "Update shared copy" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Unshare" })).toBeVisible();
+    await expect(dialog.locator("[data-doc-bar-older]")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Done" }).click();
+
+    // The copy goes older: a dot on Share, and the dialog says so.
+    await fill(r.post, d, "s3", `Bar older ${MARK}`);
+    await expect(share).toHaveAttribute("data-older", "");
+    await expect(share).toHaveAttribute("title", "Update the shared copy: it's older than this Doc");
+    await expect(share).toHaveAttribute("aria-label", "Update the shared copy: it's older than this Doc");
+    await share.click();
+    await expect(dialog.locator("[data-doc-bar-older]")).toHaveText("Shared copy is older · Update");
+    await shot("bar-dialog-shared-older");
+    await page.setViewportSize({ width: 412, height: 915 });
+    await shot("bar-dialog-shared-phone");
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await shot("bar-shared-older-phone");
+    expect(made).toHaveLength(1);
   });
 
   test("a shared Doc whose pane closed is on the Docs page and reopens with its share menu; Delete says its link stops working, unshares and removes it", async ({ page }) => {
@@ -598,14 +676,15 @@ test.describe("the owner's menus", () => {
     // Close the pane, as a person does; the Doc stays, and is shared still.
     await menu(page, first, "Close pane");
     await expect(first).toHaveCount(0);
-    await page.locator(".ws-rail [data-open-docs]").click();
+    await page.locator("[data-machine-docs]").click();
     const listed = async () => ((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; open?: number | null; shared?: object | null }[]);
     const id = (await listed()).find((x) => x.shared && x.open == null)!.id;
     const mine = page.locator(`[data-doc="${id}"]`);
     await expect(mine.locator("[data-doc-shared]")).toBeVisible();
-    await mine.locator("[data-open-doc]").click();
+    await mine.click();
+    await page.locator("[data-list-preview] [data-open-doc]").click();
 
-    // Reopened: its content, and its share menu is back, not Share link….
+    // Reopened: its content, and its share menu is back.
     await expect(page.locator("[data-docs-page]")).toHaveCount(0);
     const now = await page.evaluate(() => window.__arugula.client.active()!);
     expect(now).not.toBe(d);
@@ -617,8 +696,10 @@ test.describe("the owner's menus", () => {
     await page.keyboard.press("Escape");
 
     // Delete warns about the link, then unshares it at control and removes the Doc.
-    await page.locator(".ws-rail [data-open-docs]").click();
-    await page.locator(`[data-doc="${id}"] [data-delete-doc]`).click();
+    await page.locator("[data-machine-docs]").click();
+    await page.locator(`[data-doc="${id}"]`).click();
+    await page.locator("[data-list-preview] [data-doc-more]").click();
+    await page.getByRole("menuitem", { name: "Delete…" }).click();
     await expect(page.locator("[data-delete-shared]")).toHaveText("Its link stops working.");
     expect(await meta()).toBe(200);
     await page.locator("[data-confirm-remove]").click();
@@ -626,6 +707,73 @@ test.describe("the owner's menus", () => {
     await expect.poll(meta).toBe(404);
     expect((await listed()).some((x) => x.id === id)).toBe(false);
     await expect(block).toHaveCount(0);
+  });
+
+  test("the Docs page's Share shares a closed Doc with no pane opened, Copy link works, and Update works the same (Arugula #819)", async ({ page }) => {
+    const d = await doc(r);
+    const listed = async () => ((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; open?: number | null; shared?: { updated: number; link: string } | null }[]);
+    const panes = async () => ((await (await fetch(`${r.mini}/api/panes`)).json()) as unknown[]).length;
+    await page.goto(r.mini);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+    const first = page.locator(`[data-doc-block="${d}"]`);
+    await expect(first.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
+    const id = (await listed()).find((x) => x.open === d)!.id;
+    await menu(page, first, "Close pane");
+    await expect(first).toHaveCount(0);
+
+    // Share from the Docs page: the confirm, then the link, and no pane.
+    await page.locator("[data-machine-docs]").click();
+    const mine = page.locator(`[data-doc="${id}"]`);
+    await mine.click();
+    const preview = page.locator("[data-list-preview]");
+    const before = await panes();
+    await preview.locator("button[aria-label='Share with a link']").click();
+    const dialog = page.locator("[data-doc-share-dialog]");
+    await expect(dialog).toContainText("Anyone with the link can open it");
+    expect((await listed()).find((x) => x.id === id)!.shared, "nothing is shared before the confirm").toBeFalsy();
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(mine.locator("[data-doc-shared]")).toBeVisible();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    expect(await panes(), "no pane opened").toBe(before);
+    const row = (await listed()).find((x) => x.id === id)!;
+    expect(row.open ?? null).toBeNull();
+    const url = ((await (await fetch(`${r.mini}/api/doc-links/${row.shared!.link}`)).json()) as { url: string }).url;
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+
+    // Copy link copies it again.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    await preview.locator("[data-doc-copy-link]").click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+
+    // Shared and current, Share has nothing to update: it copies the link
+    // too, with no dialog and no new version.
+    await page.evaluate(() => navigator.clipboard.writeText("before"));
+    const commits = (await listed()).find((x) => x.id === id)!.shared!.updated;
+    await preview.locator("button[aria-label='Share with a link']").click();
+    await expect(page.getByText("Link copied")).toBeVisible();
+    await expect(page.locator("[data-doc-share-dialog], [data-doc-update-dialog]")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    expect((await listed()).find((x) => x.id === id)!.shared!.updated, "nothing was updated").toBe(commits);
+
+    // The copy goes older (a block fills it, then closes): Share reads
+    // Update, and one tap on its confirm makes the same link show the Doc as it is.
+    await preview.locator("[data-open-doc]").click();
+    await expect.poll(async () => (await listed()).find((x) => x.id === id)!.open ?? null).not.toBeNull();
+    const now = (await listed()).find((x) => x.id === id)!.open!;
+    await fill(r.post, now, "s3", `Written after ${MARK}`);
+    await menu(page, page.locator(`[data-doc-block="${now}"]`), "Close pane");
+    await page.locator("[data-machine-docs]").click();
+    await mine.click();
+    const share = preview.locator("button[data-older]");
+    await expect(share).toHaveAttribute("title", "Update the shared copy: it's older than this Doc");
+    const was = (await listed()).find((x) => x.id === id)!.shared!.updated;
+    const panesNow = await panes();
+    await share.click();
+    await page.locator("[data-doc-update-go]").click();
+    await expect.poll(async () => (await listed()).find((x) => x.id === id)!.shared!.updated).toBeGreaterThan(was);
+    expect(await panes(), "no pane opened").toBe(panesNow);
+    expect((await listed()).find((x) => x.id === id)!.shared!.link).toBe(row.shared!.link);
+    await expect(preview.locator("button[data-older]")).toHaveCount(0);
   });
 
   test("an agent on the owner's CLI can't share, update, unshare or read a link back", async () => {
@@ -646,7 +794,7 @@ test.describe("the owner's menus", () => {
   });
 });
 
-test("on a machine that hasn't joined control, Share link… is disabled and says why", async ({ page }) => {
+test("on a machine that hasn't joined control, Copy link is disabled and says why", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   const post: Post = async (path, data) => {
@@ -661,13 +809,13 @@ test("on a machine that hasn't joined control, Share link… is disabled and say
     .poll(async () => {
       await block.click({ button: "right", position: { x: 60, y: 60 } });
       await page.getByRole("menu").waitFor();
-      const item = page.getByRole("menuitem", { name: "Share link…" });
+      const item = page.getByRole("menuitem", { name: "Copy link", exact: true });
       const off = (await item.count()) === 1 && (await item.isDisabled());
       if (!off) await page.keyboard.press("Escape");
       return off;
     })
     .toBe(true);
-  await expect(page.getByRole("menuitem", { name: "Share link…" })).toHaveAttribute("title", "this machine hasn't joined control: sharing needs control");
+  await expect(page.getByRole("menuitem", { name: "Copy link", exact: true })).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
   await page.keyboard.press("Escape");
   void menu;
   void paneEl;
@@ -782,5 +930,43 @@ test.describe("Shared Docs… in the account menu", () => {
     await page.locator("[data-confirm-remove]").click();
     await expect(row).toHaveCount(0);
     expect((await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
+  });
+});
+
+test.describe("a Doc block on control's own page", () => {
+  test.describe.configure({ mode: "serial" });
+  let r: Rig;
+  let page: Page;
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    page = await ctx.newPage();
+    r = await rig(DOMAIN, page);
+  });
+  test.afterAll(async () => {
+    await r?.dispose();
+  });
+
+  // #506: the shell control serves has `default-src 'self'`, so a srcdoc frame's
+  // scripts would die there too: its Doc block frames the proto origin control's
+  // /control.json names, like the share page and the platform page.
+  test("a prototype in a Doc block on control's own page runs in a frame on the proto origin", async () => {
+    const a = await attacker();
+    try {
+      const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+      const d = await newDoc(r.post, term, "Probe doc");
+      await fill(r.post, d, "s1", prototype(a));
+      await page.goto(`${r.control}/`);
+      await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 30_000 }).toBe(true);
+      await page.evaluate((id) => window.__arugula.client.setActive(id), d);
+      await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toHaveText("Probe doc", { timeout: 20_000 });
+      const proto = `http://proto.${DOMAIN}:${new URL(r.control).port}`;
+      await expect(page.locator("[data-prototype-frame]")).toHaveAttribute("src", `${proto}/`);
+      await expect(page.locator("[data-prototype-run]")).toHaveCount(0);
+      const scheme = (await page.evaluate(() => document.documentElement.dataset.scheme)) === "light" ? "light" : "dark";
+      await prototypeRan(page, a, scheme);
+    } finally {
+      a.close();
+    }
   });
 });

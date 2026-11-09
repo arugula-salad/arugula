@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
+use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE, now_ms};
 use arugula_core::{Intent, Role};
 use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
 use tokio::time::Instant;
@@ -28,8 +28,9 @@ impl Daemon {
             Api::MayDrive(who, pane, reply) => {
                 let _ = reply.send(self.may_drive_here(&who, pane));
             }
-            Api::ChatReaders(reply) => {
-                let _ = reply.send(self.chat_readers());
+            Api::Readers(reply) => {
+                self.settle_closed();
+                let _ = reply.send(self.readers());
             }
             Api::InviteTo(session, pane, reply) => {
                 let r = match self.mux.session(session) {
@@ -57,6 +58,17 @@ impl Daemon {
                 let _ = reply.send(ok);
             }
             Api::Tell(who, message) => self.tell(&who, ServerMsg::Notice { message }),
+            Api::Trusted(reply) => {
+                let now = now_ms();
+                let mut live: Vec<(PaneId, String, u64)> = self
+                    .trust
+                    .iter()
+                    .filter(|(_, until)| **until > now)
+                    .map(|((p, to), u)| (*p, to.clone(), *u))
+                    .collect();
+                live.sort();
+                let _ = reply.send(live);
+            }
             Api::Scope(who, session, reply) => {
                 let _ = reply.send(self.scope(&who, session));
             }
@@ -73,6 +85,10 @@ impl Daemon {
             }
             Api::Panes(reply) => {
                 let _ = reply.send(self.summaries());
+            }
+            Api::Conversation(pane, reply) => {
+                let id = self.meta.get(&pane).and_then(|m| m.session.as_ref());
+                let _ = reply.send(id.filter(|s| s.running && s.agent == "claude").map(|s| s.id.clone()));
             }
             Api::Pane(pane, reply) => {
                 let _ = reply.send(self.panes.get(&pane).cloned());
@@ -103,6 +119,13 @@ impl Daemon {
                 // holds the question (M35: raised on it through `Ask`).
                 let block = self.blocks.contains_key(&pane) && !self.asks.contains_key(&pane);
                 let _ = reply.send(self.live_reason(pane).map(|r| (r, block)));
+            }
+            Api::RaiseNotice(n, reply) => {
+                self.raise_notice(n);
+                let _ = reply.send(());
+            }
+            Api::ClearNotice(key, reply) => {
+                let _ = reply.send(self.clear_notice(&key));
             }
             Api::Machines(reply) => {
                 let _ = reply.send(self.machines.values().cloned().collect());
@@ -322,6 +345,12 @@ impl Daemon {
                 let _ = reply.send(self.ask_reply(pane, id, answer, by));
             }
             Api::Hook(pane, hook) => self.hook(pane, &hook),
+            Api::TakeTagged(pane, hook, reply) => {
+                let _ = reply.send(self.take_tagged(pane, &hook));
+            }
+            Api::LastTools(reply) => {
+                let _ = reply.send(self.last_tools.clone());
+            }
             Api::Live(pane, live, pid) => {
                 let changed = match live {
                     Some(v) if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) => {
@@ -351,8 +380,34 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
-            Api::FollowUp(pane, text, by, reply) => {
-                let _ = reply.send(self.follow_up(pane, text, by));
+            Api::FollowupTurn(pane, tag, turn) => {
+                self.config.followups.turn(pane, &tag, turn);
+            }
+            Api::FollowUp(pane, text, by, tag, reply) => {
+                let _ = reply.send(self.follow_up(pane, text, by, tag));
+            }
+            Api::HeldDeliver(pane, reply) => {
+                let text = self.queued.deliver_held(pane, &*self.config.followups);
+                self.refresh_held(pane);
+                let _ = reply
+                    .send(text.ok_or_else(|| format!("%{pane} holds no mention (it was delivered, or dismissed)")));
+            }
+            Api::HeldDrop(pane, reply) => {
+                let n = self.queued.drop_held(pane);
+                self.refresh_held(pane);
+                let _ = reply.send(n);
+            }
+            Api::SilenceTagged(pane, on, reply) => {
+                let known = self.panes.contains_key(&pane);
+                if known {
+                    if on {
+                        self.tagged_off.remove(&pane);
+                    } else {
+                        self.tagged_off.insert(pane);
+                    }
+                    self.mark(pane);
+                }
+                let _ = reply.send(known);
             }
             Api::Answered(pane, by, id, how, headline) => self.record_answer(pane, &by, &id, &how, &headline),
             Api::Who(who, reply) => {

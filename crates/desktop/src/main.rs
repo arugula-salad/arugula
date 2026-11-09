@@ -700,9 +700,8 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         .inner_size(1280.0, 820.0)
         .initialization_script(cloud::init_script(cloud::control().is_some_and(|c| cloud::signed_in(app, &c))))
         // The microphone and camera for the client's own pages (a lent
-        // device's record_audio, S33; a People block's camera, voice and
-        // calls, #1792; macOS still asks, once each, for the app); nobody
-        // else's.
+        // device's record_audio, S33; scanning a QR code; macOS still asks,
+        // once each, for the app); nobody else's.
         .on_permission_request(|w, kind| match kind {
             tauri::webview::PermissionKind::Microphone | tauri::webview::PermissionKind::Camera
                 if w.url().is_ok_and(|u| ours(&u)) =>

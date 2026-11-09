@@ -1,0 +1,24 @@
+/* The progress bar of a board: the board's own page and a board's card in chat (shared/chat/previews.tsx). */
+.board-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.board-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.2s;
+}
+
+/* Done ok, Review accent, Doing warn: the lanes' own tones, which a card takes too (cardTone). */
+.board-bar i[data-lane="review"] {
+  background: var(--accent);
+}
+
+.board-bar i[data-lane="doing"] {
+  background: var(--warn);
+}

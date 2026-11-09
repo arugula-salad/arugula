@@ -234,8 +234,15 @@ pub(crate) async fn plan_deploy(c: &Call<'_>, a: PlanDeployArgs) -> Out {
             ));
         }
     };
+    // A chant-fly deploy (#1985): chant plans it first, and its owners are
+    // asked once it has.
+    let asked = if d["chant"]["state"] == "planning" {
+        "chant plans it first, on a box of its own with no Fly token, and its owners get a card once it has"
+    } else {
+        "Its owners got a card"
+    };
     let s = format!(
-        "Planned and asked, as your person's agent on this machine: {}. Its owners got a card; one of them approves it on their phone or in a browser, and you can't. read_deploy {id} follows it.\n{}",
+        "Planned and asked, as your person's agent on this machine: {}. {asked}; one of them approves it on their phone or in a browser, and you can't. read_deploy {id} follows it.\n{}",
         line(&d),
         plan_text(&d)
     );

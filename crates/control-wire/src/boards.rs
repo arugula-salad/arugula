@@ -13,7 +13,7 @@
 //! (`brd_`, M196).
 //!
 //! A project in a path is its id (`prj_…`), or `personal` for the reader's
-//! own. Behind the `boards` Labs flag: with it off, every path answers 404.
+//! own. Boards are on for everyone (they left Labs, native #191).
 //!
 //! **Revs.** A row's `rev` counts changes to its pointer and note. A write
 //! that changes those names the `rev` it read; if the row moved on, it is
@@ -43,6 +43,9 @@ pub const BOARD_REOPEN: &str = "/api/boards/{id}/reopen";
 /// `PUT` [`PutEntry`]: add a row or a group, or change a row's note or
 /// pointer or a group's title, answered with the board, [`BoardView`].
 pub const BOARD_ENTRIES: &str = "/api/boards/{id}/entries";
+/// `POST` [`AddMany`]: add many rows at once, each as [`BOARD_ENTRIES`]
+/// adds one (owners and editors, people only); answered [`AddedMany`].
+pub const BOARD_ENTRIES_MANY: &str = "/api/boards/{id}/entries/many";
 /// `DELETE`: a row, or a group and its rows; answered [`BoardView`].
 pub const BOARD_ENTRY: &str = "/api/boards/{id}/entries/{entry}";
 /// `POST` [`MoveEntry`]: change a row's group and its place in it, or move a
@@ -54,10 +57,28 @@ pub const BOARD_ENTRY_MOVE: &str = "/api/boards/{id}/entries/{entry}/move";
 pub const BOARD_ATTACHMENTS: &str = "/api/boards/{id}/attachments";
 /// `DELETE`: take an attachment off its row; answered [`BoardView`].
 pub const BOARD_ATTACHMENT: &str = "/api/boards/{id}/attachments/{attachment}";
+/// `POST` [`AddDoc`]: link a Doc to the board's Docs strip, or with `row` to
+/// that row (owners and editors); answered [`BoardView`]. A Doc linked
+/// already answers the board as it is. A Doc on a row never moves its lane
+/// and isn't proof.
+pub const BOARD_DOCS: &str = "/api/boards/{id}/docs";
+/// `DELETE`: take a Doc off the strip or a row; answered [`BoardView`].
+pub const BOARD_DOC: &str = "/api/boards/{id}/docs/{doc}";
+/// `POST` [`MoveDoc`]: move a Doc along its strip or row; answered [`BoardView`].
+pub const BOARD_DOC_MOVE: &str = "/api/boards/{id}/docs/{doc}/move";
+/// `GET`: the boards that list a project Doc, in the strip or on a row,
+/// [`DocBoards`] (members; empty with boards off).
+pub const PROJECT_DOC_BOARDS: &str = "/api/projects/{project}/docs/{doc}/boards";
 /// `GET` [`WorkQuery`]: a project's work items, [`WorkItems`].
 /// `POST` [`NewAsk`]: a person asks a question on a row (owners and
 /// editors). One open ask per row, and only on a row with an issue or a PR.
 pub const BOARD_ROW_ASK: &str = "/api/boards/{id}/rows/{row}/ask";
+/// `PUT` [`SetLane`]: a person moves a row to another lane (#494), answered
+/// [`BoardView`]. Next, Doing and Review set a lane that holds until the
+/// row's work changes it; Done closes a native issue, and moving out of
+/// Done reopens it. Owners and editors (and issues.write for the close); an
+/// agent never does, so there is no daemon twin.
+pub const BOARD_ROW_LANE: &str = "/api/boards/{id}/rows/{row}/lane";
 /// `POST` [`AnswerAsk`]: the person an ask names answers it, or an owner or
 /// editor for them. A machine and its agents never do.
 pub const BOARD_ASK_ANSWER: &str = "/api/boards/{id}/asks/{ask}/answer";
@@ -78,6 +99,9 @@ pub const AGENT_BOARD: &str = "/api/daemon/boards/{id}";
 pub const AGENT_BOARD_CLOSE: &str = "/api/daemon/boards/{id}/close";
 /// `POST`, no body: open a closed board again.
 pub const AGENT_BOARD_REOPEN: &str = "/api/daemon/boards/{id}/reopen";
+/// `POST` [`LeadBoard`]: the calling session takes the board's lead, or the
+/// board's lead is released (#414).
+pub const AGENT_BOARD_LEAD: &str = "/api/daemon/boards/{id}/lead";
 /// `PUT` [`PutEntry`]: add a row or a group, or change a row's note or
 /// pointer (a row the agent's machine added, for a pointer) or a group's
 /// title.
@@ -92,6 +116,13 @@ pub const AGENT_BOARD_ENTRY_MOVE: &str = "/api/daemon/boards/{id}/entries/{entry
 pub const AGENT_BOARD_ATTACHMENTS: &str = "/api/daemon/boards/{id}/attachments";
 /// `DELETE`: take off an attachment this machine's agents made.
 pub const AGENT_BOARD_ATTACHMENT: &str = "/api/daemon/boards/{id}/attachments/{attachment}";
+
+/// `POST` [`AddDoc`]: an agent links a Doc to the strip (`boards.write`).
+pub const AGENT_BOARD_DOCS: &str = "/api/daemon/boards/{id}/docs";
+/// `DELETE`: take off a Doc this machine's agents linked.
+pub const AGENT_BOARD_DOC: &str = "/api/daemon/boards/{id}/docs/{doc}";
+/// `POST` [`MoveDoc`]: move a Doc along the strip.
+pub const AGENT_BOARD_DOC_MOVE: &str = "/api/daemon/boards/{id}/docs/{doc}/move";
 
 /// `GET`: the projects whose boards this machine's agents reach, and with
 /// which powers, [`BoardReach`].
@@ -115,6 +146,11 @@ pub fn agent_board_close(id: &str) -> String {
 /// [`AGENT_BOARD_REOPEN`] for `id`.
 pub fn agent_board_reopen(id: &str) -> String {
     format!("/api/daemon/boards/{id}/reopen")
+}
+
+/// [`AGENT_BOARD_LEAD`] for `id`.
+pub fn agent_board_lead(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/lead")
 }
 
 /// `POST` [`NewAsk`]: an agent asks a person a question on a row
@@ -167,6 +203,21 @@ pub const AGENT_PROJECT_RELATIONS: &str = "/api/daemon/projects/{project}/relati
 /// `DELETE`: an agent takes off a relation its own machine made.
 pub const AGENT_PROJECT_RELATION: &str = "/api/daemon/projects/{project}/relations/{relation}";
 
+/// `POST` [`LinkBatch`]: an agent adds and removes up to [`LINKS_MAX`] links
+/// between items of the project (`issues.write`), each on its own; answered
+/// [`LinksDone`], one outcome for each. A reference may be `#N`,
+/// `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id.
+pub const AGENT_PROJECT_RELATIONS_BATCH: &str = "/api/daemon/projects/{project}/relations/batch";
+
+/// The most links one [`AGENT_PROJECT_RELATIONS_BATCH`] takes, added and
+/// removed together.
+pub const LINKS_MAX: usize = 50;
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`] for `project`.
+pub fn agent_project_relations_batch(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/relations/batch")
+}
+
 /// [`PROJECT_RELATIONS`] for `project`.
 pub fn project_relations(project: &str) -> String {
     format!("/api/projects/{project}/relations")
@@ -190,6 +241,11 @@ pub fn agent_project_relation(project: &str, relation: &str) -> String {
 /// [`BOARD_ROW_ASK`] for `row` of `id`.
 pub fn board_row_ask(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/ask")
+}
+
+/// [`BOARD_ROW_LANE`] for `row` of `id`.
+pub fn board_row_lane(id: &str, row: &str) -> String {
+    format!("/api/boards/{id}/rows/{row}/lane")
 }
 
 /// [`BOARD_ASK_ANSWER`] for `ask` of `id`.
@@ -230,6 +286,21 @@ pub fn agent_board_attachments(id: &str) -> String {
     format!("/api/daemon/boards/{id}/attachments")
 }
 
+/// [`AGENT_BOARD_DOCS`] for `id`.
+pub fn agent_board_docs(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs")
+}
+
+/// [`AGENT_BOARD_DOC`] for `doc` of `id`.
+pub fn agent_board_doc(id: &str, doc: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs/{doc}")
+}
+
+/// [`AGENT_BOARD_DOC_MOVE`] for `doc` of `id`.
+pub fn agent_board_doc_move(id: &str, doc: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs/{doc}/move")
+}
+
 /// [`AGENT_BOARD_ATTACHMENT`] for `attachment` of `id`.
 pub fn agent_board_attachment(id: &str, attachment: &str) -> String {
     format!("/api/daemon/boards/{id}/attachments/{attachment}")
@@ -246,6 +317,9 @@ pub const CLAIMED: &str = "claimed";
 
 /// The longest title, in characters, and the longest note: one line each.
 pub const TITLE_MAX: usize = 120;
+/// A lead session's name, in characters.
+pub const LEAD_SESSION_MAX: usize = 120;
+
 /// A board's goal or done note, in characters.
 pub const GOAL_MAX: usize = 2000;
 pub const NOTE_MAX: usize = 280;
@@ -255,6 +329,8 @@ pub const BOARDS_MAX: u64 = 100;
 pub const GROUPS_MAX: u64 = 30;
 pub const ROWS_MAX: u64 = 500;
 pub const ATTACHMENTS_MAX: u64 = 20;
+/// The most Docs in a board's strip, and on one row.
+pub const BOARD_DOCS_MAX: u64 = 20;
 /// How long, in minutes, a Doing row's blocks may sit idle before it is
 /// stalled: the default, and the most a project may set (a week).
 pub const STALL_MINUTES_DEFAULT: u32 = 30;
@@ -272,7 +348,8 @@ pub const ASK_OPTION_MAX: usize = 80;
 pub const ASKED_SHOWN: usize = 3;
 
 /// What a row points at. `None` is free text. The ids are the platform's:
-/// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+/// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+/// project Doc).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPointer"))]
@@ -303,6 +380,19 @@ pub enum Pointer {
     Link {
         url: String,
     },
+    /// A project Doc (`pdc_…`) of the board's own project. Only a Doc strip
+    /// or a `reference` attachment carries one.
+    Doc {
+        id: String,
+    },
+    /// A Doc block on a machine. `title` is a snapshot from when it was
+    /// linked, since the machine may be off; a [`BoardDoc`] reads the
+    /// machine's copy instead when the copy sits in the board's project.
+    MachineDoc {
+        machine: String,
+        doc: String,
+        title: String,
+    },
 }
 
 /// Where a row stands. `None` says nothing.
@@ -326,6 +416,8 @@ pub enum Status {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardEntryKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
+    /// A group; `group` is read as this too.
+    #[serde(alias = "group")]
     Zone,
     Row,
 }
@@ -463,6 +555,93 @@ pub struct Attachment {
     pub released: bool,
 }
 
+/// What a deleted project Doc is called.
+pub const DOC_GONE: &str = "a deleted Doc";
+
+/// One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDoc"))]
+pub struct BoardDoc {
+    /// `bdc_` and 32 hex characters.
+    pub id: String,
+    /// [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+    pub pointer: Pointer,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub sections: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub written: Option<u32>,
+    /// A project Doc that was deleted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing: bool,
+    /// A machine Doc's machine, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine_name: Option<String>,
+    /// A machine Doc's copy on the platform (`pdc_…`), when it sits in this
+    /// board's project (native #673): the title and counts are then the
+    /// copy's, and the chip opens it while the machine is away. Older
+    /// platforms don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub copy: Option<String>,
+    /// The account that linked it (the owner, for an agent).
+    pub added_by: String,
+    /// The machine whose agent linked it, if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent: Option<ChatAgent>,
+    pub created_at: u64,
+}
+
+/// [`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a
+/// [`Pointer::MachineDoc`] (a machine's agent links its own machine's), to
+/// the board's strip, or with `row` (`row_…`) to that row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddDoc"))]
+pub struct AddDoc {
+    pub pointer: Pointer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub row: Option<String>,
+}
+
+/// [`BOARD_DOC_MOVE`]'s body: the Doc it goes before, in the same strip or
+/// row; none: last.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveDoc"))]
+pub struct MoveDoc {
+    #[serde(default)]
+    pub before: Option<String>,
+}
+
+/// A board that lists a project Doc.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardOfDoc"))]
+pub struct DocOnBoard {
+    pub board: String,
+    pub title: String,
+    /// In the board's Docs strip.
+    pub strip: bool,
+    /// How many rows carry it as a reference.
+    pub rows: u32,
+}
+
+/// [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+/// open ones first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardsOfDoc"))]
+pub struct DocBoards {
+    pub boards: Vec<DocOnBoard>,
+}
+
 impl Attachment {
     /// Whether this is an agent block holding its row: work, reported and
     /// not closed, and not taken over.
@@ -545,7 +724,19 @@ pub enum Mark {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts", ts(optional))]
         repo: Option<String>,
+        /// The other board the blocker is a row of, when the reader may read
+        /// the blocker and it is on a board other than this one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        board: Option<String>,
+        /// The session that leads that board, when one does.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        lead: Option<String>,
     },
+    /// The row's item is in a loop of open ordering edges (Plane can make
+    /// one): it shares its `step` with the others in the loop.
+    Cycle,
 }
 
 /// [`BOARD_ATTACHMENTS`]' body: attach `pointer` to `row` as `role`.
@@ -601,11 +792,61 @@ pub struct Board {
     /// How many of its issues are closed.
     #[serde(default)]
     pub progress: BoardProgress,
+    /// The tracker's epic it follows, when it was made from one (Plane's,
+    /// #483); absent for a board a person made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub source: Option<BoardSource>,
+    /// The session that leads the board (#414): a post on the board's thread
+    /// reaches it. Absent when no session does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<BoardLead>,
+}
+
+/// The session that leads a board: the machine it runs on and its name there,
+/// as that machine's daemon matches it (#414).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardLead {
+    pub machine: String,
+    /// The machine's name now; empty while it can't be told.
+    #[serde(default)]
+    pub machine_name: String,
+    pub session: String,
+    /// When the session took the lead.
+    pub at: u64,
+}
+
+/// The epic a board follows: its children are the board's rows, and the
+/// connection made the board, not a person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSource"))]
+pub struct BoardSource {
+    /// `plane`.
+    pub provider: String,
+    /// The epic's key in the tracker, such as `ARUGU-10`.
+    pub key: String,
+    /// Where the epic is in the tracker's web app.
+    pub url: String,
+    /// The connection that made the board, as the project calls it.
+    pub connection: String,
+    /// How many children the board is too full to show, the oldest done
+    /// ones first.
+    #[serde(default)]
+    pub left_out: u32,
+    /// Whether the epic is started in the tracker (Plane's `started` group),
+    /// read from its mirrored item; not whether the board is open.
+    #[serde(default)]
+    pub started: bool,
 }
 
 /// A board's work, counted: the rows with a primary item (an issue or a
 /// PR; a note row is never counted). `done` is those in the Done lane, and
-/// `proven` those of them with a proof.
+/// `proven` those of them with a proof; `review` and `doing` are those in
+/// the Review and Doing lanes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardProgress"))]
@@ -614,6 +855,10 @@ pub struct BoardProgress {
     pub total: u32,
     #[serde(default)]
     pub proven: u32,
+    #[serde(default)]
+    pub review: u32,
+    #[serde(default)]
+    pub doing: u32,
 }
 
 /// `PATCH`: what to change; a field left out stays. An empty goal clears it.
@@ -671,6 +916,25 @@ pub struct NewBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub goal: Option<String>,
+    /// With an agent's write: the session that makes it leads the new board
+    /// (#414). A person's write ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead_session: Option<String>,
+}
+
+/// `POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's
+/// lead (`session`, its name on its machine), or with `release` the lead is
+/// cleared, by the machine of the session that leads or by a person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LeadBoard {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub release: bool,
 }
 
 /// Where an item is in its own life, the same words for every source
@@ -755,6 +1019,10 @@ pub struct Live {
     /// issue's names. A run has none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignees: Vec<String>,
+    /// The item's labels (#547): a native issue's, a mirrored item's, a
+    /// Plane item's. A run has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     /// `plane` for a tracker's item; absent for GitHub, native issues and runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -956,7 +1224,30 @@ impl From<BlockStateReport> for BlockState {
 pub struct PutBlockState {
     pub pane: String,
     pub block: BlockStateReport,
+    /// How long ago, in milliseconds, the machine saw the block in this
+    /// state: more than none when the report waited out a failure to reach
+    /// control. A machine that sends it (0 included) also sends each live
+    /// block's state again every [`BLOCK_STATE_EVERY_MS`], so control counts
+    /// one of its reports older than [`BLOCK_STATE_STALE_MS`] as unknown.
+    /// None: a daemon from before Arugula #745, whose report is as of now
+    /// and never goes stale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub age_ms: Option<u64>,
 }
+
+/// How often a daemon sends each live agent block's state again, changed or
+/// not (Arugula #745), so control can tell a block it hears from from one it
+/// has lost.
+pub const BLOCK_STATE_EVERY_MS: u64 = 5 * 60_000;
+
+/// How old a report from a daemon that sends again
+/// ([`PutBlockState::age_ms`]) may be before a board counts its block as
+/// unknown, for lanes and claims: four of [`BLOCK_STATE_EVERY_MS`], so
+/// three missed in a row (a short outage, a laptop asleep for a while) keep
+/// the row, and a machine that is gone frees it within twenty minutes. A
+/// closed report never goes stale.
+pub const BLOCK_STATE_STALE_MS: u64 = 4 * BLOCK_STATE_EVERY_MS;
 
 /// A question on a row that a person answers on the board (Arugula #367):
 /// asked by a person or an agent, or raised by the board itself from the
@@ -1012,7 +1303,8 @@ pub struct AnsweredAsk {
 
 /// What an edge between two work items says (Arugula #403). Only `blocks`
 /// gates: it keeps the blocked item's row out of the ready set until the
-/// blocker is closed.
+/// blocker is closed. `before` (#761) says an order and gates nothing; it
+/// can't close a cycle with `blocks` edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationKind"))]
@@ -1025,6 +1317,9 @@ pub enum RelationKind {
     DuplicateOf,
     /// The first item was found while working on the second.
     DiscoveredFrom,
+    /// The first item comes before the second, in the order the work is
+    /// done in.
+    Before,
 }
 
 impl RelationKind {
@@ -1034,6 +1329,7 @@ impl RelationKind {
             RelationKind::Relates => "relates",
             RelationKind::DuplicateOf => "duplicate_of",
             RelationKind::DiscoveredFrom => "discovered_from",
+            RelationKind::Before => "before",
         }
     }
 
@@ -1043,6 +1339,7 @@ impl RelationKind {
             "relates" => RelationKind::Relates,
             "duplicate_of" => RelationKind::DuplicateOf,
             "discovered_from" => RelationKind::DiscoveredFrom,
+            "before" => RelationKind::Before,
             _ => return None,
         })
     }
@@ -1098,6 +1395,64 @@ pub struct NewRelation {
     pub from: String,
     pub to: String,
     pub kind: RelationKind,
+}
+
+/// One link of a [`LinkBatch`]: `from` is `kind` `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkEnds"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkEnds {
+    pub from: String,
+    pub to: String,
+    pub kind: RelationKind,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkBatch"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkBatch {
+    #[serde(default)]
+    pub add: Vec<LinkEnds>,
+    #[serde(default)]
+    pub remove: Vec<LinkEnds>,
+}
+
+/// What became of one link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkOutcome"))]
+#[serde(rename_all = "snake_case")]
+pub enum LinkOutcome {
+    Added,
+    AlreadyThere,
+    Removed,
+    NotThere,
+    /// Not done; `why` says.
+    Refused,
+}
+
+/// One link's outcome, in the order it was given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkResult"))]
+pub struct LinkResult {
+    pub outcome: LinkOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of
+/// `add` and of `remove`, in order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinksDone"))]
+pub struct LinksDone {
+    pub add: Vec<LinkResult>,
+    pub remove: Vec<LinkResult>,
 }
 
 /// An edge made, as [`PROJECT_RELATIONS`] answers it.
@@ -1321,6 +1676,30 @@ pub struct BlockAttached {
     pub on: Vec<BlockOn>,
 }
 
+/// A lane a person set on a row ([`Row::lane_set`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLaneSet"))]
+pub struct LaneSet {
+    /// `next`, `doing` or `review`.
+    pub lane: Lane,
+    /// The account that moved the row.
+    pub by: String,
+    pub at: u64,
+}
+
+/// [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
+/// `completed` (when not given), `not_planned` or `duplicate`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSetLane"))]
+#[serde(deny_unknown_fields)]
+pub struct SetLane {
+    pub lane: Lane,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
@@ -1335,9 +1714,18 @@ pub struct Row {
     /// Where the row is, from the live state of its items.
     #[serde(default)]
     pub lane: Lane,
+    /// Set when a person moved the row and the work hasn't changed its
+    /// derived lane since (#494): `lane` is then the row's lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lane_set: Option<LaneSet>,
     /// Work and proof attached to the row, oldest first.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// The Docs linked to the row (#517): its spike or research, in order.
+    /// They move no lane and prove nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub docs: Vec<BoardDoc>,
     /// Set only on a Done row that is proven.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -1360,6 +1748,21 @@ pub struct Row {
     /// The edges of the row's item, both ways, for the drawer.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RowRelation>,
+    /// Where the row falls in the board's order (Arugula #762): 1 plus the
+    /// highest step of the open rows that come before it, worked out on
+    /// every read and never stored. Absent for a row with no issue or PR,
+    /// and for a Done row. Doing and Review rows are step 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub step: Option<u32>,
+    /// The column the row sits in on the Steps chart (Arugula #824): the
+    /// same longest-path layout as [`Row::step`], but over every row with an
+    /// issue or a PR, done ones included, using their ordering edges whether
+    /// the other end is open or closed. So finishing work never moves a row.
+    /// Absent for a row with no issue or PR.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub place: Option<u32>,
     /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1376,10 +1779,12 @@ pub struct Row {
     pub updated_at: u64,
 }
 
+/// One of a board's four lanes as a read answers it, with its rows. The wire
+/// and TypeScript still call it a zone (`zones`, `BoardZone`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZone"))]
-pub struct Zone {
+pub struct LaneView {
     pub id: String,
     pub rev: u64,
     pub title: String,
@@ -1414,14 +1819,32 @@ pub struct Group {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardView {
     pub board: Board,
-    pub zones: Vec<Zone>,
+    pub zones: Vec<LaneView>,
     /// Empty for a board with none; an old client ignores it.
     #[serde(default)]
     pub groups: Vec<Group>,
+    /// The Docs strip, in order. Empty for a board with none; an old client
+    /// ignores it.
+    #[serde(default)]
+    pub docs: Vec<BoardDoc>,
     /// The ready set (Arugula #403): the rows (`row_…`) with an issue or a
     /// PR as their item that are in Next and have no open blocker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ready: Vec<String>,
+    /// The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+    /// step by what unblocks the most open rows, then by position (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequence: Vec<String>,
+    /// The longest chain of open rows (`row_…`), first to last; empty when
+    /// no row waits on another (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<String>,
+    /// Every row (`row_…`) as the board stores them: by group, in the
+    /// groups' order, then by position inside each, those with no group
+    /// last. A move that names the order it read (`seen`) names a group's
+    /// rows from here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
     /// What a write did that the board alone doesn't say: a PR attached to
     /// the row of the issue it closes, an item that was there already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1447,8 +1870,8 @@ pub struct PutEntry {
     pub rev: Option<u64>,
     #[serde(default)]
     pub entry: Option<EntryKind>,
-    /// A new row's group (`zon_…`).
-    #[serde(default)]
+    /// A new row's group (`zon_…`); `group` is read as this too.
+    #[serde(default, alias = "group")]
     pub zone: Option<String>,
     /// A group's title.
     #[serde(default)]
@@ -1472,19 +1895,42 @@ pub struct PutEntry {
 /// one. A group moves among groups:
 /// `before` is a group, `zone` is absent. A lane is never set (aru-125): a
 /// `zone` that is a lane is refused.
+///
+/// `seen` is the row ids of the group the row goes to, in the order the
+/// caller read them. A row's `rev` doesn't count moves, so this is what a
+/// move that mustn't overwrite someone else's checks: if the group's rows
+/// aren't those, in that order, nothing moves and the answer is 409
+/// `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+/// Absent, a move is made whatever the order.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveEntry"))]
 pub struct MoveEntry {
     #[serde(default)]
     pub rev: Option<u64>,
-    /// The group the row goes to; `null`: none. Absent: its own.
-    #[serde(default, deserialize_with = "some")]
+    /// The group the row goes to; `null`: none. Absent: its own. `group`
+    /// is read as this too.
+    #[serde(default, alias = "group", deserialize_with = "some")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "string | null"))]
     pub zone: Option<Option<String>>,
     #[serde(default)]
     pub before: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub seen: Option<Vec<String>>,
+}
+
+/// The body of a move refused as `stale_order`: the group's rows now, in
+/// order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardStaleOrder"))]
+pub struct StaleOrder {
+    pub error: String,
+    pub reason: String,
+    pub rows: Vec<String>,
 }
 
 /// A field that is there, `null` or not, is `Some`: so `null` and absent
@@ -1508,9 +1954,12 @@ impl Pointer {
         let short = |id: &str| id.chars().take(12).collect::<String>();
         match self {
             Pointer::None => String::new(),
-            Pointer::ForgeItem { id } | Pointer::Issue { id } | Pointer::Run { id } | Pointer::Workspace { id } => {
-                short(id)
-            }
+            Pointer::ForgeItem { id }
+            | Pointer::Issue { id }
+            | Pointer::Run { id }
+            | Pointer::Workspace { id }
+            | Pointer::Doc { id } => short(id),
+            Pointer::MachineDoc { title, .. } => title.clone(),
             Pointer::Block { machine, pane } => format!("{machine}/{pane}"),
             Pointer::Link { url } => url.strip_prefix("https://").unwrap_or(url).to_owned(),
         }
@@ -1518,11 +1967,76 @@ impl Pointer {
 }
 
 impl Row {
+    /// Whether the row answers a find (#546), case-insensitive. Each word of
+    /// `q` has to hold: `#541` is the item's number, `541` is that or text,
+    /// `ARUGU-12` a tracker key or text, anything else text in the item's
+    /// title, a label or the row's note; `label:ui` is a label, whole, and `@ana` a
+    /// person assigned. An empty `q` matches every row. The web's
+    /// `rowMatches` (`shared/boards/text.ts`) says the same.
+    pub fn matches(&self, q: &str) -> bool {
+        let q = q.to_lowercase();
+        let number = self.live.as_ref().map(|l| l.number).filter(|n| *n > 0);
+        let key =
+            self.live.as_ref().and_then(|l| Some(format!("{}-{}", l.identifier.as_ref()?, number?).to_lowercase()));
+        let labels = self.live.as_ref().map_or(String::new(), |l| l.labels.join("\n"));
+        let text =
+            format!("{}\n{}\n{labels}", self.live.as_ref().map_or("", |l| l.title.as_str()), self.note).to_lowercase();
+        q.split_whitespace().all(|w| {
+            if let Some(l) = w.strip_prefix("label:").filter(|l| !l.is_empty()) {
+                return self.has_label(l);
+            }
+            if let Some(p) = w.strip_prefix('@').filter(|p| !p.is_empty()) {
+                return self.has_person(p);
+            }
+            if let Some(n) = w.strip_prefix('#').filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
+                return number.is_some_and(|x| n.parse() == Ok(x));
+            }
+            if w.bytes().all(|b| b.is_ascii_digit()) {
+                return number.is_some_and(|x| w.parse() == Ok(x)) || text.contains(w);
+            }
+            let keyed = w.split_once('-').is_some_and(|(k, n)| {
+                k.starts_with(|c: char| c.is_ascii_alphabetic())
+                    && k.bytes().all(|b| b.is_ascii_alphanumeric())
+                    && !n.is_empty()
+                    && n.bytes().all(|b| b.is_ascii_digit())
+            });
+            (keyed && key.as_deref() == Some(w)) || text.contains(w)
+        })
+    }
+
+    /// Whether the row's item has this label, case-insensitive and whole.
+    pub fn has_label(&self, label: &str) -> bool {
+        self.live.as_ref().is_some_and(|l| l.labels.iter().any(|x| x.eq_ignore_ascii_case(label.trim())))
+    }
+
+    /// Whether the row's item is assigned to a person whose name or login
+    /// holds `who`, case-insensitive; a space in a name reads as `_`, as the
+    /// text render writes it.
+    pub fn has_person(&self, who: &str) -> bool {
+        let who = who.trim().to_lowercase().replace(char::is_whitespace, "_");
+        self.live.as_ref().is_some_and(|l| {
+            l.assignees.iter().any(|a| a.to_lowercase().replace(char::is_whitespace, "_").contains(&who))
+        })
+    }
+
     /// How the row's item is written to address it: `#N` for a native or a
     /// GitHub issue or PR, `IDENT-N` for a Plane item, else the pointer's
     /// short label.
     pub fn item_label(&self) -> String {
         item_label(&self.pointer, self.live.as_ref())
+    }
+
+    /// What the text view says of the row: its item's title, then ` · ` and
+    /// the note unless the note only repeats the title. A row with no live
+    /// title (a note row, or an item the reader may not see) says its note.
+    pub fn text(&self) -> String {
+        let title = self.live.as_ref().map_or("", |l| l.title.trim());
+        let note = self.note.trim();
+        match (title.is_empty(), note.is_empty() || note.to_lowercase() == title.to_lowercase()) {
+            (true, _) => note.to_owned(),
+            (false, true) => title.to_owned(),
+            (false, false) => format!("{title} · {note}"),
+        }
     }
 
     /// Whether the row has a primary item to count: not a note row.
@@ -1555,6 +2069,14 @@ fn fit(s: &str, max: usize) -> String {
     cut.truncate(cut.trim_end().len());
     cut.push('…');
     cut
+}
+
+/// ` [boards, ui]`, or empty for none.
+fn labels_suffix(labels: &[String]) -> String {
+    if labels.is_empty() {
+        return String::new();
+    }
+    format!(" [{}]", labels.join(", "))
 }
 
 /// ` (@a, @b)`, or empty for none.
@@ -1602,8 +2124,13 @@ impl Mark {
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
             Mark::Stalled { since } => format!("stalled {}", ago(*since, now_ms())),
+            Mark::BlockedBy { number: Some(n), board: Some(b), lead: Some(l), .. } => {
+                format!("blocked by #{n} on {b}, led by {l}")
+            }
+            Mark::BlockedBy { number: Some(n), board: Some(b), .. } => format!("blocked by #{n} on {b}"),
             Mark::BlockedBy { number: Some(n), .. } => format!("blocked by #{n}"),
             Mark::BlockedBy { number: None, .. } => "blocked by something you can't see".to_owned(),
+            Mark::Cycle => "in a cycle".to_owned(),
         }
     }
 }
@@ -1644,12 +2171,13 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
             _ => "",
         };
         let room = TEXT_WIDTH - lead.chars().count();
-        let who = r.live.as_ref().map(|l| assignees_suffix(&l.assignees)).unwrap_or_default();
+        let who =
+            r.live.as_ref().map(|l| labels_suffix(&l.labels) + &assignees_suffix(&l.assignees)).unwrap_or_default();
         let note = if who.is_empty() || room < who.chars().count() + 8 {
-            fit(&format!("{mark}{}", r.note), room)
+            fit(&format!("{mark}{}", r.text()), room)
         } else {
-            // The note gives way, so the assignees stay whole.
-            format!("{}{who}", fit(&format!("{mark}{}", r.note), room - who.chars().count()))
+            // The note gives way, so the labels and assignees stay whole.
+            format!("{}{who}", fit(&format!("{mark}{}", r.text()), room - who.chars().count()))
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
@@ -1672,6 +2200,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
                 .collect();
             *out += &format!("      {}\n", fit(&format!("with {}", with.join(", ")), TEXT_WIDTH - 6));
         }
+        if !r.docs.is_empty() {
+            let docs: Vec<&str> = r.docs.iter().map(|d| d.title.as_str()).collect();
+            *out += &format!("      {}\n", fit(&format!("docs {}", docs.join(", ")), TEXT_WIDTH - 6));
+        }
         if let Some(a) = &r.ask {
             let by = if a.raised { "the board".to_owned() } else { format!("for {}", a.who_name) };
             *out += &format!("      {}\n", fit(&format!("? {} ({by})", a.question), TEXT_WIDTH - 6));
@@ -1689,8 +2221,14 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
     }
 }
 
+/// The machine a board's lead runs on, as people read it.
+fn machine_label(l: &BoardLead) -> &str {
+    if l.machine_name.is_empty() { &l.machine } else { &l.machine_name }
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
-/// lanes, `Goal:` with the goal's first line, `Issues` with the board's
+/// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
+/// it when one does, `Issues` with the board's
 /// progress when it has any, and `Done:` with the done note's first line
 /// when it is closed, and `Ready (n):` with the labels of the rows that can
 /// start now when there are any (#403). Then each lane is its title and how many rows it holds
@@ -1716,6 +2254,13 @@ pub fn render(view: &BoardView) -> String {
     if !first(&b.goal).is_empty() {
         out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
     }
+    if let Some(l) = &b.lead {
+        out += &format!("{}\n", fit(&format!("Led by {} on {}", l.session, machine_label(l)), TEXT_WIDTH));
+    }
+    if !view.docs.is_empty() {
+        let docs: Vec<&str> = view.docs.iter().map(|d| d.title.as_str()).collect();
+        out += &format!("{}\n", fit(&format!("Docs: {}", docs.join(", ")), TEXT_WIDTH));
+    }
     if b.progress.total > 0 {
         let (done, total) = (b.progress.done as usize, b.progress.total as usize);
         let filled = (done * BAR / total).min(BAR);
@@ -1729,7 +2274,7 @@ pub fn render(view: &BoardView) -> String {
         .ready
         .iter()
         .filter_map(|id| view.zones.iter().flat_map(|z| &z.rows).find(|r| &r.id == id))
-        .map(|r| r.pointer.label())
+        .map(Row::item_label)
         .collect();
     if !ready.is_empty() {
         out += &format!("{}\n", fit(&format!("Ready ({}): {}", ready.len(), ready.join(", ")), TEXT_WIDTH));
@@ -1763,7 +2308,50 @@ pub fn render(view: &BoardView) -> String {
             }
         }
     }
+    steps_text(&mut out, view);
     out.trim_end().to_owned()
+}
+
+/// `Steps` after the lanes (#762): for each step, `1  #521 #522 +3` (the
+/// labels that fit, then how many more), in the order of
+/// [`BoardView::sequence`], and `Chain:` with the longest open chain. Left
+/// out when no open row waits on another: one step is only a list.
+fn steps_text(out: &mut String, view: &BoardView) {
+    let rows: Vec<&Row> = view.zones.iter().flat_map(|z| &z.rows).collect();
+    let by_id = |id: &String| rows.iter().find(|r| &r.id == id).copied();
+    let last = rows.iter().filter_map(|r| r.step).max().unwrap_or(0);
+    if last < 2 && !rows.iter().any(|r| r.marks.contains(&Mark::Cycle)) {
+        return;
+    }
+    *out += "\nSteps\n";
+    for step in 1..=last {
+        let labels: Vec<String> =
+            view.sequence.iter().filter_map(by_id).filter(|r| r.step == Some(step)).map(Row::item_label).collect();
+        if labels.is_empty() {
+            continue;
+        }
+        let head = format!("  {step:<3}");
+        let mut line = head.clone();
+        let mut shown = 0;
+        for (i, l) in labels.iter().enumerate() {
+            // Room for ` +N` after this one, unless it is the last.
+            let more = if i + 1 < labels.len() { format!(" +{}", labels.len() - i - 1).len() } else { 0 };
+            let sep = usize::from(shown > 0);
+            if line.chars().count() + sep + l.chars().count() + more > TEXT_WIDTH && shown > 0 {
+                break;
+            }
+            line += &format!("{}{l}", if sep == 1 { " " } else { "" });
+            shown += 1;
+        }
+        if shown < labels.len() {
+            line += &format!(" +{}", labels.len() - shown);
+        }
+        *out += &format!("{}\n", fit(&line, TEXT_WIDTH));
+    }
+    let chain: Vec<String> = view.chain.iter().filter_map(by_id).map(Row::item_label).collect();
+    if chain.len() > 1 {
+        *out += &format!("{}\n", fit(&format!("Chain: {}", chain.join(" → ")), TEXT_WIDTH));
+    }
 }
 
 // ---------------------------------------------------------------- work
@@ -1787,13 +2375,25 @@ pub struct WorkQuery {
     /// At most this many (default 30, at most 100).
     #[serde(default)]
     pub limit: Option<u32>,
+    /// With `untriaged`: the page after the one that answered this
+    /// [`WorkItems::next`]. Opaque; it holds its place when items leave the
+    /// list between pages.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// With `untriaged`, `new` (the default) or `old`: by when an item was
+    /// last updated.
+    #[serde(default)]
+    pub order: Option<String>,
+    /// With `untriaged`: only items with this label.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 /// One thing a row may point at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItem"))]
-pub struct WorkItem {
+pub struct RowCandidate {
     /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
     pub pointer: Pointer,
     /// `native`, `github`, `plane` or `run`.
@@ -1818,7 +2418,20 @@ pub struct WorkItem {
     pub state: String,
     /// GitHub logins for a mirrored item; account ids for a native issue.
     pub assignees: Vec<String>,
+    /// The item's label names: a native issue's, a mirrored GitHub or Plane
+    /// item's. A run has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     pub updated_at: u64,
+}
+
+/// A label and how many of a query's matches carry it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkLabel"))]
+pub struct WorkLabel {
+    pub name: String,
+    pub count: u64,
 }
 
 /// [`PROJECT_WORK`]'s answer: the newest first, across sources.
@@ -1827,7 +2440,66 @@ pub struct WorkItem {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItems"))]
 pub struct WorkItems {
     pub project: String,
-    pub items: Vec<WorkItem>,
+    pub items: Vec<RowCandidate>,
+    /// With `untriaged`: the cursor of the next page, null at the end.
+    #[serde(default)]
+    pub next: Option<String>,
+    /// With `untriaged`: how many items match `q` and `label` in all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub total: Option<u64>,
+    /// With `untriaged`: the labels of everything that matches `q`, `label`
+    /// aside (so the chips keep their counts), most items first, then by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<WorkLabel>,
+}
+
+/// The most [`AddMany`] adds in one call.
+pub const ADD_MANY_MAX: usize = 500;
+
+/// [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
+/// `untriaged` (everything that matches, but the `except` pointers). More
+/// than [`ADD_MANY_MAX`] is refused, 400: narrow the filter.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddMany"))]
+pub struct AddMany {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pointers: Option<Vec<Pointer>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub untriaged: Option<UntriagedQuery>,
+    /// With `untriaged`: pointers to leave out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub except: Vec<Pointer>,
+}
+
+/// Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`
+/// set, of the board's own project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardUntriagedQuery"))]
+pub struct UntriagedQuery {
+    pub project: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub q: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub label: Option<String>,
+}
+
+/// [`BOARD_ENTRIES_MANY`]' answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddedMany"))]
+pub struct AddedMany {
+    /// Rows made. An item on the board already isn't counted.
+    pub added: u64,
+    /// PRs attached to the row of the issue they close, as a single add does.
+    pub attached: u64,
+    pub board: BoardView,
 }
 
 #[cfg(test)]
@@ -1847,6 +2519,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_find_matches_a_row_by_number_key_or_words() {
+        let item = |title: &str, number: u64, identifier: Option<&str>, note: &str| {
+            let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Next, note);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number,
+                title: title.into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: identifier.map(Into::into),
+                state_name: None,
+                url: None,
+                category: None,
+            });
+            r
+        };
+        let a = item("Search the board", 541, None, "");
+        let b = item("Plane epics fold", 12, Some("ARUGU"), "folded lanes unfold on a match");
+        assert!(a.matches("") && a.matches("  "), "an empty find keeps every row");
+        assert!(a.matches("#541") && a.matches("541"));
+        assert!(!a.matches("#54") && !a.matches("#12"), "a number is the whole number");
+        assert!(b.matches("arugu-12") && b.matches("ARUGU-12"));
+        assert!(!b.matches("ARUGU-13") && !a.matches("ARUGU-541"));
+        assert!(a.matches("SEARCH board") && !a.matches("search lane"));
+        assert!(b.matches("unfold match") && b.matches("#12 unfold") && !b.matches("#13 unfold"));
+        let note = row(Pointer::None, Lane::Next, "Remember the Launch checklist");
+        assert!(note.matches("launch") && !note.matches("#1"));
+    }
+
     fn row(pointer: Pointer, lane: Lane, note: &str) -> Row {
         Row {
             id: "row_1".into(),
@@ -1855,13 +2560,17 @@ mod tests {
             note: note.into(),
             status: Status::None,
             lane,
+            lane_set: None,
             attachments: vec![],
+            docs: vec![],
             proof: None,
             group: None,
             marks: vec![],
             ask: None,
             asked: vec![],
             relations: vec![],
+            step: None,
+            place: None,
             live: None,
             block: None,
             agent: None,
@@ -1870,11 +2579,11 @@ mod tests {
         }
     }
 
-    fn lane(l: Lane, rows: Vec<Row>) -> Zone {
-        Zone { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
+    fn lane(l: Lane, rows: Vec<Row>) -> LaneView {
+        LaneView { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
     }
 
-    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<Zone> {
+    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<LaneView> {
         Lane::ALL
             .map(|l| lane(l, by.iter_mut().find(|(k, _)| *k == l).map(|(_, r)| std::mem::take(r)).unwrap_or_default()))
             .into()
@@ -1897,8 +2606,18 @@ mod tests {
         format!("{title}{count:>w$}", w = TEXT_WIDTH - title.chars().count())
     }
 
-    fn view(zones: Vec<Zone>) -> BoardView {
-        BoardView { board: board(), zones, groups: vec![], ready: vec![], said: None }
+    fn view(zones: Vec<LaneView>) -> BoardView {
+        BoardView {
+            board: board(),
+            zones,
+            groups: vec![],
+            docs: vec![],
+            ready: vec![],
+            sequence: vec![],
+            chain: vec![],
+            order: vec![],
+            said: None,
+        }
     }
 
     /// Adds `"added_later"` to every object in `v`.
@@ -1935,6 +2654,7 @@ mod tests {
             number: 7,
             title: "t".into(),
             assignees: vec![],
+            labels: vec![],
             provider: None,
             identifier: None,
             state_name: None,
@@ -2032,6 +2752,25 @@ mod tests {
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 
+    /// The session that leads a board is named under its goal, by its
+    /// machine's name (its id while that is unknown), and a board nobody
+    /// leads renders as before (#414).
+    #[test]
+    fn the_text_says_who_leads_the_board() {
+        let mut v = view(lanes(vec![(Lane::Next, vec![row(Pointer::None, Lane::Next, "x")])]));
+        let plain = render(&v);
+        v.board.goal = "Ship it".into();
+        v.board.lead =
+            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), at: 5 });
+        let text = render(&v);
+        assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
+        v.board.lead.as_mut().unwrap().machine_name.clear();
+        assert!(render(&v).contains("Led by ux on m1\n"));
+        v.board.lead = None;
+        v.board.goal.clear();
+        assert_eq!(render(&v), plain);
+    }
+
     /// A board's goal, issue progress and done note head its text, and a
     /// board with none of them renders as before.
     #[test]
@@ -2041,7 +2780,7 @@ mod tests {
         assert!(plain.starts_with("Next "), "{plain}");
         v.board.goal =
             "\nShip the thing to everyone, and make it easy to find the thing again later on\nsecond line".into();
-        v.board.progress = BoardProgress { done: 3, total: 5, proven: 2 };
+        v.board.progress = BoardProgress { done: 3, total: 5, proven: 2, ..Default::default() };
         v.board.closed_at = Some(9);
         v.board.done_note = "People can sign up.\nMore.".into();
         let text = render(&v);
@@ -2069,6 +2808,7 @@ Done: People can sign up.
                 number: 4,
                 title: "Fix login".into(),
                 assignees: who.iter().map(|w| (*w).to_owned()).collect(),
+                labels: vec![],
                 provider: None,
                 identifier: None,
                 state_name: None,
@@ -2084,11 +2824,76 @@ Done: People can sign up.
         )]);
         let text = render(&view(zones));
         let want = format!(
-            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix the login redirect for every browser… (@ana)\n  ○ #4                 Fix login\n",
+            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix login · Fix the login redirect for ev… (@ana)\n  ○ #4                 Fix login\n",
             head("Next", "3")
         );
         assert!(text.starts_with(&want), "{text}");
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// A row's labels follow its note as `[boards, ui]`, before its
+    /// assignees, and find it as `label:ui` and `@ana` do (#547).
+    #[test]
+    fn a_row_shows_and_finds_its_labels() {
+        let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, "Fix login");
+        r.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 4,
+            title: "Fix login".into(),
+            assignees: vec!["Ana Diaz".into()],
+            labels: vec!["boards".into(), "ui".into()],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        });
+        let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
+        assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
+        assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
+        assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
+        assert!(r.matches("@ana_di"), "a space in a name reads as _");
+    }
+
+    /// A row says its item's title, then its note unless the note repeats the
+    /// title; the labels still fit at 72 columns with the note cut first (#582).
+    #[test]
+    fn a_row_says_its_title_then_its_note() {
+        let live = |title: &str, labels: Vec<String>| Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 498,
+            title: title.into(),
+            assignees: vec![],
+            labels,
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        };
+        let titled = |note: &str, title: &str, labels: Vec<String>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
+            r.live = Some(live(title, labels));
+            r
+        };
+        let text = |r: Row| render(&view(lanes(vec![(Lane::Next, vec![r])])));
+        let bare = text(titled("", "Fix login", vec![]));
+        assert!(bare.contains("#498               Fix login\n"), "{bare}");
+        let both = text(titled("waiting on design", "Fix login", vec![]));
+        assert!(both.contains("#498               Fix login · waiting on design\n"), "{both}");
+        let same = text(titled(" fix LOGIN ", "Fix login", vec![]));
+        assert!(same.contains("#498               Fix login\n"), "{same}");
+        let none = row(Pointer::None, Lane::Next, "Remember the checklist");
+        assert_eq!(none.text(), "Remember the checklist");
+        let long = "a note that runs on well past the end of the line and has to give way";
+        let fitted = text(titled(long, "Fix login", vec!["boards".into(), "ui".into()]));
+        let line = fitted.lines().find(|l| l.contains("#498")).unwrap();
+        assert!(line.contains("Fix login · a note") && line.contains('…'), "{fitted}");
+        assert!(line.ends_with("[boards, ui]") && line.chars().count() <= TEXT_WIDTH, "{fitted}");
     }
 
     /// A block's row carries what its machine reported under it, and the
@@ -2188,7 +2993,7 @@ Done: People can sign up.
                 id: "zon_1".into(),
                 rev: 1,
                 title: "Decide".into(),
-                progress: BoardProgress { done: 1, total: 1, proven: 0 },
+                progress: BoardProgress { done: 1, total: 1, ..Default::default() },
             },
             Group { id: "zon_2".into(), rev: 1, title: "Build".into(), progress: BoardProgress::default() },
         ];
@@ -2224,6 +3029,23 @@ Done: People can sign up.
         assert!(serde_json::to_value(parse(serde_json::json!({}))).unwrap().get("zone").is_none());
     }
 
+    /// A write takes `group` where it takes `zone`, and still sends `zone`
+    /// for an older platform.
+    #[test]
+    fn a_write_takes_group_for_zone() {
+        let moved = |v: serde_json::Value| serde_json::from_value::<MoveEntry>(v).unwrap();
+        assert_eq!(moved(serde_json::json!({ "group": null })).zone, Some(None));
+        assert_eq!(moved(serde_json::json!({ "group": "zon_1" })).zone, Some(Some("zon_1".into())));
+        assert_eq!(moved(serde_json::json!({ "zone": "zon_1" })).zone, Some(Some("zon_1".into())));
+
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "group", "group": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "zone", "zone": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let back = serde_json::to_value(&put).unwrap();
+        assert_eq!((&back["entry"], &back["zone"]), (&serde_json::json!("zone"), &serde_json::json!("zon_1")));
+    }
+
     /// The marks' wire shapes.
     #[test]
     fn marks_are_tagged_by_kind() {
@@ -2252,10 +3074,7 @@ Done: People can sign up.
             "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a", "created_at": 1, "updated_at": 2
         });
         let b: Board = serde_json::from_value(old).unwrap();
-        assert_eq!(
-            (b.goal.as_str(), b.closed_at, b.progress),
-            ("", None, BoardProgress { done: 0, total: 0, proven: 0 })
-        );
+        assert_eq!((b.goal.as_str(), b.closed_at, b.progress), ("", None, BoardProgress::default()));
     }
 
     /// A row from a control before lanes has no lane, attachments or proof,
@@ -2287,22 +3106,36 @@ Done: People can sign up.
     }
 
     /// A blocked row says what blocks it (or that it can't say), and the
-    /// ready set is a line of the rows that can start; only `blocks` gates.
+    /// ready set is a line of the rows that can start, by `#N`; only `blocks` gates.
     #[test]
     fn the_text_says_what_blocks_a_row_and_what_is_ready() {
         let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
         blocked.id = "row_b".into();
         blocked.marks = vec![
-            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None },
-            Mark::BlockedBy { number: None, title: None, repo: None },
+            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None, board: None, lead: None },
+            Mark::BlockedBy { number: None, title: None, repo: None, board: None, lead: None },
         ];
         let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
         free.id = "row_f".into();
+        free.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 8,
+            title: "Design".into(),
+            assignees: vec![],
+            labels: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
         let text = render(&v);
         assert!(text.contains("blocked by #7 · blocked by something you can't see"), "{text}");
-        assert!(text.contains("Ready (1): iss_free"), "{text}");
+        assert!(text.contains("Ready (1): #8"), "{text}");
         assert!(!text.contains("Ready (2)"), "{text}");
         assert!(RelationKind::Blocks.blocks_ready());
         assert!(
@@ -2312,5 +3145,45 @@ Done: People can sign up.
         );
         v.ready.clear();
         assert!(!render(&v).contains("Ready"), "no ready set, no line");
+    }
+
+    /// After the lanes, `Steps` lists each step's rows in the view's order
+    /// (what doesn't fit is counted), and `Chain` the longest open chain;
+    /// a board with one step has neither (#762).
+    #[test]
+    fn the_text_lists_the_steps_and_the_longest_chain() {
+        let mk = |n: u64, step: u32| {
+            let mut r = row(Pointer::Issue { id: format!("iss_{n}") }, Lane::Next, "T");
+            r.id = format!("row_{n}");
+            r.step = Some(step);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number: n,
+                title: "T".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+            });
+            r
+        };
+        let rows: Vec<Row> = (1..=40).map(|n| mk(500 + n, 1)).chain([mk(600, 2), mk(601, 3)]).collect();
+        let flat = view(lanes(vec![(Lane::Next, rows[..40].to_vec())]));
+        assert!(!render(&flat).contains("Steps"), "{}", render(&flat));
+        let mut v = view(lanes(vec![(Lane::Next, rows.clone())]));
+        v.sequence = rows.iter().rev().map(|r| r.id.clone()).collect();
+        v.chain = vec!["row_501".into(), "row_600".into(), "row_601".into()];
+        let text = render(&v);
+        let steps = text.split("\nSteps\n").nth(1).unwrap_or_else(|| panic!("{text}"));
+        let lines: Vec<&str> = steps.lines().collect();
+        assert!(lines[0].starts_with("1  #540 #539"), "{lines:?}");
+        assert!(lines[0].contains(" +"), "{lines:?}");
+        assert_eq!(&lines[1..], ["2  #600", "3  #601", "Chain: #501 → #600 → #601"]);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 }

@@ -43,6 +43,8 @@ fn routes() -> Routes {
         .route("/api/notify/prefs", get(crate::notify::prefs).post(crate::notify::set_prefs))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
+        // A project's Access view (Arugula #682): who can do what here.
+        .route("/api/projects/{project}/grants", get(crate::project_grants::list))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(
@@ -57,6 +59,8 @@ fn routes() -> Routes {
             arugula_control_wire::projects::PROJECT_TRACKER,
             axum::routing::patch(trackers::connect::settings).delete(trackers::connect::disconnect),
         )
+        .route(arugula_control_wire::projects::TRACKER_HISTORY, get(trackers::history::history))
+        .route(arugula_control_wire::projects::TRACKER_MOVE_RETRY, post(trackers::history::retry))
         .route(arugula_control_wire::projects::TRACKER_WRITES, post(trackers::writes::person))
         .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITES, get(trackers::writes::waiting))
         .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITE, axum::routing::patch(trackers::writes::edit))
@@ -77,7 +81,6 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
         .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))
-        .route(arugula_control_wire::projects::INBOX_SHADOW, post(forge::inbox::shadow))
         .route(arugula_control_wire::projects::INBOX_ITEM, post(forge::inbox::mark))
         // Native issues (M195).
         .route(issues::PROJECT_ISSUES, get(crate::issues::list_route).post(crate::issues::create_route))
@@ -103,14 +106,24 @@ fn routes() -> Routes {
         .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
         .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
+        .route(boards::BOARD_ENTRIES_MANY, post(crate::boards::add_many_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
         .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))
         .route(boards::BOARD_ATTACHMENTS, post(crate::boards::attach_route))
         .route(boards::BOARD_ATTACHMENT, axum::routing::delete(crate::boards::detach_route))
+        .route(boards::BOARD_DOCS, post(crate::boards::docs::add_route))
+        .route(boards::BOARD_DOC, axum::routing::delete(crate::boards::docs::remove_route))
+        .route(boards::BOARD_DOC_MOVE, post(crate::boards::docs::move_route))
+        .route(boards::PROJECT_DOC_BOARDS, get(crate::boards::docs::on_boards_route))
+        .route(boards::AGENT_BOARD_DOCS, post(crate::boards::agent::add_doc))
+        .route(boards::AGENT_BOARD_DOC, axum::routing::delete(crate::boards::agent::remove_doc))
+        .route(boards::AGENT_BOARD_DOC_MOVE, post(crate::boards::agent::move_doc))
         .route(boards::BOARD_ROW_ASK, post(crate::boards::asks::ask_route))
+        .route(boards::BOARD_ROW_LANE, put(crate::boards::set_lane_route))
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))
+        .route(boards::AGENT_PROJECT_RELATIONS_BATCH, post(crate::boards::agent::link))
         .route(boards::AGENT_PROJECT_RELATION, axum::routing::delete(crate::boards::agent::unrelate))
         .route(boards::PROJECT_RELATIONS, post(crate::boards::relations::add_route))
         .route(boards::PROJECT_RELATION, axum::routing::delete(crate::boards::relations::remove_route))
@@ -120,6 +133,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD, get(crate::boards::agent::get).patch(crate::boards::agent::edit))
         .route(boards::AGENT_BOARD_CLOSE, post(crate::boards::agent::close))
         .route(boards::AGENT_BOARD_REOPEN, post(crate::boards::agent::reopen))
+        .route(boards::AGENT_BOARD_LEAD, post(crate::boards::agent::lead))
         .route(boards::AGENT_BOARD_ENTRIES, put(crate::boards::agent::put))
         .route(boards::AGENT_BOARD_ENTRY, axum::routing::delete(crate::boards::agent::delete))
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))
@@ -136,8 +150,33 @@ fn routes() -> Routes {
                 .put(crate::project_docs::put_route)
                 .delete(crate::project_docs::delete_route),
         )
+        .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
+        .route(
+            project_docs::PROJECT_DOC_COPIES,
+            get(crate::project_docs::copies_route).post(crate::project_docs::share_route),
+        )
+        .route(project_docs::PROJECT_DOC_COPY, put(crate::project_docs::update_route))
+        .route(
+            project_docs::MACHINE_DOC,
+            put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),
+        )
+        .route(
+            project_docs::MACHINE_DOC_ASSET,
+            put(crate::project_docs_machine::asset_route)
+                .layer(axum::extract::DefaultBodyLimit::max(project_docs::ASSET_MAX + 1)),
+        )
         .route("/github/webhook", post(forge::webhook))
         .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
+        // CI alerts as native issues (native #774).
+        .route(
+            arugula_control_wire::projects::CI_NOTIFY,
+            post(crate::ci_alerts::notify).layer(axum::extract::DefaultBodyLimit::max(crate::ci_alerts::BODY_MAX)),
+        )
+        .route(
+            arugula_control_wire::projects::PROJECT_CI_ALERTS,
+            get(crate::ci_alerts::show).patch(crate::ci_alerts::settings),
+        )
+        .route(arugula_control_wire::projects::PROJECT_CI_ALERTS_KEY, post(crate::ci_alerts::make_key))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))
@@ -211,6 +250,7 @@ fn all_routes() -> Routes {
 /// The platform's router, for any state the hub's router has (the
 /// platform's own is applied here).
 pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Router<S> {
+    platform.adopt();
     // A call after a write in the hub reads the feed first (read your
     // writes: `cache::fresh`).
     all_routes()

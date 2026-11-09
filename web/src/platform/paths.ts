@@ -18,11 +18,11 @@
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
-//   /p/:project/triage             its open issues on no board, when the
-//                                  `boards` Labs flag is on (#292)
-//   /p/:project/boards             its boards, when the
-//                                  `boards` Labs flag is on
+//   /p/:project/triage             the Boards page, scrolled to Not on a board (#292, #656)
+//   /p/:project/boards             its boards
 //   /p/:project/boards/:board      a board (`brd_…`)
+//   /docs                          every Doc the reader can read, their own
+//                                  private ones first (#418)
 //   /p/:project/docs               its Docs (aru-118)
 //   /p/:project/docs/:doc          a Doc (`pdc_…`)
 //   /p/:project/runs               its runs (M215): `?state=…`, `?trigger=…`,
@@ -46,6 +46,10 @@
 //   /inbox                         the reader's inbox (M171): items that want
 //                                  something of them, and drafts waiting
 //   /settings                      account settings
+//   /design                        the design reference (#693): every shared
+//                                  piece of the UI, drawn by the real
+//                                  components (`#type`, `#chips`… are its
+//                                  sections); no project, no data
 //   /deploys/:deploy               a deploy (M218): its card, approvals
 //                                  and log; a push for one opens here
 //
@@ -66,7 +70,7 @@
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards"] as const;
+export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"] as const;
 
 export type Route =
   | { page: "home" }
@@ -77,7 +81,7 @@ export type Route =
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
-  | { page: "docs"; project: string }
+  | { page: "docs"; project?: string }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
@@ -94,6 +98,7 @@ export type Route =
   | { page: "inbox" }
   | { page: "all-boards" }
   | { page: "settings" }
+  | { page: "design" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
@@ -156,6 +161,12 @@ export function withSlug(id: string, name?: string | null): string {
   return slug ? `${id}-${slug}` : id;
 }
 
+/** The slug `path` has after `id`, if it has one. */
+export function slugIn(path: string, id: string): string | undefined {
+  const segment = path.split("/").find((s) => idOf(s) === id);
+  return segment?.slice(id.length + 1) || undefined;
+}
+
 /** The route a location names. */
 export function parse(path: string, search = ""): Route {
   const parts = path.split("/").filter(Boolean);
@@ -170,7 +181,9 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
+  if (parts.length === 1 && parts[0] === "docs") return { page: "docs" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
+  if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
     if (parts[1] === "activity" || parts[1] === "saved") return { page: "find", what: "chat", view: parts[1] };
@@ -329,7 +342,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "docs":
-      return `/p/${s(r.project)}/docs`;
+      return r.project ? `/p/${s(r.project)}/docs` : "/docs";
     case "doc":
       return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {
@@ -370,6 +383,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return "/boards";
     case "settings":
       return "/settings";
+    case "design":
+      return "/design";
     case "deploy":
       return `/deploys/${r.deploy}`;
     case "find":

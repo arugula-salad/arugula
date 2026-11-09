@@ -32,8 +32,8 @@ fn member(text: &str) -> NewPrompt<'_> {
     NewPrompt { author: "alice", source: Source::Member, association: None, text }
 }
 
-fn new_session(parent_seq: u64) -> NewSession<'static> {
-    NewSession {
+fn new_session(parent_seq: u64) -> NewAgentSession<'static> {
+    NewAgentSession {
         project: "prj_a",
         room: "room_1",
         parent_seq,
@@ -98,20 +98,20 @@ impl Machine {
     }
 }
 
-type Moved = Result<(Session, Vec<Event>), Refused>;
+type Moved = Result<(AgentSession, Vec<Event>), Refused>;
 
 fn control(db: &Db, s: &str, from: State, to: State, at: u64) -> Moved {
     let detail = if to == State::Failed { r#"{"reason":"the workspace is gone"}"# } else { "{}" };
     db.move_session(s, &Move::Control { from, to, at, detail }).unwrap()
 }
 
-fn create(db: &Db, parent_seq: u64) -> Session {
+fn create(db: &Db, parent_seq: u64) -> AgentSession {
     db.create_session(&new_session(parent_seq), T0).unwrap().unwrap().0
 }
 
 /// A session brought to `state` the shortest way, on thread message
 /// `parent_seq`.
-fn session_in(db: &Db, b: &Machine, state: State, parent_seq: u64) -> Session {
+fn session_in(db: &Db, b: &Machine, state: State, parent_seq: u64) -> AgentSession {
     let s = create(db, parent_seq);
     let now = T0 + 10;
     match state {
@@ -452,7 +452,7 @@ fn a_box_runs_three_sessions_and_parks_done_ones() {
         session_in(&db, &b, State::Working, thread);
     }
     let fourth = create(&db, 4);
-    let ids = |w: Vec<SessionWork>| w.into_iter().map(|w| w.session).collect::<Vec<_>>();
+    let ids = |w: Vec<AgentSessionWork>| w.into_iter().map(|w| w.session).collect::<Vec<_>>();
     assert_eq!(db.session_work_at("hw_1", T0 + 20).unwrap().len(), 3, "the queued one waits");
     assert_eq!(b.report(&db, &fourth.id, State::Working, T0 + 20).unwrap_err(), Refused::Busy);
     // All three finishing their turns makes no room yet: their agents are
@@ -620,12 +620,12 @@ fn one_session_per_thread_on_a_live_workspace() {
     let again = create(&db, 1);
     assert_eq!(db.session_on_thread("room_1", 1).unwrap().unwrap().id, again.id);
 
-    assert!(db.create_session(&NewSession { workspace: "hw_none", ..new_session(3) }, T0).unwrap().is_none());
-    assert!(db.create_session(&NewSession { project: "prj_none", ..new_session(3) }, T0).unwrap().is_none());
+    assert!(db.create_session(&NewAgentSession { workspace: "hw_none", ..new_session(3) }, T0).unwrap().is_none());
+    assert!(db.create_session(&NewAgentSession { project: "prj_none", ..new_session(3) }, T0).unwrap().is_none());
     db.c().execute("UPDATE hosted_workspaces SET deleted_at = 1 WHERE id = 'hw_1'", params![]).unwrap();
     assert!(db.create_session(&new_session(3), T0).unwrap().is_none(), "a deleted workspace");
-    assert!(db.create_session(&NewSession { slug: "Not A Slug", ..new_session(4) }, T0).is_err());
-    let bare = NewSession { slug: "", ..new_session(5) };
+    assert!(db.create_session(&NewAgentSession { slug: "Not A Slug", ..new_session(4) }, T0).is_err());
+    let bare = NewAgentSession { slug: "", ..new_session(5) };
     db.c().execute("UPDATE hosted_workspaces SET deleted_at = NULL", params![]).unwrap();
     let s = db.create_session(&bare, T0).unwrap().unwrap().0;
     assert_eq!(s.branch, format!("arugula/{}", &s.id[4..12]));
@@ -751,7 +751,8 @@ fn an_accounts_sessions_and_prompts_go_with_it() {
         )
         .unwrap();
     add_workspace(&db, "prj_p", "hw_p", "mine", None);
-    let mine = db.create_session(&NewSession { project: "prj_p", workspace: "hw_p", ..new_session(9) }, T0).unwrap();
+    let mine =
+        db.create_session(&NewAgentSession { project: "prj_p", workspace: "hw_p", ..new_session(9) }, T0).unwrap();
     let mine = mine.unwrap().0;
     let gone = crate::Deleted { account: "alice".into(), machines: vec![], disbanded: vec![] };
     {
@@ -843,4 +844,20 @@ fn actions_wait_for_the_box_and_the_first_answer_wins() {
     assert_eq!(all.iter().find(|x| x.id == c.id).unwrap().state, ActionState::Dropped);
     let ended = db.add_session_action(&s.id, &ask(ActionKind::Cancel, None), T0 + 43).unwrap();
     assert_eq!(ended, Err(Refused::Moved { now: State::Stopped }));
+}
+
+/// A thread's latest session is its own, or the try picked from its Try 3:
+/// never a review of it or a try nobody picked, however new.
+#[test]
+fn a_threads_latest_session_skips_its_reviews_and_unpicked_tries() {
+    let db = Db::test();
+    let b = Machine::new();
+    seed(&db, Some(&b.id));
+    let s = create(&db, 1);
+    create_review_in(&db.c(), &s, "alice", "codex", "look at it", T0 + 5).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, s.id, "not its review");
+    let tries = db.start_tries(&s.id, &["codex", "claude"], T0 + 10).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, s.id, "not a try nobody picked");
+    db.pick_try(&s.id, &tries[0].id, "alice", T0 + 20).unwrap().unwrap();
+    assert_eq!(db.latest_thread_session("room_1", 1).unwrap().unwrap().id, tries[0].id, "the picked try");
 }

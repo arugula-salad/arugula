@@ -21,4 +21,4 @@ crates/platform), so a platform edit doesn't rebuild the hub's 38k lines.
 - `src/planter_backup.rs`: planter's backup as both imports read it.
 - `src/lib.rs`: `Config`, and the few names and checks both sides use.
 
-Everything here is the contract `scripts/ci-hub-changed` always compares.
+Everything here is among the hub's release inputs (`ops/src/control.component.ts`).

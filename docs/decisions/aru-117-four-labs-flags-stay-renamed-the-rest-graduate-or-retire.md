@@ -65,7 +65,10 @@ machine overrides" (aru-068).
 - **`sandbox-providers`** (was `vms`), *External sandbox providers*:
   daemon-managed VMs through the machine's own provider (VM tabs and
   panes, machines, the sandboxes page). The platform's hosted (cloud)
-  workspaces are a separate thing, and need no flag.
+  workspaces are a separate thing, and need no flag. Since 2026-11-04 the
+  machine's own provider is loam alone, named by `--loam-url`: the Sprites
+  adapter (wisp) went with the older machine model (native Arugula issue
+  670, step 7), and the flag still gates the one adapter the same way.
 - **`chant-workspaces`** (was `workspaces`), *Chant workspaces*: chant's
   workspace inspection, relationships and gates.
 - **`additional-forges`** (was `forges`), *GitLab and Forgejo*: stays in
@@ -110,6 +113,13 @@ that still names it changes nothing:
   machine that had the flag on keeps it on.
 - **`swarm-themes`**: the swarm's city, hive and timeline views are
   everyone's, picked under the swarm's Theme and kept in the browser.
+
+- **`boards`** (2026-11-02, Aaron: `boards` graduates too): a project's
+  boards and epics are on for everyone, a primary feature the flag hid from
+  teams and PMs. Its agents' grants (`boards.read`, `boards.write`, and
+  `issues.write` and `trackers.write` for the rest) still decide what a
+  machine's agents may do. A `boards` word left in `flags.json` or in a
+  control push changes nothing (native #191).
 
 **Studio's connector retires later.** The daemon's own studio login and
 personal-access-token connector (linking a studio, `/api/studio…`, its

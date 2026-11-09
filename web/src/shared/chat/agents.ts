@@ -11,10 +11,27 @@ export function isSystemLine(m: ChatMessage): boolean {
   return m.via === "system" && !m.author;
 }
 
+/** The GitHub login of a comment brought in from GitHub (M205: an issue
+ * opened there, whose comments cross): no author, `via` `github:<login>`.
+ * Null for any other message. */
+export function githubLogin(m: ChatMessage): string | null {
+  return !m.author && m.via?.startsWith("github:") ? m.via.slice("github:".length) || "someone" : null;
+}
+
+/** What CI wrote (native #774): no author, `via` `ci:<source>`. Its
+ * name, "chant CI", or null for any other message. */
+export function ciName(m: ChatMessage): string | null {
+  return !m.author && m.via?.startsWith("ci:") && m.via.length > 3 ? `${m.via.slice(3)} CI` : null;
+}
+
 /** Who wrote a message, as it's shown: its author's name, or "<owner>'s
  * agent on <machine>" for one an agent wrote (M197), everywhere it shows. */
 export function authorLabel(m: ChatMessage): string {
   if (isSystemLine(m)) return "Arugula";
+  const gh = githubLogin(m);
+  if (gh) return gh;
+  const ci = ciName(m);
+  if (ci) return ci;
   // What an agent session said in its thread (Arugula #215): the session's.
   if (!m.author && m.via?.startsWith("said:ses_")) return `Agent session ${m.via.slice("said:ses_".length, "said:ses_".length + 8)}`;
   const name = m.author ? m.name || "someone" : "a deleted account";
@@ -92,14 +109,25 @@ export function sessionSlug(name: string): string {
 
 /** A machine `@` offers (#428), or one of its recent sessions. */
 export interface MachineMention {
-  /** What goes after the `@`: the machine's name, lowercased as control
-   * resolves it, or `<machine>/<session slug>`. */
+  /** What goes after the `@`: the machine's name as a word
+   * ([`machineHandle`]), as control resolves it, or `<machine>/<session slug>`. */
   token: string;
   machine: string;
   /** The machine's name, or the session's. */
   name: string;
   /** With a session: the machine it's under. */
   session?: boolean;
+}
+
+/** The word `@machine` names a machine by (control-wire `machine::handle`,
+ * #500): its name lowercased, each run of anything but letters, digits, `_`,
+ * `-` and `.` one dash, none at either end. The hostname
+ * `Aarons-Mac-mini.local` is `aarons-mac-mini.local`; "My Mini" is `my-mini`. */
+export function machineHandle(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}_.]+/gu, "-")
+    .replace(/^[.-]+|[.-]+$/g, "");
 }
 
 /** What control's `@` can name (platform chat.rs `at_words`): letters,
@@ -109,15 +137,14 @@ const MENTIONABLE_WORD = /^[\p{L}\p{N}_.-]*[\p{L}\p{N}_]$/u;
 /** The machines a mention reaches in a room (control says: `mentionable`),
  * each followed by its recent sessions, for `@`. `typed` is what follows the
  * `@`: `geek` filters machines by name, `geek/ux` the sessions of the machine
- * that is `geek`. A name that isn't one word to type can't be mentioned
- * and isn't offered. */
+ * that is `geek`. A machine is offered by its current name only. */
 export function machineMentions(agents: ChatRoomAgent[], typed: string): MachineMention[] {
   const q = typed.toLowerCase();
   const slash = q.indexOf("/");
   const out: MachineMention[] = [];
   const seen = new Set<string>();
   for (const a of agents) {
-    const token = a.machine_name.toLowerCase();
+    const token = machineHandle(a.machine_name);
     if (!a.mentionable || !token || !MENTIONABLE_WORD.test(token) || seen.has(token)) continue;
     seen.add(token);
     const mine = a.sessions.map((s) => ({ name: s, slug: sessionSlug(s) })).filter((s, i, all) => s.slug && all.findIndex((t) => t.slug === s.slug) === i);

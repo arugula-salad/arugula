@@ -34,8 +34,8 @@ export function SessionPage({ project, session }: { project: string; session: st
                 {/* Seconds, since its events land seconds apart (UI audit #200). */}
                 <Time at={e.at} seconds />
                 <span>{e.text}</span>
-                <span class="signed" title={e.signed ? "Its box reported it, signed" : "The platform recorded it"}>
-                  {e.signed ? "box, signed" : "platform"}
+                <span class="signed" title={e.signed ? "Its box reported it, signed" : "Arugula recorded it"}>
+                  {e.signed ? "box, signed" : "Arugula"}
                 </span>
               </li>
             ))}

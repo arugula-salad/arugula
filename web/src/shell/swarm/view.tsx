@@ -1,5 +1,5 @@
 // The swarm view (M26, `/#swarm`): every pane the page can see, on every
-// host (M25), as one field of tiles that cluster by project, machine, kind,
+// host (M25), as one field of tiles that cluster by repo, machine, kind,
 // session or person, with what needs you lifted out to a rail of cards
 // (M24's reasons, bundled by their bundle keys) that anyone who may answer
 // can act on: allow, deny, answer, dismiss, and send the agent a follow-up
@@ -10,6 +10,7 @@
 // (archive/spikes:spikes/s16-swarm/canvas.html). On a phone the rail is a strip of cards
 // along the bottom, and the field pinches and pans.
 
+import { EmptyLine } from "../../shared/ui/block-states";
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
@@ -24,7 +25,7 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
-import { NvimIcon } from "../ui/shell/icons";
+import { CloseIcon, IconButton, NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { ariaKeys, keyHint, useBinding } from "../ui/keys";
 import { useWall } from "./wall";
@@ -34,6 +35,7 @@ import { boardFocus, rowChip } from "./board-focus";
 import { useBoardView } from "./board-live";
 import { closeSwarmBoard, openSwarmBoard } from "./route";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { ObjectChip } from "../../shared/ui/state-chip";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -474,7 +476,7 @@ export function SwarmView({
             <div class="swarm-board" data-swarm-board={board}>
               <b>Board: {read.view?.board.title ?? "…"}</b>
               <button data-swarm-all title="Every pane again" onClick={closeSwarmBoard}>
-                ✕ All panes
+                <CloseIcon size="xs" /> All panes
               </button>
             </div>
           )}
@@ -502,7 +504,7 @@ export function SwarmView({
         {!board && (
           <div>
             <div class="swarm-seg-l">Cluster by</div>
-            <div class="swarm-seg" role="group" aria-label="Cluster by">
+            <div class="seg small swarm-seg" role="group" aria-label="Cluster by">
               {GROUPINGS.map((g) => (
                 <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
                   {GROUPING_LABEL[g]}
@@ -513,7 +515,7 @@ export function SwarmView({
         )}
         <div>
           <div class="swarm-seg-l">Theme</div>
-          <div class="swarm-seg" role="group" aria-label="Theme">
+          <div class="seg small swarm-seg" role="group" aria-label="Theme">
             {THEMES.map((t) => (
               <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -569,7 +571,7 @@ export function SwarmView({
         {board && (
           <div class="swarm-lanes" data-swarm-lanes>
             {read.missing && !read.view && <p class="dim" data-swarm-board-missing>That board isn't one you can read ({read.missing}).</p>}
-            {lanes?.lanes.length === 0 && <p class="dim">No rows on this board yet.</p>}
+            {lanes?.lanes.length === 0 && <EmptyLine>No rows on this board yet.</EmptyLine>}
             {lanes?.lanes.map((l) => (
               <span key={l.name} class="swarm-lane" data-lane={l.name} data-workers={l.keys.length} data-rows={l.rows}>
                 {l.label}
@@ -587,7 +589,7 @@ export function SwarmView({
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
           {shown.length === 0 && answered.length === 0 && (
-            <p class="swarm-empty">Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</p>
+            <EmptyLine>Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</EmptyLine>
           )}
           {railed.map((b) => (
             <Card
@@ -653,15 +655,15 @@ export function SwarmView({
           <div class="ph">
             {(byKey(peek.key)?.info.app === "nvim" || byKey(peek.key)?.info.editor?.app === "nvim") && (
               <span class="swarm-peek-app" data-swarm-nvim role="img" aria-label="nvim" title="nvim">
-                <NvimIcon size={12} />
+                <NvimIcon size="xs" />
               </span>
             )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
             {onIssueChip([byKey(peek.key)?.info.on_issue]) && (
-              <span class="work-chip" title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
+              <ObjectChip title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
                 {onIssueChip([byKey(peek.key)?.info.on_issue])!.label}
-              </span>
+              </ObjectChip>
             )}
           </div>
           <pre>{peek.text}</pre>
@@ -679,8 +681,8 @@ const ARIA: Record<Theme, string> = {
 };
 
 /** What to do with each theme: [laptop, phone]. */
-/** #551: where a pane's project comes from. */
-const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
+/** #551: where a pane's repo comes from. */
+const PROJECTS = "A pane's repo is the git repository it's in; one outside a repository goes by its directory.";
 
 
 /** The how-to tip, once put away. */
@@ -1070,16 +1072,17 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
     <div class="swarm-card in t-answered" data-answered={d.answered.id} data-panes={p.key} style={{ "--c": "rgb(124,134,152)" }}>
       <div class="ch">
         <b class="answered-by">{answeredLine(d.answered)}</b>
-        <button class="link swarm-close" title="Close" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" class="link swarm-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
       <div class="cm">
         %{p.id} · {p.host}
       </div>
       <div class="cq">{d.answered.headline}</div>
-      {can && (p.info.inbox || p.info.type === "agent") && (
+      {can && (
         <FollowUpBox
+          open={p.info.inbox || p.info.type === "agent"}
           pane={p.id}
           request={requester(fleet, p.host)}
           paneOp={(op) => fleet.paneOp(p.host, p.id, op)}

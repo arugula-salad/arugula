@@ -177,6 +177,10 @@ enum Command {
     ///
     /// Once its shell is waiting at its prompt.
     Rerun(cmd::rerun::Args),
+    /// Let teammates' agents mention a session, or silence them.
+    ///
+    /// `off %N` keeps them out of one session for as long as the pane lives.
+    Mentions(cmd::mentions::Args),
     /// Claude Code conversations on this machine.
     ///
     /// From a terminal or the desktop app's Code tab. `open` shows one as an agent
@@ -340,11 +344,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who else can reach which sessions.
+    /// Who can reach this machine, and as what.
     ///
-    /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
-    /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
-    /// control).
+    /// `access` shows it: the owner, the team's people by their role, each
+    /// session's shares, links, ssh guests and trust, each saying whose word
+    /// it is (this machine's, or the team's roster), then its agents' powers
+    /// on Arugula cloud. `access grant SESSION WHO ROLE` shares a session,
+    /// `access revoke SESSION WHO` ends that, `access log` lists every grant
+    /// and revoke. WHO is a tailnet login (or `account:ID` from control).
     Access {
         #[command(subcommand)]
         cmd: Option<cmd::access::AccessCmd>,
@@ -363,11 +370,6 @@ enum Command {
     Shares {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
-    },
-    /// History other hosts synced here (kept encrypted).
-    Synced {
-        #[command(subcommand)]
-        cmd: Option<cmd::synced::SyncedCmd>,
     },
     /// Open this machine's page in your browser, signed in.
     ///
@@ -393,16 +395,26 @@ enum Command {
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// What your machines' agents may do with your things on Arugula control.
+    /// The powers your machines' agents hold: what they may do in a project on
+    /// Arugula control.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
-    /// takes grants from one machine, `restore` gives `cloud.drive` back; `ls`
-    /// (the default) lists them. Needs `arugula login`.
+    /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
+    /// (the default) lists them, and `ls --project X` is a project's Access
+    /// view: who can do what there. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
+    },
+    /// A machine's name on Arugula control.
+    ///
+    /// `rename` changes what the machines list, chat and `@machine` mentions
+    /// call it. Needs `arugula login`.
+    Machine {
+        #[command(subcommand)]
+        cmd: cmd::machine::MachineCmd,
     },
     /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
     ///
@@ -421,10 +433,10 @@ enum Command {
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
     /// lists them (and how each one's setup goes), `open` wakes one and
     /// says its machine, `edit` changes its spec, `secret` sets what it
-    /// clones with and takes as env, `rebuild` makes its box again from its
-    /// spec (asking the box for unpushed work first), `delete` takes it and
-    /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// clones with and takes as env, `rebuild` makes its machine again from
+    /// its spec (asking the machine for unpushed work first), `delete` takes
+    /// it and its machine away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never on the machine; Anthropic's may be a
     /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).
@@ -467,6 +479,17 @@ enum Command {
     Deploys {
         #[command(subcommand)]
         cmd: cmd::deploys::DeploysCmd,
+    },
+    /// What chant needs from Arugula.
+    ///
+    /// `trust-entry` prints your passkeys as entries for chant's
+    /// `.chant/trust.json` (`passkeys`), as `arugula:<account>`: a chant-fly
+    /// deploy's approval is your passkey's signature over chant's gate
+    /// statement, which chant counts only for a passkey listed there. It
+    /// only prints. Needs `arugula login`.
+    Chant {
+        #[command(subcommand)]
+        cmd: cmd::chant::ChantCmd,
     },
     /// A project's linked GitHub repos on Arugula control.
     ///
@@ -534,13 +557,9 @@ enum Command {
     },
     /// The sandbox provider's sandboxes.
     ///
-    /// This daemon's: open a shell on one (`run --sandbox`), or make a daemon
-    /// resident there.
+    /// This daemon's: open a shell on one (`run --sandbox`).
     #[command(hide = true)]
-    Sandboxes {
-        #[command(subcommand)]
-        cmd: Option<hosts::SandboxesCmd>,
-    },
+    Sandboxes,
     /// An MCP server on stdio, for agents that start one as a command.
     ///
     /// `claude mcp add arugula -- arugula mcp`: Arugula's tools, bridged to
@@ -617,9 +636,8 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("machines", flags::SANDBOX_PROVIDERS),
     ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
+const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
     ("agent", &["recipe"], flags::AGENT_DELEGATION),
-    ("agent", &["issue", "take"], flags::BOARDS),
     ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("open", &["machine"], flags::SANDBOX_PROVIDERS),
@@ -634,7 +652,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         "Panes",
         &[
             "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
-            "rerun", "close", "export", "events", "history", "log", "search", "fs", "synced",
+            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs",
         ],
     ),
     (
@@ -653,13 +671,14 @@ const GROUPS: &[(&str, &[&str])] = &[
             "login",
             "logout",
             "grants",
+            "machine",
             "agent-tokens",
             "telemetry",
             "machines",
             "sandboxes",
         ],
     ),
-    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "chant", "project", "draft", "forge", "studio"]),
     ("Setup", &["install", "setup", "hooks", "mcp"]),
 ];
 
@@ -835,6 +854,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Machine { cmd } = cli.cmd {
+        return cmd::machine::run(cmd, cli.json);
+    }
     if let Command::AgentTokens { cmd } = cli.cmd {
         return cmd::agent_tokens::run(cmd, cli.json);
     }
@@ -846,6 +868,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     }
     if let Command::Deploys { cmd } = cli.cmd {
         return cmd::deploys::run(cmd, cli.json);
+    }
+    if let Command::Chant { cmd } = cli.cmd {
+        return cmd::chant::run(cmd, cli.json);
     }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
@@ -917,19 +942,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
             cli.json,
         );
     }
-    let reads_history = matches!(cli.cmd, Command::History(_) | Command::Search(_) | Command::Tail(_));
     let resolved = match &cli.ssh {
         Some(dest) => ssh::Remote::parse(dest).map(http::Target::Ssh),
         None => hosts::target(socket(&cli), cli.host.as_deref()),
     };
-    let (sock, gone) = match resolved {
-        Ok(t) => (t, None),
-        // A host that's gone (deleted, unreachable) may have left its
-        // history here.
-        Err(e) if reads_history && cli.host.is_some() => {
-            eprintln!("arugula: {e:#}; reading what it synced here instead");
-            (http::Target::Socket(socket(&cli)), cli.host.clone())
-        }
+    let sock = match resolved {
+        Ok(t) => t,
         // `open --host m2` meant a machine: the flag is `--machine` (#61).
         Err(e)
             if cli.host.as_deref().is_some_and(looks_like_machine)
@@ -946,9 +964,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         r.prepare()?;
     }
     let json_out = cli.json;
-    // `run --home`: the local daemon too, and the host's name in its list.
-    let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name, gone };
+    let ctx = cmd::Ctx { sock, json_out };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),
@@ -956,13 +972,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
-        Command::Synced { cmd } => cmd::synced::run(cmd, ctx),
         Command::Hosts { cmd } => {
-            hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
+            hosts::run(&ctx.sock, cmd, ctx.json_out)?;
             Ok(0)
         }
-        Command::Sandboxes { cmd } => {
-            hosts::sandboxes(&ctx.sock, cmd, ctx.json_out)?;
+        Command::Sandboxes => {
+            hosts::sandboxes(&ctx.sock, ctx.json_out)?;
             Ok(0)
         }
         // Only with --ssh: the box daemon's link, over the bridge to its
@@ -975,10 +990,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::Machine { .. }
         | Command::AgentTokens { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }
+        | Command::Chant { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {
@@ -999,6 +1016,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Pr(args) => cmd::pr::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
+        Command::Mentions(args) => cmd::mentions::run(args, ctx),
         Command::Agent(args) => cmd::agent::run(*args, ctx),
         Command::Claude { cmd } => cmd::claude::run(cmd, ctx),
         Command::Studio { cmd } => cmd::studio::run(cmd, ctx),
@@ -1081,7 +1099,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
@@ -1132,7 +1150,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),

@@ -18,15 +18,23 @@
 //!    credential store.
 //! 2. **Checks the commit**: on `main`, with a `ci/green/<sha>` tag and no
 //!    `ci/revoked/<sha>` one. A deploy whose id is in `main`'s history
-//!    already (its `Arugula-Deploy:` trailer) is a replay: refused.
+//!    already (its `Arugula-Deploy:` trailer, which a release before #1986
+//!    committed there) is a replay: refused.
 //! 3. **Runs `scripts/release bump`** as that commit has it (what `just
 //!    release` runs), with the bump and the lane the plan names, the
 //!    commit, and the deploy's id as a trailer. It refuses what it refuses
-//!    (no notes on `main`, the tag there already, the commit released
-//!    already, a daemon release's commit without the `ci/rare/<sha>` tag
-//!    rare-nightly.yml gives it, #305); else it commits the bump, tags it
-//!    and pushes the tag and
-//!    `main` in one atomic push.
+//!    (no notes in the commit, notes that leave out a PR since the last
+//!    release, the tag there already, the commit released
+//!    already, so a replay too, a daemon release's commit without the
+//!    `ci/rare/<sha>` tag rare-nightly.yml gives it, #305); else it tags
+//!    the commit itself and pushes the tag (#1986: no version-bump commit;
+//!    the release's build stamps the version, and the notes are in the tag's
+//!    message as well). For the daemon it then
+//!    commits the tag's client fixtures to `main` with the same token
+//!    (`crates/proto/fixtures/releases/X.Y.Z`, #200); if `main` refuses
+//!    that, it says so in the log and the release goes on. A commit from before #1986
+//!    has the script that committed a bump and pushed `main` with the tag,
+//!    and that still works.
 //! 4. **Revokes the token** at GitHub right after: nothing after needs it.
 //! 5. **Follows the tag's release workflow** to its end, for at most
 //!    [`FOLLOW_MINUTES`], with its second token ([`READ_TOKEN`], the App's:
@@ -54,11 +62,11 @@ use super::apps_platform::{Git, revoke_at};
 /// The name the run gets its token under.
 pub use arugula_e2e::drivers::arugula_release::TOKEN;
 
-/// The trailer that names the deploy on the bump, the tag and the merge.
+/// The trailer that names the deploy on the tag (and, before #1986, on the
+/// bump and the merge).
 pub const TRAILER: &str = "Arugula-Deploy";
 
-/// Who the bump and the merge are by (as the release workflow's Homebrew
-/// commits are).
+/// Who the tag is by (and, before #1986, the bump and the merge).
 const AUTHOR: (&str, &str) = ("arugula release", "noreply@inevitable.fyi");
 
 /// Where it works and how long it waits.
@@ -207,10 +215,14 @@ pub fn parse(
 pub struct Released {
     pub tag: String,
     pub version: String,
-    /// The bump commit the tag is on.
+    /// The commit the tag is on: the deploy's own (before #1986, the bump
+    /// on top of it).
     pub commit: String,
-    /// `main` after the push (the bump merged into it).
-    pub main: String,
+    /// `main` after the push, when the script pushed it (before #1986, the
+    /// bump merged into it); `None` from a script since #1986, which
+    /// pushes the tag and, for the daemon, a commit of the client fixtures
+    /// to `main` that its log names and isn't the release's.
+    pub main: Option<String>,
     /// The `scripts/release` it ran: its blob id at the commit.
     pub script: String,
 }
@@ -257,16 +269,23 @@ pub fn green(ls_remote: &str, sha: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The tag and `main`'s commit `scripts/release bump` says it pushed:
-/// `pushed TAG (SHORT) and main (SHORT)`.
-pub fn pushed_line(out: &str) -> Option<(String, String)> {
+/// The tag, and `main`'s commit when it pushed one, that `scripts/release
+/// bump` says it pushed: `pushed TAG (SHORT)`, or before #1986 `pushed TAG
+/// (SHORT) and main (SHORT)`.
+pub fn pushed_line(out: &str) -> Option<(String, Option<String>)> {
     let line = out.lines().rev().find(|l| l.starts_with("pushed "))?;
     let rest = line.strip_prefix("pushed ")?;
     let (tag, rest) = rest.split_once(" (")?;
-    let (_, rest) = rest.split_once(") and main (")?;
-    let main = rest.strip_suffix(')')?;
     let hex = |s: &str| !s.is_empty() && s.len() <= 40 && s.bytes().all(|b| b.is_ascii_hexdigit());
-    (hex(main) && !tag.is_empty()).then(|| (tag.to_owned(), main.to_owned()))
+    if tag.is_empty() {
+        return None;
+    }
+    if let Some((_, rest)) = rest.split_once(") and main (") {
+        let main = rest.strip_suffix(')')?;
+        return hex(main).then(|| (tag.to_owned(), Some(main.to_owned())));
+    }
+    let commit = rest.strip_suffix(')')?;
+    hex(commit).then(|| (tag.to_owned(), None))
 }
 
 /// Run the commit's own `scripts/release bump`, after checking the
@@ -406,8 +425,17 @@ pub async fn release(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Re
         }
     };
     let commit = rev(tag.clone()).await.map_err(pushed)?;
-    let main = rev(main_short).await.map_err(pushed)?;
-    say(&format!("pushed {tag} ({commit}) and {BRANCH} ({main})"));
+    let main = match main_short {
+        Some(m) => {
+            let main = rev(m).await.map_err(pushed)?;
+            say(&format!("pushed {tag} ({commit}) and {BRANCH} ({main})"));
+            Some(main)
+        }
+        None => {
+            say(&format!("pushed {tag} ({commit})"));
+            None
+        }
+    };
     Ok(Released { tag, version, commit, main, script: script_id })
 }
 

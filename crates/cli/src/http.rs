@@ -1,9 +1,7 @@
 //! Just enough HTTP/1.1: one request per connection, with fixed-length or
 //! chunked (streamed) responses. Over the daemon's Unix socket by default,
 //! or to another daemon's URL (`--host`), with TLS for `https://`, or to a
-//! host reached through the local daemon (on its socket, under `/h/<host>`
-//! for a dial-out host, `/tunnel/<host>` for a provider host), or to a box
-//! over ssh (one ssh channel per connection; `crate::ssh`).
+//! box over ssh (one ssh channel per connection; `crate::ssh`).
 
 #[cfg(unix)]
 use std::os::{
@@ -26,10 +24,6 @@ pub enum Target {
     Socket(PathBuf),
     /// Another daemon, over HTTP(S).
     Url(Url),
-    /// A host reached through the local daemon (its home daemon): the local
-    /// socket, with every path under this prefix: `/h/NAME` for a dial-out
-    /// host, `/tunnel/NAME` for a provider host (M4b).
-    Via(PathBuf, String),
     /// A box's daemon over ssh (M51): each connection is a channel running
     /// `arugula bridge` there.
     Ssh(crate::ssh::Remote),
@@ -85,16 +79,8 @@ impl Target {
     /// The Host header, and the WebSocket URL's authority.
     pub fn authority(&self) -> &str {
         match self {
-            Target::Socket(_) | Target::Via(..) | Target::Ssh(_) | Target::Control(_) => "localhost",
+            Target::Socket(_) | Target::Ssh(_) | Target::Control(_) => "localhost",
             Target::Url(u) => &u.authority,
-        }
-    }
-
-    /// What every request path is put under.
-    pub fn prefix(&self) -> &str {
-        match self {
-            Target::Via(_, p) => p,
-            _ => "",
         }
     }
 
@@ -129,20 +115,20 @@ impl Target {
     pub fn ws_url(&self) -> String {
         match self {
             Target::Url(u) if u.tls => format!("wss://{}/ws", u.authority),
-            _ => format!("ws://{}{}/ws", self.authority(), self.prefix()),
+            _ => format!("ws://{}/ws", self.authority()),
         }
     }
 
     pub fn connect(&self) -> anyhow::Result<Box<dyn Stream>> {
         match self {
             #[cfg(unix)]
-            Target::Socket(path) | Target::Via(path, _) => Ok(Box::new(
+            Target::Socket(path) => Ok(Box::new(
                 UnixStream::connect(path)
                     .with_context(|| format!("can't reach arugulad at {} (is it running?)", path.display()))?,
             )),
             // Windows: the daemon's named pipe (M56).
             #[cfg(windows)]
-            Target::Socket(path) | Target::Via(path, _) => Ok(Box::new(
+            Target::Socket(path) => Ok(Box::new(
                 crate::pipe::PipeStream::connect(path)
                     .with_context(|| format!("can't reach arugulad at {} (is it running?)", path.display()))?,
             )),
@@ -438,7 +424,7 @@ pub fn send(
         token = format!("Bearer {t}");
         all.push(("Authorization", &token));
     }
-    send_on(stream, method, &format!("{}{path}", target.prefix()), target.authority(), &all, body)
+    send_on(stream, method, path, target.authority(), &all, body)
 }
 
 /// One request on a connection of the caller's, with exactly these headers
@@ -842,8 +828,6 @@ mod tests {
         // A name is percent-encoded by the caller, as `enc` always did.
         let name = enc("a b/c");
         assert_eq!(HostRemove::path(&name), "/api/hosts/a%20b%2Fc");
-        assert_eq!(HostTokenMint::path(&name), "/api/hosts/a%20b%2Fc/token");
-        assert_eq!(HostTokenRevoke::path(&name), "/api/hosts/a%20b%2Fc/token");
         assert_eq!(route::<HostsList>(&(), &Empty {}).unwrap(), "/api/hosts");
         assert_eq!(
             route::<HostAdd>(
@@ -869,22 +853,16 @@ mod tests {
     /// Part c's routes (#578): the paths as the commands wrote them by hand
     /// (`enc` of the name in the path), and the bodies as the types serialize.
     #[test]
-    fn a_synced_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
+    fn a_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
         use super::{enc, route};
         use arugula_proto::{
             api::{Empty, FollowerLinkRequest, StudioLoginRequest},
-            hosts::PromoteRequest,
             op::{Op, Request, ops::*},
         };
         // A path argument is filled in as it is, so the commands pass `enc(name)`.
         let name = "a b/é".to_owned();
         let encoded = enc(&name);
-        assert_eq!(route::<SyncedList>(&(), &Empty {}).unwrap(), "/api/synced");
-        assert_eq!(SyncedRotate::path(&()), "/api/synced/rotate-key");
-        assert_eq!(SyncedForget::path(&encoded), "/api/synced/a%20b%2F%C3%A9");
         assert_eq!(route::<SandboxesList>(&(), &Empty {}).unwrap(), "/api/sandboxes");
-        assert_eq!(SandboxPromote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/promote");
-        assert_eq!(SandboxDemote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/resident");
         assert_eq!(route::<StudioGet>(&(), &Empty {}).unwrap(), "/api/studio");
         assert_eq!(StudioLogin::path(&()), "/api/studio");
         assert_eq!(StudioLogout::path(&()), "/api/studio");
@@ -892,8 +870,6 @@ mod tests {
         assert_eq!(StudioFollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
         assert_eq!(StudioUnfollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
         assert!(Empty::without_body().is_some());
-        let promote = PromoteRequest { host: Some("h".into()), port: None };
-        assert_eq!(serde_json::to_value(promote).unwrap().to_string(), r#"{"host":"h","port":null}"#);
         let login = StudioLoginRequest { url: "u".into(), token: "t".into() };
         assert_eq!(serde_json::to_value(login).unwrap().to_string(), r#"{"token":"t","url":"u"}"#);
         let link = serde_json::to_value(FollowerLinkRequest { link: "l".into() }).unwrap();

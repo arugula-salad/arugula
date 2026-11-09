@@ -3,10 +3,10 @@
 //! #1094), linked repos (`forge_read`, `forge_draft`, `link_repo`, M169),
 //! conversations (`read_thread`, `search_threads`, `post_thread`, M198),
 //! native issues (`issue_write`, M200), boards (`board_read`,
-//! `board_write`), runs (`start_run`, `read_run`, M216), deploys
+//! `board_write`), links between items (`link`, #761), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
-//! (`session_start`, `session_reply`, aru-121; `read_session`, Fleet 5),
-//! with `list`'s kinds `cloud_workspaces`, `cloud_tabs`, `linked_repos`,
+//! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
+//! with `list`'s kinds `cloud_workspaces`, `cloud_agents`, `linked_repos`,
 //! `threads` and `sessions`.
 //!
 //! Each call is a route on control's platform signed with this machine's
@@ -26,6 +26,7 @@ mod cloud;
 mod deploys;
 mod forge_ops;
 mod issues;
+mod links;
 mod repos;
 mod runs;
 mod threads;
@@ -33,7 +34,6 @@ mod trackers;
 
 use std::time::Duration;
 
-use arugula_proto::flags;
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
 use serde_json::Value;
@@ -41,7 +41,7 @@ use serde_json::Value;
 // What the code here names as `crate::…`: the mux's modules and the daemon's,
 // as it named them when it was the daemon's.
 use arugula_mux::mux;
-use arugulad_base::{control, fs, lab_flags, mcp, server};
+use arugulad_base::{control, fs, mcp, server};
 
 use crate::{
     mcp::{
@@ -58,7 +58,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 19] = [
+    let tools: [Listed; 21] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -77,15 +77,17 @@ pub fn register() {
         (deploys::READ_TOOL, session_start_def, run_session_start),
         (agent_sessions::START_TOOL, session_reply_def, run_session_reply),
         (agent_sessions::REPLY_TOOL, read_session_def, run_read_session),
-        (agent_sessions::READ_TOOL, tracker_write_def, run_tracker_write),
+        (agent_sessions::READ_TOOL, session_stop_def, run_session_stop),
+        (agent_sessions::STOP_TOOL, tracker_write_def, run_tracker_write),
+        (trackers::WRITE_TOOL, link_def, run_link),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
     }
     let kinds: [(&'static str, &'static crate::mcp::tools::Kind, registry::Run); 5] = [
         ("agents", &cloud::LIST_WORKSPACES, run_list_cloud_workspaces),
-        ("cloud_workspaces", &cloud::LIST_TABS, run_list_cloud_tabs),
-        ("cloud_tabs", &repos::LIST_LINKED, run_list_linked_repos),
+        ("cloud_workspaces", &cloud::LIST_AGENTS, run_list_cloud_agents),
+        ("cloud_agents", &repos::LIST_LINKED, run_list_linked_repos),
         ("linked_repos", &threads::LIST, run_list_threads),
         ("threads", &agent_sessions::LIST, run_list_sessions),
     ];
@@ -182,6 +184,7 @@ grouped!(run_issue_write, issues::WRITE_TOOL, |c, kind, args| issues::issue_writ
 one!(run_board_read, boards::board_read);
 grouped!(run_board_write, boards::WRITE_TOOL, |c, kind, args| boards::board_write(c, kind, args));
 grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::tracker_write(c, kind, args));
+one!(run_link, links::link);
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -189,9 +192,10 @@ one!(run_read_deploy, deploys::read_deploy);
 one!(run_session_start, agent_sessions::session_start);
 one!(run_session_reply, agent_sessions::session_reply);
 one!(run_read_session, agent_sessions::read_session);
+one!(run_session_stop, agent_sessions::session_stop);
 one!(run_list_sessions, agent_sessions::list_sessions);
 no_args!(run_list_cloud_workspaces, cloud::list_cloud_workspaces);
-one!(run_list_cloud_tabs, cloud::list_cloud_tabs);
+one!(run_list_cloud_agents, cloud::list_cloud_agents);
 one!(run_list_linked_repos, repos::list_linked_repos);
 no_args!(run_list_threads, threads::list_threads);
 
@@ -217,7 +221,7 @@ fn forge_draft_def() -> Def {
     Def {
         name: "forge_draft",
         title: "Draft on a linked repo",
-        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
+        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.",
         args: Args::Kinds { kinds: table(forge_ops::DRAFT), default: None },
         read_only: false,
         destructive: true,
@@ -237,7 +241,7 @@ fn read_cloud_def() -> Def {
     Def {
         name: "read_cloud",
         title: "Read a Cloud workspace",
-        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
+        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_agents their agent blocks): an agent block's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, each named by its pane number (agent_block), and reading one wakes it.",
         args: Args::Kinds { kinds: table(cloud::READ), default: None },
         read_only: true,
         destructive: false,
@@ -253,7 +257,7 @@ fn cloud_def() -> Def {
     Def {
         name: "cloud",
         title: "Drive a Cloud workspace",
-        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
+        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open an agent block on its machine (open_agent), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_agent), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project; its agent blocks (claude or codex), named by pane number (agent_block), are the project's people's too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
         args: Args::Kinds { kinds: table(cloud::DRIVE), default: None },
         read_only: false,
         destructive: true,
@@ -263,7 +267,7 @@ fn cloud_def() -> Def {
         output: None,
         human: line(
             "drive your Cloud workspaces: open an agent there, prompt it and follow its turn",
-            "Open a Claude tab in my Cloud workspace and have it fix the flaky test.",
+            "Open a Claude agent in my Cloud workspace and have it fix the flaky test.",
             Needs::Cloud,
         ),
     }
@@ -360,7 +364,7 @@ fn issue_write_def() -> Def {
 }
 
 // Boards, step 3: a project's board, through the owner's
-// grants, behind the `boards` flag.
+// grants.
 fn board_read_def() -> Def {
     Def {
         name: boards::READ_TOOL,
@@ -371,7 +375,7 @@ fn board_read_def() -> Def {
         destructive: false,
         idempotent: true,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: line(
             "read your project's board and keep its rows current",
@@ -391,14 +395,30 @@ fn board_write_def() -> Def {
         destructive: true,
         idempotent: false,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: Human::In(boards::READ_TOOL),
     }
 }
 
-// #359: a project's connected Plane project, through the owner's grants,
-// behind the `boards` flag.
+// #761: links between a project's items, through the owner's grants.
+fn link_def() -> Def {
+    Def {
+        name: links::TOOL,
+        title: "Link work items",
+        description: links::DESCRIPTION,
+        args: Args::One(schema_for_type::<links::LinkArgs>),
+        read_only: false,
+        destructive: true,
+        idempotent: true,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: Human::In(boards::READ_TOOL),
+    }
+}
+
+// #359: a project's connected Plane project, through the owner's grants.
 fn tracker_write_def() -> Def {
     Def {
         name: trackers::WRITE_TOOL,
@@ -409,7 +429,7 @@ fn tracker_write_def() -> Def {
         destructive: true,
         idempotent: false,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: line(
             "write to your project's Plane work items, with your approval where you ask for it",
@@ -524,6 +544,22 @@ fn session_reply_def() -> Def {
         read_only: false,
         destructive: false,
         idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: Human::In(agent_sessions::START_TOOL),
+    }
+}
+
+fn session_stop_def() -> Def {
+    Def {
+        name: agent_sessions::STOP_TOOL,
+        title: "Stop an agent session",
+        description: agent_sessions::STOP_DESCRIPTION,
+        args: Args::One(schema_for_type::<agent_sessions::SessionStopArgs>),
+        read_only: false,
+        destructive: true,
+        idempotent: true,
         open_world: true,
         flag: None,
         output: None,

@@ -1,8 +1,10 @@
 //! A layout saved with a VM pane (#454), restored by a daemon that has no
-//! provider: a build without Labs, or a default build with no wisp token.
+//! provider: a build without Labs, or a default build with no `--loam-url`.
 //! The daemon starts, every other pane and the tabs come back, and the VM
 //! pane stays in the layout (with its machine), exited, with a note saying
-//! why, so a daemon that has the provider can carry it on.
+//! why, so a daemon that has the provider can carry it on. The machine
+//! here is one wisp made, from before the Sprites adapter was removed:
+//! the log says it is from a provider this daemon doesn't have.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -31,7 +33,9 @@ fn until(what: &str, f: impl Fn() -> bool) {
 
 #[test]
 fn a_saved_vm_pane_stays_in_the_layout_when_there_is_no_provider() {
-    let mut d = Daemon::child();
+    let log = std::env::temp_dir().join(format!("arugula-vm-layout-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
+    let mut d = Daemon::child_env(&[], &[("ARUGULA_LOG_FILE", log.to_str().unwrap())]);
     let local = d.post("/api/run", json!({ "command": "echo local-$((6*7)); sleep 600" }))["pane"].as_u64().unwrap();
     let vm = d.post("/api/run", json!({ "command": "sleep 600" }))["pane"].as_u64().unwrap();
     // Printed before the stop: stopped first, the shell never runs the
@@ -65,6 +69,10 @@ fn a_saved_vm_pane_stays_in_the_layout_when_there_is_no_provider() {
     assert!(note.contains(why), "{note}");
     // The other pane is itself: restored, with its scrollback.
     until("the local pane's scrollback", || screen(&d, local).contains("local-42"));
+    // And the log says where the machine came from.
+    let said = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(said.contains("a saved machine is from a provider this daemon doesn't have"), "{said}");
+    assert!(said.contains("wisp"), "{said}");
 
     // Saved again, it still has the pane's machine and where it runs.
     d.stop();
@@ -72,4 +80,5 @@ fn a_saved_vm_pane_stays_in_the_layout_when_there_is_no_provider() {
     assert_eq!(again["panes"][vm.to_string()]["host"], 1, "{again}");
     assert_eq!(again["machines"]["1"]["sprite"], "illogical-eph-test-1", "{again}");
     assert_eq!(again["mux"]["sessions"][0]["tabs"].as_array().unwrap().len(), tabs);
+    let _ = std::fs::remove_file(&log);
 }

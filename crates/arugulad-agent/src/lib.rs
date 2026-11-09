@@ -75,7 +75,8 @@ use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shelle
 #[cfg(unix)]
 use arugulad_base::upload;
 use arugulad_base::{
-    agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree,
+    agent, agent_mentions, agent_mentions::MentionTag, api, board_attach, features, lab_hooks, mcp, review, rules,
+    server, task, telemetry, work, worktree,
 };
 
 use std::{
@@ -302,12 +303,16 @@ pub struct TurnStat {
 /// A prompt waiting for the agent: its text, images (M71) by name in the
 /// block's folder, and whose it is when that isn't the block's owner
 /// (M29): the transcript says so when it's sent, not when it's queued, so
-/// a follow-up queued mid-turn is credited to its own author (M255).
+/// a follow-up queued mid-turn is credited to its own author (M255). A
+/// mention (#611) carries its tag, so its turn reports `working` when it is
+/// sent and `read` when it ends (#540). The replies of one thread that wait
+/// together are one prompt (#580), with every one's tag.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
     pub by: Option<String>,
+    pub mention: Vec<MentionTag>,
 }
 
 impl Queued {
@@ -397,6 +402,8 @@ struct Inner {
     /// they end, so `wait --idle` waits.
     background: background::Background,
     queue: VecDeque<Queued>,
+    /// The mentions whose turn is running (#611), told `read` when it ends.
+    mention_turn: Vec<MentionTag>,
     cost: Option<f64>,
     currency: Option<String>,
     turns: Vec<TurnStat>,
@@ -535,8 +542,8 @@ impl crate::agent::Agents for AgentBlock {
         open_transcripts()
     }
 
-    fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
-        Arc::new(crate::conversations::Sessions)
+    fn sessions(&self) -> Arc<dyn crate::mux::Conversations> {
+        Arc::new(crate::conversations::ClaudeConversations)
     }
 
     fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {
@@ -699,6 +706,7 @@ impl Inner {
             autonomous_at: None,
             background: Default::default(),
             queue: VecDeque::new(),
+            mention_turn: vec![],
             cost: None,
             currency: None,
             turns: vec![],
@@ -769,6 +777,9 @@ impl Inner {
         let mut e = json!({ "e": "queue", "text": q.text, "images": q.images, "front": front });
         if let Some(by) = &q.by {
             e["by"] = json!(by);
+        }
+        if let [m] = q.mention.as_slice() {
+            e["mention"] = m.to_json();
         }
         self.note(e);
     }
@@ -888,10 +899,24 @@ impl Inner {
                     text: e["text"].as_str().unwrap_or_default().to_owned(),
                     images: strings(&e["images"]),
                     by: e["by"].as_str().map(str::to_owned),
+                    mention: mention_of(&e["mention"]).into_iter().collect(),
                 };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
-                    _ => self.queue.push_back(q),
+                    _ => {
+                        // #580: a reply to a thread that has replies waiting
+                        // joins them, oldest first; both live and in a log's
+                        // replay, so the queue comes out the same.
+                        let joined = match (q.mention.as_slice(), q.images.is_empty()) {
+                            ([tag], true) => self.queue.iter_mut().any(|w| {
+                                w.images.is_empty() && agent_mentions::absorb(&mut w.text, &mut w.mention, tag)
+                            }),
+                            _ => false,
+                        };
+                        if !joined {
+                            self.queue.push_back(q)
+                        }
+                    }
                 }
             }
             "queue_clear" => self.queue.clear(),
@@ -1058,7 +1083,12 @@ impl Inner {
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        let sent = Queued {
+                            text,
+                            images: blocks.iter().filter_map(image).collect(),
+                            by: None,
+                            mention: vec![],
+                        };
                         let mut by = None;
                         if self.queue.front().is_some_and(|q| q.is(&sent)) {
                             by = self.queue.pop_front().and_then(|q| q.by);
@@ -1183,7 +1213,7 @@ impl Inner {
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
                             // Whose it is was said as it went the first time.
-                            fx.push(Effect::Retry(Queued { text, images, by: None }));
+                            fx.push(Effect::Retry(Queued { text, images, by: None, mention: vec![] }));
                         }
                     }
                     (Purpose::Prompt, result) => {
@@ -1734,7 +1764,7 @@ impl Agent {
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
-            return Err("VM agents need wisp (VM panes aren't set up)".into());
+            return Err("VM agents need a sandbox provider (VM panes aren't set up)".into());
         }
         // Fail now, with a clear reason, rather than in the VM later.
         if vm && cfg.def.agent == Kind::Claude && !ctx.restoring {
@@ -1813,7 +1843,7 @@ impl Agent {
             return;
         }
         if let Some(p) = inner.cfg.prompt.take() {
-            inner.enqueue(&Queued { text: p, images: vec![], by: None }, false);
+            inner.enqueue(&Queued { text: p, images: vec![], by: None, mention: vec![] }, false);
         }
         if inner.cfg.import.is_some() {
             if let Some(t) = inner.cfg.import.as_ref().and_then(|i| i.title.clone()) {
@@ -2092,7 +2122,7 @@ impl Agent {
             }
             Some(sprite) => {
                 let Some(provider) = self.ctx.provider.clone() else {
-                    return self.failed(inner, "VM agents need wisp".into());
+                    return self.failed(inner, "VM agents need a sandbox provider".into());
                 };
                 let mut secret = match inner.cfg.def.agent {
                     Kind::Claude => match secret_env(&self.ctx) {
@@ -2377,6 +2407,11 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                             end_hosted_turn(&ctx, &mut g);
                             g.link = None;
                             g.pid = None;
+                            // #613: a turn cut off by the exit never ends
+                            // with `TurnEnded`: its mention is dropped.
+                            for tag in std::mem::take(&mut g.mention_turn) {
+                                ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
+                            }
                             info!(block = ctx.id, why, "agent server stopped");
                             g.note(json!({ "e": "exit", "why": why }));
                             if ctx.sprite.is_some() && why.contains("machine is gone") {
@@ -2672,6 +2707,9 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
         }
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
+            for tag in std::mem::take(&mut g.mention_turn) {
+                ctx.followup_turn(tag.to_tag(), mux::Turn::Ended);
+            }
             // In history as an entry of its own: the prompt. Not a command
             // and no exit code: a turn that stopped early isn't a failure of
             // anything that ran.
@@ -3024,7 +3062,17 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         g.next_run = g.carry_run.is_none().then_some(run);
     }
     g.send_prompt(&q, prompt);
+    // #611: a mention's turn starts as it is sent, not as it is queued.
+    for tag in &q.mention {
+        ctx.followup_turn(tag.to_tag(), mux::Turn::Started);
+    }
+    g.mention_turn = q.mention.clone();
     start_run(ctx, g, &q.text);
+}
+
+/// The mention a `send` or a logged queue entry carries (#611).
+fn mention_of(v: &Value) -> Option<MentionTag> {
+    MentionTag::from_json(v)
 }
 
 impl Agent {
@@ -3222,6 +3270,12 @@ impl Agent {
         // A held turn's work is done (#606): stopping it is to get on to
         // what's queued, not to drop it.
         if !g.result_in {
+            // #613: a mention in it is told it was dropped. The running
+            // turn's own is not: it ends with `cancelled`, and `TurnEnded`
+            // reports it `read`.
+            for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+                self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
+            }
             g.note(json!({ "e": "queue_clear" }));
         }
         // Open questions aren't answered: the agent withdraws them itself
@@ -3282,7 +3336,8 @@ impl Agent {
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
-        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
+        let mention: Vec<_> = mention_of(&args["mention"]).into_iter().collect();
+        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned), mention };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();
         if matches!(g.status, Status::Exited | Status::Stopped) {
@@ -3382,11 +3437,15 @@ impl Agent {
 
     /// Keep the boards this block is on (`start_agent` with an `issue`): its
     /// chip. The issue is the block's from its start; only the boards come
-    /// later, with control's answer.
+    /// later, with control's answer. An `issue` makes the block's own: for one
+    /// found from its branch, once a row is.
     fn set_work(&self, args: &Value) -> Result<Value, String> {
         let boards: Vec<board_attach::WorkBoard> =
             serde_json::from_value(args["boards"].clone()).map_err(|e| format!("set_work takes boards: {e}"))?;
         let mut g = self.inner.lock().unwrap();
+        if let Some(issue) = args["issue"].as_str() {
+            g.cfg.work.get_or_insert_with(Default::default).issue = issue.to_owned();
+        }
         let work = g.cfg.work.as_mut().ok_or("this block wasn't started on an issue")?;
         work.boards = boards;
         drop(g);

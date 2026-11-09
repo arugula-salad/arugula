@@ -15,6 +15,7 @@
 // environment holds it or the platform mints it per run, and its deploys a
 // compact table under mono column heads, as the repos' are.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
@@ -23,8 +24,9 @@ import { DeployRow } from "../pages/deploy";
 import { ENVIRONMENTS_MEAN } from "../pages/project";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
-import { deployTone, toneClass } from "../swarm";
-import { Section } from "./section";
+import { deployTone } from "../swarm";
+import { Section } from "../../shared/ui/settings-section";
+import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -74,7 +76,6 @@ export function Environments({ p }: { p: PlatformProject }) {
       title="Environments"
       count={envs?.length}
       hooks={{ "data-environments": "" }}
-      lede="Where the project's deploys go. Nothing is applied until an owner approves it with a passkey."
       more={
         <p>
           Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. An owner or editor (or their agent) plans a
@@ -90,7 +91,7 @@ export function Environments({ p }: { p: PlatformProject }) {
         </p>
       )}
       {envs?.length ? (
-        <div class="sw-cards settings-cards env-cards">
+        <div class="card-list settings-cards env-cards">
           {envs.map((env) => (
             <EnvironmentCard
               key={env.id}
@@ -132,12 +133,12 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
   // The bar: its latest deploy's state, muted until it has one.
   const latest = history.page?.deploys[0];
   return (
-    <article class={`sw-card env-card ${toneClass(latest ? deployTone(latest.state) : "muted")}`} data-environment={env.name}>
-      <div class="sw-head">
-        <b class="sw-name">{env.name}</b>
-        <span class="settings-tag" title="Its driver: what applies its deploys">
+    <Card as="article" class="env-card" tone={latest ? deployTone(latest.state) : "muted"} data-environment={env.name}>
+      <div class="card-head">
+        <b class="card-title big">{env.name}</b>
+        <Chip kind="tag" title="Its driver: what applies its deploys">
           {env.driver}
-        </span>
+        </Chip>
         {plans && (
           <a class="secondary small env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
             Deploy…
@@ -152,10 +153,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
           <ul class="env-secrets env-settings">
             {settings.map(([k, v]) => (
               <li key={k}>
-                <span class="settings-chip setting" title={`${k}: ${v}`}>
-                  <code>{k}</code>
-                  <span>{v}</span>
-                </span>
+                <ObjectChip pair id={k} fact={{ tone: "muted", text: v }} title={`${k}: ${v}`} />
               </li>
             ))}
           </ul>
@@ -183,7 +181,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
         </div>
       )}
       <RecentDeploys env={env.id} history={history} />
-    </article>
+    </Card>
   );
 }
 
@@ -192,15 +190,9 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
  * whether the environment's own would win). */
 function SecretChip({ name, minted }: { name: string; minted?: string }) {
   return minted ? (
-    <span class="settings-chip minted" title={`${name}: ${minted}`} data-env-minted>
-      <code>{name}</code>
-      <span>minted per run</span>
-    </span>
+    <ObjectChip pair proof id={name} fact={{ tone: "info", text: "minted per run" }} title={`${name}: ${minted}`} data-env-minted />
   ) : (
-    <span class="settings-chip" title={`${name}: the environment holds its value`}>
-      <code>{name}</code>
-      <span>held</span>
-    </span>
+    <ObjectChip pair id={name} fact={{ tone: "ok", text: "held" }} title={`${name}: the environment holds its value`} />
   );
 }
 

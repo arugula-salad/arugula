@@ -99,14 +99,14 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   await expect(strip).toHaveAttribute("data-item-next", "danger");
   await expect(strip).toContainText("build (ubuntu-latest) and 2 more failed");
   await expect(el.locator('[data-item-tab="checks"]')).toHaveAttribute("data-tone", "danger");
-  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✕ 3");
+  await expect(el.locator('[data-item-fact="checks"] .item-danger')).toHaveText("3");
   for (const gone of ["Waiting on you", "wants to merge", "checks failed", "polls", "no reviews"]) await expect(el).not.toContainText(gone);
   // Who you act as, and how it's read, are the source icon's tooltip.
   // M172: the reader's, not a pin (forge-pin.spec.ts): it says how it polls.
   const source = el.locator("[data-item-source]");
   await expect(source).toHaveAttribute("title", /as jhgaylor \(gh on /);
   await expect(source).toHaveAttribute("title", /polls/);
-  await expect(source).not.toHaveAttribute("title", /Arugula control/);
+  await expect(source).not.toHaveAttribute("title", /Arugula cloud/);
   // On the rail too, with a rerun.
   await expect
     .poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason?.actions ?? [], block))
@@ -179,7 +179,7 @@ test("a squash-only repository's Merge ▾ offers only Squash", async ({ page })
     [origin, REPO, N] as const,
   );
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge", exact: true }).click();
   const choices = page.locator(".prompt-choices button");
   await expect(choices).toHaveText(["Squash"]);
 });

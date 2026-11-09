@@ -41,7 +41,7 @@ use serde_json::Value;
 use tracing::Instrument as _;
 
 use arugula_control_wire::{
-    forge::{DaemonOp, OpAnswer, Poke, Standing},
+    forge::{DaemonOp, OpAnswer},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     internal::args::*,
     run_logs::{Upload, UploadGiven, Uploaded},
@@ -231,10 +231,6 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("team_project", TeamArgs { team: team.to_owned() }))
     }
 
-    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        Box::pin(self.0.call("forge_pokes", PokesArgs { pokes: pokes.to_vec() }))
-    }
-
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<GithubUser>>> {
         Box::pin(self.0.call("github_user", AccountArgs { account: account.to_owned() }))
     }
@@ -388,7 +384,6 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 answer(hub.can_drive_cloud(&a.daemon, &a.account).await?)?
             }
             "team_project" => answer(hub.team_project(&args::<TeamArgs>(&body)?.team).await?)?,
-            "forge_pokes" => answer(hub.forge_pokes(&args::<PokesArgs>(&body)?.pokes).await?)?,
             "github_user" => answer(hub.github_user(&args::<AccountArgs>(&body)?.account).await?)?,
             "github_account" => answer(hub.github_account(args::<GithubIdArgs>(&body)?.id).await?)?,
             "send_authorization" => {
@@ -476,15 +471,19 @@ impl PlatformPort for HttpPlatform {
         })
     }
 
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
-        let a = StandingArgs { account: account.to_owned(), github: github.cloned(), repos: repos.to_vec(), fresh };
-        Box::pin(self.0.call("forge_standing", a))
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            let _: Value = self.0.call("daemon_came", DaemonArgs { daemon: daemon.to_owned() }).await?;
+            Ok(())
+        })
+    }
+
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            let a = HostedRemovedArgs { workspace: workspace.to_owned(), machine: machine.to_owned() };
+            let _: Value = self.0.call("hosted_removed", a).await?;
+            Ok(())
+        })
     }
 
     fn github_token<'a>(
@@ -708,9 +707,14 @@ async fn platform_call(
                 p.roster_changed(&args::<TeamArgs>(&body)?.team).await?;
                 answer(serde_json::json!({}))?
             }
-            "forge_standing" => {
-                let a: StandingArgs = args(&body)?;
-                answer(p.forge_standing(&a.account, a.github.as_ref(), &a.repos, a.fresh).await?)?
+            "daemon_came" => {
+                p.daemon_came(&args::<DaemonArgs>(&body)?.daemon).await?;
+                answer(serde_json::json!({}))?
+            }
+            "hosted_removed" => {
+                let a: HostedRemovedArgs = args(&body)?;
+                p.hosted_removed(&a.workspace, &a.machine).await?;
+                answer(serde_json::json!({}))?
             }
             "github_token" => {
                 let a: TokenArgs = args(&body)?;
@@ -950,14 +954,11 @@ mod tests {
             fn roster_changed<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
                 Box::pin(async { Ok(()) })
             }
-            fn forge_standing<'a>(
-                &'a self,
-                _: &'a str,
-                _: Option<&'a GithubUser>,
-                _: &'a [String],
-                _: bool,
-            ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
-                Box::pin(async { Ok(vec![]) })
+            fn hosted_removed<'a>(&'a self, w: &'a str, m: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+                Box::pin(async move {
+                    anyhow::ensure!((w, m) == ("hw_1", "m1"), "not {w} {m}");
+                    Ok(())
+                })
             }
             fn github_token<'a>(
                 &'a self,
@@ -1034,6 +1035,9 @@ mod tests {
         assert_eq!(p.public_preview("nope").await.unwrap(), None);
         assert_eq!(p.public_ports("hw_1").await.unwrap(), [(5173, "hw_1-p1".to_owned())]);
         p.roster_changed("t").await.unwrap();
+        // Arugula #744: the hub's notice of a hosted machine it removed.
+        p.hosted_removed("hw_1", "m1").await.unwrap();
+        assert!(format!("{:#}", p.hosted_removed("hw_1", "m2").await.unwrap_err()).contains("not hw_1 m2"));
         let e = p.account_deleted(&Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await;
         assert!(format!("{:#}", e.unwrap_err()).contains("not now"), "an error crosses as an error");
         let woke = p.hosted_wake("prj_a", "hw_a").await.unwrap();

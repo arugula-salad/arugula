@@ -6,6 +6,8 @@ software below. The daemon's and the CLI's are in the root THIRD_PARTY.md.
 
 - **The web client**, which control serves, bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
+- **Lucide** (the web client's icons for chevrons, check, close, expand, external link, command, copy, pencil, star, reload, back, trash and arrows: paths copied into `web/src/shared/ui/icons.tsx`, not a dependency): ISC, Copyright (c) 2026 Lucide Icons and Contributors. <https://lucide.dev>
+  Some of those icons derive from Feather, MIT, Copyright (c) 2013-present Cole Bemis. Both licences are below.
 - **Rust crates**, by license:
 
 - Apache License 2.0 (257)
@@ -3067,7 +3069,7 @@ Used by:
 - [regex-automata 0.4.18](https://github.com/rust-lang/regex)
 - [regex-syntax 0.8.11](https://github.com/rust-lang/regex)
 - [rustls-native-certs 0.8.4](https://github.com/rustls/rustls-native-certs)
-- [rustls 0.23.45](https://github.com/rustls/rustls)
+- [rustls 0.23.46](https://github.com/rustls/rustls)
 - [scopeguard 1.2.0](https://github.com/bluss/scopeguard)
 - [security-framework-sys 2.17.0](https://github.com/kornelski/rust-security-framework)
 - [security-framework 3.7.0](https://github.com/kornelski/rust-security-framework)
@@ -5249,15 +5251,15 @@ limitations under the License.
 ## Apache License 2.0
 
 Used by:
-- [arugula-control 0.66.8](https://github.com/arugula-salad/arugula)
-- [arugula-platform 0.66.8](https://github.com/arugula-salad/arugula)
-- [arugula-control-base 0.66.8](https://github.com/arugula-salad/arugula)
-- [arugula-control-common 0.66.8](https://github.com/arugula-salad/arugula)
+- [arugula-control 0.66.13](https://github.com/arugula-salad/arugula)
+- [arugula-platform 0.66.13](https://github.com/arugula-salad/arugula)
+- [arugula-control-base 0.66.13](https://github.com/arugula-salad/arugula)
+- [arugula-control-common 0.66.13](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-forge-github 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula-platform-base 0.66.8](https://github.com/arugula-salad/arugula)
+- [arugula-platform-base 0.66.13](https://github.com/arugula-salad/arugula)
 - [arugula-platform-agents 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-all 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-api 0.0.0](https://github.com/arugula-salad/arugula)
@@ -5287,7 +5289,7 @@ Used by:
 - [rand_chacha 0.9.0](https://github.com/rust-random/rand)
 - [russh-cryptovec 0.62.0](https://github.com/warp-tech/russh)
 - [russh-util 0.52.0](https://github.com/warp-tech/russh)
-- [russh 0.64.1](https://github.com/warp-tech/russh)
+- [russh 0.65.0](https://github.com/warp-tech/russh)
 - [rustversion 1.0.23](https://github.com/dtolnay/rustversion)
 - [ryu 1.0.23](https://github.com/dtolnay/ryu)
 - [serde 1.0.229](https://github.com/serde-rs/serde)
@@ -7201,6 +7203,53 @@ the following restrictions:
     misrepresented as being the original software.
 
 3. This notice may not be removed or altered from any source distribution.
+```
+
+
+## Lucide: ISC License
+
+```
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+## Feather: MIT License (the Lucide icons derived from it)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 

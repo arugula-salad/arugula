@@ -24,7 +24,6 @@ pub mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
 use arugula_mux::conpty;
-pub mod dial;
 pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
@@ -68,19 +67,18 @@ use arugula_mux::perm;
 #[cfg(windows)]
 mod pipe;
 pub mod ports;
+pub mod provider_gate;
 mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 pub mod board_attach;
 mod board_block;
 mod board_state;
-mod people_block;
 pub mod push;
-mod remote;
+pub mod relay_ws;
 pub mod review;
 pub mod roots;
 pub mod rules;
-mod seal;
 mod selfupdate;
 pub mod server;
 mod setup;
@@ -94,7 +92,6 @@ pub mod sites;
 pub mod task;
 use arugula_mux::store;
 pub mod subcommands;
-mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 pub mod tailscale;
@@ -106,7 +103,7 @@ pub mod upload;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use args::{Args, BlockArgs, Command, ReachArgs, RunArgs};
+use args::{Args, BlockArgs, Command, RunArgs};
 use axum::serve::ListenerExt;
 use clap::FromArgMatches;
 use tracing::{info, warn};
@@ -223,47 +220,13 @@ impl mux::PaneGone for NoUploads {
     fn forget_on(&self, _provider: Arc<dyn provider::Provider>, _sprite: String, _pane: arugula_proto::PaneId) {}
 }
 
-/// Dial out to the home daemon and push history there, if asked to.
-fn start_reach(r: &ReachArgs, app: &std::sync::Arc<server::App>, name: String) -> anyhow::Result<()> {
-    if let (Some(peer), Some(token_file)) = (&r.peer, &r.token) {
-        dial::dial_url(peer)?;
-        let opts = dial::PeerOpts { url: peer.clone(), token_file: token_file.clone(), join: r.join.clone(), name };
-        let (accept, streams) = tokio::sync::mpsc::unbounded_channel();
-        info!(peer, "dialing out to the home daemon");
-        crate::task::spawn(axum::serve(dial::Streams(streams), server::tunnel_router(app.clone())).into_future());
-        crate::task::spawn(dial::keep_dialing(opts, accept));
-    }
-    if r.sync {
-        let origin = match (&r.sync_to, &r.peer) {
-            (Some(to), _) => to.trim_end_matches('/').to_owned(),
-            (None, Some(peer)) => dial::home_origin(peer)?,
-            (None, None) => anyhow::bail!("--sync needs --peer or --sync-to"),
-        };
-        let opts = sync::PushOpts {
-            origin,
-            token_file: r.token.clone().expect("clap requires --token"),
-            live: r.sync_live,
-            every: std::time::Duration::from_secs(r.sync_every.max(1)),
-        };
-        info!(to = opts.origin, live = opts.live, "syncing history to the home daemon");
-        crate::task::spawn(sync::keep_pushing(opts, app.mux.store.clone()));
-    }
+/// The background tasks that run for the daemon's lifetime.
+fn start_background(app: &std::sync::Arc<server::App>) {
     // Control hears what the agent blocks' rows on a board should say.
     crate::task::spawn(board_state::keep_reporting(app.clone()));
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     crate::task::spawn(upload::keep_sweeping());
-    // Synced history expires a day at a time.
-    let synced = app.synced.clone();
-    crate::task::spawn(async move {
-        let mut day = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
-        day.tick().await;
-        loop {
-            day.tick().await;
-            synced.prune(sync::RETAIN_MS);
-        }
-    });
-    Ok(())
 }
 
 /// A random name for this daemon's state directory, kept in it: the
@@ -545,15 +508,12 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
         panic!("{} is set: crashing as asked", crash::TEST_PANIC_ENV);
     }
     match args.command {
-        #[cfg(unix)]
-        Some(install @ Command::Install { tailnet: Some(_), .. }) => lab_hooks::labs().tailnet_install(install),
         Some(Command::Install { no_service: true, .. }) => install::binaries_only(),
         Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args, system)
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        Some(Command::Sandbox) => lab_hooks::labs().supervise_sandbox(),
         Some(Command::Join { url, name, team, account, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
@@ -680,16 +640,36 @@ fn sharing_cli(
     let state = |on| if on { "on" } else { "off" };
     let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
     let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
+    let sessions_about = "What a teammate's agent learns of this machine's sessions: `work`, `names` or `none`.";
+    // `on`/`off` are for the switches; `work`/`names`/`none` for agent-sessions.
+    let words = switch.is_some_and(|s| !matches!(s, args::OnOff::On | args::OnOff::Off));
+    if words != (name == Some(args::SharingSetting::AgentSessions)) && switch.is_some() {
+        anyhow::bail!("agent-sessions takes work, names or none; the others take on or off");
+    }
     match (name, switch) {
         (None, _) => {
             println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
+            println!("agent-sessions  {:5}  {sessions_about}", sharing::agent_sessions(dir).word());
         }
         (Some(args::SharingSetting::AgentMentions), None) => println!("{}", state(sharing::agent_mentions(dir))),
         (Some(args::SharingSetting::AgentMentions), Some(s)) => {
             let on = s == args::OnOff::On;
             sharing::set_agent_mentions(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("agent-mentions is {}", state(on));
+            if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+        (Some(args::SharingSetting::AgentSessions), None) => println!("{}", sharing::agent_sessions(dir).word()),
+        (Some(args::SharingSetting::AgentSessions), Some(s)) => {
+            let what = match s {
+                args::OnOff::Work => sharing::AgentListing::Work,
+                args::OnOff::Names => sharing::AgentListing::Names,
+                _ => sharing::AgentListing::None,
+            };
+            sharing::set_agent_sessions(dir, what).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("agent-sessions is {}", what.word());
             if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
             }
@@ -769,16 +749,63 @@ fn kinds(
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
     editors::kinds(&mut kinds);
-    kinds.add(BlockType::Remote, remote::RemoteKind);
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
-    kinds.add(BlockType::People, people_block::PeopleKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
     // The feature crates' (#232): the agent and chat blocks, Docs, invites.
     let cx = features::KindsCx { invite: invite.clone(), mcp, secrets, rules };
     features::kinds(&mut kinds, &cx);
     kinds
+}
+
+/// What VM panes get their machines from: loam, when `--loam-url` names
+/// it. Without it there is no provider, and VM panes are off.
+struct ProviderArgs<'a> {
+    loam_url: Option<&'a str>,
+    loam_key_file: &'a std::path::Path,
+}
+
+/// The sandbox provider VM panes run on: `Some` when one is set up here
+/// (`--loam-url`, with its key on disk), behind the `sandbox-providers`
+/// flag ([`provider_gate::Gated`], #489): the adapter is opened only with
+/// the flag on, on the running daemon, and with it off nothing is read or
+/// asked of a provider.
+fn open_provider(
+    labs: &'static dyn lab_hooks::Hooks,
+    state_dir: &std::path::Path,
+    a: ProviderArgs<'_>,
+) -> Option<std::sync::Arc<dyn provider::Provider>> {
+    let url = a.loam_url?;
+    // A build without Labs: its hook says so.
+    if !lab_flags::BUILT {
+        return labs.open_loam(url, a.loam_key_file);
+    }
+    if !std::fs::metadata(a.loam_key_file).is_ok_and(|m| m.len() > 0) {
+        warn!(file = %a.loam_key_file.display(), "no loam key; VM panes are off");
+        return None;
+    }
+    let (url, key) = (url.to_owned(), a.loam_key_file.to_owned());
+    let open: provider_gate::Open = Box::new(move || labs.open_loam(&url, &key));
+    Some(std::sync::Arc::new(provider_gate::Gated::new(state_dir, "loam", open)))
+}
+
+/// Where the token for the Sprites adapter (wisp) was, before the adapter
+/// was removed with the older machine model. It is left where it is and
+/// never read (and `fs` still never serves it); the log says so once, so
+/// a machine that was set up for wisp knows why its VM panes are off.
+fn old_wisp_token() -> PathBuf {
+    let token = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local/share"))
+        .join("wisp/token");
+    if token.exists() {
+        warn!(
+            file = %token.display(),
+            "a wisp token is here, but the Sprites adapter was removed: loam is the only sandbox provider (--loam-url and its key); VM panes made on wisp can't be reached"
+        );
+    }
+    token
 }
 
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
@@ -844,18 +871,14 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     }
     let mut access =
         access::Access::new(args.listen.port(), &public_hosts, &direct, &args.allow_origins, owner.clone());
-    if let Some(digest) = &args.provider_token_sha256 {
-        access = access.require_tunnel_token(digest)?;
-        info!("resident: loopback connections need the home daemon's tunnel token");
-    }
     if let Some(t) = &status {
         access = access.with_tailnet_name(&t.host);
     }
     // Loopback is everyone's on this machine: callers there show the local
-    // token (a resident's tunnel token stands in for it).
+    // token.
     let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
     let local_token_file = localauth::path(&state_dir);
-    if !access.tunnelled() {
+    {
         let file = &local_token_file;
         let existed = file.exists();
         let token = localauth::load_or_create(file)
@@ -957,32 +980,16 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             None
         }
     };
-    let token_file = args.wisp_token_file.clone().unwrap_or_else(|| {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".local/share"))
-            .join("wisp/token")
-    });
-    // loam, when it's named; wispd (or Fly's sprites) otherwise.
+    // loam, when it's named: the only sandbox provider.
     let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
         arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
     });
-    let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
-        Some(url) if !url.is_empty() => {
-            let p = lab_hooks::labs().open_loam(url, &loam_key_file);
-            info!(url, on = p.is_some(), "VM panes on loam");
-            p
-        }
-        _ => {
-            let p = lab_hooks::labs().open_provider(
-                &args.wisp_url,
-                &token_file,
-                args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
-            );
-            info!(url = args.wisp_url, on = p.is_some(), "VM panes");
-            p
-        }
-    };
+    let provider = open_provider(
+        lab_hooks::labs(),
+        &state_dir,
+        ProviderArgs { loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()), loam_key_file: &loam_key_file },
+    );
+    let old_wisp_token = old_wisp_token();
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
@@ -995,7 +1002,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     lab_hooks::labs().install_studio(studio_file.clone(), args.studio_file.is_some());
     // What `fs` never serves, besides the state directory.
     let private = vec![
-        token_file.clone(),
+        old_wisp_token,
         loam_key_file,
         secrets.anthropic_key.clone(),
         secrets.claude_token.clone(),
@@ -1004,9 +1011,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     ];
     let acl = std::sync::Arc::new(acl::Acl::open(&state_dir));
     let mcp_tokens = mcp::Tokens::open(&state_dir);
-    // Agent blocks reach MCP on loopback (M16); not where loopback needs
-    // the provider's tunnel token (a resident daemon).
-    let mcp_link = args.provider_token_sha256.is_none().then(|| {
+    // Agent blocks reach MCP on loopback (M16).
+    let mcp_link = Some({
         let ip = match args.listen.ip() {
             std::net::IpAddr::V4(v4) if v4.is_unspecified() => std::net::Ipv4Addr::LOCALHOST.into(),
             std::net::IpAddr::V6(v6) if v6.is_unspecified() => std::net::Ipv6Addr::LOCALHOST.into(),
@@ -1032,10 +1038,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl.clone(),
         args.no_relay,
     );
+    // M185: a hosted box's agent turns ask the platform whose key pays.
+    // First: the feature crates ask whether this is a hosted box.
+    agent::hosted::init(control.clone(), args.hosted);
     // The feature crates' use of control (Doc blocks share through it, #1066).
     features::with_control(&control);
-    // M185: a hosted box's agent turns ask the platform whose key pays.
-    agent::hosted::init(control.clone(), args.hosted);
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.
@@ -1048,6 +1055,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(upload::Uploads);
     #[cfg(not(unix))]
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(NoUploads);
+    let (turns_tx, turns_rx) = tokio::sync::mpsc::unbounded_channel();
     let config = mux::Config {
         acl: acl.clone(),
         notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
@@ -1071,6 +1079,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
+        followups: Arc::new(agent_mentions::TurnReports(turns_tx)),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
@@ -1080,7 +1089,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     editors::run_ide(&ide, mux.clone());
     editors::watch_panes(mux.clone());
 
-    let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
+    let hosts = hosts::Hosts::open(&state_dir, name.clone());
     hosts.spawn_probe();
     let shares = share::Shares::open(&state_dir);
     // Guest SSH access was the `guest-ssh` flag: a machine that had it on
@@ -1094,20 +1103,21 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     };
     let guest_given =
         !["off", lab_hooks::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
-    let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
-    synced.prune(sync::RETAIN_MS);
-    let static_dir = args.static_dir.clone().unwrap_or_else(|| {
-        let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"));
-        // The one from before the rename, where it is.
-        arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
-    });
-    // Labs' guest invites and the static binaries for resident daemons.
+    // Synced history (M4c, removed in 0.67) left sealed files nothing reads
+    // now; they're the owner's to delete, so say so rather than touch them.
+    let synced_dir = state_dir.join("synced");
+    if synced_dir.is_dir() {
+        warn!(
+            dir = %synced_dir.display(),
+            "holds history other hosts synced here, sealed; syncing was removed and nothing reads it now: delete the directory when you're done with it (`rm -r`)"
+        );
+    }
+    // Labs' guest invites.
     lab_hooks::labs().open(lab_hooks::Start {
         state_dir: state_dir.clone(),
         guest_listen,
         guest_host: args.guest_ssh_host.clone(),
         guest_given,
-        static_dir,
     });
     let app = server::App::new(
         access,
@@ -1117,13 +1127,17 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         ide,
         hosts,
         shares,
-        synced,
         control.clone(),
         acl.clone(),
         mcp_tokens,
         hand::Hands::open(&state_dir),
         rules,
     );
+    // Control hears where the turns that took teammates' mentions are (#540).
+    crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
+    // What the inbox still holds from before a restart is a card again (#551).
+    let reraised = app.clone();
+    crate::task::spawn(async move { agent_mentions::reraise(&reraised).await });
     // Labs' guest ssh server, and (M78) tasks for this machine's agents
     // that a restart interrupted.
     lab_hooks::labs().start(&app);
@@ -1157,11 +1171,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             }
         });
     }
-    start_reach(&args.reach, &app, name)?;
+    start_background(&app);
     // TCP_NODELAY on every accepted connection (axum leaves Nagle on).
-    // Dial-out tunnels write a DATA frame and a GRANT back to back, and
-    // with Nagle the second waits for the peer's delayed ACK: 40 ms on
-    // every keystroke relayed through `/h/<name>/ws` (found in S15).
+    // The relay's mux (`relay_ws.rs`) writes a DATA frame and a GRANT back
+    // to back, and with Nagle the second waits for the peer's delayed ACK:
+    // 40 ms on every relayed keystroke (found in S15, on the dial-out
+    // tunnel that first carried it).
     let listener = listener.tap_io(|tcp| {
         let _ = tcp.set_nodelay(true);
     });
@@ -1252,7 +1267,8 @@ pub mod whole {
 
     /// Every type that was made when `block::create` was a `match` has an
     /// entry in the table, in a build with Labs and in one without; the
-    /// two that never were (`Terminal`, `Unknown`) still have none.
+    /// two that never were (`Terminal`, `Unknown`) still have none, nor
+    /// does `Remote`, a word kept only so a stored layout parses.
     pub fn every_type_the_daemon_makes_has_a_kind() {
         let kinds = super::kinds(
             None,
@@ -1277,7 +1293,6 @@ pub mod whole {
             BlockType::Chat,
             BlockType::TeamChat,
             BlockType::Board,
-            BlockType::People,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1299,11 +1314,205 @@ pub mod whole {
                 | BlockType::Chat
                 | BlockType::TeamChat
                 | BlockType::Board
-                | BlockType::People
                 | BlockType::Unknown => {}
             }
-            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown | BlockType::Remote);
             assert_eq!(kinds.has(kind), made, "{kind:?}");
         }
+    }
+}
+
+#[cfg(all(test, feature = "labs"))]
+mod provider_tests {
+    use super::*;
+    use arugula_mux::provider::{Begin, Caps, Conn, Exec, ExecSink, Pipe, PipeBegin, Provider, Sandbox, ServiceDef};
+    use futures_util::future::BoxFuture;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    /// An adapter that lists one sandbox and says when it's dropped.
+    struct Fake(Arc<AtomicBool>);
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    impl std::fmt::Debug for Fake {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("Fake")
+        }
+    }
+
+    fn no<'a, T: Send + 'a>() -> BoxFuture<'a, anyhow::Result<T>> {
+        Box::pin(async { Err(anyhow::anyhow!("not here")) })
+    }
+
+    impl Provider for Fake {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        fn caps(&self) -> &Caps {
+            static CAPS: std::sync::OnceLock<Caps> = std::sync::OnceLock::new();
+            CAPS.get_or_init(|| Caps {
+                exec_replay: 7,
+                exec_offset: true,
+                reattach_owner: true,
+                reattach_resize: true,
+                kill_signal: true,
+                kill_grace_ms: 1,
+                cold: arugula_mux::provider::Cold::Restore,
+                fs: true,
+                fs_browse: true,
+                services: true,
+            })
+        }
+        fn list<'a>(&'a self, prefix: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<Sandbox>>> {
+            Box::pin(async move { Ok(vec![Sandbox { name: format!("{prefix}1"), status: "running".into() }]) })
+        }
+        fn status<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Sandbox>>> {
+            no()
+        }
+        fn create<'a>(&'a self, _: &'a str, _: Option<&'a str>) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn delete<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn wake<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn dial<'a>(&'a self, _: &'a str, _: u16) -> BoxFuture<'a, std::io::Result<Conn>> {
+            Box::pin(async { Err(std::io::Error::other("not here")) })
+        }
+        fn exec_tty(
+            self: Arc<Self>,
+            _: &tokio::runtime::Handle,
+            _: String,
+            _: Begin,
+            _: (u16, u16),
+            _: ExecSink,
+        ) -> Exec {
+            Exec { tx: tokio::sync::mpsc::unbounded_channel().0 }
+        }
+        fn kill<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn run<'a>(&'a self, _: &'a str, _: &'a [&'a str]) -> BoxFuture<'a, anyhow::Result<(Vec<u8>, Option<i32>)>> {
+            no()
+        }
+        fn pipe<'a>(&'a self, _: &'a str, _: PipeBegin) -> BoxFuture<'a, anyhow::Result<Pipe>> {
+            no()
+        }
+        fn write_file<'a>(&'a self, _: &'a str, _: &'a str, _: Vec<u8>, _: u32) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn put_service<'a>(&'a self, _: &'a str, _: &'a str, _: &'a ServiceDef) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+        fn delete_service<'a>(&'a self, _: &'a str, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+            no()
+        }
+    }
+
+    /// Labs that counts how often the adapter was opened, and says when
+    /// the last one it opened was dropped.
+    #[derive(Default)]
+    struct Asked {
+        loam: AtomicUsize,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Asked {
+        fn opened(&self) -> usize {
+            self.loam.load(Ordering::SeqCst)
+        }
+    }
+
+    impl lab_hooks::Hooks for Asked {
+        fn open_loam(&self, _: &str, _: &std::path::Path) -> Option<Arc<dyn Provider>> {
+            self.loam.fetch_add(1, Ordering::SeqCst);
+            self.dropped.store(false, Ordering::SeqCst);
+            Some(Arc::new(Fake(self.dropped.clone())))
+        }
+    }
+
+    /// The gate ([`provider_gate::Gated`]) over a fake adapter: this is
+    /// what covers the provider trait's wrapper, since no test drives a
+    /// real provider; the loam adapter itself is tested against a fake
+    /// loam in its own crate.
+    #[tokio::test]
+    async fn the_provider_follows_the_flag_on_the_running_daemon() {
+        use arugula_mux::provider::{Begin, ExecEvent};
+        use arugula_proto::flags::{SANDBOX_PROVIDERS, set};
+        let dir = std::env::temp_dir().join(format!("arugula-provider-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("loam-key");
+        let labs: &'static Asked = Box::leak(Box::default());
+        let args = |loam: Option<&'static str>| ProviderArgs { loam_url: loam, loam_key_file: &key };
+
+        // No `--loam-url`, or no key: not set up, whatever the flag says.
+        std::fs::write(&key, "loam_k").unwrap();
+        assert!(open_provider(labs, &dir, args(None)).is_none(), "no --loam-url");
+        std::fs::write(&key, "").unwrap();
+        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "an empty key");
+        std::fs::remove_file(&key).unwrap();
+        assert!(open_provider(labs, &dir, args(Some("https://loam.example"))).is_none(), "no key file");
+        std::fs::write(&key, "loam_k").unwrap();
+        assert_eq!(labs.opened(), 0);
+
+        // Off (the default): set up, so `vms` can say so, but nothing opens
+        // and every call is the flag's refusal.
+        let p = open_provider(labs, &dir, args(Some("https://loam.example"))).expect("a key file: set up");
+        assert_eq!(p.name(), "loam");
+        let e = p.list("arugula-eph-").await.unwrap_err().to_string();
+        assert!(e.contains("arugulad flags sandbox-providers on"), "{e}");
+        assert!(!p.caps().fs_browse);
+        assert_eq!(labs.opened(), 0);
+        // A terminal asked for with the flag off is lost at once, with the
+        // refusal as its output.
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let spawn =
+            arugula_mux::pane::Spawn { program: "bash".into(), args: vec![], cwd: Default::default(), env: vec![] };
+        let begin = Begin::New { spawn, image: None, create: true };
+        let _exec = p.clone().exec_tty(
+            &tokio::runtime::Handle::current(),
+            "m1".into(),
+            begin,
+            (80, 24),
+            Box::new(move |e| tx.send(e).is_ok()),
+        );
+        match rx.recv().await.unwrap() {
+            ExecEvent::Output(o) => assert!(String::from_utf8_lossy(&o).contains("sandbox-providers"), "{o:?}"),
+            e => panic!("{e:?}"),
+        }
+        assert!(matches!(rx.recv().await.unwrap(), ExecEvent::Lost { machine_gone: false }));
+        assert_eq!(labs.opened(), 0);
+
+        // On: the next call opens it, no restart.
+        set(&dir, SANDBOX_PROVIDERS, true).unwrap();
+        assert_eq!(p.list("m").await.unwrap()[0].name, "m1");
+        assert!(p.caps().fs_browse, "the adapter's capabilities");
+        assert_eq!(labs.opened(), 1);
+        assert_eq!(p.list("m").await.unwrap().len(), 1, "opened once");
+        assert_eq!(labs.opened(), 1);
+
+        // Off again, by its old name: refused, and the adapter is dropped.
+        set(&dir, "vms", false).unwrap();
+        assert!(p.list("m").await.is_err());
+        assert!(labs.dropped.load(Ordering::SeqCst), "the adapter is let go of");
+        assert!(p.status("m1").await.is_err());
+        assert_eq!(labs.opened(), 1);
+
+        // And on again: a new one.
+        set(&dir, SANDBOX_PROVIDERS, true).unwrap();
+        assert!(p.status("m1").await.is_err(), "the fake has no status");
+        assert_eq!(labs.opened(), 2);
+
+        // With the flag on now, opened at once.
+        let p = open_provider(labs, &dir, args(Some("https://loam.example"))).expect("a key file: set up");
+        assert_eq!((p.name(), labs.opened()), ("loam", 3));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

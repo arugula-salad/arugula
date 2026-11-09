@@ -19,7 +19,7 @@
 //   (yellow: one mentions you), with how many when zoomed in (M61).
 
 import { KINDS, REASON_COL } from "./model";
-import { UNREAD, UNREAD_MENTION, type FieldPane } from "./field";
+import type { FieldPane } from "./field";
 import { C, Flat, FONT, fmtDur, needs, rateOf, reduce, runtimeOf, UNTIL_STOPPED, type Rect } from "./flat";
 
 const R = 16;
@@ -310,7 +310,7 @@ export class Hive extends Flat {
       if (!p?.unread) continue;
       const x = c.x + R * 0.75;
       const y = c.y - R * 0.75;
-      cx.fillStyle = p.mention ? UNREAD_MENTION : UNREAD;
+      cx.fillStyle = p.mention ? C.mention : C.unread;
       cx.beginPath();
       cx.arc(x, y, s < 0.7 ? 3.5 : 6, 0, 7);
       cx.fill();

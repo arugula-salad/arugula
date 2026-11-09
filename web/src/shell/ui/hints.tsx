@@ -8,8 +8,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { useModal } from "../../shared/ui/modal";
+import { Modal } from "../../shared/ui/modal";
+import { HintChip as Hint_ } from "../../shared/ui/state-chip";
 import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type ModalButton, type Place } from "../hints";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 /** Watches the shown machine for facts; once, in the workspace. */
 export function HintsWatch({ client }: { client: Client }) {
@@ -29,34 +31,22 @@ const label = (a: { label: string | ((f: Fact) => string) }, f: Fact) => (typeof
 
 function Body({ client, cls }: { client: Client; cls: string }) {
   const s = shownHint()!;
-  return (
-    <span class={cls} role="status" data-hint={s.hint.id}>
-      <span class="hint-copy">{s.hint.copy(s.fact)}</span>
-      {s.hint.action && (
-        <button class="hint-act" data-hint-act onClick={() => act(client)}>
-          {label(s.hint.action, s.fact)}
-        </button>
-      )}
-      <button class="hint-dismiss" data-hint-dismiss aria-label="Dismiss this tip" title="Dismiss (Tips in Settings turns them all off)" onClick={() => dismiss()}>
-        ×
-      </button>
-    </span>
-  );
+  return <Hint_ id={s.hint.id} class={cls} copy={s.hint.copy(s.fact)} action={s.hint.action && label(s.hint.action, s.fact)} onAct={() => act(client)} onDismiss={() => dismiss()} />;
 }
 
 /** In pane `pane`'s header. */
 export function HintChip({ client, pane }: { client: Client; pane: PaneId }) {
-  return useHint("chip", pane) ? <Body client={client} cls="hint hint-chip" /> : null;
+  return useHint("chip", pane) ? <Body client={client} cls="hint-header" /> : null;
 }
 
 /** Over the workspace, at the bottom. */
 export function HintToast({ client }: { client: Client }) {
-  return useHint("toast") ? <Body client={client} cls="hint hint-toast" /> : null;
+  return useHint("toast") ? <Body client={client} cls="hint-toast" /> : null;
 }
 
 /** In a view's empty state. */
 export function HintEmpty({ client }: { client: Client }) {
-  return useHint("empty") ? <Body client={client} cls="hint hint-empty" /> : null;
+  return useHint("empty") ? <Body client={client} cls="hint-empty" /> : null;
 }
 
 /** Over pane `pane`, between its header and its edges: a big tip. Drawn
@@ -86,15 +76,13 @@ function Text({ line }: { line: Line }) {
 }
 
 function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: PaneId; hint: Hint; fact: Fact; asked: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const dialog = () => scroll.current?.closest<HTMLElement>(".pane-tip") ?? null;
   // A button's `when` reads what the client knows (a pane's nvim, its plugin).
   useSubscribe((fn) => client.subscribe(fn));
   const [never, setNever] = useState(false);
-  const optOut = useRef(never);
-  optOut.current = never;
-  // The pane under it takes nothing (useModal's `covers`): no clicks, keys
+  // The pane under it takes nothing (Modal's `covers`): no clicks, keys
   // or focus, a frame's neither, until it's answered. Escape is its ×.
-  useModal(ref, () => dismiss(optOut.current), true, () => client.viewOf(pane)?.host ?? null);
   // A pane whose focus wasn't in it (useModal gives back only what was)
   // gets its view's, when it's the one with the keys.
   useLayoutEffect(
@@ -111,10 +99,9 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
   // they were, so Escape closes it.
   const section = fact.args.section;
   useLayoutEffect(() => {
-    if (section) ref.current?.querySelector(`[data-tip-section="${section}"]`)?.scrollIntoView({ block: "start" });
-    if (asked) ref.current?.focus({ preventScroll: true });
+    if (section) scroll.current?.querySelector(`[data-tip-section="${section}"]`)?.scrollIntoView({ block: "start" });
+    if (asked) dialog()?.focus({ preventScroll: true });
   }, [section]);
-  const title = `pane-tip-title-${pane}`;
   // `buttons` (each with its `when`, asked on every draw), or the old pair:
   // the second one, then the action, the primary.
   const buttons: { b: ModalButton; which: "action" | "second" | number; primary: boolean }[] = hint.buttons
@@ -126,65 +113,71 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
   const first = hint.buttons && buttons.find(({ b }) => !("close" in b));
   if (first) first.primary = true;
   return (
-    <div
-      class="pane-tip-backdrop"
-      data-pane-tip-backdrop
-      // A click on the pane under it lands here, and the keys come in
-      // (not to the page's body, where the click would leave them).
-      onMouseDown={(e) => {
-        if (e.target !== e.currentTarget) return;
-        e.preventDefault();
-        ref.current?.focus({ preventScroll: true });
+    <Modal
+      class="pane-tip"
+      backdropClass="pane-tip-backdrop"
+      backdropProps={{
+        "data-pane-tip-backdrop": "",
+        // A click on the pane under it lands here, and the keys come in
+        // (not to the page's body, where the click would leave them).
+        onMouseDown: (e) => {
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
+          dialog()?.focus({ preventScroll: true });
+        },
+        // Not the pane's menu: its pane takes nothing while it's up.
+        onContextMenu: (e) => e.stopPropagation(),
       }}
-      // Not the pane's menu: its pane takes nothing while it's up.
-      onContextMenu={(e) => e.stopPropagation()}
+      root={{ "data-hint": hint.id, "data-pane-tip": String(pane) }}
+      covers={() => client.viewOf(pane)?.host ?? null}
+      close={() => dismiss(never)}
+      backdropClose={false}
+      x={false}
+      buttons={
+        <>
+          <label class="pane-tip-never">
+            <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
+            Don't show tips like this again
+          </label>
+          {buttons.map(({ b, which, primary }) => (
+            <button
+              class={primary ? "primary" : "secondary"}
+              {...(primary ? { "data-hint-act": "" } : {})}
+              {...(which === "second" || "close" in b ? { "data-hint-second": "" } : {})}
+              data-hint-button={b.label}
+              onClick={() => act(client, which, never)}
+            >
+              {b.label}
+            </button>
+          ))}
+        </>
+      }
     >
-      <div ref={ref} class="pane-tip" role="dialog" aria-modal="true" aria-labelledby={title} data-hint={hint.id} data-pane-tip={pane}>
-        <button class="modal-close" data-hint-dismiss aria-label="Close this tip" title="Close" onClick={() => dismiss(never)}>
-          ×
-        </button>
-        <div class="pane-tip-scroll">
-          <div class="pane-tip-inner">
-            <h2 id={title}>{hint.copy(fact)}</h2>
-            {hint.body?.(fact).map((b) =>
-              typeof b === "object" && !Array.isArray(b) && "heading" in b ? (
-                <h3 data-tip-section={b.id}>{b.heading}</h3>
-              ) : typeof b === "object" && !Array.isArray(b) ? (
-                <ul>
-                  {b.list.map((l) => (
-                    <li>
-                      <Text line={l} />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>
-                  <Text line={b} />
-                </p>
-              ),
-            )}
-            <div class="pane-tip-foot">
-              <div class="pane-tip-buttons">
-                {buttons.map(({ b, which, primary }) => (
-                  <button
-                    class={primary ? "pane-tip-act primary" : "pane-tip-second"}
-                    {...(primary ? { "data-hint-act": "" } : {})}
-                    {...(which === "second" || "close" in b ? { "data-hint-second": "" } : {})}
-                    data-hint-button={b.label}
-                    onClick={() => act(client, which, never)}
-                  >
-                    {b.label}
-                  </button>
+      <IconButton label="Close this tip" title="Close" class="modal-close" data-hint-dismiss onClick={() => dismiss(never)}>
+        <CloseIcon size="md" />
+      </IconButton>
+      <div ref={scroll} class="pane-tip-scroll">
+        <div class="pane-tip-inner">
+          <h2>{hint.copy(fact)}</h2>
+          {hint.body?.(fact).map((b) =>
+            typeof b === "object" && !Array.isArray(b) && "heading" in b ? (
+              <h3 data-tip-section={b.id}>{b.heading}</h3>
+            ) : typeof b === "object" && !Array.isArray(b) ? (
+              <ul>
+                {b.list.map((l) => (
+                  <li>
+                    <Text line={l} />
+                  </li>
                 ))}
-              </div>
-              <label class="pane-tip-never">
-                <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
-                Don't show tips like this again
-              </label>
-            </div>
-          </div>
+              </ul>
+            ) : (
+              <p>
+                <Text line={b} />
+              </p>
+            ),
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

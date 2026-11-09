@@ -12,7 +12,10 @@
 //!   makes, or the box's sandbox id. The box enrolls once ([`enroll`]),
 //!   and the hub signs its [`HostedCert`] with the hosted key, under the
 //!   newest live delegation. Fail closed: a used enrollment is refused,
-//!   and so is one whose delegation was revoked since.
+//!   and so is one whose delegation was revoked since. A project has one
+//!   live delegation. The first revoke that checks out ends it for good
+//!   ([`DelegationRow::ended`]), and control says so itself, with the hosted
+//!   key ([`closed`]), to everyone who checks.
 //! - **Reaching.** A hosted machine is reached only by its project's
 //!   people ([`may_reach`]), listed only to them ([`directory`]), and
 //!   signs only its own routes and the relay (`auth::HostedAuth`).
@@ -30,7 +33,7 @@ use arugula_control_wire::hosted::{
 use arugula_e2e::{
     Cert, Revocation, Trust,
     cert::LegacyAppChildren,
-    hosted::{Delegation, DelegationRevoke, HostedCert, HostedKey, Owner, Owners, enroll_proof_body, live},
+    hosted::{Delegation, DelegationClosed, HostedCert, HostedKey, Owner, Owners, enroll_proof_body, live},
     now_ms,
     team::{AccountCerts, Roster, TeamPin, TeamRole},
 };
@@ -41,7 +44,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use serde_json::{Value, json};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     ApiError, App,
@@ -132,8 +135,21 @@ pub(crate) fn legacy_app_children(db: &Db, people: &People) -> anyhow::Result<Le
     Ok(out)
 }
 
-fn revokes(row: &DelegationRow) -> Vec<DelegationRevoke> {
-    row.revoke.iter().cloned().collect()
+/// Control's word that `row` ended, for the clients and boxes that check:
+/// signed with the key it names, so one naming a key control no longer has
+/// gets none (nothing can enroll under that one anyway).
+fn closed(key: &HostedKey, row: &DelegationRow) -> Vec<DelegationClosed> {
+    match row.ended() {
+        Some(at) if row.delegation.key == key.public() => vec![key.close(&row.delegation, at)],
+        _ => vec![],
+    }
+}
+
+/// Control may enroll under this row: it hasn't ended, and it still checks
+/// out for the people `owners` says. A revoke isn't judged again here: it was
+/// when it came.
+fn stands(row: &DelegationRow, owners: &Owners) -> bool {
+    row.ended().is_none() && live(&row.delegation, &row.revokes, owners)
 }
 
 /// `account`'s role in the project `owner` names, as control routes: a
@@ -192,10 +208,14 @@ pub(crate) fn directory(app: &App, account: &str) -> anyhow::Result<Vec<Value>> 
             Some(Owner::Team(t)) => Some(t),
             _ => None,
         };
+        // Reached only through the relay: no direct URLs, whatever its row
+        // holds. The field stays, empty, for clients that expect it.
         out.push(json!({
-            "id": h.cert.device, "name": h.cert.name, "urls": h.urls, "last_seen": h.last_seen,
+            "id": h.cert.device, "name": h.cert.name, "urls": [], "last_seen": h.last_seen,
             "online": app.relay.online(&h.cert.device), "team": team,
-            "hosted": { "cert": h.cert, "delegation": d.delegation, "revocations": revokes(&d) },
+            "hosted": {
+                "cert": h.cert, "closed": closed(&app.hosted_key, &d), "delegation": d.delegation, "revocations": d.revokes,
+            },
         }));
     }
     Ok(out)
@@ -225,10 +245,8 @@ pub(crate) fn of_team(app: &App, team: &str) -> Vec<String> {
 fn live_delegation(db: &Db, key: &str, project: &str, owner: &Owner) -> anyhow::Result<Option<Delegation>> {
     let Some(p) = people(db, owner)? else { return Ok(None) };
     Ok(db.delegations_of(&[owner.as_string()])?.into_iter().find_map(|row| {
-        (row.delegation.project == project
-            && row.delegation.key == key
-            && live(&row.delegation, &revokes(&row), &p.owners()))
-        .then_some(row.delegation)
+        (row.delegation.project == project && row.delegation.key == key && stands(&row, &p.owners()))
+            .then_some(row.delegation)
     }))
 }
 
@@ -312,8 +330,9 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
     let mut e = Enrollment {
         url: app.cfg.public_url.clone(),
         cert: h.cert.clone(),
+        closed: closed(&app.hosted_key, &row),
         delegation: row.delegation.clone(),
-        revocations: revokes(&row),
+        revocations: row.revokes.clone(),
         team: None,
         roster: None,
         certs: Default::default(),
@@ -408,9 +427,7 @@ pub async fn enroll(
     let row = app.db.delegation(&delegation)?;
     let people = Owner::parse(&owner).map(|o| people(&app.db, &o)).transpose()?.flatten();
     let d = match (row, people) {
-        (Some(row), Some(p))
-            if row.delegation.key == app.hosted_key.public() && live(&row.delegation, &revokes(&row), &p.owners()) =>
-        {
+        (Some(row), Some(p)) if row.delegation.key == app.hosted_key.public() && stands(&row, &p.owners()) => {
             row.delegation
         }
         _ => {
@@ -438,7 +455,7 @@ pub async fn enroll(
         app.db.set_hosted_purpose(&cert.device, p)?;
     }
     info!(project, workspace, device = cert.device, ?purpose, "a hosted machine enrolled");
-    let row = HostedRow { cert, urls: vec![], last_seen: None, purpose };
+    let row = HostedRow { cert, last_seen: None, purpose };
     crate::reply(&enrollment(&app, &row)?)
 }
 
@@ -539,7 +556,13 @@ pub async fn delegations(State(app): State<Arc<App>>, s: Session) -> R {
     let rows = app.db.delegations_of(&owners_for(&app, &s.account)?)?;
     let list: Vec<Value> = rows
         .iter()
-        .map(|r| json!({ "id": r.delegation.id(), "delegation": r.delegation, "revoke": r.revoke, "by_account": r.by_account }))
+        .map(|r| {
+            // `revoke` is the first, as a page from before reads it.
+            json!({
+                "id": r.delegation.id(), "delegation": r.delegation, "revoke": r.revoke(), "revokes": r.revokes,
+                "ended": r.ended().is_some(), "by_account": r.by_account,
+            })
+        })
         .collect();
     Ok(Json(json!({ "key": app.hosted_key.public(), "delegations": list })))
 }
@@ -561,14 +584,23 @@ pub async fn delegate(State(app): State<Arc<App>>, s: Session, Json(b): Json<Del
     if !d.signed_for(&p.owners()) {
         return Err(err(StatusCode::FORBIDDEN, "it isn't signed by a device of one of the project's owners"));
     }
-    app.db.add_delegation(&d, &s.account, now_ms())?;
+    // One live delegation per project: another owner's new one waits for the
+    // old to end. One that names an older key, or whose signer has left, has
+    // ended by itself, so changing either needs no overlap.
+    let (key, owners) = (app.hosted_key.public(), p.owners());
+    if !app.db.add_delegation(&d, &s.account, now_ms(), |row| row.delegation.key == key && stands(row, &owners))? {
+        return Err(err(StatusCode::CONFLICT, "this project has a live delegation already: revoke it first"));
+    }
     info!(project = d.project, owner = d.owner, "a project delegated to control");
     Ok(Json(json!({ "id": d.id() })))
 }
 
 /// `POST /api/hosted/delegations/revoke`: an owner's device takes a
-/// delegation back. Nothing more enrolls under it; its machines stay
-/// until they're removed.
+/// delegation back. Nothing more enrolls under it; its machines stay until
+/// they're removed. This is the one place a revoke is judged, by who's an
+/// owner now and by control's clock. Answers `first` (it ended the delegation)
+/// and `kept` (it's kept: not when this device's was already, or when as many
+/// as control keeps are).
 pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<RevokePost>) -> R {
     let r = b.revoke;
     let row = app.db.delegation(&r.delegation)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such delegation"))?;
@@ -582,24 +614,74 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     if now_ms().abs_diff(r.at) > SKEW_MS {
         return Err(err(StatusCode::BAD_REQUEST, "its time is too far from control's: check this device's clock"));
     }
-    app.db.revoke_delegation(&r, now_ms())?;
-    info!(project = row.delegation.project, "a project delegation revoked");
+    let taken = app.db.revoke_delegation(&r, now_ms())?;
+    info!(project = row.delegation.project, first = taken.first, "a project delegation revoked");
     // Its machines pick the revocation up now.
     let ids: Vec<String> = app.db.hosted_of(&[owner.as_string()])?.into_iter().map(|h| h.cert.device).collect();
     app.relay.nudge(&ids);
-    Ok(Json(json!({})))
+    Ok(Json(json!({ "first": taken.first, "kept": taken.kept })))
 }
 
 /// `DELETE /api/hosted/machines/{id}`: a project owner removes a hosted
-/// machine, as a device is removed: it's hung up on, and its key signs
-/// nothing here again.
+/// machine. Unlike a device's removal, which is a signed statement clients
+/// keep, this is control's word alone: control stops listing it, refuses
+/// its signatures and hangs up on it; the workspace's delete or rebuild
+/// deletes its sandbox (`HubPort::hosted_gone`). The platform is told
+/// (`PlatformPort::hosted_removed`, Arugula #744), the only way it learns
+/// of it, so the workspace fails and its runs and sessions end. It's told
+/// in a task of its own, so a platform that hangs doesn't hold the
+/// request; one it can't be told now is told again
+/// ([`tell_untold_removals`]).
 pub async fn remove(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> R {
     let h = app.db.hosted(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
     let owner = Owner::parse(&h.cert.owner).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
     must_own(&app, &s, &owner)?;
     app.db.remove_hosted(&id, now_ms())?;
     app.relay.drop_daemon(&id);
+    tokio::spawn(async move { tell_removals(&app, Some(&id)).await });
     Ok(Json(json!({})))
+}
+
+/// Tell the platform of each hosted machine's removal it hasn't been told
+/// of (`untold_hosted_removals`), forgetting each it takes: how many it
+/// took. Taking one twice changes nothing for it. The deletions' round
+/// calls it (`account::start_telling`).
+pub async fn tell_untold_removals(app: &App) -> usize {
+    tell_removals(app, None).await
+}
+
+/// [`tell_untold_removals`], for machine `only` alone when it's named (an
+/// owner just removed it).
+pub(crate) async fn tell_removals(app: &App, only: Option<&str>) -> usize {
+    let untold = match app.db.untold_hosted_removals() {
+        Ok(u) => u.into_iter().filter(|r| only.is_none_or(|m| r.machine == m)).collect::<Vec<_>>(),
+        Err(e) => {
+            warn!(error = %e, "reading the hosted machines' removals the platform hasn't been told of");
+            return 0;
+        }
+    };
+    let mut told = 0;
+    for r in &untold {
+        match app.platform.hosted_removed(&r.workspace, &r.machine).await {
+            Ok(()) => match app.db.told_hosted_removal(&r.machine) {
+                Ok(()) => told += 1,
+                Err(e) => {
+                    warn!(machine = r.machine, error = %e, "forgetting a hosted removal the platform was told of")
+                }
+            },
+            Err(e) => {
+                warn!(
+                    machine = r.machine,
+                    error = format!("{e:#}"),
+                    "the platform wasn't told of a hosted machine's removal yet; trying again"
+                )
+            }
+        }
+    }
+    if told > 0 {
+        info!(told, left = untold.len() - told, "told the platform of removed hosted machines");
+    }
+    told
 }
 
 // ---------------------------------------------------------------- by hand

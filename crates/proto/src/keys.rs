@@ -11,6 +11,23 @@ pub struct Modes {
     pub mouse: bool,
     /// 1006: SGR mouse encoding.
     pub sgr_mouse: bool,
+    /// 2004: the program asked for pasted text in `ESC [ 200 ~` … `ESC [ 201 ~`.
+    pub bracketed_paste: bool,
+}
+
+/// The two writes that type `text` and press Enter (#573): the text, then
+/// the `\r` alone. In one write a TUI such as Claude Code reads the burst as
+/// a paste and the Enter lands inside it, unsubmitted. If the program wants
+/// bracketed paste the text goes in a bracket, unless it holds the end of
+/// one, which would close the paste early.
+pub fn send_text(text: &str, enter: bool, modes: Modes) -> (Vec<u8>, Option<Vec<u8>>) {
+    const END: &[u8] = b"\x1b[201~";
+    let mut data = text.as_bytes().to_vec();
+    if enter && modes.bracketed_paste && !data.windows(END.len()).any(|w| w == END) {
+        data.splice(0..0, *b"\x1b[200~");
+        data.extend_from_slice(END);
+    }
+    (data, enter.then(|| vec![b'\r']))
 }
 
 /// One tmux-style key name (`C-c`, `M-x`, `Up`, `Enter`, `F5`, `Space`, a
@@ -172,6 +189,19 @@ pub fn mouse(x: u16, y: u16, button: MouseButton, action: MouseAction, m: Modes)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn send_enter_is_its_own_write_after_the_text() {
+        let off = Modes::default();
+        let on = Modes { bracketed_paste: true, ..off };
+        // No enter: the text as it is, even when the program takes pastes.
+        assert_eq!(send_text("hi", false, on), (b"hi".to_vec(), None));
+        assert_eq!(send_text("hi", true, off), (b"hi".to_vec(), Some(b"\r".to_vec())));
+        assert_eq!(send_text("hi", true, on), (b"\x1b[200~hi\x1b[201~".to_vec(), Some(b"\r".to_vec())));
+        // A paste end inside the text would close the bracket early.
+        let evil = "a\x1b[201~b";
+        assert_eq!(send_text(evil, true, on), (evil.as_bytes().to_vec(), Some(b"\r".to_vec())));
+    }
 
     #[test]
     fn names() {

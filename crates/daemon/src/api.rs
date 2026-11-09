@@ -20,9 +20,9 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
         MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PaneNvimOpen, PanePermit, PanePorts, PaneProcess,
-        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
-        SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMentions, PaneMouse, PaneNvimOpen, PanePermit, PanePorts,
+        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
+        RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -60,6 +60,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PaneKeys>()
         .op::<PaneMouse>()
         .op::<PaneAttention>()
+        .op::<PaneMentions>()
         .route("/api/attention", get(attention_list))
         .route("/api/attention/act", post(act))
         .op::<PaneAsk>()
@@ -320,6 +321,17 @@ async fn act(
             }
         }
     }
+    // A teammate's agent's mention held on a session with no hooks (#579):
+    // delivering or dropping it is the machine owner's, at the card. Neither
+    // a guest's, nor an agent's on the owner's CLI, nor a team's other
+    // owner's (who is `Owner` here).
+    if !who.is_owner() || foreign(&app, &dev) || crate::invite::agent(&headers) {
+        for p in &panes {
+            if req.action == arugula_proto::Action::Deliver || holds_mention(&app, *p).await {
+                return Err(ApiError(StatusCode::FORBIDDEN, HELD_OWNER_ONLY.into()));
+            }
+        }
+    }
     // M79: a task's consent card is this machine's own account's, not a
     // team's other owner's (who is `Owner` here too).
     if !who.is_owner() || foreign(&app, &dev) {
@@ -390,6 +402,8 @@ async fn act_one(
             return crate::editors::answer_diff(&app.ide, &app.mux, pane, req.id.clone(), accept, req.text.clone(), by)
                 .await;
         }
+        // A held mention typed into the terminal (#579).
+        Action::Deliver => return deliver_held(app, pane, by).await,
         _ => {}
     }
     // A failed command typed again (M11), once its shell is idle.
@@ -413,6 +427,13 @@ async fn act_one(
         return crate::fs::type_line(app, pane, line, "rerun").await.map_err(|e| e.to_string());
     }
     if req.action == Action::Dismiss {
+        if holds_mention(app, pane).await {
+            if by.as_ref().is_some_and(|d| d.who != "owner") {
+                return Err(HELD_OWNER_ONLY.into());
+            }
+            app.mux.api(|r| Api::HeldDrop(pane, r)).await;
+            return Ok(());
+        }
         return match app.mux.api(|r| Api::Attention(pane, Attention::Idle, None, r)).await {
             Some(true) => Ok(()),
             _ => Err(format!("no pane %{pane}")),
@@ -482,7 +503,7 @@ async fn act_one(
         (Action::Allow, AskWhat::Question) => return Err(format!("%{pane} asks a question: answer it")),
         (Action::Answer, AskWhat::Approve) => return Err(format!("%{pane} asks for approval: allow or deny it")),
         (Action::Expire, _) => return Err(format!("%{pane} isn't waiting at a gate: nothing to expire")),
-        (Action::Dismiss | Action::Continue | Action::Accept | Action::Reject | Action::Rerun, _) => {
+        (Action::Dismiss | Action::Continue | Action::Accept | Action::Reject | Action::Rerun | Action::Deliver, _) => {
             unreachable!("handled above")
         }
     };
@@ -494,11 +515,52 @@ async fn act_one(
     }
 }
 
+/// What a card holding a teammate's mention says to anyone but the owner.
+const HELD_OWNER_ONLY: &str = "only this machine's owner delivers or drops a mention held for a session";
+
+/// Whether `pane` has a teammate's mention held behind a card (#579).
+async fn holds_mention(app: &App, pane: PaneId) -> bool {
+    let reason = app.mux.api(|r| Api::Reason(pane, r)).await.flatten();
+    reason.is_some_and(|(r, _)| r.actions.contains(&arugula_proto::Action::Deliver))
+}
+
+/// The owner tapped "deliver" on a held mention (#579): the one place a
+/// mention is typed into a terminal. It's typed as `arugula send --enter`
+/// types, after the mux hands it over (its turn is then `working`).
+async fn deliver_held(app: &App, pane: PaneId, by: Option<Driver>) -> Result<(), String> {
+    if by.as_ref().is_some_and(|d| d.who != "owner") {
+        return Err(HELD_OWNER_ONLY.into());
+    }
+    if !holds_mention(app, pane).await {
+        return Err(format!("%{pane} holds no mention (it was delivered, or dismissed)"));
+    }
+    let p = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no terminal %{pane}"))?;
+    if !p.running() {
+        return Err(format!("nothing is running in %{pane}"));
+    }
+    let text = app.mux.api(|r| Api::HeldDeliver(pane, r)).await.ok_or("daemon is shutting down")??;
+    crate::ops::input::send_text(app, pane, &p, &text, true, None).await;
+    Ok(())
+}
+
 /// `arugula hook`: one of Claude Code's hook events (M29).
-async fn hook(State(app): AppState, Path(id): Path<PaneId>, Json(hook): Json<serde_json::Value>) -> Res<Json<Empty>> {
+async fn hook(
+    State(app): AppState,
+    Path(id): Path<PaneId>,
+    Json(hook): Json<serde_json::Value>,
+) -> Res<Json<arugula_proto::api::HookAnswer>> {
     app.hooks_heard.lock().unwrap().insert(id, now_ms());
+    // #644: the CLI asks only where a person drives the session, and only
+    // when a tool call ended. An older CLI never asks.
+    use arugula_proto::api::{HookAnswer, HookFollowUp};
+    let take = hook[arugula_proto::api::HOOK_TAKES_MENTION] == true;
+    let asked = take.then(|| hook.clone());
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
-    Ok(Json(Empty {}))
+    let follow_up = match asked {
+        Some(hook) => app.mux.api(|r| Api::TakeTagged(id, hook, r)).await.flatten(),
+        None => None,
+    };
+    Ok(Json(HookAnswer { follow_up: follow_up.map(|(text, by)| HookFollowUp { text, by }) }))
 }
 
 /// Whether a block is an agent's invites (#234): the owner's to answer,
@@ -776,18 +838,6 @@ async fn open_block(
         }
         req.config = crate::forges::open_config(&req.config, app.control.state_dir()).await.map_err(bad)?;
     }
-    // A pane on another daemon (#17) names a host in our list: that's
-    // where clients look it up.
-    if req.kind == arugula_proto::BlockType::Remote {
-        let at = crate::remote::parse(&req.config).map_err(bad)?;
-        let list = app.hosts.list();
-        if at.host == list.this {
-            return Err(bad(format!("{} is this daemon: its panes go in the layout as they are", at.host)));
-        }
-        if !list.hosts.iter().any(|h| h.name == at.host) {
-            return Err(bad(format!("no host {} in this daemon's list", at.host)));
-        }
-    }
     // An agent started on an issue (`arugula agent --issue`, #372): its
     // row, once it's open.
     let issue = match req.kind {
@@ -937,12 +987,7 @@ async fn call(
     match method.as_str() {
         "send" => {
             let req: SendRequest = serde_json::from_value(args).map_err(|e| bad(e.to_string()))?;
-            p.mark_input();
-            let mut data = req.text.into_bytes();
-            if req.enter {
-                data.push(b'\r');
-            }
-            app.mux.send(Cmd::Input { client: None, pane: id, data });
+            crate::ops::input::send_text(&app, id, &p, &req.text, req.enter, None).await;
             Ok(Json(serde_json::json!({})))
         }
         "keys" => {
@@ -1034,9 +1079,6 @@ struct TailQuery {
     /// Strip escape sequences.
     #[serde(default)]
     text: Option<u8>,
-    /// A pane of another host, from its synced history.
-    #[serde(default)]
-    host: Option<String>,
 }
 
 /// A closed pane's output, from its retired log: no following, and offsets
@@ -1148,9 +1190,6 @@ async fn tail(
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
     if who.is_some() {
         after_authz_pause().await;
-    }
-    if let Some(host) = q.host.clone() {
-        return tail_synced(&app, who.as_ref(), id, host, &q).await;
     }
     // Under a "from now" share authz let in only an offset at or after
     // where it began; anything else reads from before any start.
@@ -1511,9 +1550,6 @@ struct HistoryQuery {
     kind: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
-    /// Another host's synced history (`*`: every host's).
-    #[serde(default)]
-    host: Option<String>,
     /// Only the panes in this session's tabs now (M112).
     #[serde(default)]
     session: Option<SessionId>,
@@ -1576,14 +1612,7 @@ async fn history_(
     Query(q): Query<HistoryQuery>,
 ) -> Res<Response> {
     let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    // M112: anyone reads the history of the panes they may read; another
-    // host's synced history stays the owner's, and a session is this host's.
-    if q.host.is_some() && !who.is_owner() {
-        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
-    }
-    if q.host.is_some() && q.session.is_some() {
-        return Err(bad("session is this host's: not with host"));
-    }
+    // M112: anyone reads the history of the panes they may read.
     let only =
         scope_for(&app, &who, q.session).await?.map(|s| s.panes.into_iter().map(|(p, f)| (p, f.offset)).collect());
     let matching = q.matching.as_deref().map(Regex::new).transpose().map_err(|e| bad(format!("match: {e}")))?;
@@ -1605,13 +1634,7 @@ async fn history_(
     };
     let store = app.mux.store.clone();
     let limit = q.limit.unwrap_or(100);
-    let synced = app.synced.clone();
-    let list = crate::task::spawn_blocking(move || match &q.host {
-        Some(host) => synced.history(host, &filter, limit),
-        None => history::history(&store, &filter, limit),
-    })
-    .await
-    .unwrap_or_default();
+    let list = crate::task::spawn_blocking(move || history::history(&store, &filter, limit)).await.unwrap_or_default();
     Ok(Json(list).into_response())
 }
 
@@ -1622,9 +1645,6 @@ struct SearchQuery {
     since: Option<u64>,
     #[serde(default)]
     limit: Option<usize>,
-    /// Another host's synced history (`*`: every host's).
-    #[serde(default)]
-    host: Option<String>,
 }
 
 async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Response> {
@@ -1633,50 +1653,14 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     let store = app.mux.store.clone();
     let kinds = app.mux.kinds.clone();
     let limit = q.limit.unwrap_or(100);
-    let synced = app.synced.clone();
     let docs_re = re.clone();
-    let host = q.host.clone();
-    let mut hits = crate::task::spawn_blocking(move || match &q.host {
-        Some(host) => synced.search(host, &re, since, limit),
-        None => history::search(&store, &kinds, &re, since, limit),
-    })
-    .await
-    .unwrap_or_default();
+    let mut hits = crate::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, limit))
+        .await
+        .unwrap_or_default();
     // The feature crates' lines (the Doc library's, #1493) follow this
     // machine's panes'.
-    if host.is_none() {
-        hits.extend(crate::features::search(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
-    }
+    hits.extend(crate::features::search(&app, docs_re, since, limit.saturating_sub(hits.len())).await);
     Ok(Json(hits).into_response())
-}
-
-/// A pane synced from another host: its output from an offset (default the
-/// last 64 KB), no following. Another host's history is the owner's alone,
-/// as with `/api/history` (authz checked `who` on this host's pane of the
-/// same number, not that one).
-async fn tail_synced(
-    app: &App,
-    who: Option<&crate::acl::Principal>,
-    id: PaneId,
-    host: String,
-    q: &TailQuery,
-) -> Res<Response> {
-    if who.is_some_and(|w| !w.is_owner()) {
-        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
-    }
-    let synced = app.synced.clone();
-    let from = match q.from.as_deref() {
-        None => None,
-        Some(n) => Some(n.parse::<u64>().map_err(|_| bad("a synced pane's from takes an offset"))?),
-    };
-    let read = crate::task::spawn_blocking(move || {
-        let from = from.unwrap_or_else(|| synced.pane(&host, id).log_end.saturating_sub(64 * 1024));
-        synced.read_from(&host, id, from)
-    })
-    .await
-    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let (_, bytes) = read.map_err(|e| ApiError(StatusCode::NOT_FOUND, e.to_string()))?;
-    Ok(if q.text == Some(1) { strip(&bytes).into_bytes() } else { bytes }.into_response())
 }
 
 /// A machine's shell is found by its tag.

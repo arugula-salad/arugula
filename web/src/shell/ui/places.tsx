@@ -2,6 +2,7 @@
 // chat, which is on the platform page (M153): the places bar's Chat opens
 // it there. The shell draws no chat page of its own since M155.
 
+import { closeSettings, settingsRoute } from "./settings-route";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { directory } from "../hosts";
@@ -12,6 +13,7 @@ import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
 import { openPlatform, platformOrigin } from "../platform-links";
+import { Count } from "../../shared/ui/state-chip";
 
 // ---- chat, on the platform page
 
@@ -54,10 +56,13 @@ export function hasChat(): boolean {
   return !!platformOrigin() && !!chatStore();
 }
 
-/** Whether to offer Boards: with chat (the machine has joined control), the
- * `boards` flag on, and the machine's owner (as Docs). */
+/** Whether to offer Boards: once control has answered for a person signed
+ * in to it, whether or not chat is on for them, since a project's boards and
+ * issues follow the project (Arugula #746); and to the machine's owner (as
+ * Docs). */
 export function hasBoards(client: Client): boolean {
-  return hasChat() && client.flag("boards") && !client.state?.roles;
+  const known = chat.on === true || (chat.on === false && !chat.signedOut);
+  return !!platformOrigin() && known && !client.state?.roles;
 }
 
 /** Unread messages in the rooms chat lists, and whether one mentions
@@ -85,7 +90,7 @@ export function useChatTick(client: Client) {
 
 /** Where a person is: the panes, the swarm or agents, or (in the new
  * workspace, M111) the overview of this machine's sessions. */
-export type Place = "panes" | "swarm" | "agents" | "docs" | "overview";
+export type Place = "panes" | "swarm" | "agents" | "docs" | "settings" | "overview";
 
 /** `#overview`, or `#overview=<session>` for one session's (M111). */
 export function overviewRoute(): { session?: number } | null {
@@ -113,6 +118,7 @@ export function currentPlace(): Place {
   if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
   if (docsRoute()) return "docs";
+  if (settingsRoute()) return "settings";
   return "panes";
 }
 
@@ -120,6 +126,7 @@ export function currentPlace(): Place {
 export function closePlace(at: Place) {
   if (at === "agents") closeAgentsPage();
   else if (at === "docs") closeDocsPage();
+  else if (at === "settings") closeSettings();
   else if (at === "swarm") closeSwarm();
   else if (at === "overview") closeOverview();
 }
@@ -162,18 +169,18 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {hasChat() && (
         <button
           class="place"
-          title="Chat: your teams' channels, messages and threads, on the platform page"
+          title="Chat: your teams' channels, messages and threads"
           data-open-chat
           onClick={() => openChat()}
         >
           Chat
-          {n > 0 && <span class={mention ? "chat-count mention" : "chat-count"}>{mention ? `@${n}` : n}</span>}
+          {n > 0 && <Count for={mention ? "mention" : "you"} class="count-after">{mention ? `@${n}` : n}</Count>}
         </button>
       )}
       {hasBoards(client) && (
         <button
           class="place"
-          title="Boards: your projects' boards and epics, on the platform page"
+          title="Boards: your projects' boards and epics"
           data-open-boards
           onClick={() => openBoards()}
         >
@@ -183,7 +190,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {docs && (
         <button
           class={at === "docs" ? "place here" : "place"}
-          title="Docs: the Docs your agents wrote, to open again"
+          title="Docs: the Docs your agents wrote on this machine, to open again"
           data-open-docs
           aria-pressed={at === "docs"}
           onClick={() => at !== "docs" && openDocsPage()}
@@ -203,5 +210,35 @@ export function Places({ client, at }: { client: Client; at: Place }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** A machine's own places, in the bar on a computer (Arugula #637): the bar is
+ * what you're in, the machine, then what it has, as a project's is. Docs and
+ * Recipes are offered as the phone's Places are. */
+export function MachinePlaces({ client, at }: { client: Client; at: Place }) {
+  const owner = !client.state?.roles;
+  const recipes = client.flag("agent-delegation") && owner;
+  const panes = at === "panes" || at === "overview";
+  const item = (name: string, hook: string, here: boolean, title: string, go: () => void) => (
+    <button
+      class={here ? "place frame-place here" : "place frame-place"}
+      title={title}
+      aria-current={here ? "page" : undefined}
+      {...{ [`data-machine-${hook}`]: "" }}
+      onClick={go}
+    >
+      {name}
+    </button>
+  );
+  return (
+    <nav class="places" aria-label="This machine's places" data-machine-places>
+      {item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", () => {
+        if (at !== "panes") closePlace(at);
+        else client.viewOf(client.active() ?? -1)?.focus();
+      })}
+      {owner && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
+      {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
+    </nav>
   );
 }

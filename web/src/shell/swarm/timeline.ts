@@ -21,7 +21,7 @@
 // sees finish while it's open; the live output from the panes' `bps`.
 
 import { KINDS, REASON_COL } from "./model";
-import { UNREAD, UNREAD_MENTION, type FieldHooks, type FieldPane } from "./field";
+import type { FieldHooks, FieldPane } from "./field";
 import { C, Flat, FONT, fmtDur, needs, rateOf, reduce, UNTIL_STOPPED, type Rect } from "./flat";
 
 /** Seconds shown when it fits. */
@@ -387,7 +387,7 @@ export class Timeline extends Flat {
       }
       if (p.unread) {
         const x = cam.x - 6 - (p.people?.length ?? 0) * 7 - 2;
-        cx.fillStyle = p.mention ? UNREAD_MENTION : UNREAD;
+        cx.fillStyle = p.mention ? C.mention : C.unread;
         cx.fillRect(x - 3, y - 3, 6, 6);
       }
       (p.people ?? []).forEach((m, i) => {

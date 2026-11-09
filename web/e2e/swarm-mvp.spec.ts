@@ -315,6 +315,11 @@ test("Sam's follow-up, now Jake trusts him with the pane, reaches the agent", as
   await expect(done.locator(".followup-sent")).toHaveText("Sent.");
   await expect.poll(() => capture(jake, "mac", 1)).toContain("A follow-up from sam (sent through Arugula): now run the tests");
   await expect.poll(() => capture(jake, "mac", 1)).toContain("mac-inbox-42");
+  // The agent took it and is working again, so no box for another: the card
+  // still says this one went.
+  await expect.poll(() => jake.evaluate(() => !!window.__arugula.fleet.panes.find((p) => p.key === "mac:1")?.info.inbox)).toBe(false);
+  await expect(done.locator(".followup input")).toHaveCount(0);
+  await expect(done.locator(".followup-sent")).toHaveText("Sent.");
 
   // The pane's history attributes both to Sam.
   const sock = join(states.get("mac")!, "sock");

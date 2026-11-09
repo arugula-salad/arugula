@@ -19,6 +19,7 @@ import type { SessionRow } from "./account";
 import { AddedAt, openPanel, QrCode, since } from "./common";
 import { HostedMachines } from "./hosted";
 import { RunGrants } from "./run-grants";
+import { Chip } from "../../shared/ui/state-chip";
 
 /** #763: for someone sharing with you who wants to verify it's you: a QR
  * code for their camera, and the same as words for over the phone. From
@@ -280,7 +281,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
       ) : null}
       {s.enrollment && !s.rootMismatch ? <VerifyMe account={s.account} root={s.enrollment.root} /> : null}
       {s.rootMismatch ? (
-        <p class="control-error">Control reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
+        <p class="control-error">Arugula cloud reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
       ) : null}
       <h3 class="control-group">Machines</h3>
       <p class="dim">They run your terminals.</p>
@@ -368,7 +369,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
                     "last use unknown"
                   )}
                 </span>
-                {old ? <span class="control-badge unused-badge">unused</span> : null}
+                {old ? <Chip kind="tag" class="control-label">unused</Chip> : null}
                 <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
                 {/* Under "Browsers and phones", a browser's kind says nothing. */}
                 <DeviceLabel s={s} c={c} kind={c.kind !== "browser" || fromApp(c)} />

@@ -48,12 +48,81 @@
       ],
       "type": "object"
     },
+    "AgentGrantAsk": {
+      "description": "A mention of this machine that its agents can't read the room for (#578).",
+      "properties": {
+        "author": {
+          "description": "Who wrote it, as people read it.",
+          "type": "string"
+        },
+        "line": {
+          "description": "Its first line.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "This machine's id and name, for the card.",
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "scope_id": {
+          "default": "",
+          "type": "string"
+        },
+        "scope_kind": {
+          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, or `account`.",
+          "type": "string"
+        },
+        "scope_name": {
+          "default": "",
+          "description": "The scope's name as its owner reads it (the team's, or \"your DMs\"),\nfor the card to say what the grant reaches. Empty: just the room.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The mention's number in the room.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "seq",
+        "author",
+        "line",
+        "machine",
+        "machine_name",
+        "scope_kind"
+      ],
+      "type": "object"
+    },
     "AgentMention": {
       "description": "A message in a thread for a machine's agents (Arugula #394).",
       "properties": {
         "author": {
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
+        },
+        "from_session": {
+          "description": "With an agent's post (#575): the name of the session that wrote it.\nThe daemon never gives the message to a session of this name, so an\nagent's mention of its own machine doesn't come back to it. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
@@ -71,6 +140,13 @@
           "default": "",
           "description": "What the room is called, for the one reading.",
           "type": "string"
+        },
+        "root_line": {
+          "description": "With a reply (#580): the first line of the thread's root message,\nabout 120 characters at most. The daemon names the thread by it when\nreplies come in together; without it, by the root's number. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "seq": {
           "description": "The message's number in the room.",
@@ -489,6 +565,13 @@
           "description": "The account it's joined to: its owner.",
           "type": "string"
         },
+        "aliases": {
+          "description": "The handles ([`crate::machine::handle`]) it went by before it was\nrenamed (#500): `@old` still reaches it, unless another machine is\ncalled that now.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -507,6 +590,17 @@
         "id",
         "account",
         "name"
+      ],
+      "type": "object"
+    },
+    "DaemonArgs": {
+      "properties": {
+        "daemon": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon"
       ],
       "type": "object"
     },
@@ -589,6 +683,34 @@
           "properties": {
             "op": {
               "const": "agents.mention",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MachineAgentsAsk",
+          "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
+          "properties": {
+            "op": {
+              "const": "agents.sessions",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentGrantAsk",
+          "description": "A teammate mentioned this machine in a room its agents can't read\n(#578): the daemon raises a card asking its owner to let them. The\ngrant itself is the owner's own act, made over their control session.",
+          "properties": {
+            "op": {
+              "const": "agents.grant_ask",
               "type": "string"
             }
           },
@@ -917,6 +1039,13 @@
             "null"
           ]
         },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "format": "uint64",
           "minimum": 0,
@@ -1225,6 +1354,22 @@
       ],
       "type": "object"
     },
+    "HostedRemovedArgs": {
+      "description": "`hosted_removed`: the hosted machine the hub removed, and the\nworkspace whose box it was.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
     "IdsArgs": {
       "properties": {
         "ids": {
@@ -1349,6 +1494,33 @@
       "required": [
         "account",
         "events"
+      ],
+      "type": "object"
+    },
+    "MachineAgentsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -1599,56 +1771,20 @@
       ],
       "type": "object"
     },
-    "Poke": {
-      "description": "What control relays of a webhook event: no more than this.",
-      "properties": {
-        "delivery": {
-          "default": "",
+    "PlanStep": {
+      "description": "Which of a deploy plan run's two tokens a box asks for (#1985).",
+      "oneOf": [
+        {
+          "const": "fetch",
+          "description": "A GitHub token that reads the deploy's repository, to fetch the\ncommit: nothing of the commit's has run yet.",
           "type": "string"
         },
-        "event": {
-          "default": "",
-          "type": "string"
-        },
-        "host": {
-          "default": "github.com",
-          "description": "A daemon takes `github.com` when it is left out.",
-          "type": "string"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "provider": {
-          "type": "string"
-        },
-        "repo": {
+        {
+          "const": "push",
+          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, the box's\ndaemon checked what the plan added, and the token reaches only the\ndaemon's own push, never the run user.",
           "type": "string"
         }
-      },
-      "required": [
-        "provider",
-        "repo"
-      ],
-      "type": "object"
-    },
-    "PokesArgs": {
-      "properties": {
-        "pokes": {
-          "items": {
-            "$ref": "#/$defs/Poke"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "pokes"
-      ],
-      "type": "object"
+      ]
     },
     "PreviewArgs": {
       "description": "Public previews (M187): a preview's id, or a workspace's.",
@@ -2243,6 +2379,17 @@
     "SecretsAsk": {
       "description": "[`WORK_SECRETS`]'s body: which run.",
       "properties": {
+        "plan_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's plan run (#1985) asks twice, a token each time: to fetch\nits source, before anything of the commit's runs, and to push\nchant's ledger, after everything that ran is stopped. Any other\nrun asks once, with none."
+        },
         "run": {
           "type": "string"
         }
@@ -2597,38 +2744,6 @@
         "failed"
       ],
       "type": "string"
-    },
-    "StandingArgs": {
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "fresh": {
-          "type": "boolean"
-        },
-        "github": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GithubUser"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "repos": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "account",
-        "repos",
-        "fresh"
-      ],
-      "type": "object"
     },
     "Team": {
       "description": "A team, as its latest signed roster says.",

@@ -105,7 +105,7 @@ fn link_back(new: &Path, old: &Path) -> std::io::Result<()> {
 }
 
 /// Every directory made under the old name, moved to the new one: the
-/// state, config, data, cache and lib directories and a sandbox's state.
+/// state, config, data, cache and lib directories.
 /// The daemon does this as it starts; anything else that asks for one of
 /// them first moves it then.
 pub fn migrate() {
@@ -119,7 +119,6 @@ pub fn migrate() {
     if let Some(home) = home() {
         named_in(&home.join(".local/lib"), NEW, OLD);
     }
-    let _ = state_home("arugula-sandbox", "illogical-sandbox");
 }
 
 fn home() -> Option<PathBuf> {

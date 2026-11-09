@@ -549,6 +549,7 @@ pub async fn send(
     let changed = ingest_page(app, &c.id, c.mirror_id, None, std::slice::from_ref(&done), now_ms())?;
     if let Some(ids) = &changed {
         crate::boards::items_changed(app, ids);
+        crate::boards::epics::from_epics(app, &c.id, ids).await;
     }
     // The item's own read doesn't say its modules, and the module was put after it: the row says so.
     if let Some(name) = &module
@@ -615,7 +616,6 @@ pub async fn person(
     Path((project, connection)): Path<(String, String)>,
     Json(w): Json<TrackerWrite>,
 ) -> Result<Json<TrackerWriteDone>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let (c, w) = resolve(&app, &project, Some(&connection), &w).await?;
     let who = Who { person: person_name(&app, &account).await?, agent: None };
@@ -632,7 +632,6 @@ pub async fn agent(
     Json(w): Json<TrackerWrite>,
 ) -> Result<Json<TrackerWriteDone>, ApiError> {
     app.limits.check_daemon(AGENT_WRITES, &d.daemon)?;
-    crate::boards::gate(&app, &d.account).await?;
     let (project, _) = membership(&app, &d.account, &project, false).await?;
     agent_may(&app, &d, TRACKERS_WRITE, &AgentScope::Project(project.clone())).await?;
     // Never past its owner: one who may write there by hand.
@@ -676,7 +675,6 @@ pub async fn agent(
 /// `trackers.write` over, as its owner reads them now.
 pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<TrackerReach>, ApiError> {
     app.limits.check_daemon(AGENT_READS, &d.daemon)?;
-    crate::boards::gate(&app, &d.account).await?;
     let mut projects = vec![];
     for (id, owner) in app.db.machine_write_projects(&d.daemon, TRACKERS_WRITE)? {
         let scope = AgentScope::Project(id.clone());
@@ -735,7 +733,6 @@ pub async fn waiting(
     Person { account }: Person,
     Path(project): Path<String>,
 ) -> Result<Json<TrackerPendingWrites>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let mut writes = vec![];
     for p in app.db.tracker_writes_waiting(&project)? {
@@ -756,7 +753,6 @@ pub async fn edit(
     Path((project, id)): Path<(String, String)>,
     Json(w): Json<TrackerWrite>,
 ) -> Result<Json<TrackerPendingWrite>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let p = app.db.tracker_write(&project, &id)?.filter(|p| p.state == "waiting").ok_or_else(none_waiting)?;
     let old: TrackerWrite = serde_json::from_str(&p.request)
@@ -780,7 +776,6 @@ pub async fn approve(
     Person { account }: Person,
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<TrackerWriteDone>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let p = app.db.take_tracker_write(&project, &id, "sent", &account, now_ms())?.ok_or_else(none_waiting)?;
     let sent = async {
@@ -815,7 +810,6 @@ pub async fn drop_write(
     Person { account }: Person,
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<TrackerPendingWrite>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let p = app.db.take_tracker_write(&project, &id, "dropped", &account, now_ms())?.ok_or_else(none_waiting)?;
     info!(%account, %project, write = %id, "dropped an agent's Plane write");

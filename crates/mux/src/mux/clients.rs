@@ -33,6 +33,7 @@ impl Daemon {
             return;
         };
         let who = sub.principal.clone();
+        self.first_message(client, &msg);
         match msg {
             ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
@@ -137,8 +138,9 @@ impl Daemon {
                     for p in self.panes.values() {
                         p.detach(client);
                     }
-                } else {
-                    self.summary.remove(&client);
+                } else if self.summary.remove(&client) {
+                    // Summaries only until now: it has none of them.
+                    self.send_blocks_to(client);
                 }
                 let state = self.state_for(&who);
                 self.send_state(client, state, summary, false);
@@ -146,6 +148,11 @@ impl Daemon {
                 self.soon();
             }
             ClientMsg::Follow { pane, on } => self.follow(client, pane, on),
+            ClientMsg::DismissNotice { key } => {
+                if who.is_owner() {
+                    self.clear_notice(&key);
+                }
+            }
             ClientMsg::BlockPatches => {
                 self.patched.insert(client, Default::default());
             }
@@ -262,9 +269,6 @@ impl Daemon {
             .collect();
         let effects = self.mux.apply(intent.clone()).map_err(|e| refused(e.to_string()))?;
         let was = std::mem::replace(&mut self.was, was);
-        for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
-            self.config.acl.forget_session(gone);
-        }
         info!(?client, ?intent, "intent");
         let rects = self.mux.pane_rects();
         for e in effects {
@@ -357,6 +361,13 @@ impl Daemon {
                     }
                 }
                 Effect::Kill { pane } => {
+                    // Its thread's readers are still worked out (`readers.rs`).
+                    // Its session's shares are still there (`sessions_gone`
+                    // comes after).
+                    if let Some(&(Some(session), private, _)) = self.was.get(&pane) {
+                        let readers = self.readers_at_close(session, private);
+                        self.closed.pane(pane, session, private, crate::store::now_ms(), readers);
+                    }
                     self.ids.lock().unwrap().remove(&pane);
                     if let Some(p) = self.panes.remove(&pane) {
                         p.close();
@@ -388,6 +399,11 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
+                    self.tagged_off.remove(&pane);
+                    self.held.remove(&pane);
+                    self.queued.gone(pane);
+                    self.midturn_told.remove(&pane);
+                    self.last_tools.remove(&pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);
                     self.links.remove(&pane);
@@ -399,6 +415,9 @@ impl Daemon {
                 }
             }
         }
+        // After the panes that went: who read them is taken before their
+        // sessions' shares go.
+        self.sessions_gone(before);
         self.reap_machines();
         self.was = was;
         self.changed();
@@ -623,8 +642,9 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence) =
-                people.entry(who.clone()).or_insert_with(|| (self.machines_for(&who), self.presence(&who)));
+            let (machines, presence, notices) = people
+                .entry(who.clone())
+                .or_insert_with(|| (self.machines_for(&who), self.presence(&who), self.notices_for(&who)));
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -663,6 +683,10 @@ impl Daemon {
                 sent.presence = presence.clone();
                 delta.presence = Some(presence.clone());
             }
+            if sent.notices != *notices {
+                sent.notices = notices.clone();
+                delta.notices = Some(notices.clone());
+            }
             if !delta.is_empty()
                 && let Some(c) = self.clients.get(&client)
             {
@@ -681,6 +705,7 @@ impl Daemon {
             panes: HashMap::new(),
             machines: state.machines.clone(),
             presence: state.presence.clone(),
+            notices: state.notices.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
         for p in &state.panes {
@@ -731,6 +756,7 @@ impl Daemon {
                 diff: None,
                 resumes: None,
                 unhooked: false,
+                mentions_off: false,
                 live: None,
                 link: None,
                 ..info
@@ -780,6 +806,11 @@ impl Daemon {
             self.machines.remove(&m);
         }
         r
+    }
+
+    /// The notices `who` sees: the owner's alone (#551).
+    pub(super) fn notices_for(&self, who: &Principal) -> Vec<arugula_proto::Notice> {
+        if who.is_owner() { self.notices_list() } else { Vec::new() }
     }
 
     pub(super) fn presence(&self, viewer: &Principal) -> Vec<Presence> {
@@ -836,6 +867,8 @@ impl Daemon {
     /// Grants changed: hang up on whoever has nothing left, let go of panes
     /// they no longer see, and show everyone their state.
     pub(super) fn acl_changed(&mut self) {
+        // Whoever lost a closed pane's thread has lost it for good.
+        self.settle_closed();
         let acl = self.config.acl.clone();
         let gone: Vec<ClientId> =
             self.clients.iter().filter(|(_, c)| !acl.knows(&c.principal)).map(|(id, _)| *id).collect();
@@ -874,6 +907,7 @@ impl Daemon {
     pub(super) fn state_for(&self, who: &Principal) -> State {
         let mut st = self.state();
         st.presence = self.presence(who);
+        st.notices = self.notices_for(who);
         if who.is_owner() {
             return st;
         }

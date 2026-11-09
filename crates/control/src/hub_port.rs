@@ -16,7 +16,6 @@ use std::{
 };
 
 use arugula_control_common::Principal;
-use arugula_control_wire::forge::Poke;
 use arugula_e2e::Kind;
 use arugula_platform_api::{
     auth::{Asked, Credential},
@@ -57,7 +56,13 @@ fn account_of(app: &App, id: &str) -> HubResult<Option<Account>> {
 
 fn daemon_of(app: &App, id: &str) -> HubResult<Option<Daemon>> {
     let Some((account, row)) = app.db.daemon_row(id)? else { return Ok(None) };
-    Ok(Some(Daemon { id: row.id, account, team: app.db.daemon_team(id)?, name: row.name }))
+    Ok(Some(Daemon {
+        id: row.id,
+        account,
+        team: app.db.daemon_team(id)?,
+        name: row.name,
+        aliases: app.db.daemon_aliases(id)?,
+    }))
 }
 
 fn resolve(app: &App, p: &Principal) -> HubResult<Option<Resolved>> {
@@ -271,10 +276,6 @@ impl HubPort for InProcess {
         })
     }
 
-    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        Box::pin(async move { Ok(crate::forge::relay_pokes(&*self.app()?, pokes)) })
-    }
-
     fn github_user<'a>(
         &'a self,
         account: &'a str,
@@ -410,7 +411,7 @@ fn local(app: &App) -> HubResult<&Arc<dyn arugula_platform_api::in_process::InPr
 /// CLI device's signature (already checked by `auth::verify_daemon`) or a
 /// refusal of it; else the session, with `auth::Session`'s same-origin
 /// check, or its refusal. `None`: a signature of another kind of device,
-/// which no platform route takes.
+/// which no platform route takes. A native app's asks as its person.
 pub async fn who(app: &Arc<App>, parts: &mut Parts) -> Option<Asked> {
     let signed = parts.extensions.get::<auth::Signed>().map(|s| s.0.clone());
     match signed {
@@ -421,6 +422,12 @@ pub async fn who(app: &Arc<App>, parts: &mut Parts) -> Option<Asked> {
             // As a session: it notes the account for analytics.
             let _ = auth::Session::from_request_parts(parts, app).await;
             Some(Asked::Principal(Principal::Cli { account: cert.account, device: cert.device }))
+        }
+        // A native app (aru-131): its person, on their own phone, with no
+        // agent beside its key. `clients::gate` has looked at the route.
+        Some(Ok(cert)) if cert.kind == Kind::Browser => {
+            let _ = auth::Session::from_request_parts(parts, app).await;
+            Some(Asked::Principal(Principal::Person { account: cert.account }))
         }
         Some(Ok(_)) => None,
         Some(Err((status, error))) => Some(Asked::Refused { status, error, by: Credential::Signature }),

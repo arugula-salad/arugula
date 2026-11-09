@@ -5,7 +5,6 @@
 use futures_util::future::BoxFuture;
 
 use arugula_control_wire::{
-    forge::Standing,
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
@@ -32,7 +31,7 @@ pub use arugula_platform_api::port::{Archived, Deleted, PlatformPort, PublicPrev
 /// since Cloud's Managoat side went (M189, M190); chat (M138) `chat_on` and its part of
 /// `account_deleted`; projects and grants, the forge mirror (M162) and
 /// native issues (M194), their part of `account_deleted`; the GitHub App
-/// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
+/// (M161) `github_token`; sends (M168) `send_draft`;
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
@@ -41,7 +40,9 @@ pub use arugula_platform_api::port::{Archived, Deleted, PlatformPort, PublicPrev
 /// `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
 /// `public_preview` and `public_ports`; deploys' runs (M219)
-/// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`.
+/// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`; chat's missed
+/// mentions (#419) `daemon_came`; a hosted machine the hub removed
+/// (Arugula #744) `hosted_removed`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         let _ = (account, start);
@@ -63,6 +64,7 @@ impl PlatformPort for Platform {
                 db::projects::erase_account(&tx, deleted)?;
                 db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::issues::erase_account(&tx, deleted)?;
+                db::ci_alerts::erase_account(&tx, deleted)?;
                 db::boards::erase_account(&tx, deleted)?;
                 db::project_docs::erase_account(&tx, deleted)?;
                 // Before the runs go: their files in the run-log bucket.
@@ -99,18 +101,9 @@ impl PlatformPort for Platform {
                 self.chat.changed();
             }
             billing::sync_seats(self, team).await;
+            crate::ci_alerts::roster_changed(self, team).await;
             Ok(())
         })
-    }
-
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
-        Box::pin(async move { Ok(forge::standing(self, account, github, repos, fresh).await) })
     }
 
     fn github_token<'a>(
@@ -282,6 +275,28 @@ impl PlatformPort for Platform {
 
     fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
         Box::pin(crate::boxes::members(self, project))
+    }
+
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            // In the background: the resends wait on daemons for seconds,
+            // and the hub's call must neither wait for them nor cancel them.
+            match self.arc() {
+                Some(app) => {
+                    let daemon = daemon.to_owned();
+                    tokio::spawn(async move { crate::features::chat().daemon_came(&app, &daemon).await });
+                }
+                None => crate::features::chat().daemon_came(self, daemon).await,
+            }
+            Ok(())
+        })
+    }
+
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            crate::hosted::machine_removed(self, workspace, machine)?;
+            Ok(())
+        })
     }
 
     fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {

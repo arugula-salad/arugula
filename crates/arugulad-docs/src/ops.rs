@@ -1,4 +1,5 @@
-//! `docs.list`, `doc.open` and `doc.delete` (#1493): the Doc library (see
+//! `docs.list`, `doc.open`, `doc.delete` (#1493), `doc.preview` (#588), `doc.read`
+//! and `doc.asset` (#608): the Doc library (see
 //! [`crate::docs::library`]) listed, a Doc opened in a block, and a Doc
 //! deleted. The owner's: `serve` checks that before the handler runs. MCP's
 //! `doc` kind `list` is `docs.list`; its kind `open` is `doc.open` with the
@@ -15,8 +16,11 @@ use std::{collections::HashMap, sync::Arc};
 use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
-    api::{DocOpenRequest, DocOpened, DocRow, DocShared, Empty, OpenRequest},
-    op::ops::{DocDelete, DocOpen, DocsList},
+    api::{
+        DocAsset, DocContent, DocOnPlatform, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty,
+        OpenRequest,
+    },
+    op::ops::{DocAssetGet, DocDelete, DocOpen, DocPreviewGet, DocRead, DocsList},
 };
 use axum::http::StatusCode;
 
@@ -37,6 +41,8 @@ use crate::{
 
 /// Said to an agent and to a team's other owner who asks to delete a Doc.
 pub const DELETE_OWNER_ONLY: &str = "only the owner can delete a Doc";
+/// How much of a Doc its list's preview shows.
+const PREVIEW_PARAGRAPHS: usize = 4;
 
 /// The blocks that show a Doc, by the Doc's id.
 pub(crate) async fn open_blocks(app: &App) -> HashMap<String, PaneId> {
@@ -85,20 +91,33 @@ impl Handle<Docs> for DocsList {
         let (metas, links) = crate::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
+        // A copy is in the owner's personal project: a team's other owner
+        // (#935) can't read it there, so they aren't pointed at it.
+        let co_owner = cx.co_owner();
         Ok(metas
             .into_iter()
-            .map(|m| DocRow {
-                open: open.get(&m.id).copied(),
-                shared: links.get(&m.id).map(|(link, e)| DocShared {
-                    made: e.made,
-                    updated: e.updated,
-                    link: link.clone(),
-                }),
-                id: m.id,
-                title: m.title,
-                made: m.made,
-                updated: m.updated,
-                by: m.by,
+            .map(|m| {
+                let shape = m.shape.unwrap_or_default();
+                DocRow {
+                    open: open.get(&m.id).copied(),
+                    shared: links.get(&m.id).map(|(link, e)| DocShared {
+                        made: e.made,
+                        updated: e.updated,
+                        link: link.clone(),
+                    }),
+                    id: m.id,
+                    title: m.title,
+                    made: m.made,
+                    updated: m.updated,
+                    by: m.by,
+                    summary: shape.summary,
+                    sections: shape.sections,
+                    platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
+                        project: p.project,
+                        id: p.id,
+                        link: p.link,
+                    }),
+                }
             })
             .collect())
     }
@@ -108,7 +127,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.",
+        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link). Any earlier session's Doc is here; open shows one.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;
@@ -119,6 +138,8 @@ impl McpOp<Docs> for DocsList {
 
     fn answer(_: &Call<'_>, _: &ListArgs, _: &(), docs: Vec<DocRow>) -> Out {
         let n = docs.len();
+        // An agent has `doc open` for a Doc's outline: the list stays short.
+        let docs: Vec<_> = docs.into_iter().map(|d| DocRow { sections: vec![], ..d }).collect();
         done(format!("{n} Docs; doc open shows one in a block"), serde_json::json!({ "docs": docs }))
     }
 }
@@ -172,6 +193,38 @@ impl Handle<Docs> for DocOpen {
             Via::Mcp(_) => None,
         };
         Ok(DocOpened { pane: open_doc(cx.app, who, req).await?.0 })
+    }
+}
+
+impl Handle<Docs> for DocPreviewGet {
+    async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<DocPreview, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let dir = library::dir(cx.app.control.state_dir(), &meta.id).map_err(OpError::Failed)?;
+        let opening = crate::task::spawn_blocking(move || crate::docs::shape::opening(&dir, PREVIEW_PARAGRAPHS))
+            .await
+            .map_err(|e| OpError::Failed(e.to_string()))?;
+        Ok(DocPreview { opening })
+    }
+}
+
+/// `doc.read` and `doc.asset` (#608) read the Doc from its files with the
+/// block's own loader and ask `open_blocks` nothing: a read never opens a
+/// block, so `docs.list` still has the Doc closed.
+impl Handle<Docs> for DocRead {
+    async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<DocContent, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let state = crate::docs::read(cx.app.control.state_dir().to_owned(), meta.id).await.map_err(OpError::Failed)?;
+        serde_json::from_value(state).map_err(|e| OpError::Failed(e.to_string()))
+    }
+}
+
+impl Handle<Docs> for DocAssetGet {
+    async fn handle(cx: &Cx<'_>, (id, name): (String, String), _: Empty) -> Result<DocAsset, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let got = crate::docs::read_asset(cx.app.control.state_dir().to_owned(), meta.id, name)
+            .await
+            .map_err(|e| OpError::Status(StatusCode::NOT_FOUND, e))?;
+        serde_json::from_value(got).map_err(|e| OpError::Failed(e.to_string()))
     }
 }
 

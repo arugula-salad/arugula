@@ -175,7 +175,8 @@ export function costTests() {
       await expect(est).toHaveAttribute("data-estimate", c.usd);
       const btn = est.locator("button");
       await expect(btn).toContainText(c.label);
-      await expect(btn).toContainText(c.usd ? "at API prices" : "no price");
+      await expect(btn).not.toContainText("at API prices");
+      if (!c.usd) await expect(btn).toContainText("no price");
       await expect(btn).toHaveAttribute("title", /token counts at Anthropic's API list prices\. Not a bill/);
       await btn.click();
       const pop = el.locator("[data-estimate-pop]");

@@ -193,6 +193,44 @@ pub(super) fn work_item_for(c: &impl Sql, target: &str, at: u64) -> Result<Optio
     Ok(Some(keep))
 }
 
+/// When `target` (an `iss_` or an `fi_` of an issue) has a work item, its
+/// counterpart joins it now ([`work_item_for`]): an issue exported, or its
+/// GitHub copy mirrored, after a board placed it. Nothing for one no board
+/// has placed: its work item is made when one does. In a savepoint of the
+/// caller's transaction: one that fails is logged and undone alone, so it
+/// never undoes what the caller recorded (a send's end, a mirror's row);
+/// the next placing joins them.
+pub(super) fn joined(c: &impl Sql, target: &str, at: u64) -> Result<()> {
+    c.execute("SAVEPOINT work_item_joined", params![])?;
+    let r = (|| -> Result<()> {
+        if ref_item(c, target)?.is_some() {
+            work_item_for(c, target, at)?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = r {
+        tracing::warn!(target, error = format!("{e:#}"), "joining an issue to its counterpart's work item");
+        c.execute("ROLLBACK TO SAVEPOINT work_item_joined", params![])?;
+    }
+    c.execute("RELEASE SAVEPOINT work_item_joined", params![])?;
+    Ok(())
+}
+
+/// The mirror wrote GitHub issue `number` of `repo_id` for the first time:
+/// a native issue exported to it that has a work item takes it in
+/// ([`joined`]), so a PR that closes the GitHub issue attaches to the row.
+pub(super) fn mirrored(c: &impl Sql, repo_id: u64, number: u64, at: u64) -> Result<()> {
+    let natives: Vec<String> = c.query_map(
+        "SELECT id FROM issues WHERE github_repo_id = ?1 AND github_number = ?2 ORDER BY id",
+        params![repo_id, number],
+        |r| r.get(0),
+    )?;
+    for n in natives {
+        joined(c, &n, at)?;
+    }
+    Ok(())
+}
+
 /// Merge work items `a` and `b` into the older, and say which that is. A
 /// board with a row for each folds them into one row first (the unique
 /// index would refuse the move otherwise); then every row and ref of the
@@ -235,7 +273,8 @@ fn merge(c: &impl Sql, a: &str, b: &str, at: u64) -> Result<String> {
 
 /// Fold row `from` of `board` into row `into`, two rows of one work item:
 /// its attachments (those `into` has already go) and asks move over, its
-/// note is added to the end of `into`'s, and the row is dropped.
+/// note is added to the end of `into`'s on the same line ([`joined_note`]),
+/// and the row is dropped.
 pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u64) -> Result<()> {
     let (Some(keep), Some(drop)) = (entry(c, board, into)?, entry(c, board, from)?) else { return Ok(()) };
     c.execute(
@@ -246,9 +285,10 @@ pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u
         params![into, from],
     )?;
     c.execute("UPDATE board_attachments SET row_id = ?1 WHERE row_id = ?2", params![into, from])?;
+    super::boards_docs::fold_rows(c, into, from)?;
     boards_asks::absorb(c, from, into)?;
     if !drop.note.is_empty() {
-        let note = if keep.note.is_empty() { drop.note } else { format!("{}\n{}", keep.note, drop.note) };
+        let note = if keep.note.is_empty() { drop.note } else { joined_note(&keep.note, &drop.note) };
         c.execute(
             "UPDATE board_entries SET rev = rev + 1, note = ?2, updated_at = ?3 WHERE id = ?1",
             params![into, note, at],
@@ -257,6 +297,21 @@ pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u
     c.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
     renumber(c, &siblings(c, board)?)?;
     touch(c, board, at)
+}
+
+/// Two rows' notes as one: still one line, and no longer than a note may
+/// be ([`NOTE_MAX`](arugula_control_wire::boards::NOTE_MAX)), cut with an
+/// ellipsis.
+fn joined_note(keep: &str, other: &str) -> String {
+    let max = arugula_control_wire::boards::NOTE_MAX;
+    let note = format!("{keep}; {other}");
+    if note.chars().count() <= max {
+        return note;
+    }
+    let mut cut: String = note.chars().take(max - 1).collect();
+    cut.truncate(cut.trim_end().len());
+    cut.push('…');
+    cut
 }
 
 /// How a reference names each of `ids` (`iss_` and `fi_` ids of issues; any

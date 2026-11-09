@@ -3,9 +3,9 @@
 //! HTTP with client tokens; and an agent block (`fake_acp.py`) using the
 //! server Arugula hands it, scoped to its tab: a dev server and a browser
 //! block beside itself, other tabs refused, and a second agent started,
-//! waited on and answered. With wisp on this host (skipped without its
-//! token), an agent block in a VM too, through the relay the daemon opens
-//! into it (#59).
+//! waited on and answered. (An agent block in a VM, through the relay the
+//! daemon opens into it, ran against a wispd on this host and went with
+//! the Sprites adapter.)
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -141,14 +141,14 @@ fn free_port() -> u16 {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tools_through_the_stdio_bridge() {
-    let d = Daemon::child_env(&["--wisp-token-file", "/nonexistent"], &[("ARUGULA_MCP_PROGRESS_MS", "200")]);
+    let d = Daemon::child_env(&[], &[("ARUGULA_MCP_PROGRESS_MS", "200")]);
     let client = Client::named("claude-code");
     let progress = client.progress.clone();
     let s = bridge(&d, client).await;
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 36 - NO_FORGE);
+    assert_eq!(tools.len(), 41 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -294,6 +294,33 @@ async fn tools_through_the_stdio_bridge() {
 /// `outputSchema`, and a client may refuse an answer that doesn't fit it. So
 /// what the real server sends fits what the real server lists, in each shape
 /// `run` answers with, and in the others.
+/// What `send_input` types arrives as the text, then the Enter on its own
+/// (#573): a TUI such as Claude Code reads one burst as a paste, so an Enter
+/// in it stays unsubmitted. A shell would submit either way, so the pane
+/// runs a program that prints each read it gets.
+#[tokio::test(flavor = "multi_thread")]
+async fn send_input_enter_is_a_write_of_its_own() {
+    let d = Daemon::child_env(&[], &[]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let script = d.sessions.join("reads.py");
+    std::fs::write(
+        &script,
+        "import os, sys, tty\ntty.setraw(0)\nsys.stdout.write('READY\\r\\n'); sys.stdout.flush()\n\
+         while True:\n    b = os.read(0, 4096)\n    sys.stdout.write('GOT %r\\r\\n' % b); sys.stdout.flush()\n",
+    )
+    .unwrap();
+    let r = call(&s, "run", json!({ "command": format!("python3 {}", script.display()) })).await;
+    let p = r["pane"].as_u64().unwrap();
+    call(&s, "wait", json!({ "pane": p, "until": "match", "pattern": "READY", "timeout": 20 })).await;
+    call(&s, "send_input", json!({ "pane": p, "text": "hello" })).await;
+    call(&s, "wait", json!({ "pane": p, "until": "match", "pattern": "GOT b'\\\\r'", "timeout": 10 })).await;
+    let screen = call(&s, "read_output", json!({ "pane": p, "screen": true })).await;
+    let screen = screen["text"].as_str().unwrap();
+    let text = screen.find("GOT b'hello'").unwrap_or_else(|| panic!("the text is one read: {screen}"));
+    let enter = screen.find("GOT b'\\r'").unwrap_or_else(|| panic!("the Enter is one read: {screen}"));
+    assert!(text < enter, "{screen}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn what_a_tool_answers_fits_the_output_schema_it_lists() {
     let d = Daemon::child();
@@ -404,7 +431,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 36 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 41 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -565,7 +592,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 15 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 16 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -653,7 +680,7 @@ fn tab_of(d: &Daemon, pane: u64) -> u64 {
 
 #[test]
 fn an_agent_block_works_in_its_own_tab() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    let d = Daemon::child_with(&["--block-listen", "127.0.0.1:0"]);
     // Another tab, with work the agent mustn't touch.
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     d.post(&format!("/api/panes/{other}/send"), json!({ "text": "echo other-tab-secret", "enter": true }));
@@ -860,69 +887,6 @@ async fn what_failed_here_yesterday() {
     s.cancel().await.unwrap();
 }
 
-/// #59: an agent block in a wisp VM gets Arugula through the relay the
-/// daemon opens into its VM (a guest can't reach the host): scoped to its
-/// tab like a local one, its `run` on its own machine, across a daemon
-/// restart. Skips without a wisp token on this host.
-#[cfg(feature = "labs")]
-#[test]
-fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
-    let token = std::env::var_os("ARUGULA_WISP_TOKEN_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap()).join(".local/share/wisp/token"));
-    if !token.exists() {
-        eprintln!("SKIP: no wisp token on this host (ARUGULA_WISP_TOKEN_FILE or ~/.local/share/wisp/token)");
-        return;
-    }
-    let mut d = Daemon::child_labs_with(&["--wisp-token-file", token.to_str().unwrap()]);
-    let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    // fake_acp.py itself, run in the guest.
-    let src = std::fs::read_to_string(fake()).unwrap();
-    let config = json!({ "agent": "acp", "command": ["python3", "-c", src], "prompt": "hello" });
-    let a = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));
-    d.wait_secs(a, "idle", 300);
-
-    // Its tab, through the relay.
-    let l = agent_mcp(&d, a, "list", json!({})).unwrap();
-    let seen: Vec<u64> = l["panes"].as_array().unwrap().iter().map(|p| p["pane"].as_u64().unwrap()).collect();
-    assert!(seen.contains(&a) && !seen.contains(&other), "{l}");
-    // Its run lands on its own machine, beside it (which makes the machine
-    // its tab's).
-    // And where an agent from before the rename (#509) connects.
-    let (sock, was) = (format!("/tmp/arugula-mcp-{a}.sock"), format!("/tmp/illogical-mcp-{a}.sock"));
-    let check = format!("test -S {sock} && test -S {was} && echo IN-ITS-VM");
-    let r = agent_mcp(&d, a, "run", json!({ "command": check, "wait": true })).unwrap();
-    assert_eq!(r["exit"], 0, "{r}");
-    assert!(r.to_string().contains("IN-ITS-VM"), "{r}");
-    let pane = r["pane"].as_u64().unwrap();
-    assert_eq!(tab_of(&d, pane), tab_of(&d, a));
-    let m = d.get("/api/machines");
-    assert_eq!(m.as_array().unwrap().len(), 1, "{m}");
-    assert_eq!(m[0]["owner"], json!({ "tab": tab_of(&d, a) }), "{m}");
-    let h = d.get("/api/history?limit=20");
-    assert!(h.as_array().unwrap().iter().any(|c| c["by"] == "mcp:fake-agent"), "{h}");
-    // Other tabs are refused, as for a local agent.
-    let e = agent_mcp(&d, a, "send_input", json!({ "pane": other, "text": "rm -rf ~" })).unwrap_err();
-    assert!(e.contains("own tab") || e.contains("another tab"), "{e}");
-
-    // A restarted daemon opens a new relay; the agent's next client gets
-    // through it.
-    d.stop();
-    d.start();
-    d.wait_secs(a, "idle", 120);
-    let l = agent_mcp(&d, a, "list", json!({})).unwrap();
-    assert!(l["panes"].as_array().unwrap().iter().any(|p| p["pane"] == pane), "{l}");
-
-    // Closed with its tab, the machine (and the relay with it) goes.
-    d.post(&format!("/api/panes/{a}/close"), json!({}));
-    d.post(&format!("/api/panes/{pane}/close"), json!({}));
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    while !d.get("/api/machines").as_array().unwrap().is_empty() {
-        assert!(std::time::Instant::now() < deadline, "its machine should go");
-        std::thread::sleep(Duration::from_millis(200));
-    }
-}
-
 /// #147: prompt_agent, one call per turn, no sleeps here: Claude Code
 /// (recorded, replayed) in a terminal pane, and an agent block.
 #[tokio::test(flavor = "multi_thread")]
@@ -1062,7 +1026,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 36 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 41 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1070,7 +1034,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 40, "{:?}", names(&with));
+        assert_eq!(with.len(), 42, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1078,16 +1042,16 @@ async fn labs_lists_all_the_tools() {
         for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
             assert!(!kinds(&with, tool).contains(&kind.to_owned()), "retired {tool} kind {kind} is listed with labs");
         }
-        // A new connection's instructions have no thread text.
+        // A new connection's instructions have no thread-reading text.
         let s2 = bridge(&d, Client::named("claude-code")).await;
-        assert!(!instructions(&s2).contains("thread"), "{}", instructions(&s2));
+        assert!(!instructions(&s2).contains("read_thread"), "{}", instructions(&s2));
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 36 - NO_FORGE);
+        assert_eq!(without.len(), 41 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1096,7 +1060,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 36 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 41 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1120,7 +1084,7 @@ async fn a_flag_turned_on_later_reaches_the_open_session() {
     let caps = call(&s, "capabilities", json!({})).await;
     assert!(caps.get("tool_status").is_none(), "everything is loaded at first: {caps}");
     let has = |tools: &[rmcp::model::Tool], name: &str| tools.iter().any(|t| t.name == name);
-    assert!(!has(&s.list_all_tools().await.unwrap(), "board_read"));
+    assert!(!has(&s.list_all_tools().await.unwrap(), "delegate"));
     assert_eq!(client.list_changed.load(Ordering::Relaxed), 0);
 
     arugula_testkit::labs(&d.state, true);
@@ -1130,12 +1094,12 @@ async fn a_flag_turned_on_later_reaches_the_open_session() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let caps = call(&s, "capabilities", json!({})).await;
-    let status = caps["tool_status"].as_array().expect("tool_status").iter().find(|t| t["tool"] == "board_read");
-    let status = status.unwrap_or_else(|| panic!("board_read isn't said to be missing: {caps}"));
+    let status = caps["tool_status"].as_array().expect("tool_status").iter().find(|t| t["tool"] == "delegate");
+    let status = status.unwrap_or_else(|| panic!("delegate isn't said to be missing: {caps}"));
     assert_eq!(status["status"], "reconnect", "{status}");
     assert!(status["note"].as_str().unwrap().contains("will pick it up"), "{status}");
 
-    assert!(has(&s.list_all_tools().await.unwrap(), "board_read"), "the next tools/list has the board tools");
+    assert!(has(&s.list_all_tools().await.unwrap(), "delegate"), "the next tools/list has delegate");
     let caps = call(&s, "capabilities", json!({})).await;
     assert!(caps.get("tool_status").is_none(), "listed again, so loaded: {caps}");
     // Read again with the same flags, it is not told twice.
@@ -1194,7 +1158,7 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
     use axum::http::{HeaderName, HeaderValue};
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    let d = Daemon::child_with(&["--block-listen", "127.0.0.1:0"]);
     arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     let a = d.open("hello");
@@ -1234,7 +1198,7 @@ const FRIEND: &str = "friend@example.com";
 /// A daemon on a tailnet (so tests can be someone else), its first pane
 /// and session, and FRIEND an editor there.
 fn shared_daemon(env: &[(&str, &str)]) -> (Daemon, u64, u64) {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_env(&args, env);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
@@ -1698,7 +1662,7 @@ async fn fake_cloud(f: FakeCloud) -> String {
 async fn an_agent_drives_cloud_workspaces_through_control() {
     let fake = FakeCloud::default();
     let url = fake_cloud(fake.clone()).await;
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
 
     let said = refused(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
@@ -1855,19 +1819,16 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     std::fs::set_permissions(bin.join("gh"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
     let api = format!("{url}/github");
-    let d = Daemon::child_env(
-        &["--wisp-token-file", "/nonexistent"],
-        &[("PATH", path.as_str()), ("ARUGULA_GITHUB_API", api.as_str())],
-    );
+    let d = Daemon::child_env(&[], &[("PATH", path.as_str()), ("ARUGULA_GITHUB_API", api.as_str())]);
     let s = bridge(&d, Client::named("claude-code")).await;
 
     // Reads and drafts, never a send.
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(
         kinds(&tools, "forge_read"),
-        ["pr", "issue", "items", "checks", "inbox", "drafts", "draft", "native_issues"]
+        ["pr", "issue", "items", "tracker_fields", "checks", "inbox", "drafts", "draft", "native_issues"]
     );
-    assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "discard"]);
+    assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "open_on_github", "discard"]);
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
 
     let said = refused(&s, "forge_read", json!({ "kind": "pr", "item": "acme/app#1" })).await;
@@ -2067,6 +2028,23 @@ async fn fake_threads(f: FakeThreads) -> String {
             }),
         )
         .route(
+            "/api/daemon/chat/replies",
+            get(|| async {
+                let m = |seq: i64, text: &str, agent: Value| {
+                    json!({ "seq": seq, "at": seq, "author": "a2", "name": "Sam", "text": text, "quote": null,
+                            "pane": null, "mentions": [], "edited": null, "deleted": null, "imported": null,
+                            "agent": agent })
+                };
+                let geek = json!({ "machine": "m1", "machine_name": "geek" });
+                Json(json!({ "threads": [
+                    { "room": "ch_general", "room_name": "general", "root": m(1, "Plan for the beta\nmore", geek.clone()),
+                      "replies": [m(4, "one", Value::Null), m(6, "two", Value::Null)] },
+                    { "room": "ch_general", "room_name": "general", "root": m(2, "Deploy?", geek),
+                      "replies": [m(5, "three", Value::Null)] },
+                ] }))
+            }),
+        )
+        .route(
             "/api/daemon/chat/search",
             get(move || {
                 let ms = found();
@@ -2087,7 +2065,7 @@ async fn fake_threads(f: FakeThreads) -> String {
 /// told so; a refusal says how to grant.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_posts_in_conversations_through_control() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let said = refused(&s, "read_thread", json!({ "room": "ch_general" })).await;
     assert!(said.contains("hasn't joined Arugula control"), "{said}");
@@ -2122,6 +2100,18 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert_eq!((&read["messages"][0]["seq"], &read["next_after_seq"]), (&json!(1), &json!(1)), "{read}");
     assert_eq!(read["messages"][0]["mentions_you"], true, "{read}");
     assert!(read["summary"].as_str().unwrap().contains("[1] Sam: @geek can you look?"), "{read}");
+    // #580: the unread replies to this machine's agents' posts, by thread; no room.
+    let unread = call(&s, "read_thread", json!({ "replies": true })).await;
+    assert_eq!(unread["threads"].as_array().map(Vec::len), Some(2), "{unread}");
+    assert_eq!(unread["threads"][0]["root"]["seq"], 1, "{unread}");
+    let seqs: Vec<_> = unread["threads"][0]["replies"].as_array().unwrap().iter().map(|m| m["seq"].clone()).collect();
+    assert_eq!(seqs, [json!(4), json!(6)], "{unread}");
+    let said = unread["summary"].as_str().unwrap();
+    assert!(
+        said.contains("3 unread replies in 2 thread(s)")
+            && said.contains("ch_general thread 1 (Sam's agent on geek: Plan for the beta)"),
+        "{said}"
+    );
     let found = call(&s, "search_threads", json!({ "q": "on it*", "team": "t1" })).await;
     assert_eq!(found["found"][0]["message"]["by"], "Jake's agent on geek", "{found}");
 
@@ -2141,6 +2131,7 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     let paths: Vec<&str> = calls.iter().map(|(p, _, _)| p.as_str()).collect();
     assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/messages?after=0&mentions=true"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/search?q=on+it*&team=t1"), "{paths:?}");
+    assert!(paths.contains(&"/api/daemon/chat/replies"), "{paths:?}");
     let post = calls.iter().find(|(p, _, _)| p == "/api/daemon/chat/rooms/iss_0123/messages").unwrap();
     assert_eq!(post.2, json!({ "text": "looking, @sam" }));
     assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");
@@ -2301,7 +2292,7 @@ async fn fake_native(f: FakeNative) -> String {
 /// clone's GitHub repo is linked to.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_files_comments_on_and_closes_a_native_issue() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeNative::default();
     let url = fake_native(fake.clone()).await;
@@ -2553,7 +2544,7 @@ async fn fake_runs(f: FakeRuns) -> String {
 /// how, and capabilities says the run tools aren't live.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_starts_a_run_waits_for_it_and_reads_its_log() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeRuns::default();
     let url = fake_runs(fake.clone()).await;
@@ -2744,7 +2735,7 @@ async fn fake_deploys(f: FakeDeploys) -> String {
 async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
     let fake = FakeDeploys::default();
     let url = fake_deploys(fake.clone()).await;
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let tools = s.list_all_tools().await.unwrap();
     let plan = tools.iter().find(|t| t.name == "plan_deploy").expect("plan_deploy is listed");
@@ -2885,7 +2876,15 @@ async fn fake_boards(f: FakeBoards) -> String {
                 { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,
                   "updated_at": 1 }] }))
             .into_response(),
-            ("GET", "/api/daemon/boards/brd_1") => Json(view()).into_response(),
+            ("GET", "/api/daemon/boards/brd_1") => {
+                let mut v = view();
+                v["ready"] = json!(["row_1"]);
+                Json(v).into_response()
+            }
+            ("POST", "/api/daemon/projects/prj_1/relations/batch") => Json(json!({
+                "add": [{ "outcome": "added" }, { "outcome": "refused", "why": "that would make a cycle" }],
+                "remove": [{ "outcome": "not_there" }] }))
+            .into_response(),
             ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
                 let mut v = view();
                 if b["title"].is_string() {
@@ -2942,6 +2941,14 @@ async fn fake_boards(f: FakeBoards) -> String {
                 Json(v).into_response()
             }
             ("POST", "/api/daemon/boards/brd_1/attachments") => Json(view()).into_response(),
+            ("POST", "/api/daemon/boards/brd_1/docs") => {
+                let mut v = view();
+                let title = b["pointer"]["title"].as_str().unwrap_or("The plan");
+                v["docs"] = json!([{ "id": "bdc_1", "pointer": b["pointer"], "title": title, "added_by": "a1",
+                                     "created_at": 2 }]);
+                Json(v).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/docs/bdc_1") => Json(view()).into_response(),
             ("DELETE", "/api/daemon/boards/brd_1/attachments/att_1") => {
                 said(StatusCode::FORBIDDEN, "an agent takes off only the attachments its own machine made", "forbidden")
             }
@@ -2976,8 +2983,213 @@ async fn fake_boards(f: FakeBoards) -> String {
     at
 }
 
-/// The board tools (boards, step 3) are listed and work only with the
-/// `boards` flag on; board_read lists a project's boards and reads one as
+/// A fake control's platform that keeps what it is told, for planning a board
+/// in one call: project `prj_1` with two open boards titled Launch, a closed
+/// one titled Old, and `brd_9` once `create_board` makes it. It files an
+/// issue as `iss_N`, N its number, and refuses a title that says `no grant`
+/// as control does without the issues.write grant.
+#[derive(Clone, Default)]
+struct FakePlan {
+    state: Arc<std::sync::Mutex<PlanState>>,
+}
+
+#[derive(Default)]
+struct PlanState {
+    made: bool,
+    /// (id, title) in order.
+    groups: Vec<(String, String)>,
+    /// (the issue's number, its group's id).
+    rows: Vec<(u64, Option<String>)>,
+    /// The bodies of the issues filed; the first is #101.
+    filed: Vec<Value>,
+}
+
+async fn fake_plan(f: FakePlan) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    fn board(id: &str, title: &str, closed: bool) -> Value {
+        let mut b = json!({ "id": id, "project": "prj_1", "title": title, "created_by": "a1", "created_at": 1,
+            "updated_at": 1, "progress": { "done": 0, "total": 0, "proven": 0 } });
+        if closed {
+            b["closed_at"] = json!(2);
+        }
+        b
+    }
+    fn view(s: &PlanState) -> Value {
+        let rows: Vec<Value> = s
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, (n, group))| {
+                json!({ "id": format!("row_{}", i + 1), "rev": 1, "pointer": { "kind": "issue", "id": format!("iss_{n}") },
+                    "note": "", "status": "none", "lane": "next", "attachments": [], "group": group,
+                    "live": { "state": "open", "kind": "native", "number": n, "title": "" },
+                    "created_at": 1, "updated_at": 1 })
+            })
+            .collect();
+        let groups: Vec<Value> = s
+            .groups
+            .iter()
+            .map(|(id, t)| json!({ "id": id, "rev": 1, "title": t, "progress": { "done": 0, "total": 0 } }))
+            .collect();
+        let lane = |id: &str, title: &str, rows: Vec<Value>| json!({ "id": format!("lane_{id}"), "rev": 0, "title": title, "kind": "lane", "rows": rows });
+        json!({ "board": board("brd_9", "Epic", false), "groups": groups,
+            "zones": [lane("next", "Next", rows), lane("doing", "Doing", vec![]), lane("review", "Review", vec![]),
+                      lane("done", "Done", vec![])] })
+    }
+    async fn any(State(f): State<FakePlan>, req: Request) -> Response {
+        let (method, at) = (req.method().to_string(), req.uri().to_string());
+        let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        let mut s = f.state.lock().unwrap();
+        let said = |status: StatusCode, said: &str| (status, Json(json!({ "error": said }))).into_response();
+        match (method.as_str(), at.split('?').next().unwrap_or_default()) {
+            ("GET", "/api/daemon/issue-home") => Json(json!({ "project": "prj_1", "home": "native" })).into_response(),
+            ("GET", "/api/daemon/projects/prj_1/boards") => {
+                let mut boards =
+                    vec![board("brd_1", "Launch", false), board("brd_2", "Launch", false), board("brd_3", "Old", true)];
+                if s.made {
+                    boards.push(board("brd_9", "Epic", false));
+                }
+                Json(json!({ "project": "prj_1", "boards": boards })).into_response()
+            }
+            ("POST", "/api/daemon/projects/prj_1/boards") => {
+                s.made = true;
+                Json(view(&s)).into_response()
+            }
+            ("GET", "/api/daemon/boards/brd_9") => Json(view(&s)).into_response(),
+            ("POST", "/api/daemon/projects/prj_1/issues") => {
+                if b["title"].as_str().is_some_and(|t| t.contains("no grant")) {
+                    return said(StatusCode::FORBIDDEN, "this machine has no issues.write grant over the project");
+                }
+                s.filed.push(b.clone());
+                let n = 100 + s.filed.len() as u64;
+                Json(json!({ "id": format!("iss_{n}"), "number": n, "state": "open", "title": b["title"] }))
+                    .into_response()
+            }
+            ("POST", "/api/daemon/boards/brd_9/resolve") => {
+                let items: Vec<Value> = b["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| match i.as_str().unwrap().strip_prefix('#').and_then(|n| n.parse::<u64>().ok()) {
+                        Some(n) if n < 100 => {
+                            json!({ "item": i, "pointer": { "kind": "issue", "id": format!("iss_{n}") } })
+                        }
+                        _ => json!({ "item": i, "why": format!("nothing is {i} in this project") }),
+                    })
+                    .collect();
+                Json(json!({ "items": items })).into_response()
+            }
+            ("PUT", "/api/daemon/boards/brd_9/entries") => {
+                if b["entry"] == "zone" {
+                    let id = format!("zon_{}", s.groups.len() + 1);
+                    s.groups.push((id, b["title"].as_str().unwrap().to_owned()));
+                } else {
+                    let n: u64 = b["pointer"]["id"].as_str().unwrap().trim_start_matches("iss_").parse().unwrap();
+                    let known = s.groups.iter().any(|(id, _)| b["zone"].as_str() == Some(id));
+                    if !b["zone"].is_null() && !known {
+                        return said(StatusCode::BAD_REQUEST, "no such group");
+                    }
+                    s.rows.push((n, b["zone"].as_str().map(str::to_owned)));
+                }
+                Json(view(&s)).into_response()
+            }
+            _ => said(StatusCode::NOT_FOUND, &format!("no route {method} {at}")),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// A board is planned in one call (#548): `create_board` with two groups and
+/// five items, two of them new issues, puts five rows in the right groups;
+/// a group is addressed by the id `add_group` answered, a board by its title;
+/// two open boards of one title are refused, both listed; a new issue that
+/// control refuses fails alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_plans_a_board_in_one_call() {
+    let d = Daemon::child_with(&[]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakePlan::default();
+    let url = fake_plan(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let rows = |fake: &FakePlan| fake.state.lock().unwrap().rows.clone();
+
+    let made = call(
+        &s,
+        "board_write",
+        json!({ "kind": "create_board", "project": "prj_1", "title": "Epic", "goal": "Ship it", "groups": [
+            { "title": "Phase 1", "items": ["#12", { "title": "New A", "body": "why" }, "#13"] },
+            { "title": "Phase 2", "items": [{ "title": "New B", "labels": ["bug"] }, "#14"] }] }),
+    )
+    .await;
+    let said = made["summary"].as_str().unwrap();
+    assert!(said.contains("Made a board") && said.contains("Groups: 2 added."), "{said}");
+    assert!(said.contains("Items: 5 added.") && said.contains("New A\": filed #101, added"), "{said}");
+    let (p1, p2) = (Some("zon_1".to_owned()), Some("zon_2".to_owned()));
+    assert_eq!(rows(&fake), [(12, p1.clone()), (101, p1.clone()), (13, p1), (102, p2.clone()), (14, p2)], "{said}");
+    let filed = fake.state.lock().unwrap().filed.clone();
+    assert_eq!(filed[0], json!({ "title": "New A", "body": "why", "labels": [], "assignees": [] }));
+    assert_eq!(filed[1]["labels"], json!(["bug"]));
+
+    // The id add_group answers addresses the group; the board is named by its title.
+    let group = call(&s, "board_write", json!({ "kind": "add_group", "board": "epic", "title": "Phase 3" })).await;
+    let id = group["group"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(id, "zon_3", "{group}");
+    assert!(group["summary"].as_str().unwrap().contains("zon_3"), "{group}");
+    // One new issue control refuses, one it files: the first fails alone.
+    let added = call(
+        &s,
+        "board_write",
+        json!({ "kind": "add", "board": "Epic", "group": id, "items": [{ "title": "no grant" }, { "title": "New C" }] }),
+    )
+    .await;
+    let said = added["summary"].as_str().unwrap();
+    assert!(said.starts_with("Added: 1 failed, 1 added."), "{said}");
+    assert!(said.contains("\"no grant\": failed, not filed, ") && said.contains("issues.write grant"), "{said}");
+    assert_eq!(rows(&fake).last(), Some(&(103, Some("zon_3".to_owned()))), "{said}");
+
+    let blank = call(&s, "board_write", json!({ "kind": "add", "board": "Epic", "items": [{ "title": " " }] })).await;
+    assert!(blank["summary"].as_str().unwrap().contains("a new issue needs a title"), "{blank}");
+    let many = vec![json!({ "title": "G" }); 21];
+    let big = refused(&s, "board_write", json!({ "kind": "create_board", "title": "Big", "groups": many })).await;
+    assert!(big.contains("up to 20 groups"), "{big}");
+    assert_eq!(fake.state.lock().unwrap().filed.len(), 3, "a refused item files nothing");
+
+    let two = refused(&s, "board_write", json!({ "kind": "add_group", "board": "launch", "title": "X" })).await;
+    assert!(two.contains("Launch (brd_1) and Launch (brd_2)"), "{two}");
+    let none = refused(&s, "board_read", json!({ "board": "Nope" })).await;
+    assert!(none.contains("Launch, Launch, Epic") && !none.contains("Old"), "{none}");
+    s.cancel().await.unwrap();
+    drop(d);
+}
+
+/// The board tools (boards, step 3) are listed and work with no flag (boards
+/// left Labs, native #191); board_read lists a project's boards and reads one as
 /// lanes, rows and 72-column text, the JSON only when verbose; board_write
 /// (#366) adds a batch of issues by their items, one failing without
 /// stopping the rest, attaches a PR to the row of its issue, addresses rows by
@@ -2986,8 +3198,8 @@ async fn fake_boards(f: FakeBoards) -> String {
 /// refusals through, in answers of a few lines.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+async fn an_agent_reads_and_writes_a_board() {
+    let d = Daemon::child_with(&[]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeBoards::default();
     let url = fake_boards(fake.clone()).await;
@@ -2996,15 +3208,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
     let s = bridge(&d, Client::named("claude-code")).await;
 
-    // Off: neither tool is listed, and a call is refused saying why.
-    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
     let names = |tools: Vec<rmcp::model::Tool>| tools.into_iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
-    let off = names(s.list_all_tools().await.unwrap());
-    assert!(!off.iter().any(|n| n.starts_with("board_")), "{off:?}");
-    assert!(!kinds(&s.list_all_tools().await.unwrap(), "show").contains(&"board".to_owned()));
-    assert!(refused(&s, "board_read", json!({ "project": "prj_1" })).await.contains("boards"));
-
-    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
     // The daemon takes a moment to join the fake control.
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
@@ -3019,9 +3223,9 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "add",
             "attach",
             "detach",
+            "link_doc",
+            "unlink_doc",
             "ask",
-            "relate",
-            "unrelate",
             "note",
             "group",
             "drop",
@@ -3032,7 +3236,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "create_board",
             "edit_board",
             "close_board",
-            "reopen_board"
+            "reopen_board",
+            "lead_board"
         ]
     );
     // show's board kind pins one beside the caller, by its id.
@@ -3088,6 +3293,22 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
+    // Link as an agent sends it: no board, `kind` left out is before. One refused link doesn't stop the rest.
+    let linked = call(
+        &s,
+        "link",
+        json!({ "add": [{ "from": "#31", "to": "#12" }, { "from": "#12", "to": "#31" }],
+                "remove": [{ "from": "#31", "to": "#12", "kind": "blocks" }] }),
+    )
+    .await;
+    let text = linked["summary"].as_str().unwrap();
+    assert!(
+        text.contains("added: #31 before #12\nrefused: #12 before #31 (that would make a cycle)")
+            && text.contains("not there: #31 blocks #12\n3 link(s): 1 added, 1 not there, 1 refused."),
+        "{linked}"
+    );
+    let sent = fake.calls.lock().unwrap().iter().find(|(at, _)| at.ends_with("/relations/batch")).cloned().unwrap();
+    assert_eq!(sent.1["add"][0], json!({ "from": "#31", "to": "#12", "kind": "before" }), "{sent:?}");
     call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,
@@ -3200,6 +3421,106 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     s.cancel().await.unwrap();
 }
 
+/// `link_doc` links a project Doc (pdc_…) or a Doc kept on this machine to a
+/// board: in the strip, or with `row` on a row. A machine's Doc
+/// goes with this machine's id and the title it has here; an id nothing on
+/// this machine has is refused before anything goes out. `unlink_doc` takes
+/// a Doc (bdc_…) off, and nothing else.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_links_docs_to_a_board() {
+    let d = Daemon::child_with(&[]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeBoards::default();
+    let url = fake_boards(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let pdc = "pdc_0123456789abcdef0123456789abcdef";
+    let local = "00112233445566ff";
+    let dir = d.state.join("docs").join(local);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        json!({ "id": local, "title": "Perf notes", "made": 1, "updated": 1, "by": "mcp:test" }).to_string(),
+    )
+    .unwrap();
+    // A path out of the library is no Doc id, even where something is there.
+    std::fs::create_dir_all(d.state.join("0011223344556")).unwrap();
+    std::fs::write(d.state.join("0011223344556").join("meta.json"), json!({ "title": "Not a Doc" }).to_string())
+        .unwrap();
+    let posts = || -> Vec<(String, Value)> {
+        fake.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(a, _)| a.contains("/docs") || a.contains("/attachments"))
+            .cloned()
+            .collect()
+    };
+
+    // A project Doc, in the strip.
+    let said = call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc })).await;
+    assert!(said["summary"].as_str().unwrap().contains("Linked a Doc"), "{said}");
+    assert_eq!(
+        posts()[0],
+        ("POST /api/daemon/boards/brd_1/docs".to_owned(), json!({ "pointer": { "kind": "doc", "id": pdc } }))
+    );
+
+    // This machine's Doc: its id and the title it has here.
+    call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": local })).await;
+    assert_eq!(
+        posts()[1].1,
+        json!({ "pointer": { "kind": "machine_doc", "machine": keys.id(), "doc": local, "title": "Perf notes" } })
+    );
+
+    // On a row, by its item.
+    let on_row =
+        call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
+    assert!(on_row["summary"].as_str().unwrap().contains("Linked the Doc to #12"), "{on_row}");
+    assert_eq!(
+        posts()[2],
+        (
+            "POST /api/daemon/boards/brd_1/docs".to_owned(),
+            json!({ "pointer": { "kind": "doc", "id": pdc }, "row": "row_1" })
+        )
+    );
+
+    // An id this machine doesn't have, and one that is no Doc id, never go out.
+    let unknown =
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
+    assert!(unknown.contains("neither a project Doc") && unknown.contains("doc list"), "{unknown}");
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../0011223344556" }))
+            .await
+            .contains("neither")
+    );
+    assert_eq!(posts().len(), 3, "nothing went out for them");
+
+    // Unlink: a Doc by its bdc_ id; nothing else.
+    call(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "bdc_1" })).await;
+    assert!(posts().iter().any(|(a, _)| a == "DELETE /api/daemon/boards/brd_1/docs/bdc_1"), "{:?}", posts());
+    let n = posts().len();
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" }))
+            .await
+            .contains("bdc_")
+    );
+    assert_eq!(posts().len(), n, "an attachment is not a Doc: nothing went out");
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" }))
+            .await
+            .contains("bdc_")
+    );
+    s.cancel().await.unwrap();
+}
+
 /// A fake control's platform for work that knows its issue (#372): the
 /// project `prj_1` that the machine may write boards of while `granted`, the
 /// rows of `#12` (one board, `brd_1` "Launch", row `row_1`) and of nothing
@@ -3307,13 +3628,12 @@ async fn a_start_on_an_issue_another_agent_holds_is_refused_without_a_pane() {
     control.granted.store(true, Relaxed);
     let url = fake_work(control.clone()).await;
     let machine = control.machine.clone();
-    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         *machine.lock().unwrap() = keys.id();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let s = bridge(&d, Client::named("claude-code")).await;
     let agent = |extra: Value| {
@@ -3392,13 +3712,12 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     control.granted.store(true, Relaxed);
     let url = fake_work(control.clone()).await;
     let machine = control.machine.clone();
-    let mut d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+    let mut d = Daemon::child_in(&[], &[], |state| {
         let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
         *machine.lock().unwrap() = keys.id();
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let s = bridge(&d, Client::named("claude-code")).await;
     let agent = |extra: Value| {
@@ -3507,13 +3826,182 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert!(r["issue"]["said"].as_str().unwrap().contains("boards.write"), "{r}");
     assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], json!({ "issue": "#12" }));
 
-    // Boards off here: the issue is kept, and nothing is asked of control.
-    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
-    let asked = control.attached.lock().unwrap().len();
-    let r = call(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
-    assert_eq!(r["issue"]["boards"], json!([]), "{r}");
-    assert!(r["issue"]["said"].as_str().unwrap().contains("boards are off"), "{r}");
-    assert_eq!(control.attached.lock().unwrap().len(), asked);
+    s.cancel().await.unwrap();
+    let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A fake control's platform with two projects whose boards this machine
+/// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
+/// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no
+/// linked repo is in the personal `prj_me`, which this machine doesn't write.
+/// Every attach as it came: the project, then the body.
+#[cfg(feature = "labs")]
+#[derive(Clone, Default)]
+struct FakeHomes {
+    machine: Arc<std::sync::Mutex<String>>,
+    attached: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+}
+
+/// An `iss_` id of #12 in `prj_1`.
+#[cfg(feature = "labs")]
+const ISS_12: &str = "iss_0123456789abcdef0123456789abcdef";
+
+#[cfg(feature = "labs")]
+async fn fake_homes(f: FakeHomes) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Path, Query, State},
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post, put},
+    };
+    async fn reach() -> Json<Value> {
+        let p = |id: &str, name: &str| json!({ "id": id, "name": name, "powers": ["boards.write"], "boards": 1 });
+        Json(json!({ "projects": [p("prj_1", "Launch crew"), p("prj_2", "Other crew")] }))
+    }
+    async fn home(Query(q): Query<std::collections::HashMap<String, String>>) -> Json<Value> {
+        let project = if q.get("repo").map(String::as_str) == Some("acme/linked") { "prj_2" } else { "prj_me" };
+        Json(json!({ "project": project, "home": "native" }))
+    }
+    async fn issue(Path((project, number)): Path<(String, u64)>) -> axum::response::Response {
+        match (project.as_str(), number) {
+            ("prj_1", 12 | 7 | 5) | ("prj_2", 7) => {
+                Json(json!({ "project": project, "number": number })).into_response()
+            }
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+    async fn by_id(Path(id): Path<String>) -> axum::response::Response {
+        match id == ISS_12 {
+            true => Json(json!({ "id": id, "project": "prj_1", "number": 12 })).into_response(),
+            false => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+    async fn attach(
+        State(f): State<FakeHomes>,
+        Path(project): Path<String>,
+        Json(b): Json<Value>,
+    ) -> axum::response::Response {
+        assert_eq!(b["machine"], f.machine.lock().unwrap().as_str(), "the block is the signer's: {b}");
+        f.attached.lock().unwrap().push((project.clone(), b.clone()));
+        let on = match (project.as_str(), b["issue"].as_str().unwrap_or_default()) {
+            ("prj_1", "#12" | "#7") => json!([{ "board": "brd_1", "title": "Launch", "row": "row_1" }]),
+            ("prj_2", "#7") => json!([{ "board": "brd_2", "title": "Other", "row": "row_2" }]),
+            _ => json!([]),
+        };
+        Json(json!({ "on": on })).into_response()
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route("/api/daemon/issue-home", get(home))
+        .route(arugula_control_wire::issues::AGENT_PROJECT_ISSUE, get(issue))
+        .route(arugula_control_wire::issues::AGENT_ISSUE, get(by_id))
+        .route(arugula_control_wire::boards::AGENT_BOARD_REACH, get(reach))
+        .route(arugula_control_wire::boards::AGENT_PROJECT_ATTACH_BLOCK, post(attach))
+        .route(
+            arugula_control_wire::boards::AGENT_PROJECT_CLAIM_CHECK,
+            post(|| async { Json(json!({ "held": null })) }),
+        )
+        .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, put(|| async { Json(json!({})) }))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// #430: an agent started on an issue is attached in the project that holds
+/// the issue, not the caller's: the caller here is in no linked repo, and
+/// this machine writes the boards of two projects. `iss_…` names its
+/// project; a `#N` two projects hold goes to the one linked to the agent's
+/// repo, else is refused naming both; with no `issue`, a worktree's branch
+/// `fix/12-…` is on #12 if a board has a row for it, and says so, and a
+/// branch that names no row, or isn't one, is on nothing and no error.
+#[cfg(all(unix, feature = "labs"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_is_attached_in_the_project_of_its_issue() {
+    let control = FakeHomes::default();
+    let url = fake_homes(control.clone()).await;
+    let machine = control.machine.clone();
+    let d = Daemon::child_in(&[], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let agent = |extra: Value| {
+        let mut a = json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "hello" });
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    let last = || control.attached.lock().unwrap().last().cloned().unwrap();
+    // A clone linked to `acme/linked` (prj_2) through a second remote; its
+    // origin is a local one the worktrees branch from.
+    let tmp = std::env::temp_dir().join(format!("arugula-430-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = tmp.canonicalize().unwrap();
+    git(&tmp, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&tmp, &["init", "-q", "-b", "main", "work"]);
+    let repo = tmp.join("work");
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&repo, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
+    git(&repo, &["remote", "add", "gh", "https://github.com/acme/linked.git"]);
+    git(&repo, &["push", "-q", "origin", "main"]);
+
+    // The lead is in no linked repo, the agent works in a linked one, and
+    // #12 is an issue of the other project: it is attached there. (The
+    // daemon takes a moment to join the fake control.)
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let r = loop {
+        let r = call_raw(&s, "start_agent", agent(json!({ "issue": "#12", "cwd": repo }))).await;
+        let r = r.structured_content.unwrap_or_default();
+        if r["issue"]["boards"][0]["title"] == "Launch" {
+            break r;
+        }
+        assert!(std::time::Instant::now() < deadline, "never attached: {r}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    };
+    assert_eq!(last().0, "prj_1", "{r}");
+
+    // iss_…: its project and number, whatever the cwd.
+    let r = call(&s, "start_agent", agent(json!({ "issue": ISS_12 }))).await;
+    assert_eq!(r["issue"]["issue"], "#12", "{r}");
+    assert_eq!(r["issue"]["boards"][0]["title"], "Launch", "{r}");
+    assert_eq!((last().0, last().1["issue"].clone()), ("prj_1".to_owned(), json!("#12")));
+    let gone = refused(&s, "start_agent", agent(json!({ "issue": "iss_ffffffffffffffffffffffffffffffff" }))).await;
+    assert!(gone.contains("iss_ffff"), "{gone}");
+
+    // #7 is in both projects: the agent's repo decides, else it is refused.
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#7", "cwd": repo }))).await;
+    assert_eq!(r["issue"]["boards"][0]["title"], "Other", "{r}");
+    assert_eq!(last().0, "prj_2");
+    let both = refused(&s, "start_agent", agent(json!({ "issue": "#7" }))).await;
+    assert!(both.contains("prj_1") && both.contains("prj_2"), "{both}");
+
+    // A worktree's branch names #12, and a board has its row.
+    let r = call(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": { "branch": "fix/12-lexer" } }))).await;
+    assert_eq!(r["issue"]["issue"], "#12", "{r}");
+    assert_eq!(r["issue"]["boards"][0]["title"], "Launch", "{r}");
+    assert!(r["issue"]["said"].as_str().unwrap().contains("from the branch fix/12-lexer"), "{r}");
+    let block = r["block"].as_u64().unwrap();
+    d.wait_for("its work", || d.state(block)["work"]["issue"] == "#12");
+    assert_eq!(d.state(block)["work"]["boards"][0]["row"], "row_1");
+    assert_eq!(last().0, "prj_1");
+
+    // #5 has no row, #99 and #3 are no issue, and the rest aren't branches of one: nothing attached, no error.
+    for branch in ["chore/5-x", "feat/99-x", "feat/3-x", "wip/12-x", "fix/12", "fix/x-12", "fix/+12-x"] {
+        let r = call(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": { "branch": branch } }))).await;
+        assert!(r.get("issue").is_none(), "{branch}: {r}");
+        assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], Value::Null, "{branch}");
+    }
 
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();

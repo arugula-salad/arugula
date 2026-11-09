@@ -8,10 +8,10 @@
 //!   (a hosted workspace's `hw_…` id or its name): the call is made on its
 //!   machine instead of here ([`Call::on_workspace`]), and its panes and
 //!   blocks are that machine's (pass it again to reach them).
-//! - **`cloud` and `read_cloud`** take a hosted workspace: its tabs are
-//!   agent blocks on its machine, by pane id ([`Call::hosted_read`],
-//!   [`Call::hosted_drive`]); `list kind cloud_workspaces` lists them,
-//!   with `kind: hosted`.
+//! - **`cloud` and `read_cloud`** take a hosted workspace: its agents are
+//!   agent blocks on its machine, by pane id (`agent_block`;
+//!   [`Call::hosted_read`], [`Call::hosted_drive`]); `list kind
+//!   cloud_workspaces` lists them, with `kind: hosted`.
 //!
 //! **How.** Control's `/api/workspaces` says which machine a workspace is,
 //! for this machine's owner (a `cloud.drive` grant). This daemon opens a
@@ -44,11 +44,12 @@ pub const CALL: &str = "/api/mcp/call";
 /// How long a waking workspace's machine is waited for.
 const WAKE: Duration = Duration::from_secs(90);
 
-/// A tab of a cloud workspace: an agent block on its machine, by pane id.
-pub fn tab_pane(tab: &str) -> Result<Value, String> {
-    let t = tab.trim().trim_start_matches('%');
+/// An agent of a cloud workspace: an agent block on its machine, by pane
+/// id.
+pub fn agent_pane(agent: &str) -> Result<Value, String> {
+    let t = agent.trim().trim_start_matches('%');
     t.parse::<u64>().map(|n| json!(n)).map_err(|_| {
-        format!("{tab:?} isn't a cloud workspace's tab: they're its machine's agent blocks, by pane number (list kind cloud_tabs)")
+        format!("{agent:?} isn't one of a Cloud workspace's agent blocks: agent_block is its pane number on its machine (list kind cloud_agents)")
     })
 }
 
@@ -233,27 +234,28 @@ impl Call<'_> {
 
     // ------------------------------------------------------------ cloud tools
 
-    /// `list kind cloud_tabs` for a cloud workspace: its machine's agent
-    /// blocks.
-    pub async fn hosted_tabs(&self, which: &str) -> Out {
+    /// `list kind cloud_agents` for a cloud workspace: its machine's agent
+    /// blocks, as `cloud_agents` and, for older callers, `cloud_tabs`
+    /// (#668).
+    pub async fn hosted_agents(&self, which: &str) -> Out {
         let v = self.on_workspace("list", which, json!({ "kind": "panes" })).await?;
         let panes = v["panes"].as_array().cloned().unwrap_or_default();
         let tabs: Vec<Value> = panes.into_iter().filter(|p| p["type"] == "agent").collect();
         let summary = match tabs.len() {
             0 => format!(
-                "{which} has no agent blocks: cloud {{kind: open_tab}} (or start_agent with workspace) opens one."
+                "{which} has no agent blocks: cloud {{kind: open_agent}} (or start_agent with cloud_workspace) opens one."
             ),
-            n => format!("{n} agent block(s) on {which}'s machine: their pane ids are the tabs"),
+            n => format!("{n} agent block(s) on {which}'s machine: name one by its pane id (agent_block)"),
         };
-        done(summary, json!({ "cloud_tabs": tabs, "panes": v["panes"] }))
+        done(summary, json!({ "cloud_agents": tabs, "cloud_tabs": tabs, "panes": v["panes"] }))
     }
 
     /// `read_cloud` for a cloud workspace.
     pub async fn hosted_read(&self, kind: &str, which: &str, args: Value) -> Out {
-        let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
+        let block = || agent_pane(args["agent_block"].as_str().unwrap_or_default());
         match kind {
             "events" => {
-                let mut a = json!({ "pane": tab()? });
+                let mut a = json!({ "pane": block()? });
                 for k in ["offset", "max_chars"] {
                     if !args[k].is_null() {
                         a[k] = args[k].clone();
@@ -262,7 +264,8 @@ impl Call<'_> {
                 self.on_workspace("read_output", which, a).await
             }
             "requests" => {
-                self.on_workspace("wait", which, json!({ "pane": tab()?, "until": "needs_input", "timeout": 0 })).await
+                self.on_workspace("wait", which, json!({ "pane": block()?, "until": "needs_input", "timeout": 0 }))
+                    .await
             }
             "files" | "file" | "diff" | "git_status" => {
                 let mut a = args.clone();
@@ -279,15 +282,16 @@ impl Call<'_> {
     /// `cloud` for a cloud workspace (all but `create`, which takes a
     /// project instead).
     pub async fn hosted_drive(&self, kind: &str, which: &str, args: Value) -> Out {
-        let tab = || tab_pane(args["tab"].as_str().unwrap_or_default());
+        let block = || agent_pane(args["agent_block"].as_str().unwrap_or_default());
         match kind {
-            "open_tab" => {
+            "open_agent" => {
                 let agent = match args["agent"].as_str() {
                     None | Some("claude" | "claude_code" | "curated_coding") => "claude",
                     Some("codex") => "codex",
-                    Some(a) => return Err(format!("a cloud workspace's tab runs claude or codex, not {a:?}")),
+                    Some(a) => return Err(format!("a Cloud workspace's agent block runs claude or codex, not {a:?}")),
                 };
-                let prompt = args["prompt"].as_str().ok_or("a cloud workspace's new tab needs its first prompt")?;
+                let prompt =
+                    args["prompt"].as_str().ok_or("a Cloud workspace's new agent block needs its first prompt")?;
                 let mut a = json!({ "agent": agent, "prompt": prompt });
                 for k in ["model", "cwd"] {
                     if !args[k].is_null() {
@@ -295,19 +299,22 @@ impl Call<'_> {
                     }
                 }
                 let mut v = self.on_workspace("start_agent", which, a).await?;
+                // Its name to the other kinds, and the old name for older
+                // callers (#668).
+                v["agent_block"] = v["pane"].clone();
                 v["tab"] = v["pane"].clone();
                 Ok(v)
             }
             "prompt" => {
-                let mut a = json!({ "pane": tab()?, "text": args["text"] });
+                let mut a = json!({ "pane": block()?, "text": args["text"] });
                 if !args["timeout"].is_null() {
                     a["timeout"] = args["timeout"].clone();
                 }
                 self.on_workspace("prompt_agent", which, a).await
             }
-            "interrupt" => self.on_workspace(MACHINE_READ, which, json!({ "kind": "cancel", "pane": tab()? })).await,
+            "interrupt" => self.on_workspace(MACHINE_READ, which, json!({ "kind": "cancel", "pane": block()? })).await,
             "answer" => {
-                let mut a = json!({ "pane": tab()? });
+                let mut a = json!({ "pane": block()? });
                 match (args["option"].as_str(), args["action"].as_str()) {
                     (Some(o), None) => {
                         a["action"] =
@@ -326,8 +333,8 @@ impl Call<'_> {
                 }
                 self.on_workspace("agent_respond", which, a).await
             }
-            "close_tab" => {
-                let v = self.on_workspace("close", which, json!({ "pane": tab()? })).await?;
+            "close_agent" => {
+                let v = self.on_workspace("close", which, json!({ "pane": block()? })).await?;
                 Ok(v)
             }
             "rebuild" => {
@@ -390,9 +397,9 @@ impl Call<'_> {
         b.call("cancel", json!({})).await.map(|_| ())
     }
 
-    /// `wait` on a cloud workspace's tab.
-    pub async fn hosted_wait(&self, which: &str, tab: &str, until: &str, timeout: Option<f64>) -> Out {
-        let mut a = json!({ "pane": tab_pane(tab)?, "until": until });
+    /// `wait` on a cloud workspace's agent block.
+    pub async fn hosted_wait(&self, which: &str, block: &str, until: &str, timeout: Option<f64>) -> Out {
+        let mut a = json!({ "pane": agent_pane(block)?, "until": until });
         if let Some(t) = timeout {
             a["timeout"] = json!(t);
         }

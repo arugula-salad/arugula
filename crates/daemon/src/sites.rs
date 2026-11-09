@@ -456,7 +456,7 @@ pub async fn serve(sites: Arc<Sites>, listener: TcpListener, tls: Option<Arc<tok
 }
 
 /// The connections to the port that one browser connection's requests
-/// reuse (one Sprites proxy socket per browser connection, not per
+/// reuse (one provider port stream per browser connection, not per
 /// request), or one block channel's (a few, since its requests come at
 /// once and HTTP/1 takes one at a time).
 #[derive(Default)]

@@ -33,6 +33,8 @@ url = { workspace = true }
 [dev-dependencies]
 # The platform's test harness: a hub of the test's own, the fake GitHub.
 arugula-platform-base = { workspace = true, features = ["testing"] }
+# CI alerts' events' times (`ci_alerts_tests`), as the base reads them.
+jiff = { version = "0.2.37", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

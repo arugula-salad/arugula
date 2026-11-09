@@ -9,7 +9,9 @@
 
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { CheckIcon, CloseIcon, ExternalIcon, IconButton, IssueIcon, MergeIcon, PrIcon, ReloadIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
+import { Card } from "./card";
 import "./item-block.css";
 
 export type ItemKind = "pr" | "issue";
@@ -49,8 +51,8 @@ export type ItemFact =
   | { kind: "text"; text: string; title?: string };
 
 /** The one thing the reader should do next. `warn` waits on you, `danger`
- * is broken, `ok` is ready. */
-export type NextStep = { tone: "warn" | "danger" | "ok"; text: string; actions?: ComponentChildren };
+ * is broken, `ok` is ready, `info` is a note (the merge is held). */
+export type NextStep = { tone: "warn" | "danger" | "ok" | "info"; text: string; actions?: ComponentChildren };
 
 export type ItemTab = {
   id: string;
@@ -61,42 +63,12 @@ export type ItemTab = {
   content: ComponentChildren;
 };
 
-const PrIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="6" cy="6" r="2.5" />
-    <circle cx="6" cy="18" r="2.5" />
-    <circle cx="18" cy="18" r="2.5" />
-    <path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-3m2-2.5L12 7l2 2.5" />
-  </svg>
-);
-const IssueIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-  </svg>
-);
-const MergeIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="6" cy="5" r="2.5" />
-    <circle cx="6" cy="19" r="2.5" />
-    <circle cx="18" cy="14" r="2.5" />
-    <path d="M6 7.5v9M18 11.5C18 8 12 9 7.5 6.5" />
-  </svg>
-);
-const SOURCE_PATH: Record<ItemSource["kind"], string> = {
-  github: "M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.100-.4 6.400-1.500 6.400-7A5.400 5.400 0 0 0 20 4.800 5.100 5.100 0 0 0 19.900 1S18.700.7 16 2.500a13.400 13.400 0 0 0-7 0C6.300.7 5.100 1 5.100 1A5.100 5.100 0 0 0 5 4.800a5.400 5.400 0 0 0-1.500 3.800c0 5.400 3.300 6.600 6.400 7A3.400 3.400 0 0 0 9 18.100V22",
-  gitlab: "M12 21 3 14l2.500-8 2.500 6h8l2.500-6L21 14z",
-  forgejo: "M7 4v6a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3V4M12 13v7",
-  arugula: "M12 3c5 0 9 4 9 9-4 0-9-1-9-9zM12 3C7 3 3 7 3 12c4 0 9-1 9-9zM12 21v-9",
-};
 const SOURCE_NAME: Record<ItemSource["kind"], string> = { github: "GitHub", gitlab: "GitLab", forgejo: "Forgejo", arugula: "Arugula" };
 
 function SourceIcon({ source }: { source: ItemSource }) {
   return (
     <span class="item-source" data-item-source={source.kind} data-live={source.live ?? undefined} title={source.title ?? SOURCE_NAME[source.kind]}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d={SOURCE_PATH[source.kind]} />
-      </svg>
+      <SourceGlyph kind={source.kind} />
       {source.live && <span class="item-live" data-item-live={source.live} />}
     </span>
   );
@@ -106,7 +78,7 @@ function Avatar({ role, name, badge, ring, dim, title }: { role: "reviewer" | "a
   return (
     <span class="item-avatar" data-item-avatar={role} data-name={name} data-ring={ring ? "asked" : undefined} data-dim={dim ? "" : undefined} title={title}>
       {name.charAt(0).toUpperCase()}
-      {badge && <span class={`item-avatar-badge item-avatar-${badge}`}>{badge === "ok" ? "✓" : badge === "danger" ? "✕" : "•"}</span>}
+      {badge && <span class={`avatar-mark item-avatar-${badge}`}>{badge === "ok" ? <CheckIcon size="xs" /> : badge === "danger" ? <CloseIcon size="xs" /> : "•"}</span>}
     </span>
   );
 }
@@ -128,7 +100,7 @@ function Fact({ fact }: { fact: ItemFact }) {
         <span class="item-fact" data-item-fact="checks">
           {ok > 0 && (
             <span class="item-ok" title={`${ok} passed`}>
-              ✓ {ok}
+              <CheckIcon size="xs" /> {ok}
             </span>
           )}
           {pending > 0 && (
@@ -138,7 +110,7 @@ function Fact({ fact }: { fact: ItemFact }) {
           )}
           {failed > 0 && (
             <span class="item-danger" title={`${failed} failed`}>
-              ✕ {failed}
+              <CloseIcon size="xs" /> {failed}
             </span>
           )}
         </span>
@@ -206,7 +178,7 @@ function Fact({ fact }: { fact: ItemFact }) {
   }
 }
 
-const STRIP_ICON = { warn: "●", danger: "✕", ok: "✓" } as const;
+const STRIP_ICON = { warn: "●", danger: <CloseIcon size="xs" />, ok: <CheckIcon size="xs" />, info: "○" } as const;
 
 /** The body, folded to a few lines. More shows only when something is
  * folded away. */
@@ -277,28 +249,35 @@ export function ItemBlock({
   const hasBody = body !== undefined && body !== null && body !== false && body !== "" && !(Array.isArray(body) && body.length === 0);
   const { tone, word } = STATE[state];
   return (
-    <section class="item-block" data-item-block={kind} data-item-state={state}>
-      <header class="item-head" data-item-head>
-        <span class="item-kind" title={kind === "pr" ? "Pull request" : "Issue"}>
-          {kind === "pr" ? <PrIcon /> : <IssueIcon />}
-        </span>
-        <span class="item-number">#{number}</span>
-        <span class="item-title">{title}</span>
-        <StateChip tone={tone} data-item-pill>
-          {word}
-        </StateChip>
-        {source && <SourceIcon source={source} />}
-        {onRefresh && (
-          <button type="button" class="item-icon-btn" data-item-refresh title={refreshTitle ?? "Refresh"} aria-label="Refresh" onClick={onRefresh}>
-            ↻
-          </button>
-        )}
-        {href && (
-          <a class="item-icon-btn" data-item-open href={href} target="_blank" rel="noreferrer" title="Open in the browser" aria-label="Open in the browser">
-            ↗
-          </a>
-        )}
-      </header>
+    <Card
+      as="section"
+      class="item-block"
+      head={
+          <header class="item-head" data-item-head>
+            <span class="item-kind" title={kind === "pr" ? "Pull request" : "Issue"}>
+              {kind === "pr" ? <PrIcon /> : <IssueIcon />}
+            </span>
+            <span class="item-number">#{number}</span>
+            <span class="item-title">{title}</span>
+            <StateChip tone={tone} data-item-pill>
+              {word}
+            </StateChip>
+            {source && <SourceIcon source={source} />}
+            {onRefresh && (
+              <IconButton label="Refresh" title={refreshTitle ?? "Refresh"} class="item-icon-btn" data-item-refresh onClick={onRefresh}>
+                <ReloadIcon size="sm" />
+              </IconButton>
+            )}
+            {href && (
+              <a class="item-icon-btn" data-item-open href={href} target="_blank" rel="noreferrer" title="Open in the browser" aria-label="Open in the browser">
+                <ExternalIcon size="xs" />
+              </a>
+            )}
+          </header>
+      }
+      data-item-block={kind}
+      data-item-state={state}
+    >
       {next && (
         <div class={`item-next item-next-${next.tone}`} data-item-next={next.tone}>
           <span class="item-next-icon" aria-hidden="true">
@@ -343,6 +322,6 @@ export function ItemBlock({
           {footer}
         </footer>
       )}
-    </section>
+    </Card>
   );
 }

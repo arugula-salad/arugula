@@ -11,8 +11,10 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import type { CodeView } from "../swarm/code";
 import { registerBlock, type BlockView } from "./view";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import { editFile } from "./diff";
+import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 export interface FileState {
   path: string;
@@ -72,15 +74,15 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
   const problem = s?.error ?? (s?.binary ? `A binary file (${KB(s.size)})` : null);
   return (
     <div class="review" data-file-block={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path" title={path}>
           <b>{path.slice(slash + 1)}</b>
           {s?.line ? <span class="dim">:{s.line}</span> : null} <span class="dim">{path.slice(0, slash)}</span>
         </span>
         {machine && (
-          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         {s?.truncated && <span class="dim" title={`${KB(s.size)}: only the start is shown`}>first {KB(s.text.length)}</span>}
         {s && !s.error && !client.state?.roles && (
@@ -93,9 +95,9 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
             {s?.watching ? "live" : "paused"}
           </span>
         )}
-      </div>
+      </Bar>
       {problem && (
-        s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <BlockEmpty>{problem}.</BlockEmpty>
+        s?.error ? <BlockError title="Can't show this file" detail={s.error} /> : <EmptyState title={`${problem}.`} />
       )}
       {!s || (s.loading && !s.text) ? <BlockLoading what={s?.name ?? "the file"} /> : null}
       <div class="file-code" ref={box} style={problem || !s || (s.loading && !s.text) ? { display: "none" } : undefined} />

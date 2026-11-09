@@ -31,8 +31,7 @@ impl Daemon {
             .or_else(|| from.and_then(|p| self.panes.get(&p)?.cwd()))
             .unwrap_or_else(|| self.config.home.clone());
         // A session that doesn't exist yet starts with this pane, not a
-        // shell beside it (#17: a home daemon's remote panes go in a
-        // session of its name here).
+        // shell beside it.
         let session = self.resolve_session(req.session.as_deref(), from);
         let before: Vec<PaneId> = self.mux.panes();
         // Joining a split pane's host: its tab's machine (which a split
@@ -168,12 +167,6 @@ impl Daemon {
             BlockType::Diff | BlockType::File => self.view_defaults(&mut req, from),
             BlockType::Agent | BlockType::Chat => self.agent_login(&mut req, from),
             _ => {}
-        }
-        // A pane on another daemon (#17): only its place is here, never on
-        // a machine of ours.
-        if req.kind == BlockType::Remote {
-            self.config.kinds.check(BlockType::Remote, &req.config)?;
-            (req.vm, req.host, req.local) = (false, None, true);
         }
         // A studio box (M35) is its own site: nothing of it runs here or on
         // a machine of ours.
@@ -363,8 +356,8 @@ impl Daemon {
     }
 
     /// Whether `client` is sent `pane`'s state only while it shows it
-    /// (#739): an agent block, a board or a People block (its page reads
-    /// it, and it draws only when shown), or a doc (#963: up to 1 MiB of text that
+    /// (#739): an agent block or a board (its page reads it, and it draws
+    /// only when shown), or a doc (#963: up to 1 MiB of text that
     /// no phone should get on attach), to a client that takes patches (a
     /// page). An agent's state is its transcript, which nothing off screen
     /// reads; the fleet, the swarm and the tab strip go by its summary. Other blocks'
@@ -374,10 +367,7 @@ impl Daemon {
     pub(super) fn only_shown(&self, client: ClientId, pane: PaneId) -> bool {
         self.patched.contains_key(&client)
             && self.blocks.get(&pane).is_some_and(|b| {
-                matches!(
-                    b.kind(),
-                    BlockType::Agent | BlockType::Chat | BlockType::Doc | BlockType::Board | BlockType::People
-                )
+                matches!(b.kind(), BlockType::Agent | BlockType::Chat | BlockType::Doc | BlockType::Board)
             })
     }
 

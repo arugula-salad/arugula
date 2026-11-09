@@ -75,7 +75,11 @@ Hosted machines run on E2B's cloud, through a substrate built to E2B's API
 - **No other adapters** (Sprites, Fly, Daytona) until something needs one.
   Managoat isn't the substrate.
 
-The daemon's own Labs providers (`crates/mux/src/provider`, `labs/loam.rs`)
-are a different thing and stay as they are.
+The daemon's own Labs provider (`crates/mux/src/provider`, `labs/loam.rs`)
+is a different thing and stays as it is. Since 2026-11-04 loam is the
+daemon's only provider: its Sprites adapter (a wispd on the machine, or
+Fly's sprites) was removed with the older machine model (native Arugula
+issue 670, step 7; Jake chose that over waiting for loam parity), so
+"no other adapters" holds for the daemon too.
 Where: `crates/platform/src/compute/` (M176), the template build (M177).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M176 (#1237), M177 (#1238), M191 (#1252).

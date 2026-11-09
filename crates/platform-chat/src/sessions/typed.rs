@@ -26,7 +26,7 @@ use tracing::info;
 use crate::{
     Platform,
     chat::session_card::threaded,
-    db::sessions::{Event, Kind, Session, SessionDetail, State},
+    db::sessions::{AgentSession, Event, Kind, SessionDetail, State},
 };
 
 /// What the thread's line starts with.
@@ -52,7 +52,7 @@ pub fn line(by: Option<&str>, typed: &str) -> Option<String> {
 /// After session `s`'s box reported `events` (`session_live::report`): a
 /// turn's start that came from its block says so in its thread (module
 /// docs).
-pub async fn reported(app: &Platform, s: &Session, events: &[Event]) -> Result<()> {
+pub async fn reported(app: &Platform, s: &AgentSession, events: &[Event]) -> Result<()> {
     for e in events.iter().filter(|e| e.kind == Kind::State && e.to == State::Working) {
         let d: SessionDetail = serde_json::from_str(&e.detail).unwrap_or_default();
         if !d.in_block {

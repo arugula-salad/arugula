@@ -2,10 +2,9 @@
 //! platform", #1150): chat, hosted workspaces and billing, and step 1's projects and
 //! grants, which deploy as often as they like without dropping a relayed
 //! terminal. The hub (`arugula-control`) keeps identity, devices, rosters,
-//! the relay, push, block and doc origins, the jump host, daemons' forge
-//! subscriptions and pokes (until M174) and telemetry, and stays the
-//! gateway: every platform path stays on control's own site ("Platform
-//! paths stay on control.arugula.io forever").
+//! the relay, push, block and doc origins, the jump host and telemetry,
+//! and stays the gateway: every platform path stays on control's own site
+//! ("Platform paths stay on control.arugula.io forever").
 //!
 //! The seam:
 //! - [`HubPort`] is everything the platform asks the hub. The platform
@@ -43,6 +42,7 @@ pub mod cache;
 pub mod chat;
 #[cfg(any(test, feature = "testing"))]
 pub mod chat_tests;
+pub mod ci_alerts;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
@@ -52,6 +52,8 @@ pub mod drivers;
 pub mod features;
 pub mod forge;
 pub mod grants;
+#[cfg(test)]
+mod grants_tests;
 pub mod hosted;
 pub use arugula_platform_api::hub;
 pub mod in_process;
@@ -64,6 +66,10 @@ pub use arugula_platform_api::page;
 pub mod planter;
 mod port;
 pub mod project_docs;
+pub mod project_docs_machine;
+pub mod project_grants;
+#[cfg(test)]
+mod project_grants_tests;
 pub mod project_roles;
 pub mod projects;
 pub use arugula_platform_api::remote;
@@ -85,7 +91,7 @@ pub mod work;
 
 /// What the platform is told when it starts: `arugula-platform-api`'s, which
 /// the hub makes it with.
-pub use arugula_platform_api::{Config, Presence};
+pub use arugula_platform_api::Config;
 pub use hub::HubPort;
 pub use port::{Archived, Deleted, PlatformPort, PublicPreview, TurnAnswer};
 pub use router::{paths, router};
@@ -162,9 +168,24 @@ pub struct Platform {
     /// Where connected trackers' APIs come from (Arugula #356): Plane's, or
     /// a test's fake.
     pub trackers: Arc<dyn trackers::Trackers>,
+    /// This platform as the `Arc` it runs in, set when its router is made
+    /// or its background work starts ([`Platform::adopt`]): for work that
+    /// outlives a request (#419).
+    me: std::sync::OnceLock<std::sync::Weak<Platform>>,
 }
 
 impl Platform {
+    /// Note the `Arc` this platform runs in, so [`Platform::arc`] has it.
+    pub fn adopt(self: &Arc<Self>) {
+        let _ = self.me.set(Arc::downgrade(self));
+    }
+
+    /// The `Arc` this platform runs in, to move into a task that outlives
+    /// the request that started it. None before [`Platform::adopt`].
+    pub fn arc(&self) -> Option<Arc<Platform>> {
+        self.me.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// Whether background work is held ([`Platform::paused`]).
     pub fn is_paused(&self) -> bool {
         self.paused.load(std::sync::atomic::Ordering::Relaxed)
@@ -236,6 +257,7 @@ impl Platform {
             deploy_tokens: Default::default(),
             slots: Default::default(),
             trackers,
+            me: Default::default(),
         }
     }
 }

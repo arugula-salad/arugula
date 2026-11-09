@@ -14,7 +14,7 @@
 //!   ([`start`]).
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -33,7 +33,7 @@ use crate::{
     db::{
         Db,
         chat::NewChatEvent,
-        sessions::{Role, Session},
+        sessions::{AgentSession, Role},
     },
     hub::{Account, Flags},
 };
@@ -83,6 +83,21 @@ pub async fn chat_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
     flag_on(app, account, FLAG).await
 }
 
+/// Whether the account itself said its personal machines copy their Docs
+/// up (native #673, `DOC_COPIES`): its own word only, never a team's. It
+/// lets a machine's copies in without chat, and turns nothing else on.
+pub async fn copies_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
+    Ok(copies_word(app, account).await? == Some(true))
+}
+
+/// The account's own word for copies, if it gave one: `false` is a no, which
+/// chat doesn't override.
+pub async fn copies_word(app: &Platform, account: &str) -> anyhow::Result<Option<bool>> {
+    let owner = account_owner(account);
+    let flags = app.cache.flags(&*app.hub, std::slice::from_ref(&owner)).await?;
+    Ok(flag_of(&flags, &owner, arugula_control_wire::DOC_COPIES))
+}
+
 /// Whether the Labs flag `flag` is on for an account, by the rule chat's
 /// is: its own if it set one, else on when any team it's in turned it on.
 pub async fn flag_on(app: &Platform, account: &str, flag: &str) -> anyhow::Result<bool> {
@@ -102,6 +117,82 @@ pub async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
 }
 
 // ---------------------------------------------------------------- mentions
+
+/// `text` with its code blanked (#492): inline code spans and fenced
+/// blocks become spaces, newlines kept, so every byte offset stays and no
+/// `@name` or keyword inside code is matched. Every matcher of a mention
+/// runs on this, never on the stored text, which is unchanged.
+///
+/// As the web client draws code (`markup.tsx`): a fence of three backticks
+/// ends at the next three, and a fence of `~~~` (from a line's start) at a
+/// line that starts with `~~~`; one that never closes is not code. A span
+/// is a run of backticks to the next run of the same length on the same
+/// line (so ``` `` a`b `` ``` is one); one that never closes is text.
+pub fn without_code(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(['`', '~']) {
+        return text.into();
+    }
+    let b = text.as_bytes();
+    let mut blank = vec![false; b.len()];
+    let mut i = 0;
+    while i < b.len() {
+        let line_start = i == 0 || b[i - 1] == b'\n';
+        let end = if b[i..].starts_with(b"```") {
+            text[i + 3..].find("```").map(|j| i + 3 + j + 3)
+        } else if line_start && b[i..].starts_with(b"~~~") {
+            text[i + 3..].find("\n~~~").map(|j| {
+                let from = i + 3 + j + 1;
+                text[from..].find('\n').map_or(b.len(), |k| from + k)
+            })
+        } else if b[i] == b'`' {
+            let run = b[i..].iter().take_while(|&&c| c == b'`').count();
+            let line = text[i + run..].find('\n').map_or(b.len(), |k| i + run + k);
+            let mut at = i + run;
+            let mut close = None;
+            while at < line {
+                if b[at] != b'`' {
+                    at += 1;
+                    continue;
+                }
+                let n = b[at..line].iter().take_while(|&&c| c == b'`').count();
+                if n == run {
+                    close = Some(at + n);
+                    break;
+                }
+                at += n;
+            }
+            match close {
+                Some(c) => Some(c),
+                None => {
+                    // Not a span: step over the whole run.
+                    i += run;
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        match end {
+            Some(e) => {
+                blank[i..e].fill(true);
+                i = e;
+            }
+            None => i += 1,
+        }
+    }
+    if !blank.contains(&true) {
+        return text.into();
+    }
+    let mut out = String::with_capacity(text.len());
+    for (k, c) in text.char_indices() {
+        if blank[k] && c != '\n' {
+            out.extend(std::iter::repeat_n(' ', c.len_utf8()));
+        } else {
+            out.push(c);
+        }
+    }
+    out.into()
+}
 
 /// The `@words` in a text, lowercased: an `@` at the start or after
 /// anything but a letter or digit (not an email address), then letters,
@@ -259,7 +350,17 @@ pub struct Hub {
     pushed: Mutex<HashMap<(String, String), u64>>,
     /// When each person last pinged typing in each room ([`typing`]).
     typed: Mutex<HashMap<(String, String), u64>>,
+    /// When agents' posts were told to each machine, per thread (#575):
+    /// the backstop on agents talking to agents ([`Hub::agent_told`]).
+    agent_told: Mutex<HashMap<(String, i64, String), VecDeque<u64>>>,
 }
+
+/// The most deliveries an agent's post may cause for one machine in one
+/// thread inside [`AGENT_TOLD_WINDOW_MS`] (#575).
+pub const AGENT_TOLD_MAX: usize = 10;
+
+/// How long [`AGENT_TOLD_MAX`] counts back.
+pub const AGENT_TOLD_WINDOW_MS: u64 = 10 * 60 * 1000;
 
 /// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
 /// (M144), the same on every machine and across restarts. An id from
@@ -291,6 +392,7 @@ impl Default for Hub {
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
             typed: Mutex::new(HashMap::new()),
+            agent_told: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -502,6 +604,24 @@ impl Hub {
         self.generation.load(Ordering::SeqCst)
     }
 
+    /// An agent's post is about to be told to `machine` in the thread of
+    /// `root` (#575): whether that's within the limit, and if so, counted.
+    pub fn agent_told(&self, room: &str, root: i64, machine: &str, now: u64) -> bool {
+        let mut t = self.agent_told.lock().unwrap();
+        if t.len() > 10_000 {
+            t.retain(|_, v| v.back().is_some_and(|at| now.saturating_sub(*at) < AGENT_TOLD_WINDOW_MS));
+        }
+        let q = t.entry((room.to_owned(), root, machine.to_owned())).or_default();
+        while q.front().is_some_and(|at| now.saturating_sub(*at) >= AGENT_TOLD_WINDOW_MS) {
+            q.pop_front();
+        }
+        if q.len() >= AGENT_TOLD_MAX {
+            return false;
+        }
+        q.push_back(now);
+        true
+    }
+
     /// Tell every machine's streams that `account` is typing in `room`
     /// (#111). Whether it was sent (a ping inside the gap isn't).
     pub fn typing(&self, db: &Db, room: &str, account: &str, name: &str, now: u64) -> bool {
@@ -534,7 +654,7 @@ impl Hub {
     /// Session `s` changed (M257): pages showing its card read it again, on
     /// every machine (through `chat_events`). A Try 3's sibling's parent
     /// card shows it in its compare view (M264), so it's told too.
-    pub fn session(&self, db: &Db, s: &Session) {
+    pub fn session(&self, db: &Db, s: &AgentSession) {
         self.publish(db, ChatLive::Session { room: s.room.clone(), ses: s.id.clone() }, None);
         if let (Role::Try, Some(parent)) = (s.role, &s.parent_session) {
             self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);
@@ -645,6 +765,27 @@ mod tests {
         assert_eq!(at_words("mail jake@example.com"), Vec::<String>::new());
         assert_eq!(at_words("(@jhgaylor) and @jhgaylor again, @"), ["jhgaylor"]);
         assert_eq!(at_words("@ünïcode @a.b."), ["ünïcode", "a.b"]);
+    }
+
+    #[test]
+    fn code_is_blanked_by_length_and_the_rest_is_kept() {
+        let blank = |t: &str| without_code(t).into_owned();
+        assert_eq!(blank("see `@sam` ok"), "see        ok");
+        assert_eq!(blank("no code @sam"), "no code @sam");
+        // Double backticks hold a single one; a span ends on its line.
+        assert_eq!(blank("a ``x`@b`` c"), format!("a {} c", " ".repeat(8)));
+        assert_eq!(blank("`@a\n@b`"), "`@a\n@b`");
+        // Fences, with an info string and across lines; newlines stay.
+        assert_eq!(blank("x\n```rust\n@sam\n```\n@b"), "x\n       \n    \n   \n@b");
+        assert_eq!(blank("x\n~~~\n@sam\n~~~\n@b"), "x\n   \n    \n   \n@b");
+        // Unclosed: text, as the web client draws it.
+        assert_eq!(blank("it costs `5 and @sam"), "it costs `5 and @sam");
+        assert_eq!(blank("``` @sam"), "``` @sam");
+        assert_eq!(blank("~~~\n@sam"), "~~~\n@sam");
+        // Offsets hold across multi-byte text.
+        let t = "é `ü@sam` @b";
+        assert_eq!(blank(t).len(), t.len());
+        assert_eq!(at_words(&without_code(t)), ["b"]);
     }
 
     #[test]

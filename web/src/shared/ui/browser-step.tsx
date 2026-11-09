@@ -13,10 +13,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { desktopApp, openOutside, openOutsideAsync, tauriInvoke } from "../desktop";
+import { ExternalIcon } from "./icons";
 
 /** The label of a button that leaves for the browser: marked as such in the
  * desktop app only. */
-export const browserButton = (label: string) => (desktopApp() ? { children: `${label} ↗`, title: "Opens in your browser" } : { children: label });
+export const browserButton = (label: string) => (desktopApp() ? { children: <>{label} <ExternalIcon size="xs" /></>, title: "Opens in your browser" } : { children: label });
 
 /**
  * - `url`: where to go, or a getter for one that takes a request (checkout's).
@@ -130,7 +131,7 @@ export function BrowserStep({
                 openOutside(href) || window.open(href, "_blank", "noopener");
               }}
             >
-              Open again ↗
+              Open again <ExternalIcon size="xs" />
             </button>
             <button type="button" class="secondary" data-browser-step-again disabled={checking} onClick={() => void again()}>
               Check again

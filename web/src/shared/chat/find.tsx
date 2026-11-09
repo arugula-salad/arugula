@@ -2,16 +2,19 @@
 // and what needs you) over control's rooms (M123). The switcher
 // (Ctrl/Cmd+K) is ./rooms'.
 
+import { EmptyLine, EmptyState } from "../ui/block-states";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
 import type { ChatStore } from "../chat-store";
 import type { ChatHit, ChatMessage, ChatRoom } from "../proto";
 import { AuthorAvatar, roomLabel, roomSigil, machineName } from "./room";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
 import { handled } from "./escape";
+import { Bar, BarTitle, BarWhere } from "../ui/bar";
+import { ChevronIcon, IconButton } from "../ui/icons";
 
 export function when(at: number): string {
   const d = new Date(at);
@@ -22,20 +25,21 @@ export function when(at: number): string {
 
 /** A view's head: its name (the platform page sets it as a page's, UI
  * audit #157), and a line about what's in it. */
-export function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
+export function ViewHead({ title, sub, phone, back = "Every thread" }: { title: string; sub?: string; phone: boolean; back?: string }) {
   const { nav } = usePlatformApi();
   return (
-    <header class="chat-head chat-view-head">
-      {phone && (
-        <button class="chat-back" title="Every thread" onClick={() => nav.openChat()}>
-          ‹
-        </button>
-      )}
-      <div class="chat-title">
-        <strong>{title}</strong>
-        {sub && <span>{sub}</span>}
-      </div>
-    </header>
+    <Bar
+      class="chat-head chat-view-head"
+      lead={
+        phone ? (
+          <IconButton label={back} class="chat-back" onClick={() => nav.openChat()}>
+            <ChevronIcon dir="left" size="md" />
+          </IconButton>
+        ) : undefined
+      }
+      title={<BarTitle class="chat-title">{title}</BarTitle>}
+      where={sub ? <BarWhere>{sub}</BarWhere> : undefined}
+    />
   );
 }
 
@@ -71,7 +75,7 @@ function RoomHits({ store, hits, mark }: { store: ChatStore; hits: { room: strin
               <span class="chat-hit-body">
                 <AuthorAvatar m={m} />
                 <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-                  <b>{authorLabel(m)}</b>
+                  <AuthorName m={m} />
                   {m.text ? <Markup text={m.text} mark={mark} /> : <p class="thread-text">{m.quote}</p>}
                 </span>
               </span>
@@ -115,8 +119,8 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
       <ViewHead title="Search" sub={q ? (hits === null ? `Looking for “${q}”…` : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"} for “${q}”`) : undefined} phone={phone} />
       {phone && <SearchField route={{ view: "search", q }} phone />}
       <div class="thread-list">
-        {!q && <p class="thread-empty">Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</p>}
-        {q && hits?.length === 0 && !err && <p class="thread-empty">No messages match.</p>}
+        {!q && <EmptyLine>Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</EmptyLine>}
+        {q && hits?.length === 0 && !err && <EmptyLine>No messages match.</EmptyLine>}
         {err && <p class="thread-error">{err}</p>}
         <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} mark={hitMark(q)} />
       </div>
@@ -154,7 +158,9 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
       <ViewHead title="Activity" sub="What needs you on every machine, and mentions of you" phone={phone} />
       <div class="thread-list">
         {NeedsYou && <NeedsYou />}
-        {hits.length === 0 && needs === 0 && <p class="thread-empty">Nothing for you yet. When an agent asks you something or finishes, or someone @mentions you, it's here.</p>}
+        {hits.length === 0 && needs === 0 && (
+          <EmptyState title="Nothing for you yet." why="When an agent asks you something or finishes, or someone @mentions you, it's here." />
+        )}
         {hits.length > 0 && needs > 0 && <h3 class="activity-head">Messages</h3>}
         <RoomHits store={store} hits={hits.slice(0, 100)} />
       </div>

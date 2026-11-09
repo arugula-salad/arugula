@@ -3,13 +3,14 @@
 // set, then the picker for the rest), and the long-press itself. The
 // quick set, tooltips and the optimistic update are in ./reactions.ts.
 
-import type { ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
+import { escapeTaken, pressedShut } from "../ui/menu";
 import { EmojiPicker } from "./emoji-picker";
 import { handled } from "./escape";
-import { QUICK, tip } from "./reactions";
+import { MachineIcon, ReactIcon } from "../ui/icons";
+import { peopleOf, QUICK, tip } from "./reactions";
 
 /** Whether `room` takes reactions on `m` (an archive's messages and a
  * read-only room's do not). */
@@ -42,29 +43,38 @@ export function ReactionChips({
   const may = mayReact(room, m);
   return (
     <div class="reactions" role="group" aria-label="Reactions">
-      {reactions.map((c) => (
-        <button
-          type="button"
-          key={c.emoji}
-          class={c.mine ? "reaction mine" : "reaction"}
-          title={tip(c, chat.me)}
-          aria-label={`${c.count} reacted with ${c.emoji}${c.mine ? ", including you" : ""}`}
-          aria-pressed={c.mine}
-          disabled={!may}
-          data-reaction={c.emoji}
-          onClick={() => toggle(room, m, c.emoji, setError)}
-        >
-          <span class="reaction-emoji">{c.emoji}</span>
-          <span class="reaction-count">{c.count}</span>
-        </button>
-      ))}
+      {reactions.map((c) => {
+        const agents = c.agents ?? 0;
+        const people = peopleOf(c);
+        return (
+          <button
+            type="button"
+            key={c.emoji}
+            class={c.mine ? "reaction mine" : "reaction"}
+            title={tip(c, chat.me)}
+            aria-label={`${people ? `${people} ${people === 1 ? "person" : "people"}` : ""}${people && agents ? " and " : ""}${agents ? `${agents} ${agents === 1 ? "agent" : "agents"}` : ""} reacted with ${c.emoji}${c.mine ? ", including you" : ""}`}
+            aria-pressed={c.mine}
+            disabled={!may}
+            data-reaction={c.emoji}
+            onClick={() => toggle(room, m, c.emoji, setError)}
+          >
+            <span class="reaction-emoji">{c.emoji}</span>
+            {people > 0 && <span class="reaction-count">{people}</span>}
+            {agents > 0 && (
+              <>
+                {people > 0 && <span class="reaction-sep" aria-hidden="true" />}
+                <span class="reaction-agents" data-reaction-agents={agents}>
+                  <MachineIcon size="xs" />
+                  {agents}
+                </span>
+              </>
+            )}
+          </button>
+        );
+      })}
       {may && (
         <button type="button" class="reaction add" title="Add a reaction" aria-label="Add a reaction" data-react-button onClick={open}>
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <circle cx="8" cy="8" r="6.2" />
-            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
-            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
-          </svg>
+          <ReactIcon />
         </button>
       )}
     </div>
@@ -72,7 +82,8 @@ export function ReactionChips({
 }
 
 /** Closes a popover on Escape and on a press outside it, but not on `keep`:
- * the buttons that toggle it themselves, and the picker, which closes itself. */
+ * the buttons that toggle it themselves, and the picker, which closes itself
+ * (and takes its own Escape). */
 export function useDismiss(root: { current: HTMLElement | null }, close: () => void, keep: string) {
   useEffect(() => {
     const away = (e: PointerEvent) => {
@@ -80,7 +91,8 @@ export function useDismiss(root: { current: HTMLElement | null }, close: () => v
       if (!root.current?.contains(t) && !t?.closest(`${keep}, [data-emoji-picker]`)) close();
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      // The picker's Escape shuts only the picker.
+      if (e.key !== "Escape" || escapeTaken(e)) return;
       handled(e);
       close();
     };
@@ -93,64 +105,76 @@ export function useDismiss(root: { current: HTMLElement | null }, close: () => v
   }, [close]);
 }
 
-/** The quick set under the toolbar (a sheet along the bottom on a phone),
- * and "more…" for the picker. Closes after one is chosen, on Escape and on
- * a press outside. As the long-press sheet it carries the message's other
- * items (`children`) under the emoji, and without `react` only those. */
-export function ReactMenu({
-  room,
-  m,
-  close,
-  setError,
-  react = true,
-  children,
-}: {
-  room: ChatRoom;
-  m: ChatMessage;
-  close: () => void;
-  setError: (e: string | null) => void;
-  react?: boolean;
-  children?: ComponentChildren;
-}) {
+/** The quick set and "more…" for the picker, as buttons: each adds the
+ * emoji (or takes mine back) and calls `close`. They sit in the toolbar's
+ * menu, and at the top of the long-press menu (`ReactRow`). */
+function ReactButtons({ room, m, close, setError, onMore }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void; onMore?: () => void }) {
   const [more, setMore] = useState(false);
-  // The picker opens below the menu unless the room under it is short (the
-  // last message: it would grow the list's scroll area) and above has more.
-  const [above, setAbove] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const menu = root.current;
-    const picker = menu?.querySelector<HTMLElement>(".emoji-picker");
-    if (!menu || !picker || matchMedia("(max-width: 600px)").matches) return;
-    const m = menu.getBoundingClientRect();
-    const list = menu.closest(".thread-list")?.getBoundingClientRect();
-    const h = picker.offsetHeight + 4;
-    const below = Math.min(list?.bottom ?? innerHeight, innerHeight) - m.bottom;
-    const over = m.top - Math.max(list?.top ?? 0, 0);
-    setAbove(below < h && over > below);
-  }, [more]);
-  useDismiss(root, close, "[data-react-button]");
+  const moreButton = useRef<HTMLButtonElement>(null);
   const choose = (emoji: string) => {
     toggle(room, m, emoji, setError);
     close();
   };
   return (
-    <div class={children ? "react-menu with-items" : "react-menu"} ref={root} role="menu" aria-label={children ? "Message" : "React"} data-react-menu>
-      {react &&
-        QUICK.map((e) => {
-          const mine = !!m.reactions?.some((c) => c.emoji === e && c.mine);
-          return (
-            <button type="button" role="menuitem" key={e} class={mine ? "mine" : ""} aria-pressed={mine} aria-label={`React with ${e}`} data-quick={e} onClick={() => choose(e)}>
-              {e}
-            </button>
-          );
-        })}
-      {react && (
-        <button type="button" role="menuitem" class="more" aria-label="More emoji" aria-expanded={more} data-react-more onClick={() => setMore((v) => !v)}>
-          …
-        </button>
-      )}
-      {more && <EmojiPicker pick={choose} close={close} above={above} />}
-      {children && <div class="react-menu-items">{children}</div>}
+    <>
+      {QUICK.map((e) => {
+        const mine = !!m.reactions?.some((c) => c.emoji === e && c.mine);
+        return (
+          <button type="button" role="menuitem" key={e} class={mine ? "mine" : ""} aria-pressed={mine} aria-label={`React with ${e}`} data-quick={e} onClick={() => choose(e)}>
+            {e}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        role="menuitem"
+        class="more"
+        aria-label="More emoji"
+        aria-expanded={more}
+        data-react-more
+        ref={moreButton}
+        onClick={() => (onMore ? onMore() : pressedShut(moreButton.current) || setMore((v) => !v))}
+      >
+        …
+      </button>
+      {more && <EmojiPicker from={moreButton} pick={choose} close={() => setMore(false)} />}
+    </>
+  );
+}
+
+/** The quick set under the toolbar. Closes after one is chosen, on Escape
+ * and on a press outside. */
+export function ReactMenu({ room, m, close, setError }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  useDismiss(root, close, "[data-react-button]");
+  return (
+    <div class="react-menu" ref={root} role="menu" aria-label="React" data-react-menu>
+      <ReactButtons room={room} m={m} close={close} setError={setError} />
+    </div>
+  );
+}
+
+/** The picker for a message's reactions, from the long-press menu's "more…":
+ * that menu has shut by now, so it hangs from the message. */
+export function ReactPicker({ room, m, from, close, setError }: { room: ChatRoom; m: ChatMessage; from: { current: HTMLElement | null }; close: () => void; setError: (e: string | null) => void }) {
+  return (
+    <EmojiPicker
+      from={from}
+      pick={(emoji) => {
+        toggle(room, m, emoji, setError);
+        close();
+      }}
+      close={close}
+    />
+  );
+}
+
+/** The same row, at the top of the message menu a long-press opens (its
+ * `head`): the menu's items follow it. */
+export function ReactRow({ room, m, close, setError, more }: { room: ChatRoom; m: ChatMessage; close: () => void; setError: (e: string | null) => void; more: () => void }) {
+  return (
+    <div class="react-menu react-row" role="group" aria-label="React" data-react-menu>
+      <ReactButtons room={room} m={m} close={close} setError={setError} onMore={more} />
     </div>
   );
 }

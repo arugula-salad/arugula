@@ -80,7 +80,7 @@ pub async fn run(f: &dyn Fixture) {
     push_options(f).await;
     cloud(f).await;
     projects(f).await;
-    pokes(f).await;
+    github(f).await;
     // Last: it prunes the feed.
     changes(f).await;
 }
@@ -116,7 +116,8 @@ async fn principals(f: &dyn Fixture) {
     assert!(resolve(Principal::Cli { account: "acct-pa".into(), device: "cli-none".into() }).await.is_none());
 
     let d = Principal::Daemon { account: "acct-pa".into(), daemon: "dmn-pa".into() };
-    let box_ = Daemon { id: "dmn-pa".into(), account: "acct-pa".into(), team: None, name: "pa-box".into() };
+    let box_ =
+        Daemon { id: "dmn-pa".into(), account: "acct-pa".into(), team: None, name: "pa-box".into(), aliases: vec![] };
     assert_eq!(resolve(d.clone()).await.expect("its machine").daemon, Some(box_));
     let theirs = Principal::Daemon { account: "acct-pb".into(), daemon: "dmn-pa".into() };
     assert!(resolve(theirs).await.is_none(), "another account's machine");
@@ -217,6 +218,7 @@ async fn daemons(f: &dyn Fixture) {
         account: "acct-ma".into(),
         team: team.map(Into::into),
         name: name.into(),
+        aliases: vec![],
     };
     assert_eq!(got, [d("dmn-m1", None, "m-uno"), d("dmn-m2", Some("t-m"), "m-two")]);
 
@@ -391,21 +393,9 @@ async fn cloud(f: &dyn Fixture) {
     assert!(!hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a revoked grant");
 }
 
-/// Relaying a webhook's pokes (M161): to no daemon when none watches the
-/// repository, nothing for no pokes. Who hears one is `forge_wire`'s, over
-/// real relay sockets.
-async fn pokes(f: &dyn Fixture) {
+/// GitHub identities, and what machines on the relay are doing.
+async fn github(f: &dyn Fixture) {
     let hub = f.hub();
-    let poke = arugula_control_wire::forge::Poke {
-        provider: "github".into(),
-        host: "github.com".into(),
-        repo: "nobody/watches".into(),
-        number: Some(1),
-        event: "pull_request".into(),
-        delivery: "d-contract".into(),
-    };
-    assert_eq!(hub.forge_pokes(&[poke]).await.unwrap(), 0);
-    assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
     // M163: who someone is on GitHub; nobody, for an account that isn't.
     assert_eq!(hub.github_user("acct-none").await.unwrap(), None);
     // M235: who signs in with a numeric GitHub id, by the number only (the

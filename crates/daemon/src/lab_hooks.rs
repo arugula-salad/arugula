@@ -42,8 +42,6 @@ pub struct Start {
     pub guest_host: Option<String>,
     /// `--guest-ssh` or `--guest-ssh-host` wasn't left at its default.
     pub guest_given: bool,
-    /// Where the static binaries a resident daemon runs are.
-    pub static_dir: PathBuf,
 }
 
 /// Which decision and run made each hunk of a file (#619), as Labs reads it
@@ -59,34 +57,8 @@ pub trait FileWhy: Send + Sync {
 pub trait Hooks: Send + Sync + 'static {
     // ------------------------------------------------------------ start-up
 
-    /// `arugulad install --tailnet`: joins a tailnet with a userspace
-    /// tailscaled and keeps the daemon running there.
-    #[cfg(unix)]
-    fn tailnet_install(&self, _cmd: crate::args::Command) -> anyhow::Result<()> {
-        anyhow::bail!(not_built("A tailnet sandbox"))
-    }
-
-    /// `arugulad sandbox`: keeps tailscaled and the daemon running, as
-    /// `install --tailnet` set them up.
-    fn supervise_sandbox(&self) -> anyhow::Result<()> {
-        if cfg!(unix) {
-            anyhow::bail!(not_built("The sandbox supervisor"))
-        }
-        anyhow::bail!("the sandbox supervisor is for Linux boxes")
-    }
-
-    /// The sandbox provider VM panes get their machines from: the Sprites
-    /// API at `url`, with the token in `token_file`. `given`: the flags
-    /// weren't left at their defaults.
-    fn open_provider(&self, url: &str, _token_file: &Path, given: bool) -> Option<Arc<dyn Provider>> {
-        if given {
-            tracing::warn!(url, "{}", not_built("VMs"));
-        }
-        None
-    }
-
-    /// The sandbox provider when it's loam: its API at `url`, with a
-    /// project key in `key_file`.
+    /// The sandbox provider VM panes get their machines from, loam: its
+    /// API at `url`, with a project key in `key_file`.
     fn open_loam(&self, url: &str, _key_file: &Path) -> Option<Arc<dyn Provider>> {
         tracing::warn!(url, "{}", not_built("VMs"));
         None
@@ -130,7 +102,7 @@ pub trait Hooks: Send + Sync + 'static {
     }
 
     /// Adds what makes a daemon a home daemon for VMs (its provider's
-    /// sandboxes, the tunnel to resident daemons) and the owner's guest ssh
+    /// sandboxes) and the owner's guest ssh
     /// invites (`/api/guests`, which a build without Labs answers with 501
     /// and "Guest ssh isn't in this build", so `arugula share --guest` says
     /// so).
@@ -160,6 +132,13 @@ pub trait Hooks: Send + Sync + 'static {
     /// Whether this machine offers agents to its teams' members (#399).
     fn offers_agents(&self, _state_dir: &Path) -> bool {
         false
+    }
+
+    /// The owner's ssh invites that still work (Arugula #681: the access
+    /// view lists them as `GET /api/guests` does). `None` in a build
+    /// without guest ssh, or before its store is open.
+    fn guests(&self) -> Option<Vec<arugula_proto::api::GuestInvite>> {
+        None
     }
 
     /// What Labs tells control on the link's text channel (guest routes).
