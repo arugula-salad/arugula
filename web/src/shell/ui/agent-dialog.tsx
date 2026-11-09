@@ -12,6 +12,7 @@ import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter, loadAdapters, type Adapter } from "./adapter";
 import { pickConversation } from "./conversations";
 import { AgentCanCard } from "./agent-can";
+import { Modal } from "../../shared/ui/modal";
 
 type Kind = "claude" | "codex" | "acp";
 
@@ -142,18 +143,27 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   };
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <form
-        class="prompt agent-dialog"
-        aria-label="Start an agent"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-        onKeyDown={(e) => e.key === "Escape" && close()}
-      >
-        <h2>Start an agent</h2>
-        <p class="hint">
+    <Modal
+      title="Start an agent"
+      class="agent-dialog"
+      close={close}
+      buttons={
+        <>
+          <button class="secondary" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={blocked}>
+            Start
+          </button>
+        </>
+      }
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <div class="agent-body">
+        <p class="dim">
           Or{" "}
           <button
             type="button"
@@ -189,7 +199,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           </label>
         )}
         {vm && kind === "claude" && (
-          <p class="hint">Claude Code in a VM uses the token in ~/.config/arugula/claude-oauth-token (from `claude setup-token`).</p>
+          <p class="dim">Claude Code in a VM uses the token in ~/.config/arugula/claude-oauth-token (from `claude setup-token`).</p>
         )}
         {adapter && (
           <AdapterHelp
@@ -229,7 +239,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             </datalist>
           </label>
           <label>
-            MCP servers <span class="hint">NAME=COMMAND, one a line</span>
+            MCP servers <span class="dim">NAME=COMMAND, one a line</span>
             <textarea
               name="mcp"
               rows={2}
@@ -244,7 +254,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             </p>
           )}
           <label>
-            Allow without asking <span class="hint">tools, as "always" on a card</span>
+            Allow without asking <span class="dim">tools, as "always" on a card</span>
             <input name="allow" value={allow} placeholder="Read, Edit, Bash" onInput={(e) => setAllow(e.currentTarget.value)} />
           </label>
           {kind === "claude" && (
@@ -262,15 +272,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             promptRef.current?.focus();
           }}
         />
-        <div class="prompt-buttons">
-          <button class="secondary" type="button" onClick={close}>
-            Cancel
-          </button>
-          <button type="submit" class="primary" disabled={blocked}>
-            Start
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </Modal>
   );
 }

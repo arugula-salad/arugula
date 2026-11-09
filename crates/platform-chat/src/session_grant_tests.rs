@@ -26,7 +26,7 @@ use crate::{
         issues::{Actor, NewIssue},
         jobs::JobKind,
         projects::{SESSIONS_REPLY, SESSIONS_START},
-        sessions::{PromptState, Session, State},
+        sessions::{AgentSession, PromptState, State},
     },
     jobs::{Clock, Handler as _, Step},
     sessions_hydrate_tests::{add_box, allow, box_says, forbid, lines, platform, post_in, sessions, take},
@@ -77,7 +77,7 @@ async fn step(app: &std::sync::Arc<Platform>, s: &str) -> Step {
 }
 
 /// A session b asked for in #general, the box's and its thread's: `p`.
-async fn session(base: &str, app: &Platform, t: &str, ask: &str) -> (Session, i64) {
+async fn session(base: &str, app: &Platform, t: &str, ask: &str) -> (AgentSession, i64) {
     let p = post_in(base, ROOM, "b", &format!("@arugula {ask}"), None).await["seq"].as_i64().unwrap();
     let s = sessions(app, t).into_iter().find(|s| s.parent_seq == p as u64).expect("a session");
     (s, p)

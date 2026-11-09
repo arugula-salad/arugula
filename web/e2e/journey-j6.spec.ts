@@ -271,7 +271,7 @@ test("J6: two people on one tailnet, no control: share by login, watch, drive, a
       "ben",
       "browser",
       () => ben!,
-      (p) => p.getByText("✎ you drive", { exact: true }),
+      (p) => p.getByText("you drive", { exact: true }),
       async (p) => {
         await clickTerminal(p);
         j.typed("echo hi-from-ben-$((6*7))");

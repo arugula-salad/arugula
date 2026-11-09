@@ -211,10 +211,18 @@ impl Db {
     /// reason)` that holds now, a thread's mentions aside (M202: those are
     /// [`Db::notice_inbox`]'s). Rows that no longer hold go (an account
     /// not in `want` has none left); a reason that holds keeps its row, so
-    /// what was seen and done stays. The rows made now, which are what a
-    /// push is for: on two machines at once, only one makes each.
-    pub fn set_inbox(&self, item: &str, want: &[(String, String)], now: u64) -> anyhow::Result<Vec<(String, String)>> {
-        let want: BTreeSet<&(String, String)> = want.iter().collect();
+    /// what was seen and done stays. The accounts in `keep` (GitHub
+    /// couldn't be asked whether they may read it) keep their rows as
+    /// they are, and get none. The rows made now, which are what a push is
+    /// for: on two machines at once, only one makes each.
+    pub fn set_inbox(
+        &self,
+        item: &str,
+        want: &[(String, String)],
+        keep: &[String],
+        now: u64,
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        let want: BTreeSet<&(String, String)> = want.iter().filter(|(a, _)| !keep.contains(a)).collect();
         let mut c = self.c();
         let tx = c.immediate()?;
         let have: Vec<(String, String)> = tx.query_map(
@@ -225,7 +233,7 @@ impl Db {
             params![item],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        for (a, r) in have.iter().filter(|h| !want.contains(h)) {
+        for (a, r) in have.iter().filter(|h| !want.contains(h) && !keep.contains(&h.0)) {
             tx.execute(
                 "DELETE FROM inbox_items WHERE account = ?1 AND item = ?2 AND reason = ?3",
                 params![a, item, r],

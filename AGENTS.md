@@ -214,13 +214,13 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
   (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
   the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
-  Sprites adapter and `labs/sandboxes.rs` in Labs), tailscaled
+  loam adapter, `labs/loam.rs`, and `labs/sandboxes.rs` in Labs), tailscaled
   (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
@@ -295,7 +295,7 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
-only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines and the
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the loam adapter, machines and the
 sandboxes list) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
@@ -316,6 +316,13 @@ the way `labs` is. Both are crates the binary registers (#232): the surface asks
 (nothing, or "isn't in this build"), so no call site needs a `cfg`.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
+
+## Building UI
+
+Read [docs/design/language.md](docs/design/language.md) before you build or
+restyle a page, pane, dialog, list or menu in `web/`: it names the shared
+component for each piece (type, colour, buttons, headers, rows, chips,
+dialogs, menus, empty states) and what not to invent.
 
 ## Commands
 
@@ -359,6 +366,15 @@ lints the daemon with neither, and with each alone.
   Arugula pane). Agents building side by side: `CARGO_BUILD_JOBS=4`.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
+
+## Release notes
+
+A pull request that changes what people using Arugula get adds a file in
+`docs/notes/` (`docs/notes/README.md` has the format): its `line` says, in one
+sentence, what it means for them. A change nobody would notice says so in a commit
+message instead: `Release-note: none, WHY`. The `notes` check fails until it has one
+or the other; a change only to docs, tests, CI or scripts needs neither. Releases
+are built from these, so nobody writes a release's notes at the end.
 
 ## Changing CI, and a red main
 

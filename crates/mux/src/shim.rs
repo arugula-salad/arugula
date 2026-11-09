@@ -226,6 +226,7 @@ pub fn run(args: &[String]) -> ! {
             let recorded = append(
                 &record,
                 &format!("pid {pid} {}\nshim {me} {}\n", start_time(pid).unwrap_or(0), start_time(me).unwrap_or(0)),
+                true,
             );
             // Nobody is left to close it, or could find it to: close it now.
             if hung_up || !recorded {
@@ -240,7 +241,7 @@ pub fn run(args: &[String]) -> ! {
                     Err(_) => break "exit -1\n".into(),
                 }
             };
-            append(&record, &status);
+            append(&record, &status, false);
             if let Some(s) = socket {
                 let _ = std::fs::remove_file(s);
             }
@@ -282,9 +283,14 @@ fn parse(args: &[String]) -> Option<(String, Option<String>, Vec<String>)> {
     (!argv.is_empty()).then_some((record, hold, argv))
 }
 
+/// Add to the record. Only the first line (`create`) makes the file: a record
+/// gone by the time the program ends means its pane's directory is being
+/// removed, and a file put back there would stop that removal with ENOTEMPTY.
+/// A daemon's death ends its panes at once, so that's when whoever stopped it
+/// is deleting its state.
 #[cfg(unix)]
-fn append(path: &str, line: &str) -> bool {
-    let Ok(mut f) = OpenOptions::new().create(true).append(true).mode(0o600).open(path) else { return false };
+fn append(path: &str, line: &str, create: bool) -> bool {
+    let Ok(mut f) = OpenOptions::new().create(create).append(true).mode(0o600).open(path) else { return false };
     let written = f.write_all(line.as_bytes()).is_ok();
     let _ = f.sync_data();
     written
@@ -412,6 +418,23 @@ mod tests {
         std::fs::write(&path, "pid 42 7\nexit 3\n").unwrap();
         assert_eq!(read_record(&path).exit, Some(Ended::Code(3)));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn how_a_program_ended_does_not_put_a_removed_record_back() {
+        let dir = std::env::temp_dir().join(format!("arugula-shim-gone-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("process");
+        let record = path.to_str().unwrap();
+        assert!(!append(record, "exit 0\n", false), "nothing to add to yet");
+        assert!(!path.exists());
+        assert!(append(record, "pid 1 5\n", true));
+        assert!(append(record, "exit 0\n", false));
+        assert_eq!(read_record(&path).exit, Some(Ended::Code(0)));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!append(record, "exit 0\n", false));
+        std::fs::remove_dir(&dir).expect("the directory is empty, so it goes");
     }
 
     #[test]

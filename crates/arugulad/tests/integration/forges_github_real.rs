@@ -218,10 +218,7 @@ fn daemon(dir: &Path, token: Option<&str>, env: &[(&str, &str)]) -> Daemon {
     let mut all = vec![("PATH", path.as_str()), ("ARUGULA_FORGE_POLL_MS", "2000,2000")];
     all.retain(|(k, _)| !env.iter().any(|(e, _)| e == k));
     all.extend_from_slice(env);
-    Daemon::child_env(
-        &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
-        &all,
-    )
+    Daemon::child_env(&["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"], &all)
 }
 
 fn info(d: &Daemon, pane: u64) -> Value {

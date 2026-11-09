@@ -41,7 +41,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }
-# wss:// for connect_async (Sprites, loam): TLS with the system's roots.
+# wss:// for connect_async (loam): TLS with the system's roots.
 # Before the server had its own workspace (server/Cargo.toml) the daemon
 # got this from arugula-control's, built beside it.
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }

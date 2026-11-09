@@ -6,13 +6,22 @@
 //! Each step, for a session that hasn't ended:
 //! - **Its workspace gone** (deleted, or being deleted): the session
 //!   stops, saying so.
+//! - **Its workspace failed** (Arugula #744): its box isn't woken, and a
+//!   queued session isn't failed as not taken: it waits for a rebuild,
+//!   which moves it to the new box. One whose workspace stays failed for
+//!   [`FAILED_END_MS`] stops, saying so ([`WORKSPACE_FAILED`]).
+//! - **Left on the old box:** a session still on a machine its workspace
+//!   no longer has (a rebuild's move that didn't go through) is moved
+//!   again each look (`hosted::sessions_on_box_changed`); one that hasn't
+//!   moved in [`work::TAKE_MS`] fails, saying so ([`NOT_MOVED`]).
 //! - **Waiting for its box** (`queued`, or `done` with a prompt queued,
 //!   or `unresponsive`): the box is woken through M182's `hosted::wake`
 //!   when it's paused or hasn't been heard from in [`work::QUIET_MS`], at
 //!   most once every [`work::WAKE_EVERY_MS`]. A box that runs a turn says
 //!   it's busy, which holds it (M181).
 //! - **Not taken:** a `queued` session no box took in [`work::TAKE_MS`]
-//!   while its box had room fails, saying so. One waiting for room (the
+//!   while its box had room fails, saying so. A failed workspace, or one
+//!   being made again, has no box to take it: its wait starts over then. One waiting for room (the
 //!   box runs `MAX_SESSIONS_PER_BOX` sessions, done ones not yet parked
 //!   too, or holds `MAX_HELD_SESSIONS_PER_BOX`, parked ones too:
 //!   `Db::box_has_room`) waits, and its wait is counted from when room
@@ -78,6 +87,17 @@ pub const IDLE_END_MS: u64 = 24 * 60 * 60_000;
 /// it), then the words.
 pub const IDLE: &str = "idle";
 
+/// How long a session waits on a failed workspace for a rebuild to move it
+/// before it ends ([`WORKSPACE_FAILED`]): a day, as an idle one does.
+pub const FAILED_END_MS: u64 = IDLE_END_MS;
+
+/// Why a session stopped when its workspace stayed failed (Arugula #744).
+pub const WORKSPACE_FAILED: &str = "workspace_failed: its cloud workspace failed and wasn't rebuilt within a day. Ask again in the thread to start a new session";
+
+/// Why a session failed when it didn't move to its workspace's new box
+/// within [`work::TAKE_MS`] of the job first seeing it on the old one.
+pub const NOT_MOVED: &str = "not_moved: its workspace was rebuilt, and it couldn't move to the new box. Ask again in the thread to start a new session";
+
 /// [`IDLE_END_MS`], unless `ARUGULA_SESSION_IDLE_END` says how many
 /// seconds.
 pub fn idle_end_ms() -> u64 {
@@ -107,9 +127,19 @@ pub struct Checkpoint {
     /// When the job last asked for its box's wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub woke_at: Option<u64>,
-    /// When the job last saw a queued session's box with no room for it.
+    /// When the job last saw a queued session's box with no room for it,
+    /// or no box at all (its workspace failed, or being made again).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_at: Option<u64>,
+    /// When the job first saw the session on a machine its workspace no
+    /// longer has (a rebuild's move that didn't go through), while it
+    /// still is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stranded_at: Option<u64>,
+    /// When the job first saw the session's workspace failed, while it
+    /// still is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_since: Option<u64>,
     /// Its thread was told its project has no standing grant, and there
     /// still isn't one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -155,6 +185,50 @@ impl Follow {
             info!(session = s.id, reason = WORKSPACE_GONE, "a session stopped");
             return Ok(Step::Done);
         };
+        let mut cp = job
+            .checkpoint
+            .as_ref()
+            .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
+            .unwrap_or_default();
+        // Still on a machine its workspace no longer has: a rebuild's move
+        // (`hosted::sessions_on_box_changed`, once as the new box enrolled)
+        // didn't go through, and the new box doesn't take a session bound
+        // to the old one. Moved again here, each look, until it goes; one
+        // that hasn't in [`work::TAKE_MS`] fails, saying so.
+        let stranded = match (&w.machine, &s.machine) {
+            (Some(now_on), Some(was)) => w.state != "failed" && now_on != was,
+            _ => false,
+        };
+        if stranded {
+            // This session alone: its own job moves each of the others.
+            let moved = match &w.machine {
+                Some(m) => crate::hosted::move_session(&self.app, &s, m).await?,
+                None => false,
+            };
+            if moved {
+                cp.stranded_at = None;
+                job.checkpoint = Some(serde_json::to_value(&cp)?);
+                db.checkpoint_job(job, now)?;
+                info!(session = s.id, workspace = w.id, "a session moved to its workspace's new box, tried again");
+                return Ok(Step::Again(now));
+            }
+            let since = *cp.stranded_at.get_or_insert(now);
+            if now.saturating_sub(since) > work::TAKE_MS {
+                let why = json!({ "reason": NOT_MOVED });
+                if control(&self.app, &s.id, s.state, State::Failed, why, now)? {
+                    info!(
+                        session = s.id,
+                        workspace = w.id,
+                        "a session that didn't move to its workspace's new box failed"
+                    );
+                    return Ok(Step::Done);
+                }
+                return Ok(Step::Again(now + work::WAITING_MS));
+            }
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
+            return Ok(Step::Again(now + work::WAITING_MS));
+        }
         // Gone quiet mid-turn.
         let mut state = s.state;
         if state.watched() && s.heard_at.unwrap_or(s.updated_at).saturating_add(QUIET_MS) <= now {
@@ -173,6 +247,31 @@ impl Follow {
                 return Ok(Step::Done);
             }
         }
+        // Its workspace failed (its box is gone, its daemon didn't come
+        // back, or the hub removed its machine): waking it answers the same
+        // each time, so it isn't woken, and a queued session isn't failed
+        // as not taken. It waits as it is, for a rebuild to move it to the
+        // new box; one that hasn't come in [`FAILED_END_MS`] ends.
+        if w.state == "failed" {
+            let since = *cp.failed_since.get_or_insert(now);
+            // No box to take it: its 15 minutes don't run (Arugula #744).
+            cp.full_at = Some(now);
+            if now.saturating_sub(since) >= FAILED_END_MS {
+                let why = json!({ "reason": WORKSPACE_FAILED });
+                if control(&self.app, &s.id, state, State::Stopped, why, now)? {
+                    info!(session = s.id, workspace = w.id, "a session on a workspace failed a day stopped");
+                    return Ok(Step::Done);
+                }
+                return Ok(Step::Again(now + work::WAITING_MS));
+            }
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
+            return Ok(Step::Again(now + IDLE_MS.min((since + FAILED_END_MS).saturating_sub(now).max(1))));
+        }
+        if cp.failed_since.take().is_some() {
+            job.checkpoint = Some(serde_json::to_value(&cp)?);
+            db.checkpoint_job(job, now)?;
+        }
         // A revoke took it back: it ends, unless a turn is under way.
         if state != State::Working && grant::ended_by_revoke(db, &s)? {
             let s = db.session(&s.id)?.filter(|s| !s.state.terminal());
@@ -183,11 +282,6 @@ impl Follow {
             }
             return Ok(Step::Done);
         }
-        let mut cp = job
-            .checkpoint
-            .as_ref()
-            .and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok())
-            .unwrap_or_default();
         if !granted {
             // A box was to take it: it can't.
             if state == State::Queued {
@@ -233,10 +327,11 @@ impl Follow {
             _ => false,
         };
         let room = db.box_has_room(&s.workspace, &s.id, now)?;
-        // Not taken while its box had room: counted from its making, or
-        // from when the job last saw the box full.
+        // Not taken while its box had room: counted from its making (or its
+        // move to a rebuilt box), or from when the job last saw the box
+        // full, failed, or being made again (no box to take it then).
         if state == State::Queued {
-            if !room {
+            if !room || matches!(w.state.as_str(), "creating" | "enrolling") {
                 cp.full_at = Some(now);
                 job.checkpoint = Some(serde_json::to_value(&cp)?);
                 db.checkpoint_job(job, now)?;

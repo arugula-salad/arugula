@@ -129,8 +129,8 @@ ARUGULA_TESTNET_PLATFORM=in "$HERE/up.sh" control
 # shellcheck source=/dev/null
 . "$STATE/control.env"
 cport="$ARUGULA_TESTNET_CONTROL_PORT"
-# The dump's image, around this tree's static binary, as
-# scripts/ci-platform-deploy builds it; and its age keys (the testnet's own).
+# The dump's image, around this tree's static binary, as a release builds it
+# (server-release.yml); and its age keys (the testnet's own).
 ctx="$(mktemp -d)"
 cp "$ARUGULA_TESTNET_BINARIES/arugula-platform" "$ROOT/packaging/platform-dump/Dockerfile" "$ROOT/packaging/platform-dump/dump.sh" "$ctx/"
 docker build -q -t "$TESTNET-platform-dump" "$ctx" >/dev/null

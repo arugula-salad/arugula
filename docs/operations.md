@@ -181,8 +181,7 @@ recommends it stays that way. Of today's 63 top-level commands, none is one
 operation with the same arguments: each takes forms the API doesn't
 (`%N`, `-` for stdin, a default pane from `$ARUGULA_PANE`), renders its own
 summary, or spans several operations (`rules` is three routes, `shell-env`
-two, `close` reaches a remote pane's own host first, `run --home` and
-`agent` compose several calls). Deriving clap from the request type would
+two, `agent` composes several calls). Deriving clap from the request type would
 rename flags and change help, which is the drift the pilot must not cause.
 What the CLI gets is the method, the path and the types from one place.
 
@@ -231,9 +230,8 @@ operations, and may call an operation's handler.
   hand-written tools. Once the operations under them exist they call
   `O::handle(&cx, …)` instead of reaching the mux themselves, which is where
   the second copy goes away.
-- **Composed CLI commands:** `run --home`, `agent`, `close` (a remote pane's
-  host first), `send --wait`, `rules`. They stay hand-written commands, each
-  making several `call::<O>`.
+- **Composed CLI commands:** `agent`, `send --wait`, `rules`. They stay
+  hand-written commands, each making several `call::<O>`.
 - **Grouped MCP tools:** `list`, `show` and `draft` themselves stay
   hand-written: their lead text, the merged schema and the default kind.
   A kind that is one operation is declared (`list` kind `panes` in the
@@ -349,7 +347,7 @@ Branch `arch/451-ops-pilot`, three operations of different shapes:
 2. **A write with a role check:** `close`. HTTP: an editor on the pane's
    session, and an invite block refuses a guest or an agent. MCP: the
    `close` tool, where an agent block may close only what it started. CLI:
-   `arugula close`, which also closes a remote pane on its own host.
+   `arugula close`.
 3. **The awkward one:** the panes list. HTTP `GET /api/panes` answers every
    `PaneSummary` to the owner; MCP's `list` is a grouped tool and this is
    its default kind, `panes`, which confines an agent block to its tab,

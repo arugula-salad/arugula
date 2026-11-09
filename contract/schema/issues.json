@@ -328,6 +328,10 @@
     "IssueExport": {
       "description": "Every issue in a project, by number, with its timeline and comments.",
       "properties": {
+        "comments_in_chat": {
+          "description": "The comments were left out: they're in chat, which is off for the\nreader (Arugula #746). Absent when they're there.",
+          "type": "boolean"
+        },
         "exported_at": {
           "format": "uint64",
           "minimum": 0,

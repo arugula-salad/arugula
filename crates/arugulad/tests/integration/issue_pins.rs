@@ -154,7 +154,7 @@ fn a_native_issue_block_is_a_pin_read_as_the_machine() {
     *f.title.lock().unwrap() = "The canary fails".into();
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("issuepins")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_FORGE_POLL_MS", "200,200")
         .args(["--direct-url", "http://127.0.0.1:0", "--owner", OWNER])

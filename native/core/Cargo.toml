@@ -34,7 +34,7 @@ aws-lc-rs = { version = "1.18.1", default-features = false, features = ["aws-lc-
 
 # Its own workspace, out of the root's, so it can't slow down or break the
 # other builds. Not under crates/: every crates/*/Cargo.toml and the root's
-# Cargo.toml are hub inputs (scripts/ci-hub-changed), and a hub deploy drops
+# Cargo.toml are hub inputs (ops/src/control.component.ts), and a hub deploy drops
 # every relayed terminal.
 [workspace]
 

@@ -41,7 +41,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use serde_json::{Value, json};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     ApiError, App,
@@ -596,14 +596,62 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
 /// machine. Unlike a device's removal, which is a signed statement clients
 /// keep, this is control's word alone: control stops listing it, refuses
 /// its signatures and hangs up on it; the workspace's delete or rebuild
-/// deletes its sandbox (`HubPort::hosted_gone`).
+/// deletes its sandbox (`HubPort::hosted_gone`). The platform is told
+/// (`PlatformPort::hosted_removed`, Arugula #744), the only way it learns
+/// of it, so the workspace fails and its runs and sessions end. It's told
+/// in a task of its own, so a platform that hangs doesn't hold the
+/// request; one it can't be told now is told again
+/// ([`tell_untold_removals`]).
 pub async fn remove(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> R {
     let h = app.db.hosted(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
     let owner = Owner::parse(&h.cert.owner).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
     must_own(&app, &s, &owner)?;
     app.db.remove_hosted(&id, now_ms())?;
     app.relay.drop_daemon(&id);
+    tokio::spawn(async move { tell_removals(&app, Some(&id)).await });
     Ok(Json(json!({})))
+}
+
+/// Tell the platform of each hosted machine's removal it hasn't been told
+/// of (`untold_hosted_removals`), forgetting each it takes: how many it
+/// took. Taking one twice changes nothing for it. The deletions' round
+/// calls it (`account::start_telling`).
+pub async fn tell_untold_removals(app: &App) -> usize {
+    tell_removals(app, None).await
+}
+
+/// [`tell_untold_removals`], for machine `only` alone when it's named (an
+/// owner just removed it).
+pub(crate) async fn tell_removals(app: &App, only: Option<&str>) -> usize {
+    let untold = match app.db.untold_hosted_removals() {
+        Ok(u) => u.into_iter().filter(|r| only.is_none_or(|m| r.machine == m)).collect::<Vec<_>>(),
+        Err(e) => {
+            warn!(error = %e, "reading the hosted machines' removals the platform hasn't been told of");
+            return 0;
+        }
+    };
+    let mut told = 0;
+    for r in &untold {
+        match app.platform.hosted_removed(&r.workspace, &r.machine).await {
+            Ok(()) => match app.db.told_hosted_removal(&r.machine) {
+                Ok(()) => told += 1,
+                Err(e) => {
+                    warn!(machine = r.machine, error = %e, "forgetting a hosted removal the platform was told of")
+                }
+            },
+            Err(e) => {
+                warn!(
+                    machine = r.machine,
+                    error = format!("{e:#}"),
+                    "the platform wasn't told of a hosted machine's removal yet; trying again"
+                )
+            }
+        }
+    }
+    if told > 0 {
+        info!(told, left = untold.len() - told, "told the platform of removed hosted machines");
+    }
+    told
 }
 
 // ---------------------------------------------------------------- by hand

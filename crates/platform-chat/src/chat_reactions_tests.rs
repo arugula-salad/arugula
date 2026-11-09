@@ -158,12 +158,13 @@ async fn an_agent_reacts_with_threads_post_apart_from_its_owner() {
 
     let for_b = seen(&base, "b", seq).await;
     assert_eq!(for_b[0]["count"], 2, "the owner's and the agent's are two: {for_b}");
+    assert_eq!(for_b[0]["agents"], 1, "one of the two is an agent's: {for_b}");
+    // In the order made, unless both landed in one millisecond: then by
+    // account and agent, the owner's first.
     let who = for_b[0]["who"].as_array().unwrap();
-    assert_eq!(
-        (&who[0]["agent"], &who[0]["account"]),
-        (&json!({ "machine": "geek", "machine_name": "geek-box" }), &json!("a"))
-    );
-    assert_eq!(who[1]["agent"], Value::Null);
+    let agent = json!({ "machine": "geek", "machine_name": "geek-box" });
+    assert!(who.iter().any(|w| w["agent"] == agent && w["account"] == "a"), "its agent's: {for_b}");
+    assert!(who.iter().any(|w| w["agent"].is_null() && w["account"] == "a"), "the owner's own: {for_b}");
     let for_a = seen(&base, "a", seq).await;
     assert_eq!(for_a[0]["mine"], true);
     // The agent reads them, its own marked, not the owner's.
@@ -174,6 +175,7 @@ async fn an_agent_reacts_with_threads_post_apart_from_its_owner() {
     let (st, m) = geek(&base, "DELETE", &format!("{path}?emoji=%F0%9F%91%80"), None).await;
     assert_eq!(st, 200, "{m}");
     assert_eq!((&m["reactions"][0]["count"], &m["reactions"][0]["mine"]), (&json!(1), &json!(false)));
+    assert_eq!(m["reactions"][0]["agents"], 0, "{m}");
     assert_eq!(seen(&base, "a", seq).await[0]["mine"], true);
 }
 

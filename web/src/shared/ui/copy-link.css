@@ -13,7 +13,7 @@
   border: 1px solid var(--raised-hover);
   border-radius: var(--btn-radius);
   background: var(--raised);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 

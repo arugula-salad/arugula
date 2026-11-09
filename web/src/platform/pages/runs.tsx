@@ -16,11 +16,13 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
+import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
@@ -37,9 +39,10 @@ import { ListLoading, mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { NewWorkspaceButton } from "./hosted-workspace";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
-import { runTone, toneClass, type Tone } from "../swarm";
+import { runTone, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
 import { ThreadUnread } from "../thread-unread";
+import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -165,7 +168,6 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
       ...(specs ?? []).map((s) => ({ label: s.name, checked: filter.spec === s.id, run: () => to({ ...filter, spec: s.id }) })),
     ]);
   const narrowed = !!(filter.state || filter.trigger || filter.spec);
-  const settings = pathOf({ page: "project-settings", project: p.id }, names);
 
   return (
     <section class="platform-section sw-page runs-page" data-runs={p.id}>
@@ -184,28 +186,18 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
             </>
           )
         }
-        sub={
-          <>
-            Runs go on this project's cloud workspaces: by hand, on a schedule, or on an event from a linked repo. Scheduled and event runs start
-            under the project's standing grant, in its{" "}
-            <a href={settings} onClick={(e) => follow(e, settings)}>
-              settings
-            </a>
-            .
-          </>
-        }
         stats={!!list?.length && <RunStats list={list} />}
       />
       {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
       <div class="issues-tools">
-        <button class={filter.state ? "issues-filter on" : "issues-filter"} data-runs-state onClick={stateMenu}>
-          {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <span class="caret">▾</span>
+        <button class="secondary" aria-pressed={!!filter.state} data-runs-state onClick={stateMenu}>
+          {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <Caret />
         </button>
-        <button class={filter.trigger ? "issues-filter on" : "issues-filter"} data-runs-trigger onClick={triggerMenu}>
-          {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <span class="caret">▾</span>
+        <button class="secondary" aria-pressed={!!filter.trigger} data-runs-trigger onClick={triggerMenu}>
+          {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <Caret />
         </button>
-        <button class={filter.spec ? "issues-filter on" : "issues-filter"} data-runs-spec onClick={specMenu}>
-          {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <span class="caret">▾</span>
+        <button class="secondary" aria-pressed={!!filter.spec} data-runs-spec onClick={specMenu}>
+          {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <Caret />
         </button>
         {narrowed && (
           <button class="link" data-runs-clear onClick={() => to({})}>
@@ -213,17 +205,21 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           </button>
         )}
       </div>
-      {error && <p class="control-error" role="alert">{error}</p>}
+      {list === null && error ? (
+        <BlockError inline title="Can't read this project's runs." detail={error} retry={() => setTick((n) => n + 1)} />
+      ) : (
+        error && <p class="control-error" role="alert">{error}</p>
+      )}
       {list === null && !error && <ListLoading />}
       {list?.length === 0 &&
         (narrowed ? (
-          <p class="dim issues-none" data-runs-none>
+          <EmptyLine data-runs-none>
             No runs match.
-          </p>
+          </EmptyLine>
         ) : (
           <NoRuns p={p} workspaces={listed} starting={starting} start={() => setStarting(true)} />
         ))}
-      <ul class="issues-list sw-cards" data-runs-list>
+      <ul class="issues-list card-list" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
           const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
@@ -232,7 +228,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           return (
             // A card in the swarm's language (../swarm.css): its bar is the
             // run's state, which the meta line says in words.
-            <li class={`issue-row run-row sw-card ${toneClass(runTone(r.state))}`} key={r.id} data-run-row={r.id} data-run-state={r.state}>
+            <Card as="li" class="issue-row run-row" tone={runTone(r.state)} key={r.id} data-run-row={r.id} data-run-state={r.state}>
               <div class="issue-row-main">
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
                   {runTitle(r.op, specName(r.source.spec), r.deploy)}
@@ -244,11 +240,11 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
                 </span>
               </div>
-              <code class="run-id sw-id" title={r.id}>
+              <code class="run-id card-id" title={r.id}>
                 {short(r.id)}
                 {ws ? ` · ${ws}` : ""}
               </code>
-            </li>
+            </Card>
           );
         })}
       </ul>
@@ -260,7 +256,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
 /** Why a reader can't start runs here, in one line; null when they can. */
 export function whyNoStart(p: PlatformProject): string | null {
   if (!mayWrite(p)) return "A team's owners and editors start its runs; you can read them here.";
-  if (!session.hosted) return "Runs go on cloud workspaces, which are in a limited beta your account isn't in yet.";
+  if (!session.hosted) return "Runs: limited beta, not on your account yet.";
   return null;
 }
 
@@ -271,26 +267,32 @@ function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; worksp
   const why = whyNoStart(p);
   if (why || workspaces === null)
     return (
-      <p class="dim issues-none" data-runs-none data-runs-why={why ? "" : undefined}>
-        No runs yet.{why ? ` ${why}` : ""}
-      </p>
+      <EmptyState where="page" data-runs-none data-runs-why={why ? "" : undefined} title="No runs yet." why={why ?? undefined} />
     );
   if (!workspaces.length)
     return (
-      <div class="issues-none platform-empty" data-runs-none>
-        <p>No runs yet. A run is a command on one of the project's cloud workspaces, and it has none yet: make one first.</p>
-        <NewWorkspaceButton project={p.id} />
-      </div>
+      <EmptyState
+        where="page"
+        data-runs-none
+        title="No runs yet."
+        why="A run needs a cloud workspace to go on: make one first."
+        action={<NewWorkspaceButton project={p.id} />}
+      />
     );
   return (
-    <div class="issues-none platform-empty" data-runs-none>
-      <p>No runs yet. Start one by hand (a command, or a run spec), or give a run spec a schedule.</p>
-      {!starting && (
-        <button class="primary" data-runs-none-start onClick={start}>
-          Start a run
-        </button>
-      )}
-    </div>
+    <EmptyState
+      where="page"
+      data-runs-none
+      title="No runs yet."
+      why="A run is a command on one of the project's cloud workspaces."
+      action={
+        !starting && (
+          <button class="primary" data-runs-none-start onClick={start}>
+            Start a run
+          </button>
+        )
+      }
+    />
   );
 }
 
@@ -320,7 +322,7 @@ function StartRun({ p, specs, workspaces, done }: { p: PlatformProject; specs: R
   return (
     <form class="run-start" data-run-start onSubmit={(e) => void start(e)}>
       {specs.length > 0 && (
-        <div class="issues-states" role="group" aria-label="What to run">
+        <div class="seg issues-states" role="group" aria-label="What to run">
           <button type="button" aria-pressed={what === "spec"} data-run-start-spec-mode onClick={() => setWhat("spec")}>
             A run spec
           </button>
@@ -796,7 +798,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
             <dd data-run-chant-ledger>
               {httpsOnly(run.chant_ledger) ? (
                 <a href={run.chant_ledger} target="_blank" rel="noopener noreferrer">
-                  The release's entry ↗
+                  The release's entry <ExternalIcon size="xs" />
                 </a>
               ) : (
                 <code>{run.chant_ledger}</code>
@@ -835,7 +837,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <>
             It's running in a pane on its machine.{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              Watch pane %{run.pane} on your machines ↗
+              Watch pane %{run.pane} on your machines <ExternalIcon size="xs" />
             </a>
             <span class="dim"> This page doesn't show machines; that one shows the pane end to end.</span>
           </>
@@ -845,7 +847,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <span class="dim">
             It ended. It ran in pane %{run.pane}, which may still be open{" "}
             <a href={live} target="_blank" rel="noopener" data-run-pane>
-              on your machines ↗
+              on your machines <ExternalIcon size="xs" />
             </a>
             .
           </span>
@@ -1049,7 +1051,7 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty="Nothing said about this run yet. Everyone in the project reads it; write @name to notify someone." />
+            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty={{ title: "Nothing said about this run yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}

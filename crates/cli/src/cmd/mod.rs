@@ -9,6 +9,7 @@ pub mod app;
 pub mod attention;
 pub mod call;
 pub mod capture;
+pub mod chant;
 pub mod chat;
 pub mod claude;
 pub mod close;
@@ -33,6 +34,7 @@ pub mod keys;
 pub mod log;
 pub mod login;
 pub mod ls;
+pub mod machine;
 pub mod machines;
 pub mod mcp;
 pub mod mentions;
@@ -60,8 +62,6 @@ pub mod wait;
 pub mod web;
 pub mod workspace;
 
-use std::path::PathBuf;
-
 use crate::http::Target;
 
 /// What a command that talks to a daemon has: the daemon it reaches, whether to print JSON, and where
@@ -69,7 +69,4 @@ use crate::http::Target;
 pub struct Ctx {
     pub sock: Target,
     pub json_out: bool,
-    /// `run --home` and `close` use the local daemon too.
-    pub local_sock: PathBuf,
-    pub host_name: Option<String>,
 }

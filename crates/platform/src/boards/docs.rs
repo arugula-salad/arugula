@@ -2,18 +2,39 @@
 //! on one row (`board_docs`, `row_id`). A Doc is a project Doc of the board's own project (`pdc_…`), or a Doc
 //! block on a machine, which an agent of that machine links
 //! (`MachineDoc`: the title is a snapshot, since the machine may be off).
+//! A machine Doc whose copy (#418) sits in the board's project is read
+//! from the copy instead (native #673): the title and sections as the
+//! machine last put them, and its `pdc_` id (`copy`), so the chip opens it
+//! while the machine is away. A copy anywhere else lends nothing: the
+//! board's readers may not read that project, so the chip keeps the title
+//! it was linked with. With the move route gone, a copy sits in its
+//! owner's personal project, so that is the owner's own boards.
 //!
 //! **Who may:** whoever writes the board (owners and editors, and an
 //! agent with `boards.write`, who takes off only the Docs its own machine
-//! linked and links only its own machine's Docs). A Doc of another
+//! linked and links only its own machine's Docs). A person links a
+//! machine's Doc only from a machine control routes them to (their own, a
+//! team's, one shared with them: the hub's `may_reach`). A Doc of another
 //! project is no Doc: 404, checked here and not in the page. A Doc linked
 //! already answers the board as it is. A closed board's Docs stay
 //! editable, as its rows do.
 //!
+//! **Whose machine it names:** a machine Doc an agent linked names its
+//! machine while that machine holds `boards.write` over the project, as
+//! its blocks' states show while it does. One a person linked names the
+//! machine only to a reader who may reach it. To anyone else the Doc is on
+//! "a machine", with the machine's id blanked too, so a link made before
+//! the check, or by someone the project has since lost, names nothing to
+//! those it doesn't concern. That is a label, not a check: it waits on the
+//! hub [`super::LABEL_WAIT`] at most, and on an error says "a machine" and goes on.
+//!
 //! **What a Doc is not:** a row's Doc is no attachment: nothing that works
 //! out a lane, the ready set, progress or a proof ever reads it.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::boards as wire;
@@ -38,8 +59,10 @@ fn no_doc() -> ApiError {
 
 /// A Doc pointer as it is kept: shaped, with a project Doc checked to be in
 /// `project` and a machine Doc's title trimmed. A machine's agent links
-/// only a Doc of its own machine.
-pub(super) fn doc_ok(
+/// only a Doc of its own machine; a person, only one on a machine they may
+/// reach (a "no" is never kept, so a machine just joined or shared is asked
+/// of the hub again).
+pub(super) async fn doc_ok(
     app: &Platform,
     by: Actor<'_>,
     project: &str,
@@ -54,10 +77,17 @@ pub(super) fn doc_ok(
         wire::Pointer::MachineDoc { machine, doc, title } => {
             name_ok(machine, "machine")?;
             name_ok(doc, "Doc")?;
-            if let Some(own) = by.agent
-                && own != machine
-            {
-                return Err(err(StatusCode::FORBIDDEN, "an agent links only Docs on its own machine"));
+            match by.agent {
+                Some(own) if own != machine => {
+                    return Err(err(StatusCode::FORBIDDEN, "an agent links only Docs on its own machine"));
+                }
+                Some(_) => {}
+                None => {
+                    let asked = std::slice::from_ref(machine);
+                    if !app.cache.may_reach(&*app.hub, by.account, asked).await?.contains(machine) {
+                        return Err(err(StatusCode::FORBIDDEN, "a person links only Docs on a machine they can reach"));
+                    }
+                }
             }
             Ok(wire::Pointer::MachineDoc {
                 machine: machine.clone(),
@@ -69,10 +99,83 @@ pub(super) fn doc_ok(
     }
 }
 
+/// Which machine Docs a read names to its reader (the module's top says
+/// which): the machines the reader may reach, and the machines whose agent
+/// writes the project now.
+#[derive(Default)]
+pub(super) struct Named {
+    reach: HashSet<String>,
+    writing: HashSet<String>,
+}
+
+impl Named {
+    fn shows(&self, machine: &str, by_agent: bool) -> bool {
+        self.reach.contains(machine) || (by_agent && self.writing.contains(machine))
+    }
+}
+
+/// The machines of `docs` (the Docs of a board, strip and rows) that a read
+/// asks the hub about, for [`named`]: those of the Docs a person linked.
+pub(super) fn to_ask(docs: &[db::Strip]) -> impl Iterator<Item = &str> {
+    docs.iter().filter(|d| d.agent.is_none()).filter_map(|d| match &d.pointer {
+        wire::Pointer::MachineDoc { machine, .. } => Some(machine.as_str()),
+        _ => None,
+    })
+}
+
+/// What the reader is told of the machines of `docs`: `reach`, the
+/// machines they may reach, is the read's one label call for the board
+/// ([`super::reach_label`]: kept a tick, "no" too; an error or a wait past
+/// [`super::LABEL_WAIT`] reaches nothing), and agents' Docs ask whether
+/// their machine writes the project.
+pub(super) async fn named(app: &Platform, project: &str, docs: &[db::Strip], reach: HashSet<String>) -> Named {
+    let mut by_agent: Vec<String> = docs
+        .iter()
+        .filter(|d| d.agent.is_some())
+        .filter_map(|d| match &d.pointer {
+            wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
+            _ => None,
+        })
+        .collect();
+    by_agent.sort();
+    by_agent.dedup();
+    let mut named = Named { reach, writing: HashSet::new() };
+    for m in by_agent {
+        if matches!(super::machine_writes(app, &m, project).await, Ok(true)) {
+            named.writing.insert(m);
+        }
+    }
+    named
+}
+
+/// The machine Docs' copies in the board's project, by machine and the
+/// machine's Doc id, for [`view`].
+pub(super) type Copies = HashMap<(String, String), crate::db::project_docs::Stored>;
+
+/// One read of the project's Docs, kept by key: a board's Docs are looked
+/// up in it, however many there are.
+pub(super) fn copies_in(app: &Platform, project: &str) -> Result<Copies, ApiError> {
+    Ok(app
+        .db
+        .project_docs(project)?
+        .into_iter()
+        .filter_map(|d| Some(((d.machine.clone()?, d.machine_doc.clone()?), d)))
+        .collect())
+}
+
 /// The Docs of a strip or a row as a read answers them: a project Doc by its
-/// title and sections now (one that is gone says so), a machine Doc by the
-/// title it had and its machine's name. `names` are the machines' names by id.
-pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec<wire::BoardDoc> {
+/// title and sections now (one that is gone says so); a machine Doc by its
+/// copy in this project (`copies`) when it has one, else the title it had,
+/// and by its machine's name, or on "a machine" with its id blanked when the
+/// reader isn't told (`named`). The copy is looked up before the id is
+/// blanked: a reader not told the machine still reads a copy in the board's
+/// project, where they may read. `names` are the machines' names by id.
+pub(super) fn view(
+    docs: Vec<db::Strip>,
+    names: &HashMap<String, String>,
+    named: &Named,
+    copies: &Copies,
+) -> Vec<wire::BoardDoc> {
     let name = |m: &str| names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned());
     docs.into_iter()
         .map(|s| {
@@ -83,6 +186,7 @@ pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec
                 written: None,
                 missing: false,
                 machine_name: None,
+                copy: None,
                 added_by: s.added_by,
                 agent: s.agent.map(|m| arugula_control_wire::chat::ChatAgent {
                     machine_name: names.get(&m).cloned().unwrap_or_default(),
@@ -92,10 +196,27 @@ pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec
                 created_at: s.created_at,
                 pointer: s.pointer,
             };
-            match (&d.pointer, s.head) {
-                (wire::Pointer::MachineDoc { machine, .. }, _) => d.machine_name = Some(name(machine)),
-                (_, Some(h)) => (d.title, d.sections, d.written) = (h.title, Some(h.sections), Some(h.written)),
-                (_, None) => (d.title, d.missing) = (wire::DOC_GONE.to_owned(), true),
+            if let wire::Pointer::MachineDoc { machine, doc, .. } = &mut d.pointer {
+                // The copy first: the machine's id may be blanked below.
+                if let Some(c) = copies.get(&(machine.clone(), doc.clone())) {
+                    (d.title, d.sections, d.written) = (c.title.clone(), Some(c.sections), Some(c.written));
+                    d.copy = Some(c.id.clone());
+                }
+                if named.shows(machine, d.agent.is_some()) {
+                    d.machine_name = Some(name(machine));
+                } else {
+                    d.machine_name = Some("a machine".to_owned());
+                    machine.clear();
+                    if let Some(a) = &mut d.agent {
+                        a.machine.clear();
+                        a.machine_name.clear();
+                    }
+                }
+            } else {
+                match s.head {
+                    Some(h) => (d.title, d.sections, d.written) = (h.title, Some(h.sections), Some(h.written)),
+                    None => (d.title, d.missing) = (wire::DOC_GONE.to_owned(), true),
+                }
             }
             d
         })
@@ -109,7 +230,7 @@ pub async fn add(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AddDoc) -> R
     if let Some(row) = &a.row {
         id_ok(row, "row").map_err(|_| bad("expected a row id that starts row_"))?;
     }
-    let pointer = doc_ok(app, by, &board.project, &a.pointer)?;
+    let pointer = doc_ok(app, by, &board.project, &a.pointer).await?;
     let said = match app.db.add_board_doc(id, a.row.as_deref(), &pointer, by.account, by.agent, now_ms())? {
         Ok(db::Added::New(_)) => None,
         Ok(db::Added::Already(_)) => {

@@ -18,8 +18,8 @@ use arugula_control_wire::{
         AgentMessages, AgentMessagesQuery, AgentRooms, ChatFound, ChatMessage, ChatPost, ChatPosted, ChatSearchQuery,
     },
     work::{
-        ArtifactGiven, DeployWork, PushAsk, PushGiven, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
-        SessionIssuesGiven, SessionReport,
+        ArtifactGiven, DeployPlanWork, DeployWork, PushAsk, PushGiven, Reported, SecretsAsk, SecretsGiven,
+        SessionIssuesAsk, SessionIssuesGiven, SessionReport,
     },
 };
 use axum::{Router, http::StatusCode, routing::MethodRouter};
@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::{
     Platform,
     auth::Machine,
-    db::{Db, mirror::ItemRow, runs::Run, sessions::Session},
+    db::{Db, mirror::ItemRow, runs::Run, sessions::AgentSession},
     forge::send::{How, Outcome},
     jobs::Worker,
     triggers::events::Seen,
@@ -86,6 +86,14 @@ pub trait Deploys: Send + Sync + 'static {
     }
     /// What a deploy's run carries to the box that applies it.
     fn deploy_work(&self, _db: &Db, _run: &str) -> anyhow::Result<Option<DeployWork>> {
+        Ok(None)
+    }
+    /// What a deploy's plan run carries to the box that plans it (#1985).
+    fn deploy_plan_work(
+        &self,
+        _db: &Db,
+        _plan: &crate::db::deploy_plans::DeployPlan,
+    ) -> anyhow::Result<Option<DeployPlanWork>> {
         Ok(None)
     }
     /// A deploy's run moved: its deploy moves too, and the box may be told
@@ -218,7 +226,7 @@ pub trait Chat: Send + Sync + 'static {
     fn merged_seen(&self, _app: &Platform, _repo: u64, _items: &[&ItemRow]) {}
     /// A session's prompt on its workspace's new box, and whether its
     /// conversation was lost with the old one (Arugula #209).
-    fn after_rebuild<'a>(&'a self, _app: &'a Platform, _s: &'a Session) -> BoxFuture<'a, anyhow::Result<Rebuilt>> {
+    fn after_rebuild<'a>(&'a self, _app: &'a Platform, _s: &'a AgentSession) -> BoxFuture<'a, anyhow::Result<Rebuilt>> {
         Box::pin(async { anyhow::bail!("no sessions here") })
     }
     /// Sessions `ids` changed: their cards and their asks hear it.
@@ -271,6 +279,21 @@ pub trait Chat: Send + Sync + 'static {
         _login: &'a str,
         _text: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<i64>> {
+        Box::pin(async { anyhow::bail!("no chat here") })
+    }
+    /// What CI said on a native issue (native #774, [`crate::ci_alerts`])
+    /// into its thread: no author, `via` `ci:chant`, nobody pushed here.
+    /// With `mark` (a delivery and its event) the delivery is noted in the
+    /// message's transaction, and `None` says it was noted already and
+    /// nothing was posted. The message's number.
+    fn ci_comment<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _issue: &'a str,
+        _via: &'a str,
+        _text: &'a str,
+        _mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
         Box::pin(async { anyhow::bail!("no chat here") })
     }
     /// Before a grant of `power` over `scope` is given (#122): the rooms

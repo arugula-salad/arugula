@@ -47,7 +47,7 @@ use std::{
 use arugula_control_wire::work::{PushAsk, PushGiven, WORK_SESSION_PUSH};
 use tracing::{info, warn};
 
-use super::{AsUser, Session, good_branch};
+use super::{AgentSessionLedger, AsUser, good_branch};
 use crate::server::App;
 
 /// The most a whole push may take: the platform marks a session whose box
@@ -291,14 +291,14 @@ async fn revoke(url: &str, token: &str) {
 
 /// The ledger's place for session `l`'s push: its bundle and the daemon's
 /// own repo.
-fn place(dir: &Path, l: &Session) -> PathBuf {
+fn place(dir: &Path, l: &AgentSessionLedger) -> PathBuf {
     dir.join(super::super::DIR).join(super::DIR).join(format!("{}.push", l.session))
 }
 
 /// What a push of session `l` left, gone once the session ends: the
 /// daemon's own repo and bundle, and a bundle a cut-off push left in its
 /// user's home.
-pub async fn clean(dir: &Path, l: &Session) {
+pub async fn clean(dir: &Path, l: &AgentSessionLedger) {
     let _ = std::fs::remove_dir_all(place(dir, l));
     let bundle = Path::new(&l.user.home).join(format!(".arugula-push-{}.bundle", l.session)).display().to_string();
     let _ = super::as_user(&l.user, &["rm", "-f", "--", &bundle]).await;
@@ -308,7 +308,7 @@ pub async fn clean(dir: &Path, l: &Session) {
 /// cleaned the session's slot then, and the push may have made its place
 /// again since (its bundle, the daemon's repo). So an ended session's is
 /// cleaned again here. Whether it had ended.
-pub async fn clean_if_ended(dir: &Path, l: &Session) -> bool {
+pub async fn clean_if_ended(dir: &Path, l: &AgentSessionLedger) -> bool {
     let ended = super::read(dir, &l.session).ok().flatten().is_none_or(|now| now.ended.is_some());
     if ended {
         clean(dir, l).await;
@@ -320,7 +320,7 @@ pub async fn clean_if_ended(dir: &Path, l: &Session) -> bool {
 /// that's on GitHub now, as the checkout has it (pushed now, or before:
 /// `l.pushed_head`), `None` when there's nothing to push (no repo, or no
 /// commits of its own), or why it didn't push.
-pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String> {
+pub async fn push_turn(app: &App, l: &AgentSessionLedger) -> Result<Option<String>, String> {
     let Some(repo) = l.repo.as_deref() else { return Ok(None) };
     let remote =
         remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::super::printable(repo)))?;
@@ -426,7 +426,7 @@ fn forget(token: String) {
 /// Clone session `l`'s repo into `stage`, shallow, from GitHub (module
 /// docs): for a repo linked to its project that no box's setup cloned. Its
 /// origin is the repo on GitHub, with no credentials in it.
-pub async fn clone_linked(app: &App, l: &Session, stage: &Path) -> Result<(), String> {
+pub async fn clone_linked(app: &App, l: &AgentSessionLedger, stage: &Path) -> Result<(), String> {
     let repo = l.repo.as_deref().ok_or("the session has no repo")?;
     let remote =
         remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::super::printable(repo)))?;

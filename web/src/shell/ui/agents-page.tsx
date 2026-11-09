@@ -16,6 +16,7 @@
 // anything, so it's a section above the list; the grants, and the places with
 // nothing to list, are sections below it.
 
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { getFleet } from "./hosts";
@@ -28,6 +29,8 @@ import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./
 import { AppBar } from "./app-bar";
 import { CopyText } from "../../shared/ui/copy";
 import { Time } from "../../shared/ui/time";
+import { Chip } from "../../shared/ui/state-chip";
+import { IconButton, MoreIcon } from "../../shared/ui/icons";
 
 interface Recipe {
   name: string;
@@ -280,19 +283,20 @@ function RecipesTab({ client }: { client: Client }) {
 
   const status =
     data === null && !error ? (
-      <p class="dim list-status">Reading this machine's recipes…</p>
+      <BlockLoading inline what="this machine's recipes" />
     ) : data && all.length === 0 ? (
-      <div class="agents-empty list-status" data-agents-empty>
-        <b>No recipes on this machine yet.</b>
-        <p>A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses.</p>
-        <p>
-          Make one with <b>New recipe</b>, or <b>Add a project…</b> that already has recipes in its <code>.claude/agents</code> folder.
-        </p>
-      </div>
+      <EmptyState
+        where="page"
+        data-agents-empty
+        title="No recipes on this machine yet."
+        why={
+          <>
+            A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. Make one with <b>New recipe</b>, or <b>Add a project…</b> that already has recipes in its <code>.claude/agents</code> folder.
+          </>
+        }
+      />
     ) : data && groups.every((g) => !g.items.length) ? (
-      <p class="dim list-status" data-agents-none>
-        {q ? "No recipe's name, description or prompt matches." : "No recipe is offered to your team."}
-      </p>
+      <EmptyLine data-agents-none>{q ? "No recipe's name, description or prompt matches." : "No recipe is offered to your team."}</EmptyLine>
     ) : undefined;
 
   return (
@@ -340,13 +344,13 @@ function RecipesTab({ client }: { client: Client }) {
             </p>
           ))
         }
-        status={status}
+        status={status && <div class="list-status">{status}</div>}
         row={({ r }) => ({
           title: r.name,
           tags: r.offered_from && (
-            <span class="list-tag info" data-recipe-offered title={`Your team's agents can send it tasks; it works in ${r.offered_from}`}>
+            <Chip kind="tag" tone="info" data-recipe-offered title={`Your team's agents can send it tasks; it works in ${r.offered_from}`}>
               offered
-            </span>
+            </Chip>
           ),
           age: r.model,
           detail: r.description,
@@ -463,21 +467,14 @@ function RecipePreview({ item, busy, tilde, run, edit, offer, unoffer, ask, unli
               Offer to team
             </button>
           )}
-          <button
-            class="secondary small"
-            aria-label={`More for ${r.name}`}
-            title="More"
-            data-recipe-more
-            disabled={busy}
-            onClick={(e) =>
+          <IconButton label={`More for ${r.name}`} title="More" class="secondary small" data-recipe-more disabled={busy} onClick={(e) =>
               moreMenu(e, [
                 ...(added ? [{ label: `Stop listing ${baseName(project!)}`, hint: "Take this project off the page (its files stay)", run: unlist }] : []),
                 { label: "Delete…", danger: true, hint: "Delete its file", run: ask },
               ])
-            }
-          >
-            ⋯
-          </button>
+            }>
+            <MoreIcon size="sm" />
+          </IconButton>
           <span class="list-preview-hint" aria-hidden="true">
             <kbd>↵</kbd> run <kbd>↑</kbd>
             <kbd>↓</kbd> move
@@ -695,22 +692,23 @@ function TeamTab({ client }: { client: Client }) {
 
   const status =
     shelves === null && !error ? (
-      <p class="dim list-status">Asking every machine for its agents…</p>
+      <BlockLoading inline what="every machine's agents" />
     ) : shelves && !offered.length ? (
-      <div class="agents-empty list-status" data-agents-empty>
-        <b>Nobody on your team offers an agent yet.</b>
-        <p>
-          Offer one of yours: open{" "}
-          <button class="agents-inline" onClick={() => openAgentsPage("recipes")}>
-            Recipes
-          </button>{" "}
-          and choose <b>Offer to team</b> on a recipe.
-        </p>
-      </div>
+      <EmptyState
+        where="page"
+        data-agents-empty
+        title="Nobody on your team offers an agent yet."
+        why="Offer one of yours: choose Offer to team on a recipe."
+        action={
+          <button class="secondary" onClick={() => openAgentsPage("recipes")}>
+            Open Recipes
+          </button>
+        }
+      />
     ) : shelves && groups.every((g) => !g.items.length) ? (
-      <p class="dim list-status" data-agents-none>
+      <EmptyLine data-agents-none>
         {q ? "No agent, machine or owner matches." : filter === "online" ? "No machine with an agent is online." : "None of the agents are yours."}
-      </p>
+      </EmptyLine>
     ) : undefined;
 
   return (
@@ -741,7 +739,7 @@ function TeamTab({ client }: { client: Client }) {
           </p>
         )
       }
-      status={status}
+      status={status && <div class="list-status">{status}</div>}
       row={({ a }) => ({ title: a.name, detail: a.description, attrs: { "data-agent": a.name } })}
       preview={(i) => <AgentPreview key={`${i.s.machine}/${i.a.name}`} item={i} busy={busy} run={() => void run(i.s, i.a.name)} />}
       above={

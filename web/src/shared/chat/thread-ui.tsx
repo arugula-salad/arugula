@@ -11,6 +11,8 @@ import { MsgAvatar } from "./avatar";
 import { messageHooks } from "./msg-actions";
 import { ago, footer, rootOf } from "./threads";
 import { when } from "../time";
+import { Count } from "../ui/state-chip";
+import { ChevronIcon, ThreadIcon } from "../ui/icons";
 
 // The hook can't ask for the page's nav: the room it's shown in registers
 // it (`RoomBody`), and the hook opens the thread there.
@@ -53,12 +55,12 @@ export function ThreadFooter({ room, m }: { room: ChatRoom; m: ChatMessage }) {
       </span>
       <span class="thread-footer-count">{footer(t, Date.now())}</span>
       {unread > 0 && (
-        <span class={t.mentions ? "chat-count mention" : "chat-count"} data-thread-unread>
+        <Count for={t.mentions ? "mention" : "you"} class="count-after" data-thread-unread>
           {t.mentions ? `@${unread}` : `${unread} new`}
-        </span>
+        </Count>
       )}
       <span class="thread-footer-go" aria-hidden="true">
-        ›
+        <ChevronIcon dir="right" />
       </span>
     </button>
   );
@@ -77,8 +79,8 @@ export function ReplyTag({ room, m, inThread }: { room: ChatRoom; m: ChatMessage
     ) : null;
   }
   return (
-    <button type="button" class="reply-tag" data-reply-tag onClick={() => nav.openRoom(room.id, m.seq, m.parent)}>
-      ↩ Replied in a thread
+    <button type="button" class="reply-link" data-reply-tag onClick={() => nav.openRoom(room.id, m.seq, m.parent)}>
+      <ThreadIcon size="xs" /> Replied in a thread
     </button>
   );
 }

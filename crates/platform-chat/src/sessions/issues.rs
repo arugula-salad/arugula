@@ -49,7 +49,7 @@ use crate::{
     db::{
         chat::Page,
         issues::Actor,
-        sessions::{Role, Session, State},
+        sessions::{AgentSession, Role, State},
     },
     issues, project_docs,
     work::HostedMachine,
@@ -69,7 +69,7 @@ fn refused(m: &HostedMachine, a: &SessionIssuesAsk, why: &str) -> SessionIssuesG
 }
 
 /// The session `a` names, if `m` may act for it: module docs.
-fn session_of(app: &Platform, m: &HostedMachine, a: &SessionIssuesAsk) -> anyhow::Result<Result<Session, String>> {
+fn session_of(app: &Platform, m: &HostedMachine, a: &SessionIssuesAsk) -> anyhow::Result<Result<AgentSession, String>> {
     let Some(s) = app.db.session(&a.session)? else { return Ok(Err("no such session".into())) };
     if s.project != m.project || s.workspace != m.workspace || s.machine.as_deref() != Some(m.machine.as_str()) {
         return Ok(Err("that session isn't this machine's".into()));
@@ -144,13 +144,13 @@ pub async fn answer(app: &Platform, m: &HostedMachine, a: &SessionIssuesAsk) -> 
 }
 
 /// Session `s` on its project's Docs: its asker's rights, as itself.
-fn as_session(s: &Session) -> project_docs::By<'_> {
+fn as_session(s: &AgentSession) -> project_docs::By<'_> {
     project_docs::By::Session { asker: &s.asker, session: &s.id }
 }
 
 fn docs_view(
     app: &Platform,
-    s: &Session,
+    s: &AgentSession,
     r: Result<arugula_control_wire::project_docs::DocView, arugula_control_common::ApiError>,
 ) -> SessionIssuesGiven {
     match r {
@@ -162,18 +162,24 @@ fn docs_view(
     }
 }
 
-async fn list(app: &Platform, by: Actor<'_>, s: &Session, q: &IssueQuery) -> SessionIssuesGiven {
+async fn list(app: &Platform, by: Actor<'_>, s: &AgentSession, q: &IssueQuery) -> SessionIssuesGiven {
     match issues::list(app, by, &s.project, q).await {
         Ok(list) => SessionIssuesGiven::List { list },
         Err(e) => said(e),
     }
 }
 
-async fn show(app: &Platform, by: Actor<'_>, s: &Session, number: u64) -> SessionIssuesGiven {
+async fn show(app: &Platform, by: Actor<'_>, s: &AgentSession, number: u64) -> SessionIssuesGiven {
     let go = async {
         let issue = issues::read_number(app, by, &s.project, number).await?;
         let events = issues::timeline(app, by, &issue.id).await?.events;
-        let (comments, more_comments) = match app.db.chat_room_on(&format!("project:{}", issue.project), &issue.id)? {
+        // The comments are chat's: only while chat is on for the asker.
+        let with_comments = crate::chat::chat_on(app, by.account).await?;
+        let room = match with_comments {
+            true => app.db.chat_room_on(&format!("project:{}", issue.project), &issue.id)?,
+            false => None,
+        };
+        let (comments, more_comments) = match room {
             Some(room) => {
                 let (ms, more) = app.db.chat_messages(&room.id, Page::Newest, COMMENTS)?;
                 let ms: Vec<_> = ms.into_iter().filter(|m| m.deleted.is_none()).collect();
@@ -181,12 +187,18 @@ async fn show(app: &Platform, by: Actor<'_>, s: &Session, number: u64) -> Sessio
             }
             None => (vec![], false),
         };
-        Ok::<_, arugula_control_common::ApiError>(SessionIssuesGiven::Shown { issue, events, comments, more_comments })
+        Ok::<_, arugula_control_common::ApiError>(SessionIssuesGiven::Shown {
+            issue,
+            events,
+            comments,
+            more_comments,
+            comments_in_chat: !with_comments,
+        })
     };
     go.await.unwrap_or_else(said)
 }
 
-async fn comment(app: &Platform, by: Actor<'_>, s: &Session, number: u64, text: &str) -> SessionIssuesGiven {
+async fn comment(app: &Platform, by: Actor<'_>, s: &AgentSession, number: u64, text: &str) -> SessionIssuesGiven {
     let text = text.trim();
     if text.is_empty() {
         return SessionIssuesGiven::Refused { why: "say something".into() };

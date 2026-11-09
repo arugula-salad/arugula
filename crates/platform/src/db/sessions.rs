@@ -86,8 +86,8 @@
 
 use anyhow::{Context as _, Result, bail};
 pub use arugula_control_wire::work::{
-    DEFAULT_SESSION_USERS, MAX_HELD_SESSIONS_PER_BOX, MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, SESSION_PARK_MS,
-    SessionAction, SessionDetail, SessionPrompt, SessionWork, TYPED_MAX,
+    AgentSessionWork, DEFAULT_SESSION_USERS, MAX_HELD_SESSIONS_PER_BOX, MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS,
+    SESSION_PARK_MS, SessionAction, SessionDetail, SessionPrompt, TYPED_MAX,
 };
 pub use arugula_e2e::session::{Kind, QUIET_MS, State};
 
@@ -226,7 +226,7 @@ pub const NOT_PICKED: &str = "not_picked: another try was kept";
 pub const TRIES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Session {
+pub struct AgentSession {
     pub id: String,
     pub project: String,
     /// Its thread: the room, and the message the thread hangs off.
@@ -289,7 +289,7 @@ pub struct Session {
     pub work_item: Option<String>,
 }
 
-impl Session {
+impl AgentSession {
     /// The state its machine sees it in: an `unresponsive` one's is the
     /// state it was in.
     pub fn seen_as(&self) -> State {
@@ -548,7 +548,7 @@ pub struct NewPrompt<'a> {
 
 /// A session to make, with its first prompt.
 #[derive(Debug, Clone, Copy)]
-pub struct NewSession<'a> {
+pub struct NewAgentSession<'a> {
     pub project: &'a str,
     /// Its thread.
     pub room: &'a str,
@@ -708,8 +708,8 @@ fn state(s: &str) -> Result<State> {
     State::parse(s).with_context(|| format!("a session in state {s:?}"))
 }
 
-pub(super) fn session_row(r: &Row) -> Result<Session> {
-    Ok(Session {
+pub(super) fn session_row(r: &Row) -> Result<AgentSession> {
+    Ok(AgentSession {
         id: r.get(0)?,
         project: r.get(1)?,
         room: r.get(2)?,
@@ -894,7 +894,7 @@ fn queued_among(c: &impl Sql, session: &str, ids: &[String]) -> Result<Result<()
 /// its turn's end). Its box closes its agent then, keeping its checkout.
 /// Not `updated_at`, which a sent PR or CI's feedback moves too: those
 /// don't wake its agent, and a prompt they queue waits for a slot.
-pub fn parked(s: &Session, now: u64) -> bool {
+pub fn parked(s: &AgentSession, now: u64) -> bool {
     s.state == State::Done && now.saturating_sub(s.heard_at.unwrap_or(s.updated_at)) >= SESSION_PARK_MS
 }
 
@@ -970,7 +970,7 @@ fn held(c: &impl Sql, workspace: &str, but: &str) -> Result<usize> {
 
 /// Whether a machine's report fits its move, against the session as it
 /// is at `now`: `Ok` with the prompts a turn starts with.
-fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport, now: u64) -> Result<Result<Vec<String>, Refused>> {
+fn check_daemon(c: &impl Sql, s: &AgentSession, r: &DaemonReport, now: u64) -> Result<Result<Vec<String>, Refused>> {
     let d = match detail_of(&r.detail) {
         Ok(d) => d,
         Err(e) => return Ok(Err(e)),
@@ -1062,7 +1062,7 @@ fn check_daemon(c: &impl Sql, s: &Session, r: &DaemonReport, now: u64) -> Result
 
 /// The session's own machine, as the report must name it: the one it's
 /// bound to, or before its first report its workspace's machine now.
-fn own_machine(c: &impl Sql, s: &Session) -> Result<Option<String>> {
+fn own_machine(c: &impl Sql, s: &AgentSession) -> Result<Option<String>> {
     if let Some(m) = &s.machine {
         return Ok(Some(m.clone()));
     }
@@ -1074,7 +1074,7 @@ fn own_machine(c: &impl Sql, s: &Session) -> Result<Option<String>> {
 }
 
 /// [`Db::create_session`] in the caller's transaction.
-pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Option<(Session, Prompt)>> {
+pub fn create_session_in(c: &impl Sql, new: &NewAgentSession, at: u64) -> Result<Option<(AgentSession, Prompt)>> {
     make_in(c, new, Role::Thread, None, "claude", at)
 }
 
@@ -1082,12 +1082,12 @@ pub fn create_session_in(c: &impl Sql, new: &NewSession, at: u64) -> Result<Opti
 /// `harness`: [`create_session_in`]'s rules.
 fn make_in(
     c: &impl Sql,
-    new: &NewSession,
+    new: &NewAgentSession,
     role: Role,
     parent: Option<&str>,
     harness: &str,
     at: u64,
-) -> Result<Option<(Session, Prompt)>> {
+) -> Result<Option<(AgentSession, Prompt)>> {
     if !is_harness(harness) {
         bail!("a session runs on claude or codex");
     }
@@ -1193,7 +1193,7 @@ pub fn set_work_item_in(c: &impl Sql, id: &str, item: &str) -> Result<()> {
 }
 
 /// The slug of session `s`'s branch (`arugula/<8 hex>-<slug>`).
-pub fn slug_of(s: &Session) -> &str {
+pub fn slug_of(s: &AgentSession) -> &str {
     let short = s.id.strip_prefix("ses_").unwrap_or(&s.id);
     let short = &short[..short.len().min(BRANCH_HEX)];
     s.branch.strip_prefix("arugula/").and_then(|b| b.strip_prefix(short)).map_or("", |r| r.trim_start_matches('-'))
@@ -1209,7 +1209,7 @@ fn first_prompt_of(c: &impl Sql, session: &str) -> Result<Option<Prompt>> {
     .optional()
 }
 
-fn siblings_in(c: &impl Sql, parent: &str) -> Result<Vec<Session>> {
+fn siblings_in(c: &impl Sql, parent: &str) -> Result<Vec<AgentSession>> {
     c.query_map(
         &format!(
             "SELECT {COLS} FROM agent_sessions WHERE parent_session = ?1 AND role = 'try' ORDER BY created_at, id"
@@ -1229,7 +1229,7 @@ pub fn start_tries_in(
     parent: &str,
     harnesses: &[&str],
     at: u64,
-) -> Result<Result<Vec<Session>, Refused>> {
+) -> Result<Result<Vec<AgentSession>, Refused>> {
     let Some(p) = session_for_update(c, parent)? else { return Ok(Err(Refused::NoSession)) };
     if harnesses.len() != TRIES - 1 || !harnesses.iter().all(|h| is_harness(h)) {
         return Ok(Err(Refused::Detail("a Try 3 runs two more: claude or codex, each")));
@@ -1248,7 +1248,7 @@ pub fn start_tries_in(
     };
     let mut out = Vec::new();
     for (i, h) in harnesses.iter().enumerate() {
-        let new = NewSession {
+        let new = NewAgentSession {
             project: &p.project,
             room: &p.room,
             parent_seq: p.parent_seq,
@@ -1286,7 +1286,7 @@ pub fn pick_in(
     picked: &str,
     by: &str,
     at: u64,
-) -> Result<Result<(Session, Vec<String>), Refused>> {
+) -> Result<Result<(AgentSession, Vec<String>), Refused>> {
     let Some(p) = session_for_update(c, parent)? else { return Ok(Err(Refused::NoSession)) };
     let siblings = siblings_in(c, &p.id)?;
     if siblings.is_empty() {
@@ -1325,13 +1325,13 @@ pub fn pick_in(
 /// under it, on its thread, workspace and repo, queued with its job.
 pub fn create_review_in(
     c: &impl Sql,
-    of: &Session,
+    of: &AgentSession,
     asker: &str,
     harness: &str,
     prompt: &str,
     at: u64,
-) -> Result<Option<(Session, Prompt)>> {
-    let new = NewSession {
+) -> Result<Option<(AgentSession, Prompt)>> {
+    let new = NewAgentSession {
         project: &of.project,
         room: &of.room,
         parent_seq: of.parent_seq,
@@ -1355,7 +1355,7 @@ pub fn dispatch(c: &impl Sql, id: &str, now: u64) -> Result<bool> {
     super::jobs::enqueue(c, id, super::jobs::JobKind::Session, &serde_json::json!({ "session": id }), now, now)
 }
 
-pub(super) fn queue_in(c: &impl Sql, s: &Session, p: &NewPrompt, at: u64) -> Result<Result<Prompt, Refused>> {
+pub(super) fn queue_in(c: &impl Sql, s: &AgentSession, p: &NewPrompt, at: u64) -> Result<Result<Prompt, Refused>> {
     if s.state.terminal() {
         return Ok(Err(Refused::Moved { now: s.state }));
     }
@@ -1409,13 +1409,16 @@ pub fn rebuilt_in(
     prompt: &NewPrompt,
     lost: bool,
     at: u64,
-) -> Result<Result<Session, Refused>> {
+) -> Result<Result<AgentSession, Refused>> {
     if from == State::Queued {
         let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
         if s.state != State::Queued {
             return Ok(Err(Refused::Moved { now: s.state }));
         }
-        c.execute("UPDATE agent_sessions SET machine = ?2 WHERE id = ?1", params![id, machine])?;
+        // Its wait for a box to take it starts over on the new one: a
+        // session asked long before the rebuild isn't failed as not taken
+        // at the first look after it (Arugula #744).
+        c.execute("UPDATE agent_sessions SET machine = ?2, updated_at = ?3 WHERE id = ?1", params![id, machine, at])?;
         return Ok(Ok(session_for_update(c, id)?.context("the session it moved")?));
     }
     let reason = if lost { BOX_REBUILT_LOST } else { BOX_REBUILT };
@@ -1466,7 +1469,7 @@ pub fn moved_in(
     lost: bool,
     (by, to_name): (&str, &str),
     at: u64,
-) -> Result<Result<Session, Refused>> {
+) -> Result<Result<AgentSession, Refused>> {
     let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
     if s.state != from {
         return Ok(Err(Refused::Moved { now: s.state }));
@@ -1514,14 +1517,21 @@ pub fn moved_in(
     Ok(Ok(session_for_update(c, id)?.context("the session it moved")?))
 }
 
-pub(super) fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<Session>> {
+pub(super) fn session_for_update(c: &impl Sql, id: &str) -> Result<Option<AgentSession>> {
     c.query_row(&format!("SELECT {COLS} FROM agent_sessions WHERE id = ?1{}", c.for_update()), params![id], session_row)
         .optional()
 }
 
 /// Write a move's new state and its event (`None` for a heartbeat), and
 /// what goes with it: an end drops the queued prompts.
-fn write_state(c: &impl Sql, s: &Session, to: State, was: Option<State>, event: Option<&Event>, at: u64) -> Result<()> {
+fn write_state(
+    c: &impl Sql,
+    s: &AgentSession,
+    to: State,
+    was: Option<State>,
+    event: Option<&Event>,
+    at: u64,
+) -> Result<()> {
     if let Some(e) = event {
         add_event(c, e)?;
     }
@@ -1547,7 +1557,7 @@ fn write_state(c: &impl Sql, s: &Session, to: State, was: Option<State>, event: 
 /// [`Db::move_session`] in a transaction the caller holds and commits:
 /// the session after it, and the events it wrote (none for a heartbeat;
 /// two when a report brought an `unresponsive` session back).
-pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(Session, Vec<Event>), Refused>> {
+pub fn move_session_in(c: &impl Sql, id: &str, m: &Move) -> Result<Result<(AgentSession, Vec<Event>), Refused>> {
     let Some(s) = session_for_update(c, id)? else { return Ok(Err(Refused::NoSession)) };
     match m {
         Move::Control { from, to, at, detail } => {
@@ -1689,7 +1699,7 @@ impl Db {
     /// such project, or no such workspace in it. A thread with a session
     /// going already is [`super::Taken`]. Its job is the caller's
     /// ([`dispatch`], M256).
-    pub fn create_session(&self, new: &NewSession, at: u64) -> Result<Option<(Session, Prompt)>> {
+    pub fn create_session(&self, new: &NewAgentSession, at: u64) -> Result<Option<(AgentSession, Prompt)>> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let made = create_session_in(&tx, new, at)?;
@@ -1697,7 +1707,7 @@ impl Db {
         Ok(made)
     }
 
-    pub fn session(&self, id: &str) -> Result<Option<Session>> {
+    pub fn session(&self, id: &str) -> Result<Option<AgentSession>> {
         self.c()
             .query_row(&format!("SELECT {COLS} FROM agent_sessions WHERE id = ?1"), params![id], session_row)
             .optional()
@@ -1706,7 +1716,7 @@ impl Db {
     /// The session going on a thread (one that hasn't ended), if any: the
     /// thread's own, or once a Try 3's sibling is picked, that one (M264).
     /// Its other tries and its reviews aren't the thread's.
-    pub fn session_on_thread(&self, room: &str, parent_seq: u64) -> Result<Option<Session>> {
+    pub fn session_on_thread(&self, room: &str, parent_seq: u64) -> Result<Option<AgentSession>> {
         self.c()
             .query_row(
                 &format!(
@@ -1723,12 +1733,12 @@ impl Db {
     }
 
     /// Session `parent`'s Try 3 siblings (M264), oldest first.
-    pub fn session_siblings(&self, parent: &str) -> Result<Vec<Session>> {
+    pub fn session_siblings(&self, parent: &str) -> Result<Vec<AgentSession>> {
         siblings_in(&self.c(), parent)
     }
 
     /// [`start_tries_in`] in a transaction of its own.
-    pub fn start_tries(&self, parent: &str, harnesses: &[&str], at: u64) -> Result<Result<Vec<Session>, Refused>> {
+    pub fn start_tries(&self, parent: &str, harnesses: &[&str], at: u64) -> Result<Result<Vec<AgentSession>, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let made = start_tries_in(&tx, parent, harnesses, at)?;
@@ -1745,7 +1755,7 @@ impl Db {
         picked: &str,
         by: &str,
         at: u64,
-    ) -> Result<Result<(Session, Vec<String>), Refused>> {
+    ) -> Result<Result<(AgentSession, Vec<String>), Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let done = pick_in(&tx, parent, picked, by, at)?;
@@ -1756,7 +1766,7 @@ impl Db {
     }
 
     /// A project's latest sessions, newest first.
-    pub fn project_sessions(&self, project: &str, limit: u32) -> Result<Vec<Session>> {
+    pub fn project_sessions(&self, project: &str, limit: u32) -> Result<Vec<AgentSession>> {
         self.c().query_map(
             &format!(
                 "SELECT {COLS} FROM agent_sessions WHERE project_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2"
@@ -1786,7 +1796,7 @@ impl Db {
 
     /// Move a session: its new state and the events saying so, in one
     /// transaction. `Err(Refused)` writes nothing.
-    pub fn move_session(&self, id: &str, m: &Move) -> Result<Result<(Session, Vec<Event>), Refused>> {
+    pub fn move_session(&self, id: &str, m: &Move) -> Result<Result<(AgentSession, Vec<Event>), Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let moved = move_session_in(&tx, id, m)?;
@@ -1962,7 +1972,7 @@ impl Db {
     }
 
     /// Every session on `workspace` that hasn't ended, oldest first.
-    pub fn live_sessions_on(&self, workspace: &str) -> Result<Vec<Session>> {
+    pub fn live_sessions_on(&self, workspace: &str) -> Result<Vec<AgentSession>> {
         self.c().query_map(
             &format!(
                 "SELECT {COLS} FROM agent_sessions WHERE workspace_id = ?1 AND state NOT IN ('failed', 'stopped')
@@ -1974,7 +1984,7 @@ impl Db {
     }
 
     /// Every session of `project` that hasn't ended, oldest first.
-    pub fn live_sessions_of(&self, project: &str) -> Result<Vec<Session>> {
+    pub fn live_sessions_of(&self, project: &str) -> Result<Vec<AgentSession>> {
         self.c().query_map(
             &format!(
                 "SELECT {COLS} FROM agent_sessions WHERE project_id = ?1 AND state NOT IN ('failed', 'stopped')
@@ -1994,7 +2004,7 @@ impl Db {
         prompt: &NewPrompt,
         lost: bool,
         at: u64,
-    ) -> Result<Result<Session, Refused>> {
+    ) -> Result<Result<AgentSession, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let moved = rebuilt_in(&tx, id, from, machine, prompt, lost, at)?;
@@ -2015,7 +2025,7 @@ impl Db {
         lost: bool,
         by: (&str, &str),
         at: u64,
-    ) -> Result<Result<Session, Refused>> {
+    ) -> Result<Result<AgentSession, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let moved = moved_in(&tx, id, from, workspace, prompt, lost, by, at)?;
@@ -2055,7 +2065,7 @@ impl Db {
     }
 
     /// What a hosted machine on `workspace` pulls, now ([`Db::session_work_at`]).
-    pub fn session_work(&self, workspace: &str) -> Result<Vec<SessionWork>> {
+    pub fn session_work(&self, workspace: &str) -> Result<Vec<AgentSessionWork>> {
         self.session_work_at(workspace, arugula_e2e::now_ms())
     }
 
@@ -2091,7 +2101,7 @@ impl Db {
     /// another ([`MAX_SESSIONS_PER_BOX`], [`MAX_HELD_SESSIONS_PER_BOX`]),
     /// the oldest first. A parked one's reply goes before a new session:
     /// its asker is waiting on a conversation the box already holds.
-    pub fn session_work_at(&self, workspace: &str, now: u64) -> Result<Vec<SessionWork>> {
+    pub fn session_work_at(&self, workspace: &str, now: u64) -> Result<Vec<AgentSessionWork>> {
         let c = self.c();
         let live = c.query_map(
             &format!(
@@ -2132,7 +2142,7 @@ impl Db {
             .query_row("SELECT machine FROM hosted_workspaces WHERE id = ?1", params![workspace], |r| r.get(0))
             .optional()?
             .flatten();
-        let ours = |s: &&Session| s.machine.is_none() || s.machine == machine;
+        let ours = |s: &&AgentSession| s.machine.is_none() || s.machine == machine;
         let mut running = live.iter().filter(ours).filter(|s| s.state != State::Queued && !parked(s, now)).count();
         let mut held = live.iter().filter(ours).filter(|s| s.state != State::Queued).count();
         // A parked one with prompts runs again while there's a slot; else
@@ -2158,7 +2168,7 @@ impl Db {
                 running += 1;
                 held += 1;
             }
-            out.push(SessionWork {
+            out.push(AgentSessionWork {
                 session: s.id.clone(),
                 project: s.project.clone(),
                 workspace: s.workspace.clone(),

@@ -16,8 +16,11 @@
 // never the window's width: a page can be narrow on a wide screen. Too narrow
 // for both, the list stands alone and a row opens its preview in its place.
 
+import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { Bar } from "./bar";
+import { CheckIcon, ChevronIcon, Svg } from "./icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -30,6 +33,9 @@ const HOVER_MS = 140;
 const KEYS_HOLD_MS = 400;
 
 export type ListTone = "live" | "bad" | "warn";
+
+/** The card tone a row's takes. */
+const ROW_TONES = { live: "accent", bad: "danger", warn: "warn" } as const;
 
 /** One count over the list. With `key`, it's a filter. */
 export interface ListCount {
@@ -62,6 +68,8 @@ export function ListCounts({ counts, on, pick }: { counts: ListCount[]; on: stri
 /** What a row says, in the places every list's row says it. */
 export interface ListRowParts {
   tone?: ListTone;
+  /** One line, as a Doc's row is: a small box with no second line. */
+  dense?: boolean;
   title: ComponentChildren;
   /** Beside the title: only what's unusual about it. */
   tags?: ComponentChildren;
@@ -100,6 +108,10 @@ export interface ListPageProps<T> {
   keyOf: (item: T) => string;
   row: (item: T) => ListRowParts;
   preview: (item: T) => ComponentChildren;
+  /** What shows a row's preview: the pointer resting on it (the default), or
+   * only a click, for a preview that's costly to draw (a Doc). The keys move
+   * the selection either way. */
+  previewOn?: "hover" | "click";
   /** Enter, or a double click. */
   onOpen: (item: T) => void;
   /** Where the divider's position is kept. */
@@ -141,7 +153,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -266,7 +278,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
 
   const hovered = (key: string, e: PointerEvent) => {
     // A form in the preview's place stays, so what's under the pointer can't show.
-    if (e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
+    if (previewOn === "click" || e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
     clearTimeout(hover.current);
     hover.current = setTimeout(() => {
       if (performance.now() - keyed.current > KEYS_HOLD_MS) setPicked(key);
@@ -277,12 +289,14 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     const key = keyOf(item);
     const r = row(item);
     return (
-      <div
+      <Card
         key={key}
         id={rowId(key)}
         role="option"
         aria-selected={key === selectedKey}
-        class={r.tone ? `list-row ${r.tone}` : "list-row"}
+        class="list-row"
+        tone={r.tone && ROW_TONES[r.tone]}
+        dense={r.dense}
         {...r.attrs}
         onClick={() => {
           setPicked(key);
@@ -299,7 +313,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         <span class="list-row-age">{r.age}</span>
         <div class="list-row-detail">{r.detail}</div>
         <span class="list-row-mark">{r.mark}</span>
-      </div>
+      </Card>
     );
   };
 
@@ -359,7 +373,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             <aside class="list-preview" aria-label={pane ? "Form" : "Preview"} data-list-preview>
               {detail && !pane && (
                 <button type="button" class="link list-back" data-list-back onClick={() => setDetail(false)}>
-                  <span aria-hidden="true">‹ </span>
+                  <ChevronIcon dir="left" />{" "}
                   {label}
                 </button>
               )}
@@ -394,20 +408,71 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   );
 }
 
-/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them. */
-export function ListPreview({ title, facts, actions, children, aside, ...attrs }: { title: ComponentChildren; facts?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them.
+ *
+ * With a `title`, the head is the list's own: the name large, then the facts and
+ * the buttons under it. Without one, the preview's words carry the name
+ * themselves (a Doc's own head is the title), and the head is a column bar
+ * (Arugula #659): the facts at the left (`factsTip` says the rest on hover),
+ * then the hint, the one primary and the icon buttons at the right, ⋯ last. */
+export function ListPreview({ title, facts, factsTip, hint, actions, children, aside, ...attrs }: { title?: ComponentChildren; facts?: ComponentChildren; factsTip?: string; hint?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
     <>
-      <header class="list-preview-head" {...attrs}>
-        <h2>{title}</h2>
-        {facts && <div class="list-preview-facts">{facts}</div>}
-        {actions && <div class="list-preview-actions">{actions}</div>}
-      </header>
+      {title === undefined ? (
+        <Bar
+          class="list-preview-bar"
+          {...attrs}
+          actions={
+            <>
+              {hint}
+              {actions}
+            </>
+          }
+        >
+          {facts && (
+            <span class="list-preview-bar-facts" title={factsTip}>
+              {facts}
+            </span>
+          )}
+        </Bar>
+      ) : (
+        <header class="list-preview-head" {...attrs}>
+          <h2>{title}</h2>
+          {facts && <div class="list-preview-facts">{facts}</div>}
+          {actions && <div class="list-preview-actions">{actions}</div>}
+        </header>
+      )}
       <div class={aside ? "list-preview-body" : "list-preview-body solo"}>
         <div class="list-preview-words">{children}</div>
         {aside && <div class="list-preview-aside">{aside}</div>}
       </div>
     </>
+  );
+}
+
+/** The preview bar's Copy link: the same icon button as a Doc's own bar, and
+ * "Copied ✓" in place for a moment. `copy` says whether it copied; `done` is
+ * the title while it says so. */
+export function PreviewCopyLink({ copy, title, done, disabled, ...attrs }: { copy: () => Promise<boolean>; title: string; done?: string; disabled?: boolean; [hook: `data-${string}`]: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const click = async () => {
+    if (!(await copy())) return;
+    setCopied(true);
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button type="button" class="bar-btn sq preview-bar-link" data-copied={copied ? "" : undefined} disabled={disabled} title={copied && done ? done : title} aria-label="Copy link" onClick={() => void click()} {...attrs}>
+      {copied ? (
+        <span class="preview-bar-copied">Copied <CheckIcon size="xs" /></span>
+      ) : (
+        <Svg size="sm">
+          <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+          <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+        </Svg>
+      )}
+    </button>
   );
 }
 
@@ -424,17 +489,17 @@ export function ListSection({ title, n, children, ...attrs }: { title: string; n
   );
 }
 
-/** A row of a `ListSection`: it looks like the list's, and it isn't a target,
+/** A row of a `ListSection`: a card like the list's, and it isn't a target,
  * so it can hold buttons. */
 export function ListItem({ tone, title, detail, actions, children, ...attrs }: { tone?: ListTone; title: ComponentChildren; detail?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
-    <div class={tone ? `list-item ${tone}` : "list-item"} {...attrs}>
+    <Card class="list-item" tone={tone && ROW_TONES[tone]} {...attrs}>
       <div class="list-item-text">
         <div class="list-item-title">{title}</div>
         {detail && <div class="list-item-detail">{detail}</div>}
         {children}
       </div>
       {actions && <div class="list-item-actions">{actions}</div>}
-    </div>
+    </Card>
   );
 }

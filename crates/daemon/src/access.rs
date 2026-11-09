@@ -303,7 +303,7 @@ impl Access {
     }
 
     /// Every request: the Host check and the identity check (the server
-    /// runs them separately, for the join exception).
+    /// runs them separately, for the share viewer and the token class).
     #[cfg(test)]
     pub fn check(&self, headers: &HeaderMap, peer: &Peer) -> Result<(), Refusal> {
         self.check_host(headers)?;

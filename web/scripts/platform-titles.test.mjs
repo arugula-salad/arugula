@@ -35,6 +35,7 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa/chat/activity"), "Activity · Chat · Acme · Arugula");
   assert.equal(t("/inbox"), "Inbox · Arugula");
   assert.equal(t("/settings"), "Account settings · Arugula");
+  assert.equal(t("/design"), "Design reference · Arugula");
   assert.equal(t("/nowhere/at/all"), "Not found · Arugula");
 });
 

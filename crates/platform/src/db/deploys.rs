@@ -794,8 +794,11 @@ pub struct VerifiedApproval {
     /// v2 the whole of its signature): `None` only for tests' unchecked
     /// ones.
     passkey: Option<PasskeyProof>,
-    /// Its format: `arugula_e2e::deploy::V1` or `V2`.
+    /// Its format: `arugula_e2e::deploy::V1`, `V2` or `V3`.
     v: u8,
+    /// v3 (#1985): the chant gate its statement is for, and its time.
+    chant: Option<arugula_e2e::deploy::chant::Gate>,
+    chant_at: String,
 }
 
 /// A passkey's assertion, as the platform checked it (M218, DK4): each
@@ -836,12 +839,24 @@ impl VerifiedApproval {
             signature: approval.sig.clone(),
             passkey: Some(passkey),
             v: approval.v,
+            chant: approval.chant.clone(),
+            chant_at: approval.at.clone(),
         }
     }
 
-    /// Its format: `arugula_e2e::deploy::V1` or `V2`.
+    /// Its format: `arugula_e2e::deploy::V1`, `V2` or `V3`.
     pub fn v(&self) -> u8 {
         self.v
+    }
+
+    /// A v3's chant gate.
+    pub fn chant(&self) -> Option<&arugula_e2e::deploy::chant::Gate> {
+        self.chant.as_ref()
+    }
+
+    /// A v3's statement's time; empty for any other.
+    pub fn chant_at(&self) -> &str {
+        &self.chant_at
     }
 
     pub fn passkey(&self) -> Option<&PasskeyProof> {
@@ -883,6 +898,8 @@ impl VerifiedApproval {
             signature: signature.into(),
             passkey: None,
             v: arugula_e2e::deploy::V1,
+            chant: None,
+            chant_at: String::new(),
         }
     }
 
@@ -946,6 +963,12 @@ impl VerifiedApproval {
                 "expires": self.expires,
             }),
         };
+        // #1985: a v3's chant gate and its statement's time, the rest of
+        // the bytes its passkey signed.
+        if let Some(g) = &self.chant {
+            d["chant"] = json!(g);
+            d["at"] = json!(self.chant_at);
+        }
         // M218: the passkey's assertion over the approval's bytes, with
         // its credential id.
         if let Some(p) = &self.passkey {
@@ -1785,6 +1808,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM planter_app_claims WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::deploy_approvals::erase_account(c)?;
     super::deploy_runs::erase_account(c)?;
+    super::deploy_plans::erase_account(c)?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;
     Ok(())
 }

@@ -171,6 +171,15 @@ export async function home(page: Page) {
   await page.waitForFunction(() => window.__arugula?.control?.phase === "ready");
 }
 
+/** `url` in a new page of `page`'s context (so signed in as it is). Playwright's
+ * Linux WebKit throws its own "Assertion error" when an open page moves to
+ * another origin, such as the platform page's (#402); a new page doesn't. */
+export async function opened(page: Page, url: string): Promise<Page> {
+  const next = await page.context().newPage();
+  await next.goto(url);
+  return next;
+}
+
 /** Show `host` in the tab view, connected. */
 export async function show(page: Page, host: string) {
   await expect.poll(() => page.evaluate(() => window.__arugula.hosts.names), { timeout: 30_000 }).toContain(host);

@@ -35,9 +35,12 @@ runs:
     - name: The native client's OpenAPI document is current (contract/openapi/)
       shell: bash
       run: just api-contract check
-    - name: DECISIONS.md lists the decision records (docs/decisions/)
+    - name: DECISIONS.md lists the decision records (docs/decisions/), and docs/data-model.md matches the code
       shell: bash
       run: just decisions check
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new
+    - name: ops/ builds its Fly plans (#1983)
+      shell: bash
+      run: just ops-check

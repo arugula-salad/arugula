@@ -211,6 +211,17 @@ pub async fn serve_on_with(
     template: &str,
     set: impl FnOnce(&mut Config),
 ) -> (Arc<TestHub>, Arc<Platform>, String, String) {
+    serve_platform(enroll, compute, template, |p| set(&mut p.hosted)).await
+}
+
+/// [`serve_on`], the platform changed by `set` before it's shared (the
+/// GitHub App, say).
+pub async fn serve_platform(
+    enroll: EnrollBy,
+    compute: Arc<dyn Substrate>,
+    template: &str,
+    set: impl FnOnce(&mut Platform),
+) -> (Arc<TestHub>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
@@ -224,7 +235,7 @@ pub async fn serve_on_with(
         cipher: Some(Arc::new(crate::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
         ..Default::default()
     };
-    set(&mut p.hosted);
+    set(&mut p);
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -346,6 +357,77 @@ async fn who_may_do_what() {
     let (_, base) = crate::chat_tests::serve(hub).await;
     assert_eq!(make(&base, "alice", "personal", "dev").await.0, 404);
     assert_eq!(call(&base, "alice", "GET", "/api/projects", None).await.1["hosted"], false);
+}
+
+/// A workspace names who made it only while they're in the project: one
+/// a former member made names nobody, in the project's list, on its own,
+/// in the caller's list of every project's, and in what a wake, a
+/// rebuild, a new spec and a delete answer. The row keeps the name. A
+/// personal project's names its account; a locked team's still names its
+/// members.
+#[tokio::test]
+async fn a_former_members_workspace_names_nobody() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (status, alices) = make(&base, "alice", &project, "alices").await;
+    assert_eq!((status, alices["created_by"].as_str()), (201, Some("alice")), "{alices}");
+    let (status, bobs) = make(&base, "bob", &project, "bobs").await;
+    assert_eq!((status, bobs["created_by"].as_str()), (201, Some("bob")), "{bobs}");
+    let bobs = bobs["id"].as_str().unwrap().to_owned();
+    let now = now_ms();
+    drive(&app, now).await;
+    for (i, id) in [alices["id"].as_str().unwrap(), &bobs].into_iter().enumerate() {
+        hub.enroll(id, &format!("m{i}"));
+    }
+    drive(&app, now + 3_000).await;
+    assert_eq!(show(&base, &project, &bobs).await["state"], "ready");
+    // Locked, bob is still a member.
+    hub.lock("t1", true);
+    app.cache.team_changed("t1");
+    assert_eq!(show(&base, &project, &bobs).await["created_by"], "bob");
+    hub.lock("t1", false);
+    // bob leaves, and the hub tells the platform.
+    hub.team("t1", &[("alice", TeamRole::Owner), ("vic", TeamRole::Viewer)]);
+    app.cache.team_changed("t1");
+
+    let by_name = |v: &Value| -> Vec<(String, Value)> {
+        v["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| (w["name"].as_str().unwrap().to_owned(), w["created_by"].clone()))
+            .collect()
+    };
+    let (status, listed) = call(&base, "vic", "GET", &format!("/api/projects/{project}/workspaces"), None).await;
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(by_name(&listed), [("alices".to_owned(), json!("alice")), ("bobs".to_owned(), Value::Null)]);
+    assert_eq!(show(&base, &project, &bobs).await["created_by"], Value::Null);
+    assert_eq!(show(&base, &project, "alices").await["created_by"], "alice");
+    let (status, all) = call(&base, "alice", "GET", "/api/workspaces", None).await;
+    assert_eq!(status, 200, "{all}");
+    assert_eq!(by_name(&all), [("alices".to_owned(), json!("alice")), ("bobs".to_owned(), Value::Null)]);
+    assert_eq!(app.db.hosted_workspace(&project, &bobs).unwrap().unwrap().created_by.as_deref(), Some("bob"));
+
+    // What's done to it answers the same way: a wake, a new spec, a
+    // rebuild, a delete.
+    fake.pause_all();
+    drive(&app, now + 70_000).await;
+    let w = show(&base, &project, &bobs).await;
+    assert_eq!((w["asked"].as_str(), w["created_by"].clone()), (Some("wake"), Value::Null), "{w}");
+    let path = format!("/api/projects/{project}/workspaces/{bobs}");
+    let spec = json!({ "repos": ["https://github.com/acme/app"], "size": "small" });
+    let (status, w) = call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+    let (status, w) = call(&base, "alice", "POST", &format!("{path}/rebuild"), None).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+    let (status, w) = call(&base, "alice", "DELETE", &path, None).await;
+    assert_eq!((status, w["created_by"].clone()), (200, Value::Null), "{w}");
+
+    // A personal project's workspace names its account.
+    let (status, w) = make(&base, "alice", "personal", "own").await;
+    assert_eq!((status, w["created_by"].as_str()), (201, Some("alice")), "{w}");
+    let (status, listed) = call(&base, "alice", "GET", "/api/projects/personal/workspaces", None).await;
+    assert_eq!((status, by_name(&listed)), (200, vec![("own".to_owned(), json!("alice"))]), "{listed}");
 }
 
 /// A create whose answer was lost is found by its metadata, never made
@@ -546,6 +628,92 @@ async fn wake_rebuild_and_delete() {
     let later = now + 90_000 + super::usage::SETTLE_MS;
     assert_eq!(super::usage::reconcile(&app, later).await.unwrap(), 2);
     assert_eq!(super::usage::reconcile(&app, later + 1).await.unwrap(), 0);
+}
+
+/// A ready workspace, `dev`, whose box enrolled as `m1`: its id and when
+/// it became ready.
+async fn ready_workspace(hub: &TestHub, app: &Platform, base: &str, project: &str) -> (String, u64) {
+    hub.delegate(project);
+    let (_, w) = make(base, "alice", project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let now = now_ms();
+    drive(app, now).await;
+    hub.enroll(&id, "m1");
+    drive(app, now + 3_000).await;
+    assert_eq!(show(base, project, &id).await["state"], "ready");
+    (id, now + 3_000)
+}
+
+/// An owner removes a workspace's machine at the hub (Arugula #744). The
+/// hub's notice is its word: the workspace fails at once, saying why, its
+/// box paused. One about another machine, or told twice, changes nothing.
+/// A rebuild makes a new box as ever.
+#[tokio::test]
+async fn a_machine_removed_at_the_hub_fails_its_workspace() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
+    fake.calls();
+    assert!(!super::machine_removed(&app, &id, "m-other").unwrap(), "not its machine");
+    assert!(super::machine_removed(&app, &id, "m1").unwrap());
+    drive(&app, at + 1_000).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(worker::REMOVED)), "{w}");
+    assert_eq!(w["asked"], Value::Null, "{w}");
+    assert_eq!(fake.calls(), ["pause sbx0"]);
+    assert!(!super::machine_removed(&app, &id, "m1").unwrap(), "failed already");
+
+    let path = format!("/api/projects/{project}/workspaces/{id}");
+    let (status, _) = call(&base, "bob", "POST", &format!("{path}/rebuild"), None).await;
+    assert_eq!(status, 200);
+    drive(&app, at + 2_000).await;
+    hub.enroll(&id, "m2");
+    drive(&app, at + 5_000).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["machine"].as_str()), (Some("ready"), Some("m2")), "{w}");
+    assert!(!super::machine_removed(&app, &id, "m1").unwrap(), "the old machine's notice, late");
+}
+
+/// Only the hub's word fails a workspace: a hub that can't answer, or one
+/// that no longer lists the machine (restored from a backup, or on an
+/// empty volume), leaves it ready, and a paused one paused. The notice
+/// fails a paused one too.
+#[tokio::test]
+async fn a_machine_missing_from_the_hub_fails_nothing() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
+    // Read as the worker left it: opening a paused workspace wakes it.
+    let state = || app.db.hosted_workspace(&project, &id).unwrap().unwrap().state;
+    hub.enrolled_down(true);
+    drive(&app, at + 61_000).await;
+    assert_eq!(state(), "ready", "the hub can't say");
+    hub.enrolled_down(false);
+    hub.remove(&id);
+    drive(&app, at + 122_000).await;
+    assert_eq!(state(), "ready", "missing isn't removed");
+    fake.pause_all();
+    drive(&app, at + 183_000).await;
+    assert_eq!(state(), "paused");
+    drive(&app, at + 800_000).await;
+    assert_eq!(state(), "paused", "still");
+    assert!(super::machine_removed(&app, &id, "m1").unwrap());
+    drive(&app, at + 800_001).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(worker::REMOVED)), "{w}");
+}
+
+/// The hub says someone tried a ready workspace's enrollment again
+/// (`taken`): the box goes, as an enrolling one's would, and the workspace
+/// fails saying so.
+#[tokio::test]
+async fn a_ready_workspaces_contested_enrollment_deletes_its_box() {
+    let (hub, fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    let (id, at) = ready_workspace(&hub, &app, &base, &project).await;
+    hub.take(&id);
+    drive(&app, at + 61_000).await;
+    let w = show(&base, &project, &id).await;
+    assert_eq!((w["state"].as_str(), w["error"].as_str()), (Some("failed"), Some(enroll::TAKEN)), "{w}");
+    assert_eq!(fake.deleted.lock().unwrap().as_slice(), ["sbx0"]);
+    assert_eq!(hub.gone(), std::slice::from_ref(&id));
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.

@@ -13,10 +13,13 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
 import { askText } from "../../shared/ui/menu";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import type { Span } from "../swarm/code";
 import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
+import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
@@ -246,12 +249,12 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
   const owner = !client.state?.roles;
   return (
     <div class="review" data-diff={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <b class="review-name">{s.name ?? "…"}</b>
         {machine && (
-          <span class="host-tag" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`On ${machine.name ?? machine.sprite}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         <span class="review-what" title={s.repo ?? ""}>
           {s.against}
@@ -285,11 +288,11 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
           </select>
         )}
         {can && (
-          <button title="Read it again" aria-label="Read it again" onClick={() => call("refresh")}>
-            ↻
-          </button>
+          <IconButton label="Read it again" onClick={() => call("refresh")}>
+            <ReloadIcon size="sm" />
+          </IconButton>
         )}
-      </div>
+      </Bar>
       <div class="review-body">
         {s.on_default && (
           <div class="diff-note" data-on-default>
@@ -301,7 +304,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         ) : s.loading && !s.files.length ? (
           <BlockLoading what="the changes" />
         ) : !s.files.length ? (
-          <BlockEmpty>Nothing changed ({s.against}).</BlockEmpty>
+          <EmptyState title="Nothing changed." why={`Compared ${s.against}. Edits show here as they're made.`} />
         ) : (
           s.files.map((f) => {
             const slash = f.path.lastIndexOf("/");
@@ -312,6 +315,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                     {LETTER[f.status]}
                   </span>
                   <span class="diff-path">
+                    {/* lint-icons: text — a rename's arrow, between the old name and the new */}
                     {f.old && <span class="dim">{f.old} → </span>}
                     <span class="dim">{f.path.slice(0, slash + 1)}</span>
                     {f.path.slice(slash + 1)}

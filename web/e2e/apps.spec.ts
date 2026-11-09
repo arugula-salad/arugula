@@ -266,7 +266,7 @@ test("a studio app opens framed from another site; its agent's question is answe
   await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.reason ?? null, b)).toBeNull();
 
   // hud's pages, in the frame.
-  await el.getByRole("button", { name: "Records ▾" }).click();
+  await el.getByRole("button", { name: "Records", exact: true }).click();
   await page.getByRole("menuitem", { name: "Work", exact: true }).click();
   await expect(frame.locator("#work")).toHaveText("Work board");
 

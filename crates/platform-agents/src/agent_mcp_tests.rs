@@ -129,7 +129,8 @@ const ALL: [&str; 8] = [
     "secrets.write",
 ];
 
-/// t's environment `production` (the chant-fly driver), made by a.
+/// t's environment `production` (the fake driver: a chant-fly deploy plans
+/// first, #1985, and is asked for once chant has), made by a.
 async fn production(base: &str, t: &str) -> String {
     let (st, env) = call(
         base,
@@ -137,8 +138,7 @@ async fn production(base: &str, t: &str) -> String {
         "POST",
         &format!("/api/projects/{t}/environments"),
         Some(json!({
-            "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
-            "settings": { "fly_app": "acme-app", "chant_env": "github" },
+            "name": "production", "driver": "fake", "secret_names": ["APP_TOKEN"],
         })),
     )
     .await;
@@ -316,7 +316,7 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
 /// call.
 #[tokio::test]
 async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
-    let (_hub, _app, base, t, u) = platform().await;
+    let (hub, app, base, t, u) = platform().await;
     assert_eq!(mint(&base, "a", "x", &[&u], &["issues.write"]).await.0, 403, "u isn't a's");
     assert_eq!(mint(&base, "a", "x", &[&t], &["cloud.drive"]).await.0, 400);
     assert_eq!(mint(&base, "a", "x", &[&t], &["deploys.approve"]).await.0, 400);
@@ -341,13 +341,104 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
     );
     assert!(why.contains("deploys.plan"), "{why}");
 
-    // A viewer's token never does more than a viewer.
-    let (_, m) = mint(&base, "x", "viewer", &[&t], &["issues.write", "secrets.write"]).await;
-    let viewer = m["token"].as_str().unwrap().to_owned();
+    // A viewer's token never does more than a viewer: a write power that
+    // does nothing for a viewer isn't minted where they only view (Arugula
+    // #683), per project, and the answer says which were left out. Nothing
+    // left at all is refused.
+    let (st, m) = mint(&base, "x", "viewer", &[&t], &["issues.write", "secrets.write"]).await;
+    assert_eq!((st, m["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{m}");
+    assert!(m["error"].as_str().unwrap().contains("an agent token"), "{m}");
+    assert_eq!(app.db.live_agent_tokens("x").unwrap(), 0);
+    let (_, me) = call(&base, "x", "GET", "/api/projects", None).await;
+    let personal = me["projects"].as_array().unwrap().iter().find(|p| p["team"].is_null()).unwrap()["id"].clone();
+    let personal = personal.as_str().unwrap().to_owned();
+    let (st, m) = mint(&base, "x", "mixed", &[&personal, &t], &["threads.read", "issues.write", "deploys.plan"]).await;
+    assert_eq!(st, 200, "{m}");
+    assert_eq!(m["left_out"], json!([{ "project": t, "name": "t", "powers": ["issues.write"] }]), "{m}");
+    let over = |p: &str| -> Vec<String> {
+        m["agent_token"]["grants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|g| g["project"]["id"] == p)
+            .map(|g| g["power"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(over(&personal), ["deploys.plan", "issues.write", "threads.read"], "{m}");
+    assert_eq!(over(&t), ["deploys.plan", "threads.read"], "deploys.plan reads for a viewer: {m}");
+    // x's devices are told what was minted, and only that: not
+    // issues.write over t.
+    let pname =
+        me["projects"].as_array().unwrap().iter().find(|p| p["id"] == personal.as_str()).unwrap()["name"].clone();
+    let body = pushed_to(&hub, "x", "A new agent token").await;
+    let reach = body
+        .strip_prefix("\u{201c}mixed\u{201d} can act as your agent: ")
+        .and_then(|b| b.strip_suffix(". Not you? Revoke it in Settings, Agents with no machine."))
+        .unwrap_or_else(|| panic!("{body}"));
+    let mut reach: Vec<&str> = reach.split("; ").collect();
+    reach.sort();
+    let mut want = [
+        format!("deploys.plan, issues.write, threads.read on {}", pname.as_str().unwrap()),
+        "deploys.plan, threads.read on t".into(),
+    ];
+    want.sort();
+    assert_eq!(reach, want, "{body}");
+    let (st, m) = mint(&base, "x", "reads", &[&t], &["threads.read", "threads.post"]).await;
+    assert_eq!((st, &m["left_out"]), (200, &json!([])), "{m}");
+    // One minted before then, written as it was: still refused at every write.
+    let (id, viewer) = crate::db::agent_tokens::new_token();
+    let new = crate::db::agent_tokens::NewToken {
+        id,
+        account: "x".into(),
+        name: "older".into(),
+        token_hash: hash(&viewer),
+        minted_from: "a browser".into(),
+    };
+    app.db.mint_agent_token(&new, &[("issues.write", &t), ("secrets.write", &t)], 1).unwrap();
     let why = refused(&tool(&base, &viewer, "issue_write", json!({ "kind": "create", "title": "no" })).await);
     assert!(why.contains("viewer"), "{why}");
     let why = refused(&tool(&base, &viewer, "set_secret", json!({ "name": "A", "value": "b" })).await);
     assert!(why.contains("viewer"), "{why}");
+    // And a token's bearer never revokes a grant: only a person does.
+    let r = reqwest::Client::new()
+        .post(format!("{base}/api/grants/grt_x/revoke"))
+        .bearer_auth(&viewer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 401);
+
+    // t's owner revokes one of a token's grants over t by its id, as a
+    // machine's (Arugula #683): the token's other grants stay, its list
+    // says who revoked which, and b is told that reach there again is a
+    // new token, not a grant.
+    let (_, m) = mint(&base, "b", "bobs", &[&t], &["threads.read", "issues.write"]).await;
+    let grants = m["agent_token"]["grants"].as_array().unwrap();
+    assert!(grants.iter().all(|g| g["revoked_by"].is_null() && g["revoked_at"].is_null()), "{m}");
+    let write = grants.iter().find(|g| g["power"] == "issues.write").unwrap()["id"].as_str().unwrap().to_owned();
+    assert_eq!(call(&base, "x", "POST", &format!("/api/grants/{write}/revoke"), None).await.0, 403, "a viewer");
+    let (st, r) = call(&base, "a", "POST", &format!("/api/grants/{write}/revoke"), None).await;
+    assert_eq!((st, &r["live"], &r["revoked_by"]["account"]), (200, &json!(false), &json!("a")), "{r}");
+    let (_, listed) = call(&base, "b", "GET", "/api/agent-tokens", None).await;
+    let bobs = listed["tokens"].as_array().unwrap().iter().find(|t| t["name"] == "bobs").unwrap();
+    let live: Vec<&str> = bobs["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|g| g["live"] == true)
+        .map(|g| g["power"].as_str().unwrap())
+        .collect();
+    assert_eq!(live, ["threads.read"], "{bobs}");
+    let gone = bobs["grants"].as_array().unwrap().iter().find(|g| g["id"] == write.as_str()).unwrap();
+    assert_eq!(
+        (&gone["live"], &gone["revoked_by"]),
+        (&json!(false), &json!({ "account": "a", "name": "a" })),
+        "{gone}"
+    );
+    assert!(gone["revoked_at"].is_u64(), "{gone}");
+    let body = pushed_to(&hub, "b", "A grant was revoked").await;
+    assert!(body.starts_with("a, an owner of t, revoked bobs's issues.write there."), "{body}");
+    assert!(body.contains("mint a new token") && !body.contains("grants add"), "{body}");
 
     // Revoked: the next request is refused, before any tool.
     let (_, m) = mint(&base, "a", "gone", &[&t], &["issues.write"]).await;
@@ -433,6 +524,18 @@ async fn it_speaks_one_json_rpc_message_per_post() {
         (&json!(false), &json!(["issues.write", "threads.read"])),
         "{caps}"
     );
+}
+
+/// The body of the first push to `to` titled `title`, waited for: the
+/// notices go in the background.
+async fn pushed_to(hub: &TestHub, to: &str, title: &str) -> String {
+    for _ in 0..50 {
+        if let Some((_, m, _)) = hub.pushes().into_iter().find(|(t, m, _)| t == to && m["title"] == title) {
+            return m["body"].as_str().unwrap().to_owned();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("no push to {to} titled {title:?}: {:?}", hub.pushes());
 }
 
 async fn call_as(base: &str, who: &str, path: &str) -> (u16, Value) {
@@ -562,7 +665,7 @@ async fn a_token_loses_a_team_when_its_owner_leaves_it() {
 /// who set them, never a value.
 #[tokio::test]
 async fn a_projects_owners_see_and_revoke_tokens_over_it() {
-    let (_hub, _app, base, t, _) = platform().await;
+    let (hub, _app, base, t, _) = platform().await;
     let (_, m) = mint(&base, "b", "bees", &[&t], &["issues.write", "secrets.write"]).await;
     let token = m["token"].as_str().unwrap().to_owned();
     let id = m["agent_token"]["id"].as_str().unwrap().to_owned();
@@ -583,6 +686,14 @@ async fn a_projects_owners_see_and_revoke_tokens_over_it() {
     }
     let (st, r) = call(&base, "a", "POST", &format!("/api/projects/{t}/agent-tokens/{id}/revoke"), None).await;
     assert_eq!((st, &r["revoked"]), (200, &json!(2)), "{r}");
+    // b, the minter, is told what was taken and that reach there again is
+    // a new token (Arugula #683); again finds nothing, and tells nobody.
+    let body = pushed_to(&hub, "b", "A grant was revoked").await;
+    assert!(body.starts_with("a, an owner of t, revoked bees's issues.write, secrets.write there."), "{body}");
+    assert!(body.contains("mint a new token"), "{body}");
+    assert_eq!(call(&base, "a", "POST", &format!("/api/projects/{t}/agent-tokens/{id}/revoke"), None).await.0, 404);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(hub.pushes().iter().filter(|(to, m, _)| to == "b" && m["title"] == "A grant was revoked").count(), 1);
     let why =
         refused(&tool(&base, &token, "issue_write", json!({ "kind": "create", "title": "no", "project": t })).await);
     assert!(why.contains("no issues.write grant"), "{why}");

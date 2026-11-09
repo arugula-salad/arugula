@@ -98,8 +98,8 @@ use crate::{
         hosted::HostedWorkspace,
         projects::{SESSIONS_REPLY, SESSIONS_START},
         sessions::{
-            ActionKind, Kind, NewAction, NewPrompt, NewSession, Session, Source, State, create_session_in, dispatch,
-            issue_slug, set_asker_agent_in, set_model_in, set_work_item_in, slug,
+            ActionKind, AgentSession, Kind, NewAction, NewAgentSession, NewPrompt, Source, State, create_session_in,
+            dispatch, issue_slug, set_asker_agent_in, set_model_in, set_work_item_in, slug,
         },
     },
     grants::AgentPrincipal,
@@ -678,7 +678,7 @@ async fn launch(
         None => slug(&words.join(" ")),
     };
     let prompt = hydrate::first_prompt(app, room, thread, project, asker, agent, repo, &slug).await?;
-    let new = NewSession {
+    let new = NewAgentSession {
         project,
         room: &room.id,
         parent_seq: thread,
@@ -731,7 +731,7 @@ async fn launch(
 
 /// What session `s` waits on while it's `needs_input`: its open request's
 /// id and whether it's a permission (`ask`), as its box said.
-fn open_ask(app: &Platform, s: &Session) -> Result<Option<(Option<String>, bool)>> {
+fn open_ask(app: &Platform, s: &AgentSession) -> Result<Option<(Option<String>, bool)>> {
     if s.seen_as() != State::NeedsInput {
         return Ok(None);
     }
@@ -750,7 +750,7 @@ fn open_ask(app: &Platform, s: &Session) -> Result<Option<(Option<String>, bool)
 /// waits on a person, and the reply is queued for after it.
 pub(crate) async fn reply(
     app: &Platform,
-    s: &Session,
+    s: &AgentSession,
     author: &str,
     agent: Option<&str>,
     text: &str,

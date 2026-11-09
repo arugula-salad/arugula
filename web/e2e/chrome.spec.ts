@@ -40,7 +40,7 @@ test.describe("on a computer", () => {
     const beta = await session(page, "beta");
     await row(page, "beta").locator(".ws-session-main").click();
     await expect.poll(() => shownSession(page)).toBe(beta);
-    await expect(row(page, "beta")).toHaveAttribute("aria-selected", "true");
+    await expect(row(page, "beta").locator(".ws-session-main")).toHaveAttribute("aria-current", "true");
 
     // Back: the tab that was shown, not the session's first.
     const firstName = await page.evaluate((s) => window.__arugula.client.state!.sessions.find((x) => x.id === s)!.name, first);
@@ -121,6 +121,10 @@ test.describe("on a computer", () => {
     const t = (await tab(page)).id;
     const pane = await active(page);
     const rail = page.locator(".ws-rail");
+    // A machine on its own has no platform page: no Projects, and no team Docs
+    // (its Docs are its bar's, Arugula #418).
+    await expect(rail.locator("[data-open-projects]")).toHaveCount(0);
+    await expect(rail.locator("[data-open-docs-all]")).toHaveCount(0);
 
     await rail.locator("[data-open-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
@@ -276,7 +280,7 @@ test.describe("states", () => {
       for (const s of c.state!.sessions) c.intent({ op: "close_session", session: s.id });
     });
     const empty = page.locator("[data-no-sessions]");
-    await expect(empty.locator(".empty-title")).toHaveText(/^No sessions on /);
+    await expect(empty.locator(".empty-state-title")).toHaveText(/^No sessions on /);
     await expect(page.locator("[data-session-empty]")).toBeVisible();
     // Nothing that needs a session: no tab strip, toolbar or activity.
     await expect(page.locator(".ws-tabs, [data-pane-toolbar], [data-activity-toggle]")).toHaveCount(0);
@@ -393,6 +397,8 @@ test.describe("accessibility", () => {
     await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
     await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
     await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\(Ctrl\+Shift\+P\)$/);
+    // Named by what it shows: the label, a space, the chord (#458).
+    await expect(page.getByRole("button", { name: /^Commands Ctrl\+Shift\+P$/ })).toBeVisible();
   });
 
   test("from the keyboard: out of the terminal by the palette, along the tabs, and back", async ({ page }) => {

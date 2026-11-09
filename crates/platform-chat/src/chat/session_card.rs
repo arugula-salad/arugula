@@ -31,7 +31,7 @@ use crate::{
         Taken,
         chat::{NewMessage, Room},
         pr_drafts::PrDraft,
-        sessions::{Role, Session},
+        sessions::{AgentSession, Role},
     },
 };
 
@@ -45,13 +45,13 @@ pub(crate) fn threaded(kind: &str) -> bool {
 /// Post session `s`'s card in its thread, once, when the session is made
 /// (M256 calls it): its message's number. The message is the platform's,
 /// with no author, and pages draw the card over it.
-pub fn post_card(app: &Platform, s: &Session) -> anyhow::Result<i64> {
+pub fn post_card(app: &Platform, s: &AgentSession) -> anyhow::Result<i64> {
     post_card_by(app, s, None)
 }
 
 /// [`post_card`] for a session its asker's agent started (aru-121):
 /// `started_by` ("<asker>'s agent on <machine>") is in its text too.
-pub fn post_card_by(app: &Platform, s: &Session, started_by: Option<&str>) -> anyhow::Result<i64> {
+pub fn post_card_by(app: &Platform, s: &AgentSession, started_by: Option<&str>) -> anyhow::Result<i64> {
     let room = app.db.chat_room(&s.room)?.ok_or_else(|| anyhow::anyhow!("no room {} for session {}", s.room, s.id))?;
     let parent = i64::try_from(s.parent_seq).ok().filter(|p| *p > 0 && threaded(&room.kind));
     let short: String = s.id.trim_start_matches("ses_").chars().take(8).collect();

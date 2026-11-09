@@ -70,7 +70,6 @@ async function start() {
       stdio: "ignore",
       env: {
         ...process.env,
-        ARUGULA_WISP_TOKEN_FILE: "/nonexistent",
         XDG_CONFIG_HOME: join(dir, "config"),
         XDG_DATA_HOME: join(dir, "data"),
         XDG_STATE_HOME: join(dir, "xstate"),

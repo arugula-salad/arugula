@@ -9,8 +9,10 @@ import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
-import { sessionSlug } from "./agents";
+import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
+import { Chip, ObjectChip } from "../ui/state-chip";
+import { CheckIcon, ChevronIcon } from "../ui/icons";
 
 /** How often an open thread asks again. */
 const EVERY_MS = 15_000;
@@ -20,6 +22,8 @@ const STATE: Record<ChatThreadAgentState, string> = {
   idle: "Idle",
   needs_you: "Needs you",
   offline: "Offline",
+  failed: "Failed",
+  stopped: "Stopped",
   unknown: "Unknown",
 };
 
@@ -31,7 +35,7 @@ export function agentName(a: ChatThreadAgent): string {
 /** Its last line: what's waiting for it, or how far it has read. */
 export function readLine(a: ChatThreadAgent, newest: number | undefined): string {
   if (a.waiting > 0) return `${a.waiting} waiting`;
-  if (a.state === "offline" || a.state === "unknown") return "";
+  if (a.state === "offline" || a.state === "unknown" || a.state === "failed" || a.state === "stopped") return "";
   if (a.read_seq === undefined || newest === undefined) return "";
   return a.read_seq >= newest ? "Read everything" : "Not woken since";
 }
@@ -76,7 +80,7 @@ function Now({ a }: { a: ChatThreadAgent }) {
   if (!a.working_on && !a.tool) return null;
   return (
     <span class="thread-agent-now">
-      {a.working_on && <span class="thread-agent-chip">{a.working_on}</span>} {a.tool}
+      {a.working_on && <Chip kind="tag">{a.working_on}</Chip>} {a.tool}
     </span>
   );
 }
@@ -99,7 +103,6 @@ function Detail({ a }: { a: ChatThreadAgent }) {
           </button>
         </p>
       )}
-      <p>Arugula shows its state, and its work item and tool name if its owner shares them. Never its output, tool arguments or paths.</p>
     </div>
   );
 }
@@ -111,7 +114,6 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
   const key = (a: ChatThreadAgent) => `${a.id}/${a.name}`;
   const shown = agents.find((a) => key(a) === open);
   const toggle = (a: ChatThreadAgent) => setOpen(open === key(a) ? null : key(a));
-  const where = (a: ChatThreadAgent) => `${a.hosted ? "hosted" : `${a.owner_name || "a teammate"}'s`} · ${a.machine_name}`;
   if (agents.length === 1) {
     const a = agents[0];
     const line = readLine(a, newest);
@@ -132,7 +134,7 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
     <section class={phone ? "thread-agents phone" : "thread-agents"} aria-label="The agents in this thread" data-thread-agents="many">
       {phone && (
         <button class="thread-agents-sum" aria-expanded={unfolded} data-thread-agents-sum onClick={() => setUnfolded(!unfolded)}>
-          {unfolded ? "▾" : "▸"} {summary(agents)}
+          <ChevronIcon open={unfolded} /> {summary(agents)}
         </button>
       )}
       {!folded && (
@@ -146,7 +148,6 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
                   {a.lead && <span class="thread-agent-lead">LEAD</span>}
                   <span class="thread-agent-state">{STATE[a.state]}</span>
                 </div>
-                <div class="thread-agent-where">{where(a)}</div>
                 <Now a={a} />
                 {line && <div class={a.waiting ? "thread-agent-read waits" : "thread-agent-read"}>{line}</div>}
               </button>
@@ -168,7 +169,9 @@ export function SeenMarks({ agents, m }: { agents: ChatThreadAgent[]; m: ChatMes
   return (
     <div class="thread-seen" title="How far each agent has read" data-thread-seen>
       {here.map((a) => (
-        <span key={`${a.id}/${a.name}`}>{agentName(a)}</span>
+        <span key={`${a.id}/${a.name}`}>
+          <CheckIcon size="xs" /> {agentName(a)}
+        </span>
       ))}
     </div>
   );
@@ -188,7 +191,7 @@ export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgen
   const words = atWords(text);
   return agents.filter((a) => {
     const name = sessionSlug(a.name);
-    const machine = a.machine_name.toLowerCase();
+    const machine = machineHandle(a.machine_name);
     return (!!name && words.has(name)) || (!a.hosted && (words.has(machine) || (!!name && words.has(`${machine}/${name}`))));
   });
 }
@@ -200,9 +203,9 @@ export function namedOutside(room: ChatRoomAgent[], agents: ChatThreadAgent[], t
   const out: string[] = [];
   for (const word of atWords(text)) {
     const [machine, session] = word.split("/", 2);
-    const a = room.find((r) => r.mentionable && r.machine_name.toLowerCase() === machine);
+    const a = room.find((r) => r.mentionable && machineHandle(r.machine_name) === machine);
     if (!a) continue;
-    const inThread = agents.some((t) => !t.hosted && t.machine_name.toLowerCase() === machine && (!session || sessionSlug(t.name) === session));
+    const inThread = agents.some((t) => !t.hosted && machineHandle(t.machine_name) === machine && (!session || sessionSlug(t.name) === session));
     if (!inThread) out.push(session ? `${session} on ${a.machine_name}` : a.machine_name);
   }
   return out;
@@ -239,11 +242,9 @@ export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: 
     <div class="thread-to" role="group" aria-label="Who this wakes" data-thread-to>
       <span class="thread-to-label">To</span>
       {agents.map((a) => (
-        <button
+        <ObjectChip
           key={keyOf(a)}
-          type="button"
-          class="thread-to-chip"
-          aria-pressed={on.includes(a)}
+          pressed={on.includes(a)}
           disabled={named}
           title={named ? "Named in your message" : undefined}
           data-thread-to-agent={keyOf(a)}
@@ -252,16 +253,16 @@ export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: 
           {agentName(a)}
           {a.lead && agents.length > 1 ? " · lead" : ""}
           {a.state === "offline" ? " · offline" : ""}
-        </button>
+        </ObjectChip>
       ))}
       {outside.map((who) => (
-        <button key={who} type="button" class="thread-to-chip" aria-pressed disabled title="Named in your message" data-thread-to-named>
+        <ObjectChip key={who} pressed disabled title="Named in your message" data-thread-to-named onClick={() => {}}>
           {who}
-        </button>
+        </ObjectChip>
       ))}
-      <button type="button" class="thread-to-chip" aria-pressed={on.length === 0 && !outside.length} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
+      <ObjectChip pressed={on.length === 0 && !outside.length} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
         Nobody
-      </button>
+      </ObjectChip>
     </div>
   );
 }

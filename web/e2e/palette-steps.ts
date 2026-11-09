@@ -39,7 +39,9 @@ async function paneMenu(page: Page, pane: number): Promise<string[]> {
   const n = await rows.count();
   for (let i = 0; i < n; i++) {
     const row = rows.nth(i);
-    const kind = await row.evaluate((el) => (el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : el.classList.contains("menu-parent") ? "parent" : "item"));
+    const kind = await row.evaluate((el) => (el.classList.contains("menu-filter-row") ? "filter" : el.classList.contains("menu-sep") ? "sep" : el.classList.contains("menu-header") ? "header" : el.classList.contains("menu-parent") ? "parent" : "item"));
+    // A long menu's filter row (#770) is no action.
+    if (kind === "filter") continue;
     if (kind === "sep") under = null;
     else if (kind === "header") under = (await row.textContent())!.trim();
     else if (kind === "parent") {

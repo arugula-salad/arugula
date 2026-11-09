@@ -2,13 +2,19 @@
 //! signs, acting for its owner's account. A copy is keyed by the machine and
 //! its own Doc id, so the same machine Doc always lands on the same `pdc_`;
 //! the first put makes it in the owner's personal project, which keeps it
-//! private to them until a person moves it into a team's
-//! ([`crate::project_docs::move_doc`]). Later puts write it wherever it is
-//! now, as long as the owner may still write there; if not, nothing changes
-//! and the machine is told why.
+//! private to them. Later puts write it wherever it is now (a copy moved
+//! into a team's project before the move route went, native #673, stays
+//! there), as long as the owner may still write there; if not, nothing
+//! changes and the machine is told why.
+//!
+//! A team's machine copies nothing (native #673): its puts and pictures are
+//! refused ([`TEAM_MACHINE`]), whatever daemon it runs; its take-downs
+//! still go. Copies it made before stay where they are.
 //!
 //! No grant is checked: a machine copying into its own owner's personal
-//! project needs none. A machine reaches only copies it made, for the
+//! project needs none. A put takes chat or the account's own word for
+//! copies (native #673, `Gate::Copies`), and taking a copy down takes
+//! neither. A machine reaches only copies it made, for the
 //! machine is in the key: another machine's `machine_doc` is a Doc of its own
 //! here, never the first one's.
 //!
@@ -34,7 +40,7 @@ use crate::{
     auth::Machine,
     db::project_docs::{self as db, Stored},
     issues::PERSONAL,
-    project_docs::{bad, changed, heading_ok, intent_ok, link, no_doc, place, refused, title_ok},
+    project_docs::{Gate, bad, changed, heading_ok, intent_ok, link, no_doc, place_gated, refused, title_ok},
 };
 
 /// Copies a machine puts, and pictures, per hour: a machine puts again when
@@ -106,9 +112,17 @@ async fn copy_for_owner(
     app: &Platform,
     d: &Machine,
     machine_doc: &str,
+    gate: Gate,
 ) -> Result<Option<(Stored, crate::project_docs::Place)>, ApiError> {
     let Some(doc) = app.db.project_doc_of_machine(&d.daemon, machine_doc)? else { return Ok(None) };
-    match place(app, &d.account, &doc.project, true).await {
+    // The word for copies is for the owner's own project alone: a copy
+    // sitting in a team's project goes by the team's chat.
+    let personal = crate::projects::personal_project(app, &d.account).await?;
+    let gate = match gate {
+        Gate::Copies if personal.as_deref() != Some(doc.project.as_str()) => Gate::Chat,
+        g => g,
+    };
+    match place_gated(app, &d.account, &doc.project, true, gate).await {
         Ok(p) => Ok(Some((doc, p))),
         Err(ApiError(StatusCode::FORBIDDEN | StatusCode::NOT_FOUND, ..)) => Err(err(
             StatusCode::FORBIDDEN,
@@ -116,6 +130,21 @@ async fn copy_for_owner(
         )),
         Err(e) => Err(e),
     }
+}
+
+/// Why a team's machine's copy isn't taken (native #673).
+pub const TEAM_MACHINE: &str = "a team's machine doesn't copy its Docs to the platform: they stay on the machine";
+
+/// A team's machine copies no Docs up (native #673), whatever daemon it
+/// runs: refused here, so the rule holds from the platform's deploy on.
+/// An older daemon logs it once and tries again after its next refresh.
+/// Its take-downs still go, so an old copy can come down.
+async fn not_a_team_machine(app: &Platform, d: &Machine) -> Result<(), ApiError> {
+    let machines = app.cache.daemons(&*app.hub, std::slice::from_ref(&d.daemon)).await?;
+    if machines.get(&d.daemon).is_some_and(|m| m.team.is_some()) {
+        return Err(err(StatusCode::FORBIDDEN, TEAM_MACHINE));
+    }
+    Ok(())
 }
 
 /// `PUT /api/daemon/docs/{machine_doc}`: the whole Doc, as the machine has
@@ -127,6 +156,7 @@ pub async fn put_route(
     Json(doc): Json<wire::MachineDoc>,
 ) -> J<wire::MachineDocPlaced> {
     app.limits.check_daemon(DOC_PUTS, &d.daemon)?;
+    not_a_team_machine(&app, &d).await?;
     plain("Doc id", &machine_doc, 64)?;
     let title = title_ok(&doc.title)?;
     let mut kept = Vec::with_capacity(doc.sections.len());
@@ -143,9 +173,9 @@ pub async fn put_route(
         .zip(&kept)
         .map(|(s, (h, i))| db::MachineSection { id: &s.id, heading: h, intent: i, body: s.body.as_deref() })
         .collect();
-    let project = match copy_for_owner(&app, &d, &machine_doc).await? {
+    let project = match copy_for_owner(&app, &d, &machine_doc, Gate::Copies).await? {
         Some((_, p)) => p.project,
-        None => place(&app, &d.account, PERSONAL, true).await?.project,
+        None => place_gated(&app, &d.account, PERSONAL, true, Gate::Copies).await?.project,
     };
     let whole = db::MachineDoc { title: &title, sections: &sections };
     let (stored, was_changed) = app
@@ -179,9 +209,10 @@ pub async fn asset_route(
     body: Bytes,
 ) -> J<wire::Asset> {
     app.limits.check_daemon(ASSET_PUTS, &d.daemon)?;
+    not_a_team_machine(&app, &d).await?;
     plain("Doc id", &machine_doc, 64)?;
     let mime = picture(&name, &body)?;
-    let Some((doc, _)) = copy_for_owner(&app, &d, &machine_doc).await? else {
+    let Some((doc, _)) = copy_for_owner(&app, &d, &machine_doc, Gate::Copies).await? else {
         return Err(err(StatusCode::NOT_FOUND, "put the Doc before its pictures"));
     };
     let (a, was_changed) = app.db.put_project_doc_asset(&doc.id, &name, mime, &body, now_ms())?.map_err(refused)?;
@@ -196,7 +227,8 @@ pub async fn asset_route(
 pub async fn delete_route(State(app): State<Arc<Platform>>, d: Machine, Path(machine_doc): Path<String>) -> J<Value> {
     app.limits.check_daemon(DOC_PUTS, &d.daemon)?;
     plain("Doc id", &machine_doc, 64)?;
-    let Some((doc, _)) = copy_for_owner(&app, &d, &machine_doc).await? else { return Err(no_doc()) };
+    // A machine takes its own copy down whatever chat or the word say.
+    let Some((doc, _)) = copy_for_owner(&app, &d, &machine_doc, Gate::None).await? else { return Err(no_doc()) };
     app.db.delete_project_doc(&doc.id)?;
     changed(&app, &doc.project, &doc.id);
     Ok(Json(json!({ "deleted": doc.id })))

@@ -9,7 +9,10 @@
 //!   (each time the step crashed, hung or failed);
 //! - jobs that ended `failed` in the last week, with why;
 //! - runs and deploys not ended that no job follows any more, which
-//!   nothing will end without the operator;
+//!   nothing will end without the operator; and runs older than
+//!   [`OLD_RUN_MS`] whatever their job's state, since a job that keeps
+//!   following a run that never ends looks like any other (Arugula
+//!   #744). Oldest first, with their age;
 //! - every deploy box not deleted, with its deploy's state and whether its
 //!   job still follows it (one it doesn't is left over).
 //!
@@ -47,7 +50,15 @@ use crate::hosted::Ask;
 /// How far back [`Stuck::failed`] looks.
 pub const FAILED_WINDOW_MS: u64 = 7 * 86_400_000;
 
-/// A run or a deploy not ended that no job follows.
+/// How old a run not ended has to be to be listed whatever its job's
+/// state: the longest it may wait for its box ([`crate::work::TAKE_MS`])
+/// and then run before its job starts asking whether its box still runs
+/// it ([`crate::work::RUN_MAX_MS`]). One listed for this is either
+/// running long on a busy box, or stuck: its age and its job say which.
+pub const OLD_RUN_MS: u64 = crate::work::TAKE_MS + crate::work::RUN_MAX_MS;
+
+/// A run or a deploy not ended that no job follows (or, for a run, older
+/// than [`OLD_RUN_MS`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unfollowed {
     pub id: String,
@@ -105,8 +116,8 @@ impl Db {
                 job_row,
             )
         };
-        let unfollowed = |sql: &str| {
-            c.query_map(sql, params![], |r| {
+        let unfollowed = |sql: &str, arg: u64| {
+            c.query_map(sql, params![arg], |r| {
                 Ok(Unfollowed {
                     id: r.get(0)?,
                     project: r.get(1)?,
@@ -123,15 +134,20 @@ impl Db {
             runs: unfollowed(
                 "SELECT r.id, r.project_id, r.state, r.created_at, j.state FROM runs r
                  LEFT JOIN platform_jobs j ON j.id = r.id
-                 WHERE r.state IN ('pending', 'approved', 'running') AND (j.id IS NULL OR j.state <> 'pending')
+                 WHERE r.state IN ('pending', 'approved', 'running')
+                     AND (j.id IS NULL OR j.state <> 'pending' OR r.created_at <= ?1)
                  ORDER BY r.created_at, r.id",
+                now.saturating_sub(OLD_RUN_MS),
             )?,
             deploys: unfollowed(
                 "SELECT d.id, e.project_id, d.state, d.created_at, j.state FROM deploys d
                  JOIN environments e ON e.id = d.environment_id
                  LEFT JOIN platform_jobs j ON j.id = d.id
                  WHERE d.state IN ('approved', 'running') AND (j.id IS NULL OR j.state <> 'pending')
+                     AND d.created_at >= ?1
                  ORDER BY d.created_at, d.id",
+                // Every one, however new.
+                0,
             )?,
             boxes: c.query_map(
                 "SELECT w.id, w.project_id, w.name, w.state, w.created_at, d.state, j.state
@@ -234,9 +250,19 @@ fn when(t: u64) -> String {
     jiff::Timestamp::from_millisecond(t as i64).map_or_else(|_| t.to_string(), |t| t.strftime("%F %T UTC").to_string())
 }
 
+/// How long `ms` is, for a person: "3d 4h", "7h 3m", "12m".
+fn age(ms: u64) -> String {
+    let m = ms / 60_000;
+    match (m / 1440, m / 60 % 24, m % 60) {
+        (0, 0, m) => format!("{m}m"),
+        (0, h, m) => format!("{h}h {m}m"),
+        (d, h, _) => format!("{d}d {h}h"),
+    }
+}
+
 impl Stuck {
-    /// For the operator's terminal.
-    pub fn render(&self) -> String {
+    /// For the operator's terminal, at `now` (for runs' ages).
+    pub fn render_at(&self, now: u64) -> String {
         use std::fmt::Write as _;
         let mut o = String::new();
         let job = |o: &mut String, j: &JobRow| {
@@ -258,16 +284,21 @@ impl Stuck {
         self.crashing.iter().for_each(|j| job(&mut o, j));
         let _ = writeln!(o, "jobs that failed in the last week: {}", self.failed.len());
         self.failed.iter().for_each(|j| job(&mut o, j));
-        for (what, list) in [("runs", &self.runs), ("deploys", &self.deploys)] {
-            let _ = writeln!(o, "{what} not ended that no job follows: {}", list.len());
+        let old = age(OLD_RUN_MS);
+        for (what, list) in [
+            (format!("runs not ended that no job follows, or made over {old} ago, oldest first"), &self.runs),
+            ("deploys not ended that no job follows".to_owned(), &self.deploys),
+        ] {
+            let _ = writeln!(o, "{what}: {}", list.len());
             for u in list {
                 let _ = writeln!(
                     o,
-                    "  {}  {}  {}  made {}  job {}",
+                    "  {}  {}  {}  made {} ({} ago)  job {}",
                     u.id,
                     u.project,
                     u.state,
                     when(u.created_at),
+                    age(now.saturating_sub(u.created_at)),
                     u.job.as_deref().unwrap_or("none")
                 );
             }

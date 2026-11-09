@@ -11,11 +11,11 @@
 // unlinking ends it. A product's name here (Studio) is what other
 // sections call it too, not its client id (`studio`, UI audit #168).
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
-import { toneClass } from "../swarm";
 import { Section } from "../../shared/ui/settings-section";
 
 export type ProductLink = {
@@ -93,7 +93,6 @@ export function LinkedProducts() {
       id="linked"
       title="Linked products"
       count={links.length}
-      lede="Products you let sign you in with Arugula. Linking alone grants them nothing here."
       more={
         <p>
           Your accounts there are linked to this one by your GitHub account's number, never its name. Unlinking takes effect the next time
@@ -107,14 +106,14 @@ export function LinkedProducts() {
         </p>
       )}
       {links.length > 0 && (
-        <ul class="platform-list sw-cards settings-cards" data-linked-products>
+        <ul class="platform-list card-list settings-cards" data-linked-products>
           {links.map((l) => {
             const since = l.linked ?? l.granted;
             // The bar: whether an account of yours there is linked, or it only signs you in.
             return (
-              <li key={l.client} class={`sw-card ${toneClass(l.user ? "accent" : "muted")}`} data-linked-product={l.client}>
-                <div class="sw-head">
-                  <b class="sw-name">{l.product}</b>
+              <Card as="li" key={l.client} tone={l.user ? "accent" : "muted"} data-linked-product={l.client}>
+                <div class="card-head">
+                  <b class="card-title big">{l.product}</b>
                   <button class="secondary danger small settings-card-act" data-unlink={l.client} disabled={busy === l.client} onClick={() => setUnlinking(l)}>
                     Unlink
                   </button>
@@ -142,7 +141,7 @@ export function LinkedProducts() {
                     <span>Let {l.product} see my projects and my role in each, and keep its apps in the ones I edit</span>
                   </label>
                 )}
-              </li>
+              </Card>
             );
           })}
         </ul>

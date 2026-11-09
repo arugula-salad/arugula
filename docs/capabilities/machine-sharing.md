@@ -33,9 +33,9 @@ Teams are signed rosters in the hub's `rosters` table. Each version is signed by
 
 A machine moved into a team (`api::move_daemon`) makes the team's owners `Principal::Owner` and gives editors and viewers that role on every session (`Enrolled::build`). A locked team admits only owners. On a hosted machine a team's editors come in as owner, and a deploy's box admits nobody.
 
-There are two kinds of read-only link. `/share/<token>` (`share.rs`) shows one terminal pane to tailnet users and local processes only (`Access::check_viewer`), and `shares.json` keeps only hashes. `POST /api/links` (`acl_api::link`) adds a `link:<hash>` viewer of one session with an X25519 key whose private half is in the page's `#link=` fragment. That viewer comes through the hub's public, rate-limited `/api/relay/link/{id}`, only while `daemon_links` says the machine has a live link. Both expire.
+There are two kinds of read-only link. `/share/<token>` (`share.rs`) shows one terminal pane to tailnet users and local processes only (`Access::check_viewer`), and `shares.json` keeps only hashes. `POST /api/links` (`acl_api::link`) adds a `link:<hash>` viewer of one session with an X25519 key whose private half is in the page's `#link=` fragment. That viewer comes through the hub's public, rate-limited `/api/relay/link/{id}`, only while `daemon_links` says the machine has a live link. Both expire. A deploy's box admits no session link: `Control::device` refuses its key there, one made before the box was told it's a deploy's included, and `POST /api/links` refuses to make one.
 
-An ssh invite (`POST /api/guests`, `guest_ssh.rs`) is the daemon's own ssh server: the username is the token, one pane, read-only by default, and `guests.json` keeps hashes. Behind NAT it hops through `guest_jump.rs`, which sees ssh ciphertext.
+An ssh invite (`POST /api/guests`, `guest_ssh.rs`) is the daemon's own ssh server: the username is the token, one pane, read-only by default, and `guests.json` keeps hashes. Behind NAT it hops through `guest_jump.rs`, which sees ssh ciphertext. A deploy's box admits no guest: the server refuses the login and ends a session already open when the box is told, and the box refuses to make an invite.
 
 ## Compatibility
 

@@ -43,11 +43,11 @@ use std::{
 use arugula_control_wire::{
     chat::{DropWhy as WireWhy, MENTION_STATE, MentionTurn, PutMentionState},
     forge::{
-        AgentGrantAsk, AgentMention, AgentSessionsAsk, MachineSession, MachineSessionState, OpAnswer, Routed,
-        RoutedStep, SESSIONS_LISTED,
+        AgentGrantAsk, AgentMention, MachineAgent, MachineAgentState, MachineAgentsAsk, OpAnswer, Routed, RoutedStep,
+        SESSIONS_LISTED,
     },
 };
-use arugula_proto::sharing::AgentSessions;
+use arugula_proto::sharing::AgentListing;
 use arugula_proto::{Driver, Notice, NoticeGrant, NoticeKind, PaneId};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -675,7 +675,7 @@ pub(crate) struct Activity {
     /// The issue its agent block was started on, as its starter wrote it.
     pub issue: Option<String>,
     /// What it's doing now (#645).
-    pub state: Option<MachineSessionState>,
+    pub state: Option<MachineAgentState>,
     /// The name of the tool it last ran, from its hooks (#645).
     pub tool: Option<String>,
 }
@@ -718,9 +718,9 @@ impl Daemon for App {
                 let at = p.info.activity.map(|a| a.last_ms).filter(|t| *t > 0).or(p.info.reason.map(|r| r.since_ms));
                 let issue = p.info.on_issue.map(|i| i.issue);
                 let state = Some(match p.info.attention {
-                    arugula_proto::Attention::Working => MachineSessionState::Working,
-                    arugula_proto::Attention::NeedsInput => MachineSessionState::NeedsInput,
-                    _ => MachineSessionState::Idle,
+                    arugula_proto::Attention::Working => MachineAgentState::Working,
+                    arugula_proto::Attention::NeedsInput => MachineAgentState::NeedsInput,
+                    _ => MachineAgentState::Idle,
                 });
                 let tool = tools.get(&p.info.id).cloned();
                 (p.info.id, Activity { ms_ago: at.map(|t| now.saturating_sub(t)), issue, state, tool })
@@ -889,10 +889,10 @@ fn reached_by(pane: PaneId, sessions: &[(PaneId, String)], tabs: &[(PaneId, Stri
 /// the newest active first, as far as the owner shows them. The names are
 /// the ones [`deliver`] matches, so each reaches its session. Never the
 /// asker's own session (#575).
-pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> OpAnswer {
+pub(crate) async fn sessions_for(app: &impl Daemon, ask: &MachineAgentsAsk) -> OpAnswer {
     use arugula_proto::sharing;
     let shown = sharing::sessions_shown(app.state_dir());
-    if shown == AgentSessions::None {
+    if shown == AgentListing::None {
         return OpAnswer::Sessions { shared: false, sessions: vec![] };
     }
     let silent = app.silenced().await;
@@ -907,7 +907,7 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> O
         .collect();
     let (tabs, activity) = (app.tab_names().await, app.activity().await);
     let author = ask.from_session.as_deref().map(slug).filter(|a| !a.is_empty());
-    let mut out: Vec<MachineSession> = sessions
+    let mut out: Vec<MachineAgent> = sessions
         .iter()
         .filter(|(_, n)| author.as_ref().is_none_or(|a| slug(n) != *a))
         .filter_map(|(pane, _)| {
@@ -916,13 +916,13 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> O
                 false => reached_by(*pane, &sessions, &tabs)?,
             };
             let note = activity.iter().find(|(p, _)| p == pane).map(|(_, a)| a.clone()).unwrap_or_default();
-            Some(MachineSession {
+            Some(MachineAgent {
                 name,
                 tab: tabs.iter().find(|(p, _)| p == pane).map(|(_, t)| t.clone()),
                 active_ms_ago: note.ms_ago,
-                working_on: note.issue.filter(|_| shown == AgentSessions::Work),
+                working_on: note.issue.filter(|_| shown == AgentListing::Work),
                 state: note.state,
-                tool: note.tool.filter(|_| shown == AgentSessions::Work),
+                tool: note.tool.filter(|_| shown == AgentListing::Work),
             })
         })
         .collect();
@@ -993,7 +993,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         state.keep(m);
         app.notice(inbox_notice(m)).await;
         let open: Vec<_> = sessions.iter().filter(|(p, _)| !silent.contains(p)).cloned().collect();
-        let mut names = if arugula_proto::sharing::sessions_shown(app.state_dir()) == AgentSessions::None {
+        let mut names = if arugula_proto::sharing::sessions_shown(app.state_dir()) == AgentListing::None {
             vec![]
         } else {
             listed_names(&open, &tabs)
@@ -1077,6 +1077,18 @@ mod tests {
     use std::{path::PathBuf, sync::Mutex};
 
     use super::*;
+
+    /// A `mentions.json` a release saved loads whole, and saves back as it
+    /// was: no field is dropped.
+    #[test]
+    fn release_mentions_load() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/mentions.json");
+        let bytes = std::fs::read(fixture).unwrap();
+        let saved: Saved = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!((saved.posted.len(), saved.threads.len(), saved.names.len(), saved.unread.len()), (1, 1, 1, 1));
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_value(&saved).unwrap(), was);
+    }
 
     #[test]
     fn one_panes_name_is_never_anothers() {
@@ -1752,15 +1764,15 @@ mod tests {
         assert_eq!(d.state.unread().len(), 2);
     }
 
-    fn listed(a: OpAnswer) -> (bool, Vec<MachineSession>) {
+    fn listed(a: OpAnswer) -> (bool, Vec<MachineAgent>) {
         match a {
             OpAnswer::Sessions { shared, sessions } => (shared, sessions),
             other => panic!("{other:?}"),
         }
     }
 
-    fn ask(from: Option<&str>) -> AgentSessionsAsk {
-        AgentSessionsAsk { room: "ch_x".into(), from_session: from.map(str::to_owned), only: vec![] }
+    fn ask(from: Option<&str>) -> MachineAgentsAsk {
+        MachineAgentsAsk { room: "ch_x".into(), from_session: from.map(str::to_owned), only: vec![] }
     }
 
     fn machine_with_sessions(name: &str) -> Fake {
@@ -1783,7 +1795,7 @@ mod tests {
         assert_eq!(got[2].active_ms_ago, Some(180_000));
         let on: Vec<_> = got.iter().map(|s| s.working_on.as_deref()).collect();
         assert_eq!(on, [None, Some("#12"), Some("#540")]);
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::Names).unwrap();
         let (_, got) = listed(sessions_for(&d, &ask(None)).await);
         assert!(got.iter().all(|s| s.working_on.is_none()), "names drops it");
     }
@@ -1795,15 +1807,15 @@ mod tests {
     async fn a_threads_strip_gets_only_the_sessions_it_names() {
         let d = machine_with_sessions("sessions-strip");
         let strip =
-            AgentSessionsAsk { room: "ch_x".into(), from_session: None, only: vec!["billing".into(), "gone".into()] };
+            MachineAgentsAsk { room: "ch_x".into(), from_session: None, only: vec!["billing".into(), "gone".into()] };
         let (shared, got) = listed(sessions_for(&d, &strip).await);
         assert!(shared);
         let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["billing"]);
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::Names).unwrap();
         let (_, got) = listed(sessions_for(&d, &strip).await);
         assert!(got[0].tool.is_none() && got[0].working_on.is_none(), "names drops them");
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::None).unwrap();
         assert_eq!(listed(sessions_for(&d, &strip).await), (false, vec![]), "the owner shows none");
     }
 
@@ -1811,9 +1823,9 @@ mod tests {
     #[tokio::test]
     async fn no_session_is_listed_when_the_owner_shows_none() {
         let d = machine_with_sessions("sessions-none");
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::None).unwrap();
         assert_eq!(listed(sessions_for(&d, &ask(None)).await), (false, vec![]));
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Work).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::Work).unwrap();
         arugula_proto::sharing::set_agent_mentions(&d.dir, false).unwrap();
         assert_eq!(listed(sessions_for(&d, &ask(None)).await), (false, vec![]));
     }
@@ -1847,10 +1859,10 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_session_lists_no_names_when_the_owner_shows_none() {
         let d = Fake::new("unknown-none", &[4]).named(&[(4, "Billing")]);
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::None).unwrap();
         let m = AgentMention { session: Some("ux".into()), ..mention() };
         assert_eq!(deliver(&d, &m).await, nowhere("ux", &[]));
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentListing::Names).unwrap();
         assert_eq!(deliver(&d, &m).await, nowhere("ux", &["billing"]));
     }
 

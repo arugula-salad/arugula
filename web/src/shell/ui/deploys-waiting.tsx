@@ -13,6 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
 import { getControlSession } from "./people";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 /** What the row needs of a waiting deploy (the platform's `deploy_json`). */
 interface Waiting {
@@ -74,7 +75,7 @@ export function DeploysWaitingNote() {
     <button type="button" class="ws-stale deploys-waiting-note" data-deploys-waiting={list.length} onClick={() => openPlatform(to)}>
       <span class="deploys-waiting-dot" aria-hidden="true" />
       <span class="deploys-waiting-said">{waitingSaid(list)}</span>
-      <span class="deploys-waiting-go">{list.length === 1 ? "Open" : "Inbox"} ›</span>
+      <span class="deploys-waiting-go">{list.length === 1 ? "Open" : "Inbox"} <ChevronIcon dir="right" /></span>
     </button>
   );
 }

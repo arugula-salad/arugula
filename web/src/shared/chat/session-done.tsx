@@ -14,6 +14,7 @@
 
 import type { SessionCard } from "../proto";
 import type { Tone } from "./session-card";
+import { ExternalIcon } from "../ui/icons";
 
 const ended = (c: SessionCard) => c.state === "done" || c.state === "failed" || c.state === "stopped";
 
@@ -38,14 +39,14 @@ export function DiffLink({ c }: { c: SessionCard }) {
   const branch = c.branch.split("/").map(encodeURIComponent).join("/");
   return (
     <a
-      class="button"
+      class="secondary small"
       href={`https://github.com/${c.repo}/compare/${branch}`}
       target="_blank"
       rel="noopener"
       title="What its pushed branch changes, on GitHub, read only. (Its checkout on the box is its own user's: an editor there can't open it.)"
       data-session-diff
     >
-      Diff ↗
+      Diff <ExternalIcon size="xs" />
     </a>
   );
 }

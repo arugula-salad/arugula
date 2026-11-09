@@ -23,7 +23,7 @@ import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
 import { LiveSwitch, liveItems } from "../../shared/live/switch";
-import { SearchIcon } from "./shell/icons";
+import { Caret, SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -116,15 +116,16 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
       // One label and title in every bar (UI audit #170); the panes' head
       // draws it as a search field.
       title={`Every command for this pane, tab and session (${keyHint("palette")})`}
-      // Its name is "Commands": the chord beside it is for the eye, and
-      // would otherwise make it a button named "…+Shift+P".
-      aria-label="Commands"
+      // No aria-label: its name is what it shows, "Commands" and the chord,
+      // so voice control's "click Commands" and a screen reader agree.
       aria-keyshortcuts={ariaKeys(keyHint("palette"))}
       onClick={() => openPalette(client)}
     >
       {search && <SearchIcon />}
       <span>Commands</span>
-      <kbd aria-hidden="true">{keyHint("palette")}</kbd>
+      {/* A space between them, so the name reads "Commands Ctrl+Shift+P". */}
+      {" "}
+      <kbd>{keyHint("palette")}</kbd>
     </button>
   );
 }
@@ -161,7 +162,7 @@ export function AccountButton({ client }: { client: Client | null }) {
         aria-haspopup="menu"
         aria-expanded={expanded}
         title={login ? "Your account" : "Settings"}
-        aria-label={login ? `Account: ${login}` : "Settings"}
+        aria-label={login ? undefined : "Settings"}
         data-account-menu
         onClick={open}
         onContextMenu={open}
@@ -170,7 +171,7 @@ export function AccountButton({ client }: { client: Client | null }) {
           {login ? login.slice(0, 1).toUpperCase() : "⚙"}
           {login && <AccountPicture />}
         </span>
-        {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
+        {login && <span class="account-login" data-signed-in-as>{login}</span>} <Caret />
       </button>
     </>
   );

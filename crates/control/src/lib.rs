@@ -80,6 +80,8 @@ mod limit;
 mod links;
 #[cfg(test)]
 mod links_wire;
+#[cfg(test)]
+mod machine_rename_wire;
 mod mail;
 mod maintenance;
 #[cfg(test)]
@@ -651,6 +653,7 @@ fn routes() -> Routes {
         .route("/api/joins/{code}/approve", post(api::join_approve))
         .route("/api/joins/{code}/reject", post(api::join_reject))
         .route("/api/daemons/{id}/team", post(api::move_daemon))
+        .route("/api/daemons/{id}/name", post(api::rename_daemon))
         .route(wire::TRUST, get(api::daemon_trust))
         .route(wire::LEAVE, post(api::daemon_leave))
         .route(

@@ -192,3 +192,57 @@ test("a keyboard suggestion replaces the word, not the line", async ({ page }) =
   await expect.poll(() => text(page, shown)).toMatch(/^brown$/m);
   expect(await text(page, shown)).not.toContain("brpwn");
 });
+
+// #709: Close pane and Close tab in the sheet ask first, as the desktop's
+// close does, instead of acting at once on a tap.
+test("Close pane and Close tab ask first: Cancel keeps them, Close takes them", async ({ page }) => {
+  await reset(page);
+  const panes = () => page.evaluate(() => window.__arugula.client.state!.panes.length);
+  const tabs = () => page.evaluate(() => window.__arugula.client.state!.tabs.length);
+  await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
+  await page.getByRole("button", { name: "Split pane" }).click();
+  await expect.poll(panes).toBe(2);
+  const shown = await active(page);
+  await ready(page, shown);
+
+  const more = async (name: string) => {
+    await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
+    await page.getByRole("button", { name, exact: true }).click();
+  };
+  const confirm = page.getByRole("alertdialog");
+
+  // Close pane: the sheet is gone, the question is up, and nothing has closed.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole("heading")).toHaveText("Close this pane?");
+  await page.waitForTimeout(700);
+  expect(await panes()).toBe(2);
+  await confirm.locator("[data-cancel-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  expect(await panes()).toBe(2);
+
+  // Escape is Cancel too.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  expect(await panes()).toBe(2);
+
+  // Close tab asks as well.
+  const before = await tabs();
+  await more("Close tab");
+  await expect(confirm.getByRole("heading")).toHaveText("Close this tab?");
+  await confirm.locator("[data-cancel-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  expect(await tabs()).toBe(before);
+
+  // Confirmed, the pane goes.
+  await more("Close pane");
+  await expect(confirm).toBeVisible();
+  await expect(confirm.locator("[data-confirm-remove]")).toBeEnabled();
+  await confirm.locator("[data-confirm-remove]").click();
+  await expect(confirm).toHaveCount(0);
+  await expect.poll(panes).toBe(1);
+});

@@ -68,7 +68,7 @@ use crate::{
         session_feedback::{
             Answer, Feedback, FeedbackKind, FeedbackState, Gathered, Item, MAX_CI_ROUNDS, NewFeedback, Prompt, Settled,
         },
-        sessions::{MAX_PROMPT, Session, Source},
+        sessions::{AgentSession, MAX_PROMPT, Source},
         triggers::RuleEvent,
     },
     forge::{Caller, Purpose, Repo, ingest::ms},
@@ -255,14 +255,14 @@ pub fn ended_line(kind: FeedbackKind, what: &str) -> String {
 }
 
 /// Post the platform's line in session `s`'s thread.
-fn say(app: &Platform, s: &Session, line: &str) -> Result<()> {
+fn say(app: &Platform, s: &AgentSession, line: &str) -> Result<()> {
     let Some(room) = app.db.chat_room(&s.room)? else { return Ok(()) };
     crate::chat::sessions::say(app, &room, s.parent_seq, line)?;
     Ok(())
 }
 
 /// The session whose branch is one of `seen`'s heads, if any.
-fn session_of(app: &Platform, seen: &Seen) -> Result<Option<Session>> {
+fn session_of(app: &Platform, seen: &Seen) -> Result<Option<AgentSession>> {
     for head in &seen.heads {
         if let Some(s) = app.db.session_on_branch(seen.repo_id, &seen.repo, head)? {
             return Ok(Some(s));
@@ -387,7 +387,7 @@ impl Reads {
 
 /// A CI round's prompt: every failed check of the commit (as
 /// [`Reads::listed`] orders them), those the base doesn't require marked.
-fn ci_prompt(fb: &Feedback, items: &[Item], s: &Session, round: u32, reads: &Reads) -> Prompt {
+fn ci_prompt(fb: &Feedback, items: &[Item], s: &AgentSession, round: u32, reads: &Reads) -> Prompt {
     let short: String = fb.batch.chars().take(12).collect();
     let skip = reads.not_required(items);
     let of_them = if skip == 0 { String::new() } else { format!(", {skip} of them not required to merge") };
@@ -587,7 +587,7 @@ async fn job_log(app: &Platform, link: &LinkedRepo, job: u64) -> Result<String> 
 /// What a CI round of session `s`, of `items`, reads from GitHub as it's
 /// sent (module docs): nothing when the platform has no App, or the
 /// session's repo isn't linked to its project now.
-async fn reads(app: &Platform, s: &Session, items: &[Item]) -> Reads {
+async fn reads(app: &Platform, s: &AgentSession, items: &[Item]) -> Reads {
     let mut out = Reads::default();
     let Some(repo) = s.repo.as_deref().filter(|_| app.github.is_some()) else { return out };
     let link = match app.db.linked_repo_named(repo) {
@@ -625,7 +625,7 @@ async fn reads(app: &Platform, s: &Session, items: &[Item]) -> Reads {
 
 /// How the thread names a reviewer: their name in the project when their
 /// GitHub account signs in a member of it, else their login.
-async fn reviewer(app: &Platform, s: &Session, fb: &Feedback) -> String {
+async fn reviewer(app: &Platform, s: &AgentSession, fb: &Feedback) -> String {
     let login = fb.login.clone().unwrap_or_else(|| "someone".into());
     let Some(id) = fb.github_id else { return login };
     let account = match app.hub.github_account(id).await {
@@ -645,7 +645,7 @@ async fn reviewer(app: &Platform, s: &Session, fb: &Feedback) -> String {
 /// so in its thread: when its next batch is due, if it has one gathering.
 /// Its job calls it each step, before it looks at the session's prompts;
 /// once the session ended, everything it gathered is settled (dropped).
-pub async fn flush(app: &Platform, s: &Session, now: u64) -> Result<Option<u64>> {
+pub async fn flush(app: &Platform, s: &AgentSession, now: u64) -> Result<Option<u64>> {
     // An ended session's job looks no more: all it gathered is settled now.
     let by = if s.state.terminal() { i64::MAX as u64 } else { now };
     let due = app.db.due_feedback(&s.id, by)?;
@@ -711,7 +711,7 @@ pub async fn flush(app: &Platform, s: &Session, now: u64) -> Result<Option<u64>>
 /// made in the same millisecond list in either order (Arugula #277). A
 /// refusal settled with a sent round in the same flush is the later of
 /// the two, as one is only refused once every round was sent.
-pub fn needs_person(app: &Platform, s: &Session) -> Result<bool> {
+pub fn needs_person(app: &Platform, s: &AgentSession) -> Result<bool> {
     let fb = app.db.session_feedback(&s.id)?;
     let settled = |f: &&Feedback| f.kind == FeedbackKind::Ci && f.state != FeedbackState::Gathering && !f.not_required;
     let Some(last) = fb

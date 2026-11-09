@@ -56,7 +56,7 @@ async function start() {
       ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
     ],
     // code-server keeps its own logs under XDG_DATA_HOME: not the user's.
-    { stdio: "ignore", env: { ...process.env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent", XDG_DATA_HOME: join(dir, "data") } },
+    { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: join(dir, "data") } },
   );
   // On ports of its choosing, then on the same ones again.
   PORT ||= await daemonPort(state, daemon);

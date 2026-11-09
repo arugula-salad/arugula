@@ -157,9 +157,18 @@ fn every_mint_logged(h: &Shared, db: &arugula_platform::db::Db) -> Vec<Value> {
     rows
 }
 
+/// GitHub's answer to a token from the repository's own installation
+/// (`jhgaylor`'s is 11, `acme`'s 12): the login's permission, or 404 for
+/// a login it doesn't know. Any other token is refused, 403, which the
+/// platform takes as unsure, not as a no.
 async fn permission(headers: HeaderMap, Path((o, r, login)): Path<(String, String, String)>) -> Response {
     let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
-    if !auth.starts_with("Bearer ghs_test_12_") || (o, r) != ("acme".into(), "tool".into()) {
+    let install = match (o.as_str(), r.as_str()) {
+        ("jhgaylor", "hud") => "11",
+        ("acme", "tool") => "12",
+        _ => return StatusCode::FORBIDDEN.into_response(),
+    };
+    if !auth.starts_with(&format!("Bearer ghs_test_{install}_")) {
         return StatusCode::FORBIDDEN.into_response();
     }
     // Who has each login now: jhgaylor is GitHub user 1.
@@ -353,12 +362,16 @@ async fn old_daemons_hear_an_empty_watching_and_no_pokes() {
     assert!(
         h.lock().unwrap().minted.iter().any(|m| m["installation"] == 11 && m["body"]["repositories"] == json!(["hud"]))
     );
-    assert_eq!(ask(&k2, "jhgaylor/hud").await.unwrap().status(), 403);
+    // GitHub's clear no: a stranger isn't a collaborator.
+    let r = ask(&k2, "jhgaylor/hud").await.unwrap();
+    assert_eq!(r.status(), 403);
+    assert!(r.text().await.unwrap().contains("collaborator"));
     assert_eq!(ask(&k3, "jhgaylor/hud").await.unwrap().status(), 403);
     assert_eq!(ask(&k1, "nobody/x").await.unwrap().status(), 403);
     // A login that changed hands gets nothing: access is by GitHub's id.
     let r = ask(&k4, "jhgaylor/hud").await.unwrap();
     assert_eq!(r.status(), 403);
+    assert!(r.text().await.unwrap().contains("isn't yours any more"));
     let r = ask(&k4, "acme/tool").await.unwrap();
     assert_eq!(r.status(), 403);
     assert!(r.text().await.unwrap().contains("isn't yours any more"));

@@ -230,7 +230,7 @@ test("done, Move to… sends it to the other box with its repo", async () => {
   boxSays(ses, "working", {});
   boxSays(ses, "done", {});
   const card = channel(bob).locator(`[data-session-card="${ses}"]`);
-  await expect(card.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(card.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   const menu = card.locator("[data-session-move]");
   await expect(menu.locator("option")).toHaveText(["Move to…", "web (asleep)"]);
   await menu.selectOption(web);

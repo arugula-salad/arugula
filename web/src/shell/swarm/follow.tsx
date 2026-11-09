@@ -15,6 +15,7 @@ import type { ActRequest, ActResponse, FollowMsg, OpenRequest, OpenResponse } fr
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { CodeView } from "./code";
+import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
 
 /** What an editor is called. */
 export function appName(app: string | undefined): string {
@@ -129,17 +130,17 @@ export function FollowView({ fleet, pkey, close, back }: { fleet: Fleet; pkey: s
           )}
           {file && p && (
             <button class="secondary small" data-open-here onClick={(e) => openMenu(e as unknown as MouseEvent, openHere(fleet, p, file, at, back, setErr))}>
-              Open here ▾
+              Open here <Caret />
             </button>
           )}
           {file && p && claudes(fleet, host).length > 0 && can && (
             <button class="secondary small" data-mention onClick={(e) => openMenu(e as unknown as MouseEvent, mention(fleet, host, file, at, setErr))}>
-              Ask Claude ▾
+              Ask Claude <Caret />
             </button>
           )}
-          <button class="secondary small" data-follow-close title="Stop following" onClick={close}>
-            ✕
-          </button>
+          <IconButton label="Stop following" class="secondary small" data-follow-close onClick={close}>
+            <CloseIcon size="sm" />
+          </IconButton>
         </div>
       </header>
       {paused && <div class="follow-note paused">Paused{ed?.debug?.line ? ` at line ${ed.debug.line}` : ""}{ed?.debug?.reason ? ` (${ed.debug.reason})` : ""}</div>}

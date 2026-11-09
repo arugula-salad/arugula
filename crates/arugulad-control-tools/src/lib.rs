@@ -3,7 +3,7 @@
 //! #1094), linked repos (`forge_read`, `forge_draft`, `link_repo`, M169),
 //! conversations (`read_thread`, `search_threads`, `post_thread`, M198),
 //! native issues (`issue_write`, M200), boards (`board_read`,
-//! `board_write`), runs (`start_run`, `read_run`, M216), deploys
+//! `board_write`), links between items (`link`, #761), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
 //! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
 //! with `list`'s kinds `cloud_workspaces`, `cloud_agents`, `linked_repos`,
@@ -26,6 +26,7 @@ mod cloud;
 mod deploys;
 mod forge_ops;
 mod issues;
+mod links;
 mod repos;
 mod runs;
 mod threads;
@@ -57,7 +58,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 20] = [
+    let tools: [Listed; 21] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -78,6 +79,7 @@ pub fn register() {
         (agent_sessions::REPLY_TOOL, read_session_def, run_read_session),
         (agent_sessions::READ_TOOL, session_stop_def, run_session_stop),
         (agent_sessions::STOP_TOOL, tracker_write_def, run_tracker_write),
+        (trackers::WRITE_TOOL, link_def, run_link),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -182,6 +184,7 @@ grouped!(run_issue_write, issues::WRITE_TOOL, |c, kind, args| issues::issue_writ
 one!(run_board_read, boards::board_read);
 grouped!(run_board_write, boards::WRITE_TOOL, |c, kind, args| boards::board_write(c, kind, args));
 grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::tracker_write(c, kind, args));
+one!(run_link, links::link);
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -391,6 +394,23 @@ fn board_write_def() -> Def {
         read_only: false,
         destructive: true,
         idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: Human::In(boards::READ_TOOL),
+    }
+}
+
+// #761: links between a project's items, through the owner's grants.
+fn link_def() -> Def {
+    Def {
+        name: links::TOOL,
+        title: "Link work items",
+        description: links::DESCRIPTION,
+        args: Args::One(schema_for_type::<links::LinkArgs>),
+        read_only: false,
+        destructive: true,
+        idempotent: true,
         open_world: true,
         flag: None,
         output: None,

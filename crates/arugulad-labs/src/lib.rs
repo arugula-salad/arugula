@@ -77,7 +77,6 @@ pub mod guest_ssh;
 // terminal on one is the core's (`arugula_mux::labs::machine`).
 pub mod loam;
 pub mod sandboxes;
-pub mod sprites;
 pub mod tea;
 pub mod wearing;
 pub mod workspace;
@@ -136,10 +135,6 @@ impl FileWhy for workspace::why::Why {
 }
 
 impl Hooks for Labs {
-    fn open_provider(&self, url: &str, token_file: &Path, _given: bool) -> Option<Arc<dyn Provider>> {
-        sprites::Sprites::open(url, token_file).map(|p| Arc::new(p) as Arc<dyn Provider>)
-    }
-
     fn open_loam(&self, url: &str, key_file: &Path) -> Option<Arc<dyn Provider>> {
         loam::Loam::open(url, key_file).map(|p| Arc::new(p) as Arc<dyn Provider>)
     }
@@ -205,6 +200,10 @@ impl Hooks for Labs {
 
     fn control_out(&self) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
         guest_ssh::guests().map(|g| g.routes_messages())
+    }
+
+    fn guests(&self) -> Option<Vec<arugula_proto::api::GuestInvite>> {
+        guest_ssh::guests().map(|g| g.list())
     }
 
     fn heard_from_control(&self, text: &str) -> bool {

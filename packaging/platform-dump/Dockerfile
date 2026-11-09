@@ -7,8 +7,9 @@
 # curl to put it in R2 (SigV4), jq for the record beside it. The
 # arugula-platform binary is the same build the platform runs, for its
 # read-only window tools: `migrations` and `checksums --snapshot`.
-# scripts/ci-platform-deploy builds it from the release's binary and moves
-# the dump machine onto it after each platform deploy.
+# A release (server-release.yml) builds it from the release's binary, and
+# chant's platform-dump component moves the dump machine onto it after the
+# platform.
 FROM postgres:17.11-alpine3.24
 RUN apk add --no-cache age curl jq
 COPY arugula-platform /arugula-platform

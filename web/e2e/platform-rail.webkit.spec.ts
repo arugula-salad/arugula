@@ -55,9 +55,9 @@ test("the rail is down the platform page's left, its places in order, and the ba
   const rail = alice.locator(".ws-rail");
   await expect(rail).toBeVisible();
   const labels = await rail.locator(".ws-rail-button .ws-rail-label").allTextContents();
-  expect(labels, `the rail's places`).toEqual(["Projects", "Panes", "Swarm", "Chat", "Settings"]);
+  expect(labels, `the rail's places`).toEqual(["Projects", "Panes", "Swarm", "Chat", "Docs", "Settings"]);
   expect(labels.at(-1), `the rail's places: ${labels}`).toBe("Settings");
-  for (const hook of ["projects", "panes", "swarm", "chat"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
+  for (const hook of ["projects", "panes", "swarm", "chat", "docs-all"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
   const box = (await rail.boundingBox())!;
   const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(alice.viewportSize())}`;
   expect(box.x, at).toBe(0);
@@ -88,7 +88,7 @@ test("Chat is lit on chat, and Projects is not", async () => {
   await expect(alice.locator("[data-platform-bar] [data-platform-chat]")).toHaveCount(0);
 });
 
-test("Projects is lit inside a project, and takes you back to the list", async () => {
+test("Projects is lit inside a project, and the picker's All projects takes you back to the list", async () => {
   await alice.goto(`${app}/`);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
@@ -100,9 +100,42 @@ test("Projects is lit inside a project, and takes you back to the list", async (
   await expect(alice.locator("[data-platform-bar] [data-platform-settings]")).toBeVisible();
   // In the page: no reload.
   await alice.evaluate(() => Object.assign(window, { stayed: true }));
-  await projects.click();
+  await alice.locator("[data-project-switcher]").click();
+  await alice.getByRole("menuitemradio", { name: "All projects" }).click();
   await expect(alice).toHaveURL(`${app}/`);
   expect(await alice.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
+});
+
+// Arugula #418: Docs is the rail's, and lit on every platform Docs page. A Doc's
+// page sits inside a project, so Projects and the bar both want it: exactly
+// one rail item is lit on each of these.
+test("Docs is the one lit item on /docs, a project's Docs and a Doc; a project lights Projects", async () => {
+  await alice.goto(`${app}/`);
+  await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
+  const project = /\/p\/(prj_[0-9a-f]+)/.exec(new URL(alice.url()).pathname)![1];
+  const doc = await alice.evaluate(async (p) => {
+    const r = await fetch(`/api/projects/${p}/docs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Rail walk", sections: [] }) });
+    return ((await r.json()) as { doc: { id: string } }).doc.id;
+  }, project);
+  const lit = async () => alice.locator(".ws-rail .ws-rail-button.here").evaluateAll((els) => els.map((e) => e.querySelector(".ws-rail-label")!.textContent));
+  const walk: [string, string][] = [
+    ["/docs", "Docs"],
+    [`/p/${project}/docs`, "Docs"],
+    [`/p/${project}/docs/${doc}`, "Docs"],
+    [`/p/${project}`, "Projects"],
+  ];
+  for (const [path, item] of walk) {
+    await alice.goto(`${app}${path}`);
+    await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(lit, { message: path, timeout: 15_000 }).toEqual([item]);
+  }
+  // It opens the platform's /docs, in this page.
+  await alice.goto(`${app}/`);
+  const docs = alice.locator(".ws-rail [data-open-docs-all]");
+  await expect(docs).toHaveAttribute("href", "/docs");
+  await docs.click();
+  await expect(alice).toHaveURL(`${app}/docs`);
 });
 
 test("the shell's Projects comes back to the page you left, and the list stays a click away (Arugula #638)", async () => {
@@ -121,8 +154,10 @@ test("the shell's Projects comes back to the page you left, and the list stays a
   await expect(alice.locator(".ws-rail [data-open-chat]")).toHaveClass(/\bhere\b/);
   await alice.goto(`${app}/?back`);
   await expect(alice).toHaveURL(left);
-  // The rail's own Projects is still the list, and the list is remembered too.
-  await alice.locator(".ws-rail [data-open-projects]").click();
+  // The picker's All projects is the list, and the list is remembered too (the rail's
+  // Projects goes to the active project instead, Arugula #586).
+  await alice.locator("[data-project-switcher]").click();
+  await alice.getByRole("menuitemradio", { name: "All projects" }).click();
   await expect(alice).toHaveURL(`${app}/`);
   await alice.goto(`${app}/?back`);
   await expect(alice).toHaveURL(`${app}/`);

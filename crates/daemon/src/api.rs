@@ -838,18 +838,6 @@ async fn open_block(
         }
         req.config = crate::forges::open_config(&req.config, app.control.state_dir()).await.map_err(bad)?;
     }
-    // A pane on another daemon (#17) names a host in our list: that's
-    // where clients look it up.
-    if req.kind == arugula_proto::BlockType::Remote {
-        let at = crate::remote::parse(&req.config).map_err(bad)?;
-        let list = app.hosts.list();
-        if at.host == list.this {
-            return Err(bad(format!("{} is this daemon: its panes go in the layout as they are", at.host)));
-        }
-        if !list.hosts.iter().any(|h| h.name == at.host) {
-            return Err(bad(format!("no host {} in this daemon's list", at.host)));
-        }
-    }
     // An agent started on an issue (`arugula agent --issue`, #372): its
     // row, once it's open.
     let issue = match req.kind {

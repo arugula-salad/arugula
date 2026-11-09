@@ -74,8 +74,8 @@ which pane, and they filter each person's `State`.
 mux uses `fs::rerun_line`. The same `fs.rs` (870 lines) holds `/api/fs`'s
 routes, which name `server::App`.
 
-**Block constructors.** `block::create` names nine types' constructors:
-`browser::Browser`, `agent::Agent`, `editor::Editor`, `remote::Remote`,
+**Block constructors.** `block::create` names the types' constructors:
+`browser::Browser`, `agent::Agent`, `editor::Editor`,
 `review::diff::Diff`, `review::file::FileView`, `forge::ForgeBlock`,
 `invite::card::InviteBlock`, and `labs::create_block` for Managoat, App and
 Workspace.
@@ -89,8 +89,6 @@ pointer to `App`.**
 
 **Block-type knowledge in the mux:**
 
-- `remote::parse` checks a remote block's config when it opens
-  (`mux/blocks.rs:178`).
 - `agent::defs::CLAUDE_CONFIG_DIR` is a constant (`mux/blocks.rs:297`).
 - `invite::OWNER_ONLY` and `CLOSE_OWNER_ONLY` are two strings
   (`mux/attention.rs:697`, `mux/clients.rs:117`).
@@ -210,7 +208,7 @@ Everything else, about 64k lines:
 - the HTTP access checks: `access.rs`, `localauth.rs`, `authz.rs`,
   `acl.rs`'s `api` (as `acl_api.rs`), `rules.rs`;
 - every block type except the ones the core makes itself: `agent/`,
-  `browser.rs`, `editor/`, `review/`, `forge/`, `invite/`, `remote.rs` and
+  `browser.rs`, `editor/`, `review/`, `forge/`, `invite/` and
   `labs/` (the threads, calls and machine modules above excepted);
 - `conversations/`, `ide/` (the relay, lock files and prefs), `gate.rs`,
   `hand.rs`, `push.rs`;
@@ -244,7 +242,7 @@ starts:
 pub trait BlockKind: Send + Sync + 'static {
     /// Make one from its config (today's `X::create(ctx, config)`).
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String>;
-    /// Check a config before the block is placed (today `remote::parse`).
+    /// Check a config before the block is placed.
     fn check(&self, _config: &Value) -> Result<(), String> { Ok(()) }
     /// A stored log as text, for history and search (today
     /// `agent::transcript_of`).
@@ -520,8 +518,7 @@ tests' count under nextest is unchanged, and the unit tests' total across
    `main.rs`. `BlockEnv` and `BlockCtx` lose `mcp`, `invite`, `secrets` and
    `rules` to the agent's and invite's kinds. `EditorLink` replaces
    `editor::link::Link` in `Block`. `EditorJoin` carries the presence
-   block. `remote::parse` becomes `check`, and `agent::transcript_of`
-   becomes `stored_text`. No crate move. **M.** Independent of ticket 1.
+   block. `agent::transcript_of` becomes `stored_text`. No crate move. **M.** Independent of ticket 1.
    - *Traps:* Labs' twin must register refusals with today's exact text,
      which `just check-core`'s tests read. `invite::Hook` is set after
      `App` exists, so the invite kind holds the same `OnceLock`, not a

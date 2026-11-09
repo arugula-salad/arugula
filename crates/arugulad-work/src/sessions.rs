@@ -3,7 +3,7 @@
 //! (`spikes/s42-thread-sessions`) found they must run.
 //!
 //! - **Pulled with runs.** A box whose template has session users says it
-//!   takes sessions ([`takes`]); each pull's [`SessionWork`]s are kept as
+//!   takes sessions ([`takes`]); each pull's [`AgentSessionWork`]s are kept as
 //!   the latest word on each ([`pulled`]). One this box runs that's no
 //!   longer listed has ended (a person stopped it): its agent is stopped.
 //! - **A user each, at most six; three running** ([`Slots`]). A session
@@ -66,7 +66,7 @@
 //!   restart between the two, the block's own log (its queue and turns)
 //!   says whether it got there. A prompt is never handed twice, and one in
 //!   the ledger is never handed again, whatever control lists.
-//! - **Reported, signed** ([`Session::push`]): the moves it makes
+//! - **Reported, signed** ([`AgentSessionLedger::push`]): the moves it makes
 //!   (`queued`/`done` to `working` with the turn's prompts, to
 //!   `needs_input` with what it asks, back, to `done`), a heartbeat every
 //!   [`HEARTBEAT`] while a turn is under way with the tool running now, the
@@ -117,9 +117,9 @@ use std::{
 };
 
 use arugula_control_wire::work::{
-    DEFAULT_MODEL, FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, MODEL_MAX, MODELS, REPLY_MAX,
-    Reported, SESSION_DETAIL_MAX, SessionAction, SessionDetail, SessionPrompt, SessionReport, SessionWork, TYPED_MAX,
-    WORK_SESSION_REPORT,
+    AgentSessionWork, DEFAULT_MODEL, FINISH_TIMEOUT_S, FinishResult, FinishStep, MAX_SESSIONS_PER_BOX, MODEL_MAX,
+    MODELS, REPLY_MAX, Reported, SESSION_DETAIL_MAX, SessionAction, SessionDetail, SessionPrompt, SessionReport,
+    TYPED_MAX, WORK_SESSION_REPORT,
 };
 use arugula_e2e::{
     now_ms,
@@ -130,7 +130,9 @@ use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
-use crate::work::sessions::{DIR, Kept, Parked, Session, Turn, all, block_gone, block_is, good_id, live, path, read};
+use crate::work::sessions::{
+    AgentSessionLedger, DIR, Kept, Parked, Turn, all, block_gone, block_is, good_id, live, path, read,
+};
 pub(crate) use crate::work::sessions::{slots, takes};
 use crate::{
     agent::hosted::AsUser,
@@ -186,7 +188,7 @@ pub static APP: std::sync::OnceLock<Arc<App>> = std::sync::OnceLock::new();
 /// began by itself ([`watch_wakes`]): the block, and that many of its turns.
 static WAKES_SEEN: Mutex<BTreeMap<String, (u32, u64)>> = Mutex::new(BTreeMap::new());
 /// The latest pull's sessions, by id: `None` before the first.
-static LATEST: Mutex<Option<BTreeMap<String, SessionWork>>> = Mutex::new(None);
+static LATEST: Mutex<Option<BTreeMap<String, AgentSessionWork>>> = Mutex::new(None);
 /// Sessions followed now.
 static FOLLOWING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// Sessions with a turn under way: the box is busy.
@@ -220,7 +222,7 @@ pub trait Push {
     fn push(&mut self, keys: &arugula_e2e::DeviceKeys, me: &str, kind: Kind, to: State, d: SessionDetail);
 }
 
-impl Push for Session {
+impl Push for AgentSessionLedger {
     fn push(&mut self, keys: &arugula_e2e::DeviceKeys, me: &str, kind: Kind, to: State, mut d: SessionDetail) {
         let from = self.now();
         let to = if kind == Kind::State { to } else { from };
@@ -332,7 +334,7 @@ pub fn good_branch(id: &str, branch: &str) -> bool {
 
 /// Make session `l.session`'s ledger, once: `true` only for the call that
 /// made it (fsynced).
-pub fn claim(dir: &Path, l: &Session) -> bool {
+pub fn claim(dir: &Path, l: &AgentSessionLedger) -> bool {
     let Some(p) = path(dir, &l.session) else { return false };
     let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
     let made = (|| -> std::io::Result<()> {
@@ -361,7 +363,11 @@ pub fn claim(dir: &Path, l: &Session) -> bool {
 
 /// Change session `id`'s ledger with `f`, written and fsynced, if it's
 /// there: one writer at a time.
-pub fn update<T>(dir: &Path, id: &str, f: impl FnOnce(&mut Session) -> T) -> Option<(Session, T)> {
+pub fn update<T>(
+    dir: &Path,
+    id: &str,
+    f: impl FnOnce(&mut AgentSessionLedger) -> T,
+) -> Option<(AgentSessionLedger, T)> {
     let p = path(dir, id)?;
     let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
     let mut l = match read(dir, id) {
@@ -396,7 +402,7 @@ fn running(dir: &Path) -> usize {
 /// The project's standing grant lets the platform have session `w` start a
 /// turn here now: `runs.instruct`, checked against what this box pinned, with
 /// every revoke it kept. The grant, when it does.
-fn checked(app: &App, w: &SessionWork) -> Result<ProjectGrant, runs::Refused> {
+fn checked(app: &App, w: &AgentSessionWork) -> Result<ProjectGrant, runs::Refused> {
     let grant = w.grant.clone().ok_or(NO_GRANT)?;
     let start = arugula_control_wire::runs::RunStart {
         project: w.project.clone(),
@@ -425,7 +431,7 @@ enum NotNow {
 /// that's asked about), so one refused for that is asked again after a
 /// refresh. Only a refresh that got through settles it: with control out of
 /// reach, the session waits rather than failing for good.
-async fn allowed(app: &App, w: &SessionWork) -> Result<ProjectGrant, NotNow> {
+async fn allowed(app: &App, w: &AgentSessionWork) -> Result<ProjectGrant, NotNow> {
     let refused = |r: runs::Refused| NotNow::Refused(format!("{}: {}", r.code, r.says));
     match checked(app, w) {
         Err(r) if PIN_CAN_CHANGE.contains(&r.code) => {
@@ -473,9 +479,9 @@ pub async fn turn_allowed(id: String) -> Result<(), String> {
 /// runs that aren't listed any more are stopped; each keeps the project's
 /// grant that checks out, for the revokes that end it; queued ones are taken
 /// while there's a slot; and each one it runs is followed.
-pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
+pub async fn pulled(app: &Arc<App>, sessions: Vec<AgentSessionWork>) {
     let dir = app.control.state_dir().to_owned();
-    let listed: BTreeMap<String, SessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
+    let listed: BTreeMap<String, AgentSessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
     // The project's grant as listed, first: one that replaced another counts
     // from now, whatever it gives.
     if let Some((w, g)) = listed.values().find_map(|w| w.grant.as_ref().map(|g| (w, g))) {
@@ -512,7 +518,7 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<SessionWork>) {
 /// `running stop`, or there's no turn under way; else when that turn ends,
 /// with what it did reported first ([`step`] gives it no fix, and no other
 /// turn starts).
-fn revoked_now(app: &App, l: &Session) -> bool {
+fn revoked_now(app: &App, l: &AgentSessionLedger) -> bool {
     let Some(how) = runs::revoke_over(app, l.grant.as_ref(), l.taken_at) else { return false };
     how == Running::Stop || !(l.now() == State::Working && l.turn.as_ref().is_some_and(|t| t.sent))
 }
@@ -587,7 +593,14 @@ async fn watch_wakes(app: &Arc<App>) {
 /// allowed: the ledger says so here, parked with its conversation kept, and
 /// the rest goes in a task of its own: its block closed and what its user runs
 /// killed first, then its transcript (closing a block sends it) and the report.
-fn stop_woken(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::block::Block>, turns: u64, why: String) {
+fn stop_woken(
+    app: &Arc<App>,
+    l: &AgentSessionLedger,
+    block: u32,
+    b: &Arc<dyn crate::block::Block>,
+    turns: u64,
+    why: String,
+) {
     let Some((keys, me, ..)) = me(app) else { return };
     let agent_session = b.state()["session_id"].as_str().map(str::to_owned);
     warn!(session = l.session, why, "hosted: stopping a turn its agent began by itself");
@@ -620,7 +633,7 @@ fn stop_woken(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::block:
 
 /// Close `block` and kill what `l`'s user runs, at once: neither waits for the
 /// other, or for the agent.
-async fn kill_agent(app: &App, l: &Session, block: Option<u32>) {
+async fn kill_agent(app: &App, l: &AgentSessionLedger, block: Option<u32>) {
     let close = async {
         if let Some(block) = block {
             app.mux.api(|r| Api::Close(block, r)).await;
@@ -711,7 +724,7 @@ pub fn has_harness(h: &str) -> bool {
 
 /// The agent session `w` runs on here: the one asked for when the box
 /// has it, else Claude Code (`None`).
-fn harness_for(w: &SessionWork) -> Option<String> {
+fn harness_for(w: &AgentSessionWork) -> Option<String> {
     w.harness.clone().filter(|h| h != "claude" && has_harness(h))
 }
 
@@ -720,7 +733,7 @@ fn harness_for(w: &SessionWork) -> Option<String> {
 /// said outright ([`DEFAULT_MODEL`]), since the adapter's own `default`
 /// depends on the account. Codex picks its own: Claude's words aren't its
 /// models.
-fn model_for(w: &SessionWork, harness: Option<&str>) -> Option<String> {
+fn model_for(w: &AgentSessionWork, harness: Option<&str>) -> Option<String> {
     if harness.is_some_and(|h| h != "claude") {
         return None;
     }
@@ -744,7 +757,7 @@ fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
 /// Take queued session `w` if there's a slot: its ledger, its checkout,
 /// its block, then its first turn. One that can't be set up fails, saying
 /// why.
-async fn take(app: &Arc<App>, w: &SessionWork) {
+async fn take(app: &Arc<App>, w: &AgentSessionWork) {
     let dir = app.control.state_dir().to_owned();
     let Some((keys, me, project, workspace)) = me(app) else { return };
     if !good_id(&w.session) {
@@ -767,7 +780,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
         return;
     }
     let dest = Path::new(&user.home).join("work").join(&w.session).display().to_string();
-    let mut l = Session {
+    let mut l = AgentSessionLedger {
         session: w.session.clone(),
         project: w.project.clone(),
         workspace: w.workspace.clone(),
@@ -805,7 +818,7 @@ async fn take(app: &Arc<App>, w: &SessionWork) {
     if let Some(h) = w.harness.as_deref().filter(|h| *h != "claude" && l.harness.is_none()) {
         info!(session = l.session, harness = h, "hosted: this box hasn't that agent; the session runs on Claude Code");
     }
-    let fail = |mut l: Session, why: String| {
+    let fail = |mut l: AgentSessionLedger, why: String| {
         info!(session = l.session, why, "hosted: a session can't start here");
         l.push(
             &keys,
@@ -955,7 +968,13 @@ async fn here(argv: &[&str], root: bool) -> Result<String, String> {
 /// setup, which is a box's age behind: sessions cut from it built on code
 /// from before the last waves merged. When that fetch fails, it starts
 /// from the clone, and the first prompt says so ([`stale_note`]).
-async fn checkout(app: &App, dir: &Path, l: &Session, src: Source, real: bool) -> Result<Option<String>, String> {
+async fn checkout(
+    app: &App,
+    dir: &Path,
+    l: &AgentSessionLedger,
+    src: Source,
+    real: bool,
+) -> Result<Option<String>, String> {
     let stage = dir.join(super::DIR).join(DIR).join(format!("{}.stage", l.session));
     let dest = PathBuf::from(&l.checkout);
     let s = stage.display().to_string();
@@ -1125,7 +1144,7 @@ fn notes(repo: &Path) -> Option<String> {
 /// its model, or Codex, when it runs on it (M264), in `full-access`, unless a test
 /// names a command (`ARUGULA_HOSTED_SESSION_AGENT`), which still runs as
 /// that kind, under M185's gate.
-fn agent_config(l: &Session) -> Value {
+fn agent_config(l: &AgentSessionLedger) -> Value {
     let agent = l.harness.as_deref().unwrap_or("claude");
     let mut c = json!({
         "agent": agent,
@@ -1162,7 +1181,7 @@ fn mode_of(agent: &str) -> &'static str {
 
 /// Open session `l`'s agent block: a new conversation, or with
 /// `agent_session`, the one it had (a parked session's), loaded.
-async fn open_block(app: &App, l: &Session, agent_session: Option<&str>) -> Result<u32, String> {
+async fn open_block(app: &App, l: &AgentSessionLedger, agent_session: Option<&str>) -> Result<u32, String> {
     let mut config = agent_config(l);
     if let Some(sid) = agent_session {
         config["session_id"] = json!(sid);
@@ -1197,7 +1216,7 @@ fn follow(app: &Arc<App>, id: &str) {
 
 /// The latest pull's word on session `id`: `None` when it wasn't listed,
 /// or before the first pull.
-fn latest(id: &str) -> Option<SessionWork> {
+fn latest(id: &str) -> Option<AgentSessionWork> {
     LATEST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id).cloned())
 }
 
@@ -1345,7 +1364,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         update(&dir, id, |now| now.model_now = m);
     }
     let Ok(Some(l)) = read(&dir, id) else { return false };
-    let say = |f: Box<dyn FnOnce(&mut Session) + Send>| {
+    let say = |f: Box<dyn FnOnce(&mut AgentSessionLedger) + Send>| {
         update(&dir, id, f);
     };
     match l.turn.clone() {
@@ -1612,7 +1631,7 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
 /// left killed, which frees the memory and a running slot. Its user,
 /// checkout and `~/.claude` stay, and the ledger keeps its agent's
 /// session id for [`unpark`].
-pub async fn park(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::block::Block>) {
+pub async fn park(app: &Arc<App>, l: &AgentSessionLedger, block: u32, b: &Arc<dyn crate::block::Block>) {
     let dir = app.control.state_dir().to_owned();
     let agent_session = b.state()["session_id"].as_str().map(str::to_owned);
     let archived = crate::hosted::archive::flush(Some(&[u64::from(block)])).await;
@@ -1639,7 +1658,7 @@ pub async fn park(app: &Arc<App>, l: &Session, block: u32, b: &Arc<dyn crate::bl
 /// its block again on the same user and checkout, loading its agent's
 /// conversation; the next look hands the prompt. Actions with no agent to
 /// do them to (a late cancel) are named, so they leave control's list.
-async fn unpark(app: &Arc<App>, l: &Session, keys: &Arc<arugula_e2e::DeviceKeys>, me: &str) {
+async fn unpark(app: &Arc<App>, l: &AgentSessionLedger, keys: &Arc<arugula_e2e::DeviceKeys>, me: &str) {
     let dir = app.control.state_dir().to_owned();
     let Some(w) = latest(&l.session) else { return };
     let late: Vec<String> = w.actions.iter().filter(|a| !l.acted.contains(&a.id)).map(|a| a.id.clone()).collect();
@@ -1755,7 +1774,7 @@ async fn give(
 
 /// The block has the turn's prompt: say the turn started (with the agent's
 /// block, on the first), once.
-fn started(now: &mut Session, keys: &arugula_e2e::DeviceKeys, me: &str) {
+fn started(now: &mut AgentSessionLedger, keys: &arugula_e2e::DeviceKeys, me: &str) {
     let Some(t) = now.turn.as_mut() else { return };
     t.sent = true;
     let prompts = t.prompts.clone();
@@ -1808,7 +1827,7 @@ impl Finished {
 /// session says it's alive, with the finish step as its tool.
 pub async fn finish_turn(
     app: &Arc<App>,
-    l: &Session,
+    l: &AgentSessionLedger,
     step: Option<&FinishStep>,
     keys: &Arc<arugula_e2e::DeviceKeys>,
     me: &str,
@@ -2013,7 +2032,7 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
 
 /// Session `id` has failed, saying `why`, as its ledger says from here on: a
 /// push under way stops, nothing follows it, and the report is kept to send.
-fn mark_failed(app: &App, id: &str, why: &str) -> Option<Session> {
+fn mark_failed(app: &App, id: &str, why: &str) -> Option<AgentSessionLedger> {
     let dir = app.control.state_dir();
     let (keys, me, ..) = me(app)?;
     let (l, _) = update(dir, id, |now| {
@@ -2034,14 +2053,14 @@ fn mark_failed(app: &App, id: &str, why: &str) -> Option<Session> {
 /// What a session that failed leaves: its agent stopped first, then its slot
 /// cleaned, then the report sent, so a control that doesn't answer holds up
 /// nothing that matters. `polite`: as [`stop_agent`].
-async fn wind_down(app: &Arc<App>, l: &Session, polite: bool) {
+async fn wind_down(app: &Arc<App>, l: &AgentSessionLedger, polite: bool) {
     clean_up(app, l, polite).await;
     send(app, &l.session).await;
 }
 
 /// What an ended session leaves goes: its agent, then its slot's files. Only
 /// then does its ledger stop saying that's owed.
-async fn clean_up(app: &App, l: &Session, polite: bool) {
+async fn clean_up(app: &App, l: &AgentSessionLedger, polite: bool) {
     stop_agent(app, l, polite).await;
     let dir = app.control.state_dir();
     clean_slot(dir, l).await;
@@ -2050,7 +2069,7 @@ async fn clean_up(app: &App, l: &Session, polite: bool) {
 
 /// Stop session `l`'s agent and what its user runs. `polite`: its agent is
 /// asked to cancel its turn first, for a few seconds at most. A stop isn't.
-async fn stop_agent(app: &App, l: &Session, polite: bool) {
+async fn stop_agent(app: &App, l: &AgentSessionLedger, polite: bool) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
     if polite
         && let Some(block) = l.block
@@ -2067,7 +2086,7 @@ async fn stop_agent(app: &App, l: &Session, polite: bool) {
 /// conversations). The slot's are removed as the session's user, who owns
 /// them: never as root, through paths the agent could have made links of.
 /// `end` and `fail` call it, once each session.
-pub async fn clean_slot(dir: &Path, l: &Session) {
+pub async fn clean_slot(dir: &Path, l: &AgentSessionLedger) {
     push::clean(dir, l).await;
     let claude = Path::new(&l.user.home).join(".claude").display().to_string();
     match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
