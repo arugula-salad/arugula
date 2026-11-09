@@ -87,16 +87,21 @@ async function ends(p: Page) {
     const base = chart.getBoundingClientRect();
     const box = (id: string) => {
       const r = chart.querySelector(`[data-step-bar="${id}"]`)!.getBoundingClientRect();
-      return { left: r.left - base.left, right: r.right - base.left, cy: (r.top + r.bottom) / 2 - base.top };
+      return { left: r.left - base.left, right: r.right - base.left, top: r.top - base.top, bottom: r.bottom - base.top, cy: (r.top + r.bottom) / 2 - base.top };
     };
     return [...chart.querySelectorAll<SVGPathElement>("path[data-link-kind]")].map((el) => {
       const g = el.parentElement as unknown as SVGGElement;
-      const n = el.getAttribute("d")!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+      const len = el.getTotalLength();
+      // An elbow's last 12px are level, so the 8px head lies on the line it ends.
+      const [s, e, head] = [el.getPointAtLength(0), el.getPointAtLength(len), el.getPointAtLength(Math.max(0, len - 12))];
       const a = box(g.dataset.linkFrom!);
       const b = box(g.dataset.linkTo!);
-      // Out of the right edge into the left of a bar further right, the other way round for one further left, else round the right.
-      const [x1, x2] = b.left >= a.right ? [a.right, b.left] : b.right <= a.left ? [a.left, b.right] : [a.right, b.right];
-      return { kind: el.dataset.linkKind!, from: g.dataset.linkFrom!, to: g.dataset.linkTo!, got: [n[0], n[1], n.at(-2)!, n.at(-1)!], want: [x1, a.cy, x2, b.cy] };
+      // To another column: an elbow down out of the bottom (up out of the top) of the bar, 10px inside the edge facing the other, into its near side. In one column: round the right.
+      const dir = b.left >= a.right ? 1 : b.right <= a.left ? -1 : 0;
+      const half = (a.right - a.left) / 2;
+      const sx = dir > 0 ? Math.max(a.left + half, a.right - 10) : Math.min(a.left + half, a.left + 10);
+      const want = dir ? [sx, b.cy > a.cy ? a.bottom : a.top, dir > 0 ? b.left : b.right, b.cy] : [a.right, a.cy, b.right, b.cy];
+      return { kind: el.dataset.linkKind!, from: g.dataset.linkFrom!, to: g.dataset.linkTo!, got: [s.x, s.y, e.x, e.y, head.y], want: [...want, dir ? b.cy : head.y] };
     });
   });
 }
