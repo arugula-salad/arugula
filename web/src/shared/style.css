@@ -1271,6 +1271,10 @@ button.att {
   flex: 1;
 }
 
+.install-hint > .primary {
+  margin-left: auto;
+}
+
 /* With no key bar under it, it keeps clear of the home indicator. */
 .install-hint:not(:has(+ .keybar)) {
   margin-bottom: calc(8px + env(safe-area-inset-bottom));
@@ -2930,16 +2934,6 @@ button.att {
   padding: 0;
   margin-bottom: 6px;
   font-weight: 600;
-}
-
-.ask-header {
-  padding: 1px 8px;
-  border-radius: var(--chip-radius);
-  background: var(--raised);
-  color: var(--dim);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
 }
 
 .ask-hint {
@@ -5253,11 +5247,6 @@ button.diff-why-run {
 .conv-context {
   flex: none;
   display: inline-flex;
-}
-
-.conv-cost-note {
-  color: var(--dim);
-  font-size: var(--text-xs);
 }
 
 .conv-cost {

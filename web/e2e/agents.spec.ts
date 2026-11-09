@@ -41,7 +41,7 @@ test.describe("desktop", () => {
     // The permission card; approving runs it.
     const card = block.getByRole("alertdialog", { name: "Allow ls --color?" });
     await expect(card).toContainText("Bash wants to run");
-    await expect(block.locator(".agent-status")).toHaveText("Needs you");
+    await expect(block.locator(".agent-status")).toHaveCount(0);
     await card.getByRole("button", { name: "Approve" }).click();
     await expect(card).toBeHidden();
     // Its output, in a read-only terminal (colours and all).

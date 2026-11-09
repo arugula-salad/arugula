@@ -599,7 +599,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   // by the composer says it, so the note it repeats doesn't (UI audit #178).
   const last = s.entries.length - 1;
   const repeats = !!s.error && s.entries[last]?.type === "note" && s.entries[last].text.toLowerCase().includes(s.error.toLowerCase());
-  const chip = archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
+  const chip = archived ? "Archived" : s.pending.length || open.length ? null : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
   return (
     <div
       class="agent"
@@ -614,8 +614,8 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
       }}
     >
       <Bar sub class="agent-bar">
-        <span class={`agent-status ${s.status}`}>{chip}</span>
-        <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
+        {chip && <span class={`agent-status ${s.status}`}>{chip}</span>}
+        <span class="agent-name" aria-description={chip ? undefined : "Needs you"} title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
         </span>
         {s.work && <WorkChip work={s.work} />}
@@ -700,6 +700,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
+              // While its card shows, the card says it; this row would say
+              // it again. Answered, the row is the transcript's record.
+              if (e.name === "AskUserQuestion" && open.length > 0 && e.status !== "completed" && e.status !== "failed") return null;
               // An archived Managoat conversation's paths were in its
               // sandbox, not here.
               const openAt = client.state?.roles || archived ? undefined : (path: string) => void openFile(client, id, path, null);
@@ -707,7 +710,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             }
           }
         })}
-        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">{s.current_tool ? `Running ${s.current_tool.title}…` : "Working…"}</div>}
+        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">Working…</div>}
         {s.queued.length > 0 && <div class="agent-note">Queued: {s.queued.join(" · ")}</div>}
       </div>
       {s.error && <div class="agent-error">{s.error}</div>}

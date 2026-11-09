@@ -316,7 +316,6 @@ export function InstallHint() {
     <div class="install-hint" role="status" data-install-hint>
       {installPrompt ? (
         <>
-          <span>Install it for a full screen and notifications.</span>
           <button
             class="primary"
             onClick={() => {
