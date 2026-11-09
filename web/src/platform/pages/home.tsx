@@ -48,8 +48,8 @@ export function Home() {
                 <span class="card-id" title={p.id}>
                   {p.id.slice(0, 12)}
                 </span>
-                <span class="dim">
-                  {p.team ? `Team ${p.team.name} · ${people} ${people === 1 ? "person" : "people"} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : "Yours alone"}
+                <span class="dim" title={p.team ? `Team ${p.team.name} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : undefined}>
+                  {p.team ? `Team · ${people} ${people === 1 ? "person" : "people"}` : "Yours alone"}
                 </span>
               </Card>
             </li>
