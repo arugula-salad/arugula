@@ -29,6 +29,10 @@ export interface MoveResult {
   noPictures?: boolean;
 }
 
+/** What a result says, as the Docs list's bar and a single Doc's Share both
+ * put it. `team` is the team's name. */
+export const resultWords = (r: MoveResult, team: string) => (r.outcome === "made" ? "Made" : r.outcome === "there" ? `Already in ${team}` : `Refused: ${r.why}`);
+
 const enc = encodeURIComponent;
 
 /** One call as the person; `body` is `{}` when the answer isn't JSON. */

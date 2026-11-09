@@ -22,7 +22,7 @@ import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
-import { CheckIcon, ChevronIcon, Svg } from "./icons";
+import { ChevronIcon } from "./icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -82,6 +82,12 @@ export interface ListRowParts {
   detail?: ComponentChildren;
   /** The row's picture of its data, at the right of that line. */
   mark?: ComponentChildren;
+  /** At the row's end: a ⋯ button, say. It's the row's own to press: a click
+   * or double click on it must not select or open the row (`stopPropagation`).
+   * A row is one option, so it holds no button: make it a mouse target with
+   * `data-row-more`, which the ContextMenu key (or Shift+F10) on the selected
+   * row and a right click on a row press. */
+  actions?: ComponentChildren;
   /** Its `data-*` hooks. */
   attrs?: Record<string, string>;
 }
@@ -283,6 +289,14 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         s.tickAt(s.selectedKey, !s.ticked.has(s.selectedKey), false);
         return;
       }
+      if ((e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && s.selectedKey !== null) {
+        const more = document.getElementById(rowId(s.selectedKey))?.querySelector<HTMLElement>("[data-row-more]");
+        if (more) {
+          e.preventDefault();
+          more.click();
+        }
+        return;
+      }
       const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
       const letter = !searching && (e.key === "j" || e.key === "k");
       if ((arrow || letter) && s.flat.length) {
@@ -362,6 +376,12 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
           if (narrow) setDetail(true);
         }}
         onDblClick={() => !narrow && onOpen(item)}
+        onContextMenu={(e) => {
+          const more = (e.currentTarget as HTMLElement).querySelector<HTMLElement>("[data-row-more]");
+          if (!more) return;
+          e.preventDefault();
+          more.click();
+        }}
         onPointerMove={(e) => hovered(key, e)}
         onPointerLeave={() => clearTimeout(hover.current)}
       >
@@ -386,6 +406,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         <span class="list-row-age">{r.age}</span>
         <div class="list-row-detail">{r.detail}</div>
         <span class="list-row-mark">{r.mark}</span>
+        {r.actions && <span class="list-row-actions">{r.actions}</span>}
       </Card>
     );
   };
@@ -544,32 +565,6 @@ export function ListPreview({ title, facts, factsTip, hint, actions, children, a
         {aside && <div class="list-preview-aside">{aside}</div>}
       </div>
     </>
-  );
-}
-
-/** The preview bar's Copy link: the same icon button as a Doc's own bar, and
- * "Copied ✓" in place for a moment. `copy` says whether it copied; `done` is
- * the title while it says so. */
-export function PreviewCopyLink({ copy, title, done, disabled, ...attrs }: { copy: () => Promise<boolean>; title: string; done?: string; disabled?: boolean; [hook: `data-${string}`]: string | undefined }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  const click = async () => {
-    if (!(await copy())) return;
-    setCopied(true);
-    clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <button type="button" class="bar-btn sq preview-bar-link" data-copied={copied ? "" : undefined} disabled={disabled} title={copied && done ? done : title} aria-label="Copy link" onClick={() => void click()} {...attrs}>
-      {copied ? (
-        <span class="preview-bar-copied">Copied <CheckIcon size="xs" /></span>
-      ) : (
-        <Svg size="sm">
-          <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
-          <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
-        </Svg>
-      )}
-    </button>
   );
 }
 

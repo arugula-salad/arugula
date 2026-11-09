@@ -19,22 +19,20 @@ import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { CopyLinkButton } from "../../shared/ui/copy-link";
-import { ListCounts, ListPage, ListPreview, PreviewCopyLink, type ListCount, type ListGroup, type ListTicked } from "../../shared/ui/list-page";
+import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup, type ListTicked } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
-import { moveDocsToTeam, type MoveResult } from "../../shared/docs/move-docs";
-import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
+import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
-import { Modal } from "../../shared/ui/modal";
 import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
+import { PlatformDocActions, RowMenu } from "./doc-actions";
 
 /** Who's who in `p`, for a Doc's maker. */
 function nameOf(p: PlatformProject) {
@@ -46,17 +44,6 @@ function nameOf(p: PlatformProject) {
 export function copyFrom(d: ProjectDoc): string | null {
   return d.machine ? d.machine_name || "a machine that left" : null;
 }
-
-/** The preview's Copy link: copies `link`, and says whether it did. */
-const copyTo = (link: string) => async () => {
-  try {
-    await navigator.clipboard.writeText(link);
-    return true;
-  } catch {
-    toast("Couldn't copy the link");
-    return false;
-  }
-};
 
 /** The project's Docs, `null` while they load. */
 function useDocs(project: string): ProjectDoc[] | null {
@@ -299,10 +286,11 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
             detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
             age: <Time at={r.doc.updated_at} title="Updated" />,
             mark: s ? <Shape sections={s} /> : undefined,
+            actions: <RowMenu p={r.p} doc={r.doc} reload={reload} />,
             attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },
           };
         }}
-        preview={(r) => <Preview key={r.doc.id} row={r} />}
+        preview={(r) => <Preview key={r.doc.id} row={r} reload={reload} />}
       />
     </div>
   );
@@ -367,7 +355,7 @@ function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: P
                   <span class="dim">Refused: {r.why}</span>
                 ) : (
                   <a href={link!} data-move-link onClick={(e) => follow(e, link!)}>
-                    {r.outcome === "made" ? "Made" : `Already in ${results.team.name}`}
+                    {resultWords(r, results.team.name)}
                   </a>
                 )}
                 {r.noPictures && <span class="dim"> · pictures stay in Mine</span>}
@@ -423,8 +411,8 @@ function NewDoc({ ps, done }: { ps: PlatformProject[]; done: () => void }) {
   );
 }
 
-/** The selected Doc, whole, kept live through its thread; Open and Copy link above it. */
-function Preview({ row }: { row: Row }) {
+/** The selected Doc, whole, kept live through its thread; Open and the three actions above it. */
+function Preview({ row, reload }: { row: Row; reload: () => void }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const { doc, p } = row;
   const [view, setView] = useState<ProjectDocView | null>(null);
@@ -459,7 +447,7 @@ function Preview({ row }: { row: Row }) {
           <button type="button" class="primary small" data-open-doc onClick={() => go(to)}>
             Open
           </button>
-          <PreviewCopyLink data-doc-copy-link title="Copy link" copy={copyTo(new URL(to, location.href).href)} />
+          <PlatformDocActions p={p} doc={doc} reload={reload} />
         </>
       }
     >
@@ -495,8 +483,6 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const last = useRef<ProjectDocView | null>(null);
   /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
-  /** Share with… is open (a copy's owner's). */
-  const [sharing, setSharing] = useState(false);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -544,14 +530,6 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       {view && copy && (
         <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
           Copy from {copy} · <Time at={view.doc.updated_at} />
-          {!p.team && (
-            <>
-              {" "}
-              <button type="button" class="link" data-doc-share-with onClick={() => setSharing(true)}>
-                Share with…
-              </button>
-            </>
-          )}
         </p>
       )}
       {missing && !view && (
@@ -566,7 +544,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           s={state}
           fresh={fresh}
           load={noImages}
-          share={<CopyLinkButton link={new URL(pathOf({ page: "doc", project, doc }, names), location.href).href} />}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu />}
           byline={
             // A copy's line above the Doc already says where it's from and when.
             view &&
@@ -595,43 +573,9 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           })}
         </p>
       )}
-      {sharing && view && <ShareWithModal project={project} id={view.doc.id} done={() => setSharing(false)} />}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
       {view && copy && deleter && <CopyDeleter project={project} view={view} machine={copy} mine={view.doc.author === session.me?.account} />}
     </section>
-  );
-}
-
-/** Share with…: the projects the reader writes Docs in, and what each has of
- * this copy. Update copy that would replace the team's edits asks first, in
- * this same dialog. */
-function ShareWithModal({ project, id, done }: { project: string; id: string; done: () => void }) {
-  const [asking, setAsking] = useState<Edited | null>(null);
-  if (asking) return <EditedDialog edited={asking} cancel={() => setAsking(null)} />;
-  return (
-    <Modal
-      title="Share with…"
-      close={done}
-      root={{ "data-share-with-dialog": true }}
-      buttons={
-        <button class="secondary" type="button" onClick={done}>
-          Done
-        </button>
-      }
-    >
-      <ShareWith
-        project={project}
-        id={id}
-        ask={setAsking}
-        say={toast}
-        done={toast}
-        open={(c) => {
-          done();
-          go(pathOf({ page: "doc", project: c.project, doc: c.id }, names));
-        }}
-        unreachable={<p class="dim">Couldn't reach the platform.</p>}
-      />
-    </Modal>
   );
 }
 
