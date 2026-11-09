@@ -61,7 +61,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 }
 
 // Each column's head, the word in a switch's name, and what it gives: the
-// head's tooltip and the key under the section's line.
+// head's tooltip.
 type Head = { head: string; short?: string; name: string; gives: string };
 const HEADS: Record<Column, Head> = {
   threads: { head: "Threads & issues", short: "Threads", name: "threads & issues", gives: "read and post in its threads (a team's channels), and write its issues" },
@@ -262,7 +262,7 @@ export function AgentGrants() {
             {n}/{machines.length}
           </Count>
         </div>
-        <span class="dim agent-card-sub">{sub}</span>
+        {sub ? <span class="dim agent-card-sub">{sub}</span> : null}
         <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>
           <thead>
             <tr>
@@ -321,7 +321,6 @@ export function AgentGrants() {
     <Section
       id="agents"
       title="Agents on your machines"
-      lede="What the agents on each of your machines may do in each project. Every switch is off until you turn it on."
       more={
         <>
           <p>
@@ -347,14 +346,6 @@ export function AgentGrants() {
         </>
       }
     >
-      <dl class="agent-key">
-        {COLUMNS.map((c) => (
-          <div key={c}>
-            <dt>{HEADS[c].head}</dt>
-            <dd>{HEADS[c].gives}</dd>
-          </div>
-        ))}
-      </dl>
       {machines.length === 0 ? (
         <p class="dim">No machines on your account yet.</p>
       ) : (
@@ -364,9 +355,7 @@ export function AgentGrants() {
             return card(
               s,
               p.name,
-              p.team
-                ? `${p.team.name}'s channels and issues${p.team.role === "viewer" ? ". You only view it, so a write power here reads and comments only" : ""}`
-                : "Your personal project",
+              p.team?.role === "viewer" ? "You only view it, so a write power here reads and comments only" : "",
               COLUMNS,
               COLUMNS.map((c) => HEADS[c]),
               { "data-agent-project": p.id },

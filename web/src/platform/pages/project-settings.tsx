@@ -136,7 +136,6 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
             id="repos"
             title="Linked repos"
             count={repos ? linked : undefined}
-            lede="GitHub repos whose pull requests and issues live in this project, for its members."
             more={
               <>
                 <p>

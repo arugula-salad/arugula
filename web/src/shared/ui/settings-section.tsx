@@ -20,7 +20,8 @@ export function Section({
   title: string;
   /** How many it lists, beside the heading. */
   count?: number;
-  lede: ComponentChildren;
+  /** The one plain line under the heading; left out where the heading says it. */
+  lede?: ComponentChildren;
   more?: ComponentChildren;
   /** The section's own `data-*` hooks. */
   hooks?: Record<`data-${string}`, string>;
@@ -32,7 +33,7 @@ export function Section({
         {title}
         {count !== undefined ? <span class="dim">{count}</span> : null}
       </h2>
-      <p class="settings-lede">{lede}</p>
+      {lede ? <p class="settings-lede">{lede}</p> : null}
       {more ? (
         <details class="settings-more">
           <summary>More</summary>

@@ -118,7 +118,6 @@ export function Access({ p }: { p: PlatformProject }) {
       title="Access"
       count={v ? grants.length : undefined}
       hooks={{ "data-access": v ? "yes" : old ? "old" : "" }}
-      lede="Who can do what here: project roles, whose machines drive its cloud workspaces, the powers members' agents hold, what an owner allowed, and the cloud workspaces. Read-only."
       more={
         <>
           <p>
@@ -154,7 +153,6 @@ export function Access({ p }: { p: PlatformProject }) {
             ))}
           </ul>
           {v.project.owner.locked && <p class="settings-warn">The team is locked: only its owners get in while it is.</p>}
-          <p class="dim settings-note">By {v.roles.says}.</p>
 
           <h3>Cloud workspaces' drivers</h3>
           <ul class="platform-list settings-rows" data-access-drivers>
@@ -166,7 +164,6 @@ export function Access({ p }: { p: PlatformProject }) {
               </li>
             ))}
           </ul>
-          <p class="dim settings-note">By {v.cloud_drive.says}.</p>
 
           <h3>Other powers</h3>
           {grants.length ? (
@@ -209,7 +206,6 @@ export function Access({ p }: { p: PlatformProject }) {
               None given: no machine's or agent token's agents hold one here. An owner's or editor's machine still keeps its own Doc copies here.
             </p>
           )}
-          <p class="dim settings-note">By {v.powers.says}.</p>
 
           <h3>Allowed</h3>
           <ul class="platform-list settings-rows" data-access-allow>
@@ -247,7 +243,6 @@ export function Access({ p }: { p: PlatformProject }) {
               </span>
             </li>
           </ul>
-          <p class="dim settings-note">{v.allow.says[0].toUpperCase() + v.allow.says.slice(1)}.</p>
 
           <h3>Cloud workspaces</h3>
           {v.workspaces.list.length ? (
@@ -268,7 +263,6 @@ export function Access({ p }: { p: PlatformProject }) {
               None. On one, {v.workspaces.full_use}.
             </p>
           )}
-          <p class="dim settings-note">By {v.workspaces.says}.</p>
         </>
       )}
     </Section>

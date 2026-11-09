@@ -102,7 +102,7 @@ test("Alice and Bob read the same Access section of the project's settings", asy
     await expect(access.locator("[data-access-roles]")).toContainText("alice");
     await expect(access.locator("[data-access-roles]")).toContainText("Owner");
     await expect(access.locator("[data-access-roles]")).toContainText("Viewer");
-    await expect(access.locator(".settings-note").first()).toContainText("roster");
+    await expect(access.locator(".settings-note")).toHaveCount(0);
     await expect(access.locator("[data-access-driver]")).toHaveCount(2);
     await expect(access.locator("[data-access-drivers]")).toContainText("alice's machines");
     await expect(access.locator("[data-access-drivers]")).toContainText("1 machine acts as an owner");

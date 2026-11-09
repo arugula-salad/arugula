@@ -122,7 +122,6 @@ function Alerts() {
       id="chat-alerts"
       title="Chat alerts"
       count={words.length}
-      lede="Words that notify you in chat as if someone had mentioned you."
       more={<p class="dim">A word counts when a message has it whole, in any case: "deploy" doesn't match "redeployed". Rooms you muted stay quiet.</p>}
       hooks={{ "data-chat-alerts": "" }}
     >

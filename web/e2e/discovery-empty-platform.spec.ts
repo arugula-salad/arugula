@@ -97,7 +97,7 @@ test("a new project's home: each empty section's button does its step", async ({
   // Deploys has a place in the bar; with no environment, its owner makes one.
   await alice.locator("[data-platform-deploys]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/deploys$/);
-  await expect(alice.locator("[data-deploys-none]")).toContainText("A deploy puts a commit");
+  await expect(alice.locator("[data-deploys-none]")).toContainText("A deploy needs an environment to go to first");
   await alice.locator("[data-deploys-make-env]").click();
   await expect(alice.locator("[data-environment-form]")).toBeVisible();
 

@@ -123,38 +123,8 @@
   padding: 2px 0;
 }
 
-/* -- Agents on your machines: what each column gives, then a card per
-      project (and your DMs) holding its matrix. */
-
-.platform .agent-key {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 24px;
-  margin: 0 0 14px;
-  font-size: var(--text-sm);
-}
-
-.platform .agent-key > div {
-  min-width: 0;
-}
-
-.platform .agent-key dt {
-  display: inline;
-  font: 600 var(--text-xs)/1.4 var(--f-mono);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--fg);
-}
-
-.platform .agent-key dt::after {
-  content: " ";
-}
-
-.platform .agent-key dd {
-  display: inline;
-  margin: 0;
-  color: var(--dim);
-}
+/* -- Agents on your machines: a card per project (and your DMs) holding
+      its matrix. */
 
 .platform .agent-card.card {
   display: block;
@@ -609,9 +579,6 @@
       the screen. */
 
 @media (max-width: 700px) {
-  .platform .agent-key {
-    grid-template-columns: 1fr;
-  }
   .platform .agent-card[data-agent-dms] {
     justify-self: stretch;
     width: auto;

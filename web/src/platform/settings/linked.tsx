@@ -93,7 +93,6 @@ export function LinkedProducts() {
       id="linked"
       title="Linked products"
       count={links.length}
-      lede="Products you let sign you in with Arugula. Linking alone grants them nothing here."
       more={
         <p>
           Your accounts there are linked to this one by your GitHub account's number, never its name. Unlinking takes effect the next time
