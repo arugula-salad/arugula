@@ -74,7 +74,6 @@ use arugula_mux::provider;
 pub mod board_attach;
 mod board_block;
 mod board_state;
-mod people_block;
 pub mod push;
 pub mod relay_ws;
 pub mod review;
@@ -753,7 +752,6 @@ fn kinds(
     forges::kinds(&mut kinds);
     kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     kinds.add(BlockType::Board, board_block::BoardKind);
-    kinds.add(BlockType::People, people_block::PeopleKind);
     lab_hooks::labs().kinds(&mut kinds, invite);
     // The feature crates' (#232): the agent and chat blocks, Docs, invites.
     let cx = features::KindsCx { invite: invite.clone(), mcp, secrets, rules };
@@ -1294,7 +1292,6 @@ pub mod whole {
             BlockType::Chat,
             BlockType::TeamChat,
             BlockType::Board,
-            BlockType::People,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1316,7 +1313,6 @@ pub mod whole {
                 | BlockType::Chat
                 | BlockType::TeamChat
                 | BlockType::Board
-                | BlockType::People
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown | BlockType::Remote);
