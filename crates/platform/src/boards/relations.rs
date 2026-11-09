@@ -345,6 +345,16 @@ impl Edges {
             .map(|r| r.from.as_str())
             .collect()
     }
+
+    /// Every item that comes before `item` in a board's steps, open or
+    /// closed (#824): where a row sits doesn't change when work finishes.
+    pub(super) fn before_any(&self, item: &str) -> Vec<&str> {
+        self.rels
+            .iter()
+            .filter(|r| r.to == item && super::steps::orders_steps(r.kind))
+            .map(|r| r.from.as_str())
+            .collect()
+    }
 }
 
 /// The other board a blocker is a row of, and its lead's session.

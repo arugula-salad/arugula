@@ -269,6 +269,44 @@ button.list-count:hover {
   white-space: nowrap;
 }
 
+/* A box on a row (Arugula #818), in the margin at the row's left: seen on
+   hover or on the keys' row, and always once any is ticked (and on a screen with no hover). */
+.list-row-check {
+  position: absolute;
+  left: calc(-1 * var(--space-5) + 2px);
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.list-row:hover .list-row-check,
+.list-rows:focus-visible .list-row[aria-selected="true"] .list-row-check,
+.list-row-check:focus-visible,
+.list-row-check:checked,
+.ticking .list-row-check,
+.list-group:hover .list-row-check {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .list-row-check {
+    opacity: 1;
+  }
+}
+
+/* A group's box sits in the header's own padding: the header spans the list. */
+.list-group-check {
+  left: 2px;
+  top: 60%;
+}
+
+.list-selection:empty {
+  display: none;
+}
+
 /* A section's row, a Card too: with its buttons at the right, or under
    it when the pane is too narrow for both. */
 .list-item.card {
@@ -374,11 +412,6 @@ button.list-count:hover {
 .list-preview-bar .list-preview-hint {
   flex: none;
   margin-left: 0;
-}
-
-.preview-bar-link[data-copied] {
-  width: auto;
-  min-width: 84px;
 }
 
 .list-preview-hint {
@@ -538,9 +571,20 @@ button.list-count:hover {
   grid-area: 1 / 3;
 }
 
+/* A row's own button (a Doc's ⋯, Arugula #820) ends the line. */
+.list-row-actions {
+  grid-area: 1 / 4;
+  align-self: center;
+  display: flex;
+}
+
 @container list-page (max-width: 480px) {
   .list-row[data-doc] {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .list-row-actions {
+    grid-area: 1 / 3;
   }
 }
 
@@ -593,4 +637,22 @@ button.list-count:hover {
 
 .doc-outline i.fig {
   background: var(--fg);
+}
+
+/* A row's ⋯ is a mouse target, not a button (a row is one option): the same
+   24px square as the icon buttons, dim until it's pointed at. */
+.row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--chip-radius);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.row-more:hover {
+  background: var(--raised);
+  color: var(--fg);
 }
