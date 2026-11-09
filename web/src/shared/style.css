@@ -5485,40 +5485,6 @@ button.diff-why-run {
 }
 
 /* The Doc bar's "Shared copy is older · Update" (#509): a chip you tap. */
-/* A Doc's three actions (Arugula #650, #782): icons, no text. In its bar the
-   path takes the room and they end the row: the bar's own fill would share
-   it with the path and leave them mid-bar. */
-.doc-bar .hbar-fill {
-  display: none;
-}
-
-.doc-actions {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.doc-action.bar-btn[data-copied] {
-  width: auto;
-  min-width: 84px;
-}
-
-.doc-action[data-older] {
-  position: relative;
-}
-
-.doc-action[data-older]::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 .ws-tags {
   display: flex;
   gap: 4px;

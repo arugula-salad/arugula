@@ -49,9 +49,23 @@ async function geekPost(path: string, body: unknown) {
   return JSON.parse(text) as { block?: number };
 }
 
+/** A Doc on geek's machine with one section filled, so its copy lands in Alice's Mine; the block's id. */
+async function machineDoc(title: string) {
+  const made = await geekPost("/api/blocks", { type: "doc", config: { title }, local: true });
+  await geekPost(`/api/blocks/${made.block}/call/doc_outline`, { title, sections: [{ id: "s1", heading: "Goals", intent: "what ships" }] });
+  await geekPost(`/api/blocks/${made.block}/call/doc_fill`, { section: "s1", markdown: `${title} says **hello**.` });
+  return made.block!;
+}
+
 async function platform(p: Page, path = "/") {
   await p.goto(`${app}${path}`);
   await expect(p.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
+}
+
+/** The Doc page's ⋯, then its "Share with…": the dialog with each team's state (the header's own Share goes straight to the one team). */
+async function shareWithDialog(p: Page) {
+  await p.locator("[data-doc-page] [data-doc-more]").click();
+  await p.getByRole("menuitem", { name: "Share with…" }).click();
 }
 
 /** A picture of the page for the PR, when E2E_SHOTS names a folder. */
@@ -370,7 +384,7 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   // Share with… (Arugula #418): a team Doc made from the copy, a snapshot
   // Acme owns. The copy stays read-only and geek's.
   const copyUrl = alice.url();
-  await page.locator("[data-doc-share-with]").click();
+  await shareWithDialog(alice);
   const dialog = alice.locator("[data-share-with-dialog]");
   const acme = dialog.locator("[data-share-with-project]", { hasText: "Acme" });
   await expect(acme.locator("[data-share-with-go]")).toBeVisible({ timeout: 15_000 });
@@ -400,7 +414,7 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await alice.goto(copyUrl);
   await expect(async () => {
     await alice.reload();
-    await page.locator("[data-doc-share-with]").click();
+    await shareWithDialog(alice);
     await expect(acme.locator("[data-share-with-update]")).toBeEnabled({ timeout: 3_000 });
   }).toPass({ timeout: 60_000, intervals: [2000] });
   await acme.locator("[data-share-with-update]").click();
@@ -464,7 +478,7 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   // "Bulk two" is in Acme already: shared from its page first.
   await row("Bulk two").click();
   await alice.locator("[data-list-preview] [data-open-doc]").click();
-  await alice.locator("[data-doc-share-with]").click();
+  await shareWithDialog(alice);
   const acme = alice.locator("[data-share-with-dialog] [data-share-with-project]", { hasText: "Acme" });
   await acme.locator("[data-share-with-go]").click();
   await expect(acme.locator("[data-share-with-made]")).toContainText("Made", { timeout: 15_000 });
@@ -550,6 +564,172 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}/);
   await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText("Bulk one", { timeout: 15_000 });
   await expect(alice.locator("[data-doc-page]")).toHaveAttribute("data-writer", "true");
+});
+
+// Arugula #820: a Doc offers the same three actions wherever it's shown, none
+// needing it opened first. Share here is "with Acme", not the machine's "with
+// a link". Two of geek's Docs go into Acme, one from its row's ⋯ and one from
+// the preview; each says what became of it, a second Share says it's already
+// there, and Team grows by one each time.
+test("a Mine Doc is shared from its row's menu and from its preview, without opening it (Arugula #820)", async () => {
+  test.setTimeout(180_000);
+  for (const title of ["Row share", "Preview share"]) await machineDoc(title);
+  const row = (title: string) => alice.locator("[data-list-rows] [data-doc]", { hasText: title });
+  const toast = alice.locator("[data-platform-toast]");
+  await platform(alice, "/docs");
+  await alice.locator("[data-list-count=mine]").click();
+  await expect
+    .poll(
+      async () => {
+        await alice.reload();
+        await expect(alice.locator("[data-docs-loading]")).toHaveCount(0, { timeout: 15_000 });
+        return (await row("Row share").count()) + (await row("Preview share").count());
+      },
+      { timeout: 60_000, intervals: [2000] },
+    )
+    .toBe(2);
+  const team = alice.locator("[data-list-count=team] b");
+  const teamWas = Number(await team.textContent());
+
+  // The row's ⋯ has the actions, and pressing it is its own: the row isn't selected or opened.
+  const more = row("Row share").locator("[data-doc-more]");
+  await more.click();
+  await expect(alice.getByRole("menuitem")).toHaveText(["Copy link", "Share with Acme", "Share with…", "Open in browser"]);
+  await expect(row("Row share")).toHaveAttribute("aria-selected", "false");
+  await expect(alice).toHaveURL(/\/docs$/);
+  await alice.getByRole("menuitem", { name: "Share with Acme" }).click();
+  await expect(toast).toHaveText("Row share: Made", { timeout: 30_000 });
+  await expect(team).toHaveText(String(teamWas + 1), { timeout: 15_000 });
+  await expect(alice).toHaveURL(/\/docs$/);
+  // Again: it's there already, and Team stays.
+  await more.click();
+  await alice.getByRole("menuitem", { name: "Share with Acme" }).click();
+  await expect(toast).toHaveText("Row share: Already in Acme", { timeout: 30_000 });
+  await expect(team).toHaveText(String(teamWas + 1));
+  // The keys work: the ContextMenu key on the selected row opens its menu (the ⋯ isn't in the tab order, a row being one option), and Escape shuts it.
+  await row("Row share").click();
+  await alice.keyboard.press("Shift+F10");
+  await expect(alice.getByRole("menuitem", { name: "Copy link" })).toBeVisible();
+  await alice.keyboard.press("Escape");
+  await expect(alice.getByRole("menu")).toHaveCount(0);
+  // And so does a right click on the row.
+  await row("Row share").click({ button: "right" });
+  await expect(alice.getByRole("menuitem", { name: "Copy link" })).toBeVisible();
+  await alice.keyboard.press("Escape");
+  await expect(alice.getByRole("menu")).toHaveCount(0);
+  await expect(alice).toHaveURL(/\/docs$/);
+
+  // The preview's three, at its right: Copy link, Share with Acme, Open in browser.
+  await row("Preview share").click();
+  const preview = alice.locator("[data-list-preview]");
+  await expect(preview.locator("[data-doc-actions] button")).toHaveCount(3);
+  await expect(preview.locator("[data-doc-copy-link]")).toHaveAttribute("aria-label", "Copy link");
+  await expect(preview.locator("[data-doc-open-browser]")).toHaveAttribute("aria-label", "Open in browser");
+  const share = preview.locator("[data-doc-share]");
+  await expect(share).toHaveAttribute("aria-label", "Share with Acme");
+  await expect(share).not.toHaveAttribute("data-older", /.*/);
+  await share.click();
+  await expect(toast).toHaveText("Preview share: Made", { timeout: 30_000 });
+  await expect(team).toHaveText(String(teamWas + 2), { timeout: 15_000 });
+  await share.click();
+  await expect(toast).toHaveText("Preview share: Already in Acme", { timeout: 30_000 });
+  await expect(team).toHaveText(String(teamWas + 2));
+  await shot(alice, "docs-doc-actions-preview.png");
+  // Open in browser is a new tab on the Doc's page, and this one stays.
+  const [tab] = await Promise.all([alice.context().waitForEvent("page"), preview.locator("[data-doc-open-browser]").click()]);
+  await expect(tab).toHaveURL(/\/p\/prj_[0-9a-f]+[^/]*\/docs\/pdc_[0-9a-f]{32}/);
+  await tab.close();
+  await expect(alice).toHaveURL(/\/docs$/);
+});
+
+// A team Doc made from a copy is older once the copy changes: Share reads
+// Update, with a dot, and brings the team's Doc up to date from the preview.
+test("Update shows for an older team copy and runs Update copy (Arugula #820)", async () => {
+  test.setTimeout(180_000);
+  const block = await machineDoc("Update share");
+  const row = alice.locator("[data-list-rows] [data-doc]", { hasText: "Update share" });
+  const toast = alice.locator("[data-platform-toast]");
+  /** /docs under Mine, with the Doc selected: its preview. */
+  const preview = async () => {
+    await platform(alice, "/docs");
+    await alice.locator("[data-list-count=mine]").click();
+    await row.click();
+    return alice.locator("[data-list-preview]");
+  };
+  await expect
+    .poll(
+      async () => {
+        await alice.reload();
+        await expect(alice.locator("[data-docs-loading]")).toHaveCount(0, { timeout: 15_000 });
+        return row.count();
+      },
+      { timeout: 60_000, intervals: [2000] },
+    )
+    .toBe(1);
+  let share = (await preview()).locator("[data-doc-share]");
+  await expect(share).toHaveAttribute("aria-label", "Share with Acme");
+  await share.click();
+  await expect(toast).toHaveText("Update share: Made", { timeout: 30_000 });
+  await expect(share).not.toHaveAttribute("data-older", /.*/);
+
+  // The machine changes the Doc: the team's copy is older than it now.
+  await geekPost(`/api/blocks/${block}/call/doc_fill`, { section: "s1", markdown: "Changed on **geek**." });
+  await expect(async () => {
+    share = (await preview()).locator("[data-doc-share]");
+    await expect(share).toHaveAttribute("data-older", "", { timeout: 3_000 });
+  }).toPass({ timeout: 60_000, intervals: [2000] });
+  await expect(share).toHaveAttribute("aria-label", "Update Acme's copy: it's older than this Doc");
+  await shot(alice, "docs-doc-actions-update.png");
+  // The row's menu says it too.
+  await row.locator("[data-doc-more]").click();
+  await expect(alice.getByRole("menuitem")).toHaveText(["Copy link", "Update", "Share with…", "Open in browser"]);
+  await alice.keyboard.press("Escape");
+  await share.click();
+  await expect(toast).toHaveText("Acme's copy now matches", { timeout: 30_000 });
+  await expect(share).not.toHaveAttribute("data-older", /.*/, { timeout: 15_000 });
+  await expect(share).toHaveAttribute("aria-label", "Share with Acme");
+});
+
+// A team's Doc has no Share: it's already the team's. Its row, its preview
+// and its page still have Copy link and Open in browser. A Mine Doc's page has
+// all three at the header's right, and Share says whom.
+test("a Team Doc has no Share, and a Doc's page has the three actions (Arugula #820)", async () => {
+  test.setTimeout(120_000);
+  const row = (title: string) => alice.locator("[data-list-rows] [data-doc]", { hasText: title });
+  await platform(alice, "/docs");
+  await alice.locator("[data-list-count=team]").click();
+  await expect(row("Row share")).toHaveCount(1, { timeout: 15_000 });
+  await row("Row share").locator("[data-doc-more]").click();
+  await expect(alice.getByRole("menuitem")).toHaveText(["Copy link", "Open in browser"]);
+  await alice.keyboard.press("Escape");
+  await row("Row share").click();
+  const preview = alice.locator("[data-list-preview]");
+  await expect(preview.locator("[data-doc-actions] button")).toHaveCount(2);
+  await expect(preview.locator("[data-doc-copy-link]")).toBeVisible();
+  await expect(preview.locator("[data-doc-open-browser]")).toBeVisible();
+  await expect(preview.locator("[data-doc-share]")).toHaveCount(0);
+  await preview.locator("[data-open-doc]").click();
+  const page = alice.locator("[data-doc-page]");
+  await expect(page.locator(".doc-title")).toHaveText("Row share", { timeout: 15_000 });
+  await expect(page.locator("[data-doc-actions] [data-doc-copy-link]")).toBeVisible();
+  await expect(page.locator("[data-doc-actions] [data-doc-open-browser]")).toBeVisible();
+  await expect(page.locator("[data-doc-share]")).toHaveCount(0);
+
+  await platform(alice, "/docs");
+  await alice.locator("[data-list-count=mine]").click();
+  await row("Row share").click();
+  await alice.locator("[data-list-preview] [data-open-doc]").click();
+  await expect(page.locator(".doc-title")).toHaveText("Row share", { timeout: 15_000 });
+  const actions = page.locator("[data-doc-actions]");
+  await expect(actions.locator("button:not([data-doc-more])")).toHaveCount(3);
+  await expect(actions.locator("[data-doc-copy-link]")).toHaveAttribute("aria-label", "Copy link");
+  await expect(actions.locator("[data-doc-share]")).toHaveAttribute("aria-label", "Share with Acme");
+  await expect(actions.locator("[data-doc-open-browser]")).toHaveAttribute("aria-label", "Open in browser");
+  await expect(page.locator("[data-doc-share-with]")).toHaveCount(0);
+  await shot(alice, "docs-doc-page-actions.png");
+  const [tab] = await Promise.all([alice.context().waitForEvent("page"), actions.locator("[data-doc-open-browser]").click()]);
+  await expect(tab).toHaveURL(alice.url());
+  await tab.close();
 });
 
 // Control serves its newest page to older platforms and daemons: a Doc

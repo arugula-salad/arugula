@@ -23,7 +23,7 @@ import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
 import { shareClosedDoc } from "./doc-share";
-import { DocActions, openTab } from "./doc-actions";
+import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";

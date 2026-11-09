@@ -561,8 +561,8 @@ test.describe("the owner's menus", () => {
     // Icon only: a title and an aria-label each, no text, no ▾.
     await expect(link).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
     await expect(link).toHaveAttribute("aria-label", "Copy link");
-    await expect(share).toHaveAttribute("title", "Share…");
-    await expect(share).toHaveAttribute("aria-label", "Share…");
+    await expect(share).toHaveAttribute("title", "Share with a link");
+    await expect(share).toHaveAttribute("aria-label", "Share with a link");
     await expect(link).toHaveText("");
     await expect(share).toHaveText("");
     await expect(bar.locator("[data-copy-link-more]")).toHaveCount(0);
@@ -727,7 +727,7 @@ test.describe("the owner's menus", () => {
     await mine.click();
     const preview = page.locator("[data-list-preview]");
     const before = await panes();
-    await preview.locator("button[aria-label='Share…']").click();
+    await preview.locator("button[aria-label='Share with a link']").click();
     const dialog = page.locator("[data-doc-share-dialog]");
     await expect(dialog).toContainText("Anyone with the link can open it");
     expect((await listed()).find((x) => x.id === id)!.shared, "nothing is shared before the confirm").toBeFalsy();
@@ -749,7 +749,7 @@ test.describe("the owner's menus", () => {
     // too, with no dialog and no new version.
     await page.evaluate(() => navigator.clipboard.writeText("before"));
     const commits = (await listed()).find((x) => x.id === id)!.shared!.updated;
-    await preview.locator("button[aria-label='Share…']").click();
+    await preview.locator("button[aria-label='Share with a link']").click();
     await expect(page.getByText("Link copied")).toBeVisible();
     await expect(page.locator("[data-doc-share-dialog], [data-doc-update-dialog]")).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);

@@ -1,5 +1,5 @@
 // Sharing a Doc with a link (#1066): its three actions in its bar (Copy
-// link, Share and Open in browser: ./doc-actions.tsx, Arugula #650, #782) and
+// link, Share and Open in browser: shared/docs/doc-actions.tsx, Arugula #650, #782) and
 // the block's menu (Copy link, and once it's shared, Update shared copy and
 // Unshare). The daemon does it (`doc_share`
 // and the rest, the owner's, never an agent's); this is the buttons, the one
@@ -30,7 +30,7 @@ import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Count } from "../../shared/ui/state-chip";
-import { DocActions, NO_LINK, ONLY_YOU, openTab } from "./doc-actions";
+import { DocActions, NO_LINK, ONLY_YOU, openTab } from "../../shared/docs/doc-actions";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
