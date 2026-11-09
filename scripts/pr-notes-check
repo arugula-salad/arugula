@@ -3,6 +3,7 @@
 # binaries.yml's notes job. Passes when:
 #   it changes only what nobody using Arugula sees (docs, tests, CI, scripts)
 #   it adds a valid note in docs/notes/ (docs/notes/README.md)
+# Any note it adds or edits must read, whatever else it changes.
 #   one of its commits says `Release-note: none, WHY`
 # Otherwise it fails, saying how to do one or the other.
 #
@@ -20,6 +21,20 @@ from=$(git merge-base "$base" "$head") || {
 }
 files=$(git diff --name-only "$from" "$head") || exit 1
 
+# Every note it adds or edits has to read as the release train reads it
+# (#795), even on a pull request that changes nothing else: the train builds
+# a release's notes from them, and one it can't read holds every release.
+notes=$(git diff --name-only --diff-filter=AM "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
+if [ -n "$notes" ]; then
+  while IFS= read -r f; do
+    # An edited note may already be in a release: only a new one's id must be new.
+    how=new
+    git cat-file -e "$from:$f" 2>/dev/null && how=edited
+    if ! git show "$head:$f" | node "$here/release-note-check.mjs" "${f##*/}" "$how"; then exit 1; fi
+  done <<<"$notes"
+fi
+added=$(git diff --name-only --diff-filter=A "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
+
 # Nothing anyone using Arugula sees.
 seen=$(printf '%s\n' "$files" | grep -vE '^(docs/|spikes/|scripts/|\.github/|\.config/|testnet/|web/e2e/|crates/[^/]+/tests/|crates/e2e/|[A-Z][A-Z_-]*\.md$|justfile$|chant\.workspace\.json$|\.gitignore$)' || true)
 if [ -z "$seen" ]; then
@@ -27,12 +42,7 @@ if [ -z "$seen" ]; then
   exit 0
 fi
 
-# Notes it adds have to read, whatever else it says.
-added=$(git diff --name-only --diff-filter=A "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
 if [ -n "$added" ]; then
-  while IFS= read -r f; do
-    if ! git show "$head:$f" | node "$here/release-note-check.mjs" "${f##*/}"; then exit 1; fi
-  done <<<"$added"
   echo "notes: $(printf '%s\n' "$added" | wc -l | tr -d ' ') note(s) added"
   exit 0
 fi
