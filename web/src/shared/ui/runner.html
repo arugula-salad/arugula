@@ -501,6 +501,77 @@
   color: var(--ar-muted);
   cursor: default;
 }
+.ar-menu-item.danger {
+  color: var(--ar-danger);
+}
+/* As the app's menu: a 16px lead column for an icon or a mark, a dim
+   detail, a chord, a header, a 1px line between groups. */
+.ar-menu-lead {
+  display: inline-block;
+  width: 16px;
+  margin-right: 8px;
+  color: var(--ar-muted);
+  text-align: center;
+  vertical-align: middle;
+}
+.ar-menu-detail {
+  margin-left: 4px;
+  color: var(--ar-muted);
+  font-size: var(--ar-text-sm);
+}
+.ar-menu-key {
+  float: right;
+  margin-left: 16px;
+  color: var(--ar-muted);
+  font: var(--ar-text-xs)/var(--ar-lh-xs) var(--ar-font);
+}
+.ar-menu-header {
+  padding: 6px 10px 2px;
+  color: var(--ar-muted);
+  font-size: var(--ar-text-xs);
+  font-weight: 600;
+}
+.ar-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--ar-raised-hover);
+}
+/* A menu of 13 rows or more starts with a filter row. */
+.ar-menu-filter {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--ar-line-strong);
+  border-radius: var(--ar-radius-sm);
+  background: var(--ar-surface);
+  color: var(--ar-text);
+  font: inherit;
+  outline: none;
+}
+.ar-menu-filter:focus {
+  border-color: var(--ar-accent);
+}
+.ar-menu-none {
+  padding: 6px 10px;
+  color: var(--ar-muted);
+}
+/* Under a finger the rows are 44px at 15px, and the chords go. */
+@media (max-width: 600px), (pointer: coarse) {
+  .ar-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: var(--ar-text-lg);
+  }
+  .ar-menu-key {
+    display: none;
+  }
+  .ar-menu-filter {
+    font-size: 16px;
+  }
+}
 
 .ar-empty {
   display: grid;

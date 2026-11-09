@@ -97,6 +97,13 @@ interface OpenMenu extends MenuOpts {
   content?: ComponentChildren;
 }
 
+/** A menu of this many choosable rows or more has a filter row. */
+const FILTER_ROWS = 13;
+
+/** Whether the keys are going to a finger: no filter takes the focus on
+ * open then, so the keyboard doesn't jump up over the sheet. */
+const TOUCH = `${SHEET}, (pointer: coarse)`;
+
 /** How long a row asking to be confirmed ignores clicks: the second click
  * of a double-click lands here (the same as the confirm dialog's). */
 const CONFIRM_SETTLE_MS = 500;
@@ -312,6 +319,11 @@ export function MenuLayer() {
   const [, setTick] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  /** What is typed in the filter row. */
+  const [query, setQuery] = useState("");
+  const queryNow = useRef("");
+  queryNow.current = query;
+  const filter = useRef<HTMLInputElement>(null);
   const [me] = useState(() => ({}));
   /** The submenu open, by its row's index: one at a time. */
   const [sub, setSub] = useState<number | null>(null);
@@ -338,6 +350,13 @@ export function MenuLayer() {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !current) return;
       tookEscape.add(e);
+      // A filter with text in it clears first; the next Escape closes.
+      if (queryNow.current && ref.current?.contains(document.activeElement)) {
+        e.stopPropagation();
+        setQuery("");
+        filter.current?.focus({ preventScroll: true });
+        return;
+      }
       // A popover's Escape is chat's: marked handled, so the page and the
       // desktop app's window leave it be (#380).
       if (current.content !== undefined) e.preventDefault();
@@ -367,6 +386,7 @@ export function MenuLayer() {
   const top = layers.at(-1) === me;
   // Keep the menu on screen, a gutter from its edges (UI audit #171).
   const focusIn = useRef(false);
+  const placedFor = useRef<OpenMenu | null>(null);
   useLayoutEffect(() => {
     if (!current || !ref.current) return setPos(null);
     // Measured at the window's left, where nothing squeezes it: near the
@@ -379,9 +399,17 @@ export function MenuLayer() {
     const r = ref.current.getBoundingClientRect();
     ref.current.style.left = was;
     ref.current.style.maxHeight = wasMax;
-    focusIn.current = current.focus;
+    // Only a menu just opened takes the keys: typing in the filter places it
+    // again, and that mustn't pull the focus back.
+    if (placedFor.current !== current) {
+      placedFor.current = current;
+      focusIn.current = current.focus;
+    }
     if (matchMedia(SHEET).matches) return setPos({ left: 0, top: 0 });
-    const x = current.end ? current.x - r.width : current.x;
+    let x = current.end ? current.x - r.width : current.x;
+    // Left-aligned to its button, right-aligned to it when that would run
+    // off the window (a facet at a board's right end).
+    if (!current.end && current.from && x + r.width > window.innerWidth - 8) x = current.from.getBoundingClientRect().right - r.width;
     let y = current.y;
     // A popover with no room below its button opens above it, when that has
     // more (the composer's emoji, at the foot of the page).
@@ -393,12 +421,13 @@ export function MenuLayer() {
       left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)),
     });
-  }, [current, top]);
+  }, [current, top, query]);
   useEffect(() => {
     setSub(null);
     setArmed(null);
     setTicks({});
     setDone(null);
+    setQuery("");
   }, [current]);
   // An opened submenu is scrolled into view, by the least that shows it,
   // and never past its own row: that stays shown.
@@ -421,7 +450,9 @@ export function MenuLayer() {
   useEffect(() => {
     if (!pos || !focusIn.current) return;
     focusIn.current = false;
-    ref.current?.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus({ preventScroll: true });
+    // A filter row has them on a desktop, and a finger's sheet leaves its field alone.
+    const into = filter.current && !matchMedia(TOUCH).matches ? filter.current : ref.current?.querySelector<HTMLElement>(".menu-item:not(:disabled)");
+    into?.focus({ preventScroll: true });
   }, [pos]);
   // A popover takes the focus once it's shown (it is hidden until placed, and
   // a hidden element can't have it): what is marked `data-autofocus`, else
@@ -450,7 +481,22 @@ export function MenuLayer() {
       return;
     }
     const items = [...(ref.current?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? [])];
+    const typing = document.activeElement === filter.current;
+    if (filter.current && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "Backspace" || (e.key.length === 1 && e.key !== " "))) {
+      // A letter typed on a row goes to the filter: the focus moves, and the
+      // letter follows it.
+      filter.current.focus({ preventScroll: true });
+      return;
+    }
+    if (typing && e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      items[0]?.click();
+      return;
+    }
     if (!items.length) return;
+    // Home and End move the caret in the filter's text, not the rows.
+    if (typing && (e.key === "Home" || e.key === "End")) return;
     const i = items.indexOf(document.activeElement as HTMLElement);
     const to =
       e.key === "ArrowDown" ? (i + 1) % items.length
@@ -574,6 +620,14 @@ export function MenuLayer() {
   };
 
   if (!current || !top) return null;
+  const rows = current.items.filter((it) => typeof it === "object" && "label" in it).length;
+  const filtered = current.content === undefined && rows >= FILTER_ROWS;
+  const q = query.trim().toLowerCase();
+  // Each row keeps its place in the menu's items, so a tick or an open
+  // submenu follows its row as the filter narrows the list.
+  const entries = current.items
+    .map((item, i) => [item, i] as const)
+    .filter(([item]) => !(filtered && q) || (typeof item === "object" && "label" in item && item.label.toLowerCase().includes(q)));
   const sheet = matchMedia(SHEET).matches;
   const popover = current.content !== undefined;
   return (
@@ -604,7 +658,24 @@ export function MenuLayer() {
       >
         {current.head}
         {current.content}
-        {current.items.map((item, i) =>
+        {filtered && (
+          <div class="menu-filter-row">
+            <input
+              ref={filter}
+              class="menu-filter"
+              type="text"
+              value={query}
+              placeholder="Filter"
+              aria-label={current.label ? `Filter ${current.label}` : "Filter"}
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck={false}
+              onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+            />
+          </div>
+        )}
+        {filtered && q && entries.length === 0 && <div class="menu-none">No match</div>}
+        {entries.map(([item, i]) =>
           typeof item === "object" && "submenu" in item ? (
             <Fragment key={i}>
               <button

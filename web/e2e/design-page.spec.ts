@@ -186,6 +186,19 @@ test("a dialog, a confirm, a side sheet and a menu open, and Escape closes them"
   await expect(menu.getByRole("menuitem", { name: "Next tab" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
+  // 13 rows or more: a filter row, which narrows the rows; Escape clears it, then closes.
+  const long = page.locator('[data-design-open="long-menu"]');
+  await long.scrollIntoViewIfNeeded();
+  await long.click();
+  const filter = menu.locator(".menu-filter");
+  await expect(filter).toBeFocused();
+  await page.keyboard.type("docs");
+  await expect(menu.getByRole("menuitemcheckbox")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(filter).toHaveValue("");
+  await expect(menu.getByRole("menuitemcheckbox")).toHaveCount(14);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
   expect(bad).toEqual([]);
 });
 
