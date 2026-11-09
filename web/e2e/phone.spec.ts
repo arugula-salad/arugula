@@ -295,6 +295,18 @@ test("swipe sideways between a tab's panes", async ({ page }) => {
   await swipe(0, -250);
   await page.waitForTimeout(400);
   expect(await active(page)).toBe(third);
+  // Starting in something that scrolls sideways, a swipe is its own.
+  await page.evaluate(() => {
+    const wide = document.createElement("div");
+    wide.id = "wide";
+    wide.style.cssText = "position:absolute;inset:0;overflow-x:auto;z-index:5";
+    wide.innerHTML = '<div style="width:3000px;height:10px"></div>';
+    document.querySelector(".pane")!.append(wide);
+  });
+  await swipe(250, 0);
+  await page.waitForTimeout(400);
+  expect(await active(page)).toBe(third);
+  await page.evaluate(() => document.getElementById("wide")!.remove());
   // Right goes back, in the tab's order; left goes forward.
   await swipe(250, 0);
   await expect.poll(() => active(page)).toBe(second);

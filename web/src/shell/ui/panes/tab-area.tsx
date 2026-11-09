@@ -176,7 +176,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   }
 
   return (
-    <div class={`${scale < 1 ? "tab-area scaled" : "tab-area"}${phone ? " swipes" : ""}`} ref={ref}>
+    <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
       <div
         class={headers ? "grid with-headers pane-chrome" : "grid"}
         style={{

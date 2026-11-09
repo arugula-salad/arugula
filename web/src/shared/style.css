@@ -1081,11 +1081,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--fg);
 }
 
-/* Vertical scrolling stays the browser's and xterm's; sideways is the swipe's. */
-.tab-area.swipes {
-  touch-action: pan-y;
-}
-
 .sheet-backdrop {
   position: fixed;
   inset: 0;
