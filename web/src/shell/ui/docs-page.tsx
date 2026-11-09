@@ -22,7 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
-import { shareDoc } from "./doc-share";
+import { shareClosedDoc } from "./doc-share";
 import { DocActions, openTab } from "./doc-actions";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
@@ -32,7 +32,7 @@ import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
-import { closeDocsPage, docsRoute, openDoc, openDocPane } from "./docs-route";
+import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
 import { Chip, StateChip } from "../../shared/ui/state-chip";
@@ -141,14 +141,13 @@ function Page({ client }: { client: Client }) {
     setBusy(false);
   };
 
-  // Share is a block's: it opens the Doc beside first, then its dialog.
-  const share = async (r: DocRow) => {
-    setBusy(true);
-    const opened = await openDocPane(client, r.id);
-    if ("why" in opened) setError(opened.why);
-    else shareDoc(client, opened.pane);
-    setBusy(false);
-  };
+  // Share goes by the Doc's id (Arugula #819): no pane opens, whether the
+  // Doc is open or not. Its dialog confirms; the list reads back after.
+  const share = (r: DocRow) =>
+    shareClosedDoc(client, { id: r.id, shared: r.shared ?? null, older: !!r.shared && r.updated > r.shared.updated }, async (why) => {
+      setError(why ?? "");
+      await load();
+    });
 
   const remove = async (r: DocRow) => {
     setDeleting(null);
@@ -279,7 +278,7 @@ function Page({ client }: { client: Client }) {
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
-        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => void share(r)} ask={() => setDeleting(r)} fail={setError} />}
+        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => share(r)} ask={() => setDeleting(r)} fail={setError} />}
       />
       {deleting && (
         <ConfirmRemove title={`Delete “${deleting.title}”?`} label="Delete" cancel={() => setDeleting(null)} go={() => void remove(deleting)}>
@@ -411,6 +410,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
             copy={copyLink}
             open={() => void linkOf().then((url) => url && openTab(url))}
             share={share}
+            older={!!doc.shared && doc.updated > doc.shared.updated}
             hooks={{ copy: { "data-doc-copy-link": "" }, open: { "data-doc-platform-link": doc.platform?.link } }}
           />
           <IconButton

@@ -307,9 +307,13 @@ test.describe("the list", () => {
     await expect(none).toBeDisabled();
     await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
 
-    // Share is a block's: the Doc opens beside, then the share dialog.
+    // Share goes by the Doc's id (Arugula #819): its dialog, and no pane opens.
+    const panes = async () => ((await (await page.request.get("/api/panes")).json()) as unknown[]).length;
+    const before = await panes();
     await (await preview(page, "Short note")).locator("button[aria-label='Share…']").click();
     await expect(page.locator("[data-doc-share-dialog]")).toBeVisible();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    expect(await panes()).toBe(before);
   });
 
   test("the preview has exactly one title, and a bar of the house's buttons over it (Arugula #659)", async ({ page }) => {
