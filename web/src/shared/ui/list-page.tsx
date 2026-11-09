@@ -8,6 +8,8 @@
 // - One primary button, in the preview. The row itself is the target, and
 //   what's destructive is behind ⋯ there.
 // - The counts are the filters, `/` searches, ↑↓ and j/k move, Enter opens.
+// - A list can opt in to `selectable` (Arugula #818): a box on each row, for
+//   acting on several at once. Its own bar (`selection`) says what to do.
 // - What must be answered without selecting anything (a request waiting for
 //   you) has buttons of its own, so it isn't a row of the list: it's a
 //   section above it. Sections below it hold what's beside the list's point.
@@ -74,6 +76,8 @@ export interface ListRowParts {
   /** Beside the title: only what's unusual about it. */
   tags?: ComponentChildren;
   age?: ComponentChildren;
+  /** What its box says it's for, when the list is `selectable`: "Select Plan". */
+  name?: string;
   /** The dim line under it. */
   detail?: ComponentChildren;
   /** The row's picture of its data, at the right of that line. */
@@ -129,6 +133,21 @@ export interface ListPageProps<T> {
   pane?: ComponentChildren;
   /** The row to select, when the page knows better: one just saved. */
   select?: string | null;
+  /** A box on each row (on hover, and always once one is ticked), for
+   * acting on several. Shift-click ticks the range between two, in the order
+   * on the screen after search and grouping; a group's box ticks its group;
+   * Space ticks the row the keys are on, and Esc clears. Turned off, it
+   * forgets what was ticked, and so does a row that a search hides. */
+  selectable?: boolean;
+  /** Under the search while `selectable`, even with nothing ticked (its own
+   * results stay): the bar that acts on `items`, in the order shown. */
+  selection?: (ticked: ListTicked<T>) => ComponentChildren;
+}
+
+/** What a `selectable` list has ticked. */
+export interface ListTicked<T> {
+  items: T[];
+  clear: () => void;
 }
 
 const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("input, textarea, select, [contenteditable]");
@@ -153,7 +172,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, selectable, selection }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -166,8 +185,39 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   const keyed = useRef(0);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(hover.current), []);
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  /** The box a shift-click's range starts from. */
+  const anchor = useRef<string | null>(null);
 
   const flat = groups.flatMap((g) => g.items);
+  // Only what's on the screen stays ticked: a hidden row can't be acted on.
+  const shownKeys = flat.map(keyOf).join("\n");
+  useEffect(() => {
+    if (ticked.size === 0) return;
+    const shown = new Set(flat.map(keyOf));
+    const kept = selectable ? [...ticked].filter((k) => shown.has(k)) : [];
+    if (kept.length !== ticked.size) setTicked(new Set(kept));
+    if (kept.length === 0) anchor.current = null;
+  }, [selectable, shownKeys]);
+  const clearTicks = () => {
+    setTicked(new Set());
+    anchor.current = null;
+  };
+  /** Tick or untick `keys`, all together. */
+  const tick = (keys: string[], on: boolean) =>
+    setTicked((was) => {
+      const next = new Set(was);
+      for (const k of keys) on ? next.add(k) : next.delete(k);
+      return next;
+    });
+  /** A box was clicked: alone, or with shift, the range from the last one. */
+  const tickAt = (key: string, on: boolean, range: boolean) => {
+    const keys = flat.map(keyOf);
+    const from = anchor.current === null ? -1 : keys.indexOf(anchor.current);
+    const to = keys.indexOf(key);
+    tick(range && from >= 0 && to >= 0 ? keys.slice(Math.min(from, to), Math.max(from, to) + 1) : [key], on);
+    anchor.current = key;
+  };
   const selected = flat.find((i) => keyOf(i) === picked) ?? flat[0];
   const selectedKey = selected === undefined ? null : keyOf(selected);
   // An id can't hold a space, and a key can (a path).
@@ -200,8 +250,8 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     scrollTo.current = false;
   }, [selectedKey]);
 
-  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery });
-  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery };
+  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks });
+  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || covered()) return;
@@ -213,7 +263,10 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         return;
       }
       if (e.key === "Escape") {
-        if (searching) {
+        if (!searching && s.selectable && s.ticked.size > 0) {
+          e.preventDefault();
+          s.clearTicks();
+        } else if (searching) {
           e.preventDefault();
           s.setQuery("");
           list.current?.focus({ preventScroll: true });
@@ -224,6 +277,12 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         return;
       }
       if (inField(e.target) && !searching) return;
+      // A button's Space is its own.
+      if (e.key === " " && !searching && s.selectable && s.selectedKey !== null && !(e.target as Element | null)?.closest?.("button, a, [role='separator']")) {
+        e.preventDefault();
+        s.tickAt(s.selectedKey, !s.ticked.has(s.selectedKey), false);
+        return;
+      }
       const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
       const letter = !searching && (e.key === "j" || e.key === "k");
       if ((arrow || letter) && s.flat.length) {
@@ -306,6 +365,20 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         onPointerMove={(e) => hovered(key, e)}
         onPointerLeave={() => clearTimeout(hover.current)}
       >
+        {selectable && (
+          <input
+            type="checkbox"
+            class="list-row-check"
+            aria-label={r.name ? `Select ${r.name}` : "Select"}
+            checked={ticked.has(key)}
+            data-list-check
+            onClick={(e) => {
+              e.stopPropagation();
+              tickAt(key, e.currentTarget.checked, e.shiftKey);
+            }}
+            onDblClick={(e) => e.stopPropagation()}
+          />
+        )}
         <div class="list-row-top">
           <span class="list-row-title">{r.title}</span>
           {r.tags}
@@ -317,6 +390,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     );
   };
 
+  const tickedItems = flat.filter((i) => ticked.has(keyOf(i)));
   const style = width ? ({ "--list-w": `${width}px` } as Record<string, string>) : undefined;
   return (
     <div ref={root} class={detail || pane ? "list-page detail" : "list-page"} style={style} data-list-page>
@@ -343,14 +417,16 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             </label>
           </div>
           {notice}
+          {selectable && selection && <div class="list-selection" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}
           <div class="list-scroll">
             {status ?? null}
             {flat.length > 0 && (
-              <div ref={list} class="list-rows" role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
+              <div ref={list} class={ticked.size > 0 ? "list-rows ticking" : "list-rows"} role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
                 {groups.map((g, i) =>
                   g.items.length === 0 ? null : g.title ? (
                     <div key={g.key ?? g.title} role="group" aria-labelledby={`list-group-${i}`} {...g.attrs}>
                       <div class="list-group" id={`list-group-${i}`}>
+                        {selectable && <GroupCheck title={g.title} items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
                         <span class={g.named ? "list-group-title named" : "list-group-title"}>
                           {g.title}
                           {g.detail && <small>{g.detail}</small>}
@@ -405,6 +481,27 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         )}
       </div>
     </div>
+  );
+}
+
+/** A group's box: ticks the group, and is half-ticked when some of it is. */
+function GroupCheck({ title, items, ticked, tick }: { title: string; items: string[]; ticked: ReadonlySet<string>; tick: (keys: string[], on: boolean) => void }) {
+  const n = items.filter((k) => ticked.has(k)).length;
+  return (
+    <input
+      type="checkbox"
+      class="list-row-check list-group-check"
+      aria-label={`Select all of ${title}`}
+      checked={n === items.length}
+      ref={(el) => {
+        if (el) el.indeterminate = n > 0 && n < items.length;
+      }}
+      data-list-group-check
+      onClick={(e) => {
+        e.stopPropagation();
+        tick(items, e.currentTarget.checked);
+      }}
+    />
   );
 }
 
