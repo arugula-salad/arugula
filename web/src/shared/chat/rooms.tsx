@@ -40,6 +40,7 @@ import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
+import { attachSwipe } from "../ui/swipe";
 
 /** The room head's width under which each of its folds goes into ⋯, in the
  * order they go: Go to pane, Members, pins, star, bell. Measured: with a
@@ -227,6 +228,31 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   useEffect(() => {
     if (missing) void store.loadRooms().catch(() => {});
   }, [missing]);
+
+  // #816: a phone's swipe moves between levels when the host has them (the
+  // platform page's). The level swiped away is the card; the one beneath is
+  // drawn only while a drag or its slide is on.
+  const [under, setUnder] = useState<"list" | "room" | null>(null);
+  const now = useRef(route);
+  now.current = route;
+  const swipes = phone && !fit.pinned && !!nav.up && !!nav.goTo;
+  useEffect(() => {
+    const el = root.current;
+    if (!swipes || !el) return;
+    return attachSwipe(el, {
+      moved: () => el.querySelector<HTMLElement>(".chat-level"),
+      has: (dir) => (dir < 0 ? nav.up?.() : nav.down?.()) != null,
+      commit: (dir) => {
+        const to = dir < 0 ? nav.up?.() : nav.down?.();
+        if (to != null) nav.goTo?.(to);
+      },
+      claim: (dir) => {
+        const at = now.current;
+        setUnder(dir > 0 || at.view ? null : at.thread !== undefined ? "room" : at.room ? "list" : null);
+      },
+      settle: () => setUnder(null),
+    });
+  }, [swipes, nav]);
 
   useEffect(() => {
     document.documentElement.style.setProperty("--chat-side", `${sideWidth}px`);
@@ -432,32 +458,50 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   }
 
   if (phone) {
+    const head = () => (
+      <>
+        {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
+        <HeadBar
+          class="chat-head"
+          title={<BarTitle class="chat-title">{scope?.name ?? "Chat"}</BarTitle>}
+          actions={
+            <>
+              <button class="chat-search-open bar-btn sq" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
+                <SearchIcon size="md" />
+              </button>
+              <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-search-open bar-btn sq" data-chat-options onClick={workspaceMenu}>
+                <MoreIcon size="sm" />
+              </IconButton>
+              <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
+                <CloseIcon size="sm" />
+              </IconButton>
+            </>
+          }
+        />
+        {list}
+      </>
+    );
+    const card = (
+      <>
+        <MaintenanceNote />
+        {view ?? head()}
+      </>
+    );
+    if (!swipes) {
+      return (
+        <div class="chat phone" ref={root} data-chat data-chat-control>
+          {card}
+        </div>
+      );
+    }
     return (
       <div class="chat phone" ref={root} data-chat data-chat-control>
-        <MaintenanceNote />
-        {view ?? (
-          <>
-            {/* Whose rooms: a phone has no bar to say (UI audit #169). */}
-            <HeadBar
-              class="chat-head"
-              title={<BarTitle class="chat-title">{scope?.name ?? "Chat"}</BarTitle>}
-              actions={
-                <>
-                  <button class="chat-search-open bar-btn sq" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => nav.openChatView("search")}>
-                    <SearchIcon size="md" />
-                  </button>
-                  <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-search-open bar-btn sq" data-chat-options onClick={workspaceMenu}>
-                    <MoreIcon size="sm" />
-                  </IconButton>
-                  <IconButton label="Close chat" title="Close" class="thread-close" onClick={nav.closeChat}>
-                    <CloseIcon size="sm" />
-                  </IconButton>
-                </>
-              }
-            />
-            {list}
-          </>
+        {under && (
+          <div class="chat-beneath" aria-hidden="true" inert data-chat-beneath={under}>
+            {under === "list" ? head() : picked && <RoomView key={picked.id} store={store} room={picked} phone={phone} />}
+          </div>
         )}
+        <div class="chat-level">{card}</div>
       </div>
     );
   }

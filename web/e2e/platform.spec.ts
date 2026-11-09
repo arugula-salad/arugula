@@ -170,6 +170,85 @@ test("on a phone, Back climbs chat one level at a time: thread, room, list (#817
   await phone.setViewportSize(before);
 });
 
+test("on a phone, a swipe right goes up a chat level and a swipe left back down (#816)", async () => {
+  test.setTimeout(120_000);
+  const { viewport } = devices["Pixel 7"];
+  // A page of its own, so the history under chat is just this test's.
+  const phone = await alice.context().newPage();
+  await phone.setViewportSize(viewport);
+  await home(alice);
+  await expect.poll(() => alice.evaluate(() => window.__arugula.chat.on), { timeout: 15_000 }).toBe(true);
+  const ids = await alice.evaluate(async () => {
+    const c = window.__arugula.chat;
+    const general = c.rooms.find((r) => r.name === "general")!.id;
+    const parent = (await c.post(general, "a swipe thread starts here")).seq;
+    await c.reply(general, parent, "and swipes on", false);
+    return { general, parent };
+  });
+  const path = () => new URL(phone.url()).pathname;
+  const search = () => new URL(phone.url()).search;
+  const room = new RegExp(`/chat/${ids.general}-general$`);
+  await platform(phone, "/chat");
+  await phone.locator(`[data-chat-room="${ids.general}"]`).click();
+  await expect.poll(path).toMatch(room);
+  await phone.locator(`[data-thread-footer="${ids.parent}"]`).click();
+  await expect.poll(search).toContain(`thread=${ids.parent}`);
+
+  // Real touches (CDP), as phone.spec.ts's pane swipe.
+  const cdp = await phone.context().newCDPSession(phone);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  let x0 = 60;
+  const y0 = 400;
+  const touch = (type: string, dx: number, dy = 0) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: x0 + dx, y: y0 + dy }] });
+  const swipe = async (dx: number, dy = 0, steps = 8) => {
+    await touch("touchStart", 0);
+    for (let i = 1; i <= steps; i++) await touch("touchMove", (dx * i) / steps, (dy * i) / steps);
+    await touch("touchEnd", dx, dy);
+  };
+
+  // A thread, swiped right: its room, the way Back goes (the entry the thread pushed is popped).
+  await swipe(300);
+  await expect.poll(search).toBe("");
+  await expect.poll(path).toMatch(room);
+  await phone.goBack();
+  await expect.poll(path).toMatch(/\/chat$/);
+  await phone.locator(`[data-chat-room="${ids.general}"]`).click();
+  await expect.poll(path).toMatch(room);
+  await expect(phone.locator(".thread-compose textarea")).toBeVisible();
+
+  // A vertical drag on the messages doesn't navigate.
+  await swipe(0, -250);
+  await phone.waitForTimeout(400);
+  expect(path()).toMatch(room);
+
+  // A room, swiped right: the list. Part way, the list shows under the room.
+  await touch("touchStart", 0);
+  for (let i = 1; i <= 4; i++) await touch("touchMove", 30 * i);
+  await expect(phone.locator('[data-chat-beneath="list"] .chat-list')).toBeVisible();
+  await phone.screenshot({ path: "/tmp/claude-arugula-816/mid-swipe.png" });
+  for (let i = 5; i <= 9; i++) await touch("touchMove", 30 * i);
+  await touch("touchEnd", 270);
+  await expect.poll(path).toMatch(/\/chat$/);
+  await expect(phone.locator("[data-chat-beneath]")).toHaveCount(0);
+
+  // The list, swiped left: back into the room it had open.
+  x0 = 380;
+  await swipe(-300);
+  await expect.poll(path).toMatch(room);
+  await phone.goBack();
+  await expect.poll(path).toMatch(/\/chat$/);
+  // The list is one entry, not two: what's under it isn't a chat page (a
+  // cross-origin entry, from the sign-in hop, reads as no url), so Back
+  // leaves chat in one press.
+  const under = await phone.evaluate(() => {
+    const nav = (window as any).navigation;
+    return nav.entries()[nav.currentEntry.index - 1]?.url ?? null;
+  });
+  expect(under ?? "").not.toMatch(/\/chat/);
+  await phone.close();
+});
+
 test("Settings is one page across both origins: each index links to the other's sections", async () => {
   await t.addMachine(alice, "settingsbox");
   await home(alice);

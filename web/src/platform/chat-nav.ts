@@ -5,7 +5,7 @@
 // step sideways replaces.
 
 import { names } from "./links";
-import { current, go, parse, pathOf, type Route } from "./router";
+import { current, go, onRoute, parse, pathOf, type Route } from "./router";
 
 export type ChatLevel = "list" | "room" | "thread";
 
@@ -30,25 +30,30 @@ const routeOf = (path: string) => {
   const u = new URL(path, location.origin);
   return parse(u.pathname, u.search);
 };
-const mark = (r: Route) => ({ chat: chatLevel(r) });
-const marked = () => (history.state as { chat?: ChatLevel } | null)?.chat;
+// Each chat entry's `history.state` says its level and which entry sits
+// directly under it (`below`), so going up can pop it when that is the target
+// (one Back press from the list leaves chat) and replace when it isn't.
+// `below` is a route's ids, not its path: slugs change as names load.
+type Mark = { chat: ChatLevel | null; below?: string };
+const keyOf = (r: Route) => (r.page === "chat" || r.page === "dm" ? `${r.project}/${r.room ?? ""}/${r.thread ?? ""}` : "");
+const mark = (r: Route, below?: string): Mark => (below ? { chat: chatLevel(r), below } : { chat: chatLevel(r) });
+const stateNow = () => history.state as Partial<Mark> | null;
+const marked = () => stateNow()?.chat;
 
-/** Open `path` inside chat, by the levels it moves between: down pushes,
- * sideways replaces, and up (a thread closing to its room) pops the entry
- * the thread pushed. */
+/** Open `path` inside chat, by the levels it moves between: down pushes, a
+ * step sideways replaces, and up pops the entry under this one when that is
+ * `path`, else replaces. */
 export function chatGo(path: string) {
   const to = routeOf(path);
   const from = chatLevel();
   const into = chatLevel(to);
-  const state = mark(to);
-  if (from === null || into === null || RANK[into] > RANK[from]) return go(path, false, state);
-  if (RANK[into] < RANK[from]) {
-    const here = current();
-    const sameRoom = "room" in here && "room" in to && here.room === to.room;
-    // Back to the room the thread was pushed from; another room replaces.
-    if (sameRoom && marked() === "thread" && chatUp(here) === path) return history.back();
-  }
-  go(path, true, state);
+  if (from === null || into === null) return go(path, false, mark(to));
+  if (RANK[into] > RANK[from]) return go(path, false, mark(to, keyOf(current())));
+  const up = chatUp(to);
+  const below = stateNow()?.below;
+  if (RANK[into] < RANK[from] && below && below === keyOf(to)) return history.back();
+  // The entry under this one stays under it only while it is still the level above `to`.
+  go(path, true, mark(to, up && below === keyOf(routeOf(up)) ? below : undefined));
 }
 
 /** Arrive at `path` from outside (a notification, a pasted link, the page
@@ -60,12 +65,13 @@ export function arrive(path: string, hash = "") {
   const level = chatLevel(to);
   if (level === null || level === "list" || marked()) return go(path, true, level === null ? null : mark(to));
   if (to.page !== "chat" && to.page !== "dm") return;
-  history.replaceState(mark({ page: "chat", project: to.project }), "", pathOf({ page: "chat", project: to.project }, names));
+  const list: Route = { page: "chat", project: to.project };
+  history.replaceState(mark(list), "", pathOf(list, names));
   const room = pathOf({ ...to, thread: undefined, msg: level === "thread" ? undefined : to.msg }, names);
-  if (level === "thread") history.pushState(mark({ ...to, thread: undefined }), "", room);
+  if (level === "thread") history.pushState(mark({ ...to, thread: undefined }, keyOf(list)), "", room);
   // The hash stays on the page's own entry: a sign-in's #code is read off it
   // after this runs (signin.ts).
-  history.pushState(mark(to), "", path + hash);
+  history.pushState(mark(to, level === "thread" ? keyOf({ ...to, thread: undefined }) : keyOf(list)), "", path + hash);
   go(path); // renders; same path, so no new entry
 }
 
@@ -73,4 +79,44 @@ export function arrive(path: string, hash = "") {
 export function arriveHere() {
   const level = chatLevel();
   if (level && level !== "list" && !marked()) arrive(location.pathname + location.search, location.hash);
+}
+
+// Swipe left (#816) goes back down: into the room last open in a project's
+// list, or the thread last open in a room. Set
+// whenever the route (the page's own, Back's, a cold load) is at a room or a
+// thread. Keyed by ids, not paths: a path's slugs change as names load.
+const lastChild = new Map<string, string>();
+const parentKey = (project: string, room?: string) => (room ? `${project}/${room}` : project);
+
+function note(r: Route = current()) {
+  const level = chatLevel(r);
+  if ((r.page === "chat" || r.page === "dm") && (level === "room" || level === "thread")) {
+    lastChild.set(parentKey(r.project, level === "thread" ? r.room : undefined), pathOf({ ...r, msg: level === "room" ? undefined : r.msg }, names));
+  }
+}
+note();
+onRoute(() => note());
+
+/** Where a swipe right goes from here: one level up (what Back does), or from
+ * the list out to the projects at `/`. Null where chat isn't. */
+export function swipeUp(r: Route = current()): string | null {
+  const level = chatLevel(r);
+  if (level === null) return null;
+  if (level === "list") return r.page === "chat" && r.view ? pathOf({ page: "chat", project: r.project }, names) : "/";
+  return chatUp(r);
+}
+
+/** Where a swipe left goes: the room or thread last open one level down, if any. */
+export function swipeDown(r: Route = current()): string | null {
+  if (r.page !== "chat" && r.page !== "dm") return null;
+  const level = chatLevel(r);
+  if (level === "list") return r.page === "chat" && !r.view ? lastChild.get(parentKey(r.project)) ?? null : null;
+  if (level === "room") return lastChild.get(parentKey(r.project, r.room)) ?? null;
+  return null;
+}
+
+/** Commit a swipe's target: `/` is a plain push, the rest are chat's levels. */
+export function swipeGo(path: string) {
+  if (path === "/") return go("/");
+  chatGo(path);
 }
