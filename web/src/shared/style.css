@@ -1504,18 +1504,6 @@ button.att {
   }
 }
 
-/* A pane's attention over its terminal: a state chip (shared/ui/state-chip),
-   placed top and centre. */
-.pane-attention {
-  position: absolute;
-  z-index: 5;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  pointer-events: none;
-  box-shadow: var(--shadow-sm);
-}
-
 .needs-you h2 {
   color: var(--accent);
 }
@@ -12091,12 +12079,6 @@ html[data-workspace="new"] .thread-panel {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* A pane with a header says there what it wants (needs you, done, failed):
-   no pill over its terminal's first lines as well. */
-.grid.with-headers .pane-attention {
-  display: none;
 }
 
 /* An agent's message (M197): its owner's, named by its tab, `machine/tab`,
