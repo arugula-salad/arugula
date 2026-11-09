@@ -58,6 +58,8 @@ test("each event says what it did", () => {
   assert.equal(eventLine(ev("edited", { title: "Old", body: true }), nameOf), "changed the title from “Old” and edited the description");
   assert.equal(eventLine(ev("closed", { reason: "not_planned" }), nameOf), "closed this as not planned");
   assert.equal(eventLine(ev("closed", {}), nameOf), "closed this as completed");
+  assert.equal(eventLine(ev("closed", { reason: "completed", pr: "acme/site#70" }), nameOf), "closed this as completed with acme/site#70");
+  assert.equal(eventLine(ev("closed", { reason: "completed", pr: "acme/site#70", by: "\"(#4)\" in the title" }), nameOf), "closed this as completed with acme/site#70, by \"(#4)\" in the title");
   assert.equal(eventLine(ev("reopened"), nameOf), "reopened this");
   assert.equal(eventLine(ev("labelled", { label: "bug" }), nameOf), "added the label bug");
   assert.equal(eventLine(ev("unlabelled", { label: "bug" }), nameOf), "removed the label bug");

@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -102,6 +102,11 @@ test("a Done row says how it is proven, or that it isn't yet; others say nothing
   // A cancelled row says so in its mark and is not "not proven yet".
   assert.equal(proofMark({ lane: "done", pointer: issue, marks: [{ kind: "cancelled" }] }), null);
   assert.equal(marksOf({ marks: [{ kind: "cancelled" }] }).cancelled, true);
+  // Which PR closed a row's issue, and by which words (Arugula #743).
+  assert.equal(closedWithLine({ closed_with: "acme/site#70", closed_by: "\"Closes #4\" in the body" }), "closed with acme/site#70, by \"Closes #4\" in the body");
+  assert.equal(closedWithLine({ closed_with: "acme/site#70" }), "closed with acme/site#70");
+  assert.equal(closedWithLine({}), null);
+  assert.equal(closedWithLine(undefined), null);
   assert.equal(proofMark({ lane: "done", pointer: { kind: "none" } }), null, "a note has nothing to prove");
   assert.equal(counted({ pointer: { kind: "forge_item", id: "fi_a" } }), true);
   assert.equal(counted({ pointer: { kind: "link", url: "https://x.example/1" } }), false);

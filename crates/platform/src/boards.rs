@@ -512,6 +512,8 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         state_name: None,
         url: None,
         category: (i.kind == "issue").then(|| github_category(&i.state, i.state_reason.as_deref())),
+        closed_with: None,
+        closed_by: None,
     }
 }
 
@@ -531,6 +533,8 @@ fn live_plane(i: &TrackerItem, c: &ReadableConnection) -> wire::Live {
         state_name: Some(i.state_name.clone()),
         url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
         category: Some(plane_category(Some(&i.state_group), &i.state)),
+        closed_with: None,
+        closed_by: None,
     }
 }
 
@@ -555,6 +559,8 @@ fn live_run(run: &Run) -> wire::Live {
         state_name: None,
         url: None,
         category: None,
+        closed_with: None,
+        closed_by: None,
     }
 }
 
@@ -624,7 +630,14 @@ async fn chips(
             .collect();
         let people =
             if accounts.is_empty() { HashMap::new() } else { app.cache.accounts(&*app.hub, &accounts).await? };
+        // Which PR closed each closed one, and by which words (Arugula #743).
+        let closed_ids: Vec<&str> = found.iter().filter(|f| f.closed).map(|f| f.id.as_str()).collect();
+        let mut prs = app.db.closing_prs(&closed_ids)?;
         for db::IssueState { id, number, title, closed, category, assignees: who, labels } in found {
+            let (closed_with, closed_by) = match prs.remove(&id) {
+                Some((pr, by)) => (Some(pr), by),
+                None => (None, None),
+            };
             let state = if closed { wire::LiveState::Closed } else { wire::LiveState::Open };
             let assignees = who
                 .into_iter()
@@ -649,6 +662,8 @@ async fn chips(
                     state_name: None,
                     url: None,
                     category: Some(category),
+                    closed_with,
+                    closed_by,
                 },
             );
         }

@@ -175,8 +175,14 @@ pub fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
         for e in events {
             let d = &e["detail"];
             let what = d["label"].as_str().or(d["assignee"].as_str()).or(d["reason"].as_str());
+            // A merged PR that closed it, and its words (Arugula #743).
+            let pr = match (d["pr"].as_str(), d["by"].as_str()) {
+                (Some(pr), Some(by)) => format!(" with {pr}, by {by}"),
+                (Some(pr), None) => format!(" with {pr}"),
+                _ => String::new(),
+            };
             out += &format!(
-                "\n- {} {}{}",
+                "\n- {} {}{}{pr}",
                 who(&e["actor"], &e["agent"]),
                 e["kind"].as_str().unwrap_or("?"),
                 what.map(|w| format!(" {w}")).unwrap_or_default()
@@ -387,5 +393,17 @@ mod tests {
         let t = text(&issue, &[], &comments);
         assert!(t.contains("[1] agent session 01234567: bisected"), "{t}");
         assert!(t.contains("[2] Ann via hud: reviewed"), "{t}");
+    }
+
+    /// A close by a merged PR names the PR and the words that did it
+    /// (Arugula #743).
+    #[test]
+    fn a_close_by_a_pr_says_which_and_by_what_words() {
+        let issue = json!({ "number": 4, "title": "t", "state": "closed", "author": "a" });
+        let closed = |detail| json!({ "actor": "bob", "kind": "closed", "detail": detail });
+        let by = json!({ "reason": "completed", "pr": "acme/site#70", "by": "\"(#4)\" in the title" });
+        let t = text(&issue, &[closed(by), closed(json!({ "reason": "not_planned" }))], &[]);
+        assert!(t.contains("\n- bob closed completed with acme/site#70, by \"(#4)\" in the title"), "{t}");
+        assert!(t.contains("\n- bob closed not_planned\n") || t.ends_with("\n- bob closed not_planned"), "{t}");
     }
 }

@@ -239,6 +239,9 @@ pub struct Patch<'a> {
     /// one only (never one closed already, for any reason, nor a reopened
     /// one again), and the `closed` event names the PR.
     pub by_pr: Option<&'a str>,
+    /// With `by_pr`: the words of the PR that closed it (`"Closes #12" in the
+    /// body`), which the `closed` event keeps as `by` (Arugula #743).
+    pub by_words: Option<&'a str>,
 }
 
 /// Which of a project's issues a list wants. Each that's set narrows it.
@@ -561,6 +564,9 @@ impl Db {
                     let mut detail = json!({ "reason": why.as_str() });
                     if let Some(pr) = p.by_pr {
                         detail["pr"] = pr.into();
+                        if let Some(words) = p.by_words {
+                            detail["by"] = words.into();
+                        }
                     }
                     events.push((EventKind::Closed, detail));
                 }
@@ -739,6 +745,35 @@ impl Db {
             .into_iter()
             .map(|e| (e.issue, (e.actor, e.actor_agent)))
             .collect())
+    }
+
+    /// The merged PR that closed each of these issues, by id, with its words
+    /// (Arugula #743): from the latest `closed` event, when that one names a
+    /// PR; an issue closed or reopened since by anyone else has none.
+    pub fn closing_prs(&self, issues: &[&str]) -> Result<HashMap<String, (String, Option<String>)>> {
+        if issues.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let marks = (1..=issues.len()).map(|n| format!("?{n}")).collect::<Vec<_>>().join(", ");
+        let args: Vec<Value> = issues.iter().map(|i| Value::Text((*i).into())).collect();
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM issue_events WHERE kind IN ('closed', 'reopened') AND issue_id IN ({marks})
+             ORDER BY id"
+        );
+        let mut out = HashMap::new();
+        // Oldest first: a later close or reopen overwrites an earlier one.
+        for e in self.c().query_map(&sql, &list(&args), event_row)? {
+            match (e.kind, e.detail["pr"].as_str()) {
+                (EventKind::Closed, Some(pr)) => {
+                    let by = e.detail["by"].as_str().map(str::to_owned);
+                    out.insert(e.issue, (pr.to_owned(), by));
+                }
+                _ => {
+                    out.remove(&e.issue);
+                }
+            }
+        }
+        Ok(out)
     }
 }
 

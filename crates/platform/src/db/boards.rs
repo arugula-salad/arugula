@@ -550,6 +550,18 @@ pub struct ItemFact {
     pub state_reason: Option<String>,
 }
 
+/// Why a merged PR closes an issue ([`Db::issues_closed_by`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClosedBy {
+    /// `Arugula #N`.
+    Native(u64),
+    /// `Closes #N`, `(#N)` in the title, or the branch: native N, or the
+    /// native issue exported as GitHub's N.
+    Number(u64),
+    /// Attached as work to the row of the issue, by a person or an agent.
+    Row,
+}
+
 /// A native issue as a board row reads it.
 pub struct IssueState {
     pub id: String,
@@ -1712,21 +1724,22 @@ impl Db {
     }
 
     /// The native issues of `project` that merging PR `pr` (of `repo`)
-    /// closes (Arugula #432), by id: those its references name, by the rule
-    /// the boards attach by (`Arugula #N` is a native issue, except written
-    /// softly; any other `#N` is the native issue exported as GitHub's #N
-    /// of `repo`, else native N unless `repo` has a GitHub issue N), and
-    /// those of the rows a person or an agent attached it to as work (a
-    /// row's issue, or any native issue of its work item). Board or no
-    /// board; open or not, for the caller to say.
-    pub fn issues_closed_by(&self, project: &str, repo: u64, pr: &str, refs: &Refs) -> Result<Vec<String>> {
+    /// closes (Arugula #432), by id, with why: those its references name
+    /// plainly, by the rule the boards attach by (`Arugula #N` is a native
+    /// issue; any other `#N` is the native issue exported as GitHub's #N of
+    /// `repo`, else native N unless `repo` has a GitHub issue N), less those
+    /// it names only softly or in passing (Arugula #743, #755); and those of
+    /// the rows a person or an agent attached it to as work (a row's issue,
+    /// or any native issue of its work item). Board or no board; open or
+    /// not, for the caller to say.
+    pub fn issues_closed_by(&self, project: &str, repo: u64, pr: &str, refs: &Refs) -> Result<Vec<(String, ClosedBy)>> {
         // Numbers are the platform's own: written into the statement.
         let list = |ns: &[u64]| ns.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
-        let mut out: Vec<String> = vec![];
-        let mut add = |ids: Vec<String>| {
-            for id in ids {
-                if !out.contains(&id) {
-                    out.push(id);
+        let mut out: Vec<(String, ClosedBy)> = vec![];
+        let mut add = |found: Vec<(String, ClosedBy)>| {
+            for (id, by) in found {
+                if !out.iter().any(|(o, _)| *o == id) {
+                    out.push((id, by));
                 }
             }
         };
@@ -1734,18 +1747,20 @@ impl Db {
         if !native.is_empty() {
             add(self.c().query_map(
                 &format!(
-                    "SELECT id FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number",
+                    "SELECT id, number FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number",
                     list(&native)
                 ),
                 params![project],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, ClosedBy::Native(r.get::<u64>(1)?))),
             )?);
         }
-        if !refs.numbers.is_empty() {
-            let n = list(&refs.numbers);
+        let numbers: Vec<u64> = refs.closing_numbers().collect();
+        if !numbers.is_empty() {
+            let n = list(&numbers);
             add(self.c().query_map(
                 &format!(
-                    "SELECT id FROM issues WHERE project_id = ?1 AND
+                    "SELECT id, CASE WHEN github_repo_id = ?2 AND github_number IN ({n}) THEN github_number ELSE number END
+                     FROM issues WHERE project_id = ?1 AND
                         ((github_repo_id = ?2 AND github_number IN ({n}))
                          OR (number IN ({n}) AND NOT EXISTS (
                              SELECT 1 FROM forge_items f
@@ -1753,7 +1768,7 @@ impl Db {
                      ORDER BY number"
                 ),
                 params![project, repo],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, ClosedBy::Number(r.get::<u64>(1)?))),
             )?);
         }
         add(self.c().query_map(
@@ -1768,7 +1783,7 @@ impl Db {
                AND a.role = 'work' AND a.source IS NULL
              ORDER BY i.id",
             params![project, pr],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, ClosedBy::Row)),
         )?);
         Ok(out)
     }

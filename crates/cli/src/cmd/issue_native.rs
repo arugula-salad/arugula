@@ -830,10 +830,18 @@ fn event_text(e: &IssueEvent, name: &dyn Fn(&str) -> String) -> String {
             }
             if what.is_empty() { "edited it".into() } else { what.join(" and ") }
         }
-        "closed" => match d["reason"].as_str() {
-            Some(r) => format!("closed it ({})", r.replace('_', " ")),
-            None => "closed it".into(),
-        },
+        "closed" => {
+            let why = match d["reason"].as_str() {
+                Some(r) => format!("closed it ({})", r.replace('_', " ")),
+                None => "closed it".into(),
+            };
+            // A merged PR that closed it, and its words (Arugula #743).
+            match (d["pr"].as_str(), d["by"].as_str()) {
+                (Some(pr), Some(by)) => format!("{why} with {pr}, by {by}"),
+                (Some(pr), None) => format!("{why} with {pr}"),
+                _ => why,
+            }
+        }
         "reopened" => "reopened it".into(),
         "labelled" => format!("labelled it {}", s("label")),
         "unlabelled" => format!("took off the label {}", s("label")),

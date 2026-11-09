@@ -1391,6 +1391,20 @@
           ],
           "description": "An issue's status category; a PR and a run have none."
         },
+        "closed_by": {
+          "description": "With `closed_with`, the words of the PR that closed it: `\"(#12)\" in\nthe title`, `\"Closes #12\" in the body`, `the branch feat/12-x`,\n`attached to its board row as work`. Absent for a close from before\nthey were kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_with": {
+          "description": "A closed native issue that a merged PR closed: the PR\n(`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "identifier": {
           "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",
           "type": [

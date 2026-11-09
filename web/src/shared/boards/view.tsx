@@ -47,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -1137,6 +1137,11 @@ function Row({
               ))}
             </div>
           )}
+          {closedWithLine(r.live) && (
+            <div class="board-line board-sub dim" data-board-closed-with title="The merged pull request that closed this issue, and the words of it that did">
+              {closedWithLine(r.live)}
+            </div>
+          )}
           {current.length > 0 && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
@@ -1291,6 +1296,11 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           </a>
         )}
       </div>
+      {closedWithLine(r.live) && (
+        <div class="board-line dim" data-board-closed-with title="The merged pull request that closed this issue, and the words of it that did">
+          {closedWithLine(r.live)}
+        </div>
+      )}
       {(marks.stalled || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
         <div class="board-line" data-board-drawer-marks>
           {r.marks?.some((m) => m.kind === "cycle") && (

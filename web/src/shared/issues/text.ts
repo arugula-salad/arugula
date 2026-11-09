@@ -67,8 +67,9 @@ export function eventLine(e: IssueEvent, nameOf: NameOf): string | null {
       return said.join(" and ") || "edited this";
     }
     case "closed":
-      // A merged PR that closed it (Arugula #432) is named.
-      return `closed this as ${reasonLabel(str(d.reason) || null)}${str(d.pr) ? ` with ${str(d.pr)}` : ""}`;
+      // A merged PR that closed it (Arugula #432) is named, and the words of
+      // it that did (Arugula #743).
+      return `closed this as ${reasonLabel(str(d.reason) || null)}${str(d.pr) ? ` with ${str(d.pr)}` : ""}${str(d.pr) && str(d.by) ? `, by ${str(d.by)}` : ""}`;
     case "reopened":
       return "reopened this";
     case "labelled":
