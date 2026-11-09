@@ -141,6 +141,25 @@ pr docs-only
 echo x >docs/guide.md
 git add -A && git commit -qm "Docs"
 passes "docs alone: needs none"
+# A note alone is checked too (#795): the train reads every note, and one it
+# can't read holds every release. The later line: wins, as in parseNote.
+pr notes-only-too-long
+note too-long "Too long" "line: $(printf 'x%.0s' {1..245})
+"
+git add -A && git commit -qm "Notes"
+refuses "a note alone still has to read: a 245-character line fails"
+if grep -qF 'docs/notes/too-long.md: line is over 240 characters' "$tmp/out"; then ok "naming the file"; else bad "the message: $(cat "$tmp/out")"; fi
+# A note already released can be edited: its id is in a release by then.
+pr edits-a-released-note
+mkdir -p docs/releases
+# shellcheck disable=SC2016
+printf '```whats-new\n[{"id": "shipped", "title": "T", "line": "L"}]\n```\n' >docs/releases/1.0.1.md
+note shipped "Shipped"
+git add -A && git commit -qm "Shipped (#16)"
+released=$(git rev-parse HEAD)
+note shipped "Shipped, reworded"
+git add -A && git commit -qm "Reword"
+if scripts/pr-notes-check "$released" HEAD >"$tmp/out" 2>&1; then ok "editing a released note: passes"; else bad "editing a released note: $(cat "$tmp/out")"; fi
 pr tests-only
 mkdir -p crates/foo/tests web/e2e .github/workflows
 echo x >crates/foo/tests/t.rs

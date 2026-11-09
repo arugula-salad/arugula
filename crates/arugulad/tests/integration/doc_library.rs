@@ -439,3 +439,121 @@ fn the_start_up_migration_moves_open_closed_and_shared_docs_once() {
     assert_eq!(tree(&d), before);
     assert_eq!(rows(&d).into_iter().map(|r| r["id"].to_string()).collect::<std::collections::BTreeSet<_>>(), ids);
 }
+
+const FRIEND: &str = "friend@example.com";
+const EDITOR: &str = "pal@example.com";
+
+fn links_held(d: &Daemon) -> usize {
+    let held: Value = serde_json::from_slice(&std::fs::read(d.state.join("doc-links.json")).unwrap()).unwrap();
+    held.as_object().unwrap().len()
+}
+
+/// Arugula #819: the owner shares a Doc by its id with no block showing it:
+/// no pane opens, the row says shared, and a block opened after shows it
+/// shared with the one link, which a second share refuses.
+#[test]
+fn sharing_a_closed_doc_opens_no_pane_and_a_block_opened_later_shows_it_shared() {
+    let mut w = World::new(&[]);
+    let (d, doc) = (&w.d, w.doc);
+    let id = id_of(d, doc);
+    close(d, doc);
+    let panes = d.get("/api/panes").as_array().unwrap().len();
+
+    let url = d.post(&format!("/api/docs/{id}/share"), json!({}))["url"].as_str().unwrap().to_owned();
+    assert!(url.contains("#k="), "{url}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), panes, "no pane opened");
+    let listed = rows(d);
+    let row = listed.iter().find(|r| r["id"] == id.as_str()).unwrap();
+    assert!(row["open"].is_null() && row["shared"].is_object(), "{row}");
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 1);
+    assert_eq!(links_held(d), 1);
+
+    let (status, text) = d.raw("POST", &format!("/api/docs/{id}/share"), Some(json!({})));
+    assert_ne!(status, 200, "{text}");
+    assert!(text.contains("already shared"), "{text}");
+
+    let block = open_doc(d, &id);
+    assert!(d.state(block)["shared"].is_object(), "the block opens shared");
+    assert_eq!(call(d, block, "doc_shares", json!({}))["url"], url.as_str(), "the same link");
+    let (status, text) = d.raw("POST", &format!("/api/blocks/{block}/call/doc_share"), Some(json!({})));
+    assert_ne!(status, 200, "{text}");
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 1, "still one link made");
+    assert_eq!(links_held(d), 1);
+    w.rt = None;
+}
+
+/// ...and the other order: a Doc a block shows is shared through the op, and
+/// the block says so at once, with no second link.
+#[test]
+fn sharing_an_open_doc_by_its_id_shows_shared_in_its_block_at_once() {
+    let mut w = World::new(&[]);
+    let (d, doc) = (&w.d, w.doc);
+    let id = id_of(d, doc);
+    assert!(d.state(doc)["shared"].is_null());
+
+    let url = d.post(&format!("/api/docs/{id}/share"), json!({}))["url"].as_str().unwrap().to_owned();
+    assert!(d.state(doc)["shared"].is_object(), "the open block says shared, with no call to it");
+    assert_eq!(call(d, doc, "doc_shares", json!({}))["url"], url.as_str());
+    assert_eq!(rows(d).iter().filter(|r| r["id"] == id.as_str()).count(), 1);
+    assert_eq!(row_of(d, doc)["open"], doc, "still the one block");
+
+    let (status, text) = d.raw("POST", &format!("/api/docs/{id}/share"), Some(json!({})));
+    assert_ne!(status, 200, "{text}");
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 1);
+    assert_eq!(links_held(d), 1);
+    w.rt = None;
+}
+
+/// Update works the same way, closed or open: the link stays and shows the
+/// Doc as it is.
+#[test]
+fn updating_a_doc_by_its_id_keeps_its_link_closed_or_open() {
+    let mut w = World::new(&[]);
+    let (d, doc) = (&w.d, w.doc);
+    let id = id_of(d, doc);
+    let path = format!("/api/docs/{id}/share");
+    // Nothing to update before there's a link.
+    let (status, text) = d.raw("POST", &path, Some(json!({ "update": true })));
+    assert_ne!(status, 200, "{text}");
+    assert!(text.contains("isn't shared"), "{text}");
+
+    let url = d.post(&path, json!({}))["url"].as_str().unwrap().to_owned();
+    call(d, doc, "doc_fill", json!({ "section": "s2", "markdown": "Written after." }));
+    assert_eq!(d.state(doc)["shared_older"], true);
+    // Open: its block hears of the update.
+    assert_eq!(d.post(&path, json!({ "update": true }))["url"], url.as_str());
+    assert_eq!(d.state(doc)["shared_older"], false);
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 2);
+
+    // Closed: the link's entry is what moves.
+    close(d, doc);
+    let before = rows(d)[0]["shared"]["updated"].as_u64().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    assert_eq!(d.post(&path, json!({ "update": true }))["url"], url.as_str());
+    assert!(rows(d)[0]["shared"]["updated"].as_u64().unwrap() > before);
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 3);
+    assert_eq!(links_held(d), 1);
+    w.rt = None;
+}
+
+/// Only the owner's tap shares a Doc by its id: an agent is told to ask, a
+/// viewer or editor is refused, and nothing is made.
+#[test]
+fn an_agent_or_a_guest_cant_share_a_doc_by_its_id() {
+    let w = World::new(&[]);
+    let (d, doc) = (&w.d, w.doc);
+    let id = id_of(d, doc);
+    close(d, doc);
+    let path = format!("/api/docs/{id}/share");
+    for who in [FRIEND, EDITOR] {
+        let (status, text) = d.raw_as(who, "POST", &path, Some(json!({})));
+        assert_eq!(status, 403, "{who}: {text}");
+    }
+    let bearer = d.bearer();
+    let agent = [("authorization", bearer.as_str()), ("x-arugula-agent", "1"), ("content-type", "application/json")];
+    let (status, _, text) = d.tcp("POST", &path, &agent, Some("{}"));
+    assert_eq!(status, 403, "{text}");
+    assert!(text.contains("ask with the doc tool's share"), "{text}");
+    assert_eq!(w.fake.commits.load(Ordering::SeqCst), 0, "nothing was made");
+    assert!(!d.state.join("doc-links.json").exists());
+}

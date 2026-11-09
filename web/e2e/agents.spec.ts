@@ -4,7 +4,7 @@
 // ACP server the daemon's tests use, so nothing here costs anything.
 
 import { execFileSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -376,6 +376,17 @@ test.describe("phone", () => {
     await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(id);
     const block = paneEl(page, id);
     await expect(page.locator(".keybar")).toBeHidden();
+    // On a terminal the key bar fits the row without scrolling, and has no "-" key.
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.evaluate(() => window.__arugula.client.setActive(window.__arugula.client.state!.panes[0].id));
+    const keys = page.locator(".keybar-keys");
+    await expect(keys).toBeVisible();
+    await expect(page.locator(".keybar").getByRole("button", { name: "Pipe" })).toBeVisible();
+    await expect(page.locator(".keybar").getByRole("button", { name: "-", exact: true })).toHaveCount(0);
+    expect(await keys.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    mkdirSync("/tmp/claude-arugula-813", { recursive: true });
+    await page.locator(".keybar").screenshot({ path: "/tmp/claude-arugula-813/keybar.png" });
+    await page.evaluate((id) => window.__arugula.client.setActive(id), id);
     const approve = block.getByRole("button", { name: "Approve" });
     await expect(approve).toBeVisible();
     const box = (await approve.boundingBox())!;

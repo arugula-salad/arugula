@@ -225,6 +225,22 @@ mod tests {
         assert_eq!(work_out(&nodes).sequence[..3], [2, 1, 0]);
     }
 
+    /// A place is the steps' layout over every row with an item, with the
+    /// edges of done rows kept (#824): A(done) -> B(done) -> C -> D sit in
+    /// 1, 2, 3, 4, though the steps of the same board are C 1 and D 2, and a
+    /// place that dropped a done row's edges would put C and D in 1 and 2.
+    #[test]
+    fn a_place_keeps_the_edges_of_done_rows() {
+        let (a, b) = (Node::default(), Node { before: vec![0], ..Default::default() });
+        // `step`: A and B are done, and an edge from a closed row is dropped.
+        let steps = work_out(&[a, b, open(&[]), open(&[2])]);
+        assert_eq!(steps.step, [None, None, Some(1), Some(2)]);
+        // `place`: every row with an item is open, and every edge is kept.
+        let place = work_out(&[open(&[]), open(&[0]), open(&[1]), open(&[2])]);
+        assert_eq!(place.step, [Some(1), Some(2), Some(3), Some(4)]);
+        assert_eq!(place.chain, [0, 1, 2, 3]);
+    }
+
     /// A long chain is no deeper than the stack: nothing recurses.
     #[test]
     fn a_long_chain_does_not_recurse() {

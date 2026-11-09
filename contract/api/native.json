@@ -119,12 +119,8 @@
       "why": "Team chat settings stay on the web"
     },
     {
-      "match": "/chat/presence/token$",
-      "why": "Live presence is not in the first app"
-    },
-    {
       "match": "/chat/presence$",
-      "why": "Live presence is not in the first app"
+      "why": "Chat presence is not in the first app"
     }
   ],
   "operations": {

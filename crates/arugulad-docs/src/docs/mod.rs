@@ -629,7 +629,21 @@ impl Doc {
 fn kept(state_dir: &Path, id: &str) -> Result<Arc<Doc>, String> {
     let dir = library::dir(state_dir, id)?;
     let title = library::read_meta(&dir).map(|m| m.title).unwrap_or_default();
-    Ok(Doc::with_link(dir, title, true, Link::none(state_dir.to_owned(), id.to_owned()), Arc::new(|| {})))
+    let mut link = Link::none(state_dir.to_owned(), id.to_owned());
+    link.remote = link::remote();
+    Ok(Doc::with_link(dir, title, true, link, Arc::new(|| {})))
+}
+
+/// Share the Doc `id` (or update its link) with no block showing it: the
+/// block's own `share`, run on the Doc read from its files, so both make the
+/// link by the one code path (Arugula #819). Its `shared` goes nowhere: a
+/// block opened later reads the link's entry.
+pub async fn share_kept(state_dir: PathBuf, id: String, update: bool) -> Result<Value, String> {
+    let doc = {
+        let dir = state_dir.clone();
+        crate::task::spawn_blocking(move || kept(&dir, &id)).await.map_err(|e| e.to_string())??
+    };
+    doc.share(update).await
 }
 
 /// The state a block of the Doc `id` would have now.

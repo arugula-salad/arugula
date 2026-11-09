@@ -35,7 +35,8 @@ import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 import { Chip } from "../../shared/ui/state-chip";
-import { ChevronIcon } from "../../shared/ui/icons";
+import type { ComponentChildren } from "preact";
+import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -57,8 +58,15 @@ export function PhoneHeader({ client }: { client: Client }) {
           )}
         </button>
         {panes.length > 1 && (
-          <span class="pane-count">
-            {panes.indexOf(active ?? -1) + 1}/{panes.length}
+          <span class="pane-pos">
+            <span class="pane-dots" aria-hidden="true">
+              {panes.map((p) => (
+                <i key={p} class={p === active ? "on" : undefined} />
+              ))}
+            </span>
+            <span class="pane-count">
+              {panes.indexOf(active ?? -1) + 1}/{panes.length}
+            </span>
           </span>
         )}
       </header>
@@ -468,19 +476,18 @@ function AccountSection({ close }: { close: () => void }) {
   );
 }
 
-const KEYS: { label: string; bytes?: string; app?: string; mod?: "ctrl" | "alt" }[] = [
-  { label: "Esc", bytes: "\x1b" },
-  { label: "Tab", bytes: "\t" },
-  { label: "Ctrl", mod: "ctrl" },
-  { label: "Alt", mod: "alt" },
-  { label: "←", bytes: "\x1b[D", app: "\x1bOD" },
-  { label: "↑", bytes: "\x1b[A", app: "\x1bOA" },
-  { label: "↓", bytes: "\x1b[B", app: "\x1bOB" },
-  { label: "→", bytes: "\x1b[C", app: "\x1bOC" },
-  { label: "|", bytes: "|" },
-  { label: "~", bytes: "~" },
-  { label: "/", bytes: "/" },
-  { label: "-", bytes: "-" },
+const KEYS: { label: string; text?: string; icon?: ComponentChildren; bytes?: string; app?: string; mod?: "ctrl" | "alt" }[] = [
+  { label: "Esc", text: "Esc", bytes: "\x1b" },
+  { label: "Tab", text: "Tab", bytes: "\t" },
+  { label: "Ctrl", text: "Ctrl", mod: "ctrl" },
+  { label: "Alt", text: "Alt", mod: "alt" },
+  { label: "Left", icon: <ArrowIcon dir="left" size="lg" />, bytes: "\x1b[D", app: "\x1bOD" },
+  { label: "Up", icon: <ArrowIcon dir="up" size="lg" />, bytes: "\x1b[A", app: "\x1bOA" },
+  { label: "Down", icon: <ArrowIcon dir="down" size="lg" />, bytes: "\x1b[B", app: "\x1bOB" },
+  { label: "Right", icon: <ArrowIcon dir="right" size="lg" />, bytes: "\x1b[C", app: "\x1bOC" },
+  { label: "Pipe", icon: <PipeKeyIcon />, bytes: "|" },
+  { label: "Tilde", icon: <TildeKeyIcon />, bytes: "~" },
+  { label: "Slash", icon: <SlashKeyIcon />, bytes: "/" },
 ];
 
 export function KeyBar({ client }: { client: Client }) {
@@ -494,6 +501,9 @@ export function KeyBar({ client }: { client: Client }) {
         return (
           <button
             key={k.label}
+            // A word key is named by its word (a label that differs fails axe's
+            // label-content-name-mismatch); a drawn one by its label.
+            aria-label={k.icon ? k.label : undefined}
             class={on ? "key on" : "key"}
             aria-pressed={k.mod ? on : undefined}
             // Keep focus (and the on-screen keyboard) on the terminal.
@@ -511,13 +521,13 @@ export function KeyBar({ client }: { client: Client }) {
               client.input(pane, enc.encode(seq));
             }}
           >
-            {k.label}
+            {k.icon ?? k.text}
           </button>
         );
       })}
       </div>
       {/* M70: a photo, or the camera, into the pane. Pinned at the end,
-          outside the keys that scroll, so it's always in sight. */}
+          at the end of the row. */}
       <button
         class="key attach"
         title="Attach file"
@@ -528,7 +538,7 @@ export function KeyBar({ client }: { client: Client }) {
           if (pane !== undefined) void client.attachFiles(pane);
         }}
       >
-        📎
+        <AttachIcon />
       </button>
     </div>
   );
