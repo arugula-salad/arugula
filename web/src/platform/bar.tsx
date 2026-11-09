@@ -6,7 +6,7 @@
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useEffect, useRef } from "preact/hooks";
+import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
@@ -16,8 +16,6 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
-import { LiveSwitch, liveItems } from "../shared/live/switch";
-import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
@@ -95,9 +93,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
-  // Live's camera goes to the team of the project on screen (#343).
-  const working = p?.team?.id ?? null;
-  useEffect(() => setWorkingTeam(working), [working]);
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
@@ -120,7 +115,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
       { label: "Settings", run: () => go("/settings") },
       // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(liveItems()),
+      ...presenceItems(),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
       { label: "Open your machines", run: () => location.assign(controlOrigin()) },
       "separator",
@@ -238,8 +233,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           Machines
         </a>
       )}
-      {/* #341: live presence, beside the account, with its Labs flag. */}
-      <LiveSwitch />
       {me && (
         <button
           ref={accountButton}

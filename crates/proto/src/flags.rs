@@ -92,9 +92,6 @@ pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
 /// A2A tasks. Was `agents`.
 pub const AGENT_DELEGATION: &str = "agent-delegation";
-/// Live presence: teammates' live faces on their avatars across Arugula,
-/// from arugula.stream (Arugula #341), which needs control.
-pub const LIVE_PRESENCE: &str = "live-presence";
 
 /// What every agent is told about Docs (#1486), in one wording: the MCP
 /// server's instructions carry it, and so does the context `arugula hook`
@@ -172,11 +169,6 @@ pub const FLAGS: &[Flag] = &[
         "Local agent delegation",
         "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
-    row(
-        LIVE_PRESENCE,
-        "Live presence",
-        "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.",
-    ),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file
@@ -189,6 +181,7 @@ pub const RETIRED: &[(&str, &str)] = &[
         "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
+    ("live-presence", "Live presence (video on avatars, the People block's calls) was removed from Arugula"),
     // Graduated (native #203): chat is control's, on where a team's owners
     // turn it on there; a machine's old threads are no longer brought in.
     ("chat", "Chat is no longer in Labs: it's on wherever a team's owners turn it on in control (Teams)"),
