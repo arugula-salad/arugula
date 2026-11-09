@@ -173,9 +173,9 @@ test("on a phone, Back climbs chat one level at a time: thread, room, list (#817
 test("on a phone, a swipe right goes up a chat level and a swipe left back down (#816)", async () => {
   test.setTimeout(120_000);
   const { viewport } = devices["Pixel 7"];
-  const before = alice.viewportSize()!;
-  await alice.setViewportSize(viewport);
-  const phone = alice;
+  // A page of its own, so the history under chat is just this test's.
+  const phone = await alice.context().newPage();
+  await phone.setViewportSize(viewport);
   await home(alice);
   await expect.poll(() => alice.evaluate(() => window.__arugula.chat.on), { timeout: 15_000 }).toBe(true);
   const ids = await alice.evaluate(async () => {
@@ -238,7 +238,15 @@ test("on a phone, a swipe right goes up a chat level and a swipe left back down 
   await expect.poll(path).toMatch(room);
   await phone.goBack();
   await expect.poll(path).toMatch(/\/chat$/);
-  await phone.setViewportSize(before);
+  // The list is one entry, not two: what's under it isn't a chat page (a
+  // cross-origin entry, from the sign-in hop, reads as no url), so Back
+  // leaves chat in one press.
+  const under = await phone.evaluate(() => {
+    const nav = (window as any).navigation;
+    return nav.entries()[nav.currentEntry.index - 1]?.url ?? null;
+  });
+  expect(under ?? "").not.toMatch(/\/chat/);
+  await phone.close();
 });
 
 test("Settings is one page across both origins: each index links to the other's sections", async () => {
