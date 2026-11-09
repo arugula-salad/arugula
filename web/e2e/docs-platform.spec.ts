@@ -337,7 +337,8 @@ test("a machine's copy is read-only, and the page says whose it is", async () =>
   await expect(page).toHaveAttribute("data-writer", "false");
   await expect(page.locator("[data-doc-writer]")).toHaveCount(0);
   await expect(page.locator("[data-doc-copy]")).toContainText("Copy from geek");
-  await expect(page.locator("[data-doc-maker]")).toHaveText("a copy from geek");
+  // The copy line says it; the byline doesn't repeat it.
+  await expect(page.locator("[data-doc-maker]")).toHaveCount(0);
   await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("geek");
 
   // Over the route, as an agent or a script would: refused, naming geek.

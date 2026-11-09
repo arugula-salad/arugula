@@ -481,16 +481,13 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           load={noImages}
           share={<CopyLinkButton link={new URL(pathOf({ page: "doc", project, doc }, names), location.href).href} />}
           byline={
+            // A copy's line above the Doc already says where it's from and when.
             view &&
-            (copy ? (
-              <>
-                <span data-doc-maker>a copy from {copy}</span> · updated <Time at={view.doc.updated_at} />
-              </>
-            ) : (
+            !copy && (
               <>
                 <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · <Time at={view.doc.updated_at} />
               </>
-            ))
+            )
           }
         />
       ) : null}
