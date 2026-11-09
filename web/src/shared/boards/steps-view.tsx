@@ -38,22 +38,30 @@ const KEY_STEP = 16;
 
 /** Room an arrow's bend takes beside the bars it joins, in pixels. */
 const BEND = 22;
+/** How far inside its outer edge an elbow leaves its bar: with the 6px between neighbouring columns, the run into the next bar is long enough to carry its head. */
+const IN = 10;
+/** The elbow's rounded corner. */
+const TURN = 6;
 
 interface Box {
   left: number;
   right: number;
+  top: number;
+  bottom: number;
   cy: number;
 }
 
-/** The path from the bar `a` to the bar `b`: out of the right edge into the left edge of a bar further right, the other way round for one further left, else bent round the right side (both in one column). */
+/** The path from the bar `a` to the bar `b`. A bar in another column gets an elbow: down out of `a`'s bottom (up out of its top for a row above), a little inside the edge facing `b`, then a turn and a run into `b`'s near side, so the head lies on the line and points into the bar. Two bars in one column are joined by a bend round their right side. */
 function pathBetween(a: Box, b: Box): string {
-  if (b.left >= a.right) {
-    const m = (a.right + b.left) / 2;
-    return `M${a.right} ${a.cy}C${m} ${a.cy} ${m} ${b.cy} ${b.left} ${b.cy}`;
-  }
-  if (b.right <= a.left) {
-    const m = (a.left + b.right) / 2;
-    return `M${a.left} ${a.cy}C${m} ${a.cy} ${m} ${b.cy} ${b.right} ${b.cy}`;
+  const dir = b.left >= a.right ? 1 : b.right <= a.left ? -1 : 0;
+  if (dir) {
+    const sx = dir > 0 ? Math.max(a.left + (a.right - a.left) / 2, a.right - IN) : Math.min(a.left + (a.right - a.left) / 2, a.left + IN);
+    const down = b.cy > a.cy;
+    const sy = down ? a.bottom : a.top;
+    const ex = dir > 0 ? b.left : b.right;
+    const r = Math.min(TURN, Math.abs(b.cy - sy) / 2, Math.abs(ex - sx) / 2);
+    const vy = down ? b.cy - r : b.cy + r;
+    return `M${sx} ${sy}V${vy}Q${sx} ${b.cy} ${sx + dir * r} ${b.cy}H${ex}`;
   }
   const x = Math.max(a.right, b.right);
   return `M${a.right} ${a.cy}C${x + BEND} ${a.cy} ${x + BEND} ${b.cy} ${b.right} ${b.cy}`;
@@ -125,7 +133,7 @@ export function StepsView({
       const b = el.querySelector(`[data-step-bar="${id}"]`);
       if (!b) return null;
       const r = b.getBoundingClientRect();
-      return { left: r.left - base.left, right: r.right - base.left, cy: (r.top + r.bottom) / 2 - base.top };
+      return { left: r.left - base.left, right: r.right - base.left, top: r.top - base.top, bottom: r.bottom - base.top, cy: (r.top + r.bottom) / 2 - base.top };
     };
     const paths = linksNow.current.flatMap((link) => {
       const [a, b] = [box(link.from), box(link.to)];
