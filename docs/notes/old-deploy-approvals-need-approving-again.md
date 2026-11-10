@@ -1,6 +1,6 @@
 ---
 section: Changed
-title: Deploy approvals from before passkey-only approvals have to be given again
+title: Deploy approvals from before 0.66.6 must be given again
 line: A deploy approved before 0.66.6, with a device's signature beside the passkey, is canceled instead of applied; approve it again.
 headline: no
 ---

@@ -1,7 +1,7 @@
 ---
 section: Fixed
 title: A merged PR closes only what it says it closes
-line: A pull request closes an Arugula issue when it says "Closes #N" or "Arugula #N", or "(#N)" in its title; any other mention links without closing, and the issue and its board row say which PR closed it and by which words.
+line: A pull request closes an Arugula issue only through "Closes #N", "Arugula #N" or a title's "(#N)"; other mentions just link. The issue and its board row say which PR closed it, and how.
 ---
 Two ways a merge closed issues it only mentioned are gone:
 
