@@ -7,12 +7,23 @@
 //!
 //! A reference is `Arugula #N`, `Closes #N` (or `Fixes`, `Resolves` and
 //! their other forms), `(#N)`, a branch segment that starts with the number
-//! (`feat/357-plane`), or `IDENT-N` for a Plane item. A bare `#N` in prose
-//! is not one. The PR's own number is never a reference to an issue.
+//! (`feat/357-plane`), or `IDENT-N` for a Plane item. In the body, any other
+//! `#N` is one too, in passing. A bare `#N` in the title is not one. The PR's
+//! own number is never a reference to an issue.
 //!
 //! A merged PR closes the native issues it names and moves the Plane items it
-//! names to Done ([`crate::forge::closes`]): `part of`, `refs` or `see` before
-//! `Arugula #N` or `KEY-N` only links ([`Refs::soft`], [`Refs::soft_plane`]).
+//! names to Done ([`crate::forge::closes`]), except those it only links (Arugula
+//! #743, #755):
+//! - `part of`, `refs` or `see` before `Arugula #N` or `KEY-N`
+//!   ([`Refs::soft`], [`Refs::soft_plane`]);
+//! - in the body, `(#N)`, `(Arugula #N)` and a bare `#N`: a mention in
+//!   passing ([`Refs::passing`]). `(#N)` closes in the title, and `Closes #N`
+//!   and `Arugula #N` anywhere;
+//! - the branch's number or key, when the title or body names it softly: the
+//!   branch is a guess, the text is what the author meant.
+//!
+//! What a merge closes by is kept as words ([`Refs::said`]), for the issue's
+//! timeline and its board row: `"Closes #12" in the body`.
 //!
 //! `Arugula #N` names a native issue only. Any other `#N` names the GitHub
 //! issue N of the PR's repo or, when the board has no row for that, the
@@ -26,6 +37,10 @@ pub struct Refs {
     /// Issue numbers, as `Closes #N` or `(#N)` say them: a GitHub issue's of
     /// the PR's repo, or a native issue's.
     pub numbers: Vec<u64>,
+    /// Those of `numbers` named only in passing (the body's `(#N)` or bare
+    /// `#N`; a branch's number the text names softly): linked, but not
+    /// closed when the PR merges.
+    pub passing: Vec<u64>,
     /// Native issue numbers, as `Arugula #N` says them.
     pub native: Vec<u64>,
     /// Those of `native` written only as `part of Arugula #N`, `refs Arugula
@@ -36,13 +51,48 @@ pub struct Refs {
     /// Those of `plane` written only as `part of ARUGU-12`, `refs ARUGU-12`
     /// or `see ARUGU-12`: linked, but not moved to Done when the PR merges.
     pub soft_plane: Vec<(String, u64)>,
+    /// How each issue a merge closes was named, first one first.
+    pub said: Vec<Said>,
+}
+
+/// The words that named an issue a merge closes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Said {
+    /// Named as `Arugula #N`: in `native`, else in `numbers`.
+    pub native: bool,
+    pub number: u64,
+    /// `"(#12)" in the title`, `"Closes #12" in the body`, `the branch
+    /// feat/12-x`.
+    pub words: String,
 }
 
 impl Refs {
-    fn add_number(&mut self, n: u64) {
+    /// A number, named in passing or not: passing unless it is named plainly
+    /// too, before or after.
+    fn add_number(&mut self, n: u64, passing: bool) {
         if !self.numbers.contains(&n) {
             self.numbers.push(n);
+            if passing {
+                self.passing.push(n);
+            }
+        } else if !passing {
+            self.passing.retain(|p| *p != n);
         }
+    }
+
+    /// The numbers a merge closes: those named plainly.
+    pub fn closing_numbers(&self) -> impl Iterator<Item = u64> + '_ {
+        self.numbers.iter().copied().filter(|n| !self.passing.contains(n))
+    }
+
+    fn say(&mut self, native: bool, number: u64, words: String) {
+        self.said.push(Said { native, number, words });
+    }
+
+    /// The words that first named `number` (as `Arugula #N` when `native`)
+    /// plainly.
+    pub fn words(&self, native: bool, number: u64) -> Option<&str> {
+        self.said.iter().find(|s| s.native == native && s.number == number).map(|s| s.words.as_str())
     }
 
     fn add_native(&mut self, n: u64) {
@@ -196,16 +246,32 @@ const CLOSING: [&str; 9] = ["closes", "closed", "close", "fixes", "fixed", "fix"
 /// `own` is the PR's number, which names itself in `(#1844)`.
 pub fn references(title: &str, branch: &str, body: &str, own: Option<u64>) -> Refs {
     let mut r = Refs::default();
-    for text in [title, body] {
-        hashes(text, &mut r);
+    for (text, place) in [(title, Place::Title), (body, Place::Body)] {
+        hashes(text, place, &mut r);
         plane(text, &mut r, true);
     }
     segments(branch, &mut r);
     plane(&branch.to_uppercase(), &mut r, false);
     if let Some(own) = own {
         r.numbers.retain(|n| *n != own);
+        r.passing.retain(|n| *n != own);
+        r.said.retain(|s| s.native || s.number != own);
     }
     r
+}
+
+/// Where in a PR a text is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Title,
+    Body,
+}
+
+impl Place {
+    fn words(self, said: &str) -> String {
+        let place = if self == Place::Title { "title" } else { "body" };
+        format!("\"{said}\" in the {place}")
+    }
 }
 
 /// What a row's `note` (or a block's branch) names: any `#N`, and a branch's
@@ -214,7 +280,7 @@ pub fn references_in(text: &str) -> Refs {
     let mut r = references(text, text, "", None);
     for (i, _) in text.match_indices('#') {
         if let Some((n, _)) = number(&text[i + 1..]) {
-            r.add_number(n);
+            r.add_number(n, false);
         }
     }
     r
@@ -229,9 +295,11 @@ fn number(s: &str) -> Option<(u64, &str)> {
     Some((s[..end].parse().ok()?, &s[end..]))
 }
 
-/// `#N` after `Arugula `, a closing word, or `(`.
-fn hashes(text: &str, r: &mut Refs) {
+/// `#N` after `Arugula `, a closing word, or `(`; in the body, any other `#N`
+/// not stuck to a word (`owner/repo#N` is another repo's), in passing.
+fn hashes(text: &str, place: Place, r: &mut Refs) {
     let lower = text.to_lowercase();
+    let body = place == Place::Body;
     for (i, _) in lower.match_indices('#') {
         let Some((n, _)) = number(&lower[i + 1..]) else { continue };
         let before = &lower[..i];
@@ -239,13 +307,25 @@ fn hashes(text: &str, r: &mut Refs) {
         let spaced = before.len() > word.len();
         let last = word.rsplit(|c: char| !c.is_ascii_alphabetic()).next().unwrap_or("");
         if spaced && last == "arugula" {
-            if soft_before(&word[..word.len() - last.len()]) {
+            let ahead = &word[..word.len() - last.len()];
+            if soft_before(ahead) || (body && ahead.ends_with('(')) {
                 r.add_soft(n);
             } else {
                 r.add_native(n);
+                r.say(true, n, place.words(&format!("Arugula #{n}")));
             }
-        } else if before.ends_with('(') || (spaced && CLOSING.contains(&last)) {
-            r.add_number(n);
+        } else if before.ends_with('(') {
+            r.add_number(n, body);
+            if !body {
+                r.say(false, n, place.words(&format!("(#{n})")));
+            }
+        } else if spaced && CLOSING.contains(&last) {
+            r.add_number(n, false);
+            let mut said = last.to_owned();
+            said[..1].make_ascii_uppercase();
+            r.say(false, n, place.words(&format!("{said} #{n}")));
+        } else if body && !before.ends_with(|c: char| c.is_alphanumeric() || "/_-&".contains(c)) {
+            r.add_number(n, true);
         }
     }
 }
@@ -264,20 +344,26 @@ fn soft_before(before: &str) -> bool {
 }
 
 /// A branch's segments that start with a number and a dash or the end:
-/// `feat/365-boards-model` names 365.
+/// `feat/365-boards-model` names 365, in passing when the text names it only
+/// softly (`part of Arugula #365`). After the title and body.
 fn segments(branch: &str, r: &mut Refs) {
     for seg in branch.split('/') {
         if let Some((n, rest)) = number(seg)
             && (rest.is_empty() || rest.starts_with('-'))
         {
-            r.add_number(n);
+            let soft = r.soft.contains(&n);
+            r.add_number(n, soft);
+            if !soft {
+                r.say(false, n, format!("the branch {branch}"));
+            }
         }
     }
 }
 
 /// `KEY-N` words: capitals and digits starting with a capital, a dash and
 /// digits, not part of a longer word. `soft_ok` is whether `part of` before
-/// one makes it soft (not in a branch).
+/// one makes it soft (not in a branch); a branch's key the text named already
+/// stays as the text named it.
 fn plane(text: &str, r: &mut Refs, soft_ok: bool) {
     let b = text.as_bytes();
     let mut i = 0;
@@ -292,6 +378,7 @@ fn plane(text: &str, r: &mut Refs, soft_ok: bool) {
             && b[key_end] == b'-'
             && let Some((n, rest)) = number(&text[key_end + 1..])
             && rest.chars().next().is_none_or(|c| !c.is_alphanumeric())
+            && (soft_ok || !r.plane.iter().any(|(k, m)| k == &text[i..key_end] && *m == n))
         {
             r.add_plane(&text[i..key_end], n, soft_ok && soft_before(&text[..i].to_lowercase()));
         }
@@ -326,6 +413,48 @@ mod tests {
         assert_eq!((soft.plane.len(), soft.closing_plane().collect::<Vec<_>>()), (3, vec![&("ARUGU".into(), 3)]));
         let both = references("Part of ARUGU-1", "", "Fixes ARUGU-1. ARUGU-2, refs ARUGU-2", None);
         assert_eq!((both.closing_plane().count(), both.soft_plane.len()), (2, 0));
+    }
+
+    /// What closes on merge (Arugula #743): `(#N)` in the title, `Closes #N`
+    /// and `Arugula #N`, each with its words. In the body `(#N)`, `(Arugula
+    /// #N)` and a bare `#N` only link; another repo's `owner/repo#N` is
+    /// nothing.
+    #[test]
+    fn only_the_title_s_parentheses_and_the_closing_words_close() {
+        let closing = |r: &Refs| (r.closing_numbers().collect::<Vec<_>>(), r.closing_native().collect::<Vec<_>>());
+        let titled = references("Wire it (#5)", "", "", Some(80));
+        assert_eq!(closing(&titled), (vec![5], vec![]));
+        assert_eq!(titled.words(false, 5), Some("\"(#5)\" in the title"));
+        let passing = references("Wire it", "", "Copied up to the platform (#5), see #6 and o/r#7.", Some(80));
+        assert_eq!((passing.numbers.clone(), closing(&passing)), (vec![5, 6], (vec![], vec![])));
+        let closes = references("Wire it", "", "Fixes: #5 and (#5). closes Arugula #6 (Arugula #7)", None);
+        assert_eq!(closing(&closes), (vec![5], vec![6]));
+        assert_eq!((closes.native.clone(), closes.soft.clone()), (vec![6, 7], vec![7]), "(Arugula #7) links");
+        assert_eq!(closes.words(false, 5), Some("\"Fixes #5\" in the body"));
+        assert_eq!(closes.words(true, 6), Some("\"Arugula #6\" in the body"));
+        assert_eq!(closes.words(true, 7), None);
+        let both = references("Arugula #8 (#9)", "", "(Arugula #8) (#9)", None);
+        assert_eq!(closing(&both), (vec![9], vec![8]), "named plainly in the title too");
+        assert!(references("Wire it", "", "Closes #80 (#80)", Some(80)).is_empty(), "never the PR itself");
+    }
+
+    /// A branch's number closes, unless the text says `part of` it (Arugula
+    /// #755): the branch is a guess, the text is what the author meant. The
+    /// same for a Plane key.
+    #[test]
+    fn the_text_s_part_of_wins_over_the_branch() {
+        let closing = |r: &Refs| (r.closing_numbers().collect::<Vec<_>>(), r.closing_native().collect::<Vec<_>>());
+        let branch = references("Header", "feat/5-x", "", None);
+        assert_eq!((closing(&branch), branch.words(false, 5)), ((vec![5], vec![]), Some("the branch feat/5-x")));
+        let part = references("Header", "feat/5-x", "Part of Arugula #5", None);
+        assert_eq!((part.numbers.clone(), closing(&part)), (vec![5], (vec![], vec![])), "linked, not closed");
+        let titled = references("Header, part of Arugula #5", "feat/5-x", "", None);
+        assert_eq!(closing(&titled), (vec![], vec![]));
+        let closes = references("Header", "feat/5-x", "Part of Arugula #5. Closes #5", None);
+        assert_eq!(closing(&closes), (vec![5], vec![]), "said plainly too");
+        let plane = references("Header", "feat/arugu-5-x", "part of ARUGU-5", None);
+        assert_eq!((plane.plane.len(), plane.closing_plane().count()), (1, 0));
+        assert_eq!(references("Header", "feat/arugu-5-x", "", None).closing_plane().count(), 1);
     }
 
     /// A native issue is named from any PR; a GitHub issue only from a PR of

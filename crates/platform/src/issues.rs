@@ -471,6 +471,7 @@ pub async fn change(
         labels: labels.as_ref().map(edit_of),
         assignees: p.assignees.as_ref().map(edit_of),
         by_pr: None,
+        by_words: None,
     };
     let old = issue;
     let (issue, events) = app.db.patch_issue(id, &patch, by, now_ms())?.ok_or_else(no_issue)?;
@@ -825,9 +826,10 @@ pub fn markdown(x: &wire::IssueExport) -> String {
                 },
                 "closed" => {
                     let why = d["reason"].as_str().unwrap_or("completed").replace('_', " ");
-                    match d["pr"].as_str() {
-                        Some(pr) => format!("closed it ({why}) with {pr}"),
-                        None => format!("closed it ({why})"),
+                    match (d["pr"].as_str(), d["by"].as_str()) {
+                        (Some(pr), Some(by)) => format!("closed it ({why}) with {pr}, by {by}"),
+                        (Some(pr), None) => format!("closed it ({why}) with {pr}"),
+                        _ => format!("closed it ({why})"),
                     }
                 }
                 "reopened" => "reopened it".to_owned(),

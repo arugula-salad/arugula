@@ -121,7 +121,7 @@ pub const MENTIONS_STEERING: &str = "Arugula delivers chat messages from your te
 /// instructions carry it (`arugulad-mcp`'s `instructions()`). Boards have no
 /// flag since they left Labs (native #191), so neither does this. `arugula
 /// hook` doesn't give it. The plugin's skill says the same in its voice.
-pub const BOARDS_STEERING: &str = "To run more than one ticket in a project, use a board: make one with board_write (with a goal) unless board_read lists a fitting one, add each ticket as a row, grouped by phase. Don't set statuses or add a row for a PR: a row's lane follows its work, and a PR naming the issue (Arugula #N, Closes #N, (#N)) attaches to its row and closes a native issue on merge (to link without closing, write `part of Arugula #N`). Attach an agent block, run or proof with board_write attach. Keep a row's note as its one-line status; at the goal, close the board with a note on what people can now do.";
+pub const BOARDS_STEERING: &str = "To run more than one ticket in a project, use a board: make one with board_write (with a goal) unless board_read lists a fitting one, add each ticket as a row, grouped by phase. Don't set statuses or add a row for a PR: a row's lane follows its work, and a PR naming the issue attaches to its row. On merge it closes a native issue it names as Closes #N or Arugula #N, or as (#N) in its title; any other #N in its body, or `part of Arugula #N`, links without closing. Attach an agent block, run or proof with board_write attach. Keep a row's note as its one-line status; at the goal, close the board with a note on what people can now do.";
 
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -88,6 +88,10 @@ runs (aru-122, aru-123). This makes them follow those, not a hand.
   so does the issue of a row a person or an agent attached the PR to as work.
   Nobody writes a keyword; `part of Arugula #N` (or `refs`, `see`) links
   without closing. A PR closed unmerged closes nothing, and nothing reopens.
+  Narrowed later (Arugula #743, #755): in the body only `Closes #N` and
+  `Arugula #N` close, and any other `#N` (`(#N)` in passing) links; `(#N)`
+  closes in the title; a branch's number links only when the text says
+  `part of` it.
 - **Migration in place:** PR, block, run and proof rows that reference an
   issue row become its attachments; the rest stay as rows. Zones whose title
   is a status fold into the lanes (below).

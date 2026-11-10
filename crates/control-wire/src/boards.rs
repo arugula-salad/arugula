@@ -1039,6 +1039,18 @@ pub struct Live {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub category: Option<Category>,
+    /// A closed native issue that a merged PR closed: the PR
+    /// (`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_with: Option<String>,
+    /// With `closed_with`, the words of the PR that closed it: `"(#12)" in
+    /// the title`, `"Closes #12" in the body`, `the branch feat/12-x`,
+    /// `attached to its board row as work`. Absent for a close from before
+    /// they were kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_by: Option<String>,
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -2185,6 +2197,12 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         if !marks.is_empty() {
             *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
+        if let Some(l) = &r.live
+            && let Some(pr) = &l.closed_with
+        {
+            let by = l.closed_by.as_deref().map(|b| format!(", by {b}")).unwrap_or_default();
+            *out += &format!("      {}\n", fit(&format!("closed with {pr}{by}"), TEXT_WIDTH - 6));
+        }
         if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
             let who = b.title.as_deref().unwrap_or("an agent");
             *out += &format!("      {}\n", fit(&format!("claimed by {who}"), TEXT_WIDTH - 6));
@@ -2238,7 +2256,8 @@ fn machine_label(l: &BoardLead) -> &str {
 /// of it. A Done row starts its note with `[proven by CI]`, `[proven]` or
 /// `[not proven yet]` (`[cancelled]` when its item was canceled), and a note row (no issue or PR) has no mark. Ids and
 /// revs aren't in it: they are in the [`BoardView`]. Under a row, its marks
-/// ([`marks_line`]). A board with groups is a `# Title  done/total` header
+/// ([`marks_line`]), and for an issue a merged PR closed, `closed with` the
+/// PR and the words that did it (Arugula #743). A board with groups is a `# Title  done/total` header
 /// for each group, and the lanes that hold its rows under it; rows with no
 /// group come last under `# No group`.
 ///
@@ -2536,6 +2555,8 @@ mod tests {
                 state_name: None,
                 url: None,
                 category: None,
+                closed_with: None,
+                closed_by: None,
             });
             r
         };
@@ -2660,6 +2681,8 @@ mod tests {
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         };
         let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Doing, "x");
         r.live = Some(live.clone());
@@ -2814,6 +2837,8 @@ Done: People can sign up.
                 state_name: None,
                 url: None,
                 category: None,
+                closed_with: None,
+                closed_by: None,
             });
             r
         };
@@ -2849,12 +2874,45 @@ Done: People can sign up.
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         });
         let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
         assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
         assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
         assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
         assert!(r.matches("@ana_di"), "a space in a name reads as _");
+    }
+
+    /// A Done row whose issue a merged PR closed says which PR and which
+    /// words, under the row (Arugula #743); one closed by hand says nothing.
+    #[test]
+    fn a_row_says_which_pr_closed_its_issue() {
+        let done = |with: Option<&str>, by: Option<&str>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Done, "Fix login");
+            r.live = Some(Live {
+                state: LiveState::Closed,
+                kind: "native".into(),
+                repo: None,
+                number: 4,
+                title: "Fix login".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+                closed_with: with.map(str::to_owned),
+                closed_by: by.map(str::to_owned),
+            });
+            render(&view(lanes(vec![(Lane::Done, vec![r])])))
+        };
+        let line = |text: String, want: &str| text.lines().any(|l| l == want);
+        let text = done(Some("acme/site#70"), Some("\"(#4)\" in the title"));
+        assert!(line(text.clone(), "      closed with acme/site#70, by \"(#4)\" in the title"), "{text}");
+        assert!(line(done(Some("acme/site#70"), None), "      closed with acme/site#70"));
+        assert!(!done(None, None).contains("closed with"));
     }
 
     /// A row says its item's title, then its note unless the note repeats the
@@ -2874,6 +2932,8 @@ Done: People can sign up.
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         };
         let titled = |note: &str, title: &str, labels: Vec<String>| {
             let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
@@ -3130,6 +3190,8 @@ Done: People can sign up.
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
@@ -3169,6 +3231,8 @@ Done: People can sign up.
                 state_name: None,
                 url: None,
                 category: None,
+                closed_with: None,
+                closed_by: None,
             });
             r
         };

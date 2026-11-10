@@ -120,6 +120,14 @@ export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): {
   };
 }
 
+/** For an issue a merged PR closed, which PR and by which words, so a wrong
+ * close is easy to spot (Arugula #743): `closed with acme/site#70, by "(#4)"
+ * in the title`. Null otherwise. */
+export function closedWithLine(live: Pick<BoardLive, "closed_with" | "closed_by"> | null | undefined): string | null {
+  if (!live?.closed_with) return null;
+  return `closed with ${live.closed_with}${live.closed_by ? `, by ${live.closed_by}` : ""}`;
+}
+
 /** How long ago a stall began, to the minute, as the wire's `ago` says it: `42m`, `3h5m`, `2d` (#404). */
 export function stalledFor(since: number, now: number): string {
   const m = Math.max(0, Math.floor((now - since) / 60_000));

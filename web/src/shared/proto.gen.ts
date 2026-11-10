@@ -569,7 +569,19 @@ url?: string | null,
 /**
  * An issue's status category; a PR and a run have none.
  */
-category?: BoardCategory, };
+category?: BoardCategory, 
+/**
+ * A closed native issue that a merged PR closed: the PR
+ * (`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).
+ */
+closed_with?: string, 
+/**
+ * With `closed_with`, the words of the PR that closed it: `"(#12)" in
+ * the title`, `"Closes #12" in the body`, `the branch feat/12-x`,
+ * `attached to its board row as work`. Absent for a close from before
+ * they were kept.
+ */
+closed_by?: string, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control

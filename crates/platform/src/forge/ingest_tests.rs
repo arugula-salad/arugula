@@ -722,7 +722,8 @@ async fn the_poller_closes_the_issue_a_merged_pr_names() {
     let events = app.db.issue_events(&named.id).unwrap();
     let closed: Vec<_> = events.iter().filter(|e| e.kind.as_str() == "closed").collect();
     assert_eq!(closed.len(), 1, "{events:?}");
-    assert_eq!(closed[0].detail, json!({ "reason": "completed", "pr": "acme/app#5" }));
+    let by = format!("\"Arugula #{}\" in the title", named.number);
+    assert_eq!(closed[0].detail, json!({ "reason": "completed", "pr": "acme/app#5", "by": by }));
 }
 
 /// The same, with the project's content off (#467): the mirror keeps no
