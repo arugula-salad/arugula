@@ -85,8 +85,10 @@ fly status -a illogical-control                     # started, 1/1 checks
 
 Rehearsed on a copy of the hub (2026-11-10, the production build on a
 throwaway app): shared-cpu-2x with 2 GB, answering again within seconds,
-its database untouched. `performance-1x` (2 GB) is the step after that. To let more sockets in, raise
-the relay's ceiling with the machine in the same update. Add
+its database untouched. `performance-1x` (2 GB) is the step after that.
+
+To let more sockets in, raise the relay's ceiling with the machine in the
+same update. Add
 `--env ARUGULA_RELAY_MAX_TOTAL=9000` and keep it below Fly's limits in
 `fly.toml` (6,000 soft, 8,000 hard: raise those with a `fly deploy` of the
 hub's `fly.toml`). Each idle relay socket costs about 28 KB, so it's open
@@ -159,7 +161,7 @@ M=$(fly machine list -a illogical-control --json | jq -r '.[] | select(.config.m
 PREV=$(fly machine list -a illogical-control --json | jq -r '.[] | select(.id == "'"$M"'") | .config.metadata["chant-release-previous-digest"]')
 image_back illogical-control "$M" "$PREV"
 fly status -a illogical-control                     # 1/1 checks passing
-curl -s https://control.arugula.io/control.json | jq .version
+fly machine list -a illogical-control --json | jq -r '.[].config.image'   # the previous digest
 ```
 
 The platform's two machines, one at a time, each passing its check before
@@ -186,9 +188,7 @@ illogical-control --image` lists `fly deploy`'s tags (`vX.Y.Z`); a chant
 release pushes `server-<run>`.
 
 Releases deploy the platform first and the hub second. Roll back in the
-reverse order, the hub first, unless only one of them is broken. Any older
-image works the same way: `fly releases -a illogical-control --image` lists
-the tags (`registry.fly.io/illogical-control:vX.Y.Z`).
+reverse order, the hub first, unless only one of them is broken.
 
 **An older build refuses a database it can't read.** If the release ran a
 migration that isn't additive, the old image won't start (`fly logs` says
@@ -229,8 +229,10 @@ fly status -a illogical-control                              # the clone started
 Not rehearsed end to end from R2 (2026-11-10): that needs the bucket's keys
 from Infisical. Litestream restoring to an empty disk was proven on
 2026-10-04 (control-ops.md, "Restoring"), and a restore plan from R2 for the
-live hub came back complete. Check that the newest account or machine is
-there before declaring it over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
+live hub came back complete.
+
+Check that the newest account or machine is there before declaring it
+over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
 volume until the restore is proven, then `fly volumes destroy <old id>`.
 Before the next release, put the new Machine's name in
 `ops/src/fly/control/control.fly.ts` (the release finds the Machine by name
@@ -262,6 +264,7 @@ only the latest. Recover the rows you need from the file by hand, or
 restore it on another machine with the bucket's keys
 ([control-ops.md, "Restoring"](control-ops.md#restoring)) and bring the
 file onto a fresh volume. `-dry-run` shows any restore's plan first.
+Arugula #853 is the follow-up that would make it one step.
 
 ### The platform
 
