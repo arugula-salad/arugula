@@ -169,8 +169,8 @@ fn approval_of(db: &Db, deploy: &str) -> Result<Option<StoredApproval>> {
 /// Whether the approval still holds at apply time (DK4): not past its
 /// `expires`, the approver an owner of the project now, and its passkey
 /// still in the account's published log, not removed since: its assertion
-/// checked again against the log at `now`. A v1 (from before DK4) is
-/// checked by its passkey too, never its device. `Err(None)`: the hub
+/// checked again against the log at `now`. A v1 (from before DK4) holds
+/// no more: every one has expired since (DK8). `Err(None)`: the hub
 /// didn't answer, so ask again later.
 async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject, now: u64) -> Result<(), Option<String>> {
     let why = |e: arugula_control_common::ApiError| {
@@ -178,6 +178,9 @@ async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject, now: u64)
     };
     if now >= a.expires {
         return Err(Some("its approval expired".into()));
+    }
+    if a.v() == arugula_e2e::deploy::V1 {
+        return Err(Some("it's from before passkey-only approvals: approve it again".into()));
     }
     if super::role(app, &a.account, p, true).await.map_err(why)? != Some(TeamRole::Owner) {
         return Err(Some("the approver isn't an owner of the project now".into()));
@@ -467,12 +470,10 @@ fn approve_run(
     a: &StoredApproval,
     now: u64,
 ) -> Result<std::result::Result<(), crate::db::runs::Refused>> {
-    // Who approved it, for the run's `approved` event: v1's device, or the
-    // passkey of a v2 (DK4) or a v3 (#1985, chant's statement).
-    let by = match &a.passkey {
-        Some(pk) if a.v() != arugula_e2e::deploy::V1 => format!("passkey:{}", pk.id),
-        _ => a.device.clone(),
-    };
+    // Who approved it, for the run's `approved` event: the passkey of a v2
+    // (DK4) or a v3 (#1985, chant's statement); `recheck` takes no v1
+    // (DK8).
+    let by = a.passkey.as_ref().map(|pk| format!("passkey:{}", pk.id)).unwrap_or_default();
     let approval = deploy_approval(run, &a.id, &by);
     Ok(db.move_run(&run.id, &Move::Approved { from: RunState::Pending, at: now, approval: &approval })?.map(|_| ()))
 }

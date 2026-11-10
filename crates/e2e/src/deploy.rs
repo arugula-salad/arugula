@@ -41,10 +41,10 @@
 //! expires <ms: by when the apply must start>
 //! ```
 //!
-//! v1 (M218), which the platform no longer takes but still reads and
-//! checks, named the signing device too (`by <device id>`, its last line)
+//! v1 (M218), which the platform no longer takes or applies but still
+//! reads, named the signing device too (`by <device id>`, its last line)
 //! and carried that device's Ed25519 signature beside the passkey's
-//! assertion.
+//! assertion. No machine applies one (DK8).
 //!
 //! **v3** (#1985) approves a chant→Fly deploy: its bytes are chant's gate
 //! statement for the gate the deploy's plan stopped at, with a binding line
@@ -484,7 +484,7 @@ pub struct Pinned<'a> {
 /// from what it pinned, rather than take the platform's word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyRefusal {
-    /// The approval isn't well formed.
+    /// The approval isn't a well-formed v2 or v3.
     Form,
     /// It's another deploy's.
     Deploy,
@@ -545,9 +545,8 @@ impl ApplyRefusal {
 /// What a machine checks before it applies `deploy`'s operation `op` (M219;
 /// DK4, aru-126), against what it pinned (`pinned`) and at `now` by its own
 /// clock:
-/// - the approval is well formed (v2, or a v1 made before DK4), `once`,
-///   for this deploy, over exactly this operation, and not past its
-///   `expires`;
+/// - the approval is a well-formed v2 or v3, `once`, for this deploy, over
+///   exactly this operation, and not past its `expires`;
 /// - its account is an owner of the project, as the machine pinned them;
 /// - its passkey assertion (`passkey`) checks out against the account's
 ///   passkey log as the machine pinned it (from control, at enrollment or
@@ -563,10 +562,9 @@ impl ApplyRefusal {
 ///   approval is recorded before its deploy's box is made and enrolls.
 ///
 /// No device signs it, and the devices that certified one play no part
-/// (aru-126). A v1 approval (a device's signature with a passkey's
-/// assertion, made before DK4, at most 7 days old) is checked by its
-/// passkey alone, as a v2 is: its device's signature adds nothing a
-/// passkey doesn't. Against whoever runs the platform this is
+/// (aru-126). A v1 (a device's signature with a passkey's assertion, from
+/// before DK4) is refused as not well formed: every one has expired (DK8).
+/// Against whoever runs the platform this is
 /// tamper-evident, not tamper-proof: control enrolled this machine and
 /// sent what it pinned.
 pub fn check_apply(
@@ -578,7 +576,7 @@ pub fn check_apply(
     carried: Option<&crate::passkey::Log>,
     now: u64,
 ) -> Result<(), ApplyRefusal> {
-    if !approval.well_formed() {
+    if approval.v == V1 || !approval.well_formed() {
         return Err(ApplyRefusal::Form);
     }
     if approval.deploy != deploy {
@@ -981,15 +979,10 @@ mod tests {
         assert_eq!(check(&team, &logs, &origins, &later, pk(&k2, &v3), None), no(Refusal::Challenge), "expiry");
         let past = Approval::v3("dep_1", &op(), "a", now, "2026-11-02T10:05:00.000Z", &chant::tests::gate());
         assert_eq!(check(&team, &logs, &origins, &past, pk(&k2, &past), None), Err(ApplyRefusal::Expired));
-        // A v1 from before DK4 applies by its passkey; its device isn't
-        // looked at.
+        // A v1 from before DK4 applies no more (DK8), even with its own
+        // passkey's assertion over it.
         let v1 = Approval::v1(&cli, "dep_1", &op(), "a", Decision::Once, now + 1);
-        assert_eq!(check(&team, &logs, &origins, &v1, pk(&k2, &v1), None), Ok(()));
-        assert_eq!(
-            check(&team, &logs, &origins, &v1, pk(&k2, &good), None),
-            no(Refusal::Challenge),
-            "a v2's assertion"
-        );
+        assert_eq!(check(&team, &logs, &origins, &v1, pk(&k2, &v1), None), Err(ApplyRefusal::Form));
         assert_eq!(
             check(&team, &logs, &origins, &good, pk(&k2, &v1), None),
             no(Refusal::Challenge),

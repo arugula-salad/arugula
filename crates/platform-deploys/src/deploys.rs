@@ -48,10 +48,10 @@
 //!
 //! **Approvals from before DK4 (v1)** named the device that signed them too,
 //! with its signature beside the passkey's assertion. They still read and
-//! show, and their events keep the log's chain; a v1 recorded before the
-//! switch still applies within its life (7 days at most), by its passkey.
-//! New ones are v2 only: a page that sends a device signature is told to
-//! reload ([`OLD_APPROVAL`]).
+//! show, and their events keep the log's chain, but none applies now
+//! (DK8): the last expired 7 days after the switch. New ones are v2 only:
+//! a page that sends a device signature is told to reload
+//! ([`OLD_APPROVAL`]).
 //!
 //! **Applied by M219** (`deploys::apply`): an approval enqueues the
 //! deploy's job, which checks the approval's `expires`, the owner's role
