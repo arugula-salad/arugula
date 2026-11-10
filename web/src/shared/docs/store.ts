@@ -69,7 +69,7 @@ export const projectDocs = {
     titles.set(id, v.doc.title);
     return view(v);
   },
-  /** The team Docs made from a copy of a machine's Doc (its owner's). */
+  /** The team Docs made from one of its owner's Docs, a machine's copy or one written here. */
   copies: (project: string, id: string) => call<ProjectDocCopies>("GET", `${docPath(project, id)}/copies`),
   /** Share with…: a team Doc in `to` from the copy as it is now. */
   share: async (project: string, id: string, to: string): Promise<ProjectDocView> =>

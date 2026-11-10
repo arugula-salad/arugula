@@ -39,26 +39,21 @@ test("a machine's copy is made in the team; a 409 with the team Doc's id is alre
   assert.ok(calls.every((c) => !c.key.startsWith("DELETE") && !c.key.startsWith("PUT")), "the original is left alone");
 });
 
-test("a Doc written on the platform is made again from its sections, and says its pictures stay", async () => {
-  const sections = [{ id: "s1", heading: "Goals", intent: "what", body: "Ship **it**.", rev: 1 }, { id: "s2", heading: "Later", intent: "more", body: null, rev: 0 }];
+test("a Doc written on the platform goes the same way: made, then there, from one route and nothing else", async () => {
+  let n = 0;
   const calls = platform({
-    "GET /api/projects/prj_me/docs/p": json(200, { doc: { id: "p" }, sections, assets: [{ name: "x.png" }] }),
-    "POST /api/projects/prj_team/docs": json(200, { doc: { id: "t_p" } }),
-    "GET /api/projects/prj_me/docs/q": json(200, { doc: { id: "q" }, sections, assets: [] }),
+    "POST /api/projects/prj_me/docs/p/copies": () => (n++ ? json(409, { error: "already", id: "t_p" }) : json(200, { doc: { id: "t_p" } })),
   });
-  const out = await moveDocsToTeam("prj_me", "prj_team", [doc("p", "Plan")]);
-  assert.deepEqual(out, [{ id: "p", title: "Plan", outcome: "made", teamDoc: "t_p", noPictures: true }]);
-  assert.deepEqual(calls[1].body, {
-    title: "Plan",
-    sections: [{ heading: "Goals", intent: "what", markdown: "Ship **it**." }, { heading: "Later", intent: "more", markdown: null }],
-  });
-  const none = await moveDocsToTeam("prj_me", "prj_team", [doc("q", "Quiet")]);
-  assert.equal("noPictures" in none[0], false, "no pictures, nothing to say");
+  const first = await moveDocsToTeam("prj_me", "prj_team", [doc("p", "Plan")]);
+  const again = await moveDocsToTeam("prj_me", "prj_team", [doc("p", "Plan")]);
+  assert.deepEqual(first, [{ id: "p", title: "Plan", outcome: "made", teamDoc: "t_p" }]);
+  assert.deepEqual(again, [{ id: "p", title: "Plan", outcome: "there", teamDoc: "t_p" }]);
+  assert.deepEqual(calls.map((c) => c.key), Array(2).fill("POST /api/projects/prj_me/docs/p/copies"), "no read of the sections, no POST …/docs");
 });
 
 test("a Doc that can't be read, or a platform that can't be reached, refuses that Doc and the rest still go", async () => {
   platform({
-    "GET /api/projects/prj_me/docs/gone": json(404, { error: "no such Doc" }),
+    "POST /api/projects/prj_me/docs/gone/copies": json(404, { error: "no such Doc" }),
     "POST /api/projects/prj_me/docs/m/copies": () => {
       throw new Error("network down");
     },

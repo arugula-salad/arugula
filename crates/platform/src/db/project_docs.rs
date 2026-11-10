@@ -221,7 +221,8 @@ fn number(id: &str) -> u64 {
     id.strip_prefix('s').and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
-/// A machine Doc's copy as read to make or refresh a snapshot.
+/// A Doc as read to make or refresh a snapshot: a machine's copy, or one
+/// written here.
 struct CopyRead {
     project: String,
     title: String,
@@ -231,17 +232,17 @@ struct CopyRead {
     assets: Vec<(String, String, Vec<u8>)>,
 }
 
-/// The copy `src` with its sections and pictures, its row held; none for
-/// a Doc that isn't there or isn't a copy.
+/// The Doc `src` with its sections and pictures, its row held; none for
+/// a Doc that isn't there.
 fn read_copy(c: &impl Sql, src: &str) -> Result<Option<CopyRead>> {
-    let row: Option<(String, String, u64, Option<String>)> = c
+    let row: Option<(String, String, u64)> = c
         .query_row(
-            &format!("SELECT project_id, title, rev, machine FROM project_docs WHERE id = ?1{}", c.for_update()),
+            &format!("SELECT project_id, title, rev FROM project_docs WHERE id = ?1{}", c.for_update()),
             params![src],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
-    let Some((project, title, rev, Some(_))) = row else {
+    let Some((project, title, rev)) = row else {
         return Ok(None);
     };
     let sections = sections_of(c, src)?;

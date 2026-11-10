@@ -54,15 +54,16 @@ pub const PROJECT_DOCS: &str = "/api/projects/{project}/docs";
 /// it goes (owners and editors; a copy too).
 pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
 
-/// A copy's team Docs. `POST` [`ShareCopy`]: Share with… makes one in the
+/// A Doc's team Docs. `POST` [`ShareCopy`]: Share with… makes one in the
 /// project `to`, answered [`DocView`] (409 [`Shared`] when there is one
 /// already); `GET`: the team Docs made from it, [`DocCopies`]. Only the
-/// copy's owner, for a copy in their personal project.
+/// Doc's owner, for a Doc in their personal project, a machine's copy or
+/// one written here.
 pub const PROJECT_DOC_COPIES: &str = "/api/projects/{project}/docs/{id}/copies";
 /// `PUT` [`UpdateCopy`]: Update copy, the team Doc in project `to` made
-/// from this copy takes the copy's title, sections and pictures as they are
-/// now, answered [`DocCopy`]; 409 [`Edited`] when the team edited it since
-/// and `replace` isn't set. Only the copy's owner, who still writes in `to`.
+/// from this Doc takes its title, sections and pictures as they are now,
+/// answered [`DocCopy`]; 409 [`Edited`] when the team edited it since and
+/// `replace` isn't set. Only the Doc's owner, who still writes in `to`.
 pub const PROJECT_DOC_COPY: &str = "/api/projects/{project}/docs/{id}/copies/{to}";
 
 /// `GET`: one of a Doc's pictures, the bytes (any member).
@@ -120,22 +121,23 @@ pub struct Doc {
     /// here, or once the machine left. Older pages don't read it.
     #[serde(default)]
     pub machine_name: Option<String>,
-    /// For a team Doc made from a copy (Share with…): where from. Null for
-    /// any other Doc, and from an older platform.
+    /// For a team Doc made from a Doc of its owner's (Share with…): where
+    /// from. Null for any other Doc, and from an older platform.
     #[serde(default)]
     pub made_from: Option<MadeFrom>,
 }
 
-/// The copy a team Doc was made from.
+/// The Doc a team Doc was made from: a machine's copy, or one written here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocMadeFrom"))]
 pub struct MadeFrom {
-    /// The copy's project (its owner's personal one) and its id.
+    /// The source Doc's project (its owner's personal one) and its id.
     pub project: String,
     pub id: String,
-    /// The name of the machine the copy is from, when control knows it. Only
-    /// what the platform could tell; the copy itself is its owner's to read.
+    /// The name of the machine the source is a copy from, when control knows
+    /// it; null for a source written here. Only what the platform could
+    /// tell; the source itself is its owner's to read.
     #[serde(default)]
     pub machine_name: Option<String>,
 }
@@ -255,7 +257,7 @@ pub struct ShareCopy {
     pub to: String,
 }
 
-/// The 409 to a [`ShareCopy`] when a team Doc was made from the copy in that
+/// The 409 to a [`ShareCopy`] when a team Doc was made from the Doc in that
 /// project already.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -266,7 +268,7 @@ pub struct Shared {
     pub id: String,
 }
 
-/// A team Doc made from a copy, as its owner sees it.
+/// A team Doc made from a Doc of its owner's, as its owner sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocCopy"))]
@@ -279,13 +281,13 @@ pub struct DocCopy {
     /// When it was made, and when it last changed (ms since the epoch).
     pub made: u64,
     pub updated: u64,
-    /// The copy changed since: its rev is above the one recorded.
+    /// The source changed since: its rev is above the one recorded.
     pub stale: bool,
     /// The team changed it since: its rev is above the one recorded.
     pub edited: bool,
 }
 
-/// `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a copy, earliest
+/// `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
 /// first, in the projects its owner still reads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

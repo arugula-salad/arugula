@@ -314,11 +314,85 @@ async fn a_teammate_cannot_snapshot_or_update_someone_elses_copy() {
     }
     let (_, d) = call(&base, "b", "GET", &path(&v, &team.id), None).await;
     assert_eq!(d["doc"]["rev"], 1, "nothing was changed: {d}");
-    // And a Doc that isn't a copy at all isn't shared.
+    // And a Doc written in a team's project isn't shared from there, as
+    // it isn't anyone's own: 403 though a writes it.
     let (_, plain) = make(&base, "a", &t, json!({ "title": "plain", "sections": [] })).await;
     let id = plain["doc"]["id"].as_str().unwrap();
-    let (st, _) = call(&base, "a", "POST", &copies(&t, id), Some(json!({ "to": v }))).await;
-    assert_eq!(st, 404);
+    for who in ["a", "b"] {
+        let (st, r) = call(&base, who, "POST", &copies(&t, id), Some(json!({ "to": v }))).await;
+        assert_eq!(st, 403, "{who}: {r}");
+        let (st, r) = call(&base, who, "GET", &copies(&t, id), None).await;
+        assert_eq!(st, 403, "{who}: {r}");
+    }
+}
+
+/// A Doc written on the platform, in the person's own project, is shared
+/// like a machine's copy (Arugula #821): the team Doc has its sections and
+/// pictures, a second share is 409 with the same Doc, and the source is
+/// editable, unlike a copy: its edit makes the team Doc stale, the team's
+/// edit makes it edited and never reaches the source, and Update copy
+/// brings the source's edit once the team's is replaced.
+#[tokio::test]
+async fn a_doc_written_on_the_platform_is_shared_once_and_updated() {
+    let (_hub, app, base, t, _u) = seeded().await;
+    let pa = personal(&app, "a").await;
+    let outline = json!({ "title": "Notes", "sections": [
+        { "heading": "Goals", "markdown": "Ship it." },
+        { "heading": "Risks", "intent": "what could go wrong" },
+    ] });
+    let (st, mine) = make(&base, "a", &pa, outline).await;
+    assert_eq!(st, 200, "{mine}");
+    let src = mine["doc"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(mine["doc"]["machine"], Value::Null);
+    app.db.put_project_doc_asset(&src, "chart.png", "image/png", PNG, 11).unwrap().unwrap();
+
+    let (st, v) = call(&base, "a", "POST", &copies(&pa, &src), Some(json!({ "to": t }))).await;
+    assert_eq!(st, 200, "{v}");
+    let team = v["doc"]["id"].as_str().unwrap().to_owned();
+    assert_eq!((&v["doc"]["project"], &v["doc"]["machine"], &v["writer"]), (&json!(t), &Value::Null, &json!(true)));
+    assert_eq!((&v["doc"]["made_from"]["project"], &v["doc"]["made_from"]["id"]), (&json!(pa), &json!(src)));
+    assert_eq!(v["doc"]["made_from"]["machine_name"], Value::Null);
+    assert_eq!(bodies(&v), [json!("Ship it."), Value::Null]);
+    assert_eq!(v["assets"][0]["name"], "chart.png", "the picture came: {v}");
+
+    // Again: 409 with the team Doc, and the team has the one.
+    let (st, v) = call(&base, "a", "POST", &copies(&pa, &src), Some(json!({ "to": t }))).await;
+    assert_eq!((st, &v["id"]), (409, &json!(team)), "{v}");
+    let (_, l) = call(&base, "a", "GET", &format!("/api/projects/{t}/docs"), None).await;
+    assert_eq!(l["docs"].as_array().unwrap().len(), 1, "{l}");
+    let (_, l) = call(&base, "a", "GET", &copies(&pa, &src), None).await;
+    let c = &l["copies"][0];
+    assert_eq!((l["copies"].as_array().unwrap().len(), &c["stale"], &c["edited"]), (1, &json!(false), &json!(false)));
+
+    // The owner edits the Mine Doc: the team Doc is stale, not edited.
+    let w = json!({ "section": "s1", "markdown": "Ship it, twice." });
+    assert_eq!(put(&base, "a", &pa, &src, w).await.0, 200);
+    let (_, l) = call(&base, "a", "GET", &copies(&pa, &src), None).await;
+    assert_eq!((&l["copies"][0]["stale"], &l["copies"][0]["edited"]), (&json!(true), &json!(false)), "{l}");
+
+    // The team edits theirs: edited, and Mine is as it was.
+    let (_, before) = call(&base, "a", "GET", &path(&pa, &src), None).await;
+    assert_eq!(put(&base, "b", &t, &team, json!({ "section": "s2", "markdown": "Ours." })).await.0, 200);
+    let (_, after) = call(&base, "a", "GET", &path(&pa, &src), None).await;
+    assert_eq!(after, before, "editing the team's Doc leaves Mine's alone");
+    let (_, l) = call(&base, "a", "GET", &copies(&pa, &src), None).await;
+    assert_eq!((&l["copies"][0]["stale"], &l["copies"][0]["edited"]), (&json!(true), &json!(true)), "{l}");
+
+    // Update asks first, then replaces with Mine's current sections.
+    let up = format!("{}/{t}", copies(&pa, &src));
+    let (st, v) = call(&base, "a", "PUT", &up, Some(json!({}))).await;
+    assert_eq!((st, &v["edited"]), (409, &json!(true)), "{v}");
+    let (st, c) = call(&base, "a", "PUT", &up, Some(json!({ "replace": true }))).await;
+    assert_eq!((st, &c["stale"], &c["edited"]), (200, &json!(false), &json!(false)), "{c}");
+    let (_, v) = call(&base, "b", "GET", &path(&t, &team), None).await;
+    assert_eq!(bodies(&v), [json!("Ship it, twice."), Value::Null]);
+    assert_eq!(v["assets"].as_array().unwrap().len(), 1);
+
+    // A teammate can't reach it: another person's Mine Doc isn't theirs.
+    for (m, p) in [("POST", copies(&pa, &src)), ("GET", copies(&pa, &src)), ("PUT", up.clone())] {
+        let (st, r) = call(&base, "b", m, &p, Some(json!({ "to": t }))).await;
+        assert_eq!(st, 404, "{m}: {r}");
+    }
 }
 
 /// Update copy needs the right to write in the team's project still: the
