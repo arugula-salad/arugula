@@ -83,7 +83,9 @@ fly machine update "$M" -a illogical-control --vm-size shared-cpu-2x --vm-memory
 fly status -a illogical-control                     # started, 1/1 checks
 ```
 
-`performance-1x` (2 GB) is the step after that. To let more sockets in, raise
+Rehearsed on a copy of the hub (2026-11-10, the production build on a
+throwaway app): shared-cpu-2x with 2 GB, answering again within seconds,
+its database untouched. `performance-1x` (2 GB) is the step after that. To let more sockets in, raise
 the relay's ceiling with the machine in the same update. Add
 `--env ARUGULA_RELAY_MAX_TOTAL=9000` and keep it below Fly's limits in
 `fly.toml` (6,000 soft, 8,000 hard: raise those with a `fly deploy` of the
@@ -173,8 +175,10 @@ for M in $(fly machine list -a arugula-platform --json | jq -r '.[] | select(.co
 done
 ```
 
-Rehearsed on a staging copy of the platform (2026-11-10): a newer image, then
-`image_back` to the one before by digest, passing its check within 5 s.
+Rehearsed (2026-11-10): the hub's commands above, word for word, on a copy
+of the hub running the current production build. They took it back to the
+release before, by its digest, in 5 s, database intact. The same on a staging
+copy of the platform.
 
 **By tag** (any older release): `fly machine update "$M" -a <app> --image
 registry.fly.io/<app>:<tag> -y` does take a tag. `fly releases -a
@@ -222,15 +226,21 @@ fly logs -a illogical-control --no-tail | grep -E 'restoring the latest backup|d
 fly status -a illogical-control                              # the clone started, 1/1 checks
 ```
 
-Check that the newest account or machine is there before declaring it
-over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
+Not rehearsed end to end from R2 (2026-11-10): that needs the bucket's keys
+from Infisical. Litestream restoring to an empty disk was proven on
+2026-10-04 (control-ops.md, "Restoring"), and a restore plan from R2 for the
+live hub came back complete. Check that the newest account or machine is
+there before declaring it over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
 volume until the restore is proven, then `fly volumes destroy <old id>`.
 Before the next release, put the new Machine's name in
 `ops/src/fly/control/control.fly.ts` (the release finds the Machine by name
 and the volume by its name, `control_data`, so only one may be left).
 
 **From a Fly volume snapshot** (R2 unreachable). The same, with the clone's
-volume made from the snapshot, which is up to a day old:
+volume made from the snapshot, which is up to a day old. Rehearsed on a copy
+of the hub (2026-11-10): back in 10 s with the same database (its push key,
+which lives in the database, unchanged). The clone gets a new name and a new
+`control_data` volume:
 
 ```
 fly volumes snapshots list vol_r68lmz2doox9myd4 -a illogical-control
