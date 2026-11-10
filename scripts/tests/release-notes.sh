@@ -192,6 +192,34 @@ GH
 mkdir "$tmp/bin"
 mv "$tmp/gh" "$tmp/bin/gh"
 chmod +x "$tmp/release" "$tmp/bin/gh"
+# A hand cut's file reaches main before its tag: its headlines stay out of a
+# train's notes, and only a file newer than the tag counts.
+hand() { # VERSION IDS (a JSON array of strings)
+  mkdir -p docs/releases
+  # shellcheck disable=SC2016 # node's script, in single quotes on purpose
+  node -e 'const [v, ids] = process.argv.slice(1); console.log("# Arugula " + v + "\n\n```whats-new\n" + JSON.stringify(JSON.parse(ids).map((id) => ({ id, title: id, line: id }))) + "\n```")' "$1" "$2" >"docs/releases/$1.md"
+}
+hand 1.3.0 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+lacks "an untagged hand cut's headline stays out" "First thing"
+has "the rest still go" "Small fix"
+code=0
+gen v1.2.3 "$to" 1.2.4 >/dev/null 2>"$tmp/err" || code=$?
+if grep -qF "first-thing is in 1.3.0's notes" "$tmp/err"; then ok "says what it left out"; else bad "said: $(cat "$tmp/err")"; fi
+hand 1.3.0 '["first-thing", "small-fix"]'
+code=0
+gen v1.2.3 "$to" 1.2.4 >/dev/null 2>&1 || code=$?
+if [ "$code" = 3 ]; then ok "the hand cut has them all: nothing to say"; else bad "exit $code, wanted 3"; fi
+rm docs/releases/1.3.0.md
+hand 1.2.0 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+has "an older release's file leaves notes alone" "First thing"
+rm docs/releases/1.2.0.md
+hand 1.2.4 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+has "its own version's file leaves notes alone" "First thing"
+rm docs/releases/1.2.4.md
+
 git push -q origin main --tags
 export FAKE=$tmp PATH=$tmp/bin:$PATH ARUGULA_TRAIN_RELEASE=$tmp/release
 train() { # WHAT WANT_EXIT WANT_BUMPS SAYS
