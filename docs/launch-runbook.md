@@ -285,9 +285,10 @@ echo "select count(*) from information_schema.tables where table_schema='public'
   fly mpg connect <new cluster id> -d fly-db
 ```
 
-Put the new cluster's URL in `ARUGULA_PLATFORM_DATABASE_URL`
-(`fly secrets set -a arugula-platform --stage …`, then a deploy), unpause, and
-turn maintenance off. Without Fly's backups, use the nightly dump
+Put the new cluster's connection string (Fly's dashboard, *Managed Postgres →
+Connect*) in Infisical and in `ARUGULA_PLATFORM_DATABASE_URL`
+(`fly secrets set -a arugula-platform ARUGULA_PLATFORM_DATABASE_URL=…`, which
+restarts the machines one at a time), unpause, and turn maintenance off. Without Fly's backups, use the nightly dump
 ([control-ops.md, "Restoring the platform's Postgres"](control-ops.md#restoring-the-platforms-postgres)).
 
 ## Switches
