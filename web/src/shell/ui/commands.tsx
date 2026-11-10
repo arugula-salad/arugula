@@ -11,9 +11,10 @@ import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
-import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, openPeople, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
+import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
+import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
@@ -28,6 +29,7 @@ import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { keyHint } from "./keys";
+import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
@@ -37,6 +39,7 @@ import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from 
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
+import { type Tone } from "../../shared/ui/state-chip";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -114,11 +117,10 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           { label: "Pin a chat room…", run: () => void pinChatRoom(client, { from: id }) } as MenuItem,
         ]
       : []),
-    // Who's around in a team, live, on arugula.stream (the block says so
-    // when control has no arugula.stream app, or chat is off).
-    ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it.
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A Doc of this machine's, beside it (#703).
+    ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
@@ -231,7 +233,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
       : []),
     ...machineItems(client, tab),
     "separator",
-    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => client.intent({ op: "close_tab", tab: tab.id }) },
+    { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => confirmCloseTab(client, tab.id) },
   ];
 }
 
@@ -271,7 +273,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     "separator",
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
-    // VMs and sandboxes need wisp (#180).
+    // VMs and sandboxes need a sandbox provider (#180).
     ...(client.has("vms")
       ? [
           { id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
@@ -520,6 +522,11 @@ function renameItems(client: Client): MenuItem[] {
 /** "idle" when nothing in the tab runs on its machine any more. */
 export function machineState(client: Client, m: Machine): string {
   return m.state === "running" && client.panesOn(m.id).length === 0 ? "idle" : m.state;
+}
+
+/** A machine state's tone on a tag: starting warns, gone is danger, idle is quiet. */
+export function machineTone(state: string): Tone {
+  return state === "starting" ? "warn" : state === "gone" ? "danger" : state === "idle" ? "muted" : "info";
 }
 
 /** The tab's machine: how it is, a new pane on it, reset. */

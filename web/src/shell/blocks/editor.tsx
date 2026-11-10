@@ -9,9 +9,12 @@ import type { Client } from "../client";
 import { editorTheme } from "../editor-theme";
 import type { OpenRequest, PaneId } from "../../shared/proto";
 import { BlockFrame, RoutePill, throughControl } from "./block-frame";
-import { BlockEmpty, BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { IconButton, ReloadIcon } from "../../shared/ui/icons";
 
 type Server =
   | { is: "stopped" }
@@ -63,14 +66,14 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   // own (through control, it opens only in its frame).
   const own = !throughControl(client, s.site_key) && /^https?:\/\//.test(s.src) ? s.src : null;
   const bar = (
-    <div class="browser-bar editor-bar">
-      <button title="Reload" aria-label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
-        ↻
-      </button>
+    <Bar sub class="browser-bar editor-bar">
+      <IconButton label="Reload" disabled={!s.src || server.is !== "running"} onClick={() => setAgain(again + 1)}>
+        <ReloadIcon size="sm" />
+      </IconButton>
       {s.machine && (
-        <span class="host-tag" title={`On ${s.machine}, a throwaway VM`}>
+        <Chip kind="tag" tone="info" class="chip-gap" title={`On ${s.machine}, a throwaway VM`}>
           VM
-        </span>
+        </Chip>
       )}
       <span class="editor-where" title={s.folder}>
         <b>{s.name || s.folder}</b>
@@ -78,7 +81,7 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
       </span>
       <RoutePill id={id} />
       {own && <OpenOutside href={own} />}
-    </div>
+    </Bar>
   );
   let body;
   if (s.error || server.is === "failed") {
@@ -92,10 +95,11 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   } else if (server.is === "fetching") {
     const pct = server.of ? Math.floor((100 * server.got) / server.of) : 0;
     body = (
-      <BlockEmpty data-editor="fetching">
-        <p>Downloading VS Code (code-server) for the first time…</p>
-        <p>{server.of ? `${pct}% of ${MB(server.of)}` : MB(server.got)}</p>
-      </BlockEmpty>
+      <EmptyState
+        data-editor="fetching"
+        title="Downloading VS Code (code-server) for the first time."
+        why={server.of ? `${pct}% of ${MB(server.of)}` : MB(server.got)}
+      />
     );
   } else if (!s.src) {
     body = <BlockLoading what={s.name || "the folder"} />;

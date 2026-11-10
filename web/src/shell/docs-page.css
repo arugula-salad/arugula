@@ -3,6 +3,14 @@
    .doc) as a sheet that is as tall as it says; the preview body scrolls it.
    The list page's own rules (shared/ui/list-page.css) are left as they are. */
 
+/* In the workspace the page is in the panes' row (ui/app.tsx): under the
+   workspace's header and the macOS titlebar strip, beside the rail, over the
+   sessions sidebar and the panes, which stay laid out under it (Arugula #796). */
+.app.ws .ws-row > .chat.ws-page {
+  position: absolute;
+  inset: 0;
+}
+
 .docs-reader {
   min-width: 0;
 }
@@ -11,11 +19,6 @@
   flex: none;
   overflow: visible;
   border-radius: 10px;
-}
-
-/* The preview's header has the title. */
-.docs-reader .doc-title {
-  display: none;
 }
 
 /* The list's text rules (.list-preview-words p) are for plain paragraphs. */

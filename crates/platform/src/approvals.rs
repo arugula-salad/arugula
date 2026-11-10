@@ -12,7 +12,7 @@
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_e2e::{
-    deploy::{Approval, MAX_LIFE_MS, V2},
+    deploy::{Approval, MAX_LIFE_MS, SLACK_MS, V2, V3, chant},
     team::TeamRole,
 };
 use axum::http::StatusCode;
@@ -59,7 +59,10 @@ pub fn assertion_of(pk: &PasskeyAssertion) -> arugula_e2e::passkey::Assertion {
 }
 
 /// Check a v2 approval (or deny) of a deploy in `project` as `a.account`'s,
-/// at the platform's `now`:
+/// or a v3 (#1985: chant's gate statement, approving once), at the
+/// platform's `now`:
+/// - a v3's time is now, within ten minutes either way (chant takes no
+///   time in the future, and the statement's time is the approval's);
 /// - good for now and for 7 days at most;
 /// - its account an owner of the project by the roster read now;
 /// - over the deploy's operation as the log has it now;
@@ -81,11 +84,17 @@ pub async fn verify(
     passkey: Option<&PasskeyAssertion>,
     now: u64,
 ) -> Result<VerifiedApproval, ApiError> {
-    if a.v != V2 || !a.well_formed() {
+    if !matches!(a.v, V2 | V3) || !a.well_formed() {
         return Err(refusal(
             StatusCode::BAD_REQUEST,
             OLD_APPROVAL,
             "deploys are approved with a passkey alone now: reload the page and approve again",
+        ));
+    }
+    if a.v == V3 && chant::timestamp_ms(&a.at).is_none_or(|at| at.abs_diff(now) > SLACK_MS) {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "the approval's time isn't now: check this device's clock, then approve it again",
         ));
     }
     if a.expires <= now {

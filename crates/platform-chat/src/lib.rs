@@ -70,8 +70,6 @@ mod chat_people_tests;
 #[cfg(test)]
 mod chat_pins_tests;
 #[cfg(test)]
-mod chat_presence_room_tests;
-#[cfg(test)]
 mod chat_previews_tests;
 #[cfg(test)]
 mod chat_reactions_tests;
@@ -83,6 +81,8 @@ mod chat_tests;
 mod chat_threads_tests;
 #[cfg(test)]
 mod chat_wants_tests;
+#[cfg(test)]
+mod ci_alerts_tests;
 #[cfg(test)]
 mod forge_mentions_tests;
 #[cfg(test)]
@@ -105,6 +105,8 @@ mod restart_tests;
 mod runs_page_tests;
 #[cfg(test)]
 mod session_feedback_tests;
+#[cfg(test)]
+mod session_grant_tests;
 #[cfg(test)]
 mod session_issues_tests;
 pub mod session_live;
@@ -133,7 +135,6 @@ impl features::Feature for Feature {
             .route("/api/chat/live/open", post(chat::open))
             .route("/api/chat/search", get(chat::search))
             .route("/api/chat/presence", post(chat::people::beat))
-            .route("/api/chat/presence/token", post(chat::presence_room::token))
             .route("/api/chat/avatar/{account}", get(chat::people::avatar))
             .route("/api/chat/sidebar", get(chat::sidebar::get).put(chat::sidebar::put))
             .route("/api/chat/targets", post(chat::open_target))
@@ -321,13 +322,22 @@ impl features::Chat for Hooks {
     fn after_rebuild<'a>(
         &'a self,
         app: &'a Platform,
-        s: &'a db::sessions::Session,
+        s: &'a db::sessions::AgentSession,
     ) -> BoxFuture<'a, anyhow::Result<features::Rebuilt>> {
         Box::pin(sessions::hydrate::after_rebuild(app, s))
     }
 
     fn told(&self, app: &Platform, ids: &[String]) -> anyhow::Result<()> {
         session_live::told(app, ids)
+    }
+
+    fn grant_revoked<'a>(
+        &'a self,
+        app: &'a Platform,
+        project: &'a str,
+        running: arugula_e2e::project_grant::Running,
+    ) -> BoxFuture<'a, anyhow::Result<u64>> {
+        Box::pin(sessions::grant::revoked(app, project, running))
     }
 
     fn suite_done(&self, app: &Platform, event: &str, v: &Value, now: u64) -> anyhow::Result<()> {
@@ -373,6 +383,17 @@ impl features::Chat for Hooks {
         text: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<i64>> {
         Box::pin(async move { chat::github_comment(app, issue, login, text) })
+    }
+
+    fn ci_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        via: &'a str,
+        text: &'a str,
+        mark: Option<(&'a str, &'a str)>,
+    ) -> BoxFuture<'a, anyhow::Result<Option<i64>>> {
+        Box::pin(async move { chat::ci_comment(app, issue, via, text, mark) })
     }
 
     fn grant_notice<'a>(

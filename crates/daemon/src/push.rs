@@ -27,9 +27,13 @@ pub struct Push {
     key: SecretKey,
     subs: Arc<Mutex<Vec<Subscription>>>,
     path: PathBuf,
-    subject: String,
     http: reqwest::Client,
 }
+
+/// The VAPID `sub`: a fixed contact, so push services don't learn the
+/// owner's login. The key pair identifies the sender, not this, so
+/// subscriptions made under an older `sub` keep working.
+const SUBJECT: &str = "mailto:push@arugula.io";
 
 /// The mux's `Notify`: this daemon's Web Push, then Arugula control.
 pub struct Notifier {
@@ -86,8 +90,7 @@ fn public_bytes(key: &SecretKey) -> Vec<u8> {
 
 impl Push {
     /// Load (or create) the VAPID key and the saved subscriptions.
-    /// `subject` identifies the sender to push services (a `mailto:`).
-    pub fn open(dir: PathBuf, subject: String) -> std::io::Result<Self> {
+    pub fn open(dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
         let key_path = dir.join("vapid.key");
         let key = match std::fs::read_to_string(&key_path)
@@ -106,7 +109,7 @@ impl Push {
         let subs = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         let http =
             crate::roots::http().timeout(std::time::Duration::from_secs(15)).build().map_err(std::io::Error::other)?;
-        Ok(Self { key, subs: Arc::new(Mutex::new(subs)), path, subject, http })
+        Ok(Self { key, subs: Arc::new(Mutex::new(subs)), path, http })
     }
 
     /// The public key browsers subscribe with (`applicationServerKey`).
@@ -190,7 +193,7 @@ impl Push {
         let body = encrypt(payload, &ua_public, &auth, &new_secret(), &random::<16>())?;
         let url = reqwest::Url::parse(&sub.endpoint)?;
         let audience = audience(&url);
-        let jwt = vapid_jwt(&self.key, &audience, &self.subject, now_ms() / 1000 + 12 * 3600);
+        let jwt = vapid_jwt(&self.key, &audience, now_ms() / 1000 + 12 * 3600);
         let res = self
             .http
             .post(url)
@@ -236,9 +239,9 @@ fn audience(endpoint: &reqwest::Url) -> String {
 }
 
 /// RFC 8292: a short-lived ES256 token naming the push service and us.
-fn vapid_jwt(key: &SecretKey, audience: &str, subject: &str, exp: u64) -> String {
+fn vapid_jwt(key: &SecretKey, audience: &str, exp: u64) -> String {
     let header = B64.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
-    let claims = B64.encode(serde_json::json!({ "aud": audience, "exp": exp, "sub": subject }).to_string());
+    let claims = B64.encode(serde_json::json!({ "aud": audience, "exp": exp, "sub": SUBJECT }).to_string());
     let signing_input = format!("{header}.{claims}");
     let sig: Signature = SigningKey::from(key.clone()).sign(signing_input.as_bytes());
     format!("{signing_input}.{}", B64.encode(sig.to_bytes()))
@@ -288,12 +291,22 @@ mod tests {
     fn vapid_token_verifies() {
         use p256::ecdsa::{VerifyingKey, signature::Verifier};
         let key = new_secret();
-        let jwt = vapid_jwt(&key, "https://fcm.googleapis.com", "mailto:me@example.com", 1);
+        let jwt = vapid_jwt(&key, "https://fcm.googleapis.com", 1);
         let (input, sig) = jwt.rsplit_once('.').unwrap();
         let sig = Signature::from_slice(&B64.decode(sig).unwrap()).unwrap();
         VerifyingKey::from(key.public_key()).verify(input.as_bytes(), &sig).unwrap();
         let claims: serde_json::Value =
             serde_json::from_slice(&B64.decode(input.split('.').nth(1).unwrap()).unwrap()).unwrap();
         assert_eq!(claims["aud"], "https://fcm.googleapis.com");
+    }
+
+    /// Arugula #488: push services see a fixed contact, never the owner's login.
+    #[test]
+    fn vapid_sub_is_fixed_contact() {
+        let jwt = vapid_jwt(&new_secret(), "https://web.push.apple.com", 1);
+        let claims: serde_json::Value =
+            serde_json::from_slice(&B64.decode(jwt.split('.').nth(1).unwrap()).unwrap()).unwrap();
+        assert_eq!(claims["sub"], "mailto:push@arugula.io");
+        assert_eq!(claims.as_object().unwrap().keys().collect::<Vec<_>>(), ["aud", "exp", "sub"]);
     }
 }

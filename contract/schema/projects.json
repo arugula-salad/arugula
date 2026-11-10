@@ -1,5 +1,148 @@
 {
   "$defs": {
+    "CiAlertOpen": {
+      "description": "A branch's open red issue.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "issue": {
+          "description": "The issue's id (`iss_`) and number.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opened_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "branch",
+        "issue",
+        "number",
+        "opened_at"
+      ],
+      "type": "object"
+    },
+    "CiAlerts": {
+      "description": "A project's CI alerts (native #774): chant's signed CI events open,\ncomment on and close a \"main is red\" native issue. Never the key.",
+      "properties": {
+        "assign": {
+          "description": "They're assigned it as well.",
+          "type": "boolean"
+        },
+        "key_made_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "key_made_by": {
+          "description": "Who made the key in use (an account, empty once it's deleted), and\nwhen. `None` while off.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_event_at": {
+          "description": "When the last signed event arrived.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "On: a key is kept and events are taken.",
+          "type": "boolean"
+        },
+        "open": {
+          "description": "Each branch's open red issue.",
+          "items": {
+            "$ref": "#/$defs/CiAlertOpen"
+          },
+          "type": "array"
+        },
+        "people": {
+          "description": "Who a new red issue mentions (accounts), in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL chant posts to: `ci.green.notify.webhook`'s variable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "on",
+        "url",
+        "people",
+        "assign",
+        "open"
+      ],
+      "type": "object"
+    },
+    "CiAlertsKey": {
+      "description": "The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,\nand the alerts as they are now. chant reads it from\n`ci.green.notify.key`'s variable.",
+      "properties": {
+        "alerts": {
+          "$ref": "#/$defs/CiAlerts"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "alerts"
+      ],
+      "type": "object"
+    },
+    "CiAlertsSettings": {
+      "description": "`PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it\nassigns them, or `on: false` to turn alerts off (the key goes; the\nissues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].",
+      "properties": {
+        "assign": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "on": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "people": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "ConnectTracker": {
       "description": "`POST /api/projects/{project}/trackers`: connect a Plane project. A\nproject's owner or editor may. `project` is Plane's project id or its\nidentifier. Control reads the project with the key first: a key Plane\nrefuses or a project it doesn't know is a 422 and nothing is kept. The\nkey and the webhook secret are sealed and never come back.",
       "properties": {
@@ -2048,7 +2191,7 @@
           "type": "string"
         },
         "why": {
-          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour), `unsure` (GitHub\ncouldn't be asked just now: it's asked again next time) or `no_app`\n(this control has no GitHub App to ask with).",
           "type": "string"
         }
       },

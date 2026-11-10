@@ -404,7 +404,7 @@ async fn crashes_between_approved_and_dispatched(open: impl Fn() -> Db) {
     let b = its_box(&two.app, &second);
     let a = two.app.db.deploy_approvals(&second).unwrap().pop().unwrap();
     let op = Op {
-        deploy: Some(DeployApply { deploy: second.clone(), driver: "fake".into(), op: a.op.clone() }),
+        deploy: Some(DeployApply { deploy: second.clone(), driver: "fake".into(), op: a.op.clone(), plan: false }),
         ..Op::default()
     }
     .encode(&m.m.machine);
@@ -590,7 +590,7 @@ async fn the_operator_sees_whats_stuck_and_unsticks_it() {
     );
     let b = &s.boxes[0];
     assert_eq!((s.boxes.len(), b.deploy.as_str(), b.left_over()), (1, id.as_str(), true));
-    let shown = s.render();
+    let shown = s.render_at(now);
     assert!(shown.contains("LEFT OVER") && shown.contains(&run), "{shown}");
 
     // The other is canceled, as the platform; its job ends.

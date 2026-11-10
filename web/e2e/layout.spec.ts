@@ -140,6 +140,30 @@ test("tabs: create, rename, reorder by dragging, dock into a split, close", asyn
   await expect.poll(() => tabsInSession(page)).toHaveLength(2);
   const t3 = (await tabsInSession(page))[1];
   await page.locator(`[data-tab-id="${t3}"]`).click({ button: "middle" });
+  await page.locator("[data-confirm-remove]").click();
+  await expect.poll(() => tabsInSession(page)).toEqual([t1]);
+});
+
+test("tabs: × only on the shown tab, and closing asks first (#753)", async ({ page }) => {
+  await reset(page);
+  const [t1] = await tabsInSession(page);
+  await page.getByTitle("New tab").click();
+  await expect.poll(() => tabsInSession(page)).toHaveLength(2);
+  const t2 = (await tabsInSession(page))[1];
+  // The new tab is shown: only it has a ×, even with the pointer over the other.
+  const close = (id: number) => page.locator(`.tabstrip:has(.tab.selected[data-tab-id="${id}"]) .tab-close`);
+  await page.locator(`[data-tab-id="${t1}"]`).hover();
+  await expect(close(t1)).toHaveCount(0);
+  await expect(close(t2)).toHaveCount(1);
+  // × asks; Cancel keeps the tab.
+  await close(t2).click();
+  await expect(page.locator("[data-confirm-dialog]")).toBeVisible();
+  await page.locator("[data-cancel-remove]").click();
+  await expect(page.locator("[data-confirm-dialog]")).toHaveCount(0);
+  expect(await tabsInSession(page)).toEqual([t1, t2]);
+  // Confirming closes it.
+  await close(t2).click();
+  await page.locator("[data-confirm-remove]").click();
   await expect.poll(() => tabsInSession(page)).toEqual([t1]);
 });
 

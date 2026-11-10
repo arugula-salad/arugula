@@ -1,9 +1,9 @@
 //! A machine's Docs copied up to the platform (#418): while this machine is
 //! in control, each Doc in the library has a copy there
 //! (`PUT /api/daemon/docs/{id}`, [`wire::MACHINE_DOC`]), which the platform
-//! makes in the owner's personal project, private to them until they move
-//! it into a team's. It keys the copy by the machine and the Doc's id, so
-//! the same Doc always lands on the same copy, wherever it was moved.
+//! makes in the owner's personal project, private to them. It keys the copy
+//! by the machine and the Doc's id, so the same Doc always lands on the same
+//! copy, wherever it sits.
 //!
 //! - **When:** a change ([`changed`]: a new Doc, its outline, a fill, a
 //!   picture) marks the Doc dirty, and it's put [`QUIET`] after its last
@@ -11,18 +11,28 @@
 //!   thirty sections is a few puts, not thirty. One put per Doc at a time,
 //!   and [`FLYING`] in all; its pictures go after it, those whose `rev` the
 //!   copy hasn't got.
-//! - **Chat off:** native Docs come with chat, so while control says chat is
-//!   off for the machine's account or team (as it sends it with the flags,
-//!   as `chat_readers` reads it) nothing is put; Docs still become dirty.
+//! - **Only on the account's own word, on a personal machine** (native
+//!   #673): `DOC_COPIES`, "Your Docs on the platform", which control sends
+//!   only to the account's personal machines and which a team never sets.
+//!   A team's machine, a hosted box, and a personal machine without the
+//!   word copy nothing; chat, a team's or heard, has no say here (it moves
+//!   reader lists, `chat_readers`). An account that had its own chat on
+//!   when the word came in was given it by control.
+//! - **Off:** nothing is put, and a machine in control that never queued
+//!   its library for its account marks nothing either, since that first
+//!   queueing takes every Doc; after it, a Doc that changes while off
+//!   stays dirty for when it's on again, as does one that changes while
+//!   the machine is out of control, for the next control it joins.
+//!   Copies already on the platform stay.
 //! - **Not now:** out of control or out of reach, a Doc stays dirty and
-//!   waits for the next refresh with control. Refused (403: chat off after
+//!   waits for the next refresh with control. Refused (403: the word off after
 //!   all, or the owner may no longer write where the Doc now is) or told to
 //!   slow down (429), nothing more is put until then: one refusal a refresh,
 //!   however many Docs wait. Why is said once, at info. The dirty Docs are
 //!   kept in `docs/.copies.json`, so a restart has them, and they wait for
 //!   its first refresh.
-//! - **Once:** after the first refresh of a machine in control with chat
-//!   on, every Doc in the library is marked dirty; `docs/.copied-1` names
+//! - **Once:** after the first refresh of a machine in control with the
+//!   word on, every Doc in the library is marked dirty; `docs/.copied-1` names
 //!   the account it was done for, and joining another does it again.
 //! - **Not on a hosted box:** its owner is whoever made the workspace, so a
 //!   session's Docs would land in their personal project; nothing is copied.
@@ -32,7 +42,24 @@
 //!
 //! A Doc the platform can't take as it is (a 400 or 413: the platform's
 //! checks are the block's, so it shouldn't happen) is left until it changes
-//! again. Deleting a Doc here leaves its copy: it may be a team's by then.
+//! again.
+//!
+//! **Deleted here, its copy goes too** (native #673: the Doc is the truth
+//! and the copy has none without it). The library writes a tombstone
+//! (`docs/.gone/<id>`) before it removes the folder, and marks the Doc
+//! like a change ([`removed`]); the put that finds the tombstone takes the
+//! copy down instead (`DELETE`, [`wire::MACHINE_DOC`]) and drops the
+//! tombstone, a copy that isn't there being done. Only a tombstone takes a
+//! copy down: a Doc whose files can't be read, or are gone with no
+//! tombstone (deleted by an older daemon, or by hand), is never taken for
+//! deleted, and a tombstone whose Doc still reads (a removal that failed)
+//! is dropped. Take-downs go whether or not copies are on: turning them off
+//! stops new and changed copies, never a deleted Doc's copy coming down. A take-down the platform refuses (the owner may no longer
+//! write there) is tried after the next refreshes, [`GONE_TRIES`] times,
+//! without pausing the other Docs, then given up with a line in the log:
+//! the copy stays, and its project's people can delete it on the
+//! platform, as they can any copy. Being told to slow down is tried
+//! again and never counted.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -42,6 +69,7 @@ use std::{
 };
 
 use arugula_control_wire::project_docs::{self as wire, MachineDoc, MachineDocPlaced, MachineSection};
+use serde_json::Value;
 use tokio::sync::Notify;
 use tracing::{info, warn};
 
@@ -58,13 +86,15 @@ pub const MOST: Duration = Duration::from_secs(10);
 /// Puts at a time, of different Docs: the first copy of a big library
 /// goes a few at a time, not all at once.
 const FLYING: usize = 4;
+/// Refusals a deleted Doc's take-down gets before it's given up.
+const GONE_TRIES: u32 = 3;
 
 /// In the library: the Docs not copied since they changed.
 const DIRTY: &str = ".copies.json";
 /// In the library: every Doc there was queued once, for this account.
 const DONE: &str = ".copied-1";
-/// Control's chat setting, sent with the flags: Docs come with chat.
-const CHAT: &str = "chat";
+/// The account's own word for copies, sent with the flags.
+const WORD: &str = arugula_control_wire::DOC_COPIES;
 
 static COPIES: OnceLock<Arc<Copies>> = OnceLock::new();
 
@@ -114,7 +144,11 @@ pub fn start(control: Arc<Control>) {
     }
     let state_dir = control.state_dir().to_owned();
     let now = Instant::now();
-    let kept = read_dirty(&state_dir);
+    let mut kept = read_dirty(&state_dir);
+    // Deleted Docs whose copies aren't down yet.
+    kept.extend(read_gone(&state_dir));
+    kept.sort();
+    kept.dedup();
     let queue = Queue {
         waiting: kept.iter().cloned().collect(),
         dirty: kept.into_iter().map(|id| (id, Dirt { first: now, last: now, changes: 0 })).collect(),
@@ -135,6 +169,49 @@ pub fn changed(id: &str) {
     }
 }
 
+/// The Doc `id` is gone from the library (its tombstone is written): its
+/// copy goes soon.
+pub fn removed(id: &str) {
+    changed(id);
+}
+
+/// The tombstones' ids ([`library::GONE`]). One whose Doc still reads (a
+/// removal that failed before the folder went) is dropped: the Doc lives,
+/// and keeps its copy.
+fn read_gone(state_dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(library::gone_dir(state_dir)) else { return vec![] };
+    entries
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|id| library::is_id(id))
+        .filter(|id| {
+            let lives = library::dir(state_dir, id).is_ok_and(|d| library::read_meta(&d).is_some());
+            if lives {
+                forget_gone(state_dir, id);
+            }
+            !lives
+        })
+        .collect()
+}
+
+fn is_gone(state_dir: &Path, id: &str) -> bool {
+    library::gone_dir(state_dir).join(id).exists()
+}
+
+/// The tombstone goes: the copy is down, or given up on.
+fn forget_gone(state_dir: &Path, id: &str) {
+    let _ = std::fs::remove_file(library::gone_dir(state_dir).join(id));
+}
+
+/// One more refusal of the take-down of `id`, kept in its tombstone: how
+/// many so far.
+fn refused_gone(state_dir: &Path, id: &str) -> u32 {
+    let file = library::gone_dir(state_dir).join(id);
+    let n: u32 = std::fs::read_to_string(&file).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0) + 1;
+    let _ = write_atomic(&file, n.to_string().as_bytes());
+    n
+}
+
 fn read_dirty(state_dir: &Path) -> Vec<String> {
     let file = library::root(state_dir).join(DIRTY);
     let ids: Vec<String> = std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
@@ -143,6 +220,19 @@ fn read_dirty(state_dir: &Path) -> Vec<String> {
 
 impl Copies {
     fn mark(&self, ids: impl IntoIterator<Item = String>) {
+        // In control, not allowed, and never queued for this account: the
+        // first queueing takes every Doc, so nothing waits in the meantime.
+        // Out of control nothing is known: a change waits for the next
+        // control, which may be the same account again.
+        // A deleted Doc's take-down is queued whatever: it may have a copy
+        // from before.
+        let mut ids: Vec<String> = ids.into_iter().collect();
+        if self.control.enrolled().is_some() && !self.allowed() && !self.queued_once() {
+            ids.retain(|id| is_gone(&self.state_dir, id));
+            if ids.is_empty() {
+                return;
+            }
+        }
         let now = Instant::now();
         let mut q = self.queue.lock().unwrap();
         let mut new = false;
@@ -177,7 +267,7 @@ impl Copies {
         let mut refreshed = self.control.on_refresh();
         while refreshed.changed().await.is_ok() {
             if let Some(account) = self.control.account()
-                && self.chat_on()
+                && self.allowed()
             {
                 self.copy_all(&account);
             }
@@ -189,8 +279,19 @@ impl Copies {
         }
     }
 
-    fn chat_on(&self) -> bool {
-        arugula_proto::flags::control_says(&self.state_dir, CHAT) == Some(true)
+    /// Copies are allowed: a personal machine, with its account's own
+    /// word (never a team's, nor chat).
+    fn allowed(&self) -> bool {
+        let personal =
+            self.control.enrolled().is_some_and(|e| matches!(e.saved.kind, crate::control::MachineKind::Personal));
+        personal && arugula_proto::flags::control_account_says(&self.state_dir, WORD) == Some(true)
+    }
+
+    /// Whether the library was queued once for the account this machine
+    /// is joined to now.
+    fn queued_once(&self) -> bool {
+        let Some(account) = self.control.account() else { return false };
+        std::fs::read_to_string(library::root(&self.state_dir).join(DONE)).is_ok_and(|a| a.trim() == account)
     }
 
     /// Every Doc in the library, once for each account the machine joins.
@@ -227,9 +328,11 @@ impl Copies {
     /// The Docs to put now, each with its count of changes, and how long
     /// until the next is due.
     fn due(&self) -> (Vec<(String, u64)>, Option<Duration>) {
-        if self.control.enrolled().is_none() || !self.chat_on() {
+        if self.control.enrolled().is_none() {
             return (Vec::new(), None);
         }
+        // Not allowed to copy: a deleted Doc's copy still comes down.
+        let allowed = self.allowed();
         let now = Instant::now();
         let mut q = self.queue.lock().unwrap();
         if q.paused {
@@ -237,7 +340,12 @@ impl Copies {
         }
         let Queue { dirty, flying, waiting, .. } = &mut *q;
         let (mut due, mut next) = (Vec::new(), None::<Duration>);
-        for (id, d) in dirty.iter_mut().filter(|(id, _)| !flying.contains(*id) && !waiting.contains(*id)) {
+        let state_dir = &self.state_dir;
+        for (id, d) in dirty
+            .iter_mut()
+            .filter(|(id, _)| !flying.contains(*id) && !waiting.contains(*id))
+            .filter(|(id, _)| allowed || is_gone(state_dir, id))
+        {
             let at = (d.last + QUIET).min(d.first + MOST);
             if at <= now {
                 // The rest wait for a put to end, which wakes this.
@@ -299,12 +407,17 @@ impl Copies {
         self.wake.notify_one();
     }
 
-    /// The Doc as it is now, put, then its pictures the copy hasn't got.
+    /// The Doc as it is now, put, then its pictures the copy hasn't got;
+    /// or, for a deleted Doc, its copy taken down.
     async fn copy(&self, id: &str) -> Result<(), Fail> {
         let dir = library::dir(&self.state_dir, id).map_err(Fail::Never)?;
+        if is_gone(&self.state_dir, id) {
+            return self.take_down(id).await;
+        }
         let at = dir.clone();
         let read = crate::task::spawn_blocking(move || whole(&at)).await.map_err(|e| Fail::Later(e.to_string()))?;
-        // Gone: deleted since it changed.
+        // Gone with no tombstone (an older daemon's delete, or by hand): the
+        // copy is left, for its project's people.
         let Some((meta, doc, pictures)) = read? else { return Ok(()) };
         let placed: MachineDocPlaced = self.control.put_signed(&wire::machine_doc(id), &doc).await.map_err(fail)?;
         let mut sent = meta.platform.filter(|p| p.id == placed.id).map(|p| p.assets).unwrap_or_default();
@@ -337,12 +450,48 @@ impl Copies {
     }
 }
 
+impl Copies {
+    /// A deleted Doc's copy, taken down; none there is done. A refusal is
+    /// tried again after the next refresh, [`GONE_TRIES`] times, then the
+    /// copy is left for its project's people; being told to slow down
+    /// (429) is tried again too, and never counted.
+    async fn take_down(&self, id: &str) -> Result<(), Fail> {
+        let got = self.control.delete_signed::<Value>(&wire::machine_doc(id)).await;
+        let why = match got {
+            Ok(_) => {
+                forget_gone(&self.state_dir, id);
+                return Ok(());
+            }
+            Err(e) => match e.downcast_ref::<Answered>() {
+                Some(Answered(404, _)) => {
+                    forget_gone(&self.state_dir, id);
+                    return Ok(());
+                }
+                // Slow down isn't a refusal: after the next refresh, uncounted.
+                Some(Answered(429, why)) => return Err(Fail::Later(why.clone())),
+                Some(Answered(400 | 403 | 413, why)) => why.clone(),
+                _ => return Err(Fail::Later(e.to_string())),
+            },
+        };
+        if refused_gone(&self.state_dir, id) >= GONE_TRIES {
+            forget_gone(&self.state_dir, id);
+            warn!(
+                doc = id,
+                why,
+                "the platform won't take a deleted Doc's copy down; the copy stays, for its project's people to delete"
+            );
+            return Ok(());
+        }
+        Err(Fail::Later(why))
+    }
+}
+
 /// The Doc in `dir` as the platform takes it, and its pictures: `None` once
-/// it's gone.
+/// it's gone for sure.
 type Whole = (library::Meta, MachineDoc, Vec<assets::Asset>);
 
 fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
-    let Some(meta) = library::read_meta(dir) else { return Ok(None) };
+    let Some(meta) = library::read_meta_or_gone(dir).map_err(Fail::Later)? else { return Ok(None) };
     let (title, sections) = if dir.join(super::OUTLINE).exists() {
         let loaded = super::load(dir).map_err(Fail::Never)?;
         let sections = loaded
@@ -355,7 +504,8 @@ fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
         (meta.title.clone(), Vec::new())
     };
     let pictures = assets::load(&dir.join(assets::FOLDER));
-    Ok(Some((meta, MachineDoc { title, sections }, pictures)))
+    let layout = (!meta.layout.is_doc()).then(|| meta.layout.as_str().to_owned());
+    Ok(Some((meta, MachineDoc { title, sections, layout }, pictures)))
 }
 
 /// What control's answer means for the Doc.
@@ -365,5 +515,31 @@ fn fail(e: anyhow::Error) -> Fail {
         Some(Answered(400 | 413, why)) => Fail::Never(why.clone()),
         Some(Answered(_, why)) => Fail::Later(why.clone()),
         None => Fail::Later(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arugula_proto::api::DocLayout;
+
+    use super::*;
+
+    #[test]
+    fn the_copy_names_a_layout_only_when_it_isnt_doc() {
+        let state = std::env::temp_dir().join(format!(
+            "arugula-copies-layout-{}-{}",
+            std::process::id(),
+            crate::store::now_ms()
+        ));
+        let meta = library::make(&state, "Plan", "me").unwrap();
+        let dir = library::dir(&state, &meta.id).unwrap();
+        let body = |dir: &Path| serde_json::to_value(whole(dir).ok().flatten().unwrap().1).unwrap();
+        // A control from before layouts sees the body it always did.
+        assert!(body(&dir).get("layout").is_none());
+        library::set_layout(&dir, DocLayout::Tabs);
+        assert_eq!(body(&dir)["layout"], "tabs");
+        library::set_layout(&dir, DocLayout::Doc);
+        assert!(body(&dir).get("layout").is_none());
+        std::fs::remove_dir_all(state).unwrap();
     }
 }

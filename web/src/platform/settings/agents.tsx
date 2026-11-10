@@ -13,11 +13,11 @@
 // grants add` (`/api/grants`, the platform's). What each switch reads of
 // the grants is ./grants's, tested.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
-import { toneClass } from "../swarm";
 import {
   boardsLimit,
   boardsLevel,
@@ -46,6 +46,7 @@ import {
 import { Time } from "../../shared/ui/time";
 import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
+import { Count } from "../../shared/ui/state-chip";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -60,7 +61,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 }
 
 // Each column's head, the word in a switch's name, and what it gives: the
-// head's tooltip and the key under the section's line.
+// head's tooltip.
 type Head = { head: string; short?: string; name: string; gives: string };
 const HEADS: Record<Column, Head> = {
   threads: { head: "Threads & issues", short: "Threads", name: "threads & issues", gives: "read and post in its threads (a team's channels), and write its issues" },
@@ -254,14 +255,14 @@ export function AgentGrants() {
     const rows = matrixOf(grants, machines, s, columns, s.role);
     const n = reaching(rows);
     return (
-      <div key={s.id ?? "dms"} class={`sw-card agent-card ${toneClass(n ? "accent" : "muted")}`} {...data}>
-        <div class="sw-head">
-          <b class="sw-name">{title}</b>
-          <span class="sw-n" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
+      <Card key={s.id ?? "dms"} class="agent-card" tone={n ? "accent" : "muted"} {...data}>
+        <div class="card-head">
+          <b class="card-title big">{title}</b>
+          <Count class="count-end" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
             {n}/{machines.length}
-          </span>
+          </Count>
         </div>
-        <span class="dim agent-card-sub">{sub}</span>
+        {sub ? <span class="dim agent-card-sub">{sub}</span> : null}
         <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>
           <thead>
             <tr>
@@ -312,7 +313,7 @@ export function AgentGrants() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     );
   };
 
@@ -320,7 +321,6 @@ export function AgentGrants() {
     <Section
       id="agents"
       title="Agents on your machines"
-      lede="What the agents on each of your machines may do in each project. Every switch is off until you turn it on."
       more={
         <>
           <p>
@@ -346,26 +346,16 @@ export function AgentGrants() {
         </>
       }
     >
-      <dl class="agent-key">
-        {COLUMNS.map((c) => (
-          <div key={c}>
-            <dt>{HEADS[c].head}</dt>
-            <dd>{HEADS[c].gives}</dd>
-          </div>
-        ))}
-      </dl>
       {machines.length === 0 ? (
         <p class="dim">No machines on your account yet.</p>
       ) : (
-        <div class="sw-cards agent-cards" data-agent-grants>
+        <div class="card-list agent-cards" data-agent-grants>
           {session.projects.map((p) => {
             const s: AgentScope = { kind: "project", id: p.id, name: p.team ? p.name : "your personal project", role: roleIn(p) as Role };
             return card(
               s,
               p.name,
-              p.team
-                ? `${p.team.name}'s channels and issues${p.team.role === "viewer" ? ". You only view it, so a write power here reads and comments only" : ""}`
-                : "Your personal project",
+              p.team?.role === "viewer" ? "You only view it, so a write power here reads and comments only" : "",
               COLUMNS,
               COLUMNS.map((c) => HEADS[c]),
               { "data-agent-project": p.id },

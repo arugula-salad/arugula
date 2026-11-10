@@ -339,7 +339,8 @@ enum Command {
     ///
     /// Made with `share --guest`, where the machine's owner has turned on
     /// Guest SSH access (`arugulad sharing guest-ssh on`). `guests revoke ID`
-    /// ends one and cuts off anyone using it.
+    /// ends one and cuts off anyone using it; turning Guest SSH access off
+    /// ends them all.
     Guests {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
@@ -370,6 +371,14 @@ enum Command {
     Shares {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
+    },
+    /// Read-only links to a session that still work.
+    ///
+    /// Made in the Share dialog. `links revoke ID` ends one; anyone watching
+    /// is cut off.
+    Links {
+        #[command(subcommand)]
+        cmd: Option<cmd::share::LinksCmd>,
     },
     /// Open this machine's page in your browser, signed in.
     ///
@@ -402,7 +411,8 @@ enum Command {
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
     /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
-    /// (the default) lists them. Needs `arugula login`.
+    /// (the default) lists them, and `ls --project X` is a project's Access
+    /// view: who can do what there. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
@@ -432,10 +442,10 @@ enum Command {
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
     /// lists them (and how each one's setup goes), `open` wakes one and
     /// says its machine, `edit` changes its spec, `secret` sets what it
-    /// clones with and takes as env, `rebuild` makes its box again from its
-    /// spec (asking the box for unpushed work first), `delete` takes it and
-    /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// clones with and takes as env, `rebuild` makes its machine again from
+    /// its spec (asking the machine for unpushed work first), `delete` takes
+    /// it and its machine away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never on the machine; Anthropic's may be a
     /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).
@@ -478,6 +488,17 @@ enum Command {
     Deploys {
         #[command(subcommand)]
         cmd: cmd::deploys::DeploysCmd,
+    },
+    /// What chant needs from Arugula.
+    ///
+    /// `trust-entry` prints your passkeys as entries for chant's
+    /// `.chant/trust.json` (`passkeys`), as `arugula:<account>`: a chant-fly
+    /// deploy's approval is your passkey's signature over chant's gate
+    /// statement, which chant counts only for a passkey listed there. It
+    /// only prints. Needs `arugula login`.
+    Chant {
+        #[command(subcommand)]
+        cmd: cmd::chant::ChantCmd,
     },
     /// A project's linked GitHub repos on Arugula control.
     ///
@@ -648,7 +669,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
     ),
     ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
-    ("Sharing", &["share", "shares", "invite", "access", "guests"]),
+    ("Sharing", &["share", "shares", "links", "invite", "access", "guests"]),
     (
         "Machines and control",
         &[
@@ -666,7 +687,7 @@ const GROUPS: &[(&str, &[&str])] = &[
             "sandboxes",
         ],
     ),
-    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "chant", "project", "draft", "forge", "studio"]),
     ("Setup", &["install", "setup", "hooks", "mcp"]),
 ];
 
@@ -857,6 +878,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Deploys { cmd } = cli.cmd {
         return cmd::deploys::run(cmd, cli.json);
     }
+    if let Command::Chant { cmd } = cli.cmd {
+        return cmd::chant::run(cmd, cli.json);
+    }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
@@ -956,6 +980,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Access { cmd } => cmd::access::run(cmd, ctx),
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
+        Command::Links { cmd } => cmd::share::links(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
         Command::Hosts { cmd } => {
             hosts::run(&ctx.sock, cmd, ctx.json_out)?;
@@ -980,6 +1005,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }
+        | Command::Chant { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

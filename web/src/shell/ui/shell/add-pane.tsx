@@ -18,10 +18,11 @@ import { OPS, opPath } from "../../ops";
 import { startAgent } from "../agent-dialog";
 import { EditInNvim } from "../edit-in-nvim";
 import { pickConversation } from "../conversations";
-import { useEscape } from "../keys";
+import { SideSheet } from "../../../shared/ui/side-sheet";
 import { openPicker } from "../picker";
 import { closeAttention } from "./attention-drawer";
 import { ordinal } from "../panes/layout";
+import { KindIcon } from "../../../shared/ui/icons";
 
 // ---- whether it's open (the toolbar's button and Ctrl+Shift+E)
 
@@ -129,7 +130,6 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const first = useRef<HTMLButtonElement>(null);
   /** Stops waiting for the pane being made (it failed). */
   const waiting = useRef<(() => void) | null>(null);
-  useEscape("add-pane.close", busy ? null : () => addPane.close(), [busy]);
   useEffect(() => first.current?.focus(), []);
 
   // What each kind may be, here and for this person (as the pane menu
@@ -281,21 +281,36 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
     settle(before, place === "down");
   };
 
+  // The sheet's Escape and backdrop close it; not while a pane is being made.
+  const close = () => !busy && addPane.close();
   return (
-    <div
+    <SideSheet
       class="add-pane"
-      data-add-pane-drawer
-      role="dialog"
-      aria-label="Add a pane"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          void create();
-        }
-      }}
+      title="Add a pane"
+      subtitle={`${tab.name || "Current tab"} · ${anchorName}`}
+      close={close}
+      root={{ "data-add-pane-drawer": true }}
+      closeAttrs={{ "aria-label": "Close Add Pane", disabled: busy }}
+      foot={
+        <>
+          <button class="secondary" onClick={() => addPane.close()} disabled={busy}>
+            Cancel
+          </button>
+          <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>
+            {busy ? "Opening…" : NEXT.includes(kind) ? "Next…" : `Open ${label.toLowerCase()}`}
+          </button>
+        </>
+      }
     >
-      <header class="add-pane-head"><div><h2>Add a pane</h2><p>{tab.name || "Current tab"} · {anchorName}</p></div><button aria-label="Close Add Pane" disabled={busy} onClick={() => addPane.close()}>✕</button></header>
-      <div class="add-pane-body">
+      <div
+        class="add-pane-body"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            void create();
+          }
+        }}
+      >
       <div class="add-pane-row">
         <span class="add-pane-label" id="add-pane-kind">
           Pane type
@@ -416,15 +431,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
         </p>
       )}
       </div>
-      <div class="add-pane-actions">
-        <button class="secondary" onClick={() => addPane.close()} disabled={busy}>
-          Cancel
-        </button>
-        <button class="primary" data-add-pane-create disabled={!!refusal || busy} title={refusal ?? "Ctrl+Enter"} onClick={() => void create()}>
-          {busy ? "Opening…" : NEXT.includes(kind) ? "Next…" : `Open ${label.toLowerCase()}`}
-        </button>
-      </div>
-    </div>
+    </SideSheet>
   );
 }
 
@@ -438,18 +445,3 @@ function LayoutPreview({ node, anchor, place, label }: { node: Node; anchor: Pan
   return <div class={`add-pane-preview-split ${node.dir}`}>{node.children.map((child, i) => <div key={i} style={{ flex: `${child.weight} 1 0`, minWidth: 0, minHeight: 0, display: "flex" }}><LayoutPreview node={child.node} anchor={anchor} place={place} label={label} /></div>)}</div>;
 }
 
-function KindIcon({ kind }: { kind: Kind }) {
-  const paths: Record<Kind, string> = {
-    shell: "M4 4h16v16H4z M7 9l3 3-3 3 M13 16h4",
-    agent: "M5 8h14v12H5z M12 8V4 M9 4h6 M8 12h1 M15 12h1 M9 16h6",
-    chat: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
-    editor: "M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6",
-    changes: "M7 7v10 M9 5h7v12 M7 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M16 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4",
-    port: "M3 12h18 M12 3c-6 6-6 12 0 18 M12 3c6 6 6 12 0 18 M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18",
-    pr: "M6 7v10 M6 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M6 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M18 17V9a3 3 0 0 0-3-3h-4 M13 4l-2 2 2 2",
-    issue: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 8v5 M12 16v.5",
-    web: "M3 5h18v14H3z M3 9h18 M6 7h.5 M8.5 7h.5",
-    conversation: "M4 4h12v9H8l-4 3z M10 16v1h6l4 3v-9h-4",
-  };
-  return <svg class="add-pane-kind-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
-}

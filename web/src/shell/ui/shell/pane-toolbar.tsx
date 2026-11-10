@@ -11,7 +11,7 @@ import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { arrange, arrangeRefusal, goToPane, layoutRefusal, PRESETS, toggleFocus } from "../panes/layout";
 import { AddPaneDrawer, addPane, useAddPane } from "./add-pane";
 import { paneStatus, paneType } from "./pane-header";
-import { PlusIcon } from "./icons";
+import { ChevronIcon, FocusIcon, PlusIcon } from "../../../shared/ui/icons";
 
 export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   const ids = paneIds(tab);
@@ -55,10 +55,10 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
 
   return (
     <div class="pane-toolbar" data-pane-toolbar role="toolbar" aria-label="Panes">
-      <button class="pt-count" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
+      <button class="pt-count bar-btn" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
         <strong>{count}</strong> {count === 1 ? "pane" : "panes"}
         <span class="pt-caret" aria-hidden="true">
-          ▾
+          <ChevronIcon />
         </span>
       </button>
       <span class="pt-sep" aria-hidden="true" />
@@ -66,7 +66,7 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         {PRESETS.map(({ preset, label }) => (
           <button
             key={preset}
-            class="pt-preset"
+            class="pt-preset bar-btn"
             data-preset={preset}
             disabled={!!why}
             // Its name at any width (the label hides when narrow); why
@@ -84,14 +84,14 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         ))}
       </div>
       <button
-        class={`pt-focus${focused ? " on" : ""}`}
+        class={`pt-focus bar-btn${focused ? " on" : ""}`}
         data-pane-focus
         aria-pressed={focused}
         disabled={!!focusWhy}
         title={focusWhy ?? `${focused ? "Show every pane again" : "Fill the tab with the active pane"} (${keyHint("pane.focus")})`}
         onClick={() => toggleFocus(client, tab, undefined, refused)}
       >
-        <FocusIcon on={focused} />
+        <FocusIcon on={focused} size="xs" />
         {focused ? "Restore" : "Focus"}
       </button>
       {note && (
@@ -102,14 +102,14 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
       <span class="pt-fill" />
       {!watching && (
         <button
-          class={`pt-add${open ? " on" : ""}`}
+          class={`pt-add bar-btn${open ? " on" : ""}`}
           data-add-pane
           aria-expanded={open}
           disabled={!!layoutRefusal(client, tab)}
           title={layoutRefusal(client, tab) ?? `Add a pane beside the active one (${keyHint("pane.add")})`}
           onClick={() => addPane.toggle()}
         >
-          <PlusIcon size={14} />
+          <PlusIcon size="sm" />
           Pane
           {keyHint("pane.add") && <kbd>{keyHint("pane.add")}</kbd>}
         </button>
@@ -144,8 +144,3 @@ function Thumb({ preset }: { preset: Preset }) {
   );
 }
 
-const FocusIcon = ({ on }: { on: boolean }) => (
-  <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    {on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
-  </svg>
-);

@@ -13,7 +13,7 @@ decisions: ["aru-041", "aru-084", "aru-085", "aru-086", "aru-088", "aru-089", "a
 ## What a person can do
 A project has numbered issues of its own on the platform: open, edit, label, assign, close, reopen, comment and export them, with every machine asleep. A person can send one native issue to a repo linked to its project, as a new GitHub issue in their own name, and after that new top-level comments cross between the two.
 
-Native issues are on only while control's chat setting is on for the account (`chat_on`). Otherwise the routes refuse with `chat_off`.
+Project membership and roles alone decide who reads and changes native issues. Control's chat setting doesn't (Arugula #746), for a person or for an agent acting for them. An issue's comments are its chat thread, so they still need chat. With chat off for the reader (the asker, for a hosted session), the page, `arugula issue show` and `arugula issue agent`, the export and a session's read of an issue leave the comments out and say they're in chat.
 
 ## Where it runs
 Short paths below are under `crates/platform/src`.
@@ -42,7 +42,7 @@ Short paths below are under `crates/platform/src`.
 - `issue_github_comments` keeps each GitHub comment id that crossed, so none comes back. `issue_github_held` holds a GitHub comment with the same text as one being sent, until the send's answer says which is ours.
 - Edits, deletions, sub-thread replies and comments from before the export don't cross.
 
-**A merged PR** closes the native issues it names, in the project its repo is linked to (`forge/closes.rs`), as whoever merged it if they're in the project, else as the App. It never reopens one, and `part of Arugula #N` only links.
+**A merged PR** closes the native issues it names, in the project its repo is linked to (`forge/closes.rs`), as whoever merged it if they're in the project, else as the App. It never reopens one. What closes: `Closes #N` (or `Fixes`, `Resolves`) and `Arugula #N`, `(#N)` in the title, a branch `feat/N-…`, and a board row the PR was attached to. `part of Arugula #N`, and any other `#N` in the body (`(#N)` in passing among them), only link; so does the branch's number when the text says `part of` it (`boards/refs.rs`). The `closed` event keeps the PR and the words that closed it (`by`), which the timeline and the board row show.
 
 ## Compatibility
 - `export_route` gives every issue with its timeline and comments as JSON or Markdown (`IssueExport`), and `issues_tests.rs` reads an export back. That is the way out aru-089 asks for.

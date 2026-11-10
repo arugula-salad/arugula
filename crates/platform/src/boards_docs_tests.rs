@@ -659,7 +659,7 @@ async fn a_closed_boards_docs_stay_editable() {
 /// of someone the team took out, who can still link the pointer they saw.
 #[tokio::test]
 async fn a_machine_docs_chip_reads_its_copy_only_in_the_copys_project() {
-    let (hub, _app, base, t, _u) = seeded().await;
+    let (hub, app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     grant_write(&base, "a", "geek", &t).await;
     let mine = json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "Perf notes" });
@@ -671,9 +671,15 @@ async fn a_machine_docs_chip_reads_its_copy_only_in_the_copys_project() {
         "title": "Perf notes, now private",
         "sections": [{ "id": "s1", "heading": "Setup", "body": "x" }, { "id": "s2", "heading": "Numbers" }],
     });
-    let (st, p) = signed(&base, "a geek", "PUT", &machine_doc("d7"), Some(put_doc)).await;
+    // geek, a team's machine, copies no more Docs up (native #673): this is
+    // a copy it made before, put from a's own machine and keyed as geek's.
+    hub.daemon("apad", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, p) = signed(&base, "a apad", "PUT", &machine_doc("d7"), Some(put_doc)).await;
     assert_eq!(st, 200, "{p}");
     let pdc = p["id"].as_str().unwrap();
+    let n = app.db.c().execute("UPDATE project_docs SET machine = 'geek' WHERE id = ?1", params![pdc]).unwrap();
+    assert_eq!(n, 1);
     // The team's board: the copy is in a's personal project, so the chip
     // keeps the title it was linked with.
     let snapshot = |d: &Value| {
@@ -712,7 +718,7 @@ async fn a_machine_docs_chip_reads_its_copy_only_in_the_copys_project() {
     snapshot(&v["docs"][0]);
     // Taken out of the team, b still has the pointer, and still only that.
     hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
-    crate::cache::catch_up(&_app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
     let (_, v) = call(&base, "b", "GET", &format!("/api/boards/{bs}"), None).await;
     snapshot(&v["docs"][0]);
     assert_eq!(

@@ -4,6 +4,7 @@
 // `/p/:project/triage` is that page, scrolled here. The reads and the adds are
 // untriaged.ts's; the issues list stays at All issues.
 
+import { BlockLoading, EmptyLine } from "../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { boards } from "../../shared/boards/store";
@@ -17,6 +18,8 @@ import { mayWrite } from "./issues";
 import { WaitingWrites } from "./tracker-writes";
 import { TRIAGE_NONE, addedWords, boxState, itemHref, rangeKeys, sourceLabel, targets } from "./triage-text";
 import { addUntriaged, countUntriaged, keyOf, pointerOf, readUntriaged, type Chosen, type UntriagedPage } from "./untriaged";
+import { ObjectChip, Chip } from "../../shared/ui/state-chip";
+import { ChevronIcon } from "../../shared/ui/icons";
 
 /** The open issues on no board, `null` while they load, for each of `projects` (read in parallel); one that can't be read counts none. */
 export function useUntriaged(projects: readonly string[]): Map<string, number> | null {
@@ -55,7 +58,7 @@ function useSettled<T>(value: T, ms: number): T {
 }
 
 /** The section's state, lifted to the page so the board cards can take a drop and the tabs can count. `added` is told when rows went onto a board, so the boards read again. */
-export function useTriage(project: string, on: boolean, added: () => void) {
+export function useTriage(project: string, added: () => void) {
   const [q, setQ] = useState("");
   const [label, setLabel] = useState("");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
@@ -75,7 +78,6 @@ export function useTriage(project: string, on: boolean, added: () => void) {
   same.current = JSON.stringify(query);
 
   useEffect(() => {
-    if (!on) return;
     const n = ++seq.current;
     // A new query is a new selection.
     setAll(false);
@@ -89,7 +91,7 @@ export function useTriage(project: string, on: boolean, added: () => void) {
       },
       (e: Error) => n === seq.current && setError(e.message),
     );
-  }, [project, on, words, label, order]);
+  }, [project, words, label, order]);
 
   const items = page?.items ?? [];
   const total = page?.total ?? 0;
@@ -219,7 +221,7 @@ export function dropOn(tri: Triage, board: { id: string; title: string }, done?:
 
 /** Whether any of the page's board cards is on screen. */
 function boardsInView(): boolean {
-  const g = document.querySelector("[data-boards] .board-card");
+  const g = document.querySelector("[data-boards] [data-board-card]");
   if (!g) return false;
   const r = g.getBoundingClientRect();
   return r.bottom > 40 && r.top < innerHeight;
@@ -316,16 +318,12 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
           Not on a board{page && <span class="untri-n" data-triage-count>{total.toLocaleString()}</span>}
         </h2>
         <a class="sw-all" href={allLink} data-triage-all onClick={(e) => follow(e, allLink)}>
-          All issues ›
+          All issues <ChevronIcon dir="right" />
         </a>
       </div>
       {error && <p class="control-error" role="alert">{error}</p>}
-      {!error && page === null && <p class="dim">Loading…</p>}
-      {page && total === 0 && !filtered && (
-        <p class="dim" data-triage-none>
-          {TRIAGE_NONE}
-        </p>
-      )}
+      {!error && page === null && <BlockLoading inline what="the issues" />}
+      {page && total === 0 && !filtered && <EmptyLine data-triage-none>{TRIAGE_NONE}</EmptyLine>}
       {page && (total > 0 || filtered) && (
         <>
           {tools && (
@@ -387,9 +385,9 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
                       )}
                       <span class="untri-fill" />
                       {i.labels?.map((l) => (
-                        <span key={l} class="untri-tag">
+                        <Chip key={l} kind="tag" class="untri-label">
                           {l}
-                        </span>
+                        </Chip>
                       ))}
                       <span class="untri-age dim">{ago(i.updated_at, Date.now(), "short")}</span>
                       {write && (
@@ -401,12 +399,12 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
                   );
                 })}
                 {items.length === 0 && (
-                  <li class="untri-empty dim" data-triage-nomatch>
+                  <li class="empty-line" data-triage-nomatch>
                     Nothing matches.
                   </li>
                 )}
                 {page.next && (
-                  <li class="untri-empty dim" ref={sentinel} data-triage-more>
+                  <li class="empty-line" ref={sentinel} data-triage-more>
                     Loading more…
                   </li>
                 )}
@@ -430,9 +428,9 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
       <div class="untri-dock" data-on={dock || undefined} data-triage-dock aria-hidden="true">
         <span class="untri-dock-label">Drop on a board:</span>
         {open.map((b) => (
-          <span key={b.id} class="untri-chip" data-dock-board={b.id} {...dropOn(tri, b, () => setDock(false))}>
+          <ObjectChip key={b.id} class="drop-target" data-dock-board={b.id} {...dropOn(tri, b, () => setDock(false))}>
             {b.title}
-          </span>
+          </ObjectChip>
         ))}
       </div>
     </section>

@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { Broken, additionalData, fromBase64Url, keyFromHash, openParts, openSnapshot } from "../src/shell/doc-link";
+import { Broken, additionalData, fromBase64Url, keyFromHash, layoutOf, openParts, openSnapshot } from "../src/shell/doc-link";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const vector = JSON.parse(readFileSync(join(here, "../../crates/daemon/tests/fixtures/docs/link-vector.json"), "utf8")) as {
@@ -31,6 +31,26 @@ test("the vector made in Rust opens in the web's code", async () => {
   expect(vector.parts.length).toBeGreaterThanOrEqual(4);
   // The additional data is the bytes the daemon binds.
   expect(new TextDecoder().decode(additionalData(vector.id, vector.ver, 2, 5))).toBe(`ADL1|${vector.id}|${vector.ver}|2|5`);
+});
+
+test("a manifest with a layout opens as it did before layouts, and an unknown layout reads as a doc (Arugula #827)", async () => {
+  const seal = (json: object) => {
+    const m = new TextEncoder().encode(JSON.stringify(json));
+    const out = new Uint8Array(8 + m.length);
+    out.set(new TextEncoder().encode("ADL1"));
+    new DataView(out.buffer).setUint32(4, m.length);
+    out.set(m, 8);
+    return sealOne(key, vector.id, 1, 0, 1, out).then((p) => openSnapshot(key, vector.id, 1, [p]));
+  };
+  const base = { title: "T", entries: [], assets: [] };
+  const tabs = await seal({ ...base, layout: "tabs" });
+  expect(tabs.manifest.title).toBe("T");
+  expect(layoutOf(tabs.manifest)).toBe("tabs");
+  expect(layoutOf((await seal({ ...base, layout: "prototype" })).manifest)).toBe("prototype");
+  expect(layoutOf((await seal({ ...base, layout: "gallery" })).manifest)).toBe("doc");
+  expect(layoutOf((await seal(base)).manifest)).toBe("doc");
+  // The vector, made without one, is a doc.
+  expect(layoutOf((await openSnapshot(key, vector.id, vector.ver, parts())).manifest)).toBe("doc");
 });
 
 test("the key is read from the fragment, 32 bytes of base64url, and nothing else", () => {

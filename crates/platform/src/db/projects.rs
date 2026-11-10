@@ -22,9 +22,11 @@
 //! - `hub_feed` is how far the platform has applied the hub's change feed
 //!   to these tables.
 //!
-//! Nothing reads `project_id` yet (M129). The tables are made by the
-//! platform's migrations (`migrations/sqlite`), which also ran M129's
-//! backfill one last time (`0003_personal_projects.sql`).
+//! For a platform row that has a `project_id`, the reader's role in that
+//! project decides who reads and writes it (aru-134). M129 added the
+//! column and backfilled it. The tables are made by the platform's migrations
+//! (`migrations/sqlite`), which also ran M129's backfill one last time
+//! (`0003_personal_projects.sql`).
 
 use serde::Serialize;
 
@@ -626,6 +628,46 @@ impl Db {
                 ors.join(" OR ")
             ),
             &super::sql::list(&args),
+            grant_row,
+        )
+    }
+
+    /// Of these accounts' machines, those whose `cloud.drive` over their
+    /// account is revoked (every grant they had there is), as (account,
+    /// machine): the rest hold it, a machine with no row yet included (it
+    /// gets its grant the first time it asks,
+    /// [`crate::grants::can_drive_cloud`]). One query for a project's Access
+    /// view (Arugula #682), which says whose machines hold it.
+    pub fn revoked_cloud_drive(&self, accounts: &[String]) -> anyhow::Result<Vec<(String, String)>> {
+        if accounts.is_empty() {
+            return Ok(vec![]);
+        }
+        let marks = vec!["?"; accounts.len()].join(", ");
+        self.c().query_map(
+            &format!(
+                "SELECT scope_id, subject_id FROM grants WHERE subject_kind = 'daemon' AND power = '{CLOUD_DRIVE}'
+                 AND scope_kind = 'account' AND scope_id IN ({marks})
+                 GROUP BY scope_id, subject_id HAVING max(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) = 0
+                 ORDER BY scope_id, subject_id"
+            ),
+            &super::sql::list(accounts),
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// Every live grant over one project, whoever gave it and whatever its
+    /// subject (a machine or an agent grant token) and power: the
+    /// project's Access view (Arugula #682). Only grants whose scope is the
+    /// project: never one over an account (a power over the owner's DMs,
+    /// which is its owner's alone to see; `cloud.drive`, which the view
+    /// counts per member through [`Db::revoked_cloud_drive`] instead).
+    pub fn grants_over_project(&self, project: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'project' AND scope_id = ?1
+                 AND revoked_at IS NULL ORDER BY granted_by, subject_id, power, created_at, id"
+            ),
+            params![project],
             grant_row,
         )
     }

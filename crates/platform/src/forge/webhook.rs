@@ -99,8 +99,12 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
         let _ = p.db.forget_delivery(&delivery);
         return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't drop kept access answers").into_response();
     }
-    // M164: a linked repo's rows. M174: no pokes go to the hub.
-    super::ingest::webhook(&p, &event, &delivery, &v, came);
+    // M164: a linked repo's rows. M174: no pokes go to the hub. Rows that
+    // failed to write aren't taken: GitHub's redelivery of it writes them.
+    if !super::ingest::webhook(&p, &event, &delivery, &v, came) {
+        let _ = p.db.forget_delivery(&delivery);
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't write the mirror's rows").into_response();
+    }
     // Arugula #432: a merged PR closes the native issues it says it closes.
     super::closes::webhook(&p, &event, &v).await;
     // M205: a comment on an exported issue's GitHub issue, into its thread.

@@ -17,6 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("sessions");
@@ -145,10 +146,23 @@ test("Acme with chat on, a hosted workspace, and #general", async ({ browser }) 
       )
       .run(`hw_${randomBytes(16).toString("hex")}`, project, machine, now + 86_400_000, me, now, now),
   );
+  sql((db) => allowSessions(db, project, team));
   const ch = await api(alice, "POST", `/api/chat/teams/${team}/channels`, { name: "general" });
   expect(ch.status, JSON.stringify(ch.body)).toBe(200);
   general = (ch.body as { id: string }).id;
   expect((await api(alice, "POST", `/api/chat/rooms/${general}/members`, { accounts: [bobAccount] })).status).toBe(200);
+});
+
+test("with no standing grant, @arugula starts nothing and the thread says how to give one", async () => {
+  sql((db) => db.prepare("DELETE FROM run_grants WHERE project_id = ?").run(project));
+  await room(bob);
+  const parent = await say(bob, "@arugula fix the canary");
+  expect(sessionOn(parent)).toBeUndefined();
+  const thread = await api(bob, "GET", `/api/chat/rooms/${general}/messages?thread=${parent}`);
+  const lines = (thread.body as { messages: { via?: string; text: string }[] }).messages.filter((m) => m.via === "system");
+  expect(lines.map((m) => m.text).join("\n")).toContain("standing grant");
+  expect(lines.map((m) => m.text).join("\n")).toContain("Devices and machines");
+  sql((db) => allowSessions(db, project, team));
 });
 
 let first: Ses;
@@ -171,7 +185,7 @@ test("the card goes queued, working, needs input, and Bob answers it", async () 
   await expect(a).toHaveAttribute("data-session-state", "working", { timeout: 15_000 });
   await expect(a.locator("[data-session-tool]")).toContainText("Bash");
   // #1595: on the platform page, Open says it goes to your machines.
-  await expect(a.locator("[data-session-open]")).toHaveText("Open on your machines ↗");
+  await expect(a.locator("[data-session-open]")).toHaveText("Open on your machines");
   await expect(a.locator("[data-session-open]")).toHaveAttribute("title", /on your machines \(.+\)\. A browser is approved/);
 
   // It asks; Bob, an editor, sees the question on his page and answers.
@@ -199,9 +213,10 @@ test("the box takes the answer and the turn ends: done, with what it left", asyn
   const branch = (await a.locator("[data-session-branch]").textContent())!.trim();
   boxSays(first.id, "turn", null, { branch, pushed: true, commits: ["a1b2c3 fix the web login"], diffstat: " web/login.ts | 12 ++++++++----\n 1 file changed" });
   boxSays(first.id, "state", "done", {});
-  await expect(a.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(a.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   await expect(a.locator("[data-session-diffstat]")).toContainText("1 file changed");
-  await expect(a.locator("[data-session-turn]")).toContainText("Pushed");
+  await expect(a.locator("[data-session-turn]")).not.toContainText("Pushed");
+  await expect(a.locator("[data-session-turn]")).toHaveAttribute("title", "Pushed · 1 commit");
   await expect(a.locator("[data-session-stop]")).toBeVisible();
 
   // Its own page: the card, larger, and its history.
@@ -211,7 +226,7 @@ test("the box takes the answer and the turn ends: done, with what it left", asyn
   await expect(history.first()).toContainText("Asked for");
   await expect(history.nth(2)).toContainText("Asks: Which login page");
   await expect(history.last()).toContainText("The turn finished");
-  await expect(alice.locator(".session-card.large [data-session-label]")).toHaveText("done");
+  await expect(alice.locator(".session-card.large [data-session-label]")).toHaveText("turn ended");
 });
 
 test("a second session's box goes quiet: stopped responding, and Bob stops it", async () => {

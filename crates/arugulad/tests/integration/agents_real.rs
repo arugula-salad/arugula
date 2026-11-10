@@ -31,14 +31,14 @@
 //! - `mcp-cc` (M16): Claude Code outside Arugula (`claude -p`, haiku),
 //!   with `arugula mcp` as its MCP server: a build that fails after a
 //!   while, waited through; it reads why, fixes it and reruns, and the
-//!   pane says "started by mcp:claude-code". With `mcp-vm` too, the build
-//!   runs in a throwaway wisp VM pane (needs wisp).
+//!   pane says "started by mcp:claude-code".
 //! - `claude`: Claude Code through the pinned `claude-agent-acp`, on your
 //!   own login, in a scratch git repo: a command it asks to run, approved.
 //! - `codex`: `codex-acp` against your `codex`.
-//! - `vm`: Claude Code in a throwaway wisp VM, with the token in
-//!   `~/.config/arugula/claude-oauth-token` (or an API key in
-//!   `…/anthropic-key`); skipped if neither exists.
+//!
+//! Claude Code in a throwaway VM (`vm`, and `mcp-vm` for the build above)
+//! ran on wisp and went with the Sprites adapter; a run on loam is for
+//! when loam has parity.
 //!
 //! Managed cloud live coverage is in arugula-control, `live_subscription_run`.
 //!
@@ -134,36 +134,6 @@ fn codex_runs() {
     let t = text(&d, id);
     assert!(t.contains("m6b-ok"), "{t}");
     assert_eq!(d.state(id)["server"]["name"], "@agentclientprotocol/codex-acp");
-}
-
-#[test]
-fn claude_code_in_a_vm() {
-    if !wanted("vm") {
-        return;
-    }
-    let config = home().join(".config/arugula");
-    if !config.join("claude-oauth-token").exists() && !config.join("anthropic-key").exists() {
-        eprintln!("SKIP: no credentials for VM agents (~/.config/arugula/claude-oauth-token or anthropic-key)");
-        return;
-    }
-    let token = home().join(".local/share/wisp/token");
-    if !token.exists() {
-        eprintln!("SKIP: no wisp token (~/.local/share/wisp/token)");
-        return;
-    }
-    let d = Daemon::child_with(&["--wisp-token-file", token.to_str().unwrap()]);
-    // VMs are the `sandbox-providers` flag's (#347).
-    arugula_testkit::labs(&d.state, true);
-    let config = json!({ "agent": "claude", "model": "haiku", "prompt": PROMPT });
-    let id = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));
-    // The first start installs Node and the adapter in the machine.
-    approve_a_command(&d, id, 300);
-    let machines: Value = d.get("/api/machines");
-    let sprite = machines[0]["sprite"].as_str().unwrap().to_owned();
-    assert!(sprite.starts_with("arugula-eph-"), "{machines}");
-    // Closing it deletes its machine.
-    d.post(&format!("/api/panes/{id}/close"), json!({}));
-    d.wait_for("its machine to go", || d.get("/api/machines").as_array().unwrap().is_empty());
 }
 
 /// M6c: Claude Code's AskUserQuestion in an agent block (one haiku turn):
@@ -503,16 +473,7 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     if !wanted("mcp-cc") {
         return;
     }
-    let on_vm = std::env::var("ARUGULA_REAL_AGENTS").unwrap_or_default().split(',').any(|w| w.trim() == "mcp-vm");
-    let wisp = home().join(".local/share/wisp/token");
-    if on_vm && !wisp.exists() {
-        eprintln!("SKIP: mcp-vm needs a wisp token (~/.local/share/wisp/token)");
-        return;
-    }
-    let d = if on_vm { Daemon::child_with(&["--wisp-token-file", wisp.to_str().unwrap()]) } else { Daemon::child() };
-    if on_vm {
-        arugula_testkit::labs(&d.state, true);
-    }
+    let d = Daemon::child();
     let cli = std::path::Path::new(env!("CARGO_BIN_EXE_arugulad")).with_file_name("arugula");
     assert!(
         std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success()
@@ -522,14 +483,12 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     let server = json!({ "mcpServers": { "arugula": { "command": cli, "args": ["--socket", d.sock(), "mcp"] } } });
     std::fs::write(&config, server.to_string()).unwrap();
     // A build that takes a while and fails until a file exists.
-    let marker = if on_vm { "/tmp/ready".to_owned() } else { format!("{repo}/ready") };
+    let marker = format!("{repo}/ready");
     let build = format!(
         "sleep 20; test -f {marker} && echo BUILD-OK || {{ echo 'error: {marker} is missing (touch it)'; false; }}"
     );
-    let place =
-        if on_vm { "with vm: true (a throwaway VM pane; run the fix in that same pane with send_input)" } else { "" };
     let prompt = format!(
-        "Use the Arugula MCP tools. Run this build with the run tool {place}, with wait true: `{build}`. \
+        "Use the Arugula MCP tools. Run this build with the run tool, with wait true: `{build}`. \
          If it fails, read why, fix it, and run the build again until it succeeds (wait again if it's still running). \
          Then reply with just the word DONE."
     );
@@ -557,9 +516,6 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     assert!(builds.iter().all(|c| c["by"] == "mcp:claude-code"), "{h}");
     let panes = d.get("/api/panes");
     assert!(panes.as_array().unwrap().iter().any(|p| p["started_by"]["by"] == "mcp:claude-code"), "{panes}");
-    if on_vm {
-        assert!(!d.get("/api/machines").as_array().unwrap().is_empty(), "on a VM");
-    }
 }
 
 /// #145, #146, #147 against the real Claude Code: no hooks, so everything

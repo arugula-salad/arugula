@@ -8,13 +8,13 @@
 // revokes); every new one pushes the account's devices a notice. A token's
 // name is shown inside <bdi>, so it can't turn the text around it.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Time } from "../../shared/ui/time";
 import { session } from "../session";
-import { toneClass } from "../swarm";
 import { roleIn } from "./environments";
 import { hasWorkOnBoards, VIEWER_REFUSED, withWorkOnBoards } from "./grants";
 import { Section } from "../../shared/ui/settings-section";
@@ -205,7 +205,6 @@ export function AgentTokens() {
       id="tokens"
       title="Your agent tokens"
       count={tokens.length}
-      lede="Tokens for agents that run somewhere without Arugula, reaching your projects through Arugula's MCP endpoint."
       more={
         <p>
           A token's agent acts as yours, labelled with the token's name, never past what you can do. It never approves anything: a deploy
@@ -252,12 +251,12 @@ export function AgentTokens() {
       )}
       {tokens.length === 0 && !making && <p class="dim">None yet.</p>}
       {tokens.length > 0 && (
-        <ul class="platform-list sw-cards settings-cards agent-tokens">
+        <ul class="platform-list card-list settings-cards agent-tokens">
           {/* The bar: live, or revoked. */}
           {tokens.map((t) => (
-            <li key={t.id} data-agent-token={t.id} class={`sw-card ${toneClass(t.live ? "accent" : "muted")}`}>
-              <div class="sw-head">
-                <b class="sw-name">
+            <Card as="li" key={t.id} data-agent-token={t.id} tone={t.live ? "accent" : "muted"}>
+              <div class="card-head">
+                <b class="card-title big">
                   <bdi>{t.name}</bdi>
                 </b>
                 <span class="settings-card-act">
@@ -293,7 +292,7 @@ export function AgentTokens() {
                 )}
               </span>
               {open === t.id && <Calls id={t.id} />}
-            </li>
+            </Card>
           ))}
         </ul>
       )}

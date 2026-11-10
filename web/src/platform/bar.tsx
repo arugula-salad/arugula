@@ -6,7 +6,7 @@
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useEffect, useRef } from "preact/hooks";
+import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
@@ -16,11 +16,10 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
-import { LiveSwitch, liveItems } from "../shared/live/switch";
-import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
+import { Caret } from "../shared/ui/icons";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
@@ -85,8 +84,7 @@ function Place({ to, here, children, data }: { to: string; here: boolean; childr
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
-  // Issues come with chat (M201): its setting on control says whether they're there,
-  // and its rooms what's new in issues' and runs' threads.
+  // Chat's rooms say what's new in issues' and runs' threads.
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
@@ -95,9 +93,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
-  // Live's camera goes to the team of the project on screen (#343).
-  const working = p?.team?.id ?? null;
-  useEffect(() => setWorkingTeam(working), [working]);
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
@@ -120,7 +115,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
       { label: "Settings", run: () => go("/settings") },
       // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(liveItems()),
+      ...presenceItems(),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
       { label: "Open your machines", run: () => location.assign(controlOrigin()) },
       "separator",
@@ -163,7 +158,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         aria-expanded={switcherOpen}
         onClick={pick}
       >
-        <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
+        <span class="platform-project-name">{projectName}</span> <Caret />
       </button>
       <nav class="places" aria-label="Places">
         {/* All projects is a scope like a project (Arugula #636): these are its places. */}
@@ -238,14 +233,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           Machines
         </a>
       )}
-      {/* #341: live presence, beside the account, with its Labs flag. */}
-      <LiveSwitch />
       {me && (
         <button
           ref={accountButton}
           class="account-button platform-me"
           title={me.login ? `Signed in as ${me.login}` : "Signed in"}
-          aria-label={`Account: ${me.login || me.name}`}
           aria-haspopup="menu"
           aria-expanded={accountOpen}
           data-signed-in-as
@@ -255,7 +247,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
             <AccountPicture />
           </span>
-          <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
+          <span class="account-login">{me.login || me.name}</span> <Caret />
         </button>
       )}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}

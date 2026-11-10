@@ -133,7 +133,7 @@ fn boot(name: &str, prompt: &str) -> (tokio::runtime::Runtime, Fake, arugula_tes
     let _ = std::fs::remove_dir_all(&sessions);
     std::fs::create_dir_all(&sessions).unwrap();
     let mut d = arugulad!(name)
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("FAKE_ACP_DIR", &sessions)
         .env_remove("CLAUDE_CONFIG_DIR")
@@ -224,6 +224,32 @@ fn a_session_that_exits_mid_turn_drops_the_mention_it_was_on() {
     d.wait_for("dropped", || states(&f) == [(7, "working".into()), (7, "dropped:exited".into())]);
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(states(&f).len(), 2, "nothing is said twice: {:?}", states(&f));
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&sessions);
+}
+
+/// #662: closing the block drops the mention its turn was on and the one
+/// waiting behind it, as the session ended before it read them.
+#[test]
+fn closing_an_agent_block_mid_turn_drops_its_mentions() {
+    let (_rt, f, d, block, sessions) = boot("mentionclose", "stream 20 150");
+
+    f.outbox.lock().unwrap().push(mention("m1", 7, "slowly"));
+    f.outbox.lock().unwrap().push(mention("m2", 8, "slowly"));
+    d.wait_for("both handed over", || answer(&f, "m1").is_some() && answer(&f, "m2").is_some());
+    d.wait_for("working", || states(&f).len() == 1);
+    let (running, state) = states(&f)[0].clone();
+    assert_eq!(state, "working");
+    let waiting = if running == 7 { 8 } else { 7 };
+
+    d.post(&format!("/api/panes/{block}/close"), json!({}));
+    d.wait_for("both dropped", || {
+        states(&f)
+            == [(running, "working".into()), (running, "dropped:exited".into()), (waiting, "dropped:exited".into())]
+    });
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(states(&f).len(), 3, "nothing is said twice: {:?}", states(&f));
 
     drop(d);
     let _ = std::fs::remove_dir_all(&sessions);

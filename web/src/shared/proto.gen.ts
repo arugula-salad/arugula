@@ -226,7 +226,7 @@ pr_block?: number, };
  * strip at the top of a thread (#646). Only with agent mentions on; off,
  * they learn nothing whatever this says.
  */
-export type AgentSessions = "none" | "names" | "work";
+export type AgentListing = "none" | "names" | "work";
 
 /**
  * The open question or approval behind an `ask` reason.
@@ -281,7 +281,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board";
 
 /**
  * [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
@@ -569,7 +569,19 @@ url?: string | null,
 /**
  * An issue's status category; a PR and a run have none.
  */
-category?: BoardCategory, };
+category?: BoardCategory, 
+/**
+ * A closed native issue that a merged PR closed: the PR
+ * (`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).
+ */
+closed_with?: string, 
+/**
+ * With `closed_with`, the words of the PR that closed it: `"(#12)" in
+ * the title`, `"Closes #12" in the body`, `the branch feat/12-x`,
+ * `attached to its board row as work`. Absent for a close from before
+ * they were kept.
+ */
+closed_by?: string, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control
@@ -582,7 +594,16 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, 
+/**
+ * The other board the blocker is a row of, when the reader may read
+ * the blocker and it is on a board other than this one.
+ */
+board?: string, 
+/**
+ * The session that leads that board, when one does.
+ */
+lead?: string, } | { "kind": "cycle" };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
@@ -591,12 +612,20 @@ export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" 
  * one. A group moves among groups:
  * `before` is a group, `zone` is absent. A lane is never set (aru-125): a
  * `zone` that is a lane is refused.
+ *
+ * `seen` is the row ids of the group the row goes to, in the order the
+ * caller read them. A row's `rev` doesn't count moves, so this is what a
+ * move that mustn't overwrite someone else's checks: if the group's rows
+ * aren't those, in that order, nothing moves and the answer is 409
+ * `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+ * Absent, a move is made whatever the order.
  */
 export type BoardMoveEntry = { rev: number | null, 
 /**
- * The group the row goes to; `null`: none. Absent: its own.
+ * The group the row goes to; `null`: none. Absent: its own. `group`
+ * is read as this too.
  */
-zone?: string | null, before: string | null, };
+zone?: string | null, before: string | null, seen?: Array<string>, };
 
 /**
  * A board that lists a project Doc.
@@ -657,7 +686,7 @@ export type BoardProofBy = "ci" | "evidence";
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
 /**
- * A new row's group (`zon_…`).
+ * A new row's group (`zon_…`); `group` is read as this too.
  */
 zone: string | null, 
 /**
@@ -726,6 +755,21 @@ asked?: Array<BoardAnsweredAsk>,
  * The edges of the row's item, both ways, for the drawer.
  */
 relations?: Array<BoardRowRelation>, 
+/**
+ * Where the row falls in the board's order (Arugula #762): 1 plus the
+ * highest step of the open rows that come before it, worked out on
+ * every read and never stored. Absent for a row with no issue or PR,
+ * and for a Done row. Doing and Review rows are step 1.
+ */
+step?: number, 
+/**
+ * The column the row sits in on the Steps chart (Arugula #824): the
+ * same longest-path layout as [`Row::step`], but over every row with an
+ * issue or a PR, done ones included, using their ordering edges whether
+ * the other end is open or closed. So finishing work never moves a row.
+ * Absent for a row with no issue or PR.
+ */
+place?: number, 
 /**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
@@ -813,6 +857,12 @@ left_out: number,
 started: boolean, };
 
 /**
+ * The body of a move refused as `stale_order`: the group's rows now, in
+ * order.
+ */
+export type BoardStaleOrder = { error: string, reason: string, rows: Array<string>, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
@@ -844,6 +894,23 @@ docs: Array<BoardDoc>,
  * PR as their item that are in Next and have no open blocker.
  */
 ready?: Array<string>, 
+/**
+ * The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+ * step by what unblocks the most open rows, then by position (#762).
+ */
+sequence?: Array<string>, 
+/**
+ * The longest chain of open rows (`row_…`), first to last; empty when
+ * no row waits on another (#762).
+ */
+chain?: Array<string>, 
+/**
+ * Every row (`row_…`) as the board stores them: by group, in the
+ * groups' order, then by position inside each, those with no group
+ * last. A move that names the order it read (`seen`) names a group's
+ * rows from here.
+ */
+order?: Array<string>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.
@@ -961,6 +1028,10 @@ order: string | null,
  */
 label: string | null, };
 
+/**
+ * One of a board's four lanes as a read answers it, with its rows. The wire
+ * and TypeScript still call it a zone (`zones`, `BoardZone`).
+ */
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 
 /**
@@ -1057,12 +1128,7 @@ export type ChatAskAnswer = { choice: string, };
  * sets their choice (absent: leave it). `machines`: whose online state
  * the page wants too (the machines its messages' agents are on).
  */
-export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, 
-/**
- * The reader's live presence choice, when they changed it (kept with
- * `live-presence` on; ignored with it off).
- */
-live: LivePresence | null, machines: Array<string>, };
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
 
 /**
  * A public channel in the browser (#118).
@@ -1462,12 +1528,7 @@ export type ChatPresence = {
 /**
  * The reader's own choice.
  */
-mode: PresenceMode, 
-/**
- * The reader's live presence choice, with the `live-presence` Labs flag
- * on for them; absent with it off, which is how a page learns the flag.
- */
-live?: LivePresence | null, people: Array<ChatPresent>, machines_online: Array<string>, };
+mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
 
 /**
  * One teammate's presence.
@@ -1498,6 +1559,11 @@ export type ChatReaction = { emoji: string,
  * All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
  */
 count: number, 
+/**
+ * How many of `count` are agents' (#632); the rest are people's. An
+ * older control leaves it out, and it reads as none.
+ */
+agents: number, 
 /**
  * The reader has: a person's own reaction, or for an agent reading,
  * its own (never the owner's, nor the agent's for the owner).
@@ -1844,7 +1910,7 @@ lead: boolean, };
 /**
  * What an agent in a thread is doing (#645).
  */
-export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "unknown";
+export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "failed" | "stopped" | "unknown";
 
 /**
  * [`chat_thread_agents`]' answer: oldest in the thread first.
@@ -1949,6 +2015,68 @@ export type CheckSource = "status" | "action" | "check_run" | "pipeline_job";
 export type CheckState = "queued" | "running" | "success" | "failure" | "cancelled" | "skipped" | "neutral" | "action_required" | "manual";
 
 export type Child = { weight: number, node: Node, };
+
+/**
+ * A branch's open red issue.
+ */
+export type CiAlertOpen = { branch: string, 
+/**
+ * The issue's id (`iss_`) and number.
+ */
+issue: string, number: number, opened_at: number, };
+
+/**
+ * A project's CI alerts (native #774): chant's signed CI events open,
+ * comment on and close a "main is red" native issue. Never the key.
+ */
+export type CiAlerts = { 
+/**
+ * The project's id (`personal` asked is answered with the real one).
+ */
+project: string, 
+/**
+ * On: a key is kept and events are taken.
+ */
+on: boolean, 
+/**
+ * The URL chant posts to: `ci.green.notify.webhook`'s variable.
+ */
+url: string, 
+/**
+ * Who a new red issue mentions (accounts), in order.
+ */
+people: Array<string>, 
+/**
+ * They're assigned it as well.
+ */
+assign: boolean, 
+/**
+ * Who made the key in use (an account, empty once it's deleted), and
+ * when. `None` while off.
+ */
+key_made_by: string | null, key_made_at: number | null, 
+/**
+ * When the last signed event arrived.
+ */
+last_event_at: number | null, 
+/**
+ * Each branch's open red issue.
+ */
+open: Array<CiAlertOpen>, };
+
+/**
+ * The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+ * and the alerts as they are now. chant reads it from
+ * `ci.green.notify.key`'s variable.
+ */
+export type CiAlertsKey = { key: string, alerts: CiAlerts, };
+
+/**
+ * `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+ * assigns them, or `on: false` to turn alerts off (the key goes; the
+ * issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+ */
+export type CiAlertsSettings = { on?: boolean, people?: Array<string>, assign?: boolean, };
 
 /**
  * Control messages from a client.
@@ -2163,6 +2291,14 @@ export type DocContentAsset = { name: string, mime: string, size: number, rev: n
 export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
 
 /**
+ * How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+ * or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+ * layout this build doesn't know (a newer peer's) reads as `doc`, never as
+ * an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+ */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
+/**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
  */
 export type DocLinkUrl = { url: string, };
@@ -2218,6 +2354,11 @@ summary: string,
  */
 sections: Array<DocSectionShape>, 
 /**
+ * How it is laid out; `doc` for a Doc that never said, and from a
+ * daemon from before layouts.
+ */
+layout: DocLayout, 
+/**
  * Its copy on the platform (#418), once this machine has copied it up:
  * readable there with this machine asleep. Null until then, and again
  * once the machine has left control; a daemon from before native #673
@@ -2231,6 +2372,12 @@ platform?: DocOnPlatform, };
  * a figure and not words, or a prototype's code reads as a long essay.
  */
 export type DocSectionShape = { heading: string, words: number, figures: number, };
+
+/**
+ * `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+ * now (it has one already); otherwise the Doc gets a link.
+ */
+export type DocShareRequest = { update: boolean, };
 
 /**
  * When a Doc was shared with a link, and last updated.
@@ -2919,7 +3066,7 @@ blocks: boolean,
  */
 block_channels?: boolean, 
 /**
- * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
+ * VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
  */
 vms: boolean, 
 /**
@@ -3121,13 +3268,21 @@ export type IssueComment = {
  */
 seq: number, 
 /**
- * The account that wrote it, or "" once it's deleted.
+ * The account that wrote it, or "": a deleted account's, or one
+ * nobody here wrote (then `via` says who did).
  */
 author: string, agent: ChatAgent | null, at: number, text: string, 
 /**
  * Lines it quoted from a pane.
  */
-quote: string | null, edited: number | null, };
+quote: string | null, edited: number | null, 
+/**
+ * As its message's [`via`](crate::chat::ChatMessage::via): with no
+ * author, Arugula's own post (`system`, a session's card or ask),
+ * GitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent
+ * session said (`said:<ses>`) (Arugula #626).
+ */
+via?: string, };
 
 /**
  * An event on an issue's timeline.
@@ -3167,7 +3322,12 @@ export type IssueExport = { project: string, project_name: string, exported_at: 
 /**
  * Everyone it names (authors, actors, assignees, commenters).
  */
-people: Array<ExportedPerson>, };
+people: Array<ExportedPerson>, 
+/**
+ * The comments were left out: they're in chat, which is off for the
+ * reader (Arugula #746). Absent when they're there.
+ */
+comments_in_chat?: boolean, };
 
 /**
  * `GET /api/projects/{project}/issues/export?format=`: `json` (when not
@@ -3418,21 +3578,13 @@ process?: string,
 pane?: boolean, };
 
 /**
- * Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
- * account so every page agrees: `off` (the default), in no arugula.stream
- * room; `watching`, in your teams' rooms, seeing their live faces. Live
- * (your camera) isn't kept: it's per window, on top of `watching`.
- */
-export type LivePresence = "off" | "watching";
-
-/**
- * A machine that blocks can run on instead of this host: today a
- * throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
- * deleted when that pane closes.
+ * A machine that blocks can run on instead of this host: a throwaway
+ * sandbox from the provider (a loam microVM) owned by one pane or tab,
+ * and deleted when that closes.
  */
 export type Machine = { id: number, 
 /**
- * Who runs it: `wisp`.
+ * Who runs it: `loam`.
  */
 provider: string, 
 /**
@@ -4312,7 +4464,12 @@ machine: string | null,
  * That machine's name, when control knows it: null for a Doc made
  * here, or once the machine left. Older pages don't read it.
  */
-machine_name: string | null, };
+machine_name: string | null, 
+/**
+ * For a team Doc made from a Doc of its owner's (Share with…): where
+ * from. Null for any other Doc, and from an older platform.
+ */
+made_from: ProjectDocMadeFrom | null, };
 
 /**
  * One picture of a Doc, without its bytes: the shape a machine Doc's
@@ -4331,6 +4488,33 @@ mime: string, size: number,
 rev: number, };
 
 /**
+ * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
+ * first, in the projects its owner still reads.
+ */
+export type ProjectDocCopies = { copies: Array<ProjectDocCopy>, };
+
+/**
+ * A team Doc made from a Doc of its owner's, as its owner sees it.
+ */
+export type ProjectDocCopy = { project: string, project_name: string, 
+/**
+ * The team Doc's id, and its page on the platform's page.
+ */
+id: string, link: string, 
+/**
+ * When it was made, and when it last changed (ms since the epoch).
+ */
+made: number, updated: number, 
+/**
+ * The source changed since: its rev is above the one recorded.
+ */
+stale: boolean, 
+/**
+ * The team changed it since: its rev is above the one recorded.
+ */
+edited: boolean, };
+
+/**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
  */
 export type ProjectDocList = { project: string, docs: Array<ProjectDoc>, 
@@ -4338,6 +4522,21 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
  * Whether the reader may make one.
  */
 writer: boolean, };
+
+/**
+ * The Doc a team Doc was made from: a machine's copy, or one written here.
+ */
+export type ProjectDocMadeFrom = { 
+/**
+ * The source Doc's project (its owner's personal one) and its id.
+ */
+project: string, id: string, 
+/**
+ * The name of the machine the source is a copy from, when control knows
+ * it; null for a source written here. Only what the platform could
+ * tell; the source itself is its owner's to read.
+ */
+machine_name: string | null, };
 
 /**
  * One section: pending (`body` null) until it's written.
@@ -4371,7 +4570,13 @@ assets: Array<ProjectDocAsset>,
 /**
  * Whether the reader may write it.
  */
-writer: boolean, };
+writer: boolean, 
+/**
+ * Whether the reader may delete it: a person who writes in the
+ * project, a copy included (native #673). An older platform sends
+ * none; the page then takes `writer`.
+ */
+deleter: boolean, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,
@@ -4507,9 +4712,10 @@ export type RelationDirection = "out" | "in";
 /**
  * What an edge between two work items says (Arugula #403). Only `blocks`
  * gates: it keeps the blocked item's row out of the ready set until the
- * blocker is closed.
+ * blocker is closed. `before` (#761) says an order and gates nothing; it
+ * can't close a cycle with `blocks` edges.
  */
-export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from";
+export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from" | "before";
 
 /**
  * Who made an edge. `plane` and `github` edges are read from there, and
@@ -4942,7 +5148,7 @@ moves: Array<SessionPlace>,
  * The issue it was started on, with the first board that has a row for
  * it (#372).
  */
-work: SessionWork | null, };
+work: SessionIssueLink | null, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -4960,6 +5166,21 @@ export type SessionIssue = { id: string, number: number, title: string, labels: 
 state: string, };
 
 /**
+ * The issue a session was started on, as its header's chip shows it:
+ * `#N · ‹board›`, linking to the board's row.
+ */
+export type SessionIssueLink = { 
+/**
+ * The issue (`iss_…`) and its number.
+ */
+issue: string, number: number, 
+/**
+ * The board that has a row for it, when boards are on for the reader,
+ * its title and the row.
+ */
+board: string | null, board_title: string | null, row: string | null, };
+
+/**
  * One entry of a session's history, in words.
  */
 export type SessionLine = { seq: number, 
@@ -4975,6 +5196,18 @@ signed: boolean,
  * What it says, in a line.
  */
 text: string, };
+
+/**
+ * One row of `GET /api/links`: a read-only link to a session that still
+ * works. Its key stays out: the private half never reached the machine, so
+ * a link can't be read back from here, only ended.
+ */
+export type SessionLink = { 
+/**
+ * What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+ * principal.
+ */
+id: string, session: number, made_ms: number, expires_ms: number, };
 
 /**
  * [`SESSION_MOVE`]'s body: the workspace it goes to.
@@ -5296,21 +5529,6 @@ going?: boolean,
 limit?: number, };
 
 /**
- * The issue a session was started on, as its header's chip shows it:
- * `#N · ‹board›`, linking to the board's row.
- */
-export type SessionWork = { 
-/**
- * The issue (`iss_…`) and its number.
- */
-issue: string, number: number, 
-/**
- * The board that has a row for it, when boards are on for the reader,
- * its title and the row.
- */
-board: string | null, board_title: string | null, row: string | null, };
-
-/**
  * A read-only share of one pane. `token`, `path` and `url` are only in the
  * answer that minted it; the daemon keeps a hash.
  */
@@ -5354,7 +5572,7 @@ agent_mentions?: boolean,
  * (#577). `work` by default, since a thread's strip shows it (Jake,
  * 2026-11-03, aru-133).
  */
-agent_sessions?: AgentSessions, 
+agent_sessions?: AgentListing, 
 /**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
@@ -5365,7 +5583,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentSessions, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentListing, };
 
 /**
  * A split's area and how long each child is along the split's direction,
@@ -5865,6 +6083,7 @@ export const OPS = {
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
   "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
+  "doc.share": { method: "POST", path: "/api/docs/{id}/share" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
@@ -5886,6 +6105,8 @@ export const OPS = {
   "ide.set": { method: "PUT", path: "/api/ide" },
   "invite.send": { method: "POST", path: "/api/invite" },
   "link.mint": { method: "POST", path: "/api/links" },
+  "link.revoke": { method: "DELETE", path: "/api/links/{id}" },
+  "links.list": { method: "GET", path: "/api/links" },
   "machine.reset": { method: "POST", path: "/api/machines/{id}/reset" },
   "machines.list": { method: "GET", path: "/api/machines" },
   "mcp_token.mint": { method: "POST", path: "/api/mcp/tokens" },
@@ -5964,7 +6185,6 @@ export const FLAGS = [
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
   { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
-  { name: "live-presence", title: "Live presence", about: "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.", default: false, local_only: false },
 ] as const;
 
 /** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old

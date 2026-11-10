@@ -76,6 +76,8 @@ struct Status {
     /// agent's CLI is on this machine (#335).
     adapters: Vec<Value>,
     cli: CliStatus,
+    /// nvim is on the owner's PATH: Edit in nvim needs nothing installed.
+    nvim: bool,
 }
 
 /// How a new terminal here runs the CLI (#883), for the welcome card.
@@ -799,12 +801,19 @@ pub(crate) async fn status(app: &Arc<App>, q: SetupQuery) -> Value {
         return serde_json::json!({ "control": control_status(app) });
     }
     if q.part.as_deref() == Some("agents") {
-        let (claude, adapters, cli) = tokio::join!(claude_status(app), adapters_status(app), cli_status());
-        return serde_json::json!({ "claude": claude, "adapters": adapters, "cli": cli });
+        let (claude, adapters, cli, nvim) =
+            tokio::join!(claude_status(app), adapters_status(app), cli_status(), nvim_found(app));
+        return serde_json::json!({ "claude": claude, "adapters": adapters, "cli": cli, "nvim": nvim });
     }
-    let (tailscale, claude, adapters, cli) =
-        tokio::join!(tailscale_status(app), claude_status(app), adapters_status(app), cli_status());
-    serde_json::to_value(Status { tailscale, control: control_status(app), claude, adapters, cli }).unwrap()
+    let (tailscale, claude, adapters, cli, nvim) =
+        tokio::join!(tailscale_status(app), claude_status(app), adapters_status(app), cli_status(), nvim_found(app));
+    serde_json::to_value(Status { tailscale, control: control_status(app), claude, adapters, cli, nvim }).unwrap()
+}
+
+/// nvim on the owner's PATH, or where Homebrew puts it.
+async fn nvim_found(app: &App) -> bool {
+    let name = if cfg!(windows) { "nvim.exe" } else { "nvim" };
+    find(app, name, &["/opt/homebrew/bin/nvim", "/usr/local/bin/nvim"]).await.is_some()
 }
 
 #[cfg(test)]

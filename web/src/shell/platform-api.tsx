@@ -19,6 +19,9 @@ import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
 import type { PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
+import { sessionSlug } from "../shared/chat/agents";
+import { cleanTitle } from "../shared/titles";
+import { CloseIcon, IconButton } from "../shared/ui/icons";
 
 const made = new WeakMap<Client, PlatformApi>();
 
@@ -86,6 +89,13 @@ function build(client: Client): PlatformApi {
       getFleet()?.touch(h.name);
       directory.select(h.name);
     },
+    agentPane(machine, session) {
+      const h = hostOf(machine);
+      const slug = sessionSlug(session);
+      if (!h || !slug) return undefined;
+      const p = getFleet()?.panes.find((x) => x.host === h.name && !x.stale && sessionSlug(cleanTitle(x.info.title ?? "")) === slug);
+      return p ? { pane: String(p.id), up: h.state === "connected" } : undefined;
+    },
     // A Doc on this machine opens in a block here; one on another stays where it is.
     machineDoc: {
       here: (machine) => {
@@ -128,9 +138,9 @@ export function QuotePicker({ close, take }: { close: () => void; take: (q: Pane
     <div class="chat-quote-pick" role="dialog" aria-label="Quote a pane" data-quote-picker>
       <header>
         <strong>{picked ? `%${picked.id} on ${picked.host}` : "Quote a pane"}</strong>
-        <button type="button" class="thread-close" title="Close" aria-label="Close the pane picker" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close the pane picker" title="Close" class="thread-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </header>
       {!picked && (
         <ul>

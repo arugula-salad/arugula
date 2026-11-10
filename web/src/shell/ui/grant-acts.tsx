@@ -17,13 +17,13 @@ export function GrantActs({ n, done, sheet }: { n: Notice; done: () => void; she
   };
   return (
     <>
-      <button class={sheet ? "sheet-act" : "primary"} data-grant-yes onClick={answer(grantRead)} title={`${grantQuestion(n)} The mention is delivered once they can.`}>
+      <button class={sheet ? "sheet-act primary" : "primary"} data-grant-yes onClick={answer(grantRead)} title={`${grantQuestion(n)} The mention is delivered once they can.`}>
         Grant
       </button>
-      <button class={sheet ? "sheet-act" : "secondary"} data-grant-later onClick={done} title={GRANT_HELP}>
+      <button class={sheet ? "sheet-act primary" : "secondary"} data-grant-later onClick={done} title={GRANT_HELP}>
         Not now
       </button>
-      <button class={sheet ? "sheet-act" : "secondary"} data-grant-never onClick={answer(grantNever)} title={GRANT_HELP}>
+      <button class={sheet ? "sheet-act primary" : "secondary"} data-grant-never onClick={answer(grantNever)} title={GRANT_HELP}>
         Never for this room
       </button>
       {err && (

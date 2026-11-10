@@ -43,6 +43,7 @@
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
+//! | POST | `/api/docs/ID/share` | `DocShareRequest`: `update` for a Doc that has a link | `DocLinkUrl`: the Doc's link, made or updated, whether or not a block shows it (the owner's, never an agent's) |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
@@ -1008,6 +1009,50 @@ pub struct AgentCan {
     pub example: String,
 }
 
+/// How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+/// or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+/// layout this build doesn't know (a newer peer's) reads as `doc`, never as
+/// an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum DocLayout {
+    #[default]
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayout {
+    pub fn is_doc(&self) -> bool {
+        *self == DocLayout::Doc
+    }
+
+    /// The name it has on the wire and in `meta.json`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DocLayout::Doc => "doc",
+            DocLayout::Tabs => "tabs",
+            DocLayout::Prototype => "prototype",
+        }
+    }
+
+    /// The layout named `s`; one this build doesn't know is `doc`.
+    pub fn from_name(s: &str) -> DocLayout {
+        match s {
+            "tabs" => DocLayout::Tabs,
+            "prototype" => DocLayout::Prototype,
+            _ => DocLayout::Doc,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DocLayout {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(DocLayout::from_name(&String::deserialize(d)?))
+    }
+}
+
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
 /// that shows it now, `shared` its link's dates and id (never its key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1031,6 +1076,10 @@ pub struct DocRow {
     /// Its sections, for the list's picture of its shape and its outline.
     #[serde(default)]
     pub sections: Vec<DocSectionShape>,
+    /// How it is laid out; `doc` for a Doc that never said, and from a
+    /// daemon from before layouts.
+    #[serde(default)]
+    pub layout: DocLayout,
     /// Its copy on the platform (#418), once this machine has copied it up:
     /// readable there with this machine asleep. Null until then, and again
     /// once the machine has left control; a daemon from before native #673
@@ -1150,6 +1199,15 @@ pub struct DocOpenRequest {
     pub session: Option<String>,
     #[serde(default)]
     pub split: Option<PaneId>,
+}
+
+/// `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+/// now (it has one already); otherwise the Doc gets a link.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocShareRequest {
+    #[serde(default)]
+    pub update: bool,
 }
 
 /// The block that shows the Doc: the one that had it open, or a new one.
@@ -1344,6 +1402,29 @@ pub struct LinkRequest {
     /// With history (default: from now on).
     #[serde(default)]
     pub history: bool,
+}
+
+/// `GET /api/links`'s query string: one session's links, or every session's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinksQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionId>,
+}
+
+/// One row of `GET /api/links`: a read-only link to a session that still
+/// works. Its key stays out: the private half never reached the machine, so
+/// a link can't be read back from here, only ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionLink {
+    /// What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+    /// principal.
+    pub id: String,
+    pub session: SessionId,
+    #[serde(default)]
+    pub made_ms: u64,
+    #[serde(default)]
+    pub expires_ms: u64,
 }
 
 fn link_ttl() -> u64 {
@@ -2785,5 +2866,21 @@ mod wire {
         same(&Empty {}, json!({}));
         let back: Empty = serde_json::from_value(json!({})).unwrap();
         assert_eq!(back, Empty {});
+    }
+
+    /// A Doc's layout (Arugula #827): `doc` when it's missing, and a name
+    /// from a newer peer reads as `doc` rather than failing the row.
+    #[test]
+    fn a_doc_layout_defaults_and_forgives() {
+        let row = |extra: serde_json::Value| -> DocRow {
+            let mut v = json!({ "id": "a", "title": "T", "made": 1, "updated": 2, "by": "me" });
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(v).unwrap()
+        };
+        assert_eq!(row(json!({})).layout, DocLayout::Doc);
+        assert_eq!(row(json!({ "layout": "tabs" })).layout, DocLayout::Tabs);
+        assert_eq!(row(json!({ "layout": "prototype" })).layout, DocLayout::Prototype);
+        assert_eq!(row(json!({ "layout": "gallery" })).layout, DocLayout::Doc);
+        assert_eq!(serde_json::to_value(DocLayout::Prototype).unwrap(), json!("prototype"));
     }
 }

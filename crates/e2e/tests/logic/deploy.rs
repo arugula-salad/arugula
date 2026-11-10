@@ -134,10 +134,14 @@ fn approval() -> Example {
          is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's \
          assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no \
          `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 \
-         signature over the body (sig). well_formed: no field is empty, longer than 200 bytes, or holds \
+         signature over the body (sig). v3 (#1985; `v: 3`) approves a chant-fly deploy once: its body is \
+         chant's gate statement for the gate the deploy's plan stopped at (`chant`), as `arugula:<account>` \
+         at `at`, relayed by arugula, with a last line `binding arugula deploy <deploy> op <hash> expires \
+         <ms>`; LF-joined, no final newline. well_formed: no field is empty, longer than 200 bytes, or holds \
          anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no \
-         sig, and no other version is. signed_by: a v1, well formed, and the signature is the given key's; \
-         never a v2.",
+         sig; a v3 neither, approves once, and has its chant gate and a time no earlier than the gate's; no \
+         other version is one. signed_by: a v1, well formed, and the signature is the given key's; never a v2 \
+         or a v3.",
         &[
             "arugula_e2e::deploy::Approval::body",
             "arugula_e2e::deploy::Approval::well_formed",
@@ -158,6 +162,18 @@ fn approval() -> Example {
     let v2_named = Approval { by: alice.keys.id(), ..v2.clone() };
     let v2_signed = Approval { sig: hex::encode(alice.keys.signature(v2.body().as_bytes())), ..v2.clone() };
     let v3 = Approval { v: 3, ..v2.clone() };
+    let gate = arugula_e2e::deploy::chant::Gate {
+        chant: "0.124.68".into(),
+        op: "release".into(),
+        gate: "ship".into(),
+        environment: None,
+        plan: format!("jcs1-sha256:{}", "ab".repeat(32)),
+        checkpoint: None,
+        run: "run-1".into(),
+        recorded: "2026-11-02T10:00:00.000Z".into(),
+    };
+    let v3_chant = Approval::v3("dep_1", &o, "alice", 90_000, "2026-11-02T10:05:00.000Z", &gate);
+    let v3_deny = Approval { decision: Decision::Deny, ..v3_chant.clone() };
     let once = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Once, 90_000);
     let deny = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Deny, 90_000);
     let pk = hex::encode(alice.keys.sign_public());
@@ -174,6 +190,8 @@ fn approval() -> Example {
         ("v2-naming-a-device", &v2_named),
         ("v2-with-a-signature", &v2_signed),
         ("v3", &v3),
+        ("v3-chant", &v3_chant),
+        ("v3-deny", &v3_deny),
         ("once", &once),
         ("deny", &deny),
         ("expires-changed", &later),
@@ -190,7 +208,9 @@ fn approval() -> Example {
     case("alice denies it, v2", "v2-deny", &pk, false, true);
     case("a v2 naming a device: not well formed", "v2-naming-a-device", &pk, false, false);
     case("a v2 carrying a device's signature: not well formed", "v2-with-a-signature", &pk, false, false);
-    case("version 3: not one", "v3", &pk, false, false);
+    case("version 3 without its chant gate: not one", "v3", &pk, false, false);
+    case("v3: alice approves a chant-fly deploy once, over chant's statement", "v3-chant", &pk, false, true);
+    case("a v3 deny: a deny stays v2", "v3-deny", &pk, false, false);
     case("v1: alice approves the deploy once, from her device", "once", &pk, true, true);
     case("v1: alice denies it: a deny is signed too", "deny", &pk, true, true);
     case("v1, checked against another key", "once", &them, false, true);
@@ -316,7 +336,7 @@ fn check_apply_cases() -> Example {
         run_check_apply,
         "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than \
          the platform's word, in this order, the first failure being the refusal: the approval is well formed \
-         (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this \
+         (approval_form; a v2 or a v3: a v1, from before DK4, applies no more since DK8); for this deploy (approval_deploy); over exactly this \
          operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now \
          (approval_expired); its account an owner of the project, as the machine knows them, its team's roster \
          or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no \
@@ -328,8 +348,7 @@ fn check_apply_cases() -> Example {
          (approval_passkey_log), and only its removals after the pinned log, at or before now, count \
          (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event \
          by sign-up or GitHub needs no proof. No device plays a \
-         part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its \
-         passkey alone, as a v2 is.",
+         part: which devices the owner has, and who certified them, is never looked at.",
         &[
             "arugula_e2e::deploy::check_apply",
             "arugula_e2e::deploy::Approval::passkey_checks",
@@ -566,19 +585,18 @@ fn check_apply_cases() -> Example {
     forged.signature = b64(&[0u8; 64]);
     let forged = assertion(&mut ex, "k2-forged", forged);
     add("a signature that isn't the passkey's", "by-alice", &account, &forged, json!({}), pk_no("signature"));
-    // A v1 from before DK4, by alice's CLI, applies by its passkey alone.
+    // A v1 from before DK4, by alice's CLI, applies no more (DK8).
     let v1 = Approval::v1(&cli, "dep_1", &o, "alice", Decision::Once, 90_000);
     ex.object("v1-by-alice-cli", &v1);
     let pv1 = assertion(&mut ex, "k2-over-v1-by-alice-cli", k2.over(&v1));
     add(
-        "a v1 made before DK4, by her CLI: its passkey alone counts",
+        "a v1 made before DK4, by her CLI, with her passkey's assertion over it: applied no more",
         "v1-by-alice-cli",
         &account,
         &pv1,
         json!({}),
-        ok.clone(),
+        no("approval_form"),
     );
-    add("a v1 with a v2's assertion", "v1-by-alice-cli", &account, &p, json!({}), pk_no("challenge"));
     add("a v2 with a v1's assertion", "by-alice", &account, &pv1, json!({}), pk_no("challenge"));
     let mut named = good.clone();
     named.by = cli.id();

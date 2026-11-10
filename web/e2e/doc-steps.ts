@@ -107,7 +107,7 @@ export async function fillsInPlace(page: Page, post: Post, term: PaneId) {
   await expect(section("s1").locator(".doc-fresh")).toHaveCount(1);
 
   await fill(post, doc, "s3", "Few risks.");
-  await expect(block.locator("[data-doc-progress]")).toHaveText("3 of 3 sections written");
+  await expect(block.locator("[data-doc-progress]")).toHaveCount(0);
   await expect(block.locator("[data-pending]")).toHaveCount(0);
   // Nothing reloaded the page, and the viewer was never scrolled.
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
@@ -449,3 +449,18 @@ export const plainPrototype = () => `\`\`\`prototype height=200 Plain
 <html><body><p id="p">Plain</p><button id="b">Go</button></body></html>
 \`\`\`
 `;
+
+/** The Doc column's measure (#783), in characters: `.doc-page`'s computed
+ * `max-width`, less its 32px of gutter, over the width of one `ch` in it. */
+export async function measure(page: Page, within = "") {
+  return page.evaluate(async (scope) => {
+    await document.fonts.ready;
+    const el = document.querySelector(`${scope} .doc-page`.trim())!;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100ch";
+    el.append(probe);
+    const ch = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+    return Math.round(((parseFloat(getComputedStyle(el).maxWidth) - 32) / ch) * 10) / 10;
+  }, within);
+}

@@ -16,6 +16,7 @@ import { platformFetch, refusalOf } from "../shared/maintenance";
 import { ConfirmRemove } from "../shared/ui/confirm";
 import { session } from "./session";
 import { toast } from "./toast";
+import { CloseIcon, ExternalIcon, IconButton } from "../shared/ui/icons";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: "same-origin" };
@@ -152,13 +153,13 @@ export function SendResult({ draft, onClose }: { draft: ForgeDraft; onClose: () 
         {draftKind(draft)} on {draftTarget(draft)}: {outcome(draft)}{" "}
         {ok && draft.sent_url && (
           <a href={draft.sent_url} target="_blank" rel="noopener noreferrer" data-sent-url>
-            Open on GitHub ↗
+            Open on GitHub <ExternalIcon size="xs" />
           </a>
         )}
       </span>
-      <button class="link" onClick={onClose} aria-label="Dismiss">
-        ✕
-      </button>
+      <IconButton label="Dismiss" class="link" onClick={onClose}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </div>
   );
 }

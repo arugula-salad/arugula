@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
   blindLine,
   blindMachines,
@@ -54,6 +54,16 @@ test("what an agent session said is the session's, not a person's (Arugula #215)
   // Its card's message, and an answer from before, aren't.
   assert.equal(authorLabel(msg({ author: "", name: "", via: "session:ses_1a2b3c4d5e6f" })), "a deleted account");
   assert.equal(authorLabel(msg({ via: "session:ses_1a2b3c4d5e6f" })), "Jake");
+});
+
+test("what CI wrote is CI's, and only with no author (native #774)", () => {
+  const ci = msg({ author: "", name: "", via: "ci:chant" });
+  assert.equal(ciName(ci), "chant CI");
+  assert.equal(authorLabel(ci), "chant CI");
+  // A person's message posted via a product named like it isn't CI's.
+  assert.equal(ciName(msg({ via: "ci:chant" })), null);
+  assert.equal(authorLabel(msg({ via: "ci:chant" })), "Jake");
+  assert.equal(ciName(msg({ author: "", name: "", via: "ci:" })), null);
 });
 
 test("a room says whose agents reach it, and what they may do", () => {

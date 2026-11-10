@@ -1,0 +1,24 @@
+frame loaded, url                                          http://app.arugula.localhost:7790/
+signed in silently inside the frame                        {"signed":true,"ms":2544,"signInPrompt":0,"bodyText":"All projects\n▾\nProjects\nBoards\nInbox\nSettings\nR\nruth\n▾\nPROJECTS\n2\nprojec
+sign-in leftovers in frame url                             false
+frame's own rail hidden                                    none
+shell's rail: Projects lit                                 page
+bell over the frame                                        1
+Ctrl+K from inside the frame opens Commands                2
+address bar follows the frame                              http://arugula.localhost:7790/?machine=build-box&at=%2Fboards
+back on panes: same terminal element                       true
+new websockets across the whole trip                       0
+address after Panes                                        http://arugula.localhost:7790/?machine=build-box
+Back from panes                                            {"url":"http://arugula.localhost:7790/?machine=build-box&at=%2Fboards","frameShown":true}
+Back again                                                 {"url":"http://arugula.localhost:7790/?machine=build-box&at=%2F","frameAt":"http://app.arugula.localhost:7790/"}
+Forward                                                    {"url":"http://arugula.localhost:7790/?machine=build-box&at=%2Fboards","frameAt":"http://app.arugula.localhost:7790/boards"}
+reload keeps the place                                     {"url":"http://arugula.localhost:7790/?machine=build-box&at=%2Fboards","frame":"http://app.arugula.localhost:7790/boards"}
+attack: read parent                                        SecurityError
+attack: fetch control's API                                TypeError
+attack: say a bad path                                     sent
+  address after the bad paths                              http://arugula.localhost:7790/?machine=build-box&at=%2Fboards
+frame's own COOP/XFO                                       {"csp":"frame-ancestors http://arugula.localhost:7790","xfo":null,"coop":"same-origin"}
+frame's sandbox attribute                                  allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads
+attack: move the top page, after a click                   SecurityError
+  top page after                                           http://arugula.localhost:7790/?machine=build-box&at=%2Fboards
+frame refusals in the console                              ["Connecting to 'http://arugula.localhost:7790/control.json' violates the following Content Security Policy directive: \"connect-src 'self'\"

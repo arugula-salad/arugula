@@ -129,6 +129,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-123](docs/decisions/aru-123-agents-make-and-run-boards.md): Agents make and run boards, but don't destroy other hands' work
 - [aru-128](docs/decisions/aru-128-a-claude-code-mod-reports-live-session-signals-beside-the.md): A Claude Code mod reports live session signals beside the hooks, through the CLI
 - [aru-133](docs/decisions/aru-133-a-thread-shows-its-agents-and-control-keeps-none-of-their-live-state.md): A thread shows its agents, and control keeps none of their live state
+- [aru-138](docs/decisions/aru-138-video-presence-is-removed.md): Video presence is removed
 
 ## Federation and control
 

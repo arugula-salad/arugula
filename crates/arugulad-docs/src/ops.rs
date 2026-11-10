@@ -112,6 +112,7 @@ impl Handle<Docs> for DocsList {
                     by: m.by,
                     summary: shape.summary,
                     sections: shape.sections,
+                    layout: m.layout,
                     platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
                         project: p.project,
                         id: p.id,
@@ -127,7 +128,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link). Any earlier session's Doc is here; open shows one.",
+        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link).",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;

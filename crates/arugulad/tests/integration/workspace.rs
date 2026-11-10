@@ -38,8 +38,7 @@ use serde_json::{Value, json};
 const OWNER: &str = "owner@example.com";
 const FRIEND: &str = "friend@example.com";
 
-const ARGS: &[&str] =
-    &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
+const ARGS: &[&str] = &["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
 
 fn daemon() -> Daemon {
     Daemon::child_labs_with(ARGS)

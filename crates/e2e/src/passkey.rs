@@ -570,6 +570,16 @@ pub fn removed_since<'a>(pinned: &Log, handed: &'a Log, at: u64) -> Option<BTree
     )
 }
 
+/// The passkeys live at `at`, each its `added` event, in the order they
+/// were added, having checked the whole chain first ([`check_chain`]): a
+/// log that doesn't hold together lists none. How anything that lists an
+/// account's passkeys reads its log.
+pub fn live(log: &Log, at: u64) -> Result<Vec<&Event>, Refusal> {
+    let mut keys: Vec<&Event> = live_at(log, at)?.into_values().collect();
+    keys.sort_by_key(|e| e.seq);
+    Ok(keys)
+}
+
 /// The passkeys live at `at`, by credential id, having checked the whole
 /// chain.
 fn live_at(log: &Log, at: u64) -> Result<BTreeMap<&str, &Event>, Refusal> {

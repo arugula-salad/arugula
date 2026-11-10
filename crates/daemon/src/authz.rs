@@ -284,6 +284,8 @@ mod tests {
             (&g, "/api/access"),
             (&p, "/api/access"),
             (&p, "/api/links"),
+            (&g, "/api/links"),
+            (&d, "/api/links/0123456789ab"),
             (&p, "/api/invite"),
             (&g, "/api/team-pins"),
             (&p, "/api/team-pins"),

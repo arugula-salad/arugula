@@ -1,10 +1,13 @@
 //! A merged PR closes the native issues it names (Arugula #432) and moves the
 //! Plane items it names to Done (#437). The link a
 //! PR makes is the one the boards already read ([`crate::boards::refs`],
-//! [`crate::boards::auto`]): `Arugula #N`, `Closes #N`, `(#N)` or a branch
-//! `feat/N-…` in its title, branch or body; and the issue of any row a person
-//! or an agent attached it to as work. Nobody writes a keyword or tends a
-//! board. `part of`, `refs` or `see` before `Arugula #N` or `KEY-N` only links.
+//! [`crate::boards::auto`]): `Arugula #N` or `Closes #N` in its title or body,
+//! `(#N)` in its title, or a branch `feat/N-…`; and the issue of any row a
+//! person or an agent attached it to as work. Nobody writes a keyword or
+//! tends a board. `part of`, `refs` or `see` before `Arugula #N` or `KEY-N`
+//! only links, and so does any other `#N` in the body, such as `(#N)` in
+//! passing (Arugula #743); a branch's number the text names softly too
+//! (#755). The `closed` event keeps the words that closed it (`by`).
 //!
 //! It runs wherever the mirror learns of a PR: a webhook ([`webhook`]) and
 //! the poller's turns ([`merged`]). Only an issue of the project the PR's
@@ -38,6 +41,7 @@ use crate::{
     Platform,
     boards::refs::{Refs, references},
     db::{
+        boards::ClosedBy,
         forge::MergedPr,
         issues::{Actor, CloseReason, Patch, State},
     },
@@ -47,6 +51,9 @@ use crate::{
 /// Who an issue is closed as when no member of its project merged the PR:
 /// the App, named as GitHub's text is in a thread (`github:<login>`).
 pub const APP: &str = "github:arugula";
+
+/// The words of a close by a PR attached to the issue's row, naming nothing.
+pub const ATTACHED: &str = "attached to its board row as work";
 
 /// A `pull_request` webhook, after the mirror wrote it: the issues the PR
 /// closes if it is merged now. Its body is the mirror's, which the same
@@ -106,9 +113,14 @@ pub fn named_by(pr: &MergedPr) -> Refs {
 async fn close_for(p: &Platform, project: &str, repo: (u64, &str), pr: &MergedPr) -> anyhow::Result<()> {
     let refs = named_by(pr);
     let mut issues = vec![];
-    for id in p.db.issues_closed_by(project, repo.0, &pr.id, &refs)? {
+    for (id, by) in p.db.issues_closed_by(project, repo.0, &pr.id, &refs)? {
         if let Some(i) = p.db.issue(&id)?.filter(|i| i.state == State::Open) {
-            issues.push(i);
+            let words = match by {
+                ClosedBy::Native(n) => refs.words(true, n),
+                ClosedBy::Number(n) => refs.words(false, n),
+                ClosedBy::Row => None,
+            };
+            issues.push((i, words.unwrap_or(ATTACHED).to_owned()));
         }
     }
     if issues.is_empty() {
@@ -117,9 +129,13 @@ async fn close_for(p: &Platform, project: &str, repo: (u64, &str), pr: &MergedPr
     let merger = merger(p, project, pr.merged_by).await;
     let by = Actor::person(merger.as_deref().unwrap_or(APP));
     let reference = format!("{}#{}", repo.1, pr.number);
-    for i in issues {
-        let patch =
-            Patch { state: Some(State::Closed(CloseReason::Completed)), by_pr: Some(&reference), ..Patch::default() };
+    for (i, words) in issues {
+        let patch = Patch {
+            state: Some(State::Closed(CloseReason::Completed)),
+            by_pr: Some(&reference),
+            by_words: Some(&words),
+            ..Patch::default()
+        };
         let Some((issue, events)) = p.db.patch_issue(&i.id, &patch, by, now_ms())? else { continue };
         if !events.is_empty() {
             // As `issues::change` tells those who show it.

@@ -57,7 +57,7 @@ use crate::{
     db::{
         issues::Issue,
         projects::{SESSIONS_REPLY, SESSIONS_START, THREADS_READ},
-        sessions::{Event, Kind, PromptState, Role, Session, State},
+        sessions::{AgentSession, Event, Kind, PromptState, Role, State},
     },
     forge::links::membership,
     grants::{AgentScope, agent_may, owner_reads},
@@ -89,7 +89,7 @@ const READS: [&str; 3] = [SESSIONS_START, SESSIONS_REPLY, THREADS_READ];
 
 /// Whether session `s` has settled: its turn finished and no prompt waits
 /// for the next one, or it waits on a person, or it ended.
-pub fn settled(s: &Session, queued: bool) -> bool {
+pub fn settled(s: &AgentSession, queued: bool) -> bool {
     match s.seen_as() {
         State::NeedsInput | State::Failed | State::Stopped => true,
         State::Done => !queued,
@@ -116,7 +116,14 @@ pub fn named(body: &str) -> HashSet<u64> {
 
 /// What waits on `reader` (who `may` answer it: an owner or editor) in a
 /// session, in a few words.
-fn waiting(s: &Session, open: Option<&SessionOpen>, ci: bool, pushed: bool, reader: &str, may: bool) -> Option<String> {
+fn waiting(
+    s: &AgentSession,
+    open: Option<&SessionOpen>,
+    ci: bool,
+    pushed: bool,
+    reader: &str,
+    may: bool,
+) -> Option<String> {
     if s.state.terminal() {
         return None;
     }
@@ -152,7 +159,7 @@ struct Seen {
 
 impl Seen {
     /// The native issue session `s` was asked on, if it was.
-    fn issue(&mut self, app: &Platform, s: &Session) -> anyhow::Result<Option<Issue>> {
+    fn issue(&mut self, app: &Platform, s: &AgentSession) -> anyhow::Result<Option<Issue>> {
         if !self.issues.contains_key(&s.room) {
             let target = app.db.chat_room(&s.room)?.filter(|r| r.kind == "object").and_then(|r| r.target);
             let issue = match target.filter(|t| t.starts_with("iss_")) {
@@ -180,7 +187,7 @@ impl Seen {
     async fn row(
         &mut self,
         app: &Platform,
-        s: &Session,
+        s: &AgentSession,
         issue: Option<&Issue>,
         events: &[Event],
         reader: &str,
@@ -239,7 +246,7 @@ impl Seen {
 }
 
 /// What session `s` asks, while it waits on a person.
-fn open_of(s: &Session, events: &[Event]) -> Option<SessionOpen> {
+fn open_of(s: &AgentSession, events: &[Event]) -> Option<SessionOpen> {
     if s.seen_as() != State::NeedsInput {
         return None;
     }
@@ -347,7 +354,7 @@ async fn may_follow(app: &Platform, d: &Machine, project: &str) -> Result<TeamRo
 
 /// Session `id`, for machine `d`'s agents: hidden outside its owner's
 /// projects, as for the owner, and refused without a grant to follow it.
-async fn followed(app: &Platform, d: &Machine, id: &str) -> Result<(Session, TeamRole), ApiError> {
+async fn followed(app: &Platform, d: &Machine, id: &str) -> Result<(AgentSession, TeamRole), ApiError> {
     let none = || err(StatusCode::NOT_FOUND, &format!("no such session: {id}"));
     let s = app.db.session(id)?.ok_or_else(none)?;
     if owner_reads(app, &d.account, &AgentScope::Project(s.project.clone()), false).await?.is_none() {
@@ -379,7 +386,7 @@ pub async fn agent_list(
 
 /// Session `s`'s read for an agent: its row, its last answer whole, and
 /// what its latest turn left.
-async fn read(app: &Platform, s: &Session, reader: &str, role: TeamRole) -> Result<AgentSessionRead, ApiError> {
+async fn read(app: &Platform, s: &AgentSession, reader: &str, role: TeamRole) -> Result<AgentSessionRead, ApiError> {
     let events = app.db.session_events(&s.id)?;
     let mut seen = Seen::default();
     let issue = seen.issue(app, s)?;

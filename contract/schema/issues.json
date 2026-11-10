@@ -226,7 +226,7 @@
           "type": "integer"
         },
         "author": {
-          "description": "The account that wrote it, or \"\" once it's deleted.",
+          "description": "The account that wrote it, or \"\": a deleted account's, or one\nnobody here wrote (then `via` says who did).",
           "type": "string"
         },
         "edited": {
@@ -251,6 +251,13 @@
         },
         "text": {
           "type": "string"
+        },
+        "via": {
+          "description": "As its message's [`via`](crate::chat::ChatMessage::via): with no\nauthor, Arugula's own post (`system`, a session's card or ask),\nGitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent\nsession said (`said:<ses>`) (Arugula #626).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -328,6 +335,10 @@
     "IssueExport": {
       "description": "Every issue in a project, by number, with its timeline and comments.",
       "properties": {
+        "comments_in_chat": {
+          "description": "The comments were left out: they're in chat, which is off for the\nreader (Arugula #746). Absent when they're there.",
+          "type": "boolean"
+        },
         "exported_at": {
           "format": "uint64",
           "minimum": 0,

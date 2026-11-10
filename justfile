@@ -88,10 +88,12 @@ api-contract mode="write":
 # Write DECISIONS.md, the index of the decision records in docs/decisions/,
 # and docs/capabilities/README.md, the index of the feature records. Without
 # `write`, check they're current, and that no standing decision names a path
-# that isn't there.
+# that isn't there. Either way, check docs/data-model.md still matches the
+# code: its tables, paths, ID prefixes and "Don't say" words.
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
     node scripts/capabilities.mjs {{ if mode == "write" { "" } else { "--check" } }}
+    node scripts/data-model-check.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
 # What the code and CI say this week, for keeping up (docs/capabilities/):
 # feature records behind the code, where the week's commits went, and what
@@ -150,10 +152,24 @@ _static arch side:
     esac
     for b in "${bins[@]}"; do file "{{target_dir}}/$t/release/$b"; done
 
+# ops/ builds its three Fly plans (#1983), so a broken component fails a
+# pull request instead of the release that cuts it. Lint runs it.
+ops-check:
+    cd ops && npm ci --silent --no-audit --no-fund && npm run build --silent
+
+# Release control's hub and its platform to production through chant
+# (#1983): server-release.yml cuts a chant release of ops/ from COMMIT (by
+# default the server lane's newest green commit) and deploys it. Each `v*`
+# tag starts it too; this is for another commit, or a re-run.
+server-release commit="":
+    gh workflow run server-release.yml -R arugula-salad/arugula -f commit={{quote(commit)}}
+    @echo "Started: gh run list -R arugula-salad/arugula -w server-release -L 1"
+
 # Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
 # the static x86_64 binary in a distroless image, from a small build context.
-# Release tags deploy it from CI (release.yml's `control` job, M133); this
-# is for hotfixes, and the fallback when that job can't.
+# Releases deploy it through chant (`just server-release`, #1983); this is
+# for hotfixes. Its image isn't a release's: chant's ledger still names the
+# release before it until the next one.
 control-deploy: static-server
     #!/usr/bin/env bash
     set -euo pipefail
@@ -163,8 +179,8 @@ control-deploy: static-server
     cd "$ctx" && fly deploy --local-only --ha=false
 
 # Deploy control's platform to Fly (packaging/platform/fly.toml, M140): the
-# static x86_64 binary in a distroless image. Release tags deploy it from
-# CI before the hub (release.yml's `platform` job); this is for hotfixes.
+# static x86_64 binary in a distroless image. Releases deploy it through
+# chant before the hub (`just server-release`, #1983); this is for hotfixes.
 platform-deploy: static-server
     #!/usr/bin/env bash
     set -euo pipefail
@@ -542,7 +558,7 @@ shellcheck:
     [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
     shellcheck -s sh scripts/install.sh scripts/glibc-floor
     shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-    shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -x scripts/ci-* scripts/chant scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
@@ -606,11 +622,14 @@ server_test_bins := server_cargo + " build --workspace --bins --tests"
 # in the root, #1680). WHICH splits a run in two:
 # `server`, only the server workspace's suite, which needs none of
 # static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
-# static builds them; `rest`, everything else (#259).
+# static builds them; `rest`, everything else (#259). Under CI's nextest
+# profile it leaves out the quarantined tests (docs/testing.md,
+# "Quarantine").
 [private]
 test-run part="" which="":
     #!/usr/bin/env bash
     set -euo pipefail
+    q=$({{quarantine_filter}})
     case "{{part}}" in
       '') part=() ;;
       1|2) part=(--partition "count:{{part}}/2") ;;
@@ -624,8 +643,8 @@ test-run part="" which="":
     # The test stack up and ready first, when this run has its tests: its
     # image build is no test's, against that test's deadline.
     if [ "{{which}}" != server ]; then testnet/suite-up.sh ${part[@]+"${part[@]}"}; fi
-    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
-    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
+    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"} -E "$q"; fi
+    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"} -E "$q"; fi
     [ "{{which}}" != server ] || exit 0
     [ "{{part}}" != 1 ] || exit 0
     {{cargo}} test --workspace --doc
@@ -638,26 +657,46 @@ test-run part="" which="":
 test-stress filter count="50": test-build
     {{suite_lock}} {{cargo}} nextest run --workspace --retries 0 --stress-count {{count}} -E '{{filter}}'
 
-# Flaky tests CI leaves out for a while (.config/quarantine.toml,
-# docs/testing.md "Quarantine"). Run it after changing that manifest:
-# writes the nextest configs' default-filter from it, then checks it.
+# The quarantined tests' filterset for nextest under CI's profile
+# (NEXTEST_PROFILE=ci): chant's, from the test phase's entries in
+# chant.workspace.json (docs/testing.md, "Quarantine"). Every nextest run
+# in CI takes it, macOS's and Windows' too. Elsewhere all().
+quarantine_filter := 'if [ "${NEXTEST_PROFILE:-}" = ci ]; then ' + justfile_directory() / "scripts/chant" + ' ci quarantine filter --phase test --runner nextest; else echo "all()"; fi'
+
+# Flaky tests CI leaves out for a while (chant.workspace.json's
+# ci.green.quarantine, docs/testing.md "Quarantine"): no entry past its
+# `until` or more than maxDays out, and each Rust test named without its
+# binary, so one filterset serves both workspaces (nextest refuses a
+# binary id that isn't in the workspace it runs). Lint runs it.
 quarantine:
-    node scripts/quarantine.mjs write
-    node scripts/quarantine.mjs check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    scripts/chant ci quarantine check
+    bad=$(jq -r '.ci.green.quarantine.phases // {} | to_entries[] | select(.key != "e2e") | .key as $phase | .value[] | select(.test | contains(" ")) | "\($phase): \(.test)"' chant.workspace.json)
+    if [ -n "$bad" ]; then
+      echo "quarantine: name a Rust test without its binary id (the name alone, as nextest prints it after the binary):" >&2
+      echo "$bad" >&2
+      exit 1
+    fi
 
 # Only the quarantined tests, which CI's runs leave out (the ssh and reboot
 # tests want what `just test` does: Docker, ARUGULA_SSH_BINARIES).
-# quarantine-nightly.yml runs them every night.
+# quarantine-nightly.yml runs them every night under CI's profile, whose
+# JUnit files chant's report reads (target/nextest/ci/junit.xml and
+# junit-server.xml, and web/junit.xml for the specs).
 test-quarantined: web e2e-build
     #!/usr/bin/env bash
     set -euo pipefail
     status=0
-    root=$(node scripts/quarantine.mjs nextest root)
-    server=$(node scripts/quarantine.mjs nextest server)
-    if [ -n "$root" ]; then {{cargo}} nextest run --workspace --ignore-default-filter -E "$root" || status=1; fi
-    if [ -n "$server" ]; then {{server_cargo}} nextest run --workspace --ignore-default-filter -E "$server" || status=1; fi
-    if [ -n "$(node scripts/quarantine.mjs e2e)" ]; then
-      (cd web && E2E_QUARANTINED=1 {{suite_lock}} pnpm exec playwright test) || status=1
+    # Only this run's results for the report: a kept target dir has the last.
+    rm -f "{{target_dir}}/nextest/ci/junit.xml" "{{target_dir}}/nextest/ci/junit-server.xml" web/junit.xml
+    only=$(scripts/chant ci quarantine filter --phase test --runner nextest --only)
+    if [ "$only" != "none()" ]; then
+      {{cargo}} nextest run --workspace --no-tests=pass -E "$only" || status=1
+      {{server_cargo}} nextest run --workspace --no-tests=pass -E "$only" || status=1
+    fi
+    if [ -n "$(scripts/chant ci quarantine filter --phase e2e --runner list)" ]; then
+      (cd web && E2E_QUARANTINED=1 PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit.xml {{suite_lock}} pnpm exec playwright test --reporter=junit) || status=1
     fi
     exit "$status"
 
@@ -682,8 +721,9 @@ test-platform-postgres:
     # Over TCP: the image's first start answers on its socket only while it
     # sets itself up.
     for _ in $(seq 120); do docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 0.5; done
+    q=$({{quarantine_filter}})
     ARUGULA_TEST_POSTGRES_URL="postgres://postgres:platform@127.0.0.1:$port/postgres" \
-        {{server_cargo}} nextest run --workspace -E 'package(/^arugula-platform/)'
+        {{server_cargo}} nextest run --workspace -E "package(/^arugula-platform/) & ($q)"
 
 # Control end to end without a browser: sign in (fake GitHub), enroll,
 # join a daemon, reach it through the relay and directly.
@@ -905,23 +945,21 @@ macos cmd="tools" *args:
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
-# a release deploying the hub only when what it's built from changed; the
-# hosted template's supervision of arugulad (M258); its templates, one
+# a server release's preflight and its older-release guard
+# (scripts/ci-server-deploy); the hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
 # binaries.yml's gate on pull requests that change CI (#304);
-# and the flaky tests' quarantine (.config/quarantine.toml): its script,
-# and last the manifest itself, which fails when an entry has no issue or
-# is past its `until`. Also the nvim key tips' `:help` tags, against a real
-# nvim when there is one (`just nvim-tips-check`).
+# and last the flaky tests' quarantine (`just quarantine`), which fails
+# when an entry is past its `until`. Also the nvim key tips' `:help` tags,
+# against a real nvim when there is one (`just nvim-tips-check`).
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
     scripts/tests/pr-plan.sh
-    scripts/tests/queue-verdict.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
-    scripts/tests/quarantine.sh
     scripts/tests/capabilities.sh
+    scripts/tests/data-model-check.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
@@ -929,12 +967,11 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/release-notes.sh
-    scripts/tests/hub-changed.sh
-    scripts/tests/ci-fly-rollback.sh
+    scripts/tests/server-deploy.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
-    node scripts/quarantine.mjs check
+    just quarantine
     scripts/check-nvim-tips
 
 # Every nvim key tip (web/src/shell/hints/nvim-tips.ts) names a `:help` tag
@@ -1014,6 +1051,7 @@ check: test mux-guard workspace-guard
     just api-contract check
     just decisions check
     just whats-new
+    just ops-check
     just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check

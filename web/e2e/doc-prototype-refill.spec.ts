@@ -68,7 +68,7 @@ test.describe("a shared Doc", () => {
     const older = page.locator("[data-doc-bar-older]");
     const shareButton = page.locator(`[data-doc-bar="${d}"] [data-doc-bar-share]`);
     await shareButton.click();
-    await expect(page.locator("[data-doc-bar-shared]")).toBeVisible();
+    await expect(page.locator("[data-doc-link-url]")).toBeVisible();
     await expect(older).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(shareButton).not.toHaveAttribute("data-older", /.*/);

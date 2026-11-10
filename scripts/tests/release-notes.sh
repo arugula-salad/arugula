@@ -22,7 +22,7 @@ git init -q -b main "$tmp/work"
 cd "$tmp/work"
 git remote add origin "$tmp/origin.git"
 mkdir -p scripts docs/notes docs/releases web/src crates/foo/src
-cp "$src/release-notes.mjs" "$src/release-note-check.mjs" "$src/pr-notes-check" "$src/release-train" scripts/
+cp "$src/release-notes.mjs" "$src/release-note-check.mjs" "$src/whats-new.mjs" "$src/pr-notes-check" "$src/release-train" scripts/
 echo '# notes' >docs/notes/README.md
 git add -A && git commit -qm base
 git tag v1.2.3
@@ -141,6 +141,46 @@ pr docs-only
 echo x >docs/guide.md
 git add -A && git commit -qm "Docs"
 passes "docs alone: needs none"
+# A note alone is checked too (#795): the train reads every note, and one it
+# can't read holds every release. The later line: wins, as in parseNote.
+pr notes-only-too-long
+note too-long "Too long" "line: $(printf 'x%.0s' {1..245})
+"
+git add -A && git commit -qm "Notes"
+refuses "a note alone still has to read: a 245-character line fails"
+if grep -qF 'docs/notes/too-long.md: line is over 200 characters' "$tmp/out"; then ok "naming the file"; else bad "the message: $(cat "$tmp/out")"; fi
+# A headline's limits, not looser ones: a 210-character line or a 61-character
+# title passed the check once and held every train (2026-11-10).
+pr notes-over-a-headline
+mkdir -p docs/releases
+note headline-line "Headline line" "line: $(printf 'x%.0s' {1..210})
+"
+git add -A && git commit -qm "Notes"
+refuses "a 210-character line fails, as a headline would"
+if grep -qF 'docs/notes/headline-line.md: line is over 200 characters' "$tmp/out"; then ok "saying the line's limit"; else bad "the message: $(cat "$tmp/out")"; fi
+pr notes-title-over-a-headline
+mkdir -p docs/releases
+note headline-title "$(printf 'T%.0s' {1..61})"
+git add -A && git commit -qm "Notes"
+refuses "a 61-character title fails, as a headline would"
+if grep -qF 'docs/notes/headline-title.md: title is over 60 characters' "$tmp/out"; then ok "saying the title's limit"; else bad "the message: $(cat "$tmp/out")"; fi
+pr notes-at-the-limits
+mkdir -p docs/releases
+note at-limits "$(printf 'T%.0s' {1..60})" "line: $(printf 'x%.0s' {1..200})
+"
+git add -A && git commit -qm "Notes"
+passes "a 60-character title and a 200-character line pass"
+# A note already released can be edited: its id is in a release by then.
+pr edits-a-released-note
+mkdir -p docs/releases
+# shellcheck disable=SC2016
+printf '```whats-new\n[{"id": "shipped", "title": "T", "line": "L"}]\n```\n' >docs/releases/1.0.1.md
+note shipped "Shipped"
+git add -A && git commit -qm "Shipped (#16)"
+released=$(git rev-parse HEAD)
+note shipped "Shipped, reworded"
+git add -A && git commit -qm "Reword"
+if scripts/pr-notes-check "$released" HEAD >"$tmp/out" 2>&1; then ok "editing a released note: passes"; else bad "editing a released note: $(cat "$tmp/out")"; fi
 pr tests-only
 mkdir -p crates/foo/tests web/e2e .github/workflows
 echo x >crates/foo/tests/t.rs
@@ -168,11 +208,39 @@ esac
 RELEASE
 cat >"$tmp/gh" <<'GH'
 #!/usr/bin/env bash
-echo "${FAKE_GOING:-0}"
+echo "${FAKE_GOING:-0} ${FAKE_STARTED:-}"
 GH
 mkdir "$tmp/bin"
 mv "$tmp/gh" "$tmp/bin/gh"
 chmod +x "$tmp/release" "$tmp/bin/gh"
+# A hand cut's file reaches main before its tag: its headlines stay out of a
+# train's notes, and only a file newer than the tag counts.
+hand() { # VERSION IDS (a JSON array of strings)
+  mkdir -p docs/releases
+  # shellcheck disable=SC2016 # node's script, in single quotes on purpose
+  node -e 'const [v, ids] = process.argv.slice(1); console.log("# Arugula " + v + "\n\n```whats-new\n" + JSON.stringify(JSON.parse(ids).map((id) => ({ id, title: id, line: id }))) + "\n```")' "$1" "$2" >"docs/releases/$1.md"
+}
+hand 1.3.0 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+lacks "an untagged hand cut's headline stays out" "First thing"
+has "the rest still go" "Small fix"
+code=0
+gen v1.2.3 "$to" 1.2.4 >/dev/null 2>"$tmp/err" || code=$?
+if grep -qF "first-thing is in 1.3.0's notes" "$tmp/err"; then ok "says what it left out"; else bad "said: $(cat "$tmp/err")"; fi
+hand 1.3.0 '["first-thing", "small-fix"]'
+code=0
+gen v1.2.3 "$to" 1.2.4 >/dev/null 2>&1 || code=$?
+if [ "$code" = 3 ]; then ok "the hand cut has them all: nothing to say"; else bad "exit $code, wanted 3"; fi
+rm docs/releases/1.3.0.md
+hand 1.2.0 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+has "an older release's file leaves notes alone" "First thing"
+rm docs/releases/1.2.0.md
+hand 1.2.4 '["first-thing"]'
+out=$(gen v1.2.3 "$to" 1.2.4 2>/dev/null)
+has "its own version's file leaves notes alone" "First thing"
+rm docs/releases/1.2.4.md
+
 git push -q origin main --tags
 export FAKE=$tmp PATH=$tmp/bin:$PATH ARUGULA_TRAIN_RELEASE=$tmp/release
 train() { # WHAT WANT_EXIT WANT_BUMPS SAYS
@@ -190,6 +258,10 @@ train "off by default: stays" 0 0 "isn't on"
 export ARUGULA_RELEASE_TRAIN=on
 FAKE_GOING=1 train "a release going: stays" 0 0 "already going"
 FAKE_GREEN='' train "nothing green: stays" 0 0 "no commit has"
+recent=$(node -e 'console.log(new Date(Date.now() - 30 * 60000).toISOString())')
+FAKE_STARTED=$recent train "a release 30m ago: waits for the gap" 0 0 "waits for 120m"
+FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=20 FAKE_GREEN='' train "past a shorter gap: goes on" 0 0 "no commit has"
+FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=0 FAKE_GREEN='' train "a manual run: no gap" 0 0 "no commit has"
 git tag -f v1.2.9 "$main" >/dev/null
 git push -q -f origin --tags
 train "already released: stays" 0 0 "nothing new"

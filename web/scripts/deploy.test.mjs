@@ -11,6 +11,9 @@ import {
   actorOf,
   approvalBody,
   approvalChallenge,
+  approvalFor,
+  approvalPosted,
+  chantGateOk,
   checkDeploy,
   checkPlan,
   eventCanonical,
@@ -68,6 +71,29 @@ test("a v2 approval is Rust's bytes, and its passkey's challenge their SHA-256",
   assert.equal(approvalBody(a), f.approval_v2_body);
   const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   assert.equal(b64u(await approvalChallenge(a)), f.approval_v2_challenge);
+});
+
+test("a v3 approval is chant's statement, Rust's bytes, bound to the deploy (#1985)", async () => {
+  const a = f.approval_v3;
+  assert.equal(a.v, 3);
+  assert.equal(approvalBody(a), f.approval_v3_body);
+  assert.ok(f.approval_v3_body.endsWith(`\nbinding arugula deploy ${a.deploy} op ${a.op} expires ${a.expires}`));
+  assert.ok(!f.approval_v3_body.endsWith("\n"));
+  const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assert.equal(b64u(await approvalChallenge(a)), f.approval_v3_challenge);
+  assert.ok(chantGateOk(a.chant));
+  assert.ok(!chantGateOk({ ...a.chant, chant: "0.124.63" }), "a chant that checks no binding");
+  assert.ok(!chantGateOk({ ...a.chant, plan: "sha256:ab" }));
+  // A page makes one for a chant-fly deploy's once, a v2 for its deny.
+  const d = { id: a.deploy, operation: { hash: a.op }, approval_v: 3, chant: { state: "planned", gate: a.chant, why: null } };
+  const now = Date.parse("2026-11-02T10:05:00.000Z");
+  const made = approvalFor(d, a.account, "once", now, a.expires);
+  assert.equal(approvalBody(made), f.approval_v3_body);
+  assert.deepEqual(approvalPosted(made), { op: a.op, expires: a.expires, at: a.at });
+  assert.equal(approvalFor(d, a.account, "deny", now, a.expires).v, 2);
+  assert.throws(() => approvalFor({ ...d, chant: { state: "planning", gate: null, why: null } }, a.account, "once", now, a.expires));
+  // Never before chant's pending fact.
+  assert.equal(approvalFor(d, a.account, "once", 0, a.expires).at, a.chant.recorded);
 });
 
 test("a deploy's push opens its card on the platform page", () => {

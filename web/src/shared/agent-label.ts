@@ -4,7 +4,7 @@
 // agent's work is: a deploy's planner and log, an issue's author and
 // timeline (UI audit #167, #192). An agent session (`ses_…`, aru-115) acts
 // as itself, with no owner: "Agent session <its first 8 hex>", as chat
-// names what one said.
+// names what one said. So does CI (`ci:<source>`, native #774): "chant CI".
 
 type Agent = { machine: string; machine_name?: string };
 
@@ -13,6 +13,13 @@ export const isToken = (agent: Agent) => agent.machine.startsWith("agt_");
 
 /** Whether the agent is an agent session, acting as itself. */
 export const isSession = (agent: Agent) => agent.machine.startsWith("ses_");
+
+/** Whether it's CI (`ci:<source>`, native #774), writing as itself: no
+ * person's and no machine's. */
+export const isCi = (agent: Agent) => agent.machine.startsWith("ci:");
+
+/** CI's name, as the platform gives it, else from its id: "chant CI". */
+const ciLabel = (agent: Agent) => agent.machine_name || `${agent.machine.slice(3)} CI`;
 
 /** A token's name, without the " (MCP)" the platform names it with as a
  * machine (grants.rs's token_label). */
@@ -24,6 +31,7 @@ const sessionName = (agent: Agent) => agent.machine_name || `Agent session ${age
 /** "<owner>'s agent on <machine>", or a token's "<owner>'s agent token
  * “<name>”", or a session's own name. `gone`: a machine with no name now. */
 export function agentLabel(owner: string, agent: Agent, gone = agent.machine): string {
+  if (isCi(agent)) return ciLabel(agent);
   if (isSession(agent)) return sessionName(agent);
   if (isToken(agent)) return `${owner}'s agent token “${tokenName(agent)}”`;
   return `${owner}'s agent on ${agent.machine_name || gone}`;
@@ -32,6 +40,7 @@ export function agentLabel(owner: string, agent: Agent, gone = agent.machine): s
 /** Short, for a list's row (UI audit #163): `agent · <machine>`, or
  * `agent token · <name>`, or a session's own name. */
 export function agentShort(agent: Agent, gone = agent.machine): string {
+  if (isCi(agent)) return ciLabel(agent);
   if (isSession(agent)) return sessionName(agent);
   return isToken(agent) ? `agent token · ${tokenName(agent)}` : `agent · ${agent.machine_name || gone}`;
 }
@@ -39,6 +48,7 @@ export function agentShort(agent: Agent, gone = agent.machine): string {
 /** Where an agent is, after "an agent": "on <machine>", or "token “<name>”",
  * or "session <8 hex>" (a badge's title). */
 export function agentWhere(agent: Agent, gone = agent.machine): string {
+  if (isCi(agent)) return `from ${ciLabel(agent)}`;
   if (isSession(agent)) return `session ${agent.machine.slice(4, 12)}`;
   return isToken(agent) ? `token “${tokenName(agent)}”` : `on ${agent.machine_name || gone}`;
 }

@@ -19,7 +19,7 @@
 use arugula_e2e::{
     Cert, Revocation, Trust,
     cert::LegacyAppChildren,
-    hosted::{Delegation, DelegationRevoke, HostedCert},
+    hosted::{Delegation, DelegationClosed, DelegationRevoke, HostedCert},
     team::{AccountCerts, Roster, TeamPin},
 };
 use serde::{Deserialize, Serialize};
@@ -171,8 +171,12 @@ pub struct Enrollment {
     pub cert: HostedCert,
     pub delegation: Delegation,
     /// Revocations of it: the machine stays, but nothing more enrolls.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "arugula_e2e::hosted::read_entries")]
     pub revocations: Vec<DelegationRevoke>,
+    /// Control's word that it ended. Empty from a control from before, or
+    /// while it stands.
+    #[serde(default, deserialize_with = "arugula_e2e::hosted::read_entries", skip_serializing_if = "Vec::is_empty")]
+    pub closed: Vec<DelegationClosed>,
     /// A team's project: the team to pin, its roster now, and its
     /// members' certificates.
     #[serde(default)]
@@ -325,6 +329,10 @@ pub struct SetupRepo {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    /// Where the box revokes `password` once its clones are done
+    /// (`DELETE`, the token as its bearer): a `github_app` token's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoke: Option<String>,
 }
 
 /// Where a hosted machine's setup is.
@@ -390,6 +398,19 @@ pub const SETUP_REASONS: &[&str] = &["exit", "pane_closed", "start", "seal_short
 /// wiped itself for the snapshot, with `ready`. A box made from the
 /// snapshot says [`FROM_SNAPSHOT`], with `ready`, and runs no setup.
 pub const SEALED: &str = "sealed";
+
+/// Whether a setup's step is past its clones: its packages or its setup
+/// script, as the box's `setup.sh` names its steps (`start`, then `clone
+/// NAME` for each repo).
+pub fn past_clones(step: &str) -> bool {
+    !step.is_empty() && step != "start" && !step.starts_with("clone ")
+}
+
+/// Whether a setup that says `status` at `step` is done cloning: past its
+/// clones, or ended. Once it is, it stays so until the box is rebuilt.
+pub fn clones_done(status: SetupStatus, step: &str) -> bool {
+    status != SetupStatus::SettingUp || past_clones(step)
+}
 pub const FROM_SNAPSHOT: &str = "snapshot";
 
 // Never the sandbox id or the ticket: each is a bearer secret while its
@@ -416,6 +437,7 @@ impl std::fmt::Debug for SetupRepo {
             .field("via", &self.via)
             .field("username", &self.username)
             .field("password", &self.password.as_ref().map(|_| "…"))
+            .field("revoke", &self.revoke)
             .finish()
     }
 }
@@ -486,6 +508,7 @@ mod tests {
                 via: "secret".into(),
                 username: Some("x-access-token".into()),
                 password: Some("hunter2".into()),
+                revoke: None,
             }],
             env: [("NPM_TOKEN".to_owned(), "s3cret".to_owned())].into(),
             ..Default::default()

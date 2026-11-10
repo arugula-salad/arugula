@@ -1,7 +1,7 @@
 //! Machines other than this host that panes run on: throwaway sandboxes
-//! from a provider (wisp sprites, by default: Firecracker microVMs on a
-//! host running wispd), and sandboxes that already exist, borrowed for a
-//! shell (M4b's "open shell", with no daemon inside).
+//! from a provider (loam: Firecracker microVMs on its cluster), and
+//! sandboxes that already exist, borrowed for a shell (M4b's "open shell",
+//! with no daemon inside).
 //!
 //! A VM pane's terminal is an exec TTY session on its machine, through the
 //! [`Provider`]. The daemon runs its own terminal engine and log over

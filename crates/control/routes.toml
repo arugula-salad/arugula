@@ -59,7 +59,7 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github`, `stripe` and
-#   `plane` (their webhooks), `operator` (by hand), `product` (another product
+#   `plane` (their webhooks), `chant` (a chant tick's signed events), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
 #   (an agent with no machine, with an agent grant token, M230), `apple`
 #   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
@@ -1010,7 +1010,7 @@ path = "/api/hosted/delegations"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again."
+note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again. Refused while the project has another live one."
 
 [[route]]
 method = "POST"
@@ -1018,7 +1018,7 @@ path = "/api/hosted/delegations/revoke"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Any owner's own device's signed revocation: nothing more enrolls under it."
+note = "Any owner's own device's signed revocation, judged as it arrives: nothing more enrolls under it. The answer says whether it was the first and whether it's kept."
 
 [[route]]
 method = "POST"
@@ -1089,7 +1089,7 @@ path = "/api/hosted/work/session/push"  # wire::work::WORK_SESSION_PUSH
 process = "hub"
 auth = "hosted"
 clients = ["daemon"]
-note = "A token for one push of an agent session's branch (M259): the platform mints it only for the machine's own live session and that session's branch exactly, on its linked repo, with contents: write and no workflows; the box revokes it after (PlatformPort::hosted_session_push)."
+note = "A token for one push of an agent session's branch (M259): the platform mints it only for the machine's own live session and that session's branch exactly, on its linked repo, and only when the session's asker may push to that repo on GitHub right now (write or better, asked of GitHub each time); the token has contents: write and workflows: write (aru-115, amended), bounded by the asker's own access; the box revokes it after. A clone (`clone` in the ask) gets contents: read after the machine, session and link checks (PlatformPort::hosted_session_push)."
 
 [[route]]
 method = "POST"
@@ -1184,6 +1184,14 @@ note = "A Plane project's changes (Arugula #358), checked by the platform agains
 
 [[route]]
 method = "POST"
+path = "/ci/notify/{project}"  # wire::projects::CI_NOTIFY
+process = "platform"
+auth = "webhook"
+clients = ["chant"]
+note = "chant's CI events for a project (native #774), checked by the platform against the project's own sealed CI alerts key (`x-chant-signature`, HMAC-SHA256 over `<x-chant-timestamp>.<body>`, the timestamp within 5 minutes); an unknown project, alerts off and a bad signature are the same 401. Bodies up to 64 KiB; limited per client address by the hub (`limit::CI_NOTIFY`) and per project by the platform. A repeated event id is a no-op. They open, comment on and close the project's red-branch issue. The URL is shown in the project's settings and given to chant's tick as a secret."
+
+[[route]]
+method = "POST"
 path = "/api/daemon/github/token"
 process = "hub"
 auth = "daemon"
@@ -1272,14 +1280,6 @@ path = "/api/chat/presence"
 process = "platform"
 auth = "session"
 clients = ["page"]
-
-[[route]]
-method = "POST"
-path = "/api/chat/presence/token"
-process = "platform"
-auth = "session"
-clients = ["page"]
-note = "a People block's room token for arugula.stream (team members only)"
 
 [[route]]
 method = "GET"
@@ -1784,7 +1784,15 @@ path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project."
+note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project. A grant whose giver doesn't read the project now answers with neither the giver nor their machine named (former_giver), as the project's Access view does."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/grants"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's Access view: its roster roles (through the platform's cache, as agent_may reads them); whose machines hold cloud.drive (given on join, never revoked per project: they act as their owner, within the owner's role, on the project's cloud workspaces and linked repos and their items and drafts, and read its Plane connections, inference keys and spend; a viewer's reads, wakes a paused workspace, makes no drafts and discards only its owner's own); every live grant over the project (machines' and agent tokens', with whose each is and what it does now if less than the power; a giver who left is a former member, unnamed, their machine too, as is a machine that isn't its giver's now; a machine's id is the owners', as a grant's is); the delegation and the standing run grant with its expiry (stale when it names an earlier delegation, and not working when its signer isn't an owner now); and its cloud workspaces (owners and editors have full use, owners alone while the team is locked). For any member; a stranger gets no such project. A token's or a grant's id, which only a revoke needs, is in the answer for the project's owners alone. Never a token, a signature or a secret: who, what and when. Read-only; 600 reads an hour per account."
 
 # ---- platform: agents with no machine (M230, platform step 8)
 # An owner mints a bearer agent grant token over projects they read, with an
@@ -1832,7 +1840,7 @@ path = "/api/projects/{project}/agent-tokens"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Every live agent token over the project, whoever minted it, with its powers there: the project's owners."
+note = "Every live agent token over the project, whoever minted it, with its powers there and its id (to revoke): the project's owners. Every member sees the same tokens, without ids, in GET /api/projects/{project}/grants."
 
 [[route]]
 method = "POST"
@@ -2054,6 +2062,30 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "A linked repo's settings (M166): content mirroring on (a member who maintains it on GitHub) or off (its content rows go at once)."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's CI alerts (native #774), for its members: whether they're on, their URL, whom a red issue mentions and the open red issues. Never the key."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Whom a project's red issue mentions or assigns, or CI alerts off, which removes the key (native #774): an owner or editor."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/ci-alerts/key"  # wire::projects::PROJECT_CI_ALERTS_KEY
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "CI alerts on with a new key, or the key rotated (native #774): an owner or editor. The key is sealed here and is in this answer only."
 
 [[route]]
 method = "GET"
@@ -3028,7 +3060,7 @@ path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+note = "Relates two items of the project (Arugula #403): blocks, before, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a cycle of blocks and before edges are 409."
 
 [[route]]
 method = "DELETE"
@@ -3048,9 +3080,9 @@ note = "The project's work items for a board's picker and Triage: its native iss
 
 # ---- platform: project Docs (aru-118)
 # A project's own Docs, for its members: a team's owners and editors make,
-# write and delete them, its viewers read them; anyone else gets 404. With
-# chat, as native issues are. `{project}` is a project's id or `personal`;
-# a Doc of another project is no Doc at all.
+# write and delete them, its viewers read them; anyone else gets 404, whatever
+# a member's chat setting (Arugula #746), as for native issues. `{project}`
+# is a project's id or `personal`; a Doc of another project is no Doc at all.
 
 [[route]]
 method = "GET"
@@ -3085,6 +3117,30 @@ clients = ["page", "native"]
 note = "Renames a Doc, writes a section (its body replaced) or adds one at the end: owners and editors. Capped at 64 KB a section, 40 sections and 1 MiB a Doc."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The team Docs made from one of the person's own Docs (Share with…), a machine's copy or one written on the platform, in the projects the reader still reads. Only the Doc's owner, from their personal project: anyone else is refused."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Share with…: makes a new, ordinary Doc in the project `to` from the Doc's title, sections and pictures as they are now, and records where it came from. The Doc is one of the person's own, a machine's copy or one written on the platform; only its owner, who writes Docs in `to`; 409 with the team Doc's id when one was made from this Doc there already."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/docs/{id}/copies/{to}"  # wire::project_docs::PROJECT_DOC_COPY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Update copy: the team Doc in `to` made from this Doc takes its title, sections and pictures as they are now. Only the Doc's owner, who still writes Docs in `to`; 409 `edited` when the team edited it since and `replace` isn't set."
+
+[[route]]
 method = "DELETE"
 path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
 process = "platform"
@@ -3102,9 +3158,11 @@ note = "A Doc's picture (PNG, JPEG, GIF or WebP), for any member of its project 
 
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors
-# change them, its viewers read them; anyone else gets 404. Behind chat's
-# Labs flag, as their threads (object threads, M196) are. `{project}` is a
-# project's id or `personal`.
+# change them, its viewers read them; anyone else gets 404, whatever a
+# member's chat setting (Arugula #746). Their comments are their threads
+# (object threads, M196), which stay chat's: the export leaves them out
+# while chat is off for the reader. `{project}` is a project's id or
+# `personal`.
 
 [[route]]
 method = "GET"
@@ -3128,7 +3186,7 @@ path = "/api/projects/{project}/issues/export"  # wire::issues::PROJECT_ISSUES_E
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Every issue in a project with its timeline and comments, as JSON or Markdown: any member."
+note = "Every issue in a project with its timeline and comments, as JSON or Markdown: any member. The comments are left out, saying so, while chat is off for the reader."
 
 [[route]]
 method = "GET"
@@ -3421,6 +3479,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Relates two items of the project for a machine's agent (Arugula #403): needs `issues.write` over the project (403 without), the owner's role is the ceiling, and the edge says an agent made it."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/relations/batch"  # wire::boards::AGENT_PROJECT_RELATIONS_BATCH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Adds and removes up to 50 links between items of the project for a machine's agent (Arugula #761), each on its own, and answers what became of every one: added, already there, removed, not there, or refused with why. Needs `issues.write` over the project (403 without). A reference is `#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id. A cycle of `before` and `blocks` links is refused; only links this machine's agents made come off."
 
 [[route]]
 method = "DELETE"

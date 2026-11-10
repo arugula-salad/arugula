@@ -36,7 +36,7 @@ const FRIEND: &str = "friend@example.com";
 const OTHER: &str = "other@example.com";
 
 fn tailnet_daemon(env: &[(&str, &str)]) -> Daemon {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     Daemon::child_env(&args, env)
 }
 
@@ -453,7 +453,7 @@ impl World {
             "revocations": [],
             "team": team.then(|| TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: self.alex_root.device.clone() }),
         });
-        Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        Daemon::child_in(&[], &[], |state| {
             std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
             self.daemon.save(&state.join("daemon.key")).unwrap();
         })
@@ -742,6 +742,8 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
     calls.push(("DELETE", format!("/api/doc-links/{id}")));
     // Deleting a Doc from the library (#1493) is the same account's.
     calls.push(("DELETE", format!("/api/docs/{}", &id[..16])));
+    // ...and so is sharing one by its id, with no block (Arugula #819).
+    calls.push(("POST", format!("/api/docs/{}/share", &id[..16])));
     for (method, path) in &calls {
         let (status, r) = channel_call(&mut dee, &dee_ch, method, path, json!({})).await;
         assert_eq!(status, 403, "dee {method} {path}: {r}");

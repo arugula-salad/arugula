@@ -36,7 +36,9 @@ git init -q --bare "$tmp/forge/arugula.git"
 # starts a run ($tmp/gh-running, "ID URL", which `run list` prints); `run
 # watch` ends it, and when FAKE_RARE is success, the run tags the commit it
 # was started on ci/rare/<sha> on the forge, as rare-nightly.yml's last job
-# does. For draft: every release is a draft, and `release edit` keeps its
+# does. `run rerun` records itself in $tmp/gh-reruns, and FAKE_RERUN=success
+# passes the watch after it. `run view` says rare-passed's conclusion
+# (FAKE_RARE_PASSED, default skipped). For draft: every release is a draft, and `release edit` keeps its
 # notes in $tmp/release-body.
 mkdir "$tmp/bin"
 cat >"$tmp/bin/gh" <<'EOF'
@@ -49,8 +51,16 @@ case "$1 $2" in
   "run watch")
     sha=$(tail -1 "$FAKE/gh-calls" | sed -n 's/.*-f sha=\([0-9a-f]*\).*/\1/p')
     : >"$FAKE/gh-running"
-    if [ "${FAKE_RARE:-}" = success ]; then git push -q "$FORGE" "$sha:refs/tags/ci/rare/$sha"; exit 0; fi
+    if [ "${FAKE_RARE:-}" = success ] || { [ -s "$FAKE/gh-reruns" ] && [ "${FAKE_RERUN:-}" = success ]; }; then
+      git push -q "$FORGE" "$sha:refs/tags/ci/rare/$sha"; exit 0
+    fi
     exit 1 ;;
+  "run view")
+    case "$*" in
+      *"--json jobs"*) echo "${FAKE_RARE_PASSED:-skipped}" ;;
+      *) echo in_progress ;;
+    esac ;;
+  "run rerun") printf '%s\n' "$*" >>"$FAKE/gh-reruns" ;;
   "release view") if [ "${6:-}" = --json ]; then echo true; fi ;;
   "release edit") while [ "$#" != 0 ]; do if [ "$1" = --notes-file ]; then cp "$2" "$FAKE/release-body"; fi; shift; done ;;
   *) echo "fake gh: $*" >&2; exit 1 ;;
@@ -212,11 +222,20 @@ has "--rare: the run it started" "actions/runs/77"
 if grep -qx "workflow run rare-nightly.yml -R forge/arugula --ref main -f sha=$two" "$tmp/gh-calls"; then ok "--rare: started rare-nightly.yml on two"
 else bad "--rare started: $(cat "$tmp/gh-calls" 2>/dev/null)"; fi
 if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "--rare, failed: nothing pushed"; else bad "it pushed v0.1.1 after the rare jobs failed"; fi
+if [ "$(grep -c 'run rerun 77 .*--failed' "$tmp/gh-reruns" 2>/dev/null)" = 1 ]; then ok "--rare: the failed jobs got one more try"
+else bad "--rare reruns: $(cat "$tmp/gh-reruns" 2>/dev/null)"; fi
+: >"$tmp/gh-reruns"
+# A person's cancel takes rare-passed with it, and stays cancelled.
+FAKE_RARE=failure FAKE_RARE_PASSED=cancelled run 1 "--rare: cancelled by hand" bump --older --rare
+has "--rare: says it was cancelled" "were cancelled"
+if [ -s "$tmp/gh-reruns" ]; then bad "--rare re-ran a cancelled run: $(cat "$tmp/gh-reruns")"; else ok "--rare: a cancelled run isn't run again"; fi
 # As the arugula-release deploy driver runs it (M221): its trailer on the
 # tag. (The driver never passes --rare; here it runs the rare jobs first,
 # which pass.) Main moves just as the fixtures go to it.
 touch "$tmp/move-main"
-ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" FAKE_RARE=success run 0 "release v0.1.1" bump --older --rare
+# They pass on the second try.
+ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" FAKE_RARE=failure FAKE_RERUN=success run 0 "release v0.1.1" bump --older --rare
+has "v0.1.1: the failed jobs ran once more" "running the failed ones once more"
 has "v0.1.1: after the rare jobs passed" "${two:0:12} passed the rare jobs (ci/rare/$two)"
 has "v0.1.1: the line the deploy driver reads" "pushed v0.1.1 (${two:0:12})"
 if [ "$(git rev-parse "v0.1.1^{commit}")" = "$two" ] && [ "$(remote 'refs/tags/v0.1.1^{}')" = "$two" ]; then ok "v0.1.1 is on two itself, on the forge"

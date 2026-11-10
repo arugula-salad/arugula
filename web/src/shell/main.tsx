@@ -1,9 +1,7 @@
 // First: this daemon's page key on the page's own requests (local-key.ts).
-import "./local-key";
+import { startPageKey } from "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
-// Live presence (#343): in the reader's teams' rooms while their switch says so.
-import { live } from "../shared/live/live";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
@@ -37,7 +35,7 @@ import { App } from "./ui/app";
 import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
-import { setReadOnlyLink } from "./ui/link-note";
+import { LinkEnded, setReadOnlyLink, waitForLinkOpen } from "./ui/link-note";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import "../shared/ui/prototype-storage";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
@@ -66,6 +64,13 @@ import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from ".
 // (M19, `#link=…`) needs no account: its key is in the fragment.
 // This device's palette and finish, before anything draws.
 applyAppearance();
+// UI audit #149: a link made since says when it ends, after the key.
+const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
+// A read-only link says what it is and waits to be opened: nothing is
+// fetched and no key is read until someone clicks, here, in a focused window.
+const linkEnds = linkMatch?.[5] ? Number(linkMatch[5]) : null;
+if (linkMatch) await waitForLinkOpen(document.getElementById("root")!, linkEnds);
+await startPageKey();
 const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
@@ -88,14 +93,12 @@ addEventListener("hashchange", () => {
   const to = platformOrigin() ? platformPath(location.hash) : null;
   if (to) location.replace(`${platformOrigin()}${to}`);
 });
-// UI audit #149: a link made since says when it ends, after the key.
-const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
 let linkTarget: import("./client").E2ETarget | undefined;
 if (info && linkMatch) {
-  const [, daemon, noise, seed, pub, ends] = linkMatch;
-  setReadOnlyLink(ends ? Number(ends) : null);
+  const [, daemon, noise, seed, pub] = linkMatch;
+  setReadOnlyLink(linkEnds);
   const pkcs8 = new Uint8Array(48);
   pkcs8.set(unhex("302e020100300506032b656e04220420"));
   pkcs8.set(unhex(seed), 16);
@@ -430,6 +433,17 @@ const draw = () =>
 draw();
 connect();
 
+// A link that ended goes (M30: what it showed isn't kept greyed) and stops
+// asking: the machine won't take it back.
+if (linkTarget) {
+  const off = client.subscribe(() => {
+    if (!client.revoked) return;
+    off();
+    client.close();
+    render(<LinkEnded />, root);
+  });
+}
+
 // A link's page shows its one daemon: no host list.
 if (!linkTarget) {
   const follow = () => {
@@ -595,8 +609,6 @@ Object.assign(window, {
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
-    /** #343: live presence's rooms on arugula.stream. */
-    live,
     fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),

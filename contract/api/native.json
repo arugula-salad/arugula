@@ -15,6 +15,10 @@
       "why": "The strip of a thread's agents is on the web for now (Arugula #646)"
     },
     {
+      "match": "/docs/\\{id\\}/copies",
+      "why": "Share with… is on the web for now"
+    },
+    {
       "match": "/secrets",
       "why": "Project secrets stay on the web"
     },
@@ -23,8 +27,16 @@
       "why": "Registered clients are configured on the web"
     },
     {
+      "match": "/ci-alerts(/|$)",
+      "why": "CI alerts are set up on the web, and their key is shown once there (native #774)"
+    },
+    {
       "match": "/agent-tokens",
       "why": "Agent tokens stay on the web"
+    },
+    {
+      "match": "/projects/\\{project\\}/grants$",
+      "why": "A project's Access view is on the web and the CLI for now"
     },
     {
       "match": "/inference",
@@ -107,12 +119,8 @@
       "why": "Team chat settings stay on the web"
     },
     {
-      "match": "/chat/presence/token$",
-      "why": "Live presence is not in the first app"
-    },
-    {
       "match": "/chat/presence$",
-      "why": "Live presence is not in the first app"
+      "why": "Chat presence is not in the first app"
     }
   ],
   "operations": {

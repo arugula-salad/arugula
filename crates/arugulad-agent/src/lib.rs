@@ -362,6 +362,9 @@ enum Effect {
     SessionLost(String),
     /// A turn ended: send what's queued.
     TurnEnded,
+    /// A cycle the agent woke for by itself ended: send what's queued
+    /// (#716).
+    WokenEnded,
     /// A permission request came: answer it if a rule allows it.
     Permission(String),
     /// An agent request we don't serve.
@@ -489,6 +492,11 @@ struct Inner {
     /// channel, for the answer.
     hosted_turn: Option<String>,
     gating: bool,
+    /// A thread session's next turn is being checked against the project's
+    /// standing grant (`work::session_turn`).
+    checking_turn: bool,
+    /// Until when that check's yes holds.
+    turn_allowed: Option<std::time::Instant>,
     to_self: Option<mpsc::UnboundedSender<Msg>>,
     /// The kind of credential its last turn ran on, which it's started
     /// holding (else the box's last Claude turn's).
@@ -504,6 +512,7 @@ enum Msg {
     /// M185: what the platform said about the next turn on a hosted box:
     /// its turn, or why it can't run.
     Gated(Result<hosted::Given, String>),
+    TurnChecked(Result<(), String>),
 }
 
 /// Whose the agent block's operations are (`impl Handle<AgentBlock> for
@@ -542,8 +551,8 @@ impl crate::agent::Agents for AgentBlock {
         open_transcripts()
     }
 
-    fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
-        Arc::new(crate::conversations::Sessions)
+    fn sessions(&self) -> Arc<dyn crate::mux::Conversations> {
+        Arc::new(crate::conversations::ClaudeConversations)
     }
 
     fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {
@@ -747,6 +756,8 @@ impl Inner {
             next_run: None,
             hosted_turn: None,
             gating: false,
+            checking_turn: false,
+            turn_allowed: None,
             to_self: None,
             hosted_auth: None,
         }
@@ -925,6 +936,7 @@ impl Inner {
                 // A new server: nothing outstanding carries over. (An old
                 // Managoat block's turn wasn't cut: it went on there.)
                 self.background.clear();
+                self.close_woken(at);
                 let cut_now = e["fountain"] != true
                     && (self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty());
                 if cut_now {
@@ -953,6 +965,7 @@ impl Inner {
             }
             "exit" | "stopped" => {
                 self.background.clear();
+                self.close_woken(at);
                 if self.prompt_id.is_some() {
                     self.interrupted = true;
                 }
@@ -1284,6 +1297,7 @@ impl Inner {
                         // An autonomous cycle's close.
                         if claude && self.replay.is_none() && origin != "human" && self.autonomous_at.take().is_some() {
                             self.end_woken(at);
+                            fx.push(Effect::WokenEnded);
                         }
                         // #444: the window claude-agent-acp learned from the
                         // turn's result (the SDK's `modelUsage`), which the
@@ -1545,6 +1559,14 @@ impl Inner {
         news
     }
 
+    /// The server it was woken on went away: so did its cycle, which no
+    /// longer holds back what's queued (#716).
+    fn close_woken(&mut self, at: u64) {
+        if self.autonomous_at.take().is_some() {
+            self.end_woken(at);
+        }
+    }
+
     /// A woken cycle ended (#700): its turn did.
     fn end_woken(&mut self, at: u64) {
         if let Some(t) = self.turns.last_mut().filter(|t| t.prompt == WOKEN && t.ended_ms.is_none()) {
@@ -1764,7 +1786,7 @@ impl Agent {
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
-            return Err("VM agents need wisp (VM panes aren't set up)".into());
+            return Err("VM agents need a sandbox provider (VM panes aren't set up)".into());
         }
         // Fail now, with a clear reason, rather than in the VM later.
         if vm && cfg.def.agent == Kind::Claude && !ctx.restoring {
@@ -2040,6 +2062,12 @@ impl Agent {
                 // #304: the member's agent session, which chant judges its
                 // writes by.
                 env.extend(session_env(&inner.cfg));
+                // Arugula #771: the `arugula issue` it runs looks in its
+                // issue's project, as its MCP calls do.
+                if let Some(p) = inner.cfg.work.as_ref().and_then(|w| w.project.clone()) {
+                    env.retain(|(n, _)| n != board_attach::PROJECT_ENV);
+                    env.push((board_attach::PROJECT_ENV.to_owned(), p));
+                }
                 // M44 and #128: what the session's `${…}`s stand for, in the
                 // adapter's environment (its own and its children's: never
                 // on a command line).
@@ -2122,7 +2150,7 @@ impl Agent {
             }
             Some(sprite) => {
                 let Some(provider) = self.ctx.provider.clone() else {
-                    return self.failed(inner, "VM agents need wisp".into());
+                    return self.failed(inner, "VM agents need a sandbox provider".into());
                 };
                 let mut secret = match inner.cfg.def.agent {
                     Kind::Claude => match secret_env(&self.ctx) {
@@ -2403,6 +2431,26 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                                 }
                             }
                         }
+                        Msg::TurnChecked(answer) => {
+                            g.checking_turn = false;
+                            match answer {
+                                Ok(()) => {
+                                    g.turn_allowed = Some(std::time::Instant::now() + TURN_ALLOWED_FOR);
+                                    send_next(&ctx, &mut g);
+                                }
+                                // Not sent: said in its place, and nothing
+                                // that was queued goes.
+                                Err(why) => {
+                                    info!(block = ctx.id, why, "hosted: a session's turn wasn't started");
+                                    end_hosted_turn(&ctx, &mut g);
+                                    for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+                                        ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
+                                    }
+                                    g.note(json!({ "e": "queue_clear" }));
+                                    g.note(json!({ "e": "error", "message": why }));
+                                }
+                            }
+                        }
                         Msg::Closed(generation, why) if generation == g.generation => {
                             end_hosted_turn(&ctx, &mut g);
                             g.link = None;
@@ -2451,6 +2499,7 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                     if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
                         g.autonomous_at = None;
                         g.end_woken(now_ms());
+                        send_next(&ctx, &mut g);
                         dirty = true;
                     }
                     // #606: what it left running, checked on this host only.
@@ -2705,6 +2754,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             }
             send_next(ctx, g);
         }
+        Effect::WokenEnded => send_next(ctx, g),
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
             for tag in std::mem::take(&mut g.mention_turn) {
@@ -3007,9 +3057,17 @@ fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
     }
 }
 
-/// Send the next queued prompt, if the agent can take it.
+/// How long a session's turn may wait for its agent after its grant checked
+/// out, before it's checked again: an agent starting over on the turn's
+/// credential, say.
+const TURN_ALLOWED_FOR: Duration = Duration::from_secs(5);
+
+/// Send the next queued prompt, if the agent can take it. Not while it
+/// works on a cycle it woke for by itself (#716): claude-agent-acp folds a
+/// prompt that comes then into that cycle and never answers it, so the
+/// block would wait on it for good. It goes when the cycle ends.
 fn send_next(ctx: &AgentCtx, g: &mut Inner) {
-    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
+    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() || g.autonomous_at.is_some() {
         return;
     }
     let Some(q) = g.queue.front().cloned() else { return };
@@ -3027,6 +3085,23 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
             let session = crate::work::sessions::session_of(ctx.id);
             crate::task::spawn_on(&ctx.rt, async move {
                 let _ = tx.send(Msg::Gated(gate.start(agent, session).await));
+            });
+        }
+        return;
+    }
+    // A thread session's turn runs under the project's standing grant
+    // (aru-115, as amended): checked here, the last thing before the agent
+    // has the prompt, whatever queued it (the session's follow-up, a mention,
+    // a person in the block, what was queued when a restart cut in).
+    if g.turn_allowed.take().is_none_or(|until| std::time::Instant::now() >= until)
+        && let Some(session) = crate::work::sessions::session_of(ctx.id)
+    {
+        if !g.checking_turn
+            && let Some(tx) = g.to_self.clone()
+        {
+            g.checking_turn = true;
+            crate::task::spawn_on(&ctx.rt, async move {
+                let _ = tx.send(Msg::TurnChecked(crate::work::session_turn(session).await));
             });
         }
         return;
@@ -3599,6 +3674,16 @@ impl Block for Agent {
         arugulad_base::hosted::archive::closed(&self.ctx.rt, self.transcript());
         let mut g = self.inner.lock().unwrap();
         g.closing = true;
+        // #662: the run loop stops at `closing`, before `Msg::Closed` could
+        // tell its mentions. The running turn's is dropped, unless its
+        // answer is already in (#606's held turn); what's queued never goes.
+        let ran = if g.result_in { mux::Turn::Ended } else { mux::Turn::Dropped(mux::DropWhy::Exited) };
+        for tag in std::mem::take(&mut g.mention_turn) {
+            self.ctx.followup_turn(tag.to_tag(), ran);
+        }
+        for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+            self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
+        }
         if let Some(l) = g.link.take() {
             l.stop();
         }

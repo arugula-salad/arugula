@@ -19,7 +19,7 @@ import { useEscape } from "./keys";
 import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
-import { LiveFace, accountOf } from "../../shared/live/face";
+import { CheckIcon, EditIcon } from "../../shared/ui/icons";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -38,12 +38,9 @@ function initials(name: string): string {
 }
 
 export function Avatar({ p, onClick, title }: { p: Pick<Presence, "who" | "name" | "pic">; onClick?: () => void; title?: string }) {
-  const live = accountOf(p.who);
   return (
     <span class="avatar" style={{ "--who": colorOf(p.who) }} title={title ?? p.name} data-who={p.who} onClick={onClick}>
       {p.pic ? <img src={p.pic} alt="" referrerpolicy="no-referrer" /> : initials(p.name)}
-      {/* #344: their live face, for someone here through control. */}
-      {live && <LiveFace account={live} />}
     </span>
   );
 }
@@ -113,7 +110,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         ) : null}
         {driving ? (
           <span class="pane-driver" data-you-drive title="You have control: your typing reaches it">
-            ✎ you drive
+            <EditIcon size="xs" /> you drive
           </span>
         ) : null}
         {focused.map((p) => (
@@ -124,7 +121,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
         {driver ? (
           <>
             <span class="pane-driver" data-driver={driver.who} title={`${driver.name} is driving: only their typing reaches it`}>
-              ✎ {driver.name.split("@")[0]}
+              <EditIcon size="xs" /> {driver.name.split("@")[0]}
             </span>
             {/* You may type here, but they have control: say how to get it (#551). */}
             {!pair && client.mayType(pane) ? (
@@ -135,7 +132,7 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
           </>
         ) : pair ? (
           <span class="pane-driver" title="Pair mode: everyone types">
-            ✎ pair
+            <EditIcon size="xs" /> pair
           </span>
         ) : null}
       </div>
@@ -399,7 +396,10 @@ export function ShareDialog({ client }: { client: Client }) {
   const name = client.state?.sessions.find((s) => s.id === session)?.name ?? `$${session}`;
   // Control mode: where a person it's shared with finds it (#551).
   const machine = control && client.e2e ? (control.daemons.find((d) => d.id === client.e2e!.daemon.id)?.name ?? "this machine") : null;
-  const mine = grants.filter((g) => g.session === session);
+  const shared = grants.filter((g) => g.session === session);
+  // A read-only link is ended under Links and guests (ShareLinks), not here:
+  // it has no role to change.
+  const mine = shared.filter((g) => !g.principal.startsWith("link:"));
   // The root a grant to an account holds, or this browser's pin for them.
   const rootOf = (g: Grant) => g.root ?? personPin(g.principal.slice("account:".length))?.root;
   // #763: a person whose key changed: control named another root than
@@ -500,7 +500,7 @@ export function ShareDialog({ client }: { client: Client }) {
                     {verified(g) ? (
                       <span class="share-verified" title="You verified their key" aria-label="verified" data-verified>
                         {" "}
-                        ✓
+                        <CheckIcon size="xs" />
                       </span>
                     ) : null}
                   </span>
@@ -542,7 +542,7 @@ export function ShareDialog({ client }: { client: Client }) {
               );
             })}
           </ul>
-        ) : (
+        ) : shared.length ? null : (
           <p class="dim">Only you can reach it.</p>
         )}
         {address && !(control && client.e2e) && mine.some((g) => g.principal.startsWith("tailnet:")) ? (
@@ -742,7 +742,13 @@ export function ShareDialog({ client }: { client: Client }) {
               onClick={() =>
                 control!
                   .makeLink((m, p, b) => client.request(m, p, b), client.e2e!.daemon.id, session, 3600, false)
-                  .then(setLink, (x: Error) => setErr(x.message))
+                  .then(
+                    (made) => {
+                      setLink(made);
+                      void load();
+                    },
+                    (x: Error) => setErr(x.message),
+                  )
               }
             >
               Make a read-only link
@@ -751,7 +757,15 @@ export function ShareDialog({ client }: { client: Client }) {
           </p>
         ) : null}
         {link ? <CopyText text={link} share data-link /> : null}
-        <ShareLinks client={client} session={session} />
+        <ShareLinks
+          client={client}
+          session={session}
+          made={link}
+          ended={() => {
+            setLink(null);
+            void load();
+          }}
+        />
         {err ? <p class="control-error">{err}</p> : null}
         <div class="prompt-buttons">
           <button class="secondary" onClick={() => setSession(null)}>Done</button>

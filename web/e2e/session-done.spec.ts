@@ -18,6 +18,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("session-done");
@@ -115,6 +116,7 @@ test("Acme with chat on, a hosted workspace on o/app, and #general", async ({ br
     ).run(`hw_${randomBytes(16).toString("hex")}`, project, JSON.stringify({ repos: ["https://github.com/o/app"] }), machine, now + 86_400_000, projects.me.account, now, now);
     db.prepare("INSERT INTO linked_repos (repo_id, full_name, private, project_id, installation_id, linked_at) VALUES (7, 'o/app', 0, ?, 1, ?)").run(project, now);
   });
+  sql((db) => allowSessions(db, project, team));
   const ch = await api(alice, "POST", `/api/chat/teams/${team}/channels`, { name: "general" });
   expect(ch.status, JSON.stringify(ch.body)).toBe(200);
   general = (ch.body as { id: string }).id;
@@ -140,7 +142,7 @@ test("a pushed session offers its diff, and its PR merging marks it merged ✓",
   moved(first.id, "turn", null, { branch: first.branch, pushed: true, commits: ["a1b2c3 cache the session lookup"], diffstat: " web/login.ts | 12 ++++++++----\n 1 file changed" }, true);
   moved(first.id, "state", "done", {}, true);
   const a = card(alice, first.id);
-  await expect(a.locator("[data-session-label]")).toHaveText("done", { timeout: 15_000 });
+  await expect(a.locator("[data-session-label]")).toHaveText("turn ended", { timeout: 15_000 });
   const diff = a.locator("[data-session-diff]");
   await expect(diff).toHaveAttribute("href", `https://github.com/o/app/compare/${first.branch}`);
   await a.scrollIntoViewIfNeeded();
@@ -158,7 +160,7 @@ test("a pushed session offers its diff, and its PR merging marks it merged ✓",
   });
   moved(first.id, "state", "stopped", { reason: "merged: its pull request merged", pr: 12 }, false, `, merged_at = ${Date.now()}, pr = 'https://github.com/o/app/pull/12'`);
   await expect(a.locator("[data-session-label]")).toHaveText("merged ✓", { timeout: 15_000 });
-  await expect(a).toHaveClass(/tone-ok/);
+  await expect(a).toHaveClass(/\bcard-ok\b/);
   await expect(a.locator("[data-session-diff]")).toHaveCount(0);
   await expect(a.locator("a[data-session-pr]")).toHaveAttribute("href", "https://github.com/o/app/pull/12");
   await expect(a.locator("[data-session-stop]")).toHaveCount(0);

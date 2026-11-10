@@ -48,6 +48,11 @@ export interface DocState {
   shared?: { made: number; updated: number } | null;
   /** A section was written after the link was last updated (#509). */
   shared_older?: boolean;
+  /** The machine has put a copy of it on the platform (Arugula #708); the
+   * page is the owner's to ask for (`doc_shares`). */
+  platform?: boolean;
+  /** How the Doc is laid out; absent is `doc` (Arugula #827). */
+  layout?: "doc" | "tabs" | "prototype";
   error?: string;
 }
 
@@ -146,16 +151,21 @@ export function DocBlock({
           ) : (
             <h1 class="doc-title">{s.title || "Untitled"}</h1>
           )}
-          <p class="doc-meta">
-            {byline && <>{byline} · </>}
-            {s.entries.length === 0 ? (
-              <span class="doc-wait">Waiting for the outline…</span>
-            ) : (
-              <span class="doc-progress" data-doc-progress>
-                {done} of {s.entries.length} sections written
-              </span>
-            )}
-          </p>
+          {(byline || s.entries.length === 0 || done < s.entries.length) && (
+            <p class="doc-meta">
+              {byline}
+              {byline && (s.entries.length === 0 || done < s.entries.length) && " · "}
+              {s.entries.length === 0 ? (
+                <span class="doc-wait">Waiting for the outline…</span>
+              ) : (
+                done < s.entries.length && (
+                  <span class="doc-progress" data-doc-progress>
+                    {done} of {s.entries.length} sections written
+                  </span>
+                )
+              )}
+            </p>
+          )}
         </header>
         {s.entries.map((e) => (
           <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>

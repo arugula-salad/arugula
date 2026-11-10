@@ -199,6 +199,18 @@ impl Db {
         Ok(n == 1)
     }
 
+    /// [`Db::first_delivery`] in the caller's transaction: whether this is
+    /// the first time `delivery` is taken (CI alerts note their event with
+    /// its first write, `ci_alerts`).
+    pub fn first_delivery_in(c: &impl Sql, delivery: &str, event: &str, now: u64) -> anyhow::Result<bool> {
+        let n = c.execute(
+            "INSERT INTO github_webhook_deliveries (delivery, event, received_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (delivery) DO NOTHING",
+            params![delivery, event, now],
+        )?;
+        Ok(n == 1)
+    }
+
     /// The event a delivery was, if it was taken and is still kept.
     pub fn delivery_event(&self, delivery: &str) -> anyhow::Result<Option<String>> {
         self.c()
@@ -929,14 +941,14 @@ pub struct DraftRow {
     pub native_seq: Option<i64>,
 }
 
-const DRAFT_COLUMNS: &str = "d.id, d.project_id, d.author, d.agent_name, d.agent_machine, d.repo_id, l.full_name, \
+pub(super) const DRAFT_COLUMNS: &str = "d.id, d.project_id, d.author, d.agent_name, d.agent_machine, d.repo_id, l.full_name, \
      d.number, d.kind, d.event, d.title, d.body, d.state, d.sent_at, d.sent_url, d.error, d.created_at, d.updated_at, \
      i.id, i.title, d.native_issue, d.native_seq";
 
-const DRAFT_FROM: &str = "drafts d JOIN linked_repos l ON l.repo_id = d.repo_id \
+pub(super) const DRAFT_FROM: &str = "drafts d JOIN linked_repos l ON l.repo_id = d.repo_id \
      LEFT JOIN forge_items i ON i.repo_id = d.repo_id AND i.number = d.number";
 
-fn draft_row(r: &Row) -> anyhow::Result<DraftRow> {
+pub(super) fn draft_row(r: &Row) -> anyhow::Result<DraftRow> {
     Ok(DraftRow {
         id: r.get(0)?,
         project_id: r.get(1)?,
@@ -1220,6 +1232,95 @@ impl Db {
         )
     }
 
+    /// Why export draft `d` mustn't be sent now, or `None`. Another export
+    /// of its issue was sent (whatever became of its link). Or one's send
+    /// named an issue that couldn't be taken for its own ([`Db::end_send`]):
+    /// it may be on GitHub as that, so that refusal stands until its draft
+    /// is discarded. Or `d`'s own last hold ran out with no end (the
+    /// platform stopped, or the send outlived [`SENDING_MS`]) and the
+    /// mirror has an issue in its repo with its title, opened since: that
+    /// send may have opened it. By title and time alone, since the `gh`
+    /// login a machine sends with may not be the person's GitHub identity.
+    pub fn export_blocked(&self, d: &DraftRow, now: u64) -> anyhow::Result<Option<String>> {
+        let (Some(native), "issue") = (d.native_issue.as_deref(), d.kind.as_str()) else { return Ok(None) };
+        let c = self.c();
+        let sent: Option<Option<String>> = c
+            .query_row(
+                "SELECT sent_url FROM drafts WHERE native_issue = ?1 AND kind = 'issue' AND state = 'sent'
+                 ORDER BY updated_at DESC LIMIT 1",
+                params![native],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(url) = sent {
+            let at = url.map(|u| format!(" ({u})")).unwrap_or_default();
+            return Ok(Some(format!("it was sent to GitHub already{at}: discard this draft")));
+        }
+        let refused: Option<String> = c
+            .query_row(
+                "SELECT sent_url FROM drafts WHERE native_issue = ?1 AND kind = 'issue' AND state = 'failed'
+                     AND sent_url IS NOT NULL
+                 ORDER BY updated_at DESC LIMIT 1",
+                params![native],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(url) = refused {
+            // Nothing links a refused send later: discarding is the way on,
+            // and it says what that costs.
+            return Ok(Some(format!(
+                "it may be on GitHub as {url}, which can't be linked to this issue: \
+                 discarding this draft lets it be opened again, as a second GitHub issue if that one is there"
+            )));
+        }
+        let lapsed = d.sent_at.filter(|at| d.state != "sent" && at + SENDING_MS <= now);
+        let (Some(held), Some(title)) = (lapsed, d.title.as_deref()) else { return Ok(None) };
+        let found: Option<u64> = c
+            .query_row(
+                "SELECT number FROM forge_items
+                 WHERE repo_id = ?1 AND kind = 'issue' AND title = ?2 AND created_at >= ?3 ORDER BY number LIMIT 1",
+                params![d.repo_id, title, held.saturating_sub(SKEW_MS)],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found.map(|n| {
+            format!(
+                "{}#{n} has this title and was opened since the last try to send it, which may have opened it: \
+                 discard this draft if so",
+                d.full_name
+            )
+        }))
+    }
+
+    /// The sent issue's place for an export draft `id`: its repo's id, name
+    /// and installation, and whether the mirror has issue `number` there.
+    /// `None` for a draft that isn't an export.
+    pub fn export_target(&self, id: &str, number: u64) -> anyhow::Result<Option<(u64, String, u64, bool)>> {
+        self.c()
+            .query_row(
+                "SELECT d.repo_id, l.full_name, l.installation_id,
+                     EXISTS (SELECT 1 FROM forge_items f WHERE f.repo_id = d.repo_id AND f.number = ?2 AND f.kind = 'issue')
+                 FROM drafts d JOIN linked_repos l ON l.repo_id = d.repo_id
+                 WHERE d.id = ?1 AND d.kind = 'issue' AND d.native_issue IS NOT NULL",
+                params![id, number],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+    }
+
+    /// Whether an export draft of native issue `issue` was sent.
+    pub fn export_drafts_sent(&self, issue: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT 1 FROM drafts WHERE native_issue = ?1 AND kind = 'issue' AND state = 'sent' LIMIT 1",
+                params![issue],
+                |r| r.get::<i64>(0),
+            )
+            .optional()?
+            .is_some())
+    }
+
     /// An export draft's title and body as its issue's are now, before it's
     /// sent: only while it waits (or failed) and no send holds it.
     pub fn refresh_export_draft(&self, id: &str, title: &str, body: &str, now: u64) -> anyhow::Result<()> {
@@ -1272,8 +1373,21 @@ impl Db {
 
     /// End the send that holds a draft since `held`: the draft after, or
     /// `None` when that hold isn't its any more (it ran out and another
-    /// send took it).
-    pub fn end_send(&self, id: &str, held: u64, end: SendEnd<'_>, now: u64) -> anyhow::Result<Option<DraftRow>> {
+    /// send took it). A native issue's export that was sent sets the
+    /// issue's GitHub origin in the same transaction (M205,
+    /// [`super::issues::set_github`]), so a draft is never sent without it.
+    /// The sent issue must be in the draft's repo, and opened since the
+    /// hold, by the draft's person, as the mirror has it or else as `by`
+    /// read it: otherwise the draft ends `failed`, saying so, with the URL
+    /// kept, so [`Db::export_blocked`] refuses another send while it stands.
+    pub fn end_send(
+        &self,
+        id: &str,
+        held: u64,
+        end: SendEnd<'_>,
+        by: &SentBy,
+        now: u64,
+    ) -> anyhow::Result<Option<DraftRow>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let (state, sent_at, url, error) = match end {
@@ -1295,9 +1409,92 @@ impl Db {
         } else {
             None
         };
+        let mut row = row;
+        if let Some(d) = &row
+            && d.state == "sent"
+            && d.kind == "issue"
+            && let Some(native) = d.native_issue.clone()
+            && let Some(url) = d.sent_url.clone()
+        {
+            let at = crate::forge::export::issue_at(&url);
+            let why = match &at {
+                Some((repo, _)) if !repo.eq_ignore_ascii_case(&d.full_name) => Some(NOT_ITS_REPO),
+                None => Some(NOT_ITS_REPO),
+                Some((_, number)) => opened_before(&tx, d.repo_id, *number, held, by)?,
+            };
+            match (why, at) {
+                (None, Some((_, number))) => {
+                    let to = super::issues::GithubOrigin { repo: d.full_name.clone(), repo_id: d.repo_id, number };
+                    super::issues::set_github(&tx, &native, &to, super::issues::Actor::person(&d.author), now)?;
+                }
+                (why, _) => {
+                    let why = why.unwrap_or(NOT_ITS_REPO);
+                    tracing::warn!(draft = id, issue = native, why, "an export's send named an issue that isn't its");
+                    // The URL stays: it may be on GitHub as that.
+                    tx.execute(
+                        "UPDATE drafts SET state = 'failed', sent_at = NULL, error = ?2 WHERE id = ?1",
+                        params![id, why],
+                    )?;
+                    row = Some(tx.query_row(
+                        &format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.id = ?1"),
+                        params![id],
+                        draft_row,
+                    )?);
+                }
+            }
+        }
         tx.commit()?;
         Ok(row)
     }
+}
+
+/// Why an export's send that named an issue outside its repo ends failed.
+pub const NOT_ITS_REPO: &str = "the sent issue must be in the draft's repo";
+/// Why one that named an issue the mirror knows from before the send did.
+pub const NOT_ITS_SEND: &str = "the sent issue was opened before this send, or by someone else";
+/// How far GitHub's time for a new issue may run behind the platform's.
+const SKEW_MS: u64 = 60_000;
+
+/// Why one whose issue couldn't be read to check.
+pub const NOT_CHECKED: &str = "the sent issue couldn't be checked on GitHub";
+
+/// Who sent an export, and its issue as GitHub has it, for
+/// [`Db::end_send`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SentBy {
+    /// GitHub's id of the draft's person, when known.
+    pub github: Option<u64>,
+    /// The sent issue's creation time and author id, as GitHub has it,
+    /// read by the send when the mirror didn't have it; why not, when it
+    /// couldn't be read.
+    pub issue: Option<Result<(u64, Option<u64>), String>>,
+}
+
+/// Why a send held at `held` can't be what opened issue `number` of
+/// `repo_id`, or `None`: as the mirror has the issue, else as `by` read it.
+/// Opened before the hold, or by someone other than the draft's person; or
+/// not known at all.
+fn opened_before(
+    c: &impl Sql,
+    repo_id: u64,
+    number: u64,
+    held: u64,
+    by: &SentBy,
+) -> anyhow::Result<Option<&'static str>> {
+    let mirrored: Option<(u64, Option<u64>)> = c
+        .query_row(
+            "SELECT created_at, author_id FROM forge_items WHERE repo_id = ?1 AND number = ?2 AND kind = 'issue'",
+            params![repo_id, number],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let (created, author) = match (mirrored, &by.issue) {
+        (Some(m), _) => m,
+        (None, Some(Ok(read))) => *read,
+        (None, _) => return Ok(Some(NOT_CHECKED)),
+    };
+    let theirs = !matches!((author, by.github), (Some(a), Some(s)) if a != s);
+    Ok((created + SKEW_MS < held || !theirs).then_some(NOT_ITS_SEND))
 }
 
 /// An installation as GitHub says it now, not suspended or deleted.

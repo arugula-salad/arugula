@@ -1,5 +1,5 @@
 // #171, #180: a machine set up for nothing optional (no --block-listen, no
-// wisp, no studio) offers nothing that would fail for setup nobody
+// sandbox provider, no studio) offers nothing that would fail for setup nobody
 // mentioned. VM, sandbox and studio items aren't in its menus; Open a
 // port… and Open in editor say how to turn block sites on, with a link,
 // instead of failing.
@@ -27,7 +27,6 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       ARUGULA_STATE_DIR: labs(state),
-      ARUGULA_WISP_TOKEN_FILE: "/nonexistent",
     },
   });
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
@@ -53,7 +52,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "live-presence"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Open a studio app…"];

@@ -644,55 +644,66 @@ async fn register(
     // desktop app's window), and confirmed: a passkey it has agrees, or for
     // a first one, a browser or a phone of its signs or a fresh GitHub
     // sign-in.
-    let added_by = match &account {
+    let added_by = match account {
         Some(a) => {
             let (hash, info) = session_of(app, headers)
-                .filter(|(_, i)| i.account == *a)
+                .filter(|(_, i)| i.account == a)
                 .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
             from_app(&info)?;
             let vouch =
-                confirm_adding(app, site, a, &made, &cd.challenge, &info, r.step_up.as_ref(), r.device.as_ref())?;
-            Some((hash, info, vouch))
+                confirm_adding(app, site, &a, &made, &cd.challenge, &info, r.step_up.as_ref(), r.device.as_ref())?;
+            Some((a, hash, info, vouch))
         }
         None => None,
     };
-    // Signed in: add it to the account. Not: it is a new account.
-    let (account, cookie) = match account {
-        Some(a) => (a, None),
+    let (account, cookie) = match &added_by {
+        // Signed in: add it to the account, into its passkey log (DK3)
+        // saying what let it in: a passkey's step-up (its proof, signed
+        // over this event, which must still be the next), or what the hub
+        // vouches for.
+        Some((a, _, _, vouch)) => {
+            let logged = match vouch {
+                Vouch { proof: Some(event), .. } => app.db.add_passkey_logged(&made.public, (**event).clone(), true)?,
+                Vouch { device: Some(d), .. } => app.db.add_passkey_logged(
+                    &made.public,
+                    made.draft(a, site, &format!("device {d}")).after(None),
+                    false,
+                )?,
+                Vouch { github, .. } => {
+                    app.db.add_passkey_logged(&made.public, made.draft(a, site, github).after(None), false)?
+                }
+            };
+            if let Err(why) = logged {
+                if why == crate::db::passkey_log::NotAppended::Breaks {
+                    return Err(err(StatusCode::FORBIDDEN, "the passkey that confirmed this one didn't sign it"));
+                }
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "your passkeys changed while this one was being added: add it again",
+                ));
+            }
+            (a.clone(), None)
+        }
+        // Not: a new account, with its identity, the passkey and its
+        // `signup` event made together, or not at all. A passkey control
+        // already has stays whose it is: it signs in at `/auth/passkey/login`.
         None => {
-            let a = app.db.account_for("passkey", &r.id, "", &auth::new_account_id(), now_ms())?;
-            app.db.set_name(&a, &name)?;
+            let a = auth::new_account_id();
+            let event = made.draft(&a, site, "signup").after(None);
+            if app.db.new_passkey_account(&made.public, event, &name)?.is_none() {
+                return Err(err(StatusCode::CONFLICT, "that passkey is already registered: sign in with it instead"));
+            }
             app.analytics.signed_in(&a, "passkey", true);
-            (a.clone(), Some(auth::start_session(app, &a, auth::Via::Passkey)?))
+            let cookie = auth::start_session(app, &a, auth::Via::Passkey)?;
+            (a, Some(cookie))
         }
     };
-    // Into the account's passkey log (DK3), saying what let it in: a
-    // passkey's step-up (its proof, signed over this event, which must
-    // still be the next), or what the hub vouches for.
-    let logged = match added_by.as_ref().map(|(_, _, v)| v) {
-        Some(Vouch { proof: Some(event), .. }) => app.db.add_passkey_logged(&made.public, (**event).clone(), true)?,
-        Some(Vouch { device: Some(d), .. }) => app.db.add_passkey_logged(
-            &made.public,
-            made.draft(&account, site, &format!("device {d}")).after(None),
-            false,
-        )?,
-        Some(Vouch { github, .. }) => {
-            app.db.add_passkey_logged(&made.public, made.draft(&account, site, github).after(None), false)?
-        }
-        None => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "signup").after(None), false)?,
-    };
-    if let Err(why) = logged {
-        if why == crate::db::passkey_log::NotAppended::Breaks {
-            return Err(err(StatusCode::FORBIDDEN, "the passkey that confirmed this one didn't sign it"));
-        }
-        return Err(err(StatusCode::CONFLICT, "your passkeys changed while this one was being added: add it again"));
-    }
     let provider = provider(&made.aaguid);
     app.db.note_passkey(&r.id, &crate::account::agent(headers), provider)?;
     if let Some(prf) = r.prf {
         app.db.passkey_prf(&r.id, prf)?;
     }
-    if let Some((hash, info, vouch)) = &added_by {
+    if let Some((_, hash, info, vouch)) = &added_by {
         // The device is the one that signed for it, not what the sign-in
         // said it is.
         app.db.note_passkey_added(&r.id, vouch.device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
@@ -2270,5 +2281,89 @@ mod tests {
             m[2].1 = Cbor::Bytes(vec![0xc5; 128]);
         }
         assert!(cose_key(&short).is_err());
+    }
+
+    /// A sign-up with a passkey control already has is refused (409) and
+    /// changes nothing: the account it belongs to keeps its name, its
+    /// sessions, its passkey and its log, and no account is made. The same
+    /// when the hub knows the id as an identity alone. A sign-up with a new
+    /// passkey still makes its account, named, signed in once.
+    #[tokio::test]
+    async fn a_sign_up_with_a_registered_passkey_changes_nothing() {
+        let app = App::for_tests(ORIGIN).start();
+        let mut h = HeaderMap::new();
+        h.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        let rows = |table: &str| -> i64 {
+            app.db.conn().query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+        };
+        let totals = || ["accounts", "identities", "passkeys", "sessions", "passkey_log"].map(rows);
+        let of = |table: &str, a: &str| -> i64 {
+            app.db
+                .conn()
+                .query_row(&format!("SELECT COUNT(*) FROM {table} WHERE account = ?1"), rusqlite::params![a], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        let sign_up = |a: &Authn, name: &str| {
+            let ch = app.passkeys.issue(Purpose::Register { account: None, name: name.into() });
+            register(&app, &h, a.create(&ch, None))
+        };
+        let signs_in = |a: &Authn| login(&app, &h, a.get(&app.passkeys.issue(Purpose::Login), UP | UV, json!({})));
+
+        // Ada signs up.
+        let ada = Authn::new(1);
+        let (a, _, cookie) = sign_up(&ada, "Ada").await.unwrap();
+        assert!(cookie.is_some());
+        assert_eq!(app.db.account(&a).unwrap().unwrap().name, "Ada");
+        assert_eq!((of("sessions", &a), of("identities", &a), of("passkeys", &a)), (1, 1, 1));
+        assert_eq!(app.db.passkey_log(&a).unwrap().events.len(), 1);
+        let before = totals();
+
+        // A sign-up with Ada's passkey id and another key, under another
+        // name: refused, before anything is made, named or signed in.
+        let other = Authn { key: ed25519_dalek::SigningKey::from_bytes(&[2; 32]), id: ada.id.clone(), aaguid: [0; 16] };
+        let e = sign_up(&other, "Bram").await.unwrap_err();
+        assert_eq!(e.0, StatusCode::CONFLICT, "{}", e.1);
+        assert!(e.1.starts_with("that passkey is already registered"), "{}", e.1);
+        assert_eq!(totals(), before, "no row made");
+        assert_eq!(app.db.account(&a).unwrap().unwrap().name, "Ada");
+        assert_eq!(of("sessions", &a), 1);
+        let stored = app.db.passkey(&ada.id()).unwrap().unwrap();
+        assert_eq!((stored.account.as_str(), stored.public), (a.as_str(), ada.key.verifying_key().to_bytes().to_vec()));
+        assert_eq!(app.db.passkey_log(&a).unwrap().events.len(), 1);
+        // Ada's key signs in as Ada; the other doesn't sign in at all.
+        assert_eq!(signs_in(&ada).unwrap().1.account, a);
+        assert!(signs_in(&other).is_err());
+
+        // An id the hub has as an identity with no passkey row behind it:
+        // refused the same, and that account stays as it was.
+        let alone = Authn::new(5);
+        let x = app.db.account_for("passkey", &alone.id(), "", "acct-x", 1).unwrap();
+        let before = totals();
+        let e = sign_up(&alone, "Dee").await.unwrap_err();
+        assert_eq!(e.0, StatusCode::CONFLICT, "{}", e.1);
+        assert_eq!(totals(), before);
+        assert_eq!(
+            (of("sessions", &x), of("passkeys", &x), app.db.account(&x).unwrap().unwrap().name),
+            (0, 0, "".into())
+        );
+
+        // A new passkey signs up as before: its account, named, one session,
+        // the passkey and its `signup` event.
+        let cy = Authn::new(3);
+        let (c, _, cookie) = sign_up(&cy, "Cy").await.unwrap();
+        assert!(cookie.is_some());
+        assert_ne!(c, a);
+        assert_eq!(app.db.account(&c).unwrap().unwrap().name, "Cy");
+        assert_eq!((of("sessions", &c), of("identities", &c), of("passkeys", &c)), (1, 1, 1));
+        let log = app.db.passkey_log(&c).unwrap();
+        assert_eq!(log.events.len(), 1);
+        assert_eq!((log.events[0].by.as_str(), log.events[0].credential.as_str()), ("signup", cy.id().as_str()));
+        assert_eq!(app.db.passkey(&cy.id()).unwrap().unwrap().public, cy.key.verifying_key().to_bytes().to_vec());
+        assert_eq!(signs_in(&cy).unwrap().1.account, c);
+        // Ada is untouched by any of it: her sessions are her sign-up and
+        // her sign-in above.
+        assert_eq!((app.db.account(&a).unwrap().unwrap().name.as_str(), of("sessions", &a)), ("Ada", 2));
     }
 }

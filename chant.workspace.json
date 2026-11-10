@@ -1,7 +1,7 @@
 {
   "name": "arugula",
   "schema": 1,
-  "minReader": "0.124.61",
+  "minReader": "0.124.70",
   "members": [
     {
       "name": "daemon",
@@ -223,6 +223,13 @@
       ]
     },
     {
+      "name": "ops",
+      "dir": "ops",
+      "kind": "chant",
+      "because": "control's hub and its platform as chant components on Fly, released from the server lane's green commits behind a production gate (server-release.yml, #1983)",
+      "links": [{ "member": "control", "output": "arugula-control" }]
+    },
+    {
       "name": "chant-fixtures",
       "kind": "examples",
       "glob": "web/e2e/fixtures/chant-*"
@@ -236,6 +243,7 @@
     "green": {
       "branch": "main",
       "window": "24h",
+      "mergeQueue": { "retries": 1 },
       "phases": {
         "lint": { "runs": ["lint", "changes", "suite-changed"], "build": "newest" },
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass", "build": "newest" },

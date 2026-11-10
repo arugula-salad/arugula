@@ -29,7 +29,7 @@ pub type Open = Box<dyn Fn() -> Option<Arc<dyn Provider>> + Send + Sync>;
 pub struct Gated {
     state_dir: PathBuf,
     /// The adapter's name before it has been opened (`machines.rs` keeps it
-    /// with each machine): `loam`, or `wisp` for the Sprites API.
+    /// with each machine): `loam`.
     kind: &'static str,
     open: Open,
     inner: Mutex<Option<Arc<dyn Provider>>>,

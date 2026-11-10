@@ -39,7 +39,7 @@ test("a prototype gets the kit's colors and classes in the Doc's scheme, and one
   // The scheme moving while it is open moves the kit with it, no reload.
   await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
   await expect.poll(bg).toBe(rgb("#eff1f5"));
-  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb("#8839ef"));
+  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb("#702fc6"));
 
   // Opt-in: a page with no ar- class has no kit rule on it.
   const p = await plain.locator("#b").evaluate((el) => {

@@ -165,7 +165,7 @@ async fn a_workspaces_card_names_its_maker_only_while_theyre_in() {
 /// project's members, and nothing for anyone else.
 #[tokio::test]
 async fn a_sessions_link_is_a_card_of_its_state() {
-    use crate::db::sessions::{NewPrompt, NewSession, Source, State as SessionState};
+    use crate::db::sessions::{NewAgentSession, NewPrompt, Source, State as SessionState};
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let (_, room) = seed(&app, &hub, &base).await;
@@ -178,7 +178,7 @@ async fn a_sessions_link_is_a_card_of_its_state() {
     else {
         panic!("no workspace");
     };
-    let new = NewSession {
+    let new = NewAgentSession {
         project: &project,
         room: &room,
         parent_seq: 1,

@@ -1,0 +1,358 @@
+# Releases control's hub (illogical-control) and its platform
+# (arugula-platform) to production through chant (#1983): a chant release of
+# the ops/ member, cut from the server lane's newest green commit, and
+# deployed by `chant run --components --release`. Each `v*` tag starts it,
+# as release.yml's deploy jobs did, with no approval step (Jake,
+# 2026-10-20): the cut's green check is what stands between main and
+# production. On a tag it releases the tag's commit when the server lane
+# is green there, else the server lane's newest green commit.
+#
+# `just server-release` starts it by hand (or `gh workflow run
+# server-release.yml`, with `-f commit=<sha>` for another green commit). It:
+#
+# 1. build: the commit's static arugula-control and arugula-platform, with
+#    a daemon release's version stamped in as release.yml's builds do
+#    (`scripts/release stamp`): the tag's on its own commit, else the newest
+#    v* tag the commit has. The platform makes a workspace's box from the E2B
+#    template of its own version, so an unstamped one would ask for the wrong
+#    one;
+# 2. images: packaging/control's, packaging/platform's and
+#    packaging/platform-dump's images around them, pushed to Fly's registry
+#    and handed on by digest;
+# 3. postgres: the platform's tests on Postgres, on the commit, beside
+#    images. SQLite accepts SQL that Postgres refuses, and the merge queue's
+#    checks run on SQLite only. The cut needs it, so a failure deploys
+#    nothing;
+# 4. cut: `chant release cut server-<run number> --lane server --image ...`,
+#    which checks the commit is on main with a ci/green-server tag and no
+#    ci/revoked-server one, and records the release on chant/lifecycle.
+#    The job's summary lists what's in it (`chant release candidates`);
+# 5. platform: the platform, once arugula-platform has its Postgres secret
+#    and no public address, rolled one Machine at a time on its Fly checks;
+#    then the nightly dump's Machine, whose failure is a warning, as before;
+# 6. control: the hub, under the release, only when something it's built
+#    from changed since the release production runs it from (its `inputs`
+#    in ops/src/control.component.ts; a version number alone doesn't count).
+#    `deploy-unchanged` deploys it anyway.
+#
+# A release that doesn't come up healthy puts back what each Machine ran
+# before (chant's fly-release, `checks`), and its job fails.
+name: server-release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "A full sha on main with a ci/green-server tag (empty: the newest)"
+        required: false
+        default: ""
+      deploy-unchanged:
+        description: "Deploy the hub even when nothing it's built from changed"
+        type: boolean
+        default: false
+
+# One release at a time.
+concurrency:
+  group: server-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CHANT_COMMITTER: github-actions[bot]
+  CHANT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  # On the home cloud's runners, as release.yml's linux job. The whole
+  # history and every tag: the green tags, and control's build.rs serves
+  # editors/nvim with a commit for each release that changed it (#1748).
+  build:
+    runs-on: arugula-amd64
+    env:
+      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+    outputs:
+      commit: ${{ steps.which.outputs.commit }}
+      version: ${{ steps.which.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Which commit
+        id: which
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          c=$COMMIT
+          # A tag: its commit, when the server lane passed there.
+          if [ -z "$c" ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            t=$(git rev-parse "$GITHUB_SHA^{commit}")
+            if git rev-parse -q --verify "refs/tags/ci/green-server/$t" >/dev/null &&
+              ! git rev-parse -q --verify "refs/tags/ci/revoked-server/$t" >/dev/null; then
+              c=$t
+            else
+              echo "::notice::$GITHUB_REF_NAME's commit isn't green on the server lane: releasing the lane's newest green commit"
+            fi
+          fi
+          [ -n "$c" ] || c=$(npx --yes @intentius/chant@0.124.70 ci last-green --lane server)
+          [[ $c =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$c isn't a full commit sha"; exit 1; }
+          git checkout -q --detach "$c"
+          [ -f ops/chant.config.ts ] || { echo "::error::$c has no ops/ member: it predates releasing control through chant (#1983)"; exit 1; }
+          # The version its binaries carry: the tag's when it's the tag's
+          # commit, else the newest daemon release the commit has.
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$c" = "$(git rev-parse "$GITHUB_SHA^{commit}")" ]; then
+            v=$GITHUB_REF_NAME
+          else
+            v=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$c")
+          fi
+          echo "commit=$c" >>"$GITHUB_OUTPUT"
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          echo "Releasing $c as $v: $(git log -1 --format=%s)" >>"$GITHUB_STEP_SUMMARY"
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: release-static
+          cache-workspace: server
+          ghostty: "false"
+      - run: just bootstrap
+      # The version into this checkout, as release.yml's linux job does.
+      - run: scripts/release stamp "$VERSION"
+        env:
+          VERSION: ${{ steps.which.outputs.version }}
+      - run: just static-server x86_64
+      - run: tar -cf "$RUNNER_TEMP/server-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugula-platform
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-binaries
+          path: ${{ runner.temp }}/server-binaries.tar
+          retention-days: 7
+          compression-level: 1
+
+  # GitHub's runner, for Docker. Each image goes to its app's repository in
+  # Fly's registry, with that app's deploy token, and is handed on by
+  # digest: a tag can move, a digest can't.
+  images:
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      control: ${{ steps.push.outputs.control }}
+      platform: ${{ steps.push.outputs.platform }}
+      dump: ${{ steps.push.outputs.dump }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-binaries
+          path: ${{ runner.temp }}/bin
+      - run: tar -xf "$RUNNER_TEMP/bin/server-binaries.tar" -C "$RUNNER_TEMP/bin"
+      # master on 2026-04-08, as release.yml pins it.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        with:
+          version: 0.4.104
+      - name: Build and push
+        id: push
+        env:
+          CONTROL_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PLATFORM_TOKEN: ${{ secrets.FLY_PLATFORM_API_TOKEN }}
+          TAG: server-${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          [ -n "$CONTROL_TOKEN" ] || { echo "::error::FLY_API_TOKEN (a deploy token for illogical-control) isn't set"; exit 1; }
+          [ -n "$PLATFORM_TOKEN" ] || { echo "::error::FLY_PLATFORM_API_TOKEN (a deploy token for arugula-platform) isn't set"; exit 1; }
+          bin=$RUNNER_TEMP/bin
+          # image NAME TOKEN REF DOCKERFILE FILES...: build REF from DOCKERFILE
+          # and FILES, push it, and set output NAME to its repository@digest.
+          image() {
+            local name=$1 token=$2 ref=$3 dockerfile=$4 ctx
+            shift 4
+            ctx=$(mktemp -d)
+            cp "$dockerfile" "$@" "$ctx"/
+            chmod +x "$ctx"/arugula-* "$ctx"/*.sh 2>/dev/null || true
+            FLY_API_TOKEN=$token flyctl auth docker >/dev/null
+            docker build -q -t "$ref" "$ctx" >/dev/null
+            docker push -q "$ref" >/dev/null
+            local digest
+            digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")
+            [[ $digest =~ ^registry\.fly\.io/[a-z0-9-]+@sha256:[0-9a-f]{64}$ ]] || { echo "::error::$ref pushed as $digest"; exit 1; }
+            echo "$name=$digest" >>"$GITHUB_OUTPUT"
+            echo "- $name: \`$digest\` (\`$ref\`)" >>"$GITHUB_STEP_SUMMARY"
+            rm -rf "$ctx"
+          }
+          echo "### Images" >>"$GITHUB_STEP_SUMMARY"
+          image control "$CONTROL_TOKEN" "registry.fly.io/illogical-control:$TAG" packaging/control/Dockerfile "$bin/arugula-control"
+          image platform "$PLATFORM_TOKEN" "registry.fly.io/arugula-platform:$TAG" packaging/platform/Dockerfile "$bin/arugula-platform"
+          image dump "$PLATFORM_TOKEN" "registry.fly.io/arugula-platform:dump-$TAG" packaging/platform-dump/Dockerfile packaging/platform-dump/dump.sh "$bin/arugula-platform"
+
+  # The platform's suite on Postgres, as rare-nightly's test-postgres runs it,
+  # on the commit this release is built from. On GitHub's runner, for Docker.
+  # Beside images, so a release waits for it only when it's the slower of the
+  # two.
+  postgres:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Postgres's image, from ghcr.io.
+      packages: read
+    env:
+      NEXTEST_PROFILE: ci
+      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+      GITHUB_TOKEN: ${{ github.token }}
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test-postgres
+          cache-workspace: server
+          ghostty: "false"
+      - run: just bootstrap
+      # The platform embeds web/dist-platform, and control web/dist.
+      - run: just web
+      # Tests, not a release build: on a v* tag, control's build.rs wants full
+      # history and the stamped version, which only the build job has.
+      - name: The platform on Postgres
+        run: env -u GITHUB_REF_TYPE -u GITHUB_REF_NAME just test-platform-postgres
+        env:
+          # As rare-nightly's test-postgres.
+          CARGO_BUILD_JOBS: "4"
+          NEXTEST_TEST_THREADS: "6"
+
+  # The release, on chant/lifecycle. Writing it needs a token that may push
+  # there, as chant-ci-green.yml's tick does.
+  cut:
+    needs: [build, images, postgres]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      label: ${{ steps.cut.outputs.label }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ops/package-lock.json
+      - run: git config --global user.name "$CHANT_COMMITTER" && git config --global user.email "$CHANT_COMMITTER_EMAIL"
+      - run: npm ci --no-fund --no-audit
+        working-directory: ops
+      # What's in it: the green commits since the release production runs,
+      # with their pull requests and the issues they close.
+      - name: Release notes
+        working-directory: ops
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch -q origin chant/lifecycle:chant/lifecycle 2>/dev/null || true
+          { echo "### What's in it"; echo; echo '```'; npx chant release candidates --env prod --forge-issues; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+      - name: Cut
+        id: cut
+        working-directory: ops
+        env:
+          COMMIT: ${{ needs.build.outputs.commit }}
+          LABEL: server-${{ github.run_number }}
+          CONTROL: ${{ needs.images.outputs.control }}
+          PLATFORM: ${{ needs.images.outputs.platform }}
+          DUMP: ${{ needs.images.outputs.dump }}
+        run: |
+          set -euo pipefail
+          npx chant release cut "$LABEL" --at "$COMMIT" --lane server --build "npm run -s build" \
+            --image "control=$CONTROL" --image "platform=$PLATFORM" --image "platform-dump=$DUMP" \
+            --actor "github:$GITHUB_ACTOR" --yes
+          echo "label=$LABEL" >>"$GITHUB_OUTPUT"
+          echo "### Release $LABEL, cut from $COMMIT" >>"$GITHUB_STEP_SUMMARY"
+
+  # The platform first: a hub never forwards a route the platform doesn't
+  # serve yet. Then the nightly dump's Machine, which runs only once the
+  # platform has deployed.
+  platform:
+    needs: [build, cut]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: platform-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ops/package-lock.json
+      - run: git config --global user.name "$CHANT_COMMITTER" && git config --global user.email "$CHANT_COMMITTER_EMAIL"
+      - run: npm ci --no-fund --no-audit && npm run -s build
+        working-directory: ops
+      # For the preflight's secret and address checks (names only).
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        with:
+          version: 0.4.104
+      - name: Deploy
+        working-directory: ops
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_PLATFORM_API_TOKEN }}
+          LABEL: ${{ needs.cut.outputs.label }}
+        run: ../scripts/ci-server-deploy platform "$LABEL"
+      # The dump's Machine never fails a release: the dump logs a warning
+      # when its build and the platform's differ, and runs on.
+      - name: The nightly dump's Machine
+        working-directory: ops
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_PLATFORM_API_TOKEN }}
+          LABEL: ${{ needs.cut.outputs.label }}
+        run: ../scripts/ci-server-deploy platform-dump "$LABEL" || echo "::warning::the nightly dump's Machine wasn't moved onto $LABEL's dump image (above)"
+
+  # The hub, once the platform runs the release.
+  control:
+    needs: [build, cut, platform]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: control-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          # The history back to the release production runs the hub from, to
+          # compare what it's built from.
+          fetch-depth: 0
+          token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ops/package-lock.json
+      - run: git config --global user.name "$CHANT_COMMITTER" && git config --global user.email "$CHANT_COMMITTER_EMAIL"
+      - run: npm ci --no-fund --no-audit && npm run -s build
+        working-directory: ops
+      - name: Deploy
+        working-directory: ops
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          LABEL: ${{ needs.cut.outputs.label }}
+          DEPLOY_UNCHANGED: ${{ inputs.deploy-unchanged }}
+        run: |
+          flags=()
+          [ "$DEPLOY_UNCHANGED" != true ] || flags=(--deploy-unchanged)
+          ../scripts/ci-server-deploy control "$LABEL" "${flags[@]}"

@@ -103,8 +103,9 @@ pub enum Command {
     },
     /// Sharing settings: `arugulad sharing guest-ssh on` lets this
     /// machine's owner invite a guest with only OpenSSH to a pane (Guest
-    /// SSH access, off by default). It writes sharing.json in the state
-    /// directory; a running daemon follows at once. Control can't set it.
+    /// SSH access, off by default); `off` ends every ssh invite. It writes
+    /// sharing.json in the state directory; a running daemon follows at
+    /// once. Control can't set it.
     Sharing {
         /// The setting to show or set [default: list them].
         #[arg(value_enum)]
@@ -202,7 +203,7 @@ pub(crate) struct RunArgs {
     #[arg(long, hide = true)]
     pub(crate) no_relay: bool,
 
-    /// A hosted workspace's box (M180): headless, enrolls itself with the
+    /// A Cloud workspace's hosted machine (M180): headless, enrolls itself with the
     /// ticket in ARUGULA_HOSTED_TICKET or its sandbox id, at
     /// ARUGULA_CONTROL_URL (else --control), and tells control when it's
     /// working.
@@ -280,15 +281,8 @@ pub(crate) struct RunArgs {
     /// and exit codes.
     #[arg(long)]
     pub(crate) no_shell_integration: bool,
-    /// The wispd that VM panes get their machines from.
-    #[arg(long, env = "ARUGULA_WISP_URL", default_value = DEFAULT_WISP_URL, hide = true)]
-    pub(crate) wisp_url: String,
-    /// Its API token. VM panes are off without one. Default:
-    /// `$XDG_DATA_HOME/wisp/token`.
-    #[arg(long, env = "ARUGULA_WISP_TOKEN_FILE", hide = true)]
-    pub(crate) wisp_token_file: Option<PathBuf>,
-    /// The loam API VM panes get their machines from instead of wispd
-    /// (`https://api.loam.inevitable.fyi`, say). Given, it's the provider.
+    /// The loam API VM panes get their machines from
+    /// (`https://api.loam.inevitable.fyi`, say). VM panes are off without it.
     #[arg(long, env = "LOAM_API_URL", hide = true)]
     pub(crate) loam_url: Option<String>,
     /// The loam project key it uses (`loam_…`), in a file of its own [default:
@@ -396,17 +390,12 @@ pub(crate) struct BlockArgs {
     pub(crate) block_acme_directory: String,
 }
 
-/// Where wispd listens unless told otherwise.
-pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
-
 /// Options that work but stay out of `--help` unless the machine has turned
 /// their Labs flag on: the studio file and the sandbox provider. (Guest
 /// ssh's left Labs, native #205: always listed.) The others that are
 /// `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 5] = [
+const LABS_OPTIONS: [(&str, &str); 3] = [
     ("studio_file", flags::STUDIO),
-    ("wisp_url", flags::SANDBOX_PROVIDERS),
-    ("wisp_token_file", flags::SANDBOX_PROVIDERS),
     ("loam_url", flags::SANDBOX_PROVIDERS),
     ("loam_key_file", flags::SANDBOX_PROVIDERS),
 ];
@@ -451,7 +440,7 @@ mod tests {
     use clap::CommandFactory;
 
     /// `arugulad --help` is for strangers: no milestone or issue numbers, no
-    /// names of our own machines, and what needs a wispd or the studio isn't
+    /// names of our own machines, and what needs loam or the studio isn't
     /// listed. Guest ssh's options are: it left Labs (native #205).
     #[test]
     fn help_has_no_internal_numbers_or_names_and_hides_what_a_stranger_cant_use() {
@@ -476,9 +465,7 @@ mod tests {
             }
         }
         let top = &texts[0];
-        for flag in
-            ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--studio-file", "--guest-machines"]
-        {
+        for flag in ["--loam-url", "--loam-key-file", "--studio-file", "--guest-machines"] {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
         assert!(top.contains("--guest-ssh ") && top.contains("--guest-ssh-host"), "{top}");
@@ -496,7 +483,7 @@ mod tests {
     /// passes the bool; it reads neither the filesystem nor the environment.
     #[test]
     fn labs_unhides_its_options_and_only_those() {
-        let labs = ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--studio-file"];
+        let labs = ["--loam-url", "--loam-key-file", "--studio-file"];
         let hidden_internals = ["--guest-machines", "--log-file", "--no-relay"];
         let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));

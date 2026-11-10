@@ -4,6 +4,7 @@
 // version on top of the one it shows, so that one must follow the last it
 // checked: control can't hand it a roster no owner wrote.
 
+import { isClosed, type DelegationClosed } from "./e2e/hosted.ts";
 import type { Cert, Revocation } from "./e2e/cert.ts";
 import { isSeen, nextRound, refreshAccount, settle, type Seen } from "./e2e/checkpoint.ts";
 import { advance, follows, lockSignedIn, rootChanges, sameRoster, type AccountCerts, type Roster, type TeamLock, type TeamPin } from "./e2e/team.ts";
@@ -82,6 +83,10 @@ export async function checkRoster(held: Roster | null, offered: Roster, pin: Tea
 
 type Store = () => Pick<Storage, "getItem" | "setItem">;
 
+/** How many delegations' ends this browser keeps, as
+ * `arugula_e2e::hosted::HELD_CLOSURES`. */
+export const HELD_CLOSURES = 512;
+
 const isRoster = (v: unknown): v is Roster =>
   !!v && typeof v === "object" && typeof (v as Roster).team === "string" && Number.isSafeInteger((v as Roster).version) && Array.isArray((v as Roster).members);
 
@@ -140,6 +145,55 @@ export class RosterStore {
       this.storage().setItem(this.key, JSON.stringify(mine));
     } catch {
       this.kept = false;
+    }
+  }
+}
+
+/** Control's word of delegations that ended, as this browser heard it, by
+ * delegation: the earliest of each, at most `HELD_CLOSURES` (the earliest-ended
+ * go first). In memory for the page's life and in `storage` beside it, read
+ * again on each look, so what another tab heard counts here too. An entry that
+ * doesn't read is left out. Storage that can't be read or written leaves
+ * memory: the page forgets when it reloads. */
+export class ClosureStore {
+  private map: Record<string, DelegationClosed> | null = null;
+  private storage: Store;
+  private key: string;
+
+  constructor(storage: Store, key: string) {
+    this.storage = storage;
+    this.key = key;
+  }
+
+  private static ok(v: unknown): v is Record<string, unknown> {
+    return !!v && typeof v === "object" && !Array.isArray(v);
+  }
+
+  /** Memory, with what `storage` holds now: the earlier of each. */
+  private held() {
+    const mine = (this.map ??= {});
+    for (const x of Object.values(readStored(this.storage, this.key, ClosureStore.ok) ?? {})) {
+      if (isClosed(x) && (!mine[x.delegation] || x.at < mine[x.delegation].at)) mine[x.delegation] = x;
+    }
+    return mine;
+  }
+
+  get(id: string) {
+    return this.held()[id];
+  }
+
+  take(c: DelegationClosed) {
+    const mine = this.held();
+    if (mine[c.delegation] && mine[c.delegation].at <= c.at) return;
+    mine[c.delegation] = c;
+    for (const x of Object.values(mine).sort((a, b) => a.at - b.at || (a.delegation < b.delegation ? -1 : 1))) {
+      if (Object.keys(mine).length <= HELD_CLOSURES) break;
+      delete mine[x.delegation];
+    }
+    try {
+      this.storage().setItem(this.key, JSON.stringify(mine));
+    } catch {
+      // Kept in memory.
     }
   }
 }

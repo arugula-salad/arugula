@@ -17,22 +17,25 @@
 // is, brighter where it has a figure, and the whole as long as the Doc is. So a
 // note and a long plan look different without opening either.
 
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { shareClosedDoc } from "./doc-share";
+import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
+import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { AppBar } from "./app-bar";
-import { directory } from "../hosts";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
-import { LinkIcon } from "./shell/icons";
+import { Chip, StateChip } from "../../shared/ui/state-chip";
 
 /** What the reader keeps of a Doc it has read, for the next time it is picked. */
 interface Read {
@@ -46,8 +49,11 @@ const NO_FRESH = new Map<string, number>();
 /** A Doc as the Doc block's renderer takes it. */
 const stateOf = (c: DocContent): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined });
 
-/** The page, while the route says so and this is the machine's owner. */
-export function DocsPage({ client }: { client: Client }) {
+/** The page, while the route says so and this is the machine's owner. In
+ * the workspace (`inWorkspace`) it sits under the workspace's header, beside
+ * its rail, as the panes do (Arugula #796); elsewhere (a phone) it covers the
+ * window under a bar of its own. */
+export function DocsPage({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -55,7 +61,7 @@ export function DocsPage({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   if (!docsRoute() || client.state?.roles) return null;
-  return <Page client={client} />;
+  return <Page client={client} inWorkspace={inWorkspace} />;
 }
 
 /** Who made it: an agent (`mcp:NAME`), a person's driver, a Doc from
@@ -102,7 +108,7 @@ function ageGroup(updated: number, now: number): string {
   return "Earlier";
 }
 
-function Page({ client }: { client: Client }) {
+function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,6 +143,14 @@ function Page({ client }: { client: Client }) {
     if (why) setError(why);
     setBusy(false);
   };
+
+  // Share goes by the Doc's id (Arugula #819): no pane opens, whether the
+  // Doc is open or not. Its dialog confirms; the list reads back after.
+  const share = (r: DocRow) =>
+    shareClosedDoc(client, { id: r.id, shared: r.shared ?? null, older: !!r.shared && r.updated > r.shared.updated }, async (why) => {
+      setError(why ?? "");
+      await load();
+    });
 
   const remove = async (r: DocRow) => {
     setDeleting(null);
@@ -176,56 +190,52 @@ function Page({ client }: { client: Client }) {
     return out;
   }, [shown]);
 
-  const words = all.reduce((n, r) => n + wordsOf(r), 0);
   const counts: ListCount[] = [
     { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
     { key: "open", n: all.filter(isOpen).length, label: "open now", tone: "live" },
     { key: "shared", n: all.filter((r) => !!r.shared).length, label: "shared" },
-    { n: words < 1000 ? words : `${Math.round(words / 1000)}k`, label: "words" },
   ];
   const narrowed = filter !== "all" || !!q;
 
   const status =
     rows === null && !error ? (
-      <p class="dim list-status" data-docs-loading>
-        Reading this machine's Docs…
-      </p>
+      <BlockLoading inline data-docs-loading what="this machine's Docs" />
     ) : rows?.length === 0 ? (
-      <div class="agents-empty list-status" data-docs-empty>
-        <b>Docs your agents write show up here.</b>
-        <p>Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps one here.</p>
+      <EmptyState
+        where="page"
+        data-docs-empty
+        title="No Docs yet."
+        why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
+        action={
+          <button
+            class="primary"
+            data-docs-start-agent
+            onClick={() => {
+              closeDocsPage();
+              startAgent(client, { session: client.session ?? undefined });
+            }}
+          >
+            Start an agent
+          </button>
+        }
+      >
         <AgentCanCard client={client} only="doc" />
-        <button
-          class="primary"
-          data-docs-start-agent
-          onClick={() => {
-            closeDocsPage();
-            startAgent(client, { session: client.session ?? undefined });
-          }}
-        >
-          Start an agent
-        </button>
-      </div>
+      </EmptyState>
     ) : rows && shown.length === 0 && narrowed ? (
-      <p class="dim list-status" data-docs-none>
+      <EmptyLine data-docs-none>
         {q ? "No Doc's title, opening or headings match." : filter === "open" ? "No Doc is open in a pane." : "No Doc is shared."}
-      </p>
+      </EmptyLine>
     ) : undefined;
 
   return (
-    <div class="chat agents-page docs-page" data-docs-page>
-      <AppBar client={client} at="docs" />
+    <div class={inWorkspace ? "chat agents-page docs-page ws-page" : "chat agents-page docs-page"} data-docs-page>
+      {!inWorkspace && <AppBar client={client} at="docs" />}
       <ListPage<DocRow>
         label="Docs"
         splitKey="docs"
         header={
           <PageHeader
             title="Docs"
-            state={
-              <span class="list-where" data-docs-machine>
-                on {directory.current || "this machine"}
-              </span>
-            }
             stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
           />
         }
@@ -234,6 +244,7 @@ function Page({ client }: { client: Client }) {
         setQuery={setQuery}
         groups={groups}
         keyOf={(r) => r.id}
+        previewOn="click"
         onOpen={(r) => void open(r)}
         notice={
           error && (
@@ -242,35 +253,35 @@ function Page({ client }: { client: Client }) {
             </p>
           )
         }
-        status={status}
+        status={status && <div class="list-status">{status}</div>}
         row={(r) => ({
           tone: isOpen(r) ? "live" : undefined,
+          dense: true,
           title: <span data-doc-title>{r.title}</span>,
           tags: (
             <>
               {isOpen(r) && (
-                <span class="list-tag live" data-doc-open-now title="Open in a pane now">
+                <StateChip tone="accent" data-doc-open-now title="Open in a pane now">
                   %{r.open}
-                </span>
+                </StateChip>
               )}
               {r.shared && (
-                <span class="list-tag info" data-doc-shared title="Shared with a link">
+                <Chip kind="tag" tone="info" data-doc-shared title="Shared with a link">
                   <LinkIcon /> shared
-                </span>
+                </Chip>
               )}
               {r.platform && (
-                <span class="list-tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
+                <Chip kind="tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
                   on the platform
-                </span>
+                </Chip>
               )}
             </>
           ),
           age: <Time at={r.updated} title="Updated" />,
-          detail: r.summary,
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
-        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} ask={() => setDeleting(r)} fail={setError} />}
+        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => share(r)} ask={() => setDeleting(r)} fail={setError} />}
       />
       {deleting && (
         <ConfirmRemove title={`Delete “${deleting.title}”?`} label="Delete" cancel={() => setDeleting(null)} go={() => void remove(deleting)}>
@@ -283,14 +294,13 @@ function Page({ client }: { client: Client }) {
 }
 
 /** The selected Doc: what it is, the page's one primary button, and the Doc itself, read in place. */
-function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; ask: () => void; fail: (why: string) => void }) {
+function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; share: () => void; ask: () => void; fail: (why: string) => void }) {
   const kept = useMemo(() => {
     let r = reads.get(doc.id);
     if (!r) reads.set(doc.id, (r = { state: null, images: new Map() }));
     return r;
   }, [doc.id]);
   const [state, setState] = useState<DocState | null>(kept.state);
-  const [copied, setCopied] = useState(false);
   const reader = useRef<HTMLDivElement>(null);
 
   // Read it when picked and whenever it changed or the window is back. The
@@ -348,60 +358,69 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
 
   const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
-  const copyLink = async () => {
+  // The one link Copy link copies and Open in browser opens (Arugula #708):
+  // the public link it has (anyone can open it), else its copy on the
+  // platform (only its owner can). Null, with the reason said, if it fails.
+  const linkOf = async (): Promise<string | null> => {
     try {
-      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
-      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
-      if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
-      await navigator.clipboard.writeText(v.url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      let url = doc.shared?.link ? undefined : doc.platform?.link;
+      if (!url) {
+        const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
+        const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+        if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
+        url = v.url;
+      }
+      return url;
     } catch (e) {
       fail((e as Error).message);
+      return null;
     }
+  };
+  const copyLink = async (): Promise<"ok" | "private" | false> => {
+    const url = await linkOf();
+    if (!url) return false;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch (e) {
+      fail((e as Error).message);
+      return false;
+    }
+    return doc.platform && !doc.shared ? "private" : "ok";
   };
 
   const words = wordsOf(doc);
   const figures = figuresOf(doc);
   const biggest = Math.max(1, ...doc.sections.map((s) => s.words));
+  const none = !doc.platform && !doc.shared?.link;
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      title={doc.title}
-      facts={
-        <>
-          {doc.sections.length > 0 && <span>{plural(doc.sections.length, "section")}</span>}
-          {words > 0 && (
-            <span>
-              {plural(words, "word")} · {Math.max(1, Math.round(words / READ_WPM))} min
-            </span>
-          )}
-          {figures > 0 && <span>{plural(figures, "figure")}</span>}
-          <span>
-            updated <Time at={doc.updated} on />
-          </span>
-          <span>{madeBy(doc.by)}</span>
-        </>
+      facts={words > 0 && <span>{Math.max(1, Math.round(words / READ_WPM))} min read</span>}
+      factsTip={[plural(doc.sections.length, "section"), plural(words, "word"), figures > 0 && plural(figures, "figure"), madeBy(doc.by)].filter(Boolean).join(" · ")}
+      hint={
+        <span class="list-preview-hint" aria-hidden="true">
+          <kbd>↵</kbd> open <kbd>↑</kbd>
+          <kbd>↓</kbd> move
+        </span>
       }
       actions={
         <>
           <button class="primary small" data-open-doc disabled={busy} title={isOpen(doc) ? "It's open: bring it forward" : "Show it in this session"} onClick={open}>
             {isOpen(doc) ? `Bring forward %${doc.open}` : "Open beside"}
           </button>
-          {doc.shared?.link && (
-            <button class="secondary small" data-doc-copy-link onClick={() => void copyLink()}>
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          )}
-          {doc.platform && (
-            <button class="secondary small" data-doc-platform-link={doc.platform.link} title="Its read-only copy on the platform, where the project reads it with this machine asleep" onClick={() => window.open(doc.platform!.link, "_blank", "noopener,noreferrer")}>
-              On the platform
-            </button>
-          )}
-          <button
-            class="secondary small"
-            aria-label={`More for ${doc.title}`}
+          <DocActions
+            none={none}
+            copy={copyLink}
+            open={() => void linkOf().then((url) => url && openTab(url))}
+            share={share}
+            older={!!doc.shared && doc.updated > doc.shared.updated}
+            hooks={{ copy: { "data-doc-copy-link": "" }, open: { "data-doc-platform-link": doc.platform?.link } }}
+          />
+          <IconButton
+            label={`More for ${doc.title}`}
             title="More"
+            class="bar-btn sq"
+            aria-haspopup="menu"
             data-doc-more
             disabled={busy}
             onClick={(e) => {
@@ -409,12 +428,8 @@ function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client
               openMenu({ clientX: b.left, clientY: b.bottom + 4, preventDefault: () => e.preventDefault() }, [{ label: "Delete…", danger: true, hint: "Delete it for good", run: ask }], e.currentTarget as HTMLElement);
             }}
           >
-            ⋯
-          </button>
-          <span class="list-preview-hint" aria-hidden="true">
-            <kbd>↵</kbd> open <kbd>↑</kbd>
-            <kbd>↓</kbd> move
-          </span>
+            <MoreIcon size="sm" />
+          </IconButton>
         </>
       }
       aside={

@@ -33,7 +33,7 @@ test.use({ baseURL: async ({}, use) => use(url) });
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "arugula-e2e-docs-page-"));
   state = join(dir, "state");
-  ({ proc, url } = await daemon(state, ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(state, ["--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {
@@ -53,7 +53,8 @@ const row = (page: Page, title: string) => page.locator("[data-doc]").filter({ h
 const preview = async (page: Page, title: string) => {
   await row(page, title).click();
   const p = page.locator("[data-list-preview]");
-  await expect(p.locator(".list-preview-head h2")).toHaveText(title);
+  // The Doc's own head is the preview's one title (Arugula #659).
+  await expect(p.locator(".doc-title")).toHaveText(title);
   return p;
 };
 const askDelete = async (page: Page, title: string) => {
@@ -109,7 +110,7 @@ test("with no Doc the page says where they come from", async ({ page }) => {
   await reset(page);
   await goToDocs(page);
   await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("[data-docs-empty]")).toContainText("Docs your agents write show up here.");
+  await expect(page.locator("[data-docs-empty]")).toContainText("No Docs yet.");
   await expect(page.locator("[data-doc]")).toHaveCount(0);
 });
 
@@ -124,8 +125,10 @@ test("a Doc whose pane was closed is on the page, and Open shows it again with i
   await expect(r).toHaveCount(1);
   await expect(r.locator("[data-doc-shared]")).toHaveCount(0);
   const p = await preview(page, "Quarterly plan");
-  await expect(p).toContainText(/updated (just now|\d+m ago)/);
-  await expect(p).toContainText("made by");
+  // The facts no longer say when it changed or its sections: the row has the age.
+  await expect(p).not.toContainText(/updated (just now|\d+m ago)/);
+  // Who made it is the facts line's hover now (Arugula #659), not a word on the bar.
+  await expect(p.locator(".list-preview-bar-facts")).toHaveAttribute("title", /made by/);
   await p.locator("[data-open-doc]").click();
 
   // It left the page for a new block: the Doc, whole, and the one in front.
@@ -231,11 +234,14 @@ test.describe("the list", () => {
     return { short, big };
   };
 
-  test("a row shows its opening and its shape, and a long Doc's is longer", async ({ page }) => {
+  test("a row is one line with its shape, and a long Doc's is longer", async ({ page }) => {
     await seed(page);
     const big = row(page, "Long plan");
-    await expect(row(page, "Short note")).toContainText("The opening line of the note.");
-    await expect(big).toContainText("Opening of the plan.");
+    // The opening isn't under the title; the row is one line, not the 52px it was with it.
+    await expect(row(page, "Short note").locator(".list-row-detail")).toBeHidden();
+    await expect(row(page, "Short note")).not.toContainText("The opening line of the note.");
+    await expect(big).not.toContainText("Opening of the plan.");
+    expect((await row(page, "Short note").boundingBox())!.height).toBeLessThan(40);
     const w = async (t: string) => (await row(page, t).locator("[data-doc-shape]").boundingBox())!.width;
     expect(await w("Long plan")).toBeGreaterThan(await w("Short note"));
     // Its section with a figure is drawn as one, and only that one.
@@ -259,6 +265,77 @@ test.describe("the list", () => {
     await expect((await preview(page, "Long plan")).locator("[data-doc-platform-link]")).toHaveCount(0);
   });
 
+  test("Copy link in the preview copies at once: the copy on the platform, and is off with none (Arugula #708)", async ({ page }) => {
+    await seed(page);
+    const link = onPlatform(await docId("Short note"));
+    await page.reload();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
+    await goToDocs(page);
+    const made: string[] = [];
+    page.on("request", (req) => /doc_share|doc_link/.test(req.url()) && made.push(req.url()));
+    const on = (await preview(page, "Short note")).locator("[data-doc-copy-link]");
+    await expect(on).toBeEnabled();
+    await on.click();
+    await expect(on).toHaveText("Copied");
+    await expect(on).toHaveAttribute("title", /only you can open it until it's shared/);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    expect(made, "nothing is asked of control and no link is made").toEqual([]);
+    const none = (await preview(page, "Long plan")).locator("[data-doc-copy-link]");
+    await expect(none).toBeDisabled();
+    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+  });
+
+  test("the preview's three actions: Copy link, Share and Open in browser, between Open beside and ⋯ (Arugula #782)", async ({ page }) => {
+    await seed(page);
+    const link = onPlatform(await docId("Short note"));
+    await page.reload();
+    await goToDocs(page);
+    const p = await preview(page, "Short note");
+    const bar = p.locator(".list-preview-bar");
+    await expect(bar.locator("button")).toHaveCount(5);
+    const order = await bar.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
+    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share with a link", "Open in browser", "More for Short note"]);
+
+    // Open in browser opens what Copy link copies, in a new tab.
+    await page.context().route(link, (route) => route.fulfill({ body: "the copy" }));
+    const popup = page.waitForEvent("popup");
+    await bar.locator("[data-doc-open-browser]").click();
+    expect((await popup).url()).toBe(link);
+
+    // With no link it's off and says why.
+    const none = (await preview(page, "Long plan")).locator("[data-doc-open-browser]");
+    await expect(none).toBeDisabled();
+    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+
+    // Share goes by the Doc's id (Arugula #819): its dialog, and no pane opens.
+    const panes = async () => ((await (await page.request.get("/api/panes")).json()) as unknown[]).length;
+    const before = await panes();
+    await (await preview(page, "Short note")).locator("button[aria-label='Share with a link']").click();
+    await expect(page.locator("[data-doc-share-dialog]")).toBeVisible();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    expect(await panes()).toBe(before);
+  });
+
+  test("the preview has exactly one title, and a bar of the house's buttons over it (Arugula #659)", async ({ page }) => {
+    await seed(page);
+    await page.reload();
+    await goToDocs(page);
+    const p = await preview(page, "Short note");
+    // The Doc's own 38px head is the only title: no second one above it, none hidden.
+    await expect(p.locator(".doc-title")).toHaveCount(1);
+    await expect(p.locator(".doc-title")).toBeVisible();
+    await expect(p.locator(".list-preview-head")).toHaveCount(0);
+    // A 34px column bar: the facts at the left, then the primary, link and ⋯, last.
+    const bar = p.locator(".list-preview-bar");
+    expect((await bar.boundingBox())!.height).toBe(34);
+    await expect(bar.locator(".list-preview-bar-facts")).toHaveText(/^\d+ min read$/);
+    const buttons = bar.locator("button");
+    await expect(buttons.first()).toHaveAttribute("data-open-doc", /.*/);
+    await expect(buttons.last()).toHaveAttribute("data-doc-more", /.*/);
+    await expect(bar.locator("[data-doc-copy-link]")).toHaveClass(/bar-btn sq/);
+    for (const b of await buttons.all()) expect((await b.boundingBox())!.height).toBe(24);
+  });
+
   test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {
     // Control serves its newest page to every machine, and a daemon before
     // 0.66.12 sends a row with no summary or sections, and has no preview.
@@ -277,8 +354,44 @@ test.describe("the list", () => {
     await page.keyboard.type("short");
     await expect(page.locator("[data-doc]")).toHaveCount(1);
     const p = await preview(page, "Short note");
-    await p.getByRole("button", { name: "Open" }).click();
+    await p.locator("[data-open-doc]").click();
     await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
+  });
+
+  test("sweeping the pointer down the list changes nothing and reads nothing; a click shows the Doc", async ({ page }) => {
+    await seed(page);
+    const head = page.locator("[data-list-preview] .doc-title");
+    await expect(head).toHaveText("Long plan");
+    await expect(page.locator("[data-list-preview] .list-preview-words")).toContainText("Opening of the plan.");
+    const reads: string[] = [];
+    page.on("request", (r) => {
+      if (/\/api\/docs\/[^/]+\/(content|preview)/.test(r.url())) reads.push(r.url());
+    });
+    // Slowly, with longer on each row than the old hover took to preview it.
+    for (const title of ["Short note", "Long plan", "Short note"]) {
+      const b = (await row(page, title).boundingBox())!;
+      await page.mouse.move(b.x + 20, b.y + b.height / 2, { steps: 6 });
+      await page.waitForTimeout(400);
+      await expect(row(page, title)).toBeVisible();
+    }
+    await expect(head).toHaveText("Long plan");
+    await expect(page.locator('[data-doc][aria-selected="true"]')).toContainText("Long plan");
+    expect(reads).toEqual([]);
+    // A click shows it, and a second click on it asks for nothing more.
+    await row(page, "Short note").click();
+    await expect(head).toHaveText("Short note");
+    await expect(page.locator("[data-list-preview] .list-preview-words")).toContainText("The opening line of the note.");
+    expect(reads.length).toBeGreaterThan(0);
+    const after = reads.length;
+    await row(page, "Short note").click();
+    await page.waitForTimeout(300);
+    expect(reads.length).toBe(after);
+    // The keys still move it, and a double click opens it.
+    await page.keyboard.press("ArrowUp");
+    await expect(head).toHaveText("Long plan");
+    await row(page, "Short note").dblclick();
+    await expect(page.locator("[data-docs-page]")).toHaveCount(0);
+    await expect(page.locator("[data-doc-block]")).toHaveCount(2);
   });
 
   test("↑↓ and j/k move, Enter opens, / searches and Esc clears", async ({ page }) => {
@@ -287,7 +400,7 @@ test.describe("the list", () => {
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("ArrowDown");
     await expect(selected).toContainText("Short note");
-    await expect(page.locator("[data-list-preview] .list-preview-head h2")).toHaveText("Short note");
+    await expect(page.locator("[data-list-preview] .doc-title")).toHaveText("Short note");
     await page.keyboard.press("k");
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("j");
@@ -330,6 +443,10 @@ test.describe("the list", () => {
     await seed(page);
     await page.locator("[data-list-search]").fill("risks");
     await expect(page.locator("[data-doc]")).toHaveCount(2);
+    // The opening isn't drawn on the row, but a search still finds it.
+    await page.locator("[data-list-search]").fill("opening line of the note");
+    await expect(page.locator("[data-doc]")).toHaveCount(1);
+    await expect(row(page, "Short note")).toBeVisible();
     await page.locator("[data-list-search]").fill("nothing like this");
     await expect(page.locator("[data-docs-none]")).toContainText("No Doc's title");
   });
@@ -408,8 +525,8 @@ test.describe("the reader", () => {
     await expect(r.locator('[data-section="s3"]')).toContainText(`Third ${MARK}`);
     await expect(r.locator('[data-section="s2"] img.doc-image')).toHaveJSProperty("naturalWidth", 40);
     await expect(r.locator("[data-prototype-frame]")).toHaveAttribute("title", "Tune it");
-    // The title is the header's: it isn't said twice.
-    await expect(r.locator(".doc-title")).toBeHidden();
+    // The Doc's own head is the title, said once (Arugula #659).
+    await expect(r.locator(".doc-title")).toBeVisible();
     await expect(p.locator("[data-open-doc]")).toHaveText("Open beside");
     // Nothing opened it: the list still has it closed, and no block shows it.
     await expect(row(page, "Read me")).toHaveAttribute("data-open", "");
@@ -460,7 +577,7 @@ test.describe("the page drawn", () => {
   test.use({ baseURL: async ({}, use) => use(url2) });
   test.beforeAll(async () => {
     dir2 = mkdtempSync(join(tmpdir(), "arugula-e2e-docs-shots-"));
-    ({ proc: proc2, url: url2 } = await daemon(join(dir2, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+    ({ proc: proc2, url: url2 } = await daemon(join(dir2, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
   });
   test.afterAll(() => {
     proc2?.kill("SIGKILL");

@@ -98,7 +98,7 @@ function Row({ r, v }: { r: AccessRow; v: AccessView }) {
       <div class="access-row-head">
         <b>{r.who}</b>
         <span data-access-role>{roleLabel(r.role)}</span>
-        <span class="hint" data-access-where>
+        <span class="dim" data-access-where>
           {whereLine(r, v)}
         </span>
         <span class="access-word" data-access-word={r.word} title="Whose word this row is">
@@ -106,7 +106,7 @@ function Row({ r, v }: { r: AccessRow; v: AccessView }) {
         </span>
       </div>
       {(r.note || r.from_ms || r.until_ms) && (
-        <span class="hint rule-where">
+        <span class="dim rule-where">
           {r.note}
           {r.from_ms ? (
             <>
@@ -144,18 +144,18 @@ function Powers({ v }: { v: AccessView }) {
       .catch(() => live && setError("Arugula cloud didn't answer, so its agents' powers aren't shown: `arugula grants ls` lists them."));
     return () => void (live = false);
   }, [joined, id, name]);
-  if (v.kind === "local") return <p class="hint" data-access-powers-none>Not joined to Arugula cloud: its agents have no powers there.</p>;
-  if (!joined) return <p class="hint" data-access-powers-error>Arugula cloud has them: open this machine there to see them here, or `arugula grants ls`.</p>;
-  if (error) return <p class="hint" data-access-powers-error>{error}</p>;
-  if (grants === null) return <p class="hint">Asking Arugula cloud…</p>;
-  if (!grants.length) return <p class="hint" data-access-powers-none>None: its agents can't do anything on Arugula cloud.</p>;
+  if (v.kind === "local") return <p class="dim" data-access-powers-none>Not joined to Arugula cloud: its agents have no powers there.</p>;
+  if (!joined) return <p class="dim" data-access-powers-error>Arugula cloud has them: open this machine there to see them here, or `arugula grants ls`.</p>;
+  if (error) return <p class="dim" data-access-powers-error>{error}</p>;
+  if (grants === null) return <p class="dim">Asking Arugula cloud…</p>;
+  if (!grants.length) return <p class="dim" data-access-powers-none>None: its agents can't do anything on Arugula cloud.</p>;
   return (
     <ul class="rules-list access-rows" data-access-powers>
       {grants.map((g) => (
         <li key={g.id} data-access-power={g.power}>
           <div class="access-row-head">
             <b>{POWERS[g.power] ?? g.power}</b>
-            <span class="hint">over {over(g)}</span>
+            <span class="dim">over {over(g)}</span>
             <span class="access-word" data-access-word="control" title="Whose word this row is">
               {WORDS.control}
             </span>
@@ -191,7 +191,7 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
   return (
     <Modal close={close} label="Access" class="rules access-view">
       <h2>Who can reach {name}</h2>
-      <p class="hint">
+      <p class="dim">
         The people, links and guests that reach this machine, and as what, from what it holds. Each row says whose word it is: this
         machine&apos;s own files, the team&apos;s roster it checked itself, or Arugula cloud.
       </p>
@@ -200,14 +200,14 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
           {error}
         </p>
       )}
-      {!error && view === null && <p class="hint">Loading…</p>}
+      {!error && view === null && <p class="dim">Loading…</p>}
       {view && (
         <>
-          <p class="hint" data-access-kind>
+          <p class="dim" data-access-kind>
             {kindLine(view)}
           </p>
           {view.notes.map((n) => (
-            <p class="hint" data-access-note key={n}>
+            <p class="dim" data-access-note key={n}>
               {n}
             </p>
           ))}
@@ -220,9 +220,9 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
           ) : (
             <p data-access-nobody>Nothing listed: no person, link or guest reaches it from what it holds.</p>
           )}
-          {view.guest_ssh === false && <p class="hint">Guest SSH access is off: no ssh guest can be invited until you turn it on.</p>}
+          {view.guest_ssh === false && <p class="dim">Guest SSH access is off: no ssh guest can be invited until you turn it on.</p>}
           <h3>Its agents&apos; powers</h3>
-          <p class="hint">
+          <p class="dim">
             What the agents on {name} may do on Arugula cloud, as you. That is Arugula cloud&apos;s word, not this machine&apos;s: change it in
             Account settings, under Agents, or with <code>arugula grants</code>.
           </p>

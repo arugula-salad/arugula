@@ -12,6 +12,7 @@ import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
 import { slugIn } from "./paths";
+import { arrive } from "./chat-nav";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -27,6 +28,7 @@ import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
+import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
@@ -41,6 +43,12 @@ import { titleOf } from "./titles";
 import { barProject, where } from "./where";
 
 export function PlatformPage() {
+  // The design reference needs no one signed in and no project, so nothing of
+  // the session is loaded for it (#693).
+  return useRoute().page === "design" ? <DesignPage /> : <Routed />;
+}
+
+function Routed() {
   useSubscribe((fn) => session.subscribe(fn));
   const r = useRoute();
   useEffect(() => void session.load(), []);
@@ -178,7 +186,7 @@ function useFind(r: Route): string | null {
     return () => void (live = false);
   }, [ask]);
   useEffect(() => {
-    if (to) go(to, true);
+    if (to) arrive(to);
   }, [to]);
   return lost;
 }

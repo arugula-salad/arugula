@@ -1,35 +1,5 @@
 {
   "$defs": {
-    "AgentMachineSessions": {
-      "description": "A machine's sessions an agent may mention in a room (#577).",
-      "properties": {
-        "machine_name": {
-          "type": "string"
-        },
-        "offline": {
-          "default": false,
-          "description": "The machine isn't on control's relay now, or didn't answer.",
-          "type": "boolean"
-        },
-        "sessions": {
-          "description": "Newest active first, at most 20.",
-          "items": {
-            "$ref": "#/$defs/MachineSession"
-          },
-          "type": "array"
-        },
-        "shared": {
-          "description": "False when its owner shows no session names.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "machine_name",
-        "shared",
-        "sessions"
-      ],
-      "type": "object"
-    },
     "AgentMessages": {
       "properties": {
         "messages": {
@@ -313,20 +283,6 @@
       ],
       "type": "object"
     },
-    "AgentSessionsQuery": {
-      "description": "[`agent_machine_sessions`]' query.",
-      "properties": {
-        "from_session": {
-          "default": null,
-          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
     "ChatAddMembers": {
       "description": "`POST /api/chat/rooms/{id}/members`: a channel's creator or its team's\nowners add people of the team.",
       "properties": {
@@ -375,18 +331,6 @@
         "idle": {
           "default": false,
           "type": "boolean"
-        },
-        "live": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LivePresence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The reader's live presence choice, when they changed it (kept with\n`live-presence` on; ignored with it off)."
         },
         "machines": {
           "default": [],
@@ -1732,17 +1676,6 @@
     "ChatPresence": {
       "description": "Who's around, for one reader: themselves and everyone who shares a team\nwith them (nobody else is named, online or not), and the asked-for\nmachines they may see that are connected. Machines' agents show as\ntheir machine, not as a person.",
       "properties": {
-        "live": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LivePresence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The reader's live presence choice, with the `live-presence` Labs flag\non for them; absent with it off, which is how a page learns the flag."
-        },
         "machines_online": {
           "items": {
             "type": "string"
@@ -1845,6 +1778,13 @@
     "ChatReaction": {
       "description": "One emoji on a message, as the reader sees it.",
       "properties": {
+        "agents": {
+          "default": 0,
+          "description": "How many of `count` are agents' (#632); the rest are people's. An\nolder control leaves it out, and it reads as none.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "count": {
           "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
           "format": "uint32",
@@ -1959,8 +1899,26 @@
       "type": "object"
     },
     "ChatReaders": {
-      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had. Those it\ndoesn't name keep theirs (a pane that closed keeps its readers).",
+      "description": "What a daemon says of a thread's readers: for each pane or session it\nnames, the whole list, which replaces the last one control had.\n\n`held`, on the last post of a send: every pane and session the machine\nstill has a list for (open, or closed and still remembered, read by\nthose who read it when it closed and still may). Control empties the list\nof every other target it has for the machine, so only the machine's\nowner reads those threads. Without it (older daemons) the targets not\nnamed keep their lists.\n\n`seq`: the post's place in the machine's order, higher for each post it\nmakes. Control ignores what a post says of a target whose list came in\na post with a higher one, so a post that arrives late can't undo a newer\none. Without it (older daemons) every post counts as it comes. At most\n`i64::MAX`.",
       "properties": {
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatTargetsHeld"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "targets": {
           "default": [],
           "items": {
@@ -1972,8 +1930,16 @@
       "type": "object"
     },
     "ChatReadersStored": {
-      "description": "How many lists control kept.",
+      "description": "How many lists control was sent, and the highest post number it holds\nfor the machine ([`ChatReaders::seq`]). Higher than the post's own: some\nof what it said was ignored as older, so the machine numbers its posts\nabove this and sends every list again (its clock went back). Older\ncontrols leave it out.",
       "properties": {
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "stored": {
           "format": "uint",
           "minimum": 0,
@@ -2413,6 +2379,26 @@
         }
       ]
     },
+    "ChatTargetsHeld": {
+      "description": "The panes and sessions a machine has reader lists for, by id: see\n[`ChatReaders`]. At most [`MAX_HELD`] of each.",
+      "properties": {
+        "panes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "ChatTeamSettings": {
       "description": "`GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners\ndecide about its chat (#114). Anyone in the team reads it, for the\ncomposer; only an owner sets it.",
       "properties": {
@@ -2563,10 +2549,24 @@
         {
           "enum": [
             "working",
-            "idle",
             "needs_you",
             "offline"
           ],
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Between turns, ready for the next prompt.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A hosted session that failed.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "A hosted session that was stopped.",
           "type": "string"
         },
         {
@@ -2791,15 +2791,7 @@
         }
       ]
     },
-    "LivePresence": {
-      "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
-      "enum": [
-        "off",
-        "watching"
-      ],
-      "type": "string"
-    },
-    "MachineSession": {
+    "MachineAgent": {
       "description": "A session of a machine a teammate's agent may mention (#577).",
       "properties": {
         "active_ms_ago": {
@@ -2818,7 +2810,7 @@
         "state": {
           "anyOf": [
             {
-              "$ref": "#/$defs/MachineSessionState"
+              "$ref": "#/$defs/MachineAgentState"
             },
             {
               "type": "null"
@@ -2853,7 +2845,7 @@
       ],
       "type": "object"
     },
-    "MachineSessionState": {
+    "MachineAgentState": {
       "description": "What a machine's session is doing (#645).",
       "enum": [
         "working",
@@ -2861,6 +2853,50 @@
         "needs_input"
       ],
       "type": "string"
+    },
+    "MachineAgents": {
+      "description": "A machine's sessions an agent may mention in a room (#577).",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "offline": {
+          "default": false,
+          "description": "The machine isn't on control's relay now, or didn't answer.",
+          "type": "boolean"
+        },
+        "sessions": {
+          "description": "Newest active first, at most 20.",
+          "items": {
+            "$ref": "#/$defs/MachineAgent"
+          },
+          "type": "array"
+        },
+        "shared": {
+          "description": "False when its owner shows no session names.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine_name",
+        "shared",
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "MachineAgentsQuery": {
+      "description": "[`agent_machine_sessions`]' query.",
+      "properties": {
+        "from_session": {
+          "default": null,
+          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "MentionTurn": {
       "description": "What the session's turn that took a mention is doing (#540).",

@@ -48,7 +48,7 @@ async fn session_on(
 
 /// [`session_on`] with no turn yet.
 async fn session_with(app: &crate::Platform, gh: &crate::forge::links_tests::Shared, team: &str, ws: &str) -> String {
-    use crate::db::sessions::{NewPrompt, NewSession, Source};
+    use crate::db::sessions::{NewAgentSession, NewPrompt, Source};
     {
         // As `arugula-io` is installed (S42 q2): it writes contents and
         // workflows too.
@@ -65,7 +65,7 @@ async fn session_with(app: &crate::Platform, gh: &crate::forge::links_tests::Sha
         panic!("no workspace");
     };
     let room = format!("rm_{}", ws.id);
-    let new = NewSession {
+    let new = NewAgentSession {
         project: team,
         room: &room,
         parent_seq: 1,
@@ -281,9 +281,10 @@ async fn a_sessions_pr_says_when_it_changes_ci() {
 
 /// The push token (M259, S42 q2): the platform mints one only for the
 /// session's own box, for exactly the session's branch, on its linked repo,
-/// with `contents: write` and `workflows: write` (aru-115, amended
-/// 2026-10-26: a branch that began before main changed CI needs it); a
-/// push outside `arugula/*`
+/// for an asker GitHub lets push to it (`sessions_tries_tests` has the
+/// askers it doesn't), with `contents: write` and `workflows: write`
+/// (aru-115, amended 2026-10-26: a branch that began before main changed
+/// CI needs it); a push outside `arugula/*`
 /// (`main`), another session's branch, another machine, or a session that
 /// ended gets none.
 #[tokio::test]
@@ -311,21 +312,29 @@ async fn a_push_outside_its_branch_is_refused() {
     }
     assert!(gh.lock().unwrap().minted.is_empty(), "nothing minted for them");
 
+    // Alice, its asker, is an admin of acme/app on GitHub: asked (with a
+    // read token of the repo), then the push's token is minted.
     let got = app.hosted_session_push(&m("box1"), &ask(&branch)).await.unwrap();
     let PushGiven::Given { token, revoke, .. } = &got else { panic!("{got:?}") };
     assert_eq!(token, "ghs_fake");
     assert!(revoke.ends_with("/installation/token"), "{revoke}");
     assert!(!format!("{got:?}").contains("ghs_fake"), "never printed");
-    assert_eq!(
-        gh.lock().unwrap().minted,
-        [json!({ "metadata": "read", "contents": "write", "workflows": "write" })],
-        "with workflows"
-    );
+    {
+        let g = gh.lock().unwrap();
+        assert_eq!(g.asked, 1, "GitHub was asked about alice-gh's role on acme/app");
+        assert_eq!(g.minted.len(), 2, "{:?}", g.minted);
+        assert_eq!(
+            g.minted[1],
+            json!({ "metadata": "read", "contents": "write", "workflows": "write" }),
+            "with workflows"
+        );
+    }
     let logged: Vec<(String, String, String)> = app
         .db
         .c()
         .query_map(
-            "SELECT caller, purpose, permissions FROM github_token_mints WHERE kind = 'installation' AND repo_id = 77",
+            "SELECT caller, purpose, permissions FROM github_token_mints
+             WHERE kind = 'installation' AND repo_id = 77 AND purpose = 'session:push'",
             params![],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -340,7 +349,7 @@ async fn a_push_outside_its_branch_is_refused() {
     assert!(matches!(got, PushGiven::Refused { .. }), "another machine's: {got:?}");
     let got = app.hosted_session_push(&m("box1"), &clone(&branch)).await.unwrap();
     assert!(matches!(got, PushGiven::Given { .. }), "{got:?}");
-    assert_eq!(gh.lock().unwrap().minted[1], json!({ "metadata": "read", "contents": "read" }));
+    assert_eq!(gh.lock().unwrap().minted.last().unwrap(), &json!({ "metadata": "read", "contents": "read" }));
 
     // Once it ended, no more.
     app.db.c().execute("UPDATE agent_sessions SET state = 'stopped' WHERE id = ?1", params![ses]).unwrap();

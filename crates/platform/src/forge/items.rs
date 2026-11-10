@@ -96,7 +96,7 @@ pub struct ItemsQuery {
 /// may read, last updated first.
 pub async fn list(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(project): Path<String>,
     Query(q): Query<ItemsQuery>,
 ) -> Result<Json<wire::ForgeItems>, ApiError> {
@@ -119,12 +119,12 @@ pub async fn list(
         && matches!(q.state.as_deref(), None | Some("open" | "closed"));
     let (mut items, mut withheld) = (Vec::new(), Vec::new());
     if github {
-        let (found, held) = github_items(&app, &v, &project, &q, limit).await?;
+        let (found, held) = github_items(&app, &mut v, &project, &q, limit).await?;
         items = found;
         withheld = held;
     }
     if plane {
-        items.extend(plane_items(&app, &v, &project, &q, tracker, limit).await?);
+        items.extend(plane_items(&app, &mut v, &project, &q, tracker, limit).await?);
     }
     // The exact `IDENT-N` a search names stays in front of the rest.
     let exact = exact_ref(&q);
@@ -149,7 +149,7 @@ fn exact_ref(q: &ItemsQuery) -> Option<(String, u64)> {
 /// The project's linked repos' items the viewer may read, and the repos they may not.
 async fn github_items(
     app: &Platform,
-    v: &Viewer,
+    v: &mut Viewer,
     project: &str,
     q: &ItemsQuery,
     limit: u32,
@@ -227,7 +227,7 @@ fn plane_item(i: TrackerItem, c: &ReadableConnection) -> wire::ForgeItem {
 /// finds that item, and as text the titles.
 async fn plane_items(
     app: &Platform,
-    v: &Viewer,
+    v: &mut Viewer,
     project: &str,
     q: &ItemsQuery,
     tracker: Option<&str>,
@@ -264,7 +264,7 @@ async fn plane_items(
 /// connection (`tracker.get`): no item at all to anyone else.
 pub async fn plane_get(
     app: &Platform,
-    v: &Viewer,
+    v: &mut Viewer,
     project: &str,
     key: &str,
     number: u64,
@@ -284,7 +284,7 @@ pub async fn plane_get(
 /// else the project's only one. The kept fields while they're fresh.
 pub async fn tracker_fields(
     app: &Platform,
-    v: &Viewer,
+    v: &mut Viewer,
     project: &str,
     tracker: Option<&str>,
     connection: Option<&str>,
@@ -323,10 +323,10 @@ pub async fn tracker_fields(
 /// `GET /api/forge/items/{id}`.
 pub async fn get(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::ForgeItem>, ApiError> {
-    let (readable, repo) = viewer::item(&app, &v, &id).await?.ok_or_else(no_item)?;
+    let (readable, repo) = viewer::item(&app, &mut v, &id).await?.ok_or_else(no_item)?;
     let i = app.db.forge_item(&readable, &id)?.ok_or_else(no_item)?;
     Ok(Json(wire_item(i, &repo.full_name)))
 }
@@ -334,10 +334,10 @@ pub async fn get(
 /// `GET /api/forge/items/{id}/checks`: its head commit's.
 pub async fn checks(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::ForgeChecks>, ApiError> {
-    let (readable, repo) = viewer::item(&app, &v, &id).await?.ok_or_else(no_item)?;
+    let (readable, repo) = viewer::item(&app, &mut v, &id).await?.ok_or_else(no_item)?;
     let i = app.db.forge_item(&readable, &id)?.ok_or_else(no_item)?;
     let checks = match &i.head_sha {
         Some(sha) => app.db.forge_checks(&readable, repo.repo_id, sha)?,
@@ -360,10 +360,10 @@ pub async fn checks(
 /// `GET /api/forge/items/{id}/events`: oldest first.
 pub async fn events(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    mut v: Viewer,
     Path(id): Path<String>,
 ) -> Result<Json<wire::ForgeEvents>, ApiError> {
-    let (readable, repo) = viewer::item(&app, &v, &id).await?.ok_or_else(no_item)?;
+    let (readable, repo) = viewer::item(&app, &mut v, &id).await?.ok_or_else(no_item)?;
     let i = app.db.forge_item(&readable, &id)?.ok_or_else(no_item)?;
     let events = app
         .db

@@ -424,12 +424,14 @@ async fn tell_platform(app: &App, deleted: &arugula_platform_api::Deleted) -> bo
 pub(crate) const TELL_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Every [`TELL_EVERY`], tell the platform of each deletion it hasn't
-/// confirmed yet (`untold_deletions`, M140): taking one twice changes
-/// nothing for it.
+/// confirmed yet (`untold_deletions`, M140), and of each hosted machine an
+/// owner removed that it hasn't heard of (`untold_hosted_removals`):
+/// taking one twice changes nothing for it.
 pub fn start_telling(app: Arc<App>) {
     tokio::spawn(async move {
         loop {
             tell_untold(&app).await;
+            crate::hosted::tell_untold_removals(&app).await;
             tokio::time::sleep(TELL_EVERY).await;
         }
     });

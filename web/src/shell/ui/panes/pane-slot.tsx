@@ -6,17 +6,18 @@ import type { Client } from "../../client";
 import type { PaneId, Rect } from "../../../shared/proto";
 import { useWorkspaceDir } from "../../blocks";
 import type { Cell } from "../cells";
-import { paneItems } from "../commands";
+import { machineTone, paneItems } from "../commands";
 import { startDrag } from "../drag";
 import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
 import { PaneMarks } from "../people";
-import { HooksChip } from "../agents-setup";
+import { HooksOffer } from "../agents-setup";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
 import { px } from "./geometry";
+import { Chip } from "../../../shared/ui/state-chip";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
 const parking = document.createElement("div");
@@ -154,14 +155,9 @@ export function PaneSlot({
       <StartedByBadge client={client} id={id} />
       <PaneMarks client={client} pane={id} />
       <ThreadBadge client={client} pane={id} />
-      {!active && (info?.attention === "needs_input" || info?.attention === "done") && (
-        <div class={`pane-badge ${info.attention}`} title={info.reason?.headline}>
-          {info.reason?.kind === "failed" ? "failed" : info.reason?.kind === "exited" ? "exited" : info.attention === "done" ? "done" : "needs you"}
-        </div>
-      )}
       {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
-      {info?.unhooked && !info.ask && <HooksChip client={client} id={id} />}
+      {info?.unhooked && !info.ask && <HooksOffer client={client} id={id} />}
       {waiting && (
         <button
           class="start-pane"
@@ -213,29 +209,33 @@ function HostBadge({ client, id }: { client: Client; id: PaneId }) {
   const tabMachine = tab ? client.tabMachine(tab.id) : undefined;
   if (tabMachine && !m) {
     return (
-      <div class="host-badge local" title="Runs on this host, not the tab's machine">
+      <Chip kind="tag" tone="muted" class="pane-host" title="Runs on this host, not the tab's machine">
         local
-      </div>
+      </Chip>
     );
   }
   if (!m || m.id === tabMachine?.id) return null;
   const state = m.state === "running" ? "" : ` · ${m.state === "gone" ? "gone" : "starting"}`;
   if (m.borrowed) {
     return (
-      <div
-        class={`host-badge borrowed ${m.state}`}
+      <Chip
+        kind="tag"
+        tone={m.state === "running" ? "warn" : machineTone(m.state)}
+        class="pane-host"
         title={`A shell on ${m.sprite} (${m.provider}) with no daemon there: disposable. Its output is kept here while it's attached; the sandbox stays when this pane closes. Make it resident (Sandboxes…) for history that survives.`}
       >
         {m.sprite} · shell{state}
-      </div>
+      </Chip>
     );
   }
   return (
-    <div
-      class={`host-badge ${m.state}`}
+    <Chip
+      kind="tag"
+      tone={machineTone(m.state)}
+      class="pane-host"
       title={`${m.name ? `${m.name}: ` : ""}${m.sprite} (${m.provider}${m.image ? `, ${m.image}` : ""}); deleted when this pane closes`}
     >
       VM{state}
-    </div>
+    </Chip>
   );
 }

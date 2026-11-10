@@ -26,6 +26,7 @@ lists the differences.
 | **Roster** | A team's signed, versioned list of members and roles | Hub `rosters`, checked again by each machine. `team_members` is a copy that's never read for machine access | Team + version |
 | **Role** | Owner, editor or viewer | The roster, or a session's share in `acl.json` | The word |
 | **Guest** | Someone with access who isn't a member | The machine | Depends on the kind |
+| **Sign-in session** | A browser or app signed in to control, or to the platform's page | Hub `sessions`; `app_sessions` for the platform's page, each made from one in `sessions` and ending with it | A hash of its token |
 
 **Grant** is five things: a person's role on a session, what a machine's agents
 may do in a project, the minutes a guest may type into one pane, the standing
@@ -50,6 +51,12 @@ machine's people are the project's people. An owner's "owner" is one of four
 too: of the machine, of a session (a share that renames, closes and shares it,
 and nothing else), of a team, or of a project, which is the team's owner seen
 from the platform.
+
+A product a person links, such as studio's lobby, holds a **consent**, which
+isn't one of the five: the person's yes on the sign-in consent screen is in
+the hub's `issuer_grants`, and what their account lets the product see, call
+or send is in the platform's `client_consents`, `inference_consents` and
+`client_secret_grants`.
 
 Org isn't built. Billing keys on an owner, with no org above it.
 
@@ -77,10 +84,30 @@ A **Cloud workspace** (`hw_`) is a project's durable object: its spec, state and
 snapshot. A **hosted machine** is what currently runs inside it, with its own keys
 and ID. A rebuild replaces the machine and keeps the workspace. Say "Cloud
 workspace" to people and "hosted machine" for the daemon inside. Don't say "box"
-for either, because it also means hud and studio app boxes.
+for either, because it also means hud and studio app boxes and a host reached
+over ssh ([Don't say](#dont-say)).
 
 Hosted machines stay out of the `daemons` table on purpose, so that what acts on
 ordinary machines (moves, shares, powers) can't reach them.
+
+The platform's `hosted_workspaces` also holds the workspaces deploys run on
+and the ones that build snapshots, told apart by `purpose`: `workspace` for
+people, `deploy` or `snapshot`. No person reaches a deploy's or a
+snapshot's machine.
+
+The hub decides who reaches a hosted machine by its project's owner, the
+account or team its certificate names, not by the project
+([crates/control/src/hosted.rs](../crates/control/src/hosted.rs), `role` and
+`may_reach`): each member of a team reaches the hosted machines of every
+project the team owns, and only its owners while the team is locked. That's right while a project's people are its team's.
+A project with fewer people than its team needs this changed first.
+
+An owner who removes a hosted machine at the hub fails its Cloud workspace.
+The hub keeps the removal in `untold_hosted_removals` until the platform
+takes it into `hosted_removed_machines`. The platform then fails the
+workspace and pauses it, fails its runs, and stops waking its agent
+sessions, which wait for a rebuild. Only the hub's word does this: a
+machine missing from the hub's list changes nothing.
 
 Other things called a workspace aren't this: a **chant workspace** is a Labs block
 over a repo directory, and the **shell's workspace** is its layout.
@@ -99,13 +126,34 @@ over a repo directory, and the **shell's workspace** is its layout.
 | **Run** | A project's run on a hosted machine. Not the same as running a command in a pane | Platform `runs`; the machine keeps a ledger | `run_` |
 | **Deploy** | A plan, its approval and its apply | Platform `deploys` | `dep_` |
 
-So "session" alone means the group of tabs. `ses_` is always "agent session", and
-Claude Code's own session is a conversation.
+So "session" alone means the group of tabs. `ses_` is always "agent session",
+Claude Code's own session is a conversation, and a sign-in session is the
+hub's (above).
+
+A **card** is something waiting on a person. On a machine it's a block's
+`Reason` ([crates/proto/src/lib.rs](../crates/proto/src/lib.rs)), shown in
+its pane, on the swarm and on the phone: an agent's question or permission
+(an `Ask`, in [crates/proto/src/ask.rs](../crates/proto/src/ask.rs)), a
+diff, or a gate. An agent's invite and its Doc share are an `Ask` too,
+raised on the invite block or the Doc block, never on the agent's pane. A
+deploy waiting for approval is the platform's card, in its inbox
+([web/src/platform/pages/inbox.tsx](../web/src/platform/pages/inbox.tsx)). A
+**session card** is the chat message that shows an agent session's state
+(`SessionCard` in
+[crates/control-wire/src/sessions.rs](../crates/control-wire/src/sessions.rs)).
+Chat's link previews, A2A agent cards and boxes on a page aren't cards in
+this sense. Don't give the word another meaning.
 
 ## Chat
 
-Chat's truth is on the platform. The daemon keeps only routing state, such as who
-may read each pane's thread.
+Chat's truth is on the platform. The daemon keeps only routing state. Who may
+read a pane's or a session's thread is the machine's to say: it sends its
+lists, and the platform keeps the latest in `chat_readers`. A closed pane's or
+session's list only narrows: someone who loses access to it is off it for
+good, and a share given after it closed adds nobody. A team's lock isn't a
+loss: a member kept out only by it can't read the thread while the lock
+lasts, and reads it again when the lock lifts (
+[crates/mux/src/mux/readers.rs](../crates/mux/src/mux/readers.rs)).
 
 | Word | What it is | ID |
 |---|---|---|
@@ -113,8 +161,13 @@ may read each pane's thread.
 | **Channel** | A team's room | `ch_` |
 | **DM** | A room for up to 8 people | `dm_` |
 | **Object thread** | A room on an issue, PR, workspace, run, agent session, board or Doc | `ob_` |
-| **Pane thread** | A room about a session or pane on a machine | `th_` |
+| **Pane thread**, **session thread** | A room about one pane, or about a session (a group of tabs), on a machine | `th_` |
+| **Reply thread** | A message and its replies, in any room. Who follows one is in `chat_thread_reads`, and `read_thread`'s `thread` names one by its first message | Room + seq |
 | **Mention** | Naming a person, machine or agent in a message | Room + seq + machine |
+
+"Thread" alone is a room: a pane thread, session thread or object thread, as
+the `read_thread` and `post_thread` tools and the `threads.read` power mean
+it. Say "reply thread" for a message and its replies.
 
 ## What a project holds
 
@@ -122,15 +175,31 @@ A **project** (`prj_`) is what platform objects belong to, owned by one team or 
 account. Each has one default project, and that's all that exists for now: nothing
 creates a second one. Membership comes from the team's roster.
 
+Nothing makes a second project yet, so what happens then is a decision, not
+code (Jake, 2026-11-05, Doc c2508fcdab6cf131): when a team gets one, the
+work it already has and its channels stay in the default project, and only
+new work goes in the new one. Nothing moves objects between projects.
+
 | Noun | What it is | Truth | ID |
 |---|---|---|---|
 | **Linked repo** | A GitHub repo tied to one project | Platform `linked_repos` | GitHub's |
 | **Native issue** | A project's own numbered issue | Platform `issues` | `iss_` + number |
 | **Forge item** | A mirrored PR, GitHub issue or Plane item | GitHub or Plane; `forge_items` is a mirror | `fi_` |
+| **Work item** | One piece of work behind a native issue, the GitHub issue it was exported to, or a Plane item. A board holds one row for it, whichever of them was added | Platform `work_items` and `work_item_refs` | `wi_` |
 | **Board** | Rows of work with a goal | Platform `boards` | `brd_` |
 | **Row** | One piece of work on a board | Platform `board_entries` | `row_` |
 | **Group** | A named section of a board | Platform `board_entries` | `zon_` |
 | **Lane** | Next, Doing, Review or Done, worked out from the work, with a person's override | Derived on read | The word |
+
+Membership and roles alone decide who reads and writes a project's native
+issues and Docs: a personal project's account, and a team's roster, where
+owners and editors write and viewers read. Anyone else gets 404. A person's
+chat setting doesn't enter into it, and nor does it for an agent acting for
+them, which also needs its own power over the project. The `chat` setting
+stays in the hub, because machines need it, and it still decides chat
+itself: an issue's comments are its object thread, so they come with chat.
+The account's `doc-copies` word for its machines' copies is apart from this
+(below).
 
 ### Forge items: two read paths
 
@@ -174,14 +243,110 @@ A native issue block (`iss_`) is a third thing: a pin onto the platform's
 `issues` row, read with the machine's `threads.read` power, never from a
 forge.
 
+About once a day for each linked repo, the mirror reads again the rows
+GitHub no longer lists as open, and deletes one only when GitHub plainly
+says it's gone or moved. Its `forge_content` goes with it.
+
+### Drafts
+
+A **draft** is a write an agent made that waits for a person to send it. There
+are five kinds:
+
+| Kind | What it is | Truth | ID |
+|---|---|---|---|
+| **Block draft** | A comment or review on an unpinned PR or issue block | The block's config in `layout.json` | The block's |
+| **Platform draft** | A comment, review or new issue for a linked repo | Platform `drafts` | `dft_` |
+| **The session's PR** | An agent session's pull request, as its asker drafts it | Platform `pr_drafts` | `pdr_` |
+| **Invite draft** | An agent's invite into a session, waiting for the machine's owner | The machine | Its own |
+| **Plane write** | An agent's write to a connected Plane project | Platform `tracker_writes` | `tw_` |
+
+Say "the session's PR" for one in `pr_drafts`, so that "draft" next to "PR"
+stays GitHub's draft PR, which the session's PR may be sent as. A person
+discards a draft; `dropped` stays where it's stored or on the wire.
+
 ### Docs
 
 | Kind | What it is | Truth | ID |
 |---|---|---|---|
 | **Library Doc** | A Doc on a machine | `<state>/docs/<id>/` | 16 hex |
 | **Project Doc** | A Doc made on the platform, in a project | Platform `project_docs` | `pdc_` |
-| **Copy** | A library Doc's copy in its owner's personal project. Read-only: the machine's Doc is the truth | Machine | `pdc_` |
+| **Copy** | A library Doc's copy in its owner's personal project, put again on every change. Read-only: the machine's Doc is the truth, and the copy goes with it | Machine | `pdc_` |
+| **Team Doc made from a copy** | Share with…: a project Doc made from a copy's title, sections and pictures as they were, in a project its owner writes in. The team owns and edits it; it records the copy it came from and both revs | Platform `project_docs` (`made_from_*`) | `pdc_` |
 | **Shared Doc** | An encrypted snapshot behind a link, frozen until someone updates it | Hub `doc_links`; the key stays out of control | 32 hex |
+
+A Doc has a layout (doc, tabs or prototype; doc when it says none),
+kept in its `meta.json`. A Doc's tabs are its sections: in code and on the
+wire they stay "sections", because "tab" there is a session's tab.
+
+A library Doc has one truth, on its machine (aru-134, aru-135). What follows
+from that, settled in native #673:
+
+- **The copy follows the Doc.** The machine puts the whole Doc on every
+  change, and takes the copy down when the Doc is deleted, from a tombstone
+  the library writes first, never from a file it can't read; a take-down
+  the platform refuses is tried three times, then given up. The copy stays
+  its project's to delete on the platform, as any Doc there is. A personal
+  machine whose account gave the word brings a new one at its next change
+  to the Doc, and the page says so; a team's machine never does.
+- **Share with… is a snapshot** (Arugula #418). A person makes a team Doc
+  from their copy through the platform's routes, as themselves: nothing
+  new on the machine, and the machine never writes to a team's project.
+  The team Doc is an ordinary one, and the copy stays the machine's truth.
+  It keeps the copy's rev at the snapshot and its own rev right after,
+  so the copy's owner is shown "the copy changed since" and "the team edited
+  it since", and Update copy replaces the team Doc whole, asking first when
+  the team edited it. Only the copy's owner does either, from their
+  personal project, and only into a project where they still write Docs;
+  one team Doc per copy per project. The copy going away leaves the team
+  Doc as it is.
+- **The machine knows where its copy is.** The put's answer (the project,
+  the `pdc_` id, the link) is kept in the Doc's `meta.json` as `platform`,
+  and `doc list`, `/api/docs` and the Docs page show it; it's forgotten when
+  the machine leaves control, and a team's other owner isn't shown it.
+- **A board reads the copy where the copy sits.** On a board of the
+  owner's own project, a machine Doc's chip shows the title and sections as
+  the machine last put them and opens the copy, so the Doc reads with the
+  machine asleep; the shell on that machine opens the live Doc first. On a
+  team's board the chip keeps the title it was linked with, since the
+  board's readers may not read the copy's project.
+- **Copying is the account's own word, on its personal machines.** A
+  machine joined to an account alone copies its Docs up only when that
+  account turned "Your Docs on the platform" on (Teams on the machines
+  page), a word of its own, `doc-copies`, apart from chat, which it
+  neither needs nor turns on. A team can't set it, and a team's machine
+  copies nothing, so no member's Docs land in another member's project:
+  the platform refuses its copies whatever daemon it runs, and its Docs
+  stay on the machine. Copies a team's machine made before stay where they
+  are, and nothing removes them. An account that had its own
+  chat on was given the word. Off stops new and changed copies, on an
+  older daemon too, whose puts the platform refuses on an explicit no;
+  copies already there stay until deleted, and a deleted Doc's copy still
+  comes down. A personal machine hears its teams' chat as `chat-heard` for its
+  threads' readers, which never copies anything.
+- **A hosted machine's library is the machine's.** Its state directory goes with
+  a rebuild, and nothing is copied up: the workspace's owner is whoever made
+  it, so a session's Docs would land in their personal project. A session's
+  write-ups for the project go in project Docs, through the session's tools.
+- **A copy stays in its owner's personal project.** The route that moved a
+  Doc between projects is gone: nothing but tests called it, and it was the
+  one way a machine's puts reached a team's project. A Doc for a team is
+  made in the team's project. A copy a move put in a team's project before
+  then takes a personal machine's puts there only while the team's chat is
+  on and its owner may write there; a team's machine's puts are refused
+  everywhere. None is expected in production.
+
+## Don't say
+
+Each of these words means something else in Arugula, or meant two things
+before. [scripts/data-model-check.mjs](../scripts/data-model-check.mjs) looks
+for them in the MCP tools' text
+([the blessed tool list](../crates/arugulad-mcp/tests/fixtures/mcp-tool-list.json))
+and in the CLI's help, and fails on any outside the phrases this table allows.
+
+| Don't say | For | Say | Allowed in |
+|---|---|---|---|
+| box, boxes | A Cloud workspace or a hosted machine | Cloud workspace, hosted machine, machine | Hud and studio apps: `hud box`, `studio app box`, `studio app's box`, `an app's box`, `a box with its own agent`, `its box's chat tabs`, `follow the box with the app's follower link`, `the link the box's owner made`. A host reached over ssh: `a box you can ssh into`, `user@box`, `[user@]box`, `https://box.`, `that box, set up over ssh`, `on a box a client reaches over ssh`, `a box over ssh`, `--ssh box` |
+| zone, zones | A board's lane or group | lane, group | `time zone`, `--tz ZONE`, `Zone:Read` |
 
 ## Don't merge these
 
@@ -201,9 +366,12 @@ purpose, and the records say why:
 
 | Where the code differs | Tracked in |
 |---|---|
-| "Session" and "agent session" name other things in Rust types | #671 |
-| A board's chip for a machine Doc shows the title from when it was linked, not its copy; deleting a copy leaves links to it dead; the route that moves a Doc has no caller | #673 |
+| What Claude Code says about its conversation is `SessionSignal` in Rust, after the `session-signal` verb and route | Not tracked: CLI verbs stay (#668) |
+| A machine Doc's chip on a team's board keeps the title it was linked with, not its copy's | Settled as far as #673 goes: a copy lives in its owner's project |
+| A board's link to a copy that was deleted, on the platform or with its Doc, reads "a deleted Doc" for good: the machine's next copy of the same Doc gets a new id, which the link doesn't follow | Not tracked |
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |
 | `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |
+| A board's wire says zone: a read's `zones` are the four lanes, and a write's `zone` names a group. Writes take `group` too | Not tracked: wire names stay for older daemons (#750) |
+| An issue's comments and the live updates of issues and Docs travel in chat, so a member with chat off reads an issue without its comments and sees a change when the page loads again | Not tracked yet |

@@ -25,18 +25,31 @@
 //! it sends. A machine that never heard a revoke honours the grant until it
 //! expires.
 //!
+//! **Newest seen** (`<state>/run-grant-newest.json`). A grant that took
+//! another's place doesn't undo the old one's signature, so the machine
+//! keeps which is the newest it has seen check out, and refuses any older
+//! ([`SUPERSEDED`]). The order is the `made` a grant signs, then its id. An
+//! owner's clock can be off, so the platform is what makes that order the
+//! order they were given: it takes a grant only if its `made` is past every
+//! grant the project has had, and the page signs one past the last. A machine
+//! that's only ever seen the old one can't know: it goes by it until it's
+//! told otherwise, or the grant expires.
+//!
 //! The kept file fails closed: once a revoke was kept (a marker beside it
 //! says so), a missing or unreadable file refuses every start. It's in
 //! arugulad's state directory, which runs must never be able to write
 //! (M212: run as another user, or outside it).
 //!
-//! The grant gates only what the platform starts. People's own use of the
+//! The grant gates what the platform starts, and every turn of a thread's
+//! agent session, whoever or whatever asks for it. People's other use of the
 //! machine (its owners and editors, M180) doesn't go through it.
 //!
 //! A start that names a run (M212) has the machine pull its work at once
 //! (`crate::work`); the run is checked again here ([`allows`]) before it
 //! starts. A revoke that says `running stop` stops the runs going under
-//! the grants it covers (`crate::work::stop_revoked`).
+//! the grants it covers (`crate::work::stop_revoked`). A thread's agent
+//! session is checked the same way for `runs.instruct`, before it's taken
+//! and before each turn, and any revoke ends it ([`revoke_over`]).
 
 use std::{path::Path, sync::Mutex};
 
@@ -62,7 +75,10 @@ const FILE: &str = "run-grant-revokes.json";
 /// there.
 const MARKER: &str = "run-grant-revokes.kept";
 
-/// One writer at a time for [`FILE`].
+/// The newest grant this machine has seen check out.
+const NEWEST: &str = "run-grant-newest.json";
+
+/// One writer at a time for [`FILE`] and [`NEWEST`].
 static KEPT: Mutex<()> = Mutex::new(());
 
 /// Why a start was refused: a code the platform shows, and what it means.
@@ -81,6 +97,24 @@ impl From<GrantRefusal> for Refused {
 const NOT_HOSTED: Refused = Refused { code: "not_hosted", says: "this machine isn't a hosted machine" };
 const WRONG_WORKSPACE: Refused =
     Refused { code: "wrong_workspace", says: "this hosted machine is another workspace's" };
+/// A session's work listed no grant.
+pub const NO_GRANT: Refused = Refused {
+    code: "no_grant",
+    says: "this project has no standing grant for agent sessions: an owner of the project allows them with a passkey",
+};
+/// What's refused for what this machine pinned of who may sign, which a
+/// refresh brings up to date.
+pub const PIN_CAN_CHANGE: &[&str] = &[
+    GrantRefusal::Unsigned.code(),
+    GrantRefusal::NotAnOwner.code(),
+    GrantRefusal::PasskeyLog.code(),
+    GrantRefusal::Passkey.code(),
+];
+/// A newer grant took this one's place, as this machine has seen.
+pub const SUPERSEDED: Refused = Refused {
+    code: "grant_superseded",
+    says: "a newer standing grant of this project has taken this one's place: this machine has seen it",
+};
 const UNREADABLE: Refused = Refused {
     code: "revokes_unreadable",
     says: "this hosted machine can't read the revokes it kept, so it starts nothing: rebuild the workspace",
@@ -143,7 +177,7 @@ pub fn check(saved: &Saved, s: &RunStart, kept: &[GrantRevoke], now: u64) -> Res
         return Err(GrantRefusal::WrongProject.into());
     }
     let owners = owners(saved).ok_or(GrantRefusal::Unsigned)?;
-    let revokes = Revokes { delegation: &pin.revocations, sent: &s.revokes, kept };
+    let revokes = Revokes { delegation: &pin.revocations, closed: &pin.closed, sent: &s.revokes, kept };
     let signers = signers(saved, &owners);
     project_grant::check(&s.grant, &pin.delegation, revokes, &signers, s.passkey_log.as_ref(), &s.cap, now)?;
     Ok(())
@@ -158,6 +192,73 @@ fn read_kept(dir: &Path) -> anyhow::Result<Vec<GrantRevoke>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && !dir.join(MARKER).exists() => Ok(vec![]),
         Err(e) => Err(anyhow::Error::new(e).context("the kept revokes are missing")),
     }
+}
+
+/// A grant's place in the order (module docs).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+struct Newest {
+    made: u64,
+    id: String,
+}
+
+impl Newest {
+    fn of(g: &ProjectGrant) -> Self {
+        Newest { made: g.made, id: g.id.clone() }
+    }
+}
+
+/// The newest grant seen here. As [`read_kept`], one that doesn't read is an
+/// error, never "none".
+fn read_newest(dir: &Path) -> anyhow::Result<Option<Newest>> {
+    match std::fs::read(dir.join(NEWEST)) {
+        Ok(b) => Ok(Some(serde_json::from_slice(&b).context("the newest grant seen doesn't read")?)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow::Error::new(e).context("the newest grant seen can't be read")),
+    }
+}
+
+/// `g`, which checked out, against the newest seen here: refused if it's
+/// older, else it's the newest now.
+fn fresh(dir: &Path, g: &ProjectGrant) -> Result<(), Refused> {
+    let _held = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    let newest = read_newest(dir).map_err(|e| {
+        warn!(error = %format!("{e:#}"), "hosted: refusing starts: the newest grant seen can't be read");
+        UNREADABLE
+    })?;
+    let this = Newest::of(g);
+    if newest.as_ref().is_some_and(|n| *n > this) {
+        return Err(SUPERSEDED);
+    }
+    if newest.as_ref() != Some(&this) {
+        let wrote = serde_json::to_vec(&this)
+            .map_err(anyhow::Error::new)
+            .and_then(|b| crate::store::write_atomic(&dir.join(NEWEST), &b).map_err(anyhow::Error::new));
+        if let Err(e) = wrote {
+            warn!(error = %format!("{e:#}"), "hosted: can't keep the newest grant seen");
+        }
+    }
+    Ok(())
+}
+
+/// Have seen `g`, the project's grant as the platform lists it, whatever it
+/// gives: a narrower one takes an older one's place too. Nothing if it
+/// doesn't check out.
+pub fn notice(app: &crate::server::App, project: &str, workspace: &str, g: &ProjectGrant, carried: Option<&Log>) {
+    let dir = app.control.state_dir();
+    if read_newest(dir).ok().flatten().is_some_and(|n| n >= Newest::of(g)) {
+        return;
+    }
+    let Some(cap) = g.caps.first().cloned() else { return };
+    let start = RunStart {
+        project: project.to_owned(),
+        workspace: workspace.to_owned(),
+        run: None,
+        cap,
+        grant: g.clone(),
+        revokes: vec![],
+        passkey_log: carried.cloned(),
+    };
+    let _ = allows(app, &start);
 }
 
 /// Keep the revokes among `revokes` that are about this machine (its
@@ -212,7 +313,8 @@ pub fn allows(app: &crate::server::App, s: &RunStart) -> Result<(), Refused> {
             return Err(UNREADABLE);
         }
     };
-    check(&saved, s, &kept, now)
+    check(&saved, s, &kept, now)?;
+    fresh(dir, &s.grant)
 }
 
 /// Keep what's about this machine among `revokes` (they come with each
@@ -232,6 +334,26 @@ pub fn stops(app: &crate::server::App, g: &ProjectGrant) -> bool {
         Ok(kept) => kept.iter().any(|r| r.running == Running::Stop && r.covers(g)),
         Err(_) => true,
     }
+}
+
+/// The kept revoke's word on a session here, under `grant` (the last one
+/// that checked out for it), taken at `taken_at`: `None` when none takes it
+/// back, else whether a turn under way finishes first. A session from
+/// before sessions held a grant has none to compare, so a revoke made since
+/// it was taken covers it. Revokes that can't be read fail closed.
+pub fn revoke_over(app: &crate::server::App, grant: Option<&ProjectGrant>, taken_at: u64) -> Option<Running> {
+    match read_kept(app.control.state_dir()) {
+        Ok(kept) => over(&kept, grant, taken_at),
+        Err(_) => Some(Running::Stop),
+    }
+}
+
+/// [`revoke_over`], of the revokes `kept`.
+fn over(kept: &[GrantRevoke], grant: Option<&ProjectGrant>, taken_at: u64) -> Option<Running> {
+    let covering = |r: &&GrantRevoke| grant.map_or(r.at >= taken_at, |g| r.covers(g));
+    let mut covers = kept.iter().filter(covering).peekable();
+    covers.peek()?;
+    Some(if covers.any(|r| r.running == Running::Stop) { Running::Stop } else { Running::Finish })
 }
 
 /// `runs.start`: check the grant, and answer. A start that names a run
@@ -272,9 +394,10 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 stop,
                 "hosted: the project's standing grants were revoked"
             );
-            if stop {
-                crate::work::stop_revoked(app);
-            }
+            // What it stops goes now: nothing here waits on control. A
+            // session it ends with its turn is ended then, by what follows it.
+            crate::work::stop_revoked(app);
+            crate::work::nudge();
             OpAnswer::Done { url: None, routed: None }
         }
         // Not this machine's, not an owner's, or an older one than it has.
@@ -304,6 +427,9 @@ pub(crate) mod tests {
 
     use super::*;
 
+    /// Control's hosted key in [`machine`].
+    pub(crate) const MACHINE_KEY: [u8; 32] = [7; 32];
+
     /// A hosted machine of an account's project, enrolled under a
     /// delegation from the account's root device; and the account's phone,
     /// another of its devices.
@@ -314,7 +440,7 @@ pub(crate) mod tests {
         let phone = DeviceKeys::generate();
         let mut phone_cert = Cert::new(&phone, "acct1", Kind::Browser, "phone");
         phone_cert.sign_with(&root);
-        let key = HostedKey::generate();
+        let key = HostedKey::from_seed(&MACHINE_KEY);
         let mut d = Delegation {
             project: "prj_1".into(),
             owner: "account:acct1".into(),
@@ -333,6 +459,7 @@ pub(crate) mod tests {
             cert,
             delegation: d.clone(),
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),
@@ -386,6 +513,46 @@ pub(crate) mod tests {
         // A machine that isn't hosted.
         let plain = Saved { kind: crate::control::MachineKind::Personal, ..saved.clone() };
         assert_eq!(check(&plain, &start(&g), &[], 20), Err(NOT_HOSTED));
+    }
+
+    /// The newest grant seen here: one older refused, by `made` then by id,
+    /// whichever clock signed it; the same one, and a newer one, taken; and a
+    /// file that doesn't read refuses.
+    #[test]
+    fn a_grant_older_than_the_newest_seen_is_refused() {
+        let (_, d, root, _) = machine();
+        let dir = super::super::scratch("run-grant-newest");
+        let (old, new) = (grant(&d, &root, 10), grant(&d, &root, 20));
+        assert_eq!(fresh(&dir, &old), Ok(()));
+        assert_eq!(fresh(&dir, &old), Ok(()), "the same one again");
+        assert_eq!(fresh(&dir, &new), Ok(()));
+        assert_eq!(fresh(&dir, &old), Err(SUPERSEDED));
+        assert_eq!(fresh(&dir, &new), Ok(()));
+        let later = grant(&d, &root, 30);
+        assert_eq!(fresh(&dir, &later), Ok(()));
+        assert_eq!(fresh(&dir, &new), Err(SUPERSEDED));
+        std::fs::write(dir.join(NEWEST), b"not json").unwrap();
+        assert_eq!(fresh(&dir, &later), Err(UNREADABLE));
+    }
+
+    /// Which revoke takes a session back: one covering the grant it holds,
+    /// however its clock reads; one made since it was taken, for a session
+    /// from before sessions held a grant; `stop` over `finish`.
+    #[test]
+    fn a_session_is_taken_back_by_a_revoke_covering_its_grant() {
+        let (_, d, root, _) = machine();
+        let g = grant(&d, &root, 10);
+        let r = |running, at| GrantRevoke::new(&g.project, &g.delegation, running, at, &root);
+        // A grant made after the revoke is a new one.
+        assert_eq!(over(&[r(Running::Stop, 9)], Some(&g), 1000), None);
+        assert_eq!(over(&[r(Running::Stop, 10)], Some(&g), 1000), Some(Running::Stop));
+        assert_eq!(over(&[r(Running::Finish, 30)], Some(&g), 1000), Some(Running::Finish));
+        assert_eq!(over(&[], Some(&g), 1000), None);
+        // No grant held: by when it was taken.
+        assert_eq!(over(&[r(Running::Finish, 30)], None, 40), None);
+        assert_eq!(over(&[r(Running::Finish, 40)], None, 40), Some(Running::Finish));
+        let (a, b) = (r(Running::Finish, 50), r(Running::Stop, 50));
+        assert_eq!(over(&[a, b], None, 40), Some(Running::Stop));
     }
 
     #[test]
@@ -478,6 +645,20 @@ pub(crate) mod tests {
         let (mut saved, d, root, _) = machine();
         let g = grant(&d, &root, 10);
         saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &root));
+        assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
+    }
+
+    /// A box that holds control's word stays stopped, by a revoke from a
+    /// device now off the account too.
+    #[test]
+    fn a_revoked_delegation_stays_revoked_when_its_signer_goes() {
+        let (mut saved, d, root, phone) = machine();
+        let g = grant(&d, &root, 10);
+        saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &phone));
+        assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
+        saved.revocations.push(arugula_e2e::Revocation::new("acct1", &phone.id(), &root));
+        assert!(check(&saved, &start(&g), &[], 40).is_ok());
+        saved.hosted_mut().unwrap().closed.push(HostedKey::from_seed(&MACHINE_KEY).close(&d, 30));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
     }
 

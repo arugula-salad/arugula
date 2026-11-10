@@ -92,9 +92,6 @@ pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
 /// A2A tasks. Was `agents`.
 pub const AGENT_DELEGATION: &str = "agent-delegation";
-/// Live presence: teammates' live faces on their avatars across Arugula,
-/// from arugula.stream (Arugula #341), which needs control.
-pub const LIVE_PRESENCE: &str = "live-presence";
 
 /// What every agent is told about Docs (#1486), in one wording: the MCP
 /// server's instructions carry it, and so does the context `arugula hook`
@@ -124,7 +121,7 @@ pub const MENTIONS_STEERING: &str = "Arugula delivers chat messages from your te
 /// instructions carry it (`arugulad-mcp`'s `instructions()`). Boards have no
 /// flag since they left Labs (native #191), so neither does this. `arugula
 /// hook` doesn't give it. The plugin's skill says the same in its voice.
-pub const BOARDS_STEERING: &str = "To run more than one ticket in a project, use a board: make one with board_write (with a goal) unless board_read lists a fitting one, add each ticket as a row, grouped by phase. Don't set statuses or add a row for a PR: a row's lane follows its work, and a PR naming the issue (Arugula #N, Closes #N, (#N)) attaches to its row and closes a native issue on merge (to link without closing, write `part of Arugula #N`). Attach an agent block, run or proof with board_write attach. Keep a row's note as its one-line status; at the goal, close the board with a note on what people can now do.";
+pub const BOARDS_STEERING: &str = "To run more than one ticket in a project, use a board: make one with board_write (with a goal) unless board_read lists a fitting one, add each ticket as a row, grouped by phase. Don't set statuses or add a row for a PR: a row's lane follows its work, and a PR naming the issue attaches to its row. On merge it closes a native issue it names as Closes #N or Arugula #N, or as (#N) in its title; any other #N in its body, or `part of Arugula #N`, links without closing. Attach an agent block, run or proof with board_write attach. Keep a row's note as its one-line status; at the goal, close the board with a note on what people can now do.";
 
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,11 +169,6 @@ pub const FLAGS: &[Flag] = &[
         "Local agent delegation",
         "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
-    row(
-        LIVE_PRESENCE,
-        "Live presence",
-        "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.",
-    ),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file
@@ -189,6 +181,7 @@ pub const RETIRED: &[(&str, &str)] = &[
         "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
+    ("live-presence", "Live presence (video on avatars, the People block's calls) was removed from Arugula"),
     // Graduated (native #203): chat is control's, on where a team's owners
     // turn it on there; a machine's old threads are no longer brought in.
     ("chat", "Chat is no longer in Labs: it's on wherever a team's owners turn it on in control (Teams)"),
@@ -353,6 +346,13 @@ fn read_control(dir: &Path) -> Pushed {
 pub fn control_says(state_dir: &Path, name: &str) -> Option<bool> {
     let pushed = read_control(state_dir);
     pushed.account.get(name).or_else(|| pushed.team.get(name)).copied()
+}
+
+/// What control last said of `name` for this machine on its account's
+/// word alone, never a team's: an account's own setting (native #673's
+/// Doc copies).
+pub fn control_account_says(state_dir: &Path, name: &str) -> Option<bool> {
+    read_control(state_dir).account.get(name).copied()
 }
 
 /// Keeps what control says for this machine (#347); `true` if it changed.

@@ -234,7 +234,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // A Managoat login is set up here, to show it's no feature now.
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("FOUNTAIN_API_KEY", "fk_test")
@@ -310,7 +310,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
 fn the_flags_are_the_owners() {
     let d = arugulad!("hosts")
         .args(["--name", "plain", "--owner", "me@example.com"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -337,7 +337,7 @@ fn the_flags_are_the_owners() {
 fn the_files_hosts_and_setup_routes_are_the_owners() {
     let d = arugulad!("hosts")
         .args(["--name", "plain", "--owner", "me@example.com"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -398,7 +398,7 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
 fn a_build_without_labs_ignores_the_labs_file() {
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("FOUNTAIN_API_KEY", "fk_test")
@@ -418,7 +418,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
 fn a_build_without_labs_answers_guest_invites_with_501() {
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("PS1", "$ ")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
@@ -474,7 +474,7 @@ fn both_helps_follow_the_same_labs_file() {
     // only parses.
     assert!(!listed(&cli_off, "managoat") && !listed(&cli_off, "fountain"), "{cli_off}");
     assert!(!d_off.contains("--managoat-account-stream"), "{d_off}");
-    for f in ["--studio-file", "--wisp-url"] {
+    for f in ["--studio-file", "--loam-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
     }
 
@@ -491,7 +491,7 @@ fn both_helps_follow_the_same_labs_file() {
     let by_env = help(daemon(), &[], Some(&state));
     let by_flag = help(daemon(), &["--state-dir", state.to_str().unwrap()], None);
     let flag_without = help(daemon(), &["--state-dir", elsewhere.to_str().unwrap()], Some(&state));
-    for f in ["--studio-file", "--wisp-url"] {
+    for f in ["--studio-file", "--loam-url"] {
         assert!(by_env.contains(f), "{f} isn't in `arugulad --help` with labs (environment)");
         assert!(by_flag.contains(f), "{f} isn't in `arugulad --help` with labs (--state-dir)");
         assert!(!flag_without.contains(f), "{f}: the flag's directory has no labs, whatever the environment's does");

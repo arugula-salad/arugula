@@ -203,6 +203,21 @@ pub const AGENT_PROJECT_RELATIONS: &str = "/api/daemon/projects/{project}/relati
 /// `DELETE`: an agent takes off a relation its own machine made.
 pub const AGENT_PROJECT_RELATION: &str = "/api/daemon/projects/{project}/relations/{relation}";
 
+/// `POST` [`LinkBatch`]: an agent adds and removes up to [`LINKS_MAX`] links
+/// between items of the project (`issues.write`), each on its own; answered
+/// [`LinksDone`], one outcome for each. A reference may be `#N`,
+/// `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id.
+pub const AGENT_PROJECT_RELATIONS_BATCH: &str = "/api/daemon/projects/{project}/relations/batch";
+
+/// The most links one [`AGENT_PROJECT_RELATIONS_BATCH`] takes, added and
+/// removed together.
+pub const LINKS_MAX: usize = 50;
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`] for `project`.
+pub fn agent_project_relations_batch(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/relations/batch")
+}
+
 /// [`PROJECT_RELATIONS`] for `project`.
 pub fn project_relations(project: &str) -> String {
     format!("/api/projects/{project}/relations")
@@ -401,6 +416,8 @@ pub enum Status {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardEntryKind"))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
+    /// A group; `group` is read as this too.
+    #[serde(alias = "group")]
     Zone,
     Row,
 }
@@ -707,7 +724,19 @@ pub enum Mark {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts", ts(optional))]
         repo: Option<String>,
+        /// The other board the blocker is a row of, when the reader may read
+        /// the blocker and it is on a board other than this one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        board: Option<String>,
+        /// The session that leads that board, when one does.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        lead: Option<String>,
     },
+    /// The row's item is in a loop of open ordering edges (Plane can make
+    /// one): it shares its `step` with the others in the loop.
+    Cycle,
 }
 
 /// [`BOARD_ATTACHMENTS`]' body: attach `pointer` to `row` as `role`.
@@ -1010,6 +1039,18 @@ pub struct Live {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub category: Option<Category>,
+    /// A closed native issue that a merged PR closed: the PR
+    /// (`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_with: Option<String>,
+    /// With `closed_with`, the words of the PR that closed it: `"(#12)" in
+    /// the title`, `"Closes #12" in the body`, `the branch feat/12-x`,
+    /// `attached to its board row as work`. Absent for a close from before
+    /// they were kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_by: Option<String>,
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -1195,7 +1236,30 @@ impl From<BlockStateReport> for BlockState {
 pub struct PutBlockState {
     pub pane: String,
     pub block: BlockStateReport,
+    /// How long ago, in milliseconds, the machine saw the block in this
+    /// state: more than none when the report waited out a failure to reach
+    /// control. A machine that sends it (0 included) also sends each live
+    /// block's state again every [`BLOCK_STATE_EVERY_MS`], so control counts
+    /// one of its reports older than [`BLOCK_STATE_STALE_MS`] as unknown.
+    /// None: a daemon from before Arugula #745, whose report is as of now
+    /// and never goes stale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub age_ms: Option<u64>,
 }
+
+/// How often a daemon sends each live agent block's state again, changed or
+/// not (Arugula #745), so control can tell a block it hears from from one it
+/// has lost.
+pub const BLOCK_STATE_EVERY_MS: u64 = 5 * 60_000;
+
+/// How old a report from a daemon that sends again
+/// ([`PutBlockState::age_ms`]) may be before a board counts its block as
+/// unknown, for lanes and claims: four of [`BLOCK_STATE_EVERY_MS`], so
+/// three missed in a row (a short outage, a laptop asleep for a while) keep
+/// the row, and a machine that is gone frees it within twenty minutes. A
+/// closed report never goes stale.
+pub const BLOCK_STATE_STALE_MS: u64 = 4 * BLOCK_STATE_EVERY_MS;
 
 /// A question on a row that a person answers on the board (Arugula #367):
 /// asked by a person or an agent, or raised by the board itself from the
@@ -1251,7 +1315,8 @@ pub struct AnsweredAsk {
 
 /// What an edge between two work items says (Arugula #403). Only `blocks`
 /// gates: it keeps the blocked item's row out of the ready set until the
-/// blocker is closed.
+/// blocker is closed. `before` (#761) says an order and gates nothing; it
+/// can't close a cycle with `blocks` edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationKind"))]
@@ -1264,6 +1329,9 @@ pub enum RelationKind {
     DuplicateOf,
     /// The first item was found while working on the second.
     DiscoveredFrom,
+    /// The first item comes before the second, in the order the work is
+    /// done in.
+    Before,
 }
 
 impl RelationKind {
@@ -1273,6 +1341,7 @@ impl RelationKind {
             RelationKind::Relates => "relates",
             RelationKind::DuplicateOf => "duplicate_of",
             RelationKind::DiscoveredFrom => "discovered_from",
+            RelationKind::Before => "before",
         }
     }
 
@@ -1282,6 +1351,7 @@ impl RelationKind {
             "relates" => RelationKind::Relates,
             "duplicate_of" => RelationKind::DuplicateOf,
             "discovered_from" => RelationKind::DiscoveredFrom,
+            "before" => RelationKind::Before,
             _ => return None,
         })
     }
@@ -1337,6 +1407,64 @@ pub struct NewRelation {
     pub from: String,
     pub to: String,
     pub kind: RelationKind,
+}
+
+/// One link of a [`LinkBatch`]: `from` is `kind` `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkEnds"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkEnds {
+    pub from: String,
+    pub to: String,
+    pub kind: RelationKind,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkBatch"))]
+#[serde(deny_unknown_fields)]
+pub struct LinkBatch {
+    #[serde(default)]
+    pub add: Vec<LinkEnds>,
+    #[serde(default)]
+    pub remove: Vec<LinkEnds>,
+}
+
+/// What became of one link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkOutcome"))]
+#[serde(rename_all = "snake_case")]
+pub enum LinkOutcome {
+    Added,
+    AlreadyThere,
+    Removed,
+    NotThere,
+    /// Not done; `why` says.
+    Refused,
+}
+
+/// One link's outcome, in the order it was given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinkResult"))]
+pub struct LinkResult {
+    pub outcome: LinkOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+}
+
+/// [`AGENT_PROJECT_RELATIONS_BATCH`]'s answer: one result for each link of
+/// `add` and of `remove`, in order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LinksDone"))]
+pub struct LinksDone {
+    pub add: Vec<LinkResult>,
+    pub remove: Vec<LinkResult>,
 }
 
 /// An edge made, as [`PROJECT_RELATIONS`] answers it.
@@ -1632,6 +1760,21 @@ pub struct Row {
     /// The edges of the row's item, both ways, for the drawer.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RowRelation>,
+    /// Where the row falls in the board's order (Arugula #762): 1 plus the
+    /// highest step of the open rows that come before it, worked out on
+    /// every read and never stored. Absent for a row with no issue or PR,
+    /// and for a Done row. Doing and Review rows are step 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub step: Option<u32>,
+    /// The column the row sits in on the Steps chart (Arugula #824): the
+    /// same longest-path layout as [`Row::step`], but over every row with an
+    /// issue or a PR, done ones included, using their ordering edges whether
+    /// the other end is open or closed. So finishing work never moves a row.
+    /// Absent for a row with no issue or PR.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub place: Option<u32>,
     /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1648,10 +1791,12 @@ pub struct Row {
     pub updated_at: u64,
 }
 
+/// One of a board's four lanes as a read answers it, with its rows. The wire
+/// and TypeScript still call it a zone (`zones`, `BoardZone`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardZone"))]
-pub struct Zone {
+pub struct LaneView {
     pub id: String,
     pub rev: u64,
     pub title: String,
@@ -1686,7 +1831,7 @@ pub struct Group {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BoardView {
     pub board: Board,
-    pub zones: Vec<Zone>,
+    pub zones: Vec<LaneView>,
     /// Empty for a board with none; an old client ignores it.
     #[serde(default)]
     pub groups: Vec<Group>,
@@ -1698,6 +1843,20 @@ pub struct BoardView {
     /// PR as their item that are in Next and have no open blocker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ready: Vec<String>,
+    /// The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+    /// step by what unblocks the most open rows, then by position (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequence: Vec<String>,
+    /// The longest chain of open rows (`row_…`), first to last; empty when
+    /// no row waits on another (#762).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<String>,
+    /// Every row (`row_…`) as the board stores them: by group, in the
+    /// groups' order, then by position inside each, those with no group
+    /// last. A move that names the order it read (`seen`) names a group's
+    /// rows from here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
     /// What a write did that the board alone doesn't say: a PR attached to
     /// the row of the issue it closes, an item that was there already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1723,8 +1882,8 @@ pub struct PutEntry {
     pub rev: Option<u64>,
     #[serde(default)]
     pub entry: Option<EntryKind>,
-    /// A new row's group (`zon_…`).
-    #[serde(default)]
+    /// A new row's group (`zon_…`); `group` is read as this too.
+    #[serde(default, alias = "group")]
     pub zone: Option<String>,
     /// A group's title.
     #[serde(default)]
@@ -1748,19 +1907,42 @@ pub struct PutEntry {
 /// one. A group moves among groups:
 /// `before` is a group, `zone` is absent. A lane is never set (aru-125): a
 /// `zone` that is a lane is refused.
+///
+/// `seen` is the row ids of the group the row goes to, in the order the
+/// caller read them. A row's `rev` doesn't count moves, so this is what a
+/// move that mustn't overwrite someone else's checks: if the group's rows
+/// aren't those, in that order, nothing moves and the answer is 409
+/// `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+/// Absent, a move is made whatever the order.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveEntry"))]
 pub struct MoveEntry {
     #[serde(default)]
     pub rev: Option<u64>,
-    /// The group the row goes to; `null`: none. Absent: its own.
-    #[serde(default, deserialize_with = "some")]
+    /// The group the row goes to; `null`: none. Absent: its own. `group`
+    /// is read as this too.
+    #[serde(default, alias = "group", deserialize_with = "some")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "string | null"))]
     pub zone: Option<Option<String>>,
     #[serde(default)]
     pub before: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub seen: Option<Vec<String>>,
+}
+
+/// The body of a move refused as `stale_order`: the group's rows now, in
+/// order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardStaleOrder"))]
+pub struct StaleOrder {
+    pub error: String,
+    pub reason: String,
+    pub rows: Vec<String>,
 }
 
 /// A field that is there, `null` or not, is `Some`: so `null` and absent
@@ -1954,8 +2136,13 @@ impl Mark {
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
             Mark::Stalled { since } => format!("stalled {}", ago(*since, now_ms())),
+            Mark::BlockedBy { number: Some(n), board: Some(b), lead: Some(l), .. } => {
+                format!("blocked by #{n} on {b}, led by {l}")
+            }
+            Mark::BlockedBy { number: Some(n), board: Some(b), .. } => format!("blocked by #{n} on {b}"),
             Mark::BlockedBy { number: Some(n), .. } => format!("blocked by #{n}"),
             Mark::BlockedBy { number: None, .. } => "blocked by something you can't see".to_owned(),
+            Mark::Cycle => "in a cycle".to_owned(),
         }
     }
 }
@@ -2010,6 +2197,12 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         if !marks.is_empty() {
             *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
+        if let Some(l) = &r.live
+            && let Some(pr) = &l.closed_with
+        {
+            let by = l.closed_by.as_deref().map(|b| format!(", by {b}")).unwrap_or_default();
+            *out += &format!("      {}\n", fit(&format!("closed with {pr}{by}"), TEXT_WIDTH - 6));
+        }
         if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
             let who = b.title.as_deref().unwrap_or("an agent");
             *out += &format!("      {}\n", fit(&format!("claimed by {who}"), TEXT_WIDTH - 6));
@@ -2063,7 +2256,8 @@ fn machine_label(l: &BoardLead) -> &str {
 /// of it. A Done row starts its note with `[proven by CI]`, `[proven]` or
 /// `[not proven yet]` (`[cancelled]` when its item was canceled), and a note row (no issue or PR) has no mark. Ids and
 /// revs aren't in it: they are in the [`BoardView`]. Under a row, its marks
-/// ([`marks_line`]). A board with groups is a `# Title  done/total` header
+/// ([`marks_line`]), and for an issue a merged PR closed, `closed with` the
+/// PR and the words that did it (Arugula #743). A board with groups is a `# Title  done/total` header
 /// for each group, and the lanes that hold its rows under it; rows with no
 /// group come last under `# No group`.
 ///
@@ -2099,7 +2293,7 @@ pub fn render(view: &BoardView) -> String {
         .ready
         .iter()
         .filter_map(|id| view.zones.iter().flat_map(|z| &z.rows).find(|r| &r.id == id))
-        .map(|r| r.pointer.label())
+        .map(Row::item_label)
         .collect();
     if !ready.is_empty() {
         out += &format!("{}\n", fit(&format!("Ready ({}): {}", ready.len(), ready.join(", ")), TEXT_WIDTH));
@@ -2133,7 +2327,50 @@ pub fn render(view: &BoardView) -> String {
             }
         }
     }
+    steps_text(&mut out, view);
     out.trim_end().to_owned()
+}
+
+/// `Steps` after the lanes (#762): for each step, `1  #521 #522 +3` (the
+/// labels that fit, then how many more), in the order of
+/// [`BoardView::sequence`], and `Chain:` with the longest open chain. Left
+/// out when no open row waits on another: one step is only a list.
+fn steps_text(out: &mut String, view: &BoardView) {
+    let rows: Vec<&Row> = view.zones.iter().flat_map(|z| &z.rows).collect();
+    let by_id = |id: &String| rows.iter().find(|r| &r.id == id).copied();
+    let last = rows.iter().filter_map(|r| r.step).max().unwrap_or(0);
+    if last < 2 && !rows.iter().any(|r| r.marks.contains(&Mark::Cycle)) {
+        return;
+    }
+    *out += "\nSteps\n";
+    for step in 1..=last {
+        let labels: Vec<String> =
+            view.sequence.iter().filter_map(by_id).filter(|r| r.step == Some(step)).map(Row::item_label).collect();
+        if labels.is_empty() {
+            continue;
+        }
+        let head = format!("  {step:<3}");
+        let mut line = head.clone();
+        let mut shown = 0;
+        for (i, l) in labels.iter().enumerate() {
+            // Room for ` +N` after this one, unless it is the last.
+            let more = if i + 1 < labels.len() { format!(" +{}", labels.len() - i - 1).len() } else { 0 };
+            let sep = usize::from(shown > 0);
+            if line.chars().count() + sep + l.chars().count() + more > TEXT_WIDTH && shown > 0 {
+                break;
+            }
+            line += &format!("{}{l}", if sep == 1 { " " } else { "" });
+            shown += 1;
+        }
+        if shown < labels.len() {
+            line += &format!(" +{}", labels.len() - shown);
+        }
+        *out += &format!("{}\n", fit(&line, TEXT_WIDTH));
+    }
+    let chain: Vec<String> = view.chain.iter().filter_map(by_id).map(Row::item_label).collect();
+    if chain.len() > 1 {
+        *out += &format!("{}\n", fit(&format!("Chain: {}", chain.join(" → ")), TEXT_WIDTH));
+    }
 }
 
 // ---------------------------------------------------------------- work
@@ -2175,7 +2412,7 @@ pub struct WorkQuery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItem"))]
-pub struct WorkItem {
+pub struct RowCandidate {
     /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
     pub pointer: Pointer,
     /// `native`, `github`, `plane` or `run`.
@@ -2222,7 +2459,7 @@ pub struct WorkLabel {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardWorkItems"))]
 pub struct WorkItems {
     pub project: String,
-    pub items: Vec<WorkItem>,
+    pub items: Vec<RowCandidate>,
     /// With `untriaged`: the cursor of the next page, null at the end.
     #[serde(default)]
     pub next: Option<String>,
@@ -2318,6 +2555,8 @@ mod tests {
                 state_name: None,
                 url: None,
                 category: None,
+                closed_with: None,
+                closed_by: None,
             });
             r
         };
@@ -2351,6 +2590,8 @@ mod tests {
             ask: None,
             asked: vec![],
             relations: vec![],
+            step: None,
+            place: None,
             live: None,
             block: None,
             agent: None,
@@ -2359,11 +2600,11 @@ mod tests {
         }
     }
 
-    fn lane(l: Lane, rows: Vec<Row>) -> Zone {
-        Zone { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
+    fn lane(l: Lane, rows: Vec<Row>) -> LaneView {
+        LaneView { id: l.id().into(), rev: 0, title: l.title().into(), kind: Some(ZoneKind::Lane), rows }
     }
 
-    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<Zone> {
+    fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<LaneView> {
         Lane::ALL
             .map(|l| lane(l, by.iter_mut().find(|(k, _)| *k == l).map(|(_, r)| std::mem::take(r)).unwrap_or_default()))
             .into()
@@ -2386,8 +2627,18 @@ mod tests {
         format!("{title}{count:>w$}", w = TEXT_WIDTH - title.chars().count())
     }
 
-    fn view(zones: Vec<Zone>) -> BoardView {
-        BoardView { board: board(), zones, groups: vec![], docs: vec![], ready: vec![], said: None }
+    fn view(zones: Vec<LaneView>) -> BoardView {
+        BoardView {
+            board: board(),
+            zones,
+            groups: vec![],
+            docs: vec![],
+            ready: vec![],
+            sequence: vec![],
+            chain: vec![],
+            order: vec![],
+            said: None,
+        }
     }
 
     /// Adds `"added_later"` to every object in `v`.
@@ -2430,6 +2681,8 @@ mod tests {
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         };
         let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Doing, "x");
         r.live = Some(live.clone());
@@ -2584,6 +2837,8 @@ Done: People can sign up.
                 state_name: None,
                 url: None,
                 category: None,
+                closed_with: None,
+                closed_by: None,
             });
             r
         };
@@ -2619,12 +2874,45 @@ Done: People can sign up.
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         });
         let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
         assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
         assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
         assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
         assert!(r.matches("@ana_di"), "a space in a name reads as _");
+    }
+
+    /// A Done row whose issue a merged PR closed says which PR and which
+    /// words, under the row (Arugula #743); one closed by hand says nothing.
+    #[test]
+    fn a_row_says_which_pr_closed_its_issue() {
+        let done = |with: Option<&str>, by: Option<&str>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Done, "Fix login");
+            r.live = Some(Live {
+                state: LiveState::Closed,
+                kind: "native".into(),
+                repo: None,
+                number: 4,
+                title: "Fix login".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+                closed_with: with.map(str::to_owned),
+                closed_by: by.map(str::to_owned),
+            });
+            render(&view(lanes(vec![(Lane::Done, vec![r])])))
+        };
+        let line = |text: String, want: &str| text.lines().any(|l| l == want);
+        let text = done(Some("acme/site#70"), Some("\"(#4)\" in the title"));
+        assert!(line(text.clone(), "      closed with acme/site#70, by \"(#4)\" in the title"), "{text}");
+        assert!(line(done(Some("acme/site#70"), None), "      closed with acme/site#70"));
+        assert!(!done(None, None).contains("closed with"));
     }
 
     /// A row says its item's title, then its note unless the note repeats the
@@ -2644,6 +2932,8 @@ Done: People can sign up.
             state_name: None,
             url: None,
             category: None,
+            closed_with: None,
+            closed_by: None,
         };
         let titled = |note: &str, title: &str, labels: Vec<String>| {
             let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
@@ -2799,6 +3089,23 @@ Done: People can sign up.
         assert!(serde_json::to_value(parse(serde_json::json!({}))).unwrap().get("zone").is_none());
     }
 
+    /// A write takes `group` where it takes `zone`, and still sends `zone`
+    /// for an older platform.
+    #[test]
+    fn a_write_takes_group_for_zone() {
+        let moved = |v: serde_json::Value| serde_json::from_value::<MoveEntry>(v).unwrap();
+        assert_eq!(moved(serde_json::json!({ "group": null })).zone, Some(None));
+        assert_eq!(moved(serde_json::json!({ "group": "zon_1" })).zone, Some(Some("zon_1".into())));
+        assert_eq!(moved(serde_json::json!({ "zone": "zon_1" })).zone, Some(Some("zon_1".into())));
+
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "group", "group": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let put: PutEntry = serde_json::from_value(serde_json::json!({ "entry": "zone", "zone": "zon_1" })).unwrap();
+        assert_eq!((put.entry, put.zone.as_deref()), (Some(EntryKind::Zone), Some("zon_1")));
+        let back = serde_json::to_value(&put).unwrap();
+        assert_eq!((&back["entry"], &back["zone"]), (&serde_json::json!("zone"), &serde_json::json!("zon_1")));
+    }
+
     /// The marks' wire shapes.
     #[test]
     fn marks_are_tagged_by_kind() {
@@ -2859,22 +3166,38 @@ Done: People can sign up.
     }
 
     /// A blocked row says what blocks it (or that it can't say), and the
-    /// ready set is a line of the rows that can start; only `blocks` gates.
+    /// ready set is a line of the rows that can start, by `#N`; only `blocks` gates.
     #[test]
     fn the_text_says_what_blocks_a_row_and_what_is_ready() {
         let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
         blocked.id = "row_b".into();
         blocked.marks = vec![
-            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None },
-            Mark::BlockedBy { number: None, title: None, repo: None },
+            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None, board: None, lead: None },
+            Mark::BlockedBy { number: None, title: None, repo: None, board: None, lead: None },
         ];
         let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
         free.id = "row_f".into();
+        free.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 8,
+            title: "Design".into(),
+            assignees: vec![],
+            labels: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+            closed_with: None,
+            closed_by: None,
+        });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
         let text = render(&v);
         assert!(text.contains("blocked by #7 · blocked by something you can't see"), "{text}");
-        assert!(text.contains("Ready (1): iss_free"), "{text}");
+        assert!(text.contains("Ready (1): #8"), "{text}");
         assert!(!text.contains("Ready (2)"), "{text}");
         assert!(RelationKind::Blocks.blocks_ready());
         assert!(
@@ -2884,5 +3207,47 @@ Done: People can sign up.
         );
         v.ready.clear();
         assert!(!render(&v).contains("Ready"), "no ready set, no line");
+    }
+
+    /// After the lanes, `Steps` lists each step's rows in the view's order
+    /// (what doesn't fit is counted), and `Chain` the longest open chain;
+    /// a board with one step has neither (#762).
+    #[test]
+    fn the_text_lists_the_steps_and_the_longest_chain() {
+        let mk = |n: u64, step: u32| {
+            let mut r = row(Pointer::Issue { id: format!("iss_{n}") }, Lane::Next, "T");
+            r.id = format!("row_{n}");
+            r.step = Some(step);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number: n,
+                title: "T".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+                closed_with: None,
+                closed_by: None,
+            });
+            r
+        };
+        let rows: Vec<Row> = (1..=40).map(|n| mk(500 + n, 1)).chain([mk(600, 2), mk(601, 3)]).collect();
+        let flat = view(lanes(vec![(Lane::Next, rows[..40].to_vec())]));
+        assert!(!render(&flat).contains("Steps"), "{}", render(&flat));
+        let mut v = view(lanes(vec![(Lane::Next, rows.clone())]));
+        v.sequence = rows.iter().rev().map(|r| r.id.clone()).collect();
+        v.chain = vec!["row_501".into(), "row_600".into(), "row_601".into()];
+        let text = render(&v);
+        let steps = text.split("\nSteps\n").nth(1).unwrap_or_else(|| panic!("{text}"));
+        let lines: Vec<&str> = steps.lines().collect();
+        assert!(lines[0].starts_with("1  #540 #539"), "{lines:?}");
+        assert!(lines[0].contains(" +"), "{lines:?}");
+        assert_eq!(&lines[1..], ["2  #600", "3  #601", "Chain: #501 → #600 → #601"]);
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 }

@@ -120,6 +120,7 @@ impl Daemon {
     /// Write the layout and pane details if anything changed since the last
     /// write.
     pub(super) fn save(&mut self) {
+        self.save_closed();
         // Whichever notices a new directory or command tells the clients
         // (at the next tick).
         self.refresh_meta();

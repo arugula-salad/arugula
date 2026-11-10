@@ -17,11 +17,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom, ChatThreadAgent, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "./agents";
+import { authorLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "./agents";
 import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { AuthorName } from "./agent-name";
 import { TypingLine } from "./typing";
 import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
@@ -29,14 +30,15 @@ import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alert
 import "./saved-hooks";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
-import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
+import { closeMenu, MenuHost, pressedShut, type MenuItem } from "../ui/menu";
+import { hookFor, itemsOf, openMsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
 import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
 import { MentionStatus } from "./mention-status";
-import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
+import { longPress, mayReact, ReactionChips, ReactMenu, ReactPicker, ReactRow } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
@@ -47,9 +49,11 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon, ReactIcon } from "./icons";
+import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
+import { Chip } from "../ui/state-chip";
 
 // ---- machines, by control's id for them
 
@@ -118,6 +122,8 @@ export function roomSigil(r: ChatRoom): string {
 export function AuthorAvatar({ m }: { m: ChatMessage }) {
   const gh = githubLogin(m);
   if (gh) return <MsgAvatar who={`github:${gh}`} name={gh} dot />;
+  const ci = ciName(m);
+  if (ci) return <MsgAvatar who={m.via ?? "ci:"} name={ci} dot />;
   return m.agent ? (
     <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} account={m.author || undefined} agent={m.agent.machine} dot />
   ) : (
@@ -202,22 +208,26 @@ function keepDraft(key: string, text: string) {
 }
 
 /** What the room says before anything's in it. */
-function emptyNote(r: ChatRoom): string {
+export type EmptyNote = { title: string; why?: string };
+function emptyNote(r: ChatRoom): EmptyNote {
   switch (r.kind) {
     case "channel":
       return r.private
-        ? `This is the start of the private channel #${r.name}. Only the people in it read it; write @name to notify one of them.`
-        : `This is the start of #${r.name}. Anyone in the team can join it; write @name to notify someone.`;
+        ? { title: `This is the start of #${r.name}.`, why: "Only the people in it read it. Write @name to notify one of them." }
+        : { title: `This is the start of #${r.name}.`, why: "Anyone in the team can join it. Write @name to notify someone." };
     case "dm":
-      return r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`;
+      return {
+        title: r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`,
+        why: "Write @name to bring someone else in.",
+      };
     case "pane":
-      return "Talk about this pane here. Whoever may read its thread sees it; write @name to notify one of them.";
+      return { title: "Talk about this pane here.", why: "Whoever may read its thread sees it. Write @name to notify one of them." };
     case "session":
-      return "Talk about this session here; write @name to notify someone.";
+      return { title: "Talk about this session here.", why: "Write @name to notify someone." };
     case "object":
-      return "Talk about this here. Its project's members read it; write @name to notify one of them.";
+      return { title: "Talk about this here.", why: "Its project's members read it. Write @name to notify one of them." };
     default:
-      return "Nothing kept here.";
+      return { title: "Nothing kept here." };
   }
 }
 
@@ -275,7 +285,7 @@ export function RoomBody({
    * issue's timeline (M201). */
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
-  empty?: string;
+  empty?: EmptyNote;
   /** The host's header shows whose agents reach the room (a chip), so the
    * room doesn't repeat it above its messages. */
   chip?: boolean;
@@ -435,8 +445,8 @@ export function RoomBody({
             Earlier messages
           </button>
         )}
-        {msgs === null && !error && <p class="thread-empty">Loading…</p>}
-        {msgs?.length === 0 && !between?.length && <p class="thread-empty">{empty ?? emptyNote(current)}</p>}
+        {msgs === null && !error && <BlockLoading inline what="the room" />}
+        {msgs?.length === 0 && !between?.length && <EmptyState {...(empty ?? emptyNote(current))} />}
         {msgs &&
           rowsOf(msgs, between).map((row, i, rows) => {
             const at = row.m ? row.m.at : row.x.at;
@@ -489,7 +499,7 @@ export function RoomBody({
         {!atBottom && (
           <div class="jump-newest">
             <button type="button" data-jump-newest onClick={toNewest}>
-              {unseen > 0 ? `↓ ${unseen} new ${unseen === 1 ? "message" : "messages"}` : "↓ Jump to newest"}
+              <ArrowIcon dir="down" size="xs" /> {unseen > 0 ? `${unseen} new ${unseen === 1 ? "message" : "messages"}` : "Jump to newest"}
             </button>
           </div>
         )}
@@ -542,8 +552,15 @@ export function RoomMessage({
    * worked out once by the list, not by each message (#438). */
   tokens?: Map<string, string>;
 }) {
+  // An agent's name is its tab (#632), so a post from another of its
+  // sessions starts a head of its own rather than reading as the last one's.
   const head =
-    !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
+    !prev ||
+    prev.author !== m.author ||
+    prev.agent?.machine !== m.agent?.machine ||
+    (prev.agent?.session ?? null) !== (m.agent?.session ?? null) ||
+    prev.via !== m.via ||
+    m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
@@ -553,17 +570,19 @@ export function RoomMessage({
   const reached = m.mentions.length ? [...tokens].filter(([, who]) => m.mentions.includes(who)).map(([t]) => t) : [];
   // The same function while it's for the same people: Markdown parses again for a new one.
   const landed = useCallback((t: string) => (chat.isMe(t) ? forMe : reached.includes(t.toLowerCase())), [forMe, reached.join(" ")]);
-  const [copied, setCopied] = useState(false);
   // `@geek`, when geek is a machine this message mentions: its icon (#428).
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
   const machineIcon = useCallback(
     (word: string) =>
-      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size={13} /> : null,
+      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size="xs" /> : null,
     [room.id, heard.join(" ")],
   );
-  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet
-  // a long-press opens on a phone (the emoji and the menu's items together).
-  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
+  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, the menu a
+  // long-press opens (a sheet on a phone: the emoji row over the items), or
+  // the picker that menu's "more…" opens in its place.
+  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | "picker" | null>(null);
+  const msgRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const may = mayReact(room, m);
   const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq, m.parent);
@@ -573,16 +592,7 @@ export function RoomMessage({
   const save = hookFor("save", ctx);
   const items = itemsOf(ctx, {
     quote: room.writable ? () => reply(m.text || m.quote || "") : undefined,
-    copied,
-    copy: () => {
-      void navigator.clipboard?.writeText(link).then(
-        () => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        },
-        () => {},
-      );
-    },
+    copy: () => void navigator.clipboard?.writeText(link).catch(() => {}),
     edit: mine && room.writable ? () => setEditing(true) : undefined,
     remove: owned
       ? () => {
@@ -590,6 +600,13 @@ export function RoomMessage({
         }
       : undefined,
   });
+  // The toolbar has these two as buttons; the long-press menu lists them first.
+  const onToolbar: MenuItem[] = [
+    ...(thread ? [{ label: "Reply in thread", icon: <ThreadIcon />, run: () => thread.run(ctx), attrs: { "data-msg-thread": "" } }] : []),
+    ...(save
+      ? [{ label: save.label?.(ctx) ?? "Save for later", icon: <BookmarkIcon on={save.on?.(ctx)} size="md" />, run: () => save.run(ctx), attrs: { "data-msg-save": "", ...(save.on === undefined ? {} : { "aria-pressed": !!save.on(ctx) }) } }]
+      : []),
+  ];
   if (isSystemLine(m)) {
     return (
       <div class="msg-system" data-msg={m.seq} data-system role="note">
@@ -624,6 +641,7 @@ export function RoomMessage({
       data-author={m.author}
       data-agent={m.agent?.machine}
       data-said={said ?? undefined}
+      ref={msgRef}
       {...longPress(() => setPanel("sheet"))}
     >
       <div class="msg-gutter">
@@ -648,35 +666,26 @@ export function RoomMessage({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
-            {m.agent?.session && !said && (
-              <span class="thread-session" title={`The session that wrote it, on ${m.agent.machine_name || "its machine"}`}>
-                · {m.agent.session}
-              </span>
-            )}
-            {m.agent && (
-              <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </span>
-            )}
+            {said ? <SaidHead ses={said} project={room.project} /> : <AuthorName m={m} open tag="span" />}
             {m.imported && (
-              <span class="msg-badge" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
+              <Chip kind="tag" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported
-              </span>
+              </Chip>
             )}
             {githubLogin(m) && (
-              <span class="msg-badge via-badge" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
+              <Chip kind="tag" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
                 on GitHub
-              </span>
+              </Chip>
             )}
-            {m.via && !said && !githubLogin(m) && (
-              <span
-                class="msg-badge via-badge"
-                title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`}
-                data-via={m.via}
-              >
+            {ciName(m) && (
+              <Chip kind="tag" title="Written by CI from its signed events, not by a person or an agent" data-via="ci">
+                CI
+              </Chip>
+            )}
+            {m.via && !said && !githubLogin(m) && !ciName(m) && (
+              <Chip kind="tag" title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`} data-via={m.via}>
                 via {answerVia(m, name)?.label ?? m.via}
-              </span>
+              </Chip>
             )}
             {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
           </div>
@@ -719,7 +728,7 @@ export function RoomMessage({
             {QUICK.slice(0, 3).map((e) => (
               <button
                 key={e}
-                class="msg-quick"
+                class="msg-quick bar-btn sq"
                 title={`React with ${e}`}
                 aria-label={`React with ${e}`}
                 aria-pressed={!!m.reactions?.some((c) => c.emoji === e && c.mine)}
@@ -729,18 +738,19 @@ export function RoomMessage({
                 {e}
               </button>
             ))}
-            <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
+            <button class="bar-btn sq" title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
               <ReactIcon />
             </button>
           </>
         )}
         {thread && (
-          <button title="Reply in thread" aria-label="Reply in thread" data-msg-thread onClick={() => thread.run(ctx)}>
-            ↩
-          </button>
+          <IconButton label="Reply in thread" class="bar-btn sq" data-msg-thread onClick={() => thread.run(ctx)}>
+            <ThreadIcon />
+          </IconButton>
         )}
         {save && (
           <button
+            class="bar-btn sq"
             title={save.label?.(ctx) ?? "Save for later"}
             aria-label={save.label?.(ctx) ?? "Save for later"}
             aria-pressed={save.on?.(ctx)}
@@ -751,29 +761,24 @@ export function RoomMessage({
             <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
-        <button title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
-          ⋯
-        </button>
+        <IconButton label="More actions" class="bar-btn sq" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more ref={moreRef} onClick={() => setPanel(panel === "menu" ? null : "menu")}>
+          <MoreIcon size="sm" />
+        </IconButton>
       </div>
-      {panel === "menu" && <MsgMenu items={items} close={close} />}
       {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
-      {panel === "sheet" && (
-        <ReactMenu room={room} m={m} close={close} setError={setError} react={may}>
-          {thread && (
-            <button type="button" role="menuitem" class="msg-item" data-msg-thread onClick={() => (close(), thread.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">↩</span>Reply in thread
-            </button>
-          )}
-          {save && (
-            <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">
-                <BookmarkIcon on={save.on?.(ctx)} />
-              </span>
-              {save.label?.(ctx) ?? "Save for later"}
-            </button>
-          )}
-          <MsgItems items={items} done={close} />
-        </ReactMenu>
+      {panel === "picker" && may && <ReactPicker room={room} m={m} from={msgRef} close={close} setError={setError} />}
+      {(panel === "menu" || panel === "sheet") && (
+        <MenuHost
+          key={panel}
+          show={() => {
+            const at = panel === "menu" ? moreRef.current : msgRef.current;
+            // The ⋯ lists the items; the long-press one the toolbar's too, under the emoji row.
+            const list = panel === "menu" ? items : [...onToolbar, ...(onToolbar.length ? ["separator" as const] : []), ...items];
+            const head = panel === "sheet" && may ? <ReactRow room={room} m={m} close={closeMenu} setError={setError} more={() => { closeMenu(); setPanel("picker"); }} /> : undefined;
+            return !!at && openMsgMenu(list, at, { head, button: panel === "menu", onClose: close });
+          }}
+          close={close}
+        />
       )}
     </div>
   );
@@ -833,7 +838,6 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
           }
         }}
       />
-      <span class="dim">Enter saves, Shift+Enter is a new line, Esc cancels</span>
     </div>
   );
 }
@@ -849,7 +853,7 @@ function PaneChip({ pane, quote }: { pane: NonNullable<ChatMessage["pane"]>; quo
   const asleep = pane.opens && !machineUp(api, pane.machine);
   const from = (
     <span class="thread-quote-from">
-      <span class="chat-pane-chip" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
+      <span class="chat-pane-ref" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
         ↳ {where}
       </span>
       {!pane.opens && <span class="dim"> · not a pane you can open</span>}
@@ -1074,7 +1078,10 @@ export function RoomCompose({
   // has lost focus by the pick, and its selection with it in some browsers),
   // then just after each pick.
   const at = useRef<{ from: number; to: number } | null>(null);
+  const emojiButton = useRef<HTMLButtonElement>(null);
   const openEmoji = () => {
+    // A press on the button just shut the picker: this click is the same tap.
+    if (pressedShut(emojiButton.current)) return;
     // The box blurred on the button's press and kept where it was (onBlur):
     // by the click, a rerender may have moved its caret to the end.
     const el = input.current;
@@ -1175,7 +1182,7 @@ export function RoomCompose({
                   <span class="mention-session-gap" aria-hidden="true" />
                 ) : (
                   <span class="avatar-wrap mention-machine-icon">
-                    <MachineIcon size={18} />
+                    <MachineIcon size="lg" />
                     <MachineDot machine={p.machine} />
                   </span>
                 )
@@ -1198,7 +1205,7 @@ export function RoomCompose({
           </button>
         </p>
       )}
-      {emoji && <EmojiPicker pick={insert} close={() => setEmoji(false)} />}
+      {emoji && <EmojiPicker from={emojiButton} pick={insert} close={() => setEmoji(false)} />}
       {emojis.length > 0 && (
         <ul class="mention-pick emoji-pick" role="listbox" aria-label="Emoji">
           {emojis.map((e, i) => (
@@ -1226,9 +1233,9 @@ export function RoomCompose({
               ↳ %{quote.pane} on {machineName(api, quote.machine, "a machine")}
             </span>
             <pre>{quote.text}</pre>
-            <button type="button" title="Don't quote it" aria-label="Don't quote it" onClick={() => setQuote(undefined)}>
-              ✕
-            </button>
+            <IconButton label="Don't quote it" onClick={() => setQuote(undefined)}>
+              <CloseIcon size="sm" />
+            </IconButton>
           </div>
         )}
         <AttachChips items={files.items} remove={files.remove} />
@@ -1292,24 +1299,15 @@ export function RoomCompose({
             }
           }}
         />
-        {canQuote && (<button type="button" class="compose-tool" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-            <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+        {canQuote && (<button type="button" class="compose-tool bar-btn sq" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
+          <QuotePaneIcon />
         </button>)}
         <AttachButton add={files.add} />
-        <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={openEmoji}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <circle cx="8" cy="8" r="6.2" />
-            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
-            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
-          </svg>
+        <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
+          <ReactIcon size="md" />
         </button>
-        <button class="compose-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-          </svg>
+        <button class="compose-send primary" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
+          <SendIcon />
         </button>
       </div>
       {thread && (

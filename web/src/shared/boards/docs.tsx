@@ -14,6 +14,8 @@ import type { BoardPointer, ProjectDoc } from "../proto";
 import { usePlatformApi } from "../platform-api";
 import { boards } from "./store";
 import { docHref, docWords } from "./text";
+import { ObjectChip } from "../ui/state-chip";
+import { CloseIcon, IconButton } from "../ui/icons";
 
 /** What a Doc's chip needs: a strip entry has all of it, a row's reference has the pointer and its `doc`. */
 export interface DocShown {
@@ -76,15 +78,19 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
     name = <span class="board-ptr dim">{d.title}</span>;
   }
   return (
-    <span class="sw-chip board-chip board-doc" data-board-doc={p.kind === "doc" || p.kind === "machine_doc" ? (p.kind === "doc" ? p.id : p.doc) : undefined} data-board-doc-kind={p.kind} data-board-doc-missing={d.missing ? "" : undefined}>
+    <ObjectChip
+      data-board-doc={p.kind === "doc" || p.kind === "machine_doc" ? (p.kind === "doc" ? p.id : p.doc) : undefined}
+      data-board-doc-kind={p.kind}
+      data-board-doc-missing={d.missing ? "" : undefined}
+    >
       {name}
       {tail && <span class="dim board-doc-words"> {tail}</span>}
       {remove && (
-        <button type="button" class="board-more board-doc-remove" aria-label={`Take ${d.title} off`} data-board-doc-remove onClick={remove}>
-          ×
-        </button>
+        <IconButton label={`Take ${d.title} off`} class="bar-btn sq board-more board-doc-remove" data-board-doc-remove onClick={remove}>
+          <CloseIcon size="xs" />
+        </IconButton>
       )}
-    </span>
+    </ObjectChip>
   );
 }
 

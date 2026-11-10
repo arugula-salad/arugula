@@ -92,6 +92,7 @@ pub const OWNERS: &[Entry] = &[
     ("board_read", None),
     ("board_write", None),
     ("tracker_write", None),
+    ("link", None),
     ("start_run", None),
     ("read_run", None),
     ("plan_deploy", None),

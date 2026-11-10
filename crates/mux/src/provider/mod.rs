@@ -1,14 +1,15 @@
 //! Sandbox providers (M4b): whoever runs the machines that aren't this
-//! host, behind one trait. The first adapter is the Sprites API
-//! (`labs/sprites.rs`), which covers wisp here on geek and Fly's hosted sprites.
+//! host, behind one trait. The adapter is loam's (`labs/loam.rs` in
+//! `arugulad-labs`); the Sprites adapter (wisp, Fly's sprites) was the
+//! first, and was removed with the older machine model.
 //!
 //! A provider can:
 //!
 //! - **list** its sandboxes and say what state each is in (`running`,
 //!   `warm`, `cold`), from its API: asking never wakes a sandbox;
 //! - **create**, **delete** and **wake** one;
-//! - open a **byte stream** to a port inside one (the Sprites proxy): how a
-//!   browser block reaches a dev server;
+//! - open a **byte stream** to a port inside one (loam's port stream): how
+//!   a browser block reaches a dev server;
 //! - run an **exec TTY** (create, attach, resize, kill): VM panes, and a
 //!   shell on a sandbox with no daemon in it;
 //! - run a non-TTY exec with pipes (agent servers in VMs), and a command to
@@ -22,11 +23,11 @@
 //! **Differences are capabilities, not assumptions** ([`Caps`]). S4 found
 //! two "compatible" implementations differ in how much exec output they
 //! replay, who owns a reattached session, how a kill behaves and what
-//! "cold" means; code asks instead of assuming wisp.
+//! "cold" means; code asks instead of assuming one provider.
 //!
-//! The trait and its types stay in core, as the interface; the Sprites
-//! adapter and what runs on it are Labs (`labs/`). A build without Labs has
-//! no adapter, so none of this is ever used there.
+//! The trait and its types stay in core, as the interface; the adapter
+//! and what runs on it are Labs (`labs/`). A build without Labs has no
+//! adapter, so none of this is ever used there.
 #![cfg_attr(not(feature = "labs"), allow(dead_code))]
 
 use std::{io, sync::Arc, time::Duration};
@@ -52,7 +53,7 @@ pub type Conn = Box<dyn Io>;
 #[serde(rename_all = "snake_case")]
 pub enum Cold {
     /// A real reboot: processes are gone, the disk stays; services start
-    /// again at the next wake (wisp, after `--warm-ttl`).
+    /// again at the next wake (what wisp did after its warm TTL).
     Reboot,
     /// Memory is restored: processes carry on (what S4 saw on Fly).
     Restore,
@@ -63,7 +64,7 @@ pub enum Cold {
 pub struct Caps {
     /// How much output a detached exec keeps and resends on reattach, in
     /// bytes. A shell with no daemon behind it has no more history than
-    /// this while nothing is attached: wisp keeps 1 MiB, Fly about 6.5 KB.
+    /// this while nothing is attached: loam keeps 1 MiB, Fly kept about 6.5 KB.
     pub exec_replay: u64,
     /// Reattaching can resume from a byte offset, so nothing is repeated.
     pub exec_offset: bool,
@@ -193,7 +194,7 @@ pub struct Pipe {
 /// A sandbox provider. Methods that take a name never create the sandbox
 /// unless they say so; none of the status calls wake it.
 pub trait Provider: Send + Sync + std::fmt::Debug {
-    /// Short name, kept with machines and hosts: `wisp`, `sprites`.
+    /// Short name, kept with machines: `loam`.
     fn name(&self) -> &str;
     fn caps(&self) -> &Caps;
 
@@ -268,7 +269,7 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
 }
 
 /// Tries, half a second apart, before giving up on a provider that isn't
-/// answering (wispd may still be starting, at boot).
+/// answering (a network blip, a rollout of the provider).
 pub const PATIENCE: u32 = 120;
 
 /// Make sure the sandbox exists, creating it if not; waits for a provider

@@ -4,8 +4,8 @@
 // holds the provider.
 
 import { opPath } from "../ops";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "../../shared/ui/modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "../../shared/ui/modal";
 import type { RunRequest, RunResponse } from "../../shared/proto";
 
 interface SandboxInfo {
@@ -61,9 +61,6 @@ function size(bytes: number): string {
 const ORDER: Record<string, number> = { running: 0, warm: 1, cold: 2 };
 
 function Sandboxes({ close }: { close: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // UI audit #150: takes the focus, keeps it, and Escape closes it.
-  useModal(ref, close);
   const [list, setList] = useState<SandboxList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -96,11 +93,18 @@ function Sandboxes({ close }: { close: () => void }) {
     .sort((a, b) => (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3) || a.name.localeCompare(b.name));
 
   return (
-    <div class="prompt-backdrop" role="dialog" aria-modal="true" aria-label="Sandboxes" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div ref={ref} class="prompt sandboxes">
-        <h2>Sandboxes{list ? ` on ${list.provider.name}` : ""}</h2>
+    <Modal
+      class="sandboxes"
+      title={`Sandboxes${list ? ` on ${list.provider.name}` : ""}`}
+      close={close}
+      buttons={
+        <button class="secondary" type="button" onClick={close}>
+          Close
+        </button>
+      }
+    >
         {list && (
-          <p class="hint">
+          <p class="dim">
             <b>Shell</b>: no daemon there, so it's disposable. While nothing follows it, {list.provider.name} keeps only{" "}
             {size(list.provider.exec_replay)} of its output, and it ends when its pane closes.
           </p>
@@ -129,12 +133,6 @@ function Sandboxes({ close }: { close: () => void }) {
             </li>
           ))}
         </ul>
-        <div class="prompt-buttons">
-          <button class="secondary" type="button" onClick={close}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

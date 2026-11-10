@@ -129,7 +129,8 @@ const ALL: [&str; 8] = [
     "secrets.write",
 ];
 
-/// t's environment `production` (the chant-fly driver), made by a.
+/// t's environment `production` (the fake driver: a chant-fly deploy plans
+/// first, #1985, and is asked for once chant has), made by a.
 async fn production(base: &str, t: &str) -> String {
     let (st, env) = call(
         base,
@@ -137,8 +138,7 @@ async fn production(base: &str, t: &str) -> String {
         "POST",
         &format!("/api/projects/{t}/environments"),
         Some(json!({
-            "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
-            "settings": { "fly_app": "acme-app", "chant_env": "github" },
+            "name": "production", "driver": "fake", "secret_names": ["APP_TOKEN"],
         })),
     )
     .await;

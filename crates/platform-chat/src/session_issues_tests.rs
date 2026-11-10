@@ -9,7 +9,7 @@ use crate::{
     PlatformPort as _,
     agents_tests::seeded,
     chat_tests::call,
-    db::sessions::{NewPrompt, NewSession, Source},
+    db::sessions::{NewAgentSession, NewPrompt, Source},
     work::HostedMachine,
 };
 
@@ -22,7 +22,7 @@ fn session(app: &crate::Platform, project: &str, ws: &str, asker: &str) -> Strin
     else {
         panic!("no workspace");
     };
-    let new = NewSession {
+    let new = NewAgentSession {
         project,
         room: "ch_general",
         parent_seq: ws.len() as u64 + ws.bytes().last().map_or(0, u64::from),
@@ -62,6 +62,30 @@ async fn file(base: &str, by: &str, project: &str, title: &str) -> serde_json::V
     v
 }
 
+/// Issue comments stay with chat (Arugula #746): with chat off for its
+/// asker, a session reads the issue without its comments, and is told
+/// they're in chat.
+#[tokio::test]
+async fn a_session_whose_asker_has_chat_off_gets_no_comments() {
+    let (hub, app, base, t, _u) = seeded().await;
+    file(&base, "a", &t, "x").await;
+    let ses = session(&app, &t, "hw_1", "b");
+    let m = machine(&t, "hw_1", "box1");
+    let comment = Op::Comment { number: 1, text: "a word in the thread".into() };
+    assert!(matches!(ask(&app, &m, &ses, comment).await, Given::Commented { .. }));
+    let Given::Shown { comments, .. } = ask(&app, &m, &ses, Op::Show { number: 1 }).await else { panic!() };
+    assert_eq!(comments.len(), 1);
+
+    hub.flag("account:b", false);
+    crate::cache::catch_up(&app).await.unwrap();
+    let Given::Shown { issue, comments, more_comments, comments_in_chat, .. } =
+        ask(&app, &m, &ses, Op::Show { number: 1 }).await
+    else {
+        panic!()
+    };
+    assert_eq!((issue.number, comments.len(), more_comments, comments_in_chat), (1, 0, false, true));
+}
+
 /// The asker's agent lists, reads and comments on its own project's
 /// issues, and a comment is the session's own (no author, `via`
 /// `said:<ses>`, as its answers are), in the issue's thread, where people
@@ -79,13 +103,14 @@ async fn a_sessions_agent_reads_and_comments_in_its_project() {
     let titles: Vec<&str> = list.issues.iter().map(|i| i.title.as_str()).collect();
     assert_eq!((list.project.as_str(), titles), (t.as_str(), vec!["the canary fails"]), "never u's");
 
-    let Given::Shown { issue, events, comments, more_comments } = ask(&app, &m, &ses, Op::Show { number: 1 }).await
+    let Given::Shown { issue, events, comments, more_comments, comments_in_chat } =
+        ask(&app, &m, &ses, Op::Show { number: 1 }).await
     else {
         panic!()
     };
     assert_eq!(
-        (issue.id.as_str(), events.len(), comments.len(), more_comments),
-        (one["id"].as_str().unwrap(), 1, 0, false)
+        (issue.id.as_str(), events.len(), comments.len(), more_comments, comments_in_chat),
+        (one["id"].as_str().unwrap(), 1, 0, false, false)
     );
 
     let comment = Op::Comment { number: 1, text: "bisected it to Tuesday".into() };
@@ -371,10 +396,13 @@ async fn a_sessions_agent_makes_writes_and_reads_its_projects_docs() {
 /// still reads the copy.
 #[tokio::test]
 async fn a_session_doesnt_write_a_machines_copy() {
-    let (_hub, app, base, t, _u) = seeded().await;
+    let (hub, app, base, t, _u) = seeded().await;
+    // a's personal machine: a team's machine copies nothing (native #673).
+    hub.daemon("apad", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
     let ses = session(&app, &t, "hw_2", "a");
     let m = machine(&t, "hw_2", "box1");
-    // geek (a's machine) copies a Doc up; the copy sits in the team's
+    // apad (a's machine) copies a Doc up; the copy sits in the team's
     // project, as a move left it before the move route went (native #673).
     let body = serde_json::to_vec(
         &json!({ "title": "From geek", "sections": [{ "id": "s1", "heading": "One", "body": "v1" }] }),
@@ -382,7 +410,7 @@ async fn a_session_doesnt_write_a_machines_copy() {
     .unwrap();
     let r = reqwest::Client::new()
         .put(format!("{base}/api/daemon/docs/d1"))
-        .header("x-test-daemon", "a geek")
+        .header("x-test-daemon", "a apad")
         .header("content-type", "application/json")
         .body(body)
         .send()
@@ -398,11 +426,11 @@ async fn a_session_doesnt_write_a_machines_copy() {
     }
 
     let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocRead { id: Some(id.clone()) }).await else { panic!() };
-    assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("geek-box")));
+    assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("apad-box")));
     let w = Op::DocWrite { id, write: fill("s1", "the session's") };
     let refused = ask(&app, &m, &ses, w).await;
     let why = why(&refused);
-    assert!(why.contains("copy") && why.contains("geek-box"), "{why}");
+    assert!(why.contains("copy") && why.contains("apad-box"), "{why}");
 }
 
 /// A session's Doc calls are checked as its asker's and against the

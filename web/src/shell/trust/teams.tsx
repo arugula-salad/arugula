@@ -26,6 +26,27 @@ const PUSHED = FLAGS.filter((f) => !f.local_only);
  * off too. */
 const CHAT = "chat";
 
+/** The account's own word for its machines' Doc copies (native #673),
+ * apart from chat: what copies the Docs of a machine joined to this
+ * account alone up to its personal project. A team's machine never copies.
+ * Off is kept as `false`, never unset. */
+const COPIES = "doc-copies";
+
+function AccountDocs({ on, set }: { on: boolean; set: (on: boolean) => void }) {
+  return (
+    <section class="team" data-account-docs>
+      <h3>Your Docs on the platform</h3>
+      <label class="control-check" data-account-docs-check>
+        <input type="checkbox" checked={on} aria-label="Copy my machines' Docs to the platform" onChange={(e) => set((e.target as HTMLInputElement).checked)} />
+        <span>
+          Copy the Docs of machines joined to your account alone up to your Docs on the platform, where they read with the machine asleep. A team's machine doesn't copy its Docs.
+          <span class="dim"> Off stops new and changed Docs from being copied. Copies already there stay until you delete them.</span>
+        </span>
+      </label>
+    </section>
+  );
+}
+
 function TeamChat({ team, on, edit, set }: { team: Team; on: boolean; edit: boolean; set: (on: boolean) => void }) {
   return (
     <>
@@ -137,6 +158,7 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
       {s.teams.map((t) => (
         <TeamSection key={t.team} s={s} t={t} act={act} kept={kept?.teams[t.team]} labs={labs?.teams[t.team]} setFlag={setFlag(t.team)} />
       ))}
+      {kept ? <AccountDocs on={kept.account[COPIES] === true} set={(on) => setFlag(undefined)(COPIES, on)} /> : null}
       {labs ? (
         <section class="team" data-account-labs>
           <h3>Your machines</h3>
@@ -326,6 +348,7 @@ function TeamSection({
                 <span>
                   {t.names?.[c.account] ?? c.name} <span class="dim">· version {c.version}</span>
                   <span class="control-device-label">
+                    {/* lint-icons: text — an arrow between two fingerprints */}
                     <span class="fingerprint-inline">{fingerprint(c.from)}</span> → <span class="fingerprint-inline">{fingerprint(c.to)}</span>
                   </span>
                 </span>

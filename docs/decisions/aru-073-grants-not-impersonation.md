@@ -139,5 +139,17 @@ boards, `sessions.start` follows sessions and stops the owner's own) is
 given, and lists with what it does. The one list is `WRITE_POWERS`. A
 grant from before stays and lists with its limit, so a role change brings
 the rest of it back. Both only narrow what's possible.
+**Every member sees a project's grants** (amended, Jake, 2026-11-04,
+Arugula #682, from the access design's Option A). The project's Access view
+(`GET /api/projects/{id}/grants`, `crates/platform/src/project_grants.rs`)
+lists, to any member, every live grant over the project, machines' and
+tokens': whose it is, its name, what it may do and what it does now when
+that's less than the power (the same `limited` the grants list says), and
+that each member's machines hold `cloud.drive`, which is over the account,
+acts as its owner within their role on everything a `CloudDriver` route
+serves, and is never revoked per project. A token's or a grant's id, which
+only a revoke needs, is the project's owners', since only they revoke what
+they didn't give; a giver who left the project is a former member, unnamed.
+Nothing here changes what's enforced.
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
 From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236), #1317 (step 7, planned in #1290).

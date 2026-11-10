@@ -41,10 +41,23 @@ pub trait People: Send + Sync + Debug {
     fn as_owner(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
     fn team_people(&self) -> Vec<Principal>;
+    /// Whether the team's roster is known here yet (a machine in no team
+    /// knows it has none), so who of the team reads what can be said.
+    fn roster_known(&self) -> bool {
+        true
+    }
+    /// People kept out for now only because their team is locked: by
+    /// principal id, with the team when it's one a session was shared with
+    /// (`None`: this machine's own team). A lock is lifted, so what their
+    /// team gives them they haven't lost, though they're refused it while
+    /// it lasts.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
+        Vec::new()
+    }
 }
 
 /// The Claude Code conversations on this machine (#146).
-pub trait AgentSessions: Send + Sync + Debug {
+pub trait Conversations: Send + Sync + Debug {
     /// The transcript of a conversation, by id or a unique prefix.
     fn transcript(&self, id: &str) -> Option<PathBuf>;
     /// The conversation each of our panes' Claude Code holds now, by pane,

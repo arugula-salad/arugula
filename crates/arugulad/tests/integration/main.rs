@@ -87,8 +87,6 @@ mod hosts;
 mod ide;
 mod invite;
 mod local_auth;
-#[cfg(feature = "labs")]
-mod machines;
 mod mcp;
 mod memory;
 mod mention_agent_block;
@@ -108,6 +106,7 @@ mod remote_layout;
 mod resume;
 mod review;
 mod session_history;
+mod session_links;
 // Stand-in shell scripts for Claude Code, Node and npm.
 #[cfg(unix)]
 mod setup;
@@ -121,8 +120,6 @@ mod telemetry;
 mod upgrade;
 mod version;
 mod vm_layout;
-#[cfg(feature = "labs")]
-mod vm_reboot;
 mod waits;
 mod windows;
 #[cfg(feature = "labs")]

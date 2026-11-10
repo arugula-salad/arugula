@@ -136,6 +136,8 @@ impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
 
+impl Request for crate::api::LinksQuery {}
+
 impl Request for crate::api::SendRequest {}
 
 impl Request for crate::api::KeysRequest {}
@@ -179,6 +181,8 @@ impl Request for crate::api::ConversationsQuery {}
 impl Request for crate::api::OpenConversationRequest {}
 
 impl Request for crate::api::DocOpenRequest {}
+
+impl Request for crate::api::DocShareRequest {}
 
 impl Request for crate::api::Subscription {}
 
@@ -282,6 +286,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocLinkDelete);
         $m!($crate::op::ops::DocsList);
         $m!($crate::op::ops::DocOpen);
+        $m!($crate::op::ops::DocShare);
         $m!($crate::op::ops::DocDelete);
         $m!($crate::op::ops::DocPreviewGet);
         $m!($crate::op::ops::DocRead);
@@ -355,6 +360,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::AclSet);
         $m!($crate::op::ops::AccessGet);
         $m!($crate::op::ops::LinkMint);
+        $m!($crate::op::ops::LinksList);
+        $m!($crate::op::ops::LinkRevoke);
         $m!($crate::op::ops::InviteSend);
         $m!($crate::op::ops::TeamPinsGet);
         $m!($crate::op::ops::TeamPinsSet);
@@ -383,16 +390,16 @@ pub mod ops {
         api::{
             AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
             ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
-            DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
-            GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
-            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
-            MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest,
-            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
-            NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
-            WaitRequest, WaitResult, WithdrawRequest,
+            DocOpened, DocPreview, DocRow, DocShareRequest, DriverEntry, Empty, FollowUpRequest, FollowedUp,
+            FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest, MouseRequest, NotifyPref, NotifyRequest,
+            NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies,
+            NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
+            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, SessionLink,
+            Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
+            Subscription, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
@@ -655,6 +662,24 @@ pub mod ops {
         type Path = ();
         type Req = DocOpenRequest;
         type Res = DocOpened;
+    }
+
+    /// `POST /api/docs/ID/share` (Arugula #819): share a Doc with a link, or
+    /// update the link it has, whether or not a block shows it. The owner's,
+    /// and never an agent's, as the block's own `doc_share` is. The answer
+    /// holds the key, as `DocLinkGet`'s does.
+    pub struct DocShare;
+
+    impl Op for DocShare {
+        const NAME: &'static str = "doc.share";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/{id}/share";
+        const ACCESS: Access = Access::Owner;
+        // The URL holds the key that opens the Doc.
+        const CREDENTIAL: bool = true;
+        type Path = String;
+        type Req = DocShareRequest;
+        type Res = DocLinkUrl;
     }
 
     /// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, read
@@ -1591,9 +1616,10 @@ pub mod ops {
     }
 
     /// `GET /api/guests` (M65): the ssh invites made here. A credential. A
-    /// build without Labs answers 501 to every method. Like making and
-    /// revoking one, refused where Guest SSH access is off (a sharing
-    /// setting, `crate::sharing`, native #205; it was the `guest-ssh` flag).
+    /// build without Labs answers 501 to every method. Listing and revoking
+    /// work whatever Guest SSH access says (a sharing setting,
+    /// `crate::sharing`, native #205; it was the `guest-ssh` flag); off,
+    /// there are none, since turning it off ends them (native #270).
     pub struct GuestsList;
 
     impl Op for GuestsList {
@@ -1608,7 +1634,7 @@ pub mod ops {
     }
 
     /// `POST /api/guests`: an ssh invite to one terminal pane (`arugula share
-    /// --guest`).
+    /// --guest`). Refused where Guest SSH access is off.
     pub struct GuestMint;
 
     impl Op for GuestMint {
@@ -1689,6 +1715,36 @@ pub mod ops {
         type Path = ();
         type Req = LinkRequest;
         type Res = serde_json::Value;
+    }
+
+    /// `GET /api/links`: the read-only links to sessions that still work
+    /// (`arugula links`), or one session's with `?session=N`. No keys, so
+    /// not a credential: it says no more than `GET /api/acl` does.
+    pub struct LinksList;
+
+    impl Op for LinksList {
+        const NAME: &'static str = "links.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/links";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = LinksQuery;
+        type Res = Vec<SessionLink>;
+    }
+
+    /// `DELETE /api/links/ID`: end a read-only link now (`arugula links
+    /// revoke`). Its viewers are cut off at once, and control stops letting
+    /// them through once no other link is live.
+    pub struct LinkRevoke;
+
+    impl Op for LinkRevoke {
+        const NAME: &'static str = "link.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/links/{id}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
     }
 
     /// `POST /api/invite` (#233): share a session with someone and tell them

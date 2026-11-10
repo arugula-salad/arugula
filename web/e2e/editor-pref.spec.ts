@@ -76,7 +76,7 @@ test.beforeAll(async () => {
     ],
     {
       stdio: "ignore",
-      env: { ...process.env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent", XDG_CONFIG_HOME: join(dir, "config"), XDG_DATA_HOME: join(dir, "data"), XDG_STATE_HOME: join(dir, "xstate") },
+      env: { ...process.env, XDG_CONFIG_HOME: join(dir, "config"), XDG_DATA_HOME: join(dir, "data"), XDG_STATE_HOME: join(dir, "xstate") },
     },
   );
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
@@ -332,7 +332,7 @@ test("+ Pane › Editor: Edit in nvim sets the Editor preference, and unticking 
   const drawer = page.locator("[data-add-pane-drawer]");
   await drawer.locator('[data-kind="editor"]').click();
   const box = drawer.locator("[data-edit-in-nvim]");
-  await expect(drawer.getByText("Opens files in nvim, in a pane. Nothing to install.")).toBeVisible();
+  await expect(drawer.getByText("Opens files in nvim, in a pane.", { exact: true })).toBeVisible();
   await expect(box).not.toBeChecked();
   await box.check();
   await expect(drawer.locator("[data-add-pane-destination]")).toContainText("nvim on");

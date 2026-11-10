@@ -7,12 +7,16 @@
 //   node scripts/release-notes.mjs FROM TO VERSION
 //
 // The notes FROM..TO add up to, for `scripts/release bump --notes`, on stdout.
-// Exits 3, printing nothing, when no commit in the range added a note. With
+// Exits 3, printing nothing, when no commit in the range added a note, or when
+// a newer release file that has no tag yet already has them all. With
 // --check, it instead validates every note the range added and prints nothing.
 //
 // A note can name its pull request's number only through the commit that added
 // it, so a note is read from the commit that added it, as TO has it.
 import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { LINE_MAX, TITLE_MAX } from "./whats-new.mjs";
 
 const SECTIONS = ["Added", "Changed", "Fixed", "Removed"];
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -37,8 +41,10 @@ export function parseNote(name, text) {
   if (!SECTIONS.includes(section)) throw new Error(`docs/notes/${name}: section is one of ${SECTIONS.join(", ")}, not ${section}`);
   if (!title) throw new Error(`docs/notes/${name}: no title`);
   if (!line) throw new Error(`docs/notes/${name}: no line`);
-  if (title.length > 80) throw new Error(`docs/notes/${name}: title is over 80 characters`);
-  if (line.length > 240) throw new Error(`docs/notes/${name}: line is over 240 characters`);
+  // Any note can be a headline (a release with none marked uses its first), so
+  // every note is held to a headline's limits.
+  if (title.length > TITLE_MAX) throw new Error(`docs/notes/${name}: title is over ${TITLE_MAX} characters`);
+  if (line.length > LINE_MAX) throw new Error(`docs/notes/${name}: line is over ${LINE_MAX} characters`);
   let tryIt;
   if (fields.try) {
     try {
@@ -91,6 +97,37 @@ export function collect(from, to) {
   return { notes, silent };
 }
 
+const parts = (v) => v.split(".").map(Number);
+const after = (a, b) => {
+  const [x, y] = [parts(a), parts(b)];
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+};
+
+// The headline ids of the release files newer than the tag FROM that have no
+// tag of their own, other than VERSION's, each with its version. A hand cut's docs/releases file reaches
+// main hours before its tag, so a train counting from the last tag would
+// offer its notes again, and release refuses a headline id that two files
+// have (Arugula #799). Read from the checkout, as that check does.
+export function promised(from, version) {
+  const tag = from.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
+  const dir = join(git("rev-parse", "--show-toplevel").trim(), "docs/releases");
+  const ids = new Map();
+  if (!tag || !existsSync(dir)) return ids;
+  for (const file of readdirSync(dir)) {
+    if (!/^\d+\.\d+\.\d+\.md$/.test(file)) continue;
+    const v = file.slice(0, -3);
+    if (after(v, tag) <= 0 || v === version || git("tag", "-l", `v${v}`).trim()) continue;
+    const block = readFileSync(join(dir, file), "utf8").match(/```whats-new\n([\s\S]*?)```/)?.[1];
+    if (!block) continue;
+    try {
+      for (const item of JSON.parse(block)) ids.set(item.id, v);
+    } catch {
+      // whats-new.mjs says what's wrong with it.
+    }
+  }
+  return ids;
+}
+
 // The markdown a release's tag carries: scripts/whats-new.mjs reads its block.
 export function render(version, notes, silent) {
   const headlined = notes.filter((n) => n.headline);
@@ -126,8 +163,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(2);
   }
   try {
-    const { notes, silent } = collect(from, to);
+    const { notes: all, silent } = collect(from, to);
     if (check) process.exit(0);
+    const coming = promised(from, version);
+    const notes = all.filter((n) => {
+      if (coming.has(n.id)) console.error(`${n.id} is in ${coming.get(n.id)}'s notes, which has no tag yet: leaving it to that release`);
+      return !coming.has(n.id);
+    });
     if (notes.length === 0) {
       console.error(`no pull request in ${from}..${to} added a note`);
       process.exit(3);

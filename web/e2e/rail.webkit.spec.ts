@@ -44,8 +44,28 @@ test("Projects is the rail's first place, above Panes, and the bar has no Projec
   await expect(projects).toHaveAttribute("href", `${app}/?back`);
   // The way to the platform page is the rail's now, not the bar's.
   await expect(alice.locator("[data-open-projects]")).toHaveCount(1);
+  // Docs is beside it, after Chat: the platform's /docs, in a tab of its own (Arugula #418).
+  const docs = alice.locator(".ws-rail [data-open-docs-all]");
+  await expect(docs).toHaveCount(1);
+  await expect(docs).toHaveAttribute("href", `${app}/docs`);
+  await expect(docs).toHaveAttribute("target", "arugula-platform");
+  await expect(docs).not.toHaveClass(/\bhere\b/);
   await expect(alice.getByText("Projects ↗")).toHaveCount(0);
   await expect(alice.locator(".ws-head, .bar").locator("a", { hasText: "Projects" })).toHaveCount(0);
+});
+
+// Arugula #796: a machine's Docs is the rail's Docs, under the panes' header.
+test("on the machine's Docs the rail lights Docs, not Panes, and the header is the panes'", async () => {
+  await alice.locator("[data-machine-docs]").click();
+  await expect(alice.locator("[data-docs-page]")).toBeVisible();
+  await expect(alice.locator(".ws-rail [data-open-docs-all]")).toHaveAttribute("aria-current", "page");
+  await expect(alice.locator(".ws-rail [data-open-panes]")).not.toHaveAttribute("aria-current", "page");
+  await expect(alice.locator(".app-bar")).toHaveCount(0);
+  await expect(alice.locator(".ws-head [data-machine-docs]")).toHaveAttribute("aria-current", "page");
+  await alice.locator(".ws-head [data-machine-panes]").click();
+  await expect(alice.locator("[data-docs-page]")).toHaveCount(0);
+  await expect(alice.locator(".ws-rail [data-open-panes]")).toHaveAttribute("aria-current", "page");
+  await expect(alice.locator(".ws-rail [data-open-docs-all]")).not.toHaveAttribute("aria-current", "page");
 });
 
 test("in a browser, Projects opens the platform page in a tab of its own", async () => {

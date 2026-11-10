@@ -431,6 +431,8 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
     let ids = session_ids(ids)?;
     let started = Instant::now();
     let body = |wait: u64| json!({ "sessions": ids, "wait": wait });
+    // Why control didn't answer the last ask, if it didn't.
+    let missed = std::sync::Mutex::new(None::<String>);
     let poll = async {
         loop {
             let v = match c.app().control.cloud(Method::POST, AGENT_SESSIONS_WAIT, Some(&body(SESSION_WAIT_MAX))).await
@@ -441,8 +443,17 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
+                // A long wait is many asks: one control didn't answer (a
+                // dropped connection, a timeout) is asked again, not the
+                // wait's end (Arugula #621).
+                Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
+                    *missed.lock().unwrap() = Some(e.to_string());
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
                 Err(e) => return Err(said(e)),
             };
+            *missed.lock().unwrap() = None;
             if v["settled"].as_array().is_some_and(|s| !s.is_empty()) {
                 return Ok::<_, String>(v);
             }
@@ -451,15 +462,23 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
     let what = format!("waiting for {}", ids.join(", "));
     let Some(v) = c.waiting(&what, limit, poll).await else {
         let secs = started.elapsed().as_secs();
-        let v = sessions_call(c, AGENT_SESSIONS_WAIT, body(0)).await?;
-        let rows = v["sessions"].as_array().cloned().unwrap_or_default();
-        return done(
-            format!(
-                "None finished after {secs}s: call wait with agent_session again.\n{}",
-                rows.iter().map(row_line).collect::<Vec<_>>().join("\n")
-            ),
-            json!({ "state": "still running", "sessions": rows }),
-        );
+        let mut missed = missed.into_inner().unwrap();
+        let rows = match c.app().control.cloud(Method::POST, AGENT_SESSIONS_WAIT, Some(&body(0))).await {
+            Ok(v) => v["sessions"].as_array().cloned().unwrap_or_default(),
+            Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
+                missed = Some(e.to_string());
+                vec![]
+            }
+            Err(e) => return Err(said(e)),
+        };
+        let mut s = format!("None finished after {secs}s: call wait with agent_session again.");
+        if let Some(m) = missed {
+            s += &format!(" The last time control was asked it didn't answer ({m}).");
+        }
+        for r in &rows {
+            s += &format!("\n{}", row_line(r));
+        }
+        return done(s, json!({ "state": "still running", "sessions": rows }));
     };
     let v = v?;
     let settled: Vec<String> =

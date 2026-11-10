@@ -1,9 +1,16 @@
+import { CloseIcon, IconButton } from "./icons";
+import { useSubscribe } from "./hooks";
+import { dialogUp, subscribeDialogs } from "./modal";
 // The question about usage counts (the telemetry track): a card in the
-// corner, not a dialog, so nothing waits on it. Control's page asks for the
+// corner, not a dialog (#690), so nothing waits on it: no backdrop, no focus
+// trap, and the page under it stays usable. Its title and footer are the
+// dialogs' (15/600; buttons.css order, Cancel first). Control's page asks for the
 // account (M104, ./account-telemetry.tsx); the machine's web client
 // asks for the machine (M103, shell/ui/machine-telemetry.tsx), with its own
 // words and the machine's preview under *What's sent*. Closing it without
-// answering asks again on the next load.
+// answering asks again on the next load. While a dialog is up (Getting
+// started's greeting on a first visit) it waits, so one panel shows at a
+// time, as modal.tsx's dialogUp says (Arugula #280).
 
 export function TelemetryCard({
   about,
@@ -19,12 +26,14 @@ export function TelemetryCard({
   answer: (on: boolean) => void;
   later: () => void;
 }) {
+  useSubscribe(subscribeDialogs);
+  if (dialogUp()) return null;
   return (
-    <div class="telemetry-card" role="dialog" aria-labelledby="telemetry-card-title" data-telemetry-card>
-      <button class="modal-close" aria-label="Not now" title="Not now" onClick={later}>
-        ×
-      </button>
-      <h2 id="telemetry-card-title">Help improve Arugula?</h2>
+    <section class="telemetry-card" role="region" aria-label="Help improve Arugula?" data-telemetry-card>
+      <IconButton label="Not now" class="modal-close" onClick={later}>
+        <CloseIcon size="md" />
+      </IconButton>
+      <h2>Help improve Arugula?</h2>
       <p>{about}</p>
       {preview !== undefined && <TelemetryPreview preview={preview} />}
       <div class="prompt-buttons">
@@ -35,7 +44,7 @@ export function TelemetryCard({
           Yes, send them
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 

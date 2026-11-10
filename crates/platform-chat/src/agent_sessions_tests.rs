@@ -17,7 +17,7 @@ use crate::{
     chat_tests::{TestHub, call},
     db::{
         projects::{SESSIONS_REPLY, SESSIONS_START, THREADS_POST},
-        sessions::{ActionKind, Session, State},
+        sessions::{ActionKind, AgentSession, State},
     },
     grants::AGENT_UNGRANTED,
     sessions_hydrate_tests::{platform, post_in, sessions, take},
@@ -54,7 +54,7 @@ async fn joined(hub: &TestHub, app: &Platform) {
     crate::cache::catch_up(app).await.unwrap();
 }
 
-fn session_of(app: &Platform, project: &str, parent: i64) -> Option<Session> {
+fn session_of(app: &Platform, project: &str, parent: i64) -> Option<AgentSession> {
     sessions(app, project).into_iter().find(|s| s.parent_seq == parent as u64)
 }
 
@@ -277,7 +277,7 @@ async fn asked(
     keys: &arugula_e2e::DeviceKeys,
     who: &str,
     text: &str,
-) -> (i64, Session) {
+) -> (i64, AgentSession) {
     let p = post_in(base, ROOM, who, text, None).await["seq"].as_i64().unwrap();
     let s = session_of(app, project, p).expect("a session");
     take(app, keys, &s.id);

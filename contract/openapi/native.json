@@ -6937,6 +6937,13 @@
           "board": {
             "$ref": "#/components/schemas/Board"
           },
+          "chain": {
+            "description": "The longest chain of open rows (`row_…`), first to last; empty when\nno row waits on another (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "docs": {
             "default": [],
             "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
@@ -6950,6 +6957,13 @@
             "description": "Empty for a board with none; an old client ignores it.",
             "items": {
               "$ref": "#/components/schemas/Group"
+            },
+            "type": "array"
+          },
+          "order": {
+            "description": "Every row (`row_…`) as the board stores them: by group, in the\ngroups' order, then by position inside each, those with no group\nlast. A move that names the order it read (`seen`) names a group's\nrows from here.",
+            "items": {
+              "type": "string"
             },
             "type": "array"
           },
@@ -6967,9 +6981,16 @@
               "null"
             ]
           },
+          "sequence": {
+            "description": "The rows (`row_…`) that have a [`Row::step`], by step, and inside a\nstep by what unblocks the most open rows, then by position (#762).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "zones": {
             "items": {
-              "$ref": "#/components/schemas/Zone"
+              "$ref": "#/components/schemas/LaneView"
             },
             "type": "array"
           }
@@ -8547,6 +8568,13 @@
       "ChatReaction": {
         "description": "One emoji on a message, as the reader sees it.",
         "properties": {
+          "agents": {
+            "default": 0,
+            "description": "How many of `count` are agents' (#632); the rest are people's. An\nolder control leaves it out, and it reads as none.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "count": {
             "description": "All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].",
             "format": "uint32",
@@ -9440,6 +9468,18 @@
               "null"
             ]
           },
+          "made_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MadeFrom"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For a team Doc made from a Doc of its owner's (Share with…): where\nfrom. Null for any other Doc, and from an older platform."
+          },
           "project": {
             "type": "string"
           },
@@ -9560,6 +9600,11 @@
             },
             "type": "array"
           },
+          "deleter": {
+            "default": false,
+            "description": "Whether the reader may delete it: a person who writes in the\nproject, a copy included (native #673). An older platform sends\nnone; the page then takes `writer`.",
+            "type": "boolean"
+          },
           "doc": {
             "$ref": "#/components/schemas/Doc"
           },
@@ -9659,11 +9704,19 @@
       },
       "EntryKind": {
         "description": "Zone (a group, in a database; a lane, on the wire) or row.",
-        "enum": [
-          "zone",
-          "row"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "row"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "zone",
+            "description": "A group; `group` is read as this too.",
+            "type": "string"
+          }
+        ]
       },
       "ForgeDraft": {
         "properties": {
@@ -10807,6 +10860,45 @@
         ],
         "type": "object"
       },
+      "LaneView": {
+        "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZoneKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rev",
+          "title",
+          "rows"
+        ],
+        "type": "object"
+      },
       "Live": {
         "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
         "properties": {
@@ -10827,6 +10919,20 @@
               }
             ],
             "description": "An issue's status category; a PR and a run have none."
+          },
+          "closed_by": {
+            "description": "With `closed_with`, the words of the PR that closed it: `\"(#12)\" in\nthe title`, `\"Closes #12\" in the body`, `the branch feat/12-x`,\n`attached to its board row as work`. Absent for a close from before\nthey were kept.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closed_with": {
+            "description": "A closed native issue that a merged PR closed: the PR\n(`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "identifier": {
             "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",
@@ -10943,6 +11049,31 @@
           }
         ]
       },
+      "MadeFrom": {
+        "description": "The Doc a team Doc was made from: a machine's copy, or one written here.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "machine_name": {
+            "default": null,
+            "description": "The name of the machine the source is a copy from, when control knows\nit; null for a source written here. Only what the platform could\ntell; the source itself is its owner's to read.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The source Doc's project (its owner's personal one) and its id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "id"
+        ],
+        "type": "object"
+      },
       "Mark": {
         "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
         "oneOf": [
@@ -11036,9 +11167,23 @@
           {
             "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
             "properties": {
+              "board": {
+                "description": "The other board the blocker is a row of, when the reader may read\nthe blocker and it is on a board other than this one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "const": "blocked_by",
                 "type": "string"
+              },
+              "lead": {
+                "description": "The session that leads that board, when one does.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "number": {
                 "format": "uint64",
@@ -11059,6 +11204,19 @@
                   "string",
                   "null"
                 ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The row's item is in a loop of open ordering edges (Plane can make\none): it shares its `step` with the others in the loop.",
+            "properties": {
+              "kind": {
+                "const": "cycle",
+                "type": "string"
               }
             },
             "required": [
@@ -11105,7 +11263,7 @@
         "type": "object"
       },
       "MoveEntry": {
-        "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
+        "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.\n\n`seen` is the row ids of the group the row goes to, in the order the\ncaller read them. A row's `rev` doesn't count moves, so this is what a\nmove that mustn't overwrite someone else's checks: if the group's rows\naren't those, in that order, nothing moves and the answer is 409\n`stale_order` with the group's rows as they are now ([`StaleOrder`]).\nAbsent, a move is made whatever the order.",
         "properties": {
           "before": {
             "default": null,
@@ -11123,8 +11281,17 @@
               "null"
             ]
           },
+          "seen": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "zone": {
-            "description": "The group the row goes to; `null`: none. Absent: its own.",
+            "description": "The group the row goes to; `null`: none. Absent: its own. `group`\nis read as this too.",
             "type": [
               "string",
               "null"
@@ -11650,7 +11817,7 @@
           },
           "zone": {
             "default": null,
-            "description": "A new row's group (`zon_…`).",
+            "description": "A new row's group (`zon_…`); `group` is read as this too.",
             "type": [
               "string",
               "null"
@@ -11691,7 +11858,7 @@
         ]
       },
       "RelationKind": {
-        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+        "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
         "oneOf": [
           {
             "enum": [
@@ -11712,6 +11879,11 @@
           {
             "const": "discovered_from",
             "description": "The first item was found while working on the second.",
+            "type": "string"
+          },
+          {
+            "const": "before",
+            "description": "The first item comes before the second, in the order the work is\ndone in.",
             "type": "string"
           }
         ]
@@ -11846,6 +12018,15 @@
           "note": {
             "type": "string"
           },
+          "place": {
+            "description": "The column the row sits in on the Steps chart (Arugula #824): the\nsame longest-path layout as [`Row::step`], but over every row with an\nissue or a PR, done ones included, using their ordering edges whether\nthe other end is open or closed. So finishing work never moves a row.\nAbsent for a row with no issue or PR.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pointer": {
             "$ref": "#/components/schemas/Pointer"
           },
@@ -11876,6 +12057,15 @@
             "$ref": "#/components/schemas/Status",
             "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
           },
+          "step": {
+            "description": "Where the row falls in the board's order (Arugula #762): 1 plus the\nhighest step of the open rows that come before it, worked out on\nevery read and never stored. Absent for a row with no issue or PR,\nand for a Done row. Doing and Review rows are step 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "updated_at": {
             "format": "uint64",
             "minimum": 0,
@@ -11889,6 +12079,90 @@
           "note",
           "status",
           "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RowCandidate": {
+        "description": "One thing a row may point at.",
+        "properties": {
+          "assignees": {
+            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "identifier": {
+            "description": "A tracker item's project key (`ARUGU`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "`issue`, `pr` or `run`.",
+            "type": "string"
+          },
+          "labels": {
+            "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "number": {
+            "description": "A run has none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pointer": {
+            "$ref": "#/components/schemas/Pointer",
+            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
+          },
+          "repo": {
+            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "`native`, `github`, `plane` or `run`.",
+            "type": "string"
+          },
+          "state": {
+            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
+            "type": "string"
+          },
+          "title": {
+            "description": "A run's: how it started (`manual run`).",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "Where a tracker item is, in the tracker.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pointer",
+          "source",
+          "kind",
+          "title",
+          "state",
+          "assignees",
           "updated_at"
         ],
         "type": "object"
@@ -12666,7 +12940,7 @@
           "work": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/sessions.SessionWork"
+                "$ref": "#/components/schemas/SessionIssueLink"
               },
               {
                 "type": "null"
@@ -12756,6 +13030,47 @@
           "title",
           "labels",
           "state"
+        ],
+        "type": "object"
+      },
+      "SessionIssueLink": {
+        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board_title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "The issue (`iss_…`) and its number.",
+            "type": "string"
+          },
+          "number": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "row": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "issue",
+          "number"
         ],
         "type": "object"
       },
@@ -13570,7 +13885,7 @@
             "type": "string"
           },
           "why": {
-            "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+            "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour), `unsure` (GitHub\ncouldn't be asked just now: it's asked again next time) or `no_app`\n(this control has no GitHub App to ask with).",
             "type": "string"
           }
         },
@@ -13585,7 +13900,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/boards.WorkItem"
+              "$ref": "#/components/schemas/RowCandidate"
             },
             "type": "array"
           },
@@ -13702,134 +14017,12 @@
         },
         "type": "object"
       },
-      "Zone": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ZoneKind"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rev": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/Row"
-            },
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "rev",
-          "title",
-          "rows"
-        ],
-        "type": "object"
-      },
       "ZoneKind": {
         "description": "A zone's kind: every zone a read answers is a `lane`, one of the four\n([`Lane`]). No one makes a zone.",
         "enum": [
           "lane"
         ],
         "type": "string"
-      },
-      "boards.WorkItem": {
-        "description": "One thing a row may point at.",
-        "properties": {
-          "assignees": {
-            "description": "GitHub logins for a mirrored item; account ids for a native issue.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "identifier": {
-            "description": "A tracker item's project key (`ARUGU`).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "description": "`issue`, `pr` or `run`.",
-            "type": "string"
-          },
-          "labels": {
-            "description": "The item's label names: a native issue's, a mirrored GitHub or Plane\nitem's. A run has none.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "number": {
-            "description": "A run has none.",
-            "format": "uint64",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "pointer": {
-            "$ref": "#/components/schemas/Pointer",
-            "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
-          },
-          "repo": {
-            "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "description": "`native`, `github`, `plane` or `run`.",
-            "type": "string"
-          },
-          "state": {
-            "description": "`open`, `closed` or `merged` for an issue or a PR; a run's own state.",
-            "type": "string"
-          },
-          "title": {
-            "description": "A run's: how it started (`manual run`).",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "url": {
-            "description": "Where a tracker item is, in the tracker.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "pointer",
-          "source",
-          "kind",
-          "title",
-          "state",
-          "assignees",
-          "updated_at"
-        ],
-        "type": "object"
       },
       "issues.NewIssue": {
         "properties": {
@@ -13858,47 +14051,6 @@
         },
         "required": [
           "title"
-        ],
-        "type": "object"
-      },
-      "sessions.SessionWork": {
-        "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
-        "properties": {
-          "board": {
-            "default": null,
-            "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "board_title": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "issue": {
-            "description": "The issue (`iss_…`) and its number.",
-            "type": "string"
-          },
-          "number": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "row": {
-            "default": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "issue",
-          "number"
         ],
         "type": "object"
       }

@@ -20,7 +20,7 @@
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { ChatRoom, DraftSent, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
-import { agentWhere } from "../agent-label";
+import { agentWhere, isCi } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
@@ -35,6 +35,7 @@ import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
 import "./issues.css";
 import { eventLine, stateLabel, whoLabel, type NameOf } from "./text";
+import { CheckIcon, ChevronIcon, EditIcon, ExternalIcon } from "../ui/icons";
 
 /** What an issue's view reads and changes it through. */
 export interface IssueApi {
@@ -240,6 +241,13 @@ export function IssueView({
     return line === null ? [] : [{ key: `e${e.id}`, at: e.at, el: <IssueEventRow e={e} line={line} nameOf={nameOf} /> }];
   });
 
+  // Two labelled actions at most (#686): closing, and the agent. Editing
+  // the title and sending it to GitHub are in ⋯.
+  const more: MenuItem[] = [
+    ...(writer && editing !== "title" ? [{ label: "Edit title", run: () => setEditing("title") }] : []),
+    ...(writer && api.openOnGithub && api.repos && !issue.github ? [openOnGithub(issue, api.openOnGithub, api.repos, toast, again)] : []),
+  ];
+
   return (
     <section class={`${cls} issue-page`} data-issue={issue.id} data-issue-number={issue.number} data-stale={stale ? "" : undefined}>
       <PageHeader
@@ -253,17 +261,10 @@ export function IssueView({
         named
         back={back}
         class="issue-head"
+        more={more}
         actions={
           <span class="issue-actions">
             {writer && api.agent && issue.state === "open" && <AgentOnThis id={id} agent={api.agent} />}
-            {writer && api.openOnGithub && api.repos && !issue.github && (
-              <OpenOnGithub issue={issue} send={api.openOnGithub} repos={api.repos} sent={again} />
-            )}
-            {writer && editing !== "title" && (
-              <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
-                Edit title
-              </button>
-            )}
             {writer &&
               (issue.state === "closed" ? (
                 <button class="secondary small" data-issue-reopen onClick={() => void change({ state: "open" })}>
@@ -275,7 +276,7 @@ export function IssueView({
                     Close issue
                   </button>
                   <button class="secondary small" title="Close it for another reason" aria-label="Close it for another reason" data-issue-close-as onClick={closeMenu}>
-                    ▾
+                    <ChevronIcon />
                   </button>
                 </span>
               ))}
@@ -284,19 +285,21 @@ export function IssueView({
         sub={
           <div class="issue-meta">
             <StateTag i={issue} />
-            <span>
-              <b class="issue-who">{whoLabel(issue.author, issue.agent, nameOf)}</b> opened this <Time at={issue.created_at} long />
-              {issue.state === "closed" && issue.closed_at ? (
-                <>
-                  {" "}
-                  · closed <Time at={issue.closed_at} long />
-                </>
-              ) : null}
-            </span>
-            {issue.agent && (
-              <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
-                Agent
+            {issue.state === "closed" && issue.closed_at ? (
+              <span>
+                closed <Time at={issue.closed_at} long />
+              </span>
+            ) : null}
+            {issue.agent && isCi(issue.agent) ? (
+              <Chip kind="tag" title="Opened by CI from its signed events, not by a person or an agent" data-issue-ci>
+                CI
               </Chip>
+            ) : (
+              issue.agent && (
+                <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
+                  Agent
+                </Chip>
+              )
             )}
             {issue.github && (
               <a
@@ -307,7 +310,7 @@ export function IssueView({
                 title="It was opened on GitHub: new comments here go there, and theirs come here"
                 data-issue-github
               >
-                Lives on GitHub as {issue.github.repo}#{issue.github.number} ↗
+                Lives on GitHub as {issue.github.repo}#{issue.github.number} <ExternalIcon size="xs" />
               </a>
             )}
           </div>
@@ -358,20 +361,20 @@ export function IssueView({
                 <div class="issue-text">
                   <Markdown text={issue.body} refs={null} />
                 </div>
-              ) : (
-                <p class="dim">No description.</p>
-              )}
+              ) : null}
             </div>
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
+              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet" }} />
             ) : (
               <>
                 {between.map((b) => (
                   <div key={b.key}>{b.el}</div>
                 ))}
-                <p class="thread-note">{threadError ? `The comments didn't load: ${threadError}` : "Loading the comments…"}</p>
+                <p class="thread-note" data-issue-thread-note>
+                  {chat.on === false ? "Its comments are in chat, which is off for you." : threadError ? `The comments didn't load: ${threadError}` : "Loading the comments…"}
+                </p>
               </>
             )}
           </div>
@@ -412,24 +415,17 @@ function AgentOnThis({ id, agent }: { id: string; agent: (id: string) => Promise
   );
 }
 
-/** Open on GitHub (M205): a menu of the project's linked repos, each
- * sending it there as the reader, which is the confirmation. GitHub's
- * authorization in this browser, or one of their machines. */
-function OpenOnGithub({
-  issue,
-  send,
-  repos,
-  sent,
-}: {
-  issue: NativeIssue;
-  send: (id: string, repo: string) => Promise<DraftSent>;
-  repos: (project: string) => Promise<string[]>;
-  sent: () => void;
-}) {
-  const { toast } = usePlatformApi();
-  const [busy, setBusy] = useState(false);
+/** Open on GitHub (M205), in the header's ⋯: a menu of the project's linked
+ * repos, each sending it there as the reader, which is the confirmation.
+ * GitHub's authorization in this browser, or one of their machines. */
+function openOnGithub(
+  issue: NativeIssue,
+  send: (id: string, repo: string) => Promise<DraftSent>,
+  repos: (project: string) => Promise<string[]>,
+  toast: (s: string) => void,
+  sent: () => void,
+): MenuItem {
   const go = async (repo: string) => {
-    setBusy(true);
     try {
       const v = await send(issue.id, repo);
       if (v.authorize) return location.assign(v.authorize);
@@ -437,12 +433,9 @@ function OpenOnGithub({
       sent();
     } catch (e) {
       toast((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
-  const pick = async (e: MouseEvent) => {
-    const at = e.currentTarget as HTMLElement;
+  const pick = async () => {
     let list: string[];
     try {
       list = await repos(issue.project);
@@ -450,30 +443,24 @@ function OpenOnGithub({
       return toast((err as Error).message);
     }
     if (!list.length) return toast("Link a GitHub repo to this project first: its issue goes there");
-    const r = at.getBoundingClientRect();
-    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => {} }, [
+    const r = document.querySelector("[data-page-more]")?.getBoundingClientRect();
+    openMenu({ clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4, preventDefault: () => {} }, [
       { header: "Open on GitHub, as you" },
       ...list.map((repo) => ({ label: `New issue on ${repo}`, run: () => void go(repo) })),
     ]);
   };
-  return (
-    <button
-      class="secondary small"
-      disabled={busy}
-      title="Send it to a linked GitHub repo as a new issue, as you. It stays here too, and new comments cross both ways."
-      data-issue-open-github
-      onClick={(e) => void pick(e)}
-    >
-      {busy ? "Sending…" : "Open on GitHub"}
-    </button>
-  );
+  return {
+    label: "Open on GitHub",
+    hint: "Send it to a linked GitHub repo as a new issue, as you. It stays here too, and new comments cross both ways.",
+    run: () => void pick(),
+  };
 }
 
 function IssueEventRow({ e, line, nameOf }: { e: IssueEvent; line: string; nameOf: NameOf }) {
   return (
     <div class={`issue-event ${e.kind}`} data-issue-event={e.kind} data-agent={e.agent?.machine}>
       <span class="issue-event-mark" aria-hidden="true">
-        {e.kind === "closed" ? "✓" : e.kind === "reopened" ? "↺" : e.kind.includes("label") ? "◆" : e.kind.includes("assign") ? "●" : "✎"}
+        {e.kind === "closed" ? <CheckIcon size="xs" /> : e.kind === "reopened" ? "↺" : e.kind.includes("label") ? "◆" : e.kind.includes("assign") ? "●" : <EditIcon size="xs" />}
       </span>
       <span>
         <b>{whoLabel(e.actor, e.agent, nameOf)}</b> {line}{" "}
@@ -516,9 +503,7 @@ function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIs
             <LabelChip key={l} label={l} />
           ))}
         </div>
-      ) : (
-        <p class="dim">None</p>
-      )}
+      ) : null}
     </section>
   );
 }

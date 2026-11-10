@@ -141,15 +141,70 @@ async fn a_personal_projects_issues_are_its_accounts() {
     assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(0)), "{v}");
 }
 
-/// Issues are a Labs feature, with chat.
+/// Membership and roles alone decide (Arugula #746): an editor with chat
+/// off opens, reads and changes issues, and a viewer with chat off reads
+/// them and changes nothing. Someone outside the project gets 404 with chat
+/// on, and so does someone with no team at all.
 #[tokio::test]
-async fn issues_come_with_chat() {
+async fn chat_off_changes_nothing_about_issues() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let (p, _) = seed(&app, &hub);
     hub.flag("account:e", false);
-    let (st, v) = get(&base, "e", &format!("/api/projects/{p}/issues")).await;
+    hub.flag("account:v", false);
+    hub.flag("account:z", true);
+    app.cache.drop_all();
+    let (st, i) = new_issue(&base, "e", &p, json!({ "title": "no chat here" })).await;
+    assert_eq!(st, 200, "{i}");
+    let id = i["id"].as_str().unwrap();
+    assert_eq!(patch(&base, "e", id, json!({ "labels": { "add": ["p1"] } })).await.0, 200);
+    for who in ["e", "v"] {
+        let (st, v) = get(&base, who, &format!("/api/projects/{p}/issues")).await;
+        assert_eq!((st, v["issues"].as_array().map(Vec::len)), (200, Some(1)), "{who}: {v}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}/events")).await.0, 200, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issue-home")).await.0, 200, "{who}");
+    }
+    assert_eq!(patch(&base, "v", id, json!({ "title": "theirs" })).await.0, 403, "a viewer still changes nothing");
+    for who in ["c", "z"] {
+        assert_eq!(get(&base, who, &format!("/api/projects/{p}/issues")).await.0, 404, "{who}");
+        assert_eq!(get(&base, who, &format!("/api/issues/{id}")).await.0, 404, "{who}");
+        assert_eq!(patch(&base, who, id, json!({ "title": "theirs" })).await.0, 404, "{who}");
+    }
+    // An agent acting for e, with no grant over the project, reaches nothing.
+    let agent = Actor { account: "e", agent: Some("geek") };
+    assert!(read(&app, agent, id).await.is_err());
+    // Its comments are still chat's: e's thread is refused while chat is off.
+    let (st, v) = call(&base, "e", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
     assert_eq!((st, &v["reason"]), (403, &json!(crate::chat::CHAT_OFF)), "{v}");
+}
+
+/// Issue comments stay with chat (Arugula #746): a member with chat off
+/// exports the issues without their comments, and the export says so, in
+/// JSON and in Markdown. With chat on, the same export has them.
+#[tokio::test]
+async fn an_export_leaves_comments_out_while_chat_is_off() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, i) = new_issue(&base, "a", &p, json!({ "title": "talked about" })).await;
+    let id = i["id"].as_str().unwrap();
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let room = room["id"].as_str().unwrap();
+    let post = Some(json!({ "text": "a word in the thread" }));
+    assert_eq!(call(&base, "a", "POST", &format!("/api/chat/rooms/{room}/messages"), post).await.0, 200);
+
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    assert_eq!((x.issues[0].comments.len(), x.comments_in_chat), (1, false));
+    hub.flag("account:v", false);
+    app.cache.drop_all();
+    let (st, v) = get(&base, "v", &format!("/api/projects/{p}/issues/export")).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((&v["issues"][0]["comments"], &v["comments_in_chat"]), (&json!([]), &json!(true)), "{v}");
+    let x = export(&app, Actor::person("v"), &p).await.unwrap();
+    let md = markdown(&x);
+    assert!(md.contains("comments are left out") && !md.contains("a word in the thread"), "{md}");
 }
 
 /// What a patch takes and what it refuses; lists filter and page.
@@ -313,6 +368,87 @@ async fn an_export_reads_back_with_every_issue_event_and_comment() {
     }
     assert_eq!((headings, bylines), (x.issues.len(), comments), "{md}");
     assert_eq!(get(&base, "v", &format!("/api/projects/{p}/issues/export?format=pdf")).await.0, 400);
+}
+
+/// What nobody here wrote in an issue's thread is named in an export as
+/// the page names it (Arugula #626): Arugula's own posts (a line it says,
+/// a session's card) as Arugula, what a session said as that session, a
+/// comment from GitHub as its login there. "a deleted account" is only
+/// for a member who deleted theirs. JSON keeps the raw author and `via`.
+#[tokio::test]
+async fn an_export_names_who_wrote_what_nobody_here_did() {
+    use crate::{Deleted, PlatformPort as _, db::chat::NewMessage};
+    use arugula_control_wire::{
+        chat::SYSTEM_VIA,
+        sessions::{card_via, said_via},
+    };
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, i) = new_issue(&base, "e", &p, json!({ "title": "opened by someone who goes" })).await;
+    let id = i["id"].as_str().unwrap();
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let room = room["id"].as_str().unwrap();
+    for who in ["a", "e"] {
+        let post = Some(json!({ "text": format!("{who} says hello") }));
+        assert_eq!(call(&base, who, "POST", &format!("/api/chat/rooms/{room}/messages"), post).await.0, 200);
+    }
+    let ses = "ses_0123456789abcdef";
+    let (card, said) = (card_via(ses), said_via(ses));
+    let theirs = [
+        (SYSTEM_VIA, "CI failed: 2 checks; sent to the session (round 1 of 2)"),
+        (card.as_str(), "Agent session started on o/app"),
+        (said.as_str(), "Pushed 1 commit to `fix`."),
+        ("github:dana-gh", "Seen on 1.2 too"),
+    ];
+    for (via, text) in theirs {
+        let m = NewMessage {
+            author: "",
+            at: arugula_e2e::now_ms(),
+            text,
+            quote: None,
+            ref_machine: None,
+            ref_pane: None,
+            mentions: &[],
+            agent: None,
+            via: Some(via),
+            parent: None,
+            also: false,
+            agent_session: None,
+        };
+        app.db.add_chat_message(room, &m).unwrap();
+    }
+    app.account_deleted(&Deleted { account: "e".into(), machines: vec![], disbanded: vec![] }).await.unwrap();
+
+    let (st, v) = get(&base, "v", &format!("/api/projects/{p}/issues/export?format=json")).await;
+    assert_eq!(st, 200, "{v}");
+    let x: IssueExport = serde_json::from_value(v).unwrap();
+    let e = &x.issues[0];
+    assert_eq!(e.issue.author, "", "e's account is gone");
+    let raw: Vec<(&str, Option<&str>, &str)> =
+        e.comments.iter().map(|c| (c.author.as_str(), c.via.as_deref(), c.text.as_str())).collect();
+    assert_eq!(
+        raw,
+        [
+            ("a", None, "a says hello"),
+            ("", Some(SYSTEM_VIA), theirs[0].1),
+            ("", Some(card.as_str()), theirs[1].1),
+            ("", Some(said.as_str()), theirs[2].1),
+            ("", Some("github:dana-gh"), theirs[3].1),
+        ],
+        "e's comment went with e's account"
+    );
+
+    let (st, _, md) = text(&base, "v", &format!("/api/projects/{p}/issues/export?format=md")).await;
+    assert_eq!(st, 200, "{md}");
+    let a =
+        x.people.iter().find(|p| p.account == "a").map(|p| p.name.as_str()).filter(|n| !n.is_empty()).unwrap_or("a");
+    let bylines: Vec<&str> =
+        md.lines().filter(|l| l.starts_with("**")).map(|l| l[2..].split("**").next().unwrap()).collect();
+    assert_eq!(bylines, [a, "Arugula", "Arugula", "Agent session 01234567", "dana-gh on GitHub"], "{md}");
+    assert!(md.contains("- Opened by a deleted account on "), "{md}");
+    assert_eq!(md.matches("a deleted account").count(), 2, "its opening, in the facts and the timeline: {md}");
 }
 
 /// A project's issue home: native without a linked repo, GitHub with one

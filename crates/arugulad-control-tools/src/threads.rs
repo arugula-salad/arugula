@@ -39,8 +39,8 @@ use crate::{control::CloudRefused, mux::Api};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadThreadArgs {
-    /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// box's id (iss_…, fi_…, hw_…) for its thread. Not needed with
+    /// The room's id (list kind threads), or an issue's, PR's or Cloud
+    /// workspace's id (iss_…, fi_…, hw_…) for its thread. Not needed with
     /// `replies`.
     #[serde(default)]
     pub room: String,
@@ -76,8 +76,8 @@ pub struct ReadThreadArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct PostThreadArgs {
-    /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// box's id (iss_…, fi_…, hw_…) to comment on it.
+    /// The room's id (list kind threads), or an issue's, PR's or Cloud
+    /// workspace's id (iss_…, fi_…, hw_…) to comment on it.
     pub room: String,
     /// The message, in markdown; @login mentions a person there. Not
     /// needed to react.
@@ -794,9 +794,14 @@ pub(super) async fn threads_reach(app: &crate::server::App) -> ThreadsReach {
     let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_ROOMS, None));
     let v = match asked.await {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e) },
+        Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e), answered: false },
         Err(_) => {
-            return ThreadsReach { live: false, scopes: vec![], note: "Arugula control didn't answer in time".into() };
+            return ThreadsReach {
+                live: false,
+                scopes: vec![],
+                note: "Arugula control didn't answer in time".into(),
+                answered: false,
+            };
         }
     };
     let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
@@ -820,7 +825,7 @@ pub(super) async fn threads_reach(app: &crate::server::App) -> ThreadsReach {
             rooms.join(", ")
         );
     }
-    ThreadsReach { live, scopes, note }
+    ThreadsReach { live, scopes, note, answered: true }
 }
 
 #[cfg(test)]

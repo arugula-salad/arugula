@@ -278,7 +278,7 @@ pub struct HostFeatures {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub block_channels: bool,
-    /// VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
+    /// VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
     pub vms: bool,
     /// A studio is linked (`arugula studio login`).
     pub studio: bool,

@@ -32,13 +32,20 @@ test("an agent session's issue is its own, with no owner (aru-115)", () => {
   assert.equal(whoLabel("", { machine: ses.machine, machine_name: "" }, nameOf), "Agent session 01234567", "named from its id");
 });
 
+test("CI's issue is its own, with no owner (native #774)", () => {
+  const ci = { machine: "ci:chant", machine_name: "chant CI" };
+  assert.equal(whoLabel("", ci, nameOf), "chant CI");
+  assert.equal(whoShort("", ci, nameOf), "chant CI");
+  assert.equal(whoLabel("", { machine: "ci:chant", machine_name: "" }, nameOf), "chant CI", "named from its id");
+});
+
 test("a list's row: who opened it, or who closed it and why (UI audit #163)", () => {
   const geek = { machine: "d1", machine_name: "geek" };
   assert.equal(whoShort("a1", geek, nameOf), "agent · geek");
   assert.equal(whoShort("a2", null, nameOf), "Sam");
   const now = 10 * 86_400_000;
   const i = { state: "open", close_reason: null, author: "a1", agent: geek, created_at: now - 3 * 86_400_000, closed_at: null };
-  assert.equal(rowLine(i, nameOf, now), "opened 3 days ago by agent · geek");
+  assert.equal(rowLine(i, nameOf, now), "3d · agent · geek");
   const closed = { ...i, state: "closed", close_reason: "completed", closed_at: now - 86_400_000, closed_by: "a2" };
   assert.equal(rowLine(closed, nameOf, now), "closed as completed by Sam 1 day ago");
   assert.equal(rowLine({ ...closed, close_reason: "duplicate", closed_by: undefined }, nameOf, now), "closed as a duplicate 1 day ago");
@@ -51,6 +58,8 @@ test("each event says what it did", () => {
   assert.equal(eventLine(ev("edited", { title: "Old", body: true }), nameOf), "changed the title from “Old” and edited the description");
   assert.equal(eventLine(ev("closed", { reason: "not_planned" }), nameOf), "closed this as not planned");
   assert.equal(eventLine(ev("closed", {}), nameOf), "closed this as completed");
+  assert.equal(eventLine(ev("closed", { reason: "completed", pr: "acme/site#70" }), nameOf), "closed this as completed with acme/site#70");
+  assert.equal(eventLine(ev("closed", { reason: "completed", pr: "acme/site#70", by: "\"(#4)\" in the title" }), nameOf), "closed this as completed with acme/site#70, by \"(#4)\" in the title");
   assert.equal(eventLine(ev("reopened"), nameOf), "reopened this");
   assert.equal(eventLine(ev("labelled", { label: "bug" }), nameOf), "added the label bug");
   assert.equal(eventLine(ev("unlabelled", { label: "bug" }), nameOf), "removed the label bug");

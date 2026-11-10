@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_wire::work::{Reported, SessionReport};
+use arugula_control_wire::work::{PushAsk, PushGiven, Reported, SessionReport};
 use arugula_e2e::{DeviceKeys, now_ms, team::TeamRole};
 use serde_json::{Value, json};
 
@@ -30,7 +30,7 @@ use crate::{
     db::{
         Db,
         chat::Room,
-        sessions::{Kind, NOT_PICKED, PromptState, Role, Session, State},
+        sessions::{AgentSession, Kind, NOT_PICKED, PromptState, Role, State},
         sql::{Sql as _, params},
     },
     forge::{
@@ -74,6 +74,7 @@ async fn world() -> World {
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
     let project = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    crate::sessions_hydrate_tests::allow(&app, &project);
     let general = Room {
         id: "ch_general".into(),
         scope: "team:t".into(),
@@ -166,7 +167,7 @@ impl World {
         assert_eq!(self.says(ses, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
     }
 
-    fn session(&self, id: &str) -> Session {
+    fn session(&self, id: &str) -> AgentSession {
         self.app.db.session(id).unwrap().unwrap()
     }
 
@@ -202,7 +203,7 @@ fn told(db: &Db, ses: &str) -> usize {
 }
 
 /// `a` asks `@arugula` in #general: the thread's number and its session.
-async fn asked(w: &World, text: &str) -> (i64, Session) {
+async fn asked(w: &World, text: &str) -> (i64, AgentSession) {
     let m = post_in(&w.base, "ch_general", "a", text, None).await;
     let p = m["seq"].as_i64().unwrap();
     let s = w.app.db.session_on_thread("ch_general", p as u64).unwrap().expect("a session");
@@ -573,4 +574,168 @@ async fn a_turn_typed_in_the_block_is_said_in_its_thread() {
     assert!(matches!(not, Reported::Refused { .. }), "{not:?}");
     assert_eq!(w.says(&s.id, Kind::State, Some(State::Done), json!({})).await, Reported::Taken);
     assert_eq!(lines().await.len(), before + 1);
+}
+
+/// The world with `arugula-io`'s own grants on acme/app (contents and
+/// workflows write), and a session b, an editor, asked for in #general,
+/// taken by the box: the session and the box, for its push asks.
+async fn pushing_world() -> (World, AgentSession, HostedMachine) {
+    let w = world().await;
+    {
+        let mut g = w.gh.lock().unwrap();
+        g.grants.insert(
+            "acme/app".into(),
+            json!({
+                "actions": "read", "checks": "read", "contents": "write", "issues": "write", "members": "read",
+                "metadata": "read", "pull_requests": "write", "statuses": "read", "workflows": "write",
+            }),
+        );
+        g.asked = 0;
+    }
+    let m = post_in(&w.base, "ch_general", "b", "@arugula fix the canary", None).await;
+    let p = m["seq"].as_i64().unwrap();
+    let s = w.app.db.session_on_thread("ch_general", p as u64).unwrap().expect("an editor starts a session");
+    assert_eq!(s.asker, "b");
+    w.take(&s.id, "claude").await;
+    let machine = HostedMachine {
+        project: w.project.clone(),
+        workspace: "hw_dev".into(),
+        machine: w.keys.id(),
+        sign: hex::encode(w.keys.sign_public()),
+    };
+    (w, s, machine)
+}
+
+/// The box's ask for a token to push (or clone) `branch` of `s`.
+async fn push_ask(w: &World, m: &HostedMachine, s: &AgentSession, branch: &str, clone: bool) -> PushGiven {
+    let ask = PushAsk { session: s.id.clone(), branch: branch.into(), clone };
+    crate::sessions::push::token(&w.app, m, &ask).await.unwrap()
+}
+
+/// The `session:push` mints logged so far.
+fn push_mints(w: &World) -> Vec<crate::db::forge::TokenMint> {
+    w.app.db.token_mints(0).unwrap().into_iter().filter(|m| m.purpose == "session:push").collect()
+}
+
+/// A session pushes as its asker, so only where its asker may push on
+/// GitHub (`sessions::push`): b, an editor of the project, gets no token
+/// for their session while they have no GitHub identity, and none while
+/// GitHub gives their login read or triage on acme/app, which the platform
+/// asks GitHub about each time. The branch rule and a clone are as before,
+/// and a session whose asker's account is gone pushes nothing.
+#[tokio::test]
+async fn an_asker_without_write_on_github_gets_no_push_token() {
+    let (w, s, m) = pushing_world().await;
+
+    // No GitHub identity: refused before GitHub is asked.
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(format!("{given:?}").contains("hasn't signed in to control with GitHub"), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().asked, 0);
+
+    // A login GitHub gives read, then triage, on acme/app: asked, and refused.
+    w.hub.github("b", 1002, "bob-gh");
+    for (n, role) in ["read", "triage"].into_iter().enumerate() {
+        w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), (role.into(), 1002));
+        let given = push_ask(&w, &m, &s, &s.branch, false).await;
+        let said = format!("{given:?}");
+        assert!(said.contains("can't push to acme/app on GitHub") && said.contains(role), "{role}: {said}");
+        assert_eq!(w.gh.lock().unwrap().asked, n + 1, "GitHub was asked about bob-gh's role on acme/app");
+    }
+    // A login GitHub lists on no repo at all.
+    w.gh.lock().unwrap().roles.remove(&("acme/app".into(), "bob-gh".into()));
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(format!("{given:?}").contains("doesn't list bob-gh as a collaborator"), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().asked, 3);
+
+    // Nothing with contents: write was minted, and no session:push logged.
+    {
+        let g = w.gh.lock().unwrap();
+        assert!(g.minted.iter().all(|p| p["contents"] != "write"), "{:?}", g.minted);
+    }
+    assert!(push_mints(&w).is_empty());
+
+    // Another ref is still refused by its name, before GitHub is asked.
+    for other in ["main", "arugula/deadbeef-other"] {
+        let given = push_ask(&w, &m, &s, other, false).await;
+        assert!(format!("{given:?}").contains("its own branch and nothing else"), "{other}: {given:?}");
+    }
+    assert_eq!(w.gh.lock().unwrap().asked, 3);
+
+    // A clone of the linked repo (Fleet 6) is as before: contents read.
+    let given = push_ask(&w, &m, &s, &s.branch, true).await;
+    assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().minted.last().unwrap(), &json!({ "metadata": "read", "contents": "read" }));
+    assert_eq!(w.gh.lock().unwrap().asked, 3, "a clone doesn't ask");
+
+    // An asker whose account is gone: the session pushes as nobody.
+    w.app.db.c().execute("UPDATE agent_sessions SET asker = '' WHERE id = ?1", params![s.id]).unwrap();
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(format!("{given:?}").contains("asker is gone"), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().asked, 3);
+    assert!(push_mints(&w).is_empty());
+}
+
+/// An asker GitHub gives write on the repo gets the token for their
+/// session's branch: GitHub is asked about them each time, and the mint
+/// is logged for them, `session:push`, with the repo's contents and
+/// workflows (aru-115, amended) on acme/app alone.
+#[tokio::test]
+async fn an_asker_with_write_on_github_gets_the_push_token() {
+    let (w, s, m) = pushing_world().await;
+    w.hub.github("b", 1002, "bob-gh");
+    w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    let PushGiven::Given { token, revoke, .. } = &given else { panic!("{given:?}") };
+    assert!(token.starts_with("ghs_fake"), "{token}");
+    assert!(revoke.ends_with("/installation/token"), "{revoke}");
+    {
+        let g = w.gh.lock().unwrap();
+        assert_eq!(g.asked, 1, "GitHub was asked whether bob-gh may push to acme/app");
+        assert_eq!(g.minted.last().unwrap(), &json!({ "metadata": "read", "contents": "write", "workflows": "write" }));
+    }
+    let mints = push_mints(&w);
+    assert_eq!(mints.len(), 1, "{mints:?}");
+    assert_eq!(mints[0].caller, "b");
+    assert_eq!(mints[0].repo_id, Some(77));
+    assert!(mints[0].permissions.contains("\"workflows\":\"write\""), "{}", mints[0].permissions);
+
+    // Asked again on the next push: GitHub's answer isn't kept.
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().asked, 2);
+    // So a role taken away on GitHub ends the session's pushes.
+    w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("read".into(), 1002));
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(format!("{given:?}").contains("can't push to acme/app on GitHub"), "{given:?}");
+    assert_eq!(push_mints(&w).len(), 2);
+}
+
+/// When GitHub can't say (a 5xx asking about the asker's role), no token:
+/// the check fails closed, says it couldn't check rather than that they
+/// can't, and the next ask, with GitHub answering, is given.
+#[tokio::test]
+async fn a_push_token_is_withheld_when_github_cant_be_asked() {
+    let (w, s, m) = pushing_world().await;
+    w.hub.github("b", 1002, "bob-gh");
+    {
+        let mut g = w.gh.lock().unwrap();
+        g.roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+        g.permission_fails = Some(502);
+    }
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    let said = format!("{given:?}");
+    assert!(said.contains("couldn't check the asker's access to acme/app") && said.contains("502"), "{said}");
+    {
+        let g = w.gh.lock().unwrap();
+        assert_eq!(g.asked, 1, "GitHub was asked");
+        assert!(g.minted.iter().all(|p| p["contents"] != "write"), "{:?}", g.minted);
+    }
+    assert!(push_mints(&w).is_empty());
+
+    w.gh.lock().unwrap().permission_fails = None;
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().asked, 2);
+    assert_eq!(push_mints(&w).len(), 1);
 }

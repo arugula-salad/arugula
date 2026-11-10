@@ -64,8 +64,8 @@
     $bin = Join-Path $env:LOCALAPPDATA 'Programs\arugula'
     ''
     'Arugula is installed. In a new terminal:'
-    '  arugula web       open it in your browser, signed in'
-    '  arugula run pwsh  a pane, from the command line'
+    '  arugula web             open it in your browser, signed in'
+    '  arugula run powershell  a pane, from the command line'
     "(Or now: & '$bin\arugula.exe' web)"
     # Telemetry is opt-in (docs/telemetry.md): say the first command asks,
     # unless the environment already keeps it off.

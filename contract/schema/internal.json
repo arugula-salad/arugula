@@ -179,33 +179,6 @@
       ],
       "type": "object"
     },
-    "AgentSessionsAsk": {
-      "description": "An agent asks which sessions of a machine it may mention (#577).",
-      "properties": {
-        "from_session": {
-          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "only": {
-          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "room": {
-          "description": "The room the mention would be in.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "room"
-      ],
-      "type": "object"
-    },
     "ArchiveBlocks": {
       "description": "`hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent\nblocks only. The platform asks before Move to… takes a session off a\nbox that stays up: its conversation goes with it, and the box's other\nblocks are archived when they close, as they end (one transcript per\nblock is kept). A daemon from before it answers that it doesn't know\nthe op.",
       "properties": {
@@ -719,7 +692,7 @@
           "type": "object"
         },
         {
-          "$ref": "#/$defs/AgentSessionsAsk",
+          "$ref": "#/$defs/MachineAgentsAsk",
           "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
           "properties": {
             "op": {
@@ -1381,6 +1354,22 @@
       ],
       "type": "object"
     },
+    "HostedRemovedArgs": {
+      "description": "`hosted_removed`: the hosted machine the hub removed, and the\nworkspace whose box it was.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "machine"
+      ],
+      "type": "object"
+    },
     "IdsArgs": {
       "properties": {
         "ids": {
@@ -1505,6 +1494,33 @@
       "required": [
         "account",
         "events"
+      ],
+      "type": "object"
+    },
+    "MachineAgentsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -1754,6 +1770,21 @@
         "signature"
       ],
       "type": "object"
+    },
+    "PlanStep": {
+      "description": "Which of a deploy plan run's two tokens a box asks for (#1985).",
+      "oneOf": [
+        {
+          "const": "fetch",
+          "description": "A GitHub token that reads the deploy's repository, to fetch the\ncommit: nothing of the commit's has run yet.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "A GitHub token that writes the repository's contents, to push\nchant's ledger: everything the plan ran is stopped by then, the box's\ndaemon checked what the plan added, and the token reaches only the\ndaemon's own push, never the run user.",
+          "type": "string"
+        }
+      ]
     },
     "PreviewArgs": {
       "description": "Public previews (M187): a preview's id, or a workspace's.",
@@ -2348,6 +2379,17 @@
     "SecretsAsk": {
       "description": "[`WORK_SECRETS`]'s body: which run.",
       "properties": {
+        "plan_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A deploy's plan run (#1985) asks twice, a token each time: to fetch\nits source, before anything of the commit's runs, and to push\nchant's ledger, after everything that ran is stopped. Any other\nrun asks once, with none."
+        },
         "run": {
           "type": "string"
         }

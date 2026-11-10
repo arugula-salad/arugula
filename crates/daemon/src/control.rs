@@ -300,6 +300,9 @@ pub struct HostedPin {
     pub cert: arugula_e2e::hosted::HostedCert,
     pub delegation: arugula_e2e::hosted::Delegation,
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    /// Control's word that the delegation ended: the earliest it's heard. A
+    /// refresh never takes it away.
+    pub closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     pub purpose: Purpose,
     /// The project's team, when the delegation's owner is a team: its
     /// roster checked from the pin, as a team machine's is. None when an
@@ -446,6 +449,8 @@ struct OnDiskHosted {
     delegation: arugula_e2e::hosted::Delegation,
     #[serde(default)]
     revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     deploy: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -514,6 +519,7 @@ impl TryFrom<OnDisk> for Saved {
                     cert: h.cert,
                     delegation: h.delegation,
                     revocations: h.revocations,
+                    closed: h.closed,
                     purpose,
                     team,
                     legacy_app_children: h.legacy_app_children,
@@ -551,6 +557,7 @@ impl From<Saved> for OnDisk {
                     cert: h.cert,
                     delegation: h.delegation,
                     revocations: h.revocations,
+                    closed: h.closed,
                     deploy: h.purpose.deploys(),
                     builder: h.purpose.builds_snapshot(),
                     legacy_app_children: h.legacy_app_children,
@@ -1199,6 +1206,15 @@ impl Enrolled {
         a.dedup();
         a
     }
+
+    /// Whether a read-only link's key or a guest's ssh invite gets in. A
+    /// deploy's box admits no one, as [`Enrolled::build`] admits no roster
+    /// there, and that includes links and guests: one made before the box
+    /// was told it's a deploy's stops working then (purposes only close).
+    /// The link or invite stays where it is.
+    fn admits_links_and_guests(&self) -> bool {
+        !self.saved.purpose().is_some_and(Purpose::deploys)
+    }
 }
 
 impl std::fmt::Debug for Control {
@@ -1218,6 +1234,10 @@ pub struct Control {
     /// `control.json`'s stamp as [`Control::reload`] last read it, taken
     /// before the read: where the watcher starts from.
     loaded: std::sync::Mutex<Option<std::time::SystemTime>>,
+    /// `control.json` is there and couldn't be read at the last
+    /// [`Control::reload`]: whether this machine is a team's, and who's in
+    /// it, isn't known.
+    unreadable: std::sync::atomic::AtomicBool,
     /// Bumped whenever the trusted set changes: open channels re-check
     /// their device and close if it's gone.
     pub changed: watch::Sender<u64>,
@@ -1246,6 +1266,10 @@ pub struct Control {
     /// fetched and checked as a shared team's, so their members can be
     /// named; they let no one in.
     team_pins: RwLock<BTreeMap<String, String>>,
+    /// Control's word of delegations that ended, as heard
+    /// (`crate::peer::with_held`): kept here too, so a file that can't be
+    /// written forgets nothing, and one left behind takes nothing back.
+    held_closures: std::sync::Mutex<arugula_e2e::hosted::HeldClosures>,
     /// Invites waiting for their person to be reachable (#233), in
     /// `person-invites.json`: tried again after each refresh, for a day.
     invites: std::sync::Mutex<Vec<Waiting>>,
@@ -1549,6 +1573,7 @@ impl Control {
             unsaved: Default::default(),
             now: RwLock::new(None),
             loaded: Default::default(),
+            unreadable: Default::default(),
             changed: watch::channel(0).0,
             direct_urls,
             default_url,
@@ -1559,6 +1584,7 @@ impl Control {
             published: Default::default(),
             no_relay,
             control_urls: Default::default(),
+            held_closures: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
                     .ok()
@@ -1705,6 +1731,10 @@ impl Control {
     }
 
     /// Where `control.json` and the device key live.
+    pub(crate) fn held_closures(&self) -> &std::sync::Mutex<arugula_e2e::hosted::HeldClosures> {
+        &self.held_closures
+    }
+
     pub fn state_dir(&self) -> &Path {
         &self.state_dir
     }
@@ -1824,6 +1854,12 @@ impl Control {
         body: &impl Serialize,
     ) -> anyhow::Result<T> {
         self.send_signed(reqwest::Method::PUT, path, serde_json::to_vec(body)?, "application/json").await
+    }
+
+    /// DELETE at control, signed as this machine, if it's in control (a
+    /// Doc's copy, once the Doc is gone): as [`Control::put_signed`].
+    pub async fn delete_signed<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+        self.send_signed(reqwest::Method::DELETE, path, Vec::new(), "application/json").await
     }
 
     /// [`Control::put_signed`] with a body of bytes as they are (a Doc's
@@ -2204,6 +2240,18 @@ impl Control {
         self.enrolled().is_some_and(|e| e.drivers.iter().any(|(c, _)| c.noise == key))
     }
 
+    /// Whether this machine lets in read-only links and ssh guests: not on
+    /// a deploy's box ([`Enrolled::admits_links_and_guests`]). A machine
+    /// with no `control.json` (joined to no control) does. One whose file is
+    /// there but didn't load doesn't: it could be a deploy's box's, and
+    /// [`Control::device`] refuses links then too.
+    pub fn admits_links_and_guests(&self) -> bool {
+        match self.enrolled() {
+            Some(e) => e.admits_links_and_guests(),
+            None => !self.state_dir.join(FILE).exists(),
+        }
+    }
+
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
         let e = self.enrolled()?;
         if let Some(c) = e.trusted.by_noise(noise).filter(|c| c.kind.connects()) {
@@ -2222,7 +2270,11 @@ impl Control {
         if let Some(found) = e.agent_callers.iter().find(|(c, _)| c.noise == key) {
             return Some(found.clone());
         }
-        // A read-only link's key (M19): a viewer of one session, while it lasts.
+        // A read-only link's key (M19): a viewer of one session, while it
+        // lasts, except on a deploy's box.
+        if !e.admits_links_and_guests() {
+            return None;
+        }
         let g = self.acl.link_by_key(&key)?;
         let cert = Cert {
             v: 1,
@@ -2272,9 +2324,13 @@ impl Control {
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
             Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents())))
         }) {
-            Ok(n) => n,
+            Ok(n) => {
+                self.unreadable.store(false, std::sync::atomic::Ordering::SeqCst);
+                n
+            }
             Err(e) => {
                 warn!(error = %e, "can't read the control enrollment; ignoring it");
+                self.unreadable.store(true, std::sync::atomic::Ordering::SeqCst);
                 None
             }
         };
@@ -2785,10 +2841,14 @@ impl Control {
                 None => req,
             }
         };
-        let (status, got) = self
-            .patiently(method.as_str(), path_and_query, patience, build)
-            .await
-            .map_err(|e| CloudRefused::Unreachable(e.to_string()))?;
+        let (status, got) = self.patiently(method.as_str(), path_and_query, patience, build).await.map_err(|e| {
+            // With its causes: reqwest's own words are only "error sending
+            // request", which can't tell a timeout from a dropped
+            // connection (Arugula #621).
+            let e = format!("{:#}", anyhow::Error::from(e));
+            info!(path = path_and_query, error = %e, "control didn't answer");
+            CloudRefused::Unreachable(e)
+        })?;
         let v: serde_json::Value = serde_json::from_slice(&got).unwrap_or_default();
         if (200..300).contains(&status) {
             return Ok(v);
@@ -3990,6 +4050,39 @@ impl crate::mux::People for Control {
 
     fn team_people(&self) -> Vec<Principal> {
         Control::team_people(self)
+    }
+
+    /// Known unless this machine is a team's and has no roster from it
+    /// yet, or its enrollment can't be read.
+    fn roster_known(&self) -> bool {
+        match self.enrolled() {
+            Some(e) => e.saved.team().is_none_or(|t| t.roster.is_some()),
+            None => !self.unreadable.load(std::sync::atomic::Ordering::SeqCst),
+        }
+    }
+
+    /// The members of this machine's team, and of teams sessions were
+    /// shared with (with the team), kept out only because their team is
+    /// locked: everyone but its owners.
+    fn locked_out(&self) -> Vec<(String, Option<String>)> {
+        let Some(e) = self.enrolled() else { return Vec::new() };
+        let out_of = |r: &Roster, team: Option<&String>| -> Vec<(String, Option<String>)> {
+            r.members
+                .iter()
+                .filter(|m| m.role != TeamRole::Owner)
+                .map(|m| (format!("account:{}", m.account), team.cloned()))
+                .collect()
+        };
+        let mut out = Vec::new();
+        if let Some(t) = e.saved.team().filter(|t| t.locked)
+            && let Some(r) = &t.roster
+        {
+            out.extend(out_of(r, None));
+        }
+        for (team, t) in e.saved.shared_teams.iter().filter(|(_, t)| t.locked) {
+            out.extend(out_of(&t.roster, Some(team)));
+        }
+        out
     }
 }
 
@@ -5318,6 +5411,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: team_saved.team().cloned(),
                 legacy_app_children: None,
@@ -5438,6 +5532,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: team_saved.team().cloned(),
                 legacy_app_children: None,
@@ -5767,6 +5862,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d.clone(),
                 revocations: vec![],
+                closed: vec![],
                 purpose,
                 team: Some(in_team(r, locked)),
                 legacy_app_children: None,
@@ -5909,6 +6005,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                closed: vec![],
                 purpose: Purpose::People,
                 team: Some(in_team),
                 legacy_app_children: None,
@@ -6725,11 +6822,159 @@ pub(crate) mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|i| match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"]) {
-                Ok((project, _)) => format!("ok {project}"),
-                Err(_) => "err".to_owned(),
+            .map(|i| {
+                match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"], &mut Default::default()) {
+                    Ok((project, _)) => format!("ok {project}"),
+                    Err(_) => "err".to_owned(),
+                }
             })
             .collect()
+    }
+
+    /// This daemon keeps control's word that a delegation ended: a machine it
+    /// refused stays refused when control leaves the word out, across a
+    /// restart too, and one made before is accepted.
+    #[test]
+    fn a_daemon_keeps_a_delegations_end() {
+        use arugula_e2e::hosted::{HeldClosures, HostedCert, HostedKey};
+
+        use crate::{
+            hosted::runs::tests::{MACHINE_KEY, machine},
+            peer::{HELD_FILE, accept_hosted, read_held, with_held, write_held},
+        };
+        let (saved, d, _root, _phone) = machine();
+        let dir = std::env::temp_dir().join(format!("arugula-peer-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let key = HostedKey::from_seed(&MACHINE_KEY);
+        let entry = |created: u64, closed: serde_json::Value| {
+            let k = DeviceKeys::generate();
+            let mut cert = HostedCert::new(
+                &d,
+                "hw_2",
+                "box",
+                &hex::encode(k.noise_public),
+                &hex::encode(k.sign_public()),
+                created,
+            );
+            key.sign(&mut cert);
+            (
+                cert.device.clone(),
+                serde_json::json!({ "cert": cert, "delegation": d, "revocations": [], "closed": closed }),
+            )
+        };
+        let none = serde_json::json!([]);
+        let (before, after) = (entry(5, none.clone()), entry(40, none));
+        let (told_id, told) = entry(40, serde_json::json!([key.close(&d, 30), {}]));
+
+        let mut held = HeldClosures::default();
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_ok(), "it's heard nothing yet");
+        assert!(accept_hosted(&e, &told_id, &told, &mut held).is_err());
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_err(), "control left it out");
+        assert!(accept_hosted(&e, &before.0, &before.1, &mut held).is_ok());
+
+        write_held(&dir, &held).unwrap();
+        let mut back = read_held(&dir).unwrap();
+        assert_eq!(back, held);
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut back).is_err(), "after a restart");
+        // A file that doesn't read is an error, never none, and no hosted
+        // machine counts until it's fixed.
+        std::fs::write(dir.join(HELD_FILE), b"{").unwrap();
+        assert!(read_held(&dir).is_err());
+        let memory = std::sync::Mutex::new(HeldClosures::default());
+        assert!(with_held(&memory, &dir, |held| held.is_none()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // A write that fails forgets nothing: this directory isn't there, so
+        // the file reads as none and can't be written.
+        let round = |entry: &(String, serde_json::Value)| {
+            with_held(&memory, &dir, |held| accept_hosted(&e, &entry.0, &entry.1, held.unwrap()).is_ok())
+        };
+        assert!(!round(&(told_id.clone(), told.clone())));
+        assert!(!dir.exists());
+        assert!(!round(&after), "the next round, with control leaving it out");
+        // A file left behind takes nothing back, and memory goes into it.
+        std::fs::create_dir_all(&dir).unwrap();
+        write_held(&dir, &HeldClosures::default()).unwrap();
+        assert!(!round(&after));
+        assert_eq!(read_held(&dir).unwrap(), *memory.lock().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A read-only link's key on each kind of machine: a personal and a
+    /// team machine (just joined), a workspace and a snapshot's box let it
+    /// in; a deploy's box, of an account's project or a team's, and one
+    /// that is both, don't, and say they admit no guests either. A link
+    /// made while the box was a workspace stops working when it's told it's
+    /// a deploy's: the relay's channel, which waits on `changed` and then
+    /// asks `device` again, closes, and the link stays in `acl.json`.
+    #[test]
+    fn a_deploys_box_admits_no_links() {
+        let load = |name: &str| -> Saved {
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        let noise = [7u8; 32];
+        let key = hex::encode(noise);
+        let admitted = |saved: &Saved, tag: &str| {
+            let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-{tag}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
+            let got = c.device(&noise).map(|(_, p)| p);
+            (c, acl, dir, got)
+        };
+        for (name, want) in [
+            ("personal-joined", true),
+            ("team-joined", true),
+            ("hosted-team", true),
+            ("hosted-snapshot", true),
+            ("hosted-deploy", false),
+            ("hosted-deploy-team", false),
+            ("hosted-both", false),
+        ] {
+            let (c, _, dir, got) = admitted(&load(name), name);
+            assert_eq!(got.is_some(), want, "{name}: {got:?}");
+            assert_eq!(c.admits_links_and_guests(), want, "{name}: links and guests");
+            if let Some(p) = got {
+                assert!(p.id().starts_with("link:"), "{name}: {}", p.id());
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        // Made on a workspace, then the box is told it's a deploy's.
+        let mut saved = load("hosted-team");
+        let (c, acl, dir, before) = admitted(&saved, "switch");
+        let was = before.expect("a workspace lets the link in");
+        let mut changed = c.changed.subscribe();
+        changed.mark_unchanged();
+        saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
+        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        assert!(changed.has_changed().unwrap(), "the channel's loop is woken");
+        let now = c.device(&noise).map(|(_, p)| p);
+        assert!(now.is_none(), "the same key, once it's a deploy's box");
+        assert_eq!(crate::e2e::no_longer(now, &was), Some(crate::e2e::UNTRUSTED), "its open channel closes");
+        assert!(!c.admits_links_and_guests(), "nor a guest's invite");
+        assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Not enrolled: with no control.json, a machine of its own admits
+        // guests as it always has; with one that won't load, it doesn't.
+        let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-unloaded", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        assert!(c.enrolled().is_none() && c.admits_links_and_guests(), "no control.json");
+        std::fs::write(dir.join(FILE), "not json").unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl, false);
+        assert!(c.enrolled().is_none(), "the file doesn't load");
+        assert!(!c.admits_links_and_guests(), "a control.json that won't load");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The access view (Arugula #681) says exactly whom [`Enrolled::build`]

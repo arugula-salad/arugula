@@ -1,11 +1,13 @@
 //! A merged PR closes the native issues it names (Arugula #432), through the
 //! mirror's own webhook, in M165's world (`viewer_tests::world`): the same
 //! links the boards read (`Arugula #N` in the body, a branch `feat/N-…`)
-//! close on merge, as completed, naming the PR, and the board's row is Done,
-//! proven by CI, with nobody writing a keyword. `part of Arugula #N`, a PR
-//! closed unmerged and an issue of another project close nothing; one closed
-//! already stays as it was; a PR a person attached to a row closes that
-//! row's issue; a second pass adds no event.
+//! close on merge, as completed, naming the PR and its words, and the board's
+//! row is Done, proven by CI, and says which PR closed it, with nobody
+//! writing a keyword. `part of Arugula #N` (even from a branch `feat/N-…`),
+//! `(#N)` in passing in the body, a PR closed unmerged and an issue of
+//! another project close nothing; one closed already stays as it was; a PR a
+//! person attached to a row closes that row's issue; a second pass adds no
+//! event.
 
 use std::time::Instant;
 
@@ -104,12 +106,15 @@ async fn a_merged_pr_that_names_the_issue_closes_it() {
     let events = closed_events(&app, &issue);
     assert_eq!(events.len(), 1, "{events:?}");
     assert_eq!((events[0].actor.as_str(), &events[0].actor_agent), ("bob", &None));
-    assert_eq!(events[0].detail, json!({ "reason": "completed", "pr": "acme/site#70" }));
+    let by = format!("\"Arugula #{n}\" in the body");
+    assert_eq!(events[0].detail, json!({ "reason": "completed", "pr": "acme/site#70", "by": by }));
     let (s, got) = call(&base, "bob", "GET", &format!("/api/issues/{issue}"), None).await;
     assert_eq!((s, got["state"].as_str(), got["close_reason"].as_str()), (200, Some("closed"), Some("completed")));
     let v = read(&base, "bob", &board).await;
     assert_eq!(on(&v, &issue).0, "lane_done", "{v}");
     assert_eq!(on(&v, &issue).1["proof"], json!({ "by": "ci", "pointer": fi(&pr_id(&app, 70)) }), "{v}");
+    let live = &on(&v, &issue).1["live"];
+    assert_eq!((&live["closed_with"], &live["closed_by"]), (&json!("acme/site#70"), &json!(by)), "{v}");
 
     // The same delivery again, and the poller's pass over the PR.
     deliver(&app, "closed", &p, 11, true, BOB).await;
@@ -118,19 +123,21 @@ async fn a_merged_pr_that_names_the_issue_closes_it() {
 }
 
 /// The branch, a `(#N)` in the title and a GitHub-style `Closes #N` name too,
-/// with no board; a `#N` that is a GitHub issue of the repo is not the native
-/// one; a merger who is not in the project leaves the App to close it; an
-/// issue closed already stays as it was; the poller's pass closes a PR the
-/// webhook never told of.
+/// with no board, each kept as its words; a `(#N)` in passing in the body
+/// only links (Arugula #743); a `#N` that is a GitHub issue of the repo is
+/// not the native one; a merger who is not in the project leaves the App to
+/// close it; an issue closed already stays as it was; the poller's pass
+/// closes a PR the webhook never told of.
 #[tokio::test]
 async fn every_link_names_an_issue_and_the_rest_stays_as_it_was() {
     let (base, app, team, _) = start().await;
     mirror_bodies(&app);
     let mut ns = vec![];
-    for t in ["A", "B", "C", "D", "E"] {
+    for t in ["A", "B", "C", "D", "E", "F", "G"] {
         ns.push(native(&base, &team, t).await);
     }
     let (a, b, c, d, e) = (&ns[0], &ns[1], &ns[2], &ns[3], &ns[4]);
+    let (f, g) = (&ns[5], &ns[6]);
     let (s, _) = call(
         &base,
         "bob",
@@ -145,18 +152,24 @@ async fn every_link_names_an_issue_and_the_rest_stays_as_it_was() {
     // bare `#2` is GitHub's: native #2 (B) is left alone by it.
     assert_eq!(b.1, 2);
     let branch = format!("feat/{}-wire", a.1);
-    let body = format!("closes #{} and Arugula #{}, (#{})", b.1, c.1, d.1);
-    let p = Pr { number: 71, title: "Wire", body: &body, branch: &branch };
+    let body = format!("closes #{} and Arugula #{}, as the platform had it (#{}). Closes #{}", b.1, c.1, d.1, f.1);
+    let title = format!("Wire (#{})", g.1);
+    let p = Pr { number: 71, title: &title, body: &body, branch: &branch };
     open_and_merge(&app, &p, ("eve-gh", 1005)).await;
     let ea = closed_events(&app, &a.0);
     assert_eq!(ea.len(), 1, "named by its branch");
     assert_eq!(ea[0].actor, closes::APP, "a merger outside the project: the App");
     assert_eq!(ea[0].detail["pr"], "acme/site#71");
+    assert_eq!(ea[0].detail["by"], format!("the branch {branch}"));
     assert!(closed_events(&app, &b.0).is_empty(), "#2 is the repo's GitHub issue");
     let ec = closed_events(&app, &c.0);
     assert_eq!(ec.len(), 1, "its own close only: {ec:?}");
     assert_eq!(ec[0].detail, json!({ "reason": "not_planned" }), "not changed to completed");
-    assert_eq!(closed_events(&app, &d.0).len(), 1, "named by (#N) in the body");
+    assert!(closed_events(&app, &d.0).is_empty(), "(#N) in passing in the body only links");
+    let ef = closed_events(&app, &f.0);
+    assert_eq!(ef[0].detail["by"], format!("\"Closes #{}\" in the body", f.1));
+    let eg = closed_events(&app, &g.0);
+    assert_eq!(eg[0].detail["by"], format!("\"(#{})\" in the title", g.1));
 
     // The poller reads a PR the webhook never told of: its pass closes too.
     let title = format!("Arugula #{}: poll", e.1);
@@ -195,6 +208,12 @@ async fn links_that_do_not_close() {
     assert!(closed_events(&app, &issue).is_empty(), "linked, unmerged: open");
     assert!(closed_events(&app, &theirs.id).is_empty(), "another project's issue");
     assert_eq!(app.db.issue(&theirs.id).unwrap().unwrap().state.as_str(), "open");
+
+    // A branch that names it, with `part of` in the text (Arugula #755).
+    let branch = format!("feat/{n}-page-header");
+    let part = format!("Part of Arugula #{n}");
+    open_and_merge(&app, &Pr { number: 77, title: &part, body: &part, branch: &branch }, BOB).await;
+    assert!(closed_events(&app, &issue).is_empty(), "the text's part of wins over the branch");
 
     // Said plainly as well as softly, it closes.
     let both = format!("Part of Arugula #{n}\n\nArugula #{n}");

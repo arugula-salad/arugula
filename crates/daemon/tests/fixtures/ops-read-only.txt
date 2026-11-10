@@ -17,6 +17,7 @@ host.get GET /api/host
 hosted_setup.get GET /api/hosted/setup
 hosts.list GET /api/hosts
 ide.get GET /api/ide
+links.list GET /api/links
 machines.list GET /api/machines
 notify.get GET /api/notify
 pane.detection GET /api/panes/{id}/detection

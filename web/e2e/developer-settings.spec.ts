@@ -29,13 +29,13 @@ test.afterAll(closeContexts);
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-developer-"));
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
-  writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
+  writeFileSync(join(state, "loam-key"), "loam_e2e-key");
   daemon = spawn(
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", state, "--shell", "bash --norc --noprofile", "--no-manager-env"],
       ...["--owner", OWNER, "--tailscale-socket", "/nonexistent/tailscaled.sock"],
-      ...["--wisp-url", "http://127.0.0.1:9", "--wisp-token-file", join(state, "wisp-token")],
+      ...["--loam-url", "http://127.0.0.1:9", "--loam-key-file", join(state, "loam-key")],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
     { stdio: "ignore" },
@@ -48,7 +48,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "live-presence"] as const;
+const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -83,15 +83,11 @@ async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> 
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agent-delegation"),
-      // Live presence is control's too (#341): the switch follows control's
-      // say, so here the page only knows the flag.
-      live: c.flag("live-presence"),
     };
   });
   if (page_says.workspaces) out.push("chant-workspaces");
   if (page_says.forges) out.push("additional-forges");
   if (page_says.agents) out.push("agent-delegation");
-  if (page_says.live) out.push("live-presence");
   return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
 

@@ -11,8 +11,9 @@
 //! - no one deletes a single issue (deleting the project takes them);
 //! - anyone else gets 404, as if the project or issue weren't there.
 //!
-//! Native issues come with chat, so they're behind control's chat setting
-//! (`chat_on`), as their threads are.
+//! Membership and roles alone say who may do what (Arugula #746): a
+//! person's chat setting doesn't, nor an agent's owner's. An issue's
+//! comments are chat's object thread, so they still come with chat.
 //!
 //! **Who acts** is an [`Actor`]: a person (the routes here, from a browser
 //! or a CLI device), or a person's agent on a machine (M197; [`agent`]'s
@@ -36,8 +37,12 @@ pub mod agent;
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use arugula_control_common::{ApiError, err, refusal};
-use arugula_control_wire::{chat::ChatAgent, issues as wire};
+use arugula_control_common::{ApiError, err};
+use arugula_control_wire::{
+    chat::ChatAgent,
+    issues as wire,
+    projects::{CI_VIA, ci_name},
+};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
@@ -49,7 +54,6 @@ use axum::{
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat::{CHAT_OFF, chat_on},
     db::{
         chat::{Page, Word},
         issues::{self as db, Actor, CloseReason, Filter, ListEdit, State as IssueState},
@@ -88,7 +92,7 @@ impl Place {
     }
 
     /// Whether `account` is in the project: who may be assigned.
-    fn has(&self, account: &str) -> bool {
+    pub fn has(&self, account: &str) -> bool {
         match &self.team {
             Some(t) => t.role(account).is_some(),
             None => self.project.account.as_deref() == Some(account),
@@ -115,13 +119,6 @@ fn no_issue() -> ApiError {
 /// write), so it never reaches more than its owner. [`agent`]'s routes
 /// (M200) call these functions with one.
 pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<Place, ApiError> {
-    if !chat_on(app, by.account).await? {
-        return Err(refusal(
-            StatusCode::FORBIDDEN,
-            CHAT_OFF,
-            "native issues come with chat, which isn't on for you: a team's owners turn it on in control (Teams)",
-        ));
-    }
     let id = if asked == PERSONAL {
         crate::projects::personal_project(app, by.account).await?.ok_or_else(no_project)?
     } else {
@@ -167,7 +164,8 @@ pub(crate) async fn issue_place(
 
 /// Machines' names for the agents among these, by id. An agent session
 /// (`ses_…`, aru-115) is named here, `Agent session <its first 8 hex>`, as
-/// chat names what one said.
+/// chat names what one said, and CI (`ci:<source>`, native #774) as
+/// `<source> CI`.
 async fn machine_names(
     app: &Platform,
     agents: impl Iterator<Item = &String>,
@@ -175,6 +173,9 @@ async fn machine_names(
     let (sessions, ids): (Vec<String>, Vec<String>) =
         agents.cloned().collect::<BTreeSet<_>>().into_iter().partition(|id| id.starts_with(SESSION));
     let mut out: Names = sessions.iter().map(|id| (id.clone(), session_name(id))).collect();
+    // What CI opened or closed (native #774) is named by its `ci:` id.
+    let (ci, ids): (Vec<String>, Vec<String>) = ids.into_iter().partition(|id| id.starts_with(CI_VIA));
+    out.extend(ci.into_iter().filter_map(|id| ci_name(&id).map(|n| (id, n))));
     if !ids.is_empty() {
         out.extend(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)));
     }
@@ -470,6 +471,7 @@ pub async fn change(
         labels: labels.as_ref().map(edit_of),
         assignees: p.assignees.as_ref().map(edit_of),
         by_pr: None,
+        by_words: None,
     };
     let old = issue;
     let (issue, events) = app.db.patch_issue(id, &patch, by, now_ms())?.ok_or_else(no_issue)?;
@@ -521,17 +523,23 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
 }
 
 /// Every issue in a project with its timeline and comments, as `by` may
-/// read them (M195: custody's one-way door).
+/// read them (M195: custody's one-way door). The comments are chat's, so
+/// they come only while chat is on for `by` (its owner, for an agent).
 pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire::IssueExport, ApiError> {
     let place = place(app, by, project, false).await?;
     app.limits.check_account(ISSUE_EXPORTS, by.account)?;
+    let with_comments = crate::chat::chat_on(app, by.account).await?;
     let all = app.db.export_issues(&place.project.id)?;
     let mut people = BTreeSet::new();
     let mut agents = BTreeSet::new();
     let mut threads = Vec::with_capacity(all.len());
     for e in &all {
         let mut comments = vec![];
-        if let Some(room) = app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)? {
+        let room = match with_comments {
+            true => app.db.chat_room_on(&format!("project:{}", e.issue.project), &e.issue.id)?,
+            false => None,
+        };
+        if let Some(room) = room {
             let mut after = i64::MIN;
             loop {
                 let (page, more) = app.db.chat_messages(&room.id, Page::After(after), 500)?;
@@ -586,6 +594,7 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
                     text: m.text,
                     quote: m.quote,
                     edited: m.edited,
+                    via: m.via,
                 })
                 .collect(),
         })
@@ -609,6 +618,7 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
         exported_at: now_ms(),
         issues,
         people,
+        comments_in_chat: !with_comments,
     })
 }
 
@@ -754,6 +764,23 @@ fn fenced(s: &str) -> String {
     format!("{fence}\n{}\n{fence}\n", s.trim_end())
 }
 
+/// Who wrote a comment with no author but a `via`, as the page names it
+/// (Arugula #626): a GitHub login "on GitHub", CI by its name, an agent
+/// session by its id, and the rest (`system`, a session's card or ask)
+/// Arugula itself. Only a deleted account's comment has neither.
+fn posted_by(via: &str) -> String {
+    use arugula_control_wire::{projects::ci_name, sessions::said_of};
+    if let Some(login) = via.strip_prefix("github:") {
+        format!("{} on GitHub", if login.is_empty() { "someone" } else { login })
+    } else if let Some(ci) = ci_name(via) {
+        ci
+    } else if let Some(ses) = said_of(via) {
+        format!("Agent session {}", ses.trim_start_matches("ses_").chars().take(8).collect::<String>())
+    } else {
+        "Arugula".to_owned()
+    }
+}
+
 /// An export as one Markdown file: a heading per issue, its facts, its
 /// body, its timeline and its comments, each by name. What people wrote is
 /// one line or in a code block ([`line`], [`fenced`]), so it can't pass
@@ -775,12 +802,20 @@ pub fn markdown(x: &wire::IssueExport) -> String {
             None => who,
         })
     };
+    let by = |c: &wire::IssueComment| match c.via.as_deref() {
+        Some(via) if c.author.is_empty() => line(&posted_by(via)),
+        Some(via) => format!("{} via {}", name(&c.author, &c.agent), line(via)),
+        None => name(&c.author, &c.agent),
+    };
     let mut out = format!(
         "# Issues: {}\n\nExported {} from project `{}`.\n",
         line(&x.project_name),
         when(x.exported_at),
         x.project
     );
+    if x.comments_in_chat {
+        out.push_str("\nThe comments are left out: they're in chat, which is off for you.\n");
+    }
     for e in &x.issues {
         let i = &e.issue;
         let _ = write!(out, "\n## #{} {}\n\n", i.number, line(&i.title));
@@ -814,9 +849,10 @@ pub fn markdown(x: &wire::IssueExport) -> String {
                 },
                 "closed" => {
                     let why = d["reason"].as_str().unwrap_or("completed").replace('_', " ");
-                    match d["pr"].as_str() {
-                        Some(pr) => format!("closed it ({why}) with {pr}"),
-                        None => format!("closed it ({why})"),
+                    match (d["pr"].as_str(), d["by"].as_str()) {
+                        (Some(pr), Some(by)) => format!("closed it ({why}) with {pr}, by {by}"),
+                        (Some(pr), None) => format!("closed it ({why}) with {pr}"),
+                        _ => format!("closed it ({why})"),
                     }
                 }
                 "reopened" => "reopened it".to_owned(),
@@ -834,7 +870,7 @@ pub fn markdown(x: &wire::IssueExport) -> String {
         if !e.comments.is_empty() {
             out.push_str("\n### Comments\n");
             for c in &e.comments {
-                let _ = write!(out, "\n**{}**, {}:\n\n", name(&c.author, &c.agent), when(c.at));
+                let _ = write!(out, "\n**{}**, {}:\n\n", by(c), when(c.at));
                 if let Some(q) = c.quote.as_deref().filter(|q| !q.is_empty()) {
                     out.push_str(&fenced(q));
                     out.push('\n');

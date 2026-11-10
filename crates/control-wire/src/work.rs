@@ -28,7 +28,7 @@
 //!   hasn't ended, on every pull: the queued ones to take (no more than
 //!   the box's [`MAX_SESSIONS_PER_BOX`] running and
 //!   [`MAX_HELD_SESSIONS_PER_BOX`] held), the rest so it sees their new
-//!   prompts and which to park ([`SessionWork::park`]), and its own last
+//!   prompts and which to park ([`AgentSessionWork::park`]), and its own last
 //!   report number (`n`). One the
 //!   machine runs that's no longer listed has ended (stopped, failed): it
 //!   stops the agent.
@@ -68,7 +68,7 @@
 //!   the platform mints only for the session's own branch on the session's
 //!   repo, with `contents: write` alone, and the box revokes it after. The
 //!   turn's `pushed` says whether it got there.
-//! - **Actions** come as [`SessionAction`]s in [`SessionWork::actions`]:
+//! - **Actions** come as [`SessionAction`]s in [`AgentSessionWork::actions`]:
 //!   what people asked of the session that only the box can do (`answer`
 //!   its open question, `approve` or `deny` its open permission, `cancel`
 //!   the turn), oldest first, on every pull until a report names them in
@@ -195,23 +195,25 @@ impl WorkQuery {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Work {
     #[serde(default)]
-    pub items: Vec<WorkItem>,
+    pub items: Vec<ReadyRun>,
     /// Every revoke of the project's grants the platform holds, on every
     /// pull, ready runs or not: a machine checks them against the grants
     /// its runs going were started under, and stops those a `running stop`
-    /// covers.
+    /// covers, and against its sessions' grants, ending those any revoke
+    /// covers (a turn under way finishes first, unless it says `running
+    /// stop`).
     #[serde(default)]
     pub revokes: Vec<GrantRevoke>,
     /// The sessions on this machine's workspace that haven't ended, for a
     /// machine that takes them ([`TAKES_SESSION`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sessions: Vec<SessionWork>,
+    pub sessions: Vec<AgentSessionWork>,
 }
 
 /// A run that's ready for this machine and hasn't started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct WorkItem {
+pub struct ReadyRun {
     /// `run_` and 32 hex characters.
     pub run: String,
     pub project: String,
@@ -242,6 +244,30 @@ pub struct WorkItem {
     /// approval, which the machine checks itself before it starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<DeployWork>,
+    /// A chant→Fly deploy's plan run (#1985): the deploy whose plan it
+    /// runs, before anyone approves it. A machine from before it reads
+    /// neither this nor [`ReadyRun::deploy`], and a deploy's box refuses
+    /// that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy_plan: Option<DeployPlanWork>,
+}
+
+/// What a deploy's plan run plans (#1985): the deploy's operation, its
+/// driver and settings. No approval: the plan comes before one, and its
+/// run gets no secret of the environment's, only a GitHub token the
+/// platform mints to push chant's ledger ([`DeployPlanWork::secrets`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DeployPlanWork {
+    /// `dep_` and 32 hex characters.
+    pub deploy: String,
+    pub operation: Operation,
+    pub driver: String,
+    /// The secrets it gets: `GITHUB_TOKEN`, minted.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub settings: arugula_e2e::drivers::Settings,
 }
 
 /// What a deploy's run applies (M219), for its machine to check: the
@@ -301,6 +327,34 @@ pub struct PasskeyAssertion {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SecretsAsk {
     pub run: String,
+    /// A deploy's plan run (#1985) asks twice, a token each time: to fetch
+    /// its source, before anything of the commit's runs, and to push
+    /// chant's ledger, after everything that ran is stopped. Any other
+    /// run asks once, with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_step: Option<PlanStep>,
+}
+
+impl SecretsAsk {
+    /// A run's one ask (not a plan run's).
+    pub fn run(run: &str) -> Self {
+        Self { run: run.into(), plan_step: None }
+    }
+}
+
+/// Which of a deploy plan run's two tokens a box asks for (#1985).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStep {
+    /// A GitHub token that reads the deploy's repository, to fetch the
+    /// commit: nothing of the commit's has run yet.
+    Fetch,
+    /// A GitHub token that writes the repository's contents, to push
+    /// chant's ledger: everything the plan ran is stopped by then, the box's
+    /// daemon checked what the plan added, and the token reaches only the
+    /// daemon's own push, never the run user.
+    Push,
 }
 
 /// [`WORK_SECRETS`]'s answer.
@@ -348,7 +402,7 @@ impl std::fmt::Debug for Secret {
 /// An agent session on this machine's workspace that hasn't ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct SessionWork {
+pub struct AgentSessionWork {
     /// `ses_` and 32 hex characters.
     pub session: String,
     pub project: String,
@@ -406,6 +460,21 @@ pub struct SessionWork {
     /// for it ([`MAX_SESSIONS_PER_BOX`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub park: bool,
+    /// The project's standing grant, on every pull while it has a live one
+    /// that gives `runs.instruct` (aru-115, as amended): the box checks it
+    /// against what it pinned before it takes the session or starts a turn
+    /// (`arugula_e2e::project_grant::check`), and keeps the last one that
+    /// checked out, for the revokes that come with every pull
+    /// ([`Work::revokes`]). With none, the box starts nothing new; a turn
+    /// under way finishes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<ProjectGrant>,
+    /// A v2 grant's granter's passkey log, as the platform read it from the
+    /// hub (DK6, as [`WorkItem::passkey_log`]), while the session may be
+    /// about to start a turn: the machine takes only its removals. `None`:
+    /// it goes by what it pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_log: Option<arugula_e2e::passkey::Log>,
 }
 
 /// The agents a session runs on (M264): Claude Code and Codex, through
@@ -788,6 +857,10 @@ pub enum SessionIssuesGiven {
         comments: Vec<crate::chat::ChatMessage>,
         /// There are older comments than these.
         more_comments: bool,
+        /// The comments were left out: they're in chat, which is off for
+        /// the session's asker (Arugula #746). Absent when they're there.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        comments_in_chat: bool,
     },
     /// Posted, as this message of the issue's thread.
     Commented {

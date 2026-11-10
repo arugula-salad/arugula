@@ -31,7 +31,7 @@ Short paths below are under `crates/platform/src`.
 **What attaches:**
 - `work` is a PR, an agent block or a run; `proof` is a run or a link (`AttachRole::takes`). Done rows are proven by CI, by evidence or not at all (`lanes::proof`).
 - A PR attaches itself. `forge/ingest.rs` and `forge/poller.rs` call `auto_attach_prs` (`boards/auto.rs`), which matches the references in `boards/refs.rs` to rows of the project its repo is linked to. It never takes off an attachment a person or agent made.
-- A merged PR closes the native issues it names (`forge/closes.rs`), which then moves the row. `part of Arugula #N` only links.
+- A merged PR closes the native issues it names (`forge/closes.rs`), which then moves the row, and the row says which PR closed it and by which words (`Live::closed_with`, `closed_by`). `part of Arugula #N` and any other `#N` in the body, such as `(#N)` in passing, only link.
 - Docs are `board_docs` (`boards/docs.rs`): project Docs of the same project, or a machine's Doc by id. A Doc never moves a lane or counts as proof.
 - Asks are `boards/asks.rs`. Only the named person, or an owner or editor for them, answers, and never a machine. The board also raises asks on read, from failed checks and blocks waiting for input.
 - Relations are `boards/relations.rs`. `blocks` marks a row as blocked and leaves its lane alone. Plane epics become boards through `boards/epics.rs`, when the connection's `epics_as_boards` is on.

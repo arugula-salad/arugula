@@ -12,7 +12,9 @@
 //!   forgotten when the machine leaves control ([`forget_platform`]).
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
-//! Nothing here prunes: a Doc stays until the owner deletes it.
+//! Nothing here prunes: a Doc stays until the owner deletes it, and its
+//! copy on the platform goes with it ([`remove`], a tombstone in
+//! [`GONE`] until it's down).
 //!
 //! **The migration** ([`migrate`]) moves the Docs of the old layout, where a
 //! Doc's files were in its block's folder (`blocks/<id>/doc/`, or
@@ -31,7 +33,7 @@ use std::{
 };
 
 use arugula_core::PaneId;
-use arugula_proto::api::SearchHit;
+use arugula_proto::api::{DocLayout, SearchHit};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -61,6 +63,9 @@ pub struct Meta {
     pub shape: Option<Shape>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<OnPlatform>,
+    /// How the Doc is laid out; a `meta.json` without it is `doc`.
+    #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
+    pub layout: DocLayout,
 }
 
 /// Where a Doc's copy on the platform is (#418), as its last put was
@@ -116,6 +121,7 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             by: by.to_owned(),
             shape: Some(Shape::default()),
             platform: None,
+            layout: DocLayout::Doc,
         };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
@@ -154,6 +160,25 @@ pub fn touch(dir: &Path, title: Option<&str>) {
     super::copies::changed(&meta.id);
 }
 
+/// The Doc's layout is now `layout`: `updated` moves, and its copy and
+/// share follow. A folder with no `meta.json` is left alone. Whether it
+/// changed.
+pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
+    let _held = META_LOCK.lock().unwrap();
+    let Some(mut meta) = read_meta(dir) else { return false };
+    if meta.layout == layout {
+        return false;
+    }
+    meta.layout = layout;
+    meta.updated = now_ms().max(meta.updated);
+    if let Err(e) = write_meta(dir, &meta) {
+        warn!(doc = meta.id, error = e, "can't keep a Doc's layout");
+        return false;
+    }
+    super::copies::changed(&meta.id);
+    true
+}
+
 /// Where the Doc's copy on the platform is now.
 pub fn set_platform(dir: &Path, on: OnPlatform) {
     let _held = META_LOCK.lock().unwrap();
@@ -165,6 +190,7 @@ pub fn set_platform(dir: &Path, on: OnPlatform) {
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't keep where a Doc's copy is");
     }
+    super::moved(&meta.id, true);
 }
 
 /// This machine left control: where each Doc's copy was no longer holds
@@ -179,6 +205,7 @@ pub fn forget_platform(state_dir: &Path) {
         {
             warn!(doc = meta.id, error = e, "can't forget where a Doc's copy was");
         }
+        super::moved(&meta.id, false);
     }
 }
 
@@ -209,10 +236,46 @@ pub fn list(state_dir: &Path) -> Vec<Meta> {
     out
 }
 
-/// The Doc, gone from disk.
+/// In the library: a file per deleted Doc, by id, until its copy on the
+/// platform is down ([`super::copies`]); its content counts the refusals.
+pub const GONE: &str = ".gone";
+
+/// Where the tombstones are.
+pub fn gone_dir(state_dir: &Path) -> PathBuf {
+    root(state_dir).join(GONE)
+}
+
+/// The Doc, gone from disk: its tombstone first, so a removal that fails
+/// partway still takes the copy down, then its folder, and its copy on the
+/// platform follows ([`super::copies::removed`]). A removal that fails
+/// before the Doc's files went takes the tombstone back: the Doc lives,
+/// and keeps its copy.
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"))
+    let gone = gone_dir(state_dir);
+    private_dir(&gone)
+        .and_then(|()| write_atomic(&gone.join(id), b"0"))
+        .map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
+    let removed = std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"));
+    if removed.is_err() && read_meta(&dir).is_some() {
+        let _ = std::fs::remove_file(gone.join(id));
+        return removed;
+    }
+    super::copies::removed(id);
+    removed
+}
+
+/// The Doc's `meta.json`, or `None` when it's gone for sure (no such
+/// file); one that can't be read or doesn't parse is an error, never an
+/// absence.
+pub fn read_meta_or_gone(dir: &Path) -> Result<Option<Meta>, String> {
+    let bytes = match std::fs::read(dir.join(META)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("can't read the Doc's meta.json: {e}")),
+    };
+    let meta: Meta = serde_json::from_slice(&bytes).map_err(|e| format!("the Doc's meta.json doesn't parse: {e}"))?;
+    Ok(Some(meta))
 }
 
 /// Lines of every Doc in the library matching `re` (a Doc that no block shows
@@ -418,6 +481,7 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
             by: "migrated".into(),
             shape: Some(shape::of(&to)),
             platform: None,
+            layout: DocLayout::Doc,
         },
     )?;
     Ok(id)
@@ -808,6 +872,33 @@ mod tests {
         // `since` leaves out a Doc not changed since.
         assert!(search(&state, &shown, &re, Some(now_ms() + 60_000), 10).is_empty());
         assert!(search(&state, &shown, &re, None, 0).is_empty());
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    #[test]
+    fn a_docs_layout_is_kept_and_a_doc_without_one_reads_as_doc() {
+        let state = temp("layout");
+        let made = make(&state, "Mine", "me").unwrap();
+        let dir = dir(&state, &made.id).unwrap();
+        // A fresh Doc writes none, and a `meta.json` from before layouts reads `doc`.
+        let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join(META)).unwrap()).unwrap();
+        assert!(on_disk.get("layout").is_none());
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Doc);
+
+        assert!(!set_layout(&dir, DocLayout::Doc), "no change, no write");
+        assert!(set_layout(&dir, DocLayout::Tabs));
+        // As a restart reads it: from the folder, in the list too.
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Tabs);
+        assert_eq!(list(&state)[0].layout, DocLayout::Tabs);
+        assert!(set_layout(&dir, DocLayout::Prototype));
+        assert_eq!(list(&state)[0].layout, DocLayout::Prototype);
+        // A layout from a newer peer reads as `doc`, and the Doc still lists.
+        let mut meta = on_disk;
+        meta["layout"] = json!("gallery");
+        std::fs::write(dir.join(META), meta.to_string()).unwrap();
+        assert_eq!(list(&state)[0].layout, DocLayout::Doc);
+        // Setting it on a folder with no `meta.json` does nothing.
+        assert!(!set_layout(&state.join("nowhere"), DocLayout::Tabs));
         std::fs::remove_dir_all(state).unwrap();
     }
 }

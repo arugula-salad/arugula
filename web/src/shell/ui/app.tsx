@@ -3,6 +3,7 @@
 // a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
 // the layers over them (menus, dialogs, the palette).
 
+import { EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -133,7 +134,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
-      {state && <DocsPageLayer client={client} />}
       <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -196,6 +196,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
+            {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
+            {state && <DocsPageLayer client={client} inWorkspace />}
             {/* M111: between the header and the footer, over the panes. */}
             <AttentionDrawer client={client} />
           </div>
@@ -265,20 +267,28 @@ function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   const guest = !!client.state?.roles;
   return (
     <div class="empty" data-no-sessions>
-      <p class="empty-title">{guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}</p>
-      <p class="dim">
-        {guest
-          ? "When its owner shares a session with you, it shows here."
-          : "A session holds tabs, and each tab its panes: shells, agents, editors."}
-      </p>
-      {directory.control && (
-        <p data-no-sessions-host>Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.</p>
-      )}
-      {!guest && (
-        <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
-          New session
-        </button>
-      )}
+      <EmptyState
+        where="page"
+        title={guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}
+        why={
+          guest
+            ? "When its owner shares a session with you, it shows here."
+            : "A session holds tabs, and each tab its panes: shells, agents, editors."
+        }
+        action={
+          !guest && (
+            <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+              New session
+            </button>
+          )
+        }
+      >
+        {directory.control && (
+          <p class="empty-state-why" data-no-sessions-host>
+            Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.
+          </p>
+        )}
+      </EmptyState>
       <HintEmpty client={client} />
     </div>
   );
@@ -348,7 +358,7 @@ function SettingsPageLayer({ client }: { client: Client }) {
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is
  * up. Not Labs' since native #204. */
-function DocsPageLayer({ client }: { client: Client }) {
+function DocsPageLayer({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [, setTick] = useState(0);
   const [page, setPage] = useState<typeof import("./docs-page") | null>(null);
   useEffect(() => {
@@ -361,5 +371,5 @@ function DocsPageLayer({ client }: { client: Client }) {
     if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
   }, [on]);
   if (!on || !page) return null;
-  return <page.DocsPage client={client} />;
+  return <page.DocsPage client={client} inWorkspace={inWorkspace} />;
 }

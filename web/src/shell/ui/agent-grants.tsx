@@ -13,6 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Modal } from "../../shared/ui/modal";
 import { directory } from "../hosts";
 import { openPlatform, platformOrigin } from "../platform-links";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A grant, as `GET /api/grants` lists it. */
 export interface Grant {
@@ -124,22 +125,22 @@ function AgentGrants({ close }: { close: () => void }) {
   return (
     <Modal close={close} label="Agents' grants" class="rules agent-grants">
       <h2>Agents' grants</h2>
-      <p class="hint">
+      <p class="dim">
         What the agents on {name} may do on Arugula cloud, as you: each one's work there is labelled as your agent's on this machine.
       </p>
-      {error && <p class="hint" data-agent-grants-error>{error}</p>}
-      {!error && grants === null && <p class="hint">Loading…</p>}
+      {error && <p class="dim" data-agent-grants-error>{error}</p>}
+      {!error && grants === null && <p class="dim">Loading…</p>}
       {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on Arugula cloud.</p>}
       {powers.length > 0 && (
         <ul class="agent-grants-list" data-agent-grants>
           {powers.map((p) => (
             <li key={p} data-agent-grant={p}>
-              <b>{POWERS[p] ?? p}</b> <span class="hint">over {byPower.get(p)!.join(", ")}</span>
+              <b>{POWERS[p] ?? p}</b> <span class="dim">over {byPower.get(p)!.join(", ")}</span>
             </li>
           ))}
         </ul>
       )}
-      <p class="hint">
+      <p class="dim">
         {settings ? "Give or take them back in Account settings, under Agents, or with " : "Give or take them back with "}
         <code>arugula grants</code>.
       </p>
@@ -154,7 +155,7 @@ function AgentGrants({ close }: { close: () => void }) {
               openPlatform("/settings#agents");
             }}
           >
-            Change them in Settings ↗
+            Change them in Settings <ExternalIcon size="xs" />
           </button>
         )}
         <button class="primary" type="button" onClick={close}>
