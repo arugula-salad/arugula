@@ -1728,6 +1728,7 @@ impl Inner {
         state["recipe"] = json!(self.cfg.def.recipe);
         // #372: the issue it was started on, and the boards it is on.
         state["work"] = json!(self.cfg.work);
+        state["worktree"] = json!(self.cfg.worktree.as_ref().map(|w| &w.path));
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
@@ -3377,11 +3378,11 @@ impl Agent {
     /// work it left, as a [`arugula_proto::api::TurnResult`]; `null` while a
     /// turn runs, before the first, or when it said nothing.
     fn turn_result(&self) -> BoxFuture<'static, Result<Value, String>> {
-        let (message, started_ms, cwd) = {
+        let (message, started_ms, cwd, worktree) = {
             let g = self.inner.lock().unwrap();
             let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
             let message = if done { g.t.last_message() } else { None };
-            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
+            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g), g.cfg.worktree.as_ref().map(|w| w.path.clone()))
         };
         let block = self.ctx.block.clone();
         let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
@@ -3393,10 +3394,13 @@ impl Agent {
                 Some(u) => Ok(crate::review::Runner::As(u)),
                 None => crate::review::Runner::user(&block).await,
             };
-            let r = match runner {
+            let mut r = match runner {
                 Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
                 Err(_) => arugula_proto::api::TurnResult { message, work: None },
             };
+            if let Some(w) = r.work.as_mut() {
+                w.worktree = worktree;
+            }
             serde_json::to_value(r).map_err(|e| e.to_string())
         })
     }
@@ -3576,7 +3580,8 @@ impl Block for Agent {
                 })
                 .collect(),
         });
-        crate::block::Summary { title: g.shown_title(), on_issue, stopped, ..Default::default() }
+        let worktree = g.cfg.worktree.as_ref().map(|w| w.path.clone());
+        crate::block::Summary { title: g.shown_title(), on_issue, worktree, stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {

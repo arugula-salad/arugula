@@ -506,6 +506,14 @@ async fn start_agent_owns_a_worktree_and_close_keeps_unmerged_work() {
     assert!(r["summary"].as_str().unwrap().contains(wa.to_str().unwrap()), "{r}");
     call(&s, "wait", json!({ "pane": a, "until": "idle", "timeout": 30 })).await;
     assert_eq!(d.state(a)["cwd"], wa.to_str().unwrap());
+    // Every answer about the block says where its worktree is.
+    let want = wa.to_str().unwrap();
+    let w = call(&s, "wait", json!({ "pane": a, "until": "idle", "timeout": 30 })).await;
+    assert_eq!(w["turn"]["work"]["worktree"], want, "{w}");
+    let l = call(&s, "list", json!({})).await;
+    let row = l["panes"].as_array().unwrap().iter().find(|e| e["pane"] == a).unwrap();
+    assert_eq!(row["worktree"], want, "{l}");
+    assert_eq!(d.state(a)["worktree"], want);
     assert!(wa.join("dirty.txt").exists());
 
     // The same branch again is refused, not reused.
@@ -515,6 +523,7 @@ async fn start_agent_owns_a_worktree_and_close_keeps_unmerged_work() {
     // An uncommitted file: closed, but kept, with the reason.
     let r = call(&s, "close", json!({ "pane": a })).await;
     assert_eq!(r["worktree"]["outcome"], "kept", "{r}");
+    assert_eq!(r["worktree"]["path"], want, "{r}");
     assert!(r["worktree"]["why"].as_str().unwrap().contains("1 uncommitted file"), "{r}");
     assert!(r["summary"].as_str().unwrap().contains("kept worktree"), "{r}");
     assert!(wa.join("dirty.txt").exists());

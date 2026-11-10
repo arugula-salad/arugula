@@ -1258,6 +1258,10 @@ pub struct PaneInfo {
     /// (#372): the chip on its sidebar row and its swarm card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_issue: Option<OnIssue>,
+    /// The git worktree an agent block owns, absolute (start_agent with a
+    /// worktree, or an agent on an issue): where its work is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
 }
 
 /// The issue a block was started on, and the boards with a row it is

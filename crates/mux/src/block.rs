@@ -124,6 +124,8 @@ pub struct Summary {
     pub editor: Option<arugula_proto::EditorInfo>,
     /// The issue an agent block was started on, and its boards (#372).
     pub on_issue: Option<arugula_proto::OnIssue>,
+    /// The git worktree it owns, absolute.
+    pub worktree: Option<String>,
     /// Its program ended: an agent block whose agent stopped. It isn't
     /// running then (UI audit #154).
     pub stopped: bool,
