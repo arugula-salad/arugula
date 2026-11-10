@@ -218,8 +218,10 @@ jobs:
       - run: just bootstrap
       # The platform embeds web/dist-platform, and control web/dist.
       - run: just web
+      # Tests, not a release build: on a v* tag, control's build.rs wants full
+      # history and the stamped version, which only the build job has.
       - name: The platform on Postgres
-        run: just test-platform-postgres
+        run: env -u GITHUB_REF_TYPE -u GITHUB_REF_NAME just test-platform-postgres
         env:
           # As rare-nightly's test-postgres.
           CARGO_BUILD_JOBS: "4"
