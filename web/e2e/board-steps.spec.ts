@@ -581,3 +581,71 @@ test("at 390 px the page doesn't scroll sideways, with the title column at its w
   await shot(page, "390-narrowest");
   await grip(page).dblclick();
 });
+
+test("the Done toggle hides the done rows, closes the columns they leave empty and says how many each phase hides; the choice is kept, and Lanes has no toggle", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  const done = page.locator("[data-board-done]");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await page.locator('[data-board-view="steps"]').click();
+  // Narrowed to the chain (A and B done, C and D open: places 1 to 4), the only rows in view.
+  await page.locator("[data-board-find-input]").fill("Chain");
+  await expect(done).toHaveAttribute("aria-pressed", "true");
+  await expect(done).toHaveText("Done");
+  await expect(page.locator("[data-steps-col]")).toHaveText(["1", "2", "3", "4"]);
+  await expect(page.locator("[data-steps-done]")).toHaveCount(0);
+
+  // (a) Hidden: A and B aren't drawn, C is in column 1 and D in column 2 (not their places, 3 and 4), a phase says "2 done", and C's one arrow is to D.
+  await done.click();
+  await expect(done).toHaveAttribute("aria-pressed", "false");
+  await expect(bar(page, "Chain A")).toHaveCount(0);
+  await expect(bar(page, "Chain B")).toHaveCount(0);
+  await expect(page.locator("[data-steps-col]")).toHaveText(["1", "2"]);
+  await expect(page.locator("[data-steps]")).toHaveAttribute("data-steps-last", "2");
+  await expect(bar(page, "Chain C")).toHaveAttribute("data-place", "1");
+  await expect(bar(page, "Chain D")).toHaveAttribute("data-place", "2");
+  const cols = await page.locator("[data-steps-col]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()));
+  for (const [i, t] of ["Chain C", "Chain D"].entries()) {
+    const b = (await bar(page, t).locator("[data-step-bar]").boundingBox())!;
+    expect(b.x, `${t} is in column ${i + 1}`).toBeGreaterThanOrEqual(cols[i].left);
+    expect(b.x + b.width).toBeLessThanOrEqual(cols[i].right + 0.5);
+  }
+  await expect(page.locator(`[data-steps-phase="${phaseD}"] [data-steps-done]`)).toHaveText("2 done");
+  await bar(page, "Chain C").hover();
+  await expect(page.locator("path[data-link-kind]")).toHaveCount(1);
+  await expect(page.locator(`g[data-link-from="${rowOf["Chain C"]}"][data-link-to="${rowOf["Chain D"]}"]`)).toHaveCount(1);
+  await onTheBars(page, ["before"]);
+  await shot(page, "831-1280-hidden-chain-c");
+  await page.mouse.move(2, 2);
+  // Shown again, they are back in their places.
+  await done.click();
+  await expect(bar(page, "Chain A")).toBeVisible();
+  await expect(bar(page, "Chain C")).toHaveAttribute("data-place", "3");
+  await expect(page.locator("[data-steps-col]")).toHaveText(["1", "2", "3", "4"]);
+  await done.click();
+
+  // (b) The choice is kept across a reload.
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.done"))).toBe("0");
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  await expect(done).toHaveAttribute("aria-pressed", "false");
+  await expect(bar(page, "Chain A")).toHaveCount(0);
+  await expect(bar(page, "Chain C")).toBeVisible();
+
+  // (c) Lanes has no toggle.
+  await page.locator('[data-board-view="lanes"]').click();
+  await expect(done).toHaveCount(0);
+  await page.locator('[data-board-view="steps"]').click();
+  await expect(done).toHaveAttribute("aria-pressed", "false");
+
+  // (d) At 390 px, with the whole board's done rows hidden, the page doesn't scroll sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  await expect(page.locator('[data-step-bar][data-bar="done"]')).toHaveCount(0);
+  await expect(page.locator("[data-steps-done]").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await shot(page, "831-390-hidden");
+
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.done"));
+});
