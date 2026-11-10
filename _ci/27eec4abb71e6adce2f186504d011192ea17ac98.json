@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "commit": "27eec4abb71e6adce2f186504d011192ea17ac98",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-10T19:00:50Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "lint",
+          "id": 130056438353,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056438353"
+        },
+        {
+          "name": "changes",
+          "id": 130056438068,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056438068"
+        },
+        {
+          "name": "suite-changed",
+          "id": 130056436507,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858518/job/130056436507"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "build",
+          "id": 130056569217,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569217"
+        },
+        {
+          "name": "static",
+          "id": 130056569419,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569419"
+        },
+        {
+          "name": "clippy",
+          "id": 130056569123,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569123"
+        }
+      ]
+    },
+    "test": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "test",
+          "id": 130056569311,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569311"
+        },
+        {
+          "name": "test-2",
+          "id": 130056567476,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056567476"
+        }
+      ]
+    },
+    "e2e": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "e2e",
+          "id": 130056570173,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056570173"
+        }
+      ]
+    },
+    "claims": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 130056569353,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569353"
+        }
+      ]
+    },
+    "macos": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 130056569351,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858525/job/130056569351"
+        }
+      ]
+    },
+    "windows": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 130056597707,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858518/job/130056597707"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 130056598206,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858518/job/130056598206"
+        }
+      ]
+    },
+    "windows-desktop": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 130056545088,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/42880858537/job/130056545088"
+        }
+      ]
+    }
+  }
+}
