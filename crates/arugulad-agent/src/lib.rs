@@ -3403,7 +3403,12 @@ impl Agent {
             let g = self.inner.lock().unwrap();
             let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
             let message = if done { g.t.last_message() } else { None };
-            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g), g.cfg.worktree.as_ref().map(|w| w.path.clone()))
+            (
+                message,
+                g.turns.last().map(|t| t.started_ms),
+                work_dir(&self.ctx, &g),
+                g.cfg.worktree.as_ref().map(|w| w.path.clone()),
+            )
         };
         let block = self.ctx.block.clone();
         let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
