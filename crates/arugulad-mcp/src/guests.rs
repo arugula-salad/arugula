@@ -108,7 +108,7 @@ pub const OWNERS: &[Entry] = &[
 /// control (`agent_session`, and `session`, its old name, which `route`
 /// reads as the new one first).
 pub const OWNERS_ARGS: &[(&str, &str)] =
-    &[("*", hosted::ARG), ("wait", "run"), ("wait", "agent_session"), ("wait", "session")];
+    &[("*", hosted::ARG), ("wait", "run"), ("wait", "agent_session"), ("wait", "session"), ("wait", "pr")];
 
 fn placed(list: &[Entry], tool: &str, kind: Option<&str>) -> bool {
     list.iter().any(|(t, k)| *t == tool && (k.is_none() || *k == kind))

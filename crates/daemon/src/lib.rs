@@ -28,6 +28,7 @@ pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
 pub mod features;
+pub mod forge_wait;
 pub mod forges;
 pub mod fs;
 pub mod git_remote;
