@@ -581,7 +581,7 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await platform(alice, "/docs");
   await mine.click();
   await expect(row("Private notes")).toHaveCount(1, { timeout: 15_000 });
-  await row("Private notes").locator("[data-list-check]").check();
+  await row("Private notes").locator("[data-list-check]").click();
   await alice.locator("[data-docs-share]").click();
   const again = alice.locator("[data-docs-share-results]");
   await expect(again).toBeVisible({ timeout: 30_000 });
