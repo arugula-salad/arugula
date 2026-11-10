@@ -98,6 +98,9 @@ pub fn daemon_lines(host: Option<&HostInfo>, unreachable: Option<&str>, here: Op
     if let Some(p) = svc.and_then(Service::program) {
         out.push(Line { part: "binary", says: p.display().to_string(), fix: None });
     }
+    // The journal has the log only of the systemd unit: a daemon started
+    // by hand (no systemd, as in a container) logs where its output went.
+    let log = log.filter(|l| !matches!(l, service::Log::Journal(_)) || svc.is_some());
     if let Some(l) = log {
         out.push(Line { part: "log", says: l.to_string(), fix: None });
     }
@@ -359,7 +362,18 @@ mod tests {
             Here { service: None, log: Some(service::Log::Journal("journalctl --user -u arugulad -e".into())) };
         let ls = lines(None, None, Some(&journal));
         assert_eq!(ls[0].fix.as_deref(), Some("`arugulad install` sets it up as a service and starts it"));
-        assert_eq!(ls[1].says, "`journalctl --user -u arugulad -e`");
+        assert!(ls.iter().all(|l| l.part != "log"), "no unit, so nothing of its in the journal");
+        // Run by systemd: the journal has its log.
+        let unit = Service {
+            kind: service::Kind::Systemd,
+            target: "arugulad.service".into(),
+            file: PathBuf::new(),
+            running: true,
+            loaded: true,
+        };
+        let journal = Here { service: Some(unit), ..journal };
+        let ls = lines(None, None, Some(&journal));
+        assert_eq!(ls.iter().find(|l| l.part == "log").unwrap().says, "`journalctl --user -u arugulad -e`");
 
         // Another machine's daemon: what it says, not this machine's service.
         let ls = lines(Some((&host, None)), None, None);
