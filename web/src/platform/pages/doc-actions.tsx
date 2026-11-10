@@ -75,7 +75,7 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
     busy.current = true;
     const [r] = await moveDocsToTeam(p.id, team.id, [doc]);
     busy.current = false;
-    toast(`${r.title}: ${resultWords(r, team.name)}${r.noPictures ? " · pictures stay in Mine" : ""}`);
+    toast(`${r.title}: ${resultWords(r, team.name)}`);
     await after();
   };
   const update = async (c: ProjectDocCopy, replace: boolean): Promise<void> => {

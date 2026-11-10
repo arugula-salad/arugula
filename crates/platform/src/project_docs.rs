@@ -36,13 +36,17 @@
 //! project's to delete like any Doc (`deleter`, for the page): the
 //! machine's next change makes a new copy.
 //!
-//! **Share with…** makes a team Doc from a copy ([`share`]): a new,
-//! ordinary Doc in a project the copy's owner writes in, from the copy's
+//! **Share with…** makes a team Doc from a Doc of the person's own
+//! ([`share`]): a machine's copy or one written here (Arugula #821). It's a
+//! new, ordinary Doc in a project the owner writes in, from the Doc's
 //! title, sections and pictures as they are, which the team owns and edits.
 //! It records where it came from and at which revs, and **Update copy**
-//! ([`update`]) replaces it from the copy again when its owner asks,
-//! refusing first if the team edited it since. Only the copy's owner does
-//! either, as a person ([`own_copy`]: reading a copy is allowed to whoever
+//! ([`update`]) replaces it from the source again when its owner asks,
+//! refusing first if the team edited it since. A Doc written here is
+//! editable, and each edit raises its rev, so "the source changed" reads
+//! the same as for a copy a machine put again; the team's Doc is its own,
+//! and editing it never touches the source. Only the Doc's owner does
+//! either, as a person ([`own_doc`]: reading a Doc is allowed to whoever
 //! reads its project, and that isn't the question); nothing is live, and a
 //! machine never writes to a team's project.
 //!
@@ -457,26 +461,21 @@ pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> R
 
 // ------------------------------------------------------- Share with…
 
-/// The copy `id` in `project`, for its owner to share: a copy (a Doc a
-/// machine put) in `account`'s own personal project. Anyone else, whatever
-/// they read or write elsewhere, is refused: 404 for what they can't see,
-/// 403 for a copy that sits in a team's project (one moved there before
-/// native #673) or isn't a copy's to share.
-async fn own_copy(app: &Platform, account: &str, project: &str, id: &str) -> Result<db::Stored, ApiError> {
+/// The Doc `id` in `project`, for its owner to share: any Doc in
+/// `account`'s own personal project, a machine's copy or one written here.
+/// Anyone else, whatever they read or write elsewhere, is refused: 404 for
+/// what they can't see, 403 for a Doc that sits in a team's project (a copy
+/// moved there before native #673, or the team's own) or isn't theirs to
+/// share.
+async fn own_doc(app: &Platform, account: &str, project: &str, id: &str) -> Result<db::Stored, ApiError> {
     id_ok(id)?;
     let (place, doc) = doc_in(app, By::Person(account), project, id, false).await?;
-    if doc.machine.is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "this Doc isn't a copy from a machine"));
-    }
     let mine = app
         .db
         .issue_project(&place.project)?
         .is_some_and(|p| p.team.is_none() && p.account.as_deref() == Some(account));
     if !mine {
-        return Err(err(
-            StatusCode::FORBIDDEN,
-            "only the person whose machine made a copy shares it, from their own project",
-        ));
+        return Err(err(StatusCode::FORBIDDEN, "only a Doc's owner shares it, from their own personal project"));
     }
     Ok(doc)
 }
@@ -496,7 +495,7 @@ fn copy_of(app: &Platform, src: &db::Stored, d: &db::Stored, made: &db::MadeFrom
     })
 }
 
-/// Share with…: `account` makes a team Doc in `to` from their copy. `Err`
+/// Share with…: `account` makes a team Doc in `to` from their Doc. `Err`
 /// of the id when one was made there already.
 pub async fn share(
     app: &Platform,
@@ -505,11 +504,11 @@ pub async fn share(
     id: &str,
     to: &str,
 ) -> Result<Result<wire::DocView, String>, ApiError> {
-    let src = own_copy(app, account, project, id).await?;
+    let src = own_doc(app, account, project, id).await?;
     let by = By::Person(account);
     let place = place(app, account, to, true).await?;
     if place.project == src.project {
-        return Err(bad("a copy is in your personal project already: share it with a team's"));
+        return Err(bad("a Doc is in your personal project already: share it with a team's"));
     }
     let made = app.db.snapshot_project_doc(&src.id, &place.project, account, now_ms(), wire::DOCS_MAX)?;
     let doc = match made {
@@ -521,10 +520,10 @@ pub async fn share(
     Ok(Ok(view(app, by, &place, &doc).await?))
 }
 
-/// The team Docs made from the copy `id`, in the projects `account` still
+/// The team Docs made from the Doc `id`, in the projects `account` still
 /// reads.
 pub async fn copies(app: &Platform, account: &str, project: &str, id: &str) -> Result<wire::DocCopies, ApiError> {
-    let src = own_copy(app, account, project, id).await?;
+    let src = own_doc(app, account, project, id).await?;
     let mut copies = Vec::new();
     for d in app.db.project_doc_snapshots(&src.id)? {
         let Some(made) = &d.made_from else { continue };
@@ -538,8 +537,8 @@ pub async fn copies(app: &Platform, account: &str, project: &str, id: &str) -> R
     Ok(wire::DocCopies { copies })
 }
 
-/// Update copy: the team Doc in `to` made from the copy `id` takes the
-/// copy's title, sections and pictures as they are now. `Err` when the team
+/// Update copy: the team Doc in `to` made from the Doc `id` takes its
+/// title, sections and pictures as they are now. `Err` when the team
 /// edited it since and `replace` isn't set.
 pub async fn update(
     app: &Platform,
@@ -549,7 +548,7 @@ pub async fn update(
     to: &str,
     replace: bool,
 ) -> Result<Result<wire::DocCopy, ()>, ApiError> {
-    let src = own_copy(app, account, project, id).await?;
+    let src = own_doc(app, account, project, id).await?;
     // Still writing there, from the hub's roster: someone removed from
     // the project can't change its Docs by way of one they made.
     let place = place(app, account, to, true).await?;
@@ -623,7 +622,7 @@ pub async fn asset_route(
     Ok(r)
 }
 
-/// `POST /api/projects/{project}/docs/{id}/copies`: Share with… (the copy's
+/// `POST /api/projects/{project}/docs/{id}/copies`: Share with… (the Doc's
 /// owner); 409 with the team Doc's id when one is there already.
 pub async fn share_route(
     State(app): State<Arc<Platform>>,
@@ -634,7 +633,7 @@ pub async fn share_route(
     Ok(match share(&app, &s.account, &project, &id, &body.to).await? {
         Ok(v) => Json(v).into_response(),
         Err(id) => {
-            let error = "a Doc was made from this copy in that project already; Update copy refreshes it".into();
+            let error = "a Doc was made from this Doc in that project already; Update copy refreshes it".into();
             (StatusCode::CONFLICT, Json(wire::Shared { error, id })).into_response()
         }
     })

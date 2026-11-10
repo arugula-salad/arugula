@@ -4458,8 +4458,8 @@ machine: string | null,
  */
 machine_name: string | null, 
 /**
- * For a team Doc made from a copy (Share with…): where from. Null for
- * any other Doc, and from an older platform.
+ * For a team Doc made from a Doc of its owner's (Share with…): where
+ * from. Null for any other Doc, and from an older platform.
  */
 made_from: ProjectDocMadeFrom | null, };
 
@@ -4480,13 +4480,13 @@ mime: string, size: number,
 rev: number, };
 
 /**
- * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a copy, earliest
+ * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
  * first, in the projects its owner still reads.
  */
 export type ProjectDocCopies = { copies: Array<ProjectDocCopy>, };
 
 /**
- * A team Doc made from a copy, as its owner sees it.
+ * A team Doc made from a Doc of its owner's, as its owner sees it.
  */
 export type ProjectDocCopy = { project: string, project_name: string, 
 /**
@@ -4498,7 +4498,7 @@ id: string, link: string,
  */
 made: number, updated: number, 
 /**
- * The copy changed since: its rev is above the one recorded.
+ * The source changed since: its rev is above the one recorded.
  */
 stale: boolean, 
 /**
@@ -4516,16 +4516,17 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
 writer: boolean, };
 
 /**
- * The copy a team Doc was made from.
+ * The Doc a team Doc was made from: a machine's copy, or one written here.
  */
 export type ProjectDocMadeFrom = { 
 /**
- * The copy's project (its owner's personal one) and its id.
+ * The source Doc's project (its owner's personal one) and its id.
  */
 project: string, id: string, 
 /**
- * The name of the machine the copy is from, when control knows it. Only
- * what the platform could tell; the copy itself is its owner's to read.
+ * The name of the machine the source is a copy from, when control knows
+ * it; null for a source written here. Only what the platform could
+ * tell; the source itself is its owner's to read.
  */
 machine_name: string | null, };
 

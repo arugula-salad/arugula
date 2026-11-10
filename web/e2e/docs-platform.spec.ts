@@ -552,7 +552,6 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await expect(results.locator("[data-move-result]", { hasText: "Bulk two" })).toHaveAttribute("data-move-result", "there");
   await expect(results.locator("[data-move-result]", { hasText: "Bulk two" }).locator("[data-move-link]")).toHaveText("Already in Acme");
   await expect(results.locator("[data-move-result]", { hasText: "Private notes" })).toHaveAttribute("data-move-result", "made");
-  await expect(results.locator("[data-move-result]", { hasText: "Private notes" })).not.toContainText("pictures stay");
   await shot(alice, "docs-share-results.png");
   // The selection cleared, the originals stay in Mine, and Team grew by two.
   await expect(alice.locator("[data-docs-selected]")).toHaveCount(0);
@@ -564,6 +563,20 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}/);
   await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText("Bulk one", { timeout: 15_000 });
   await expect(alice.locator("[data-doc-page]")).toHaveAttribute("data-writer", "true");
+
+  // Arugula #821: Private notes, written here, moves once. The same pick
+  // again says it's there already, and Team doesn't grow.
+  await platform(alice, "/docs");
+  await mine.click();
+  await expect(row("Private notes")).toHaveCount(1, { timeout: 15_000 });
+  await row("Private notes").locator("[data-list-check]").check();
+  await alice.locator("[data-docs-share]").click();
+  const again = alice.locator("[data-docs-share-results]");
+  await expect(again).toBeVisible({ timeout: 30_000 });
+  await expect(again.locator("[data-move-result]")).toHaveCount(1);
+  await expect(again.locator("[data-move-result]")).toHaveAttribute("data-move-result", "there");
+  await expect(again.locator("[data-move-link]")).toHaveText("Already in Acme");
+  await expect(team).toHaveText(String(teamWas + 2), { timeout: 15_000 });
 });
 
 // Arugula #820: a Doc offers the same three actions wherever it's shown, none
