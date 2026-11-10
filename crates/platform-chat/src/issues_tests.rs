@@ -387,7 +387,8 @@ async fn an_export_names_who_wrote_what_nobody_here_did() {
     let (p, _) = seed(&app, &hub);
     let (_, i) = new_issue(&base, "e", &p, json!({ "title": "opened by someone who goes" })).await;
     let id = i["id"].as_str().unwrap();
-    let (_, room) = call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
     let room = room["id"].as_str().unwrap();
     for who in ["a", "e"] {
         let post = Some(json!({ "text": format!("{who} says hello") }));
@@ -441,7 +442,8 @@ async fn an_export_names_who_wrote_what_nobody_here_did() {
 
     let (st, _, md) = text(&base, "v", &format!("/api/projects/{p}/issues/export?format=md")).await;
     assert_eq!(st, 200, "{md}");
-    let a = x.people.iter().find(|p| p.account == "a").map(|p| p.name.as_str()).filter(|n| !n.is_empty()).unwrap_or("a");
+    let a =
+        x.people.iter().find(|p| p.account == "a").map(|p| p.name.as_str()).filter(|n| !n.is_empty()).unwrap_or("a");
     let bylines: Vec<&str> =
         md.lines().filter(|l| l.starts_with("**")).map(|l| l[2..].split("**").next().unwrap()).collect();
     assert_eq!(bylines, [a, "Arugula", "Arugula", "Agent session 01234567", "dana-gh on GitHub"], "{md}");
