@@ -76,7 +76,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). A merged PR closes a native issue it names as Closes #N or Arugula #N, or as (#N) in its title; any other #N in its body, or part of Arugula #N, only links. When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add. A PR or an agent block is not a row of its own: start_agent with issue: \"#N\" attaches the block it starts to that row, and attach takes one already running on this machine (block:local/N, block:%N or a bare %N; or block:MACHINE/N with this machine's id in control) or a PR: attach it to the row of its issue (a PR that names that issue is attached for you). A merged PR closes a native issue it names as Closes #N or Arugula #N, or as (#N) in its title; any other #N in its body, or part of Arugula #N, only links. When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A write answers in a few lines (what changed, the rows' cards, the progress); verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -263,7 +263,10 @@ pub struct AttachArgs {
     /// The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
     pub item: String,
     /// What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an
-    /// https:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).
+    /// https:// link, or an agent block on this machine (block:MACHINE/PANE:
+    /// MACHINE is this machine's id in control, or `local`; PANE is the pane's
+    /// number as %N or N; `block:%N` and a bare `%N` work too). A block starts
+    /// attached to its row with start_agent's issue: "#N".
     /// A string, or a list of them.
     #[serde(deserialize_with = "many")]
     #[schemars(with = "StringOrList")]
@@ -903,17 +906,43 @@ enum Target {
     Item(String),
 }
 
-fn target(to: &str) -> Result<Target, String> {
-    let to = to.trim();
-    if let Some(rest) = to.strip_prefix("block:") {
-        let (machine, pane) = rest
-            .split_once('/')
-            .filter(|(m, p)| !m.is_empty() && !p.is_empty())
-            .ok_or_else(|| format!("{to:?}: an agent block is block:MACHINE/PANE"))?;
-        return Ok(Target::Done(
-            Pointer::Block { machine: machine.into(), pane: pane.trim().trim_start_matches('%').into() },
-            AttachRole::Work,
+/// This machine's id in control, which `block:MACHINE/PANE` names.
+fn own_machine(c: &Call<'_>) -> Option<String> {
+    c.app().control.enrolled().map(|e| e.saved.cert.device.clone())
+}
+
+/// A block on this machine, `own` being its id: `block:<id>/N`, or the
+/// shorthands `block:local/N`, `block:%N` and a bare `%N`. A block on
+/// another machine is refused, with the string that works.
+fn block_target(to: &str, own: Option<&str>) -> Result<Target, String> {
+    let rest = to.strip_prefix("block:").unwrap_or(to);
+    let (machine, pane) = match rest.split_once('/') {
+        Some((m, p)) => (Some(m.trim()), p),
+        None => (None, rest),
+    };
+    let pane = pane.trim().trim_start_matches('%');
+    if machine.is_some_and(str::is_empty) || pane.is_empty() || !pane.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!(
+            "{to:?}: an agent block is block:MACHINE/PANE, MACHINE being this machine's id (or local) and PANE the pane's number: block:local/N, block:%N or %N"
         ));
+    }
+    let own = own.ok_or("this machine hasn't joined Arugula control, where boards live: ask your person to join it")?;
+    let machine = match machine {
+        None | Some("local") => own,
+        Some(m) => m,
+    };
+    if machine != own {
+        return Err(format!(
+            "{to:?}: an agent attaches only blocks on its own machine. This machine is {own}: use block:{own}/{pane} (or block:local/{pane}). To attach a block to its row when it starts, use start_agent with issue: \"#N\"; that is the intended path"
+        ));
+    }
+    Ok(Target::Done(Pointer::Block { machine: machine.into(), pane: pane.into() }, AttachRole::Work))
+}
+
+fn target(to: &str, own: Option<&str>) -> Result<Target, String> {
+    let to = to.trim();
+    if to.starts_with("block:") || (to.starts_with('%') && to.len() > 1) {
+        return block_target(to, own);
     }
     if to.starts_with("run_") {
         return Ok(Target::Done(Pointer::Run { id: to.into() }, AttachRole::Work));
@@ -1099,7 +1128,8 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
     }
     let mut view = read_view(c, &a.board).await?;
     let row = find_row(&view, &a.item)?.clone();
-    let targets: Vec<Result<Target, String>> = a.to.iter().map(|t| target(t)).collect();
+    let own = own_machine(c);
+    let targets: Vec<Result<Target, String>> = a.to.iter().map(|t| target(t, own.as_deref())).collect();
     let to_resolve: Vec<String> = targets
         .iter()
         .filter_map(|t| match t {
@@ -2046,13 +2076,30 @@ mod tests {
     /// resolves.
     #[test]
     fn an_attachment_is_named_by_its_kind() {
-        assert!(matches!(target("block:m1/7"), Ok(Target::Done(Pointer::Block { .. }, AttachRole::Work))));
-        assert!(matches!(target("run_ab12"), Ok(Target::Done(Pointer::Run { .. }, AttachRole::Work))));
-        assert!(matches!(
-            target("https://ci.example.com/1"),
-            Ok(Target::Done(Pointer::Link { .. }, AttachRole::Proof))
-        ));
-        assert!(matches!(target("#12"), Ok(Target::Item(_))));
-        assert!(target("block:m1").is_err());
+        let t = |to| target(to, Some("m1"));
+        assert!(matches!(t("block:m1/7"), Ok(Target::Done(Pointer::Block { .. }, AttachRole::Work))));
+        assert!(matches!(t("run_ab12"), Ok(Target::Done(Pointer::Run { .. }, AttachRole::Work))));
+        assert!(matches!(t("https://ci.example.com/1"), Ok(Target::Done(Pointer::Link { .. }, AttachRole::Proof))));
+        assert!(matches!(t("#12"), Ok(Target::Item(_))));
+        assert!(t("block:m1").is_err());
+    }
+
+    /// `local`, `block:%N` and `%N` are this machine's block; another
+    /// machine's is refused with the string that works.
+    #[test]
+    fn block_shorthand_is_this_machines() {
+        for to in ["block:local/278", "block:%278", "%278", "block:m1/%278", "block:278"] {
+            match target(to, Some("m1")) {
+                Ok(Target::Done(Pointer::Block { machine, pane }, _)) => {
+                    assert_eq!((machine.as_str(), pane.as_str()), ("m1", "278"), "{to}")
+                }
+                _ => panic!("{to} should be a block"),
+            }
+        }
+        let Err(why) = target("block:other/278", Some("m1")) else { panic!("refused") };
+        assert!(why.contains("block:m1/278") && why.contains("start_agent") && why.contains("issue"), "{why}");
+        assert!(target("block:local/278", None).is_err());
+        assert!(target("block:local/", Some("m1")).is_err());
+        assert!(target("%x", Some("m1")).is_err());
     }
 }
