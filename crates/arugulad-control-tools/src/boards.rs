@@ -1381,7 +1381,17 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             if a.groups.len() > GROUPS_MAX || a.groups.iter().any(|g| g.items.len() > BATCH_MAX) {
                 return Err(format!("create_board takes up to {GROUPS_MAX} groups of up to {BATCH_MAX} items"));
             }
-            let chosen = c.chosen_project(a.project.as_deref()).await?;
+            let planned_items: Vec<&str> = a
+                .groups
+                .iter()
+                .flat_map(|g| &g.items)
+                .filter_map(|i| match i {
+                    ItemArg::Existing(s) => Some(s.as_str()),
+                    ItemArg::New(_) => None,
+                })
+                .collect();
+            let project = super::plane_home::home(c, a.project.as_deref(), &planned_items).await?;
+            let chosen = c.chosen_project(project.as_deref().or(a.project.as_deref())).await?;
             let session = own_session(c).await;
             let new = NewBoard { title: a.title, goal: a.goal, lead_session: session.clone() };
             let v = boards_call(c, Method::POST, &agent_project_boards(&chosen.id), Some(given(new)?)).await?;

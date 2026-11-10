@@ -373,6 +373,26 @@ async fn no_answer_carries_the_key() {
     let _ = TrackerWrite::Reopen { item: String::new() };
 }
 
+/// The homes list the projects a machine's grants reach by their Plane
+/// identifiers, and the default project asked for, so an `IDENT-N` finds the
+/// project that holds it; a project without a connection isn't listed.
+#[tokio::test]
+async fn the_homes_list_identifiers_by_project() {
+    let w = world().await;
+    w.grant().await;
+
+    let (s, v) = geek(&w.base, "GET", "/api/daemon/trackers/homes", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["projects"][0]["id"].as_str(), Some(w.project.as_str()), "{v}");
+    assert_eq!(v["projects"][0]["identifiers"], json!(["ARUGU"]), "{v}");
+    assert_eq!(v["projects"].as_array().map(Vec::len), Some(1), "{v}");
+
+    // A default project with no connection is no home.
+    let (s, v) = geek(&w.base, "GET", "/api/daemon/trackers/homes?also=personal", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["projects"].as_array().map(Vec::len), Some(1), "{v}");
+}
+
 /// A project with one connection: `create {title}` lands there, and the
 /// reach lists the connection (identifier and policy) without a key. With a
 /// second, a create naming neither is refused listing both; `tracker` names

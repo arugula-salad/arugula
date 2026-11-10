@@ -722,6 +722,17 @@ impl Db {
         )
     }
 
+    /// The projects over which `daemon` holds any live grant that `by`, its
+    /// owner, gave.
+    pub fn grant_projects_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT DISTINCT scope_id FROM grants WHERE subject_kind = ?3 AND subject_id = ?1
+             AND granted_by = ?2 AND revoked_at IS NULL AND scope_kind = 'project' ORDER BY scope_id",
+            params![daemon, by, subject_kind(daemon)],
+            |r| r.get(0),
+        )
+    }
+
     /// The last hub change applied here; `None` before the first read.
     pub fn feed_after(&self) -> anyhow::Result<Option<u64>> {
         self.c().query_row("SELECT seq FROM hub_feed WHERE reader = ?1", params![READER], |r| r.get(0)).optional()

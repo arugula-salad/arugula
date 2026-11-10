@@ -1027,6 +1027,13 @@ pub const AGENT_TRACKER_WRITES: &str = "/api/daemon/projects/{project}/tracker-w
 /// `trackers.write` over ([`TrackerReach`]).
 pub const AGENT_TRACKER_REACH: &str = "/api/daemon/trackers/reach";
 
+/// `GET /api/daemon/trackers/homes?also=prj_…`: which of the projects the
+/// machine's grants reach hold a Plane connection, by identifier
+/// ([`TrackerHomes`]), so an `IDENT-N` with no project finds its project.
+/// `also` adds one project the owner reads (the default one) even when no
+/// grant names it.
+pub const AGENT_TRACKER_HOMES: &str = "/api/daemon/trackers/homes";
+
 /// [`AGENT_TRACKER_WRITES`] for `project`.
 pub fn agent_tracker_writes(project: &str) -> String {
     AGENT_TRACKER_WRITES.replace("{project}", project)
@@ -1221,6 +1228,23 @@ pub struct TrackerReachProject {
     /// Its live connections: never a key or a secret.
     #[serde(default)]
     pub connections: Vec<TrackerReachConnection>,
+}
+
+/// The projects a machine reaches that hold a live Plane connection, and
+/// the identifiers of those.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerHomes {
+    pub projects: Vec<TrackerHome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerHome {
+    pub id: String,
+    pub name: String,
+    /// Its live connections' identifiers, like `ARUGU`.
+    pub identifiers: Vec<String>,
 }
 
 /// A live Plane connection of a project an agent reaches.

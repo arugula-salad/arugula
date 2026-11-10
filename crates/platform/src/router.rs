@@ -223,6 +223,7 @@ fn routes() -> Routes {
         .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))
         .route(arugula_control_wire::projects::AGENT_TRACKER_WRITES, post(trackers::writes::agent))
         .route(arugula_control_wire::projects::AGENT_TRACKER_REACH, get(trackers::writes::reach))
+        .route(arugula_control_wire::projects::AGENT_TRACKER_HOMES, get(trackers::writes::homes))
         .route(wire_runs::AGENT_RUN_REACH, get(run_agents::reach))
         .route(wire_runs::AGENT_PROJECT_RUNS, get(run_agents::list).post(run_agents::start))
         .route(wire_runs::AGENT_RUN, get(run_agents::show))

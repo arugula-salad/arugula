@@ -33,13 +33,13 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::projects::{
-    TrackerClose, TrackerPendingWrite, TrackerPendingWrites, TrackerReach, TrackerReachConnection, TrackerReachProject,
-    TrackerWrite, TrackerWriteDone,
+    TrackerClose, TrackerHome, TrackerHomes, TrackerPendingWrite, TrackerPendingWrites, TrackerReach,
+    TrackerReachConnection, TrackerReachProject, TrackerWrite, TrackerWriteDone,
 };
 use arugula_e2e::now_ms;
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use tracing::{info, warn};
@@ -701,6 +701,49 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
     }
     projects.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
     Ok(Json(TrackerReach { projects }))
+}
+
+/// What `homes` may be asked.
+#[derive(serde::Deserialize)]
+pub struct HomesQuery {
+    /// One more project to look in: the default one a call would use.
+    pub also: Option<String>,
+}
+
+/// `GET /api/daemon/trackers/homes`: the projects any grant of this
+/// machine's reaches, as its owner reads them now (and `also`, when they
+/// read it), each with its live connections' identifiers, so an `IDENT-N`
+/// with no project finds the project that holds it.
+pub async fn homes(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Query(q): Query<HomesQuery>,
+) -> Result<Json<TrackerHomes>, ApiError> {
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let mut ids = app.db.grant_projects_of(&d.daemon, &d.account)?;
+    if let Some(also) = q.also.filter(|a| !ids.contains(a)) {
+        ids.push(also);
+    }
+    let mut projects = vec![];
+    for id in ids {
+        let Some(name) = owner_reads(&app, &d.account, &AgentScope::Project(id.clone()), false).await? else {
+            continue;
+        };
+        let mut identifiers: Vec<String> = app
+            .db
+            .tracker_connections(&id)?
+            .into_iter()
+            .filter(|c| c.unlinked_at.is_none())
+            .map(|c| c.identifier)
+            .collect();
+        identifiers.sort();
+        identifiers.dedup();
+        if !identifiers.is_empty() {
+            projects.push(TrackerHome { id, name, identifiers });
+        }
+    }
+    projects.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    Ok(Json(TrackerHomes { projects }))
 }
 
 // ---- waiting writes: a person's
