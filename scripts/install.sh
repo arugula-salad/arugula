@@ -351,8 +351,9 @@ say "  Anywhere  ${bin}arugulad join https://control.arugula.io"
 say "            (also how you add this machine to a team: pick it when you approve)"
 say "  Agents    ${bin}arugula agent --help · claude mcp add arugula -- ${bin}arugula mcp"
 say "  Hooks     ${bin}arugula hooks install   (Claude Code's questions and approvals as cards)"
-say "            or both at once, in Claude Code: /plugin install arugula --marketplace arugula-salad/arugula"
-say "  Docs      https://arugula.io/#install"
+say "            or both at once, in Claude Code: /plugin marketplace add arugula-salad/arugula"
+say "            then /plugin install arugula@arugula"
+say "  Docs      https://docs.arugula.io/quickstart/"
 # Telemetry is opt-in (docs/telemetry.md): say the first command asks,
 # unless the environment already keeps it off.
 if [ -z "${ARUGULA_TELEMETRY:-}" ] && [ -z "${DO_NOT_TRACK:-}" ]; then
