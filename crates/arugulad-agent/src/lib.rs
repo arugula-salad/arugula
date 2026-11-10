@@ -868,6 +868,25 @@ impl Inner {
         list
     }
 
+    /// The MCP servers this agent is started with, by name, and whether
+    /// Arugula's own is among them; when it isn't, why (Arugula #836).
+    /// No values: a token or a header never leaves in it.
+    fn mcp_report(&self, ctx: &AgentCtx) -> Value {
+        let servers: Vec<String> =
+            self.servers(ctx).iter().filter_map(|s| s["name"].as_str().map(str::to_owned)).collect();
+        let arugula = servers.iter().any(|n| n == crate::mcp::SERVER_NAME);
+        let note = if arugula {
+            None
+        } else if self.cfg.def.chat {
+            Some("A chat has no tools, so none of Arugula's MCP server: it can't reach issues, boards or threads")
+        } else if self.cfg.run_as.is_some() {
+            Some("This session's agent gets Arugula's MCP only over HTTP, and this agent or box doesn't offer it")
+        } else {
+            Some("Arugula's MCP server isn't given to this agent: it has no tools to reach issues, boards or threads")
+        };
+        json!({ "servers": servers, "arugula": arugula, "note": note })
+    }
+
     /// What never goes into the log or the transcript: a worn agent's
     /// secrets, and Arugula's own token where it went by reference.
     fn secrets(&self) -> Vec<String> {
@@ -1728,6 +1747,8 @@ impl Inner {
         state["recipe"] = json!(self.cfg.def.recipe);
         // #372: the issue it was started on, and the boards it is on.
         state["work"] = json!(self.cfg.work);
+        // #836: the MCP servers it has, and whether Arugula's is one.
+        state["mcp"] = self.mcp_report(ctx);
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
