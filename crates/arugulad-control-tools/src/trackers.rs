@@ -250,7 +250,18 @@ async fn write_of(c: &Call<'_>, kind: &str, a: Value) -> Result<(String, Tracker
         }
         _ => return Err(format!("{WRITE_TOOL} kind {kind} isn't wired up")),
     };
-    Ok((c.current_project(project.as_deref()).await?, write))
+    let items: Vec<&str> = match &write {
+        TrackerWrite::Comment { item, .. }
+        | TrackerWrite::Close { item, .. }
+        | TrackerWrite::Reopen { item }
+        | TrackerWrite::Edit { item, .. } => vec![item.as_str()],
+        _ => vec![],
+    };
+    let project = match super::plane_home::home(c, project.as_deref(), &items).await? {
+        Some(p) => p,
+        None => c.current_project(project.as_deref()).await?,
+    };
+    Ok((project, write))
 }
 
 /// `tracker_write`.
