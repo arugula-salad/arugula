@@ -41,6 +41,7 @@ async fn an_arugula_being_written_wakes_the_agents_box_once() {
         last_seq: 0,
     };
     app.db.add_chat_room(&room, &["alice", "bob", "vic"], Some(&project)).unwrap();
+    crate::sessions_hydrate_tests::allow(&app, &project);
     fake.pause_all();
     worker::start(app.clone());
 

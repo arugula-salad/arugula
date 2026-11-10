@@ -123,6 +123,7 @@ use arugula_control_wire::work::{
 };
 use arugula_e2e::{
     now_ms,
+    project_grant::{INSTRUCT, ProjectGrant, Running},
     session::{Event, Kind, State},
 };
 use arugula_proto::{BlockType, api::OpenRequest};
@@ -133,7 +134,13 @@ use crate::work::sessions::{
     AgentSessionLedger, DIR, Kept, Parked, Turn, all, block_gone, block_is, good_id, live, path, read,
 };
 pub(crate) use crate::work::sessions::{slots, takes};
-use crate::{agent::hosted::AsUser, mux::Api, server::App};
+use crate::{
+    agent::hosted::AsUser,
+    control::REFRESH_WAIT,
+    hosted::runs::{self, NO_GRANT, PIN_CAN_CHANGE},
+    mux::Api,
+    server::App,
+};
 
 /// The mux session sessions' blocks open in.
 pub const BLOCKS: &str = "sessions";
@@ -170,6 +177,16 @@ const FINISH_OUTPUT_MAX: usize = 4 * 1024;
 /// Who a finish step's fix prompt is from, in the block's transcript.
 pub const FINISH_STEP: &str = "the finish step";
 
+/// How long stopping an agent waits for it to cancel its turn before its
+/// block closes anyway.
+const CANCEL_MAX: Duration = Duration::from_secs(5);
+
+/// The daemon, for what asks with no handle on it
+/// ([`turn_allowed`]). Set when the work starts.
+pub static APP: std::sync::OnceLock<Arc<App>> = std::sync::OnceLock::new();
+/// How far each session's block's turns have been looked at for ones its agent
+/// began by itself ([`watch_wakes`]): the block, and that many of its turns.
+static WAKES_SEEN: Mutex<BTreeMap<String, (u32, u64)>> = Mutex::new(BTreeMap::new());
 /// The latest pull's sessions, by id: `None` before the first.
 static LATEST: Mutex<Option<BTreeMap<String, AgentSessionWork>>> = Mutex::new(None);
 /// Sessions followed now.
@@ -382,16 +399,108 @@ fn running(dir: &Path) -> usize {
     live(dir).iter().filter(|l| l.parked.is_none()).count()
 }
 
+/// The project's standing grant lets the platform have session `w` start a
+/// turn here now: `runs.instruct`, checked against what this box pinned, with
+/// every revoke it kept. The grant, when it does.
+fn checked(app: &App, w: &AgentSessionWork) -> Result<ProjectGrant, runs::Refused> {
+    let grant = w.grant.clone().ok_or(NO_GRANT)?;
+    let start = arugula_control_wire::runs::RunStart {
+        project: w.project.clone(),
+        workspace: w.workspace.clone(),
+        run: None,
+        cap: INSTRUCT.into(),
+        grant: grant.clone(),
+        revokes: vec![],
+        passkey_log: w.passkey_log.clone(),
+    };
+    runs::allows(app, &start)?;
+    Ok(grant)
+}
+
+/// Why a session's next turn doesn't start now ([`allowed`]).
+enum NotNow {
+    /// The grant doesn't let it, and that's settled: what its report says.
+    Refused(String),
+    /// This box can't say until a refresh gets through: it waits, and is
+    /// asked again.
+    Wait,
+}
+
+/// [`checked`], before something that starts a turn. What this box pinned of
+/// who may sign can be a refresh old (a passkey just added, to sign the grant
+/// that's asked about), so one refused for that is asked again after a
+/// refresh. Only a refresh that got through settles it: with control out of
+/// reach, the session waits rather than failing for good.
+async fn allowed(app: &App, w: &AgentSessionWork) -> Result<ProjectGrant, NotNow> {
+    let refused = |r: runs::Refused| NotNow::Refused(format!("{}: {}", r.code, r.says));
+    match checked(app, w) {
+        Err(r) if PIN_CAN_CHANGE.contains(&r.code) => {
+            if !app.control.refresh_now(REFRESH_WAIT).await {
+                info!(session = w.session, code = r.code, "hosted: a session waits for a refresh to check its grant");
+                return Err(NotNow::Wait);
+            }
+            checked(app, w).map_err(refused)
+        }
+        r => r.map_err(refused),
+    }
+}
+
+/// Whether session `id`'s agent may start a turn now
+/// (`work::Work::session_turn`), its block asks, just before the prompt goes:
+/// `Err` says why not. With no pull answered since this daemon started, or a
+/// refresh it can't get, it waits.
+pub async fn turn_allowed(id: String) -> Result<(), String> {
+    loop {
+        if let Some(app) = APP.get() {
+            let dir = app.control.state_dir();
+            let Ok(Some(l)) = read(dir, &id) else { return Err("this box has no such session".into()) };
+            if l.ended.is_some() {
+                return Err("the session ended".into());
+            }
+            if runs::revoke_over(app, l.grant.as_ref(), l.taken_at).is_some() {
+                return Err(super::REVOKED.to_owned());
+            }
+            let pulled = LATEST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.get(&id).cloned());
+            match pulled {
+                Some(Some(w)) => match allowed(app, &w).await {
+                    Ok(_) => return Ok(()),
+                    Err(NotNow::Refused(why)) => return Err(why),
+                    Err(NotNow::Wait) => {}
+                },
+                Some(None) => return Err("control doesn't list the session".into()),
+                None => {}
+            }
+        }
+        tokio::time::sleep(FOLLOW).await;
+    }
+}
+
 /// A pull's sessions: kept as the latest word on each; the ones this box
-/// runs that aren't listed any more are stopped; queued ones are taken
+/// runs that aren't listed any more are stopped; each keeps the project's
+/// grant that checks out, for the revokes that end it; queued ones are taken
 /// while there's a slot; and each one it runs is followed.
 pub async fn pulled(app: &Arc<App>, sessions: Vec<AgentSessionWork>) {
     let dir = app.control.state_dir().to_owned();
     let listed: BTreeMap<String, AgentSessionWork> = sessions.into_iter().map(|s| (s.session.clone(), s)).collect();
+    // The project's grant as listed, first: one that replaced another counts
+    // from now, whatever it gives.
+    if let Some((w, g)) = listed.values().find_map(|w| w.grant.as_ref().map(|g| (w, g))) {
+        runs::notice(app, &w.project, &w.workspace, g, w.passkey_log.as_ref());
+    }
     *LATEST.lock().unwrap_or_else(|e| e.into_inner()) = Some(listed.clone());
     for l in live(&dir) {
-        if !listed.contains_key(&l.session) {
+        let Some(w) = listed.get(&l.session) else {
             end(app, &l.session, "control says it ended").await;
+            continue;
+        };
+        // A revoke over what it holds ends it ([`stop_revoked`]), whatever
+        // newer grant is listed by now.
+        if w.grant.is_some()
+            && w.grant != l.grant
+            && runs::revoke_over(app, l.grant.as_ref(), l.taken_at).is_none()
+            && let Ok(g) = checked(app, w)
+        {
+            update(&dir, &l.session, |now| now.grant = Some(g));
         }
     }
     for (id, w) in &listed {
@@ -405,16 +514,164 @@ pub async fn pulled(app: &Arc<App>, sessions: Vec<AgentSessionWork>) {
     send_all(app).await;
 }
 
+/// Whether a revoke kept here ends session `l` now: at once if it says
+/// `running stop`, or there's no turn under way; else when that turn ends,
+/// with what it did reported first ([`step`] gives it no fix, and no other
+/// turn starts).
+fn revoked_now(app: &App, l: &AgentSessionLedger) -> bool {
+    let Some(how) = runs::revoke_over(app, l.grant.as_ref(), l.taken_at) else { return false };
+    how == Running::Stop || !(l.now() == State::Working && l.turn.as_ref().is_some_and(|t| t.sent))
+}
+
+/// End the sessions a revoke kept here takes back, now: each is marked here
+/// and its agent stopped in a task of its own, so nothing about control's
+/// answers holds it up. As a revoke is kept (relayed, or with a pull); and
+/// [`watch`] looks, for the turn that ends later.
+pub fn stop_revoked(app: &Arc<App>) {
+    for l in live(app.control.state_dir()) {
+        if !revoked_now(app, &l) {
+            continue;
+        }
+        info!(session = l.session, "hosted: ending a session: its standing grant was revoked");
+        if let Some(l) = mark_failed(app, &l.session, super::REVOKED) {
+            let app = app.clone();
+            crate::task::spawn(async move { wind_down(&app, &l, false).await });
+        }
+    }
+}
+
+/// While the box runs: every [`FOLLOW`], the sessions a revoke ends and the
+/// turns agents began by themselves. It's its own loop, not a session's
+/// [`step`], which waits on finish steps, pushes and reports: nothing here
+/// waits on control, and what it stops, it stops in a task of its own.
+pub fn watch(app: Arc<App>) {
+    crate::task::spawn(async move {
+        loop {
+            stop_revoked(&app);
+            watch_wakes(&app).await;
+            tokio::time::sleep(FOLLOW).await;
+        }
+    });
+}
+
+/// Whether any of `from..to`, a block's turns, was one its agent began by
+/// itself: a turn with no prompt.
+fn woke_between(s: &Seen, from: u64, to: u64) -> bool {
+    (from..to).any(|n| s.typed_at(n).is_none())
+}
+
+/// A turn an agent began by itself (a background task's end woke it) came
+/// through no prompt to check, so it's checked here, whatever else the session
+/// is doing. What can't be checked as of now counts as refused: no pull since
+/// this daemon started, or a grant this box can't check until a refresh. Its
+/// agent goes ([`stop_woken`]), and a reply opens it again once a check answers.
+async fn watch_wakes(app: &Arc<App>) {
+    for l in live(app.control.state_dir()) {
+        let Some(block) = l.block else { continue };
+        let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() else { continue };
+        let s = seen(&b.state());
+        let start = l.turns_seen.unwrap_or(s.turns);
+        let from = {
+            let seen = WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+            seen.get(&l.session).filter(|(b, _)| *b == block).map_or(start, |(_, n)| *n)
+        };
+        if woke_between(&s, from, s.turns) {
+            let why = match latest(&l.session) {
+                None => Err("no_pull: this box hasn't heard from control since it started".to_owned()),
+                Some(w) => checked(app, &w).map_err(|r| format!("{}: {}", r.code, r.says)),
+            };
+            if let Err(why) = why {
+                stop_woken(app, &l, block, &b, s.turns, why);
+                continue;
+            }
+        }
+        WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner()).insert(l.session.clone(), (block, s.turns));
+    }
+}
+
+/// Stop the agent of session `l`, which began a turn by itself that isn't
+/// allowed: the ledger says so here, parked with its conversation kept, and
+/// the rest goes in a task of its own: its block closed and what its user runs
+/// killed first, then its transcript (closing a block sends it) and the report.
+fn stop_woken(
+    app: &Arc<App>,
+    l: &AgentSessionLedger,
+    block: u32,
+    b: &Arc<dyn crate::block::Block>,
+    turns: u64,
+    why: String,
+) {
+    let Some((keys, me, ..)) = me(app) else { return };
+    let agent_session = b.state()["session_id"].as_str().map(str::to_owned);
+    warn!(session = l.session, why, "hosted: stopping a turn its agent began by itself");
+    let done = update(app.control.state_dir(), &l.session, |now| {
+        if now.now() == State::NeedsInput {
+            now.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());
+        }
+        if now.now() == State::Working {
+            now.push(&keys, &me, Kind::State, State::Done, SessionDetail::default());
+        }
+        now.turn = None;
+        now.turns_seen = Some(turns);
+        now.parked = Some(Parked { at: now_ms(), block: Some(block), agent_session });
+        now.block = None;
+        let to = now.now();
+        now.push(&keys, &me, Kind::Error, to, SessionDetail { error: Some(why.clone()), ..Default::default() });
+        now.error = Some(why);
+    });
+    if done.is_none() {
+        return;
+    }
+    BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
+    let (app, l) = (app.clone(), l.clone());
+    crate::task::spawn(async move {
+        kill_agent(&app, &l, Some(block)).await;
+        block_gone(block);
+        send(&app, &l.session).await;
+    });
+}
+
+/// Close `block` and kill what `l`'s user runs, at once: neither waits for the
+/// other, or for the agent.
+async fn kill_agent(app: &App, l: &AgentSessionLedger, block: Option<u32>) {
+    let close = async {
+        if let Some(block) = block {
+            app.mux.api(|r| Api::Close(block, r)).await;
+        }
+    };
+    let kill = async {
+        if slots().is_some_and(|s| s.real) {
+            super::kill_user(&l.user.user).await;
+        }
+    };
+    tokio::join!(close, kill);
+    // A block's agent that went down first may have started again.
+    if slots().is_some_and(|s| s.real) {
+        super::kill_user(&l.user.user).await;
+    }
+}
+
 /// After a restart: follow every session this box runs, and send what's
 /// unsent.
 pub async fn resume(app: &Arc<App>) {
     let dir = app.control.state_dir().to_owned();
     // Its blocks' turns are their sessions' from the start, before a
-    // restored block sends what it had queued.
-    for l in live(&dir) {
+    // restored block sends what it had queued. One that ended is asked too,
+    // and refused.
+    for l in all(&dir).into_iter().filter(|l| l.ended.is_none() || l.cleanup_owed) {
         if let Some(b) = l.block {
             block_is(b, &l.session);
         }
+    }
+    // What a session that ended left, when the daemon stopped before it had
+    // all gone: its agent, a block the restart brought back, what its user
+    // runs, its slot's files.
+    for l in all(&dir).into_iter().filter(|l| l.ended.is_some() && l.cleanup_owed) {
+        info!(session = l.session, "hosted: finishing what an ended session left");
+        if let Some(b) = l.parked.as_ref().and_then(|p| p.block) {
+            app.mux.api(|r| Api::Close(b, r)).await;
+        }
+        clean_up(app, &l, false).await;
     }
     let real = slots().is_some_and(|s| s.real);
     for l in live(&dir) {
@@ -487,8 +744,14 @@ fn model_for(w: &AgentSessionWork, harness: Option<&str>) -> Option<String> {
 /// A free slot: a session user no session this box runs holds.
 fn free_slot(dir: &Path) -> Option<(AsUser, bool)> {
     let slots = slots()?;
-    let held: BTreeSet<String> = live(dir).into_iter().map(|l| l.user.user).collect();
-    slots.users.iter().find(|u| !held.contains(&u.user)).cloned().map(|u| (u, slots.real))
+    let sessions = all(dir);
+    let held: BTreeSet<&str> = sessions.iter().filter(|l| l.ended.is_none()).map(|l| l.user.user.as_str()).collect();
+    let user = slots.users.iter().find(|u| !held.contains(u.user.as_str()))?;
+    // What the session before it left goes first: it waits for that.
+    if sessions.iter().any(|l| l.cleanup_owed && l.user.user == user.user) {
+        return None;
+    }
+    Some((user.clone(), slots.real))
 }
 
 /// Take queued session `w` if there's a slot: its ledger, its checkout,
@@ -528,6 +791,8 @@ async fn take(app: &Arc<App>, w: &AgentSessionWork) {
         checkout: dest,
         block: None,
         taken_at: now_ms(),
+        grant: None,
+        cleanup_owed: false,
         n: w.n,
         state: State::Queued.as_str().into(),
         ended: None,
@@ -567,6 +832,12 @@ async fn take(app: &Arc<App>, w: &AgentSessionWork) {
             let _ = update(&dir, &l.session, |now| *now = l.clone());
         }
     };
+    match allowed(app, w).await {
+        Ok(g) => l.grant = Some(g),
+        Err(NotNow::Refused(why)) => return fail(l, why),
+        // Still queued: it's asked again on the next pull.
+        Err(NotNow::Wait) => return,
+    }
     if !good_branch(&w.session, &w.branch) {
         return fail(l, format!("its branch isn't the session's own: {}", super::printable(&w.branch)));
     }
@@ -1103,6 +1374,21 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
             if s.turns > t.base || s.queued > 0 {
                 let (k, m) = (keys.clone(), me.clone());
                 say(Box::new(move |now| started(now, &k, &m)));
+            } else if work.is_none() {
+                // No pull has answered since this daemon started: what's
+                // saved waits for one.
+                return true;
+            } else if let Some(not) = match &work {
+                Some(w) => allowed(app, w).await.err(),
+                None => None,
+            } {
+                match not {
+                    NotNow::Refused(why) => {
+                        fail(app, id, &why).await;
+                        return false;
+                    }
+                    NotNow::Wait => return true,
+                }
             } else if let Some(text) = t.fix.clone() {
                 give_fix(app, &b, id, text, &keys, &me).await;
             } else if let Some(p) = work.as_ref().and_then(|w| w.prompts.iter().find(|p| t.prompts.contains(&p.id))) {
@@ -1136,8 +1422,9 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                     say(Box::new(move |now| now.push(&k, &m, Kind::State, State::Working, SessionDetail::default())));
                 }
                 // The finish step, before the push: a stop meanwhile ends
-                // it here. A review runs none (M264).
-                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review);
+                // it here. A review runs none (M264), and nor does a turn
+                // that never began: no agent ran for it to check.
+                let step = work.as_ref().and_then(|w| w.finish.as_ref()).filter(|_| !l.review && s.turns > t.base);
                 let finished = finish_turn(app, &l, step, &keys, &me).await;
                 let Ok(Some(l)) = read(&dir, id) else { return false };
                 if l.ended.is_some() {
@@ -1145,8 +1432,10 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 }
                 // One fix, after a turn that ran and wasn't cancelled.
                 let went = s.turns > t.base && s.error.is_none() && s.status != "exited" && s.status != "stopped";
+                // A fix is another turn: not once the grant's gone.
+                let may_fix = work.as_ref().is_some_and(|w| checked(app, w).is_ok());
                 let fix = match &finished {
-                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went => Some(fix_prompt(r)),
+                    Finished::Failed(r) if t.fix.is_none() && !t.cancelled && went && may_fix => Some(fix_prompt(r)),
                     _ => None,
                 };
                 let result = b.call("turn_result", json!({})).await.ok().filter(|v| !v.is_null());
@@ -1252,6 +1541,16 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
         }
         None => {
             BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+            // What the block said with no turn under way: a prompt it refused
+            // to start (a mention with no grant, say). The card says why.
+            if let Some(e) = s.error.clone().filter(|e| l.error.as_ref() != Some(e)) {
+                let (k, m) = (keys.clone(), me.clone());
+                say(Box::new(move |now| {
+                    let to = now.now();
+                    now.push(&k, &m, Kind::Error, to, SessionDetail { error: Some(e.clone()), ..Default::default() });
+                    now.error = Some(e);
+                }));
+            }
             let next = work.as_ref().and_then(|w| w.prompts.iter().find(|p| !l.handed.contains(&p.id)).cloned());
             let Some(seen_turns) = l.turns_seen else {
                 // A ledger from before it was kept: from now on.
@@ -1259,6 +1558,15 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 say(Box::new(move |now| now.turns_seen = Some(turns)));
                 return true;
             };
+            // A turn the agent began by itself becomes the session's only once
+            // [`watch_wakes`] has checked it.
+            let looked = {
+                let seen = WAKES_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+                seen.get(id).filter(|(b, _)| *b == block).is_some_and(|(_, n)| *n >= s.turns)
+            };
+            if !looked && woke_between(&s, seen_turns, s.turns) {
+                return true;
+            }
             if l.now() == State::Done && (s.turns > seen_turns || s.queued > 0) {
                 // A turn started in the block itself (someone typed there,
                 // or the agent woke itself): followed like the box's own,
@@ -1280,7 +1588,20 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                     now.push(&k, &m, Kind::State, State::Working, d);
                 }));
             } else if let Some(p) = next {
-                hand(app, &b, id, p, &keys, &me, s.turns).await;
+                // A follow-up is listed only with a grant to run it under:
+                // refused here, the platform's word and this box's differ,
+                // and the card says why.
+                match work.as_ref().map(|w| allowed(app, w)) {
+                    Some(check) => match check.await {
+                        Ok(_) => hand(app, &b, id, p, &keys, &me, s.turns).await,
+                        Err(NotNow::Refused(why)) => {
+                            fail(app, id, &why).await;
+                            return false;
+                        }
+                        Err(NotNow::Wait) => return true,
+                    },
+                    None => return true,
+                }
             } else if l.now() == State::Done
                 && work.as_ref().is_some_and(|w| w.park)
                 && l.unnamed.is_empty()
@@ -1352,6 +1673,11 @@ async fn unpark(app: &Arc<App>, l: &AgentSessionLedger, keys: &Arc<arugula_e2e::
     }
     if !w.prompts.iter().any(|p| !l.handed.contains(&p.id)) || running(&dir) >= MAX_SESSIONS_PER_BOX {
         return;
+    }
+    match allowed(app, &w).await {
+        Ok(_) => {}
+        Err(NotNow::Refused(why)) => return fail(app, &l.session, &why).await,
+        Err(NotNow::Wait) => return,
     }
     let sid = l.parked.as_ref().and_then(|p| p.agent_session.clone());
     let block = match open_block(app, l, sid.as_deref()).await {
@@ -1687,17 +2013,29 @@ async fn act(b: &Arc<dyn crate::block::Block>, a: &SessionAction) {
 /// agent, close its block, kill what its user left, and free its slot.
 async fn end(app: &Arc<App>, id: &str, why: &str) {
     let dir = app.control.state_dir().to_owned();
-    let Some((l, _)) = update(&dir, id, |now| now.ended = Some(why.to_owned())) else { return };
+    let Some((l, _)) = update(&dir, id, |now| {
+        now.ended = Some(why.to_owned());
+        now.cleanup_owed = true;
+    }) else {
+        return;
+    };
     info!(session = id, why, "hosted: a session ended; stopping its agent");
-    stop_agent(app, &l).await;
-    clean_slot(&dir, &l).await;
+    clean_up(app, &l, true).await;
 }
 
 /// Session `id` fails here, saying `why`, and its agent is stopped.
 async fn fail(app: &Arc<App>, id: &str, why: &str) {
-    let dir = app.control.state_dir().to_owned();
-    let Some((keys, me, ..)) = me(app) else { return };
-    let Some((l, _)) = update(&dir, id, |now| {
+    if let Some(l) = mark_failed(app, id, why) {
+        wind_down(app, &l, true).await;
+    }
+}
+
+/// Session `id` has failed, saying `why`, as its ledger says from here on: a
+/// push under way stops, nothing follows it, and the report is kept to send.
+fn mark_failed(app: &App, id: &str, why: &str) -> Option<AgentSessionLedger> {
+    let dir = app.control.state_dir();
+    let (keys, me, ..) = me(app)?;
+    let (l, _) = update(dir, id, |now| {
         now.push(
             &keys,
             &me,
@@ -1706,26 +2044,40 @@ async fn fail(app: &Arc<App>, id: &str, why: &str) {
             SessionDetail { reason: Some(why.to_owned()), ..Default::default() },
         );
         now.ended = Some(why.to_owned());
-    }) else {
-        return;
-    };
+        now.cleanup_owed = true;
+    })?;
     warn!(session = id, why, "hosted: a session failed");
-    stop_agent(app, &l).await;
-    clean_slot(&dir, &l).await;
-    send(app, id).await;
+    Some(l)
 }
 
-async fn stop_agent(app: &App, l: &AgentSessionLedger) {
+/// What a session that failed leaves: its agent stopped first, then its slot
+/// cleaned, then the report sent, so a control that doesn't answer holds up
+/// nothing that matters. `polite`: as [`stop_agent`].
+async fn wind_down(app: &Arc<App>, l: &AgentSessionLedger, polite: bool) {
+    clean_up(app, l, polite).await;
+    send(app, &l.session).await;
+}
+
+/// What an ended session leaves goes: its agent, then its slot's files. Only
+/// then does its ledger stop saying that's owed.
+async fn clean_up(app: &App, l: &AgentSessionLedger, polite: bool) {
+    stop_agent(app, l, polite).await;
+    let dir = app.control.state_dir();
+    clean_slot(dir, l).await;
+    update(dir, &l.session, |now| now.cleanup_owed = false);
+}
+
+/// Stop session `l`'s agent and what its user runs. `polite`: its agent is
+/// asked to cancel its turn first, for a few seconds at most. A stop isn't.
+async fn stop_agent(app: &App, l: &AgentSessionLedger, polite: bool) {
     BUSY.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.session);
-    if let Some(block) = l.block {
-        if let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten() {
-            let _ = b.call("cancel", json!({})).await;
-        }
-        app.mux.api(|r| Api::Close(block, r)).await;
+    if polite
+        && let Some(block) = l.block
+        && let Some(b) = app.mux.api(|r| Api::Block(block, r)).await.flatten()
+    {
+        let _ = tokio::time::timeout(CANCEL_MAX, b.call("cancel", json!({}))).await;
     }
-    if slots().is_some_and(|s| s.real) {
-        super::kill_user(&l.user.user).await;
-    }
+    kill_agent(app, l, l.block).await;
 }
 
 /// Leave an ended session's slot clean for the next session in it: what

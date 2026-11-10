@@ -489,6 +489,11 @@ struct Inner {
     /// channel, for the answer.
     hosted_turn: Option<String>,
     gating: bool,
+    /// A thread session's next turn is being checked against the project's
+    /// standing grant (`work::session_turn`).
+    checking_turn: bool,
+    /// Until when that check's yes holds.
+    turn_allowed: Option<std::time::Instant>,
     to_self: Option<mpsc::UnboundedSender<Msg>>,
     /// The kind of credential its last turn ran on, which it's started
     /// holding (else the box's last Claude turn's).
@@ -504,6 +509,7 @@ enum Msg {
     /// M185: what the platform said about the next turn on a hosted box:
     /// its turn, or why it can't run.
     Gated(Result<hosted::Given, String>),
+    TurnChecked(Result<(), String>),
 }
 
 /// Whose the agent block's operations are (`impl Handle<AgentBlock> for
@@ -747,6 +753,8 @@ impl Inner {
             next_run: None,
             hosted_turn: None,
             gating: false,
+            checking_turn: false,
+            turn_allowed: None,
             to_self: None,
             hosted_auth: None,
         }
@@ -2409,6 +2417,26 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                                 }
                             }
                         }
+                        Msg::TurnChecked(answer) => {
+                            g.checking_turn = false;
+                            match answer {
+                                Ok(()) => {
+                                    g.turn_allowed = Some(std::time::Instant::now() + TURN_ALLOWED_FOR);
+                                    send_next(&ctx, &mut g);
+                                }
+                                // Not sent: said in its place, and nothing
+                                // that was queued goes.
+                                Err(why) => {
+                                    info!(block = ctx.id, why, "hosted: a session's turn wasn't started");
+                                    end_hosted_turn(&ctx, &mut g);
+                                    for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+                                        ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
+                                    }
+                                    g.note(json!({ "e": "queue_clear" }));
+                                    g.note(json!({ "e": "error", "message": why }));
+                                }
+                            }
+                        }
                         Msg::Closed(generation, why) if generation == g.generation => {
                             end_hosted_turn(&ctx, &mut g);
                             g.link = None;
@@ -3013,6 +3041,11 @@ fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
     }
 }
 
+/// How long a session's turn may wait for its agent after its grant checked
+/// out, before it's checked again: an agent starting over on the turn's
+/// credential, say.
+const TURN_ALLOWED_FOR: Duration = Duration::from_secs(5);
+
 /// Send the next queued prompt, if the agent can take it.
 fn send_next(ctx: &AgentCtx, g: &mut Inner) {
     if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
@@ -3033,6 +3066,23 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
             let session = crate::work::sessions::session_of(ctx.id);
             crate::task::spawn_on(&ctx.rt, async move {
                 let _ = tx.send(Msg::Gated(gate.start(agent, session).await));
+            });
+        }
+        return;
+    }
+    // A thread session's turn runs under the project's standing grant
+    // (aru-115, as amended): checked here, the last thing before the agent
+    // has the prompt, whatever queued it (the session's follow-up, a mention,
+    // a person in the block, what was queued when a restart cut in).
+    if g.turn_allowed.take().is_none_or(|until| std::time::Instant::now() >= until)
+        && let Some(session) = crate::work::sessions::session_of(ctx.id)
+    {
+        if !g.checking_turn
+            && let Some(tx) = g.to_self.clone()
+        {
+            g.checking_turn = true;
+            crate::task::spawn_on(&ctx.rt, async move {
+                let _ = tx.send(Msg::TurnChecked(crate::work::session_turn(session).await));
             });
         }
         return;

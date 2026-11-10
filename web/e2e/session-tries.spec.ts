@@ -14,6 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("tries");
@@ -132,6 +133,7 @@ test("Acme with chat on, a hosted workspace, and #general", async ({ browser }) 
       )
       .run(`hw_${randomBytes(16).toString("hex")}`, project, machine, now + 86_400_000, me, now, now),
   );
+  sql((db) => allowSessions(db, project, team));
   const ch = await api(alice, "POST", `/api/chat/teams/${team}/channels`, { name: "general" });
   expect(ch.status, JSON.stringify(ch.body)).toBe(200);
   general = (ch.body as { id: string }).id;

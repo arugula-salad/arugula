@@ -160,6 +160,11 @@ pub struct AgentSessionLedger {
     #[serde(default)]
     pub block: Option<u32>,
     pub taken_at: u64,
+    /// The project's standing grant it last checked out under (aru-115, as
+    /// amended), for the revokes that end it. `None` in a ledger from before
+    /// a session's work carried one, until a pull lists one that checks out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<arugula_e2e::project_grant::ProjectGrant>,
     /// This box's latest report number in it.
     pub n: u64,
     /// Its state by this box's own reports.
@@ -167,6 +172,12 @@ pub struct AgentSessionLedger {
     /// It ended, and why: this box stops following it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// It ended, and what it left (its agent, what its user runs, its
+    /// slot's files) hasn't all gone yet: a restart finishes that. Written
+    /// with `ended`, and cleared once it's done. Its slot goes to nobody else
+    /// until then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cleanup_owed: bool,
     /// Every prompt handed to its agent: none is handed again.
     #[serde(default)]
     pub handed: Vec<String>,

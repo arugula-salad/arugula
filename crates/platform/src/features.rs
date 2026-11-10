@@ -233,6 +233,16 @@ pub trait Chat: Send + Sync + 'static {
     fn told(&self, _app: &Platform, _ids: &[String]) -> anyhow::Result<()> {
         Ok(())
     }
+    /// The project's standing grant was just revoked, saying `running`: its
+    /// live sessions end, a turn under way first if `finish`. How many ended.
+    fn grant_revoked<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _project: &'a str,
+        _running: arugula_e2e::project_grant::Running,
+    ) -> BoxFuture<'a, anyhow::Result<u64>> {
+        Box::pin(async { Ok(0) })
+    }
     /// A check suite finished: on a session's branch, its session hears.
     fn suite_done(&self, _app: &Platform, _event: &str, _v: &Value, _now: u64) -> anyhow::Result<()> {
         Ok(())

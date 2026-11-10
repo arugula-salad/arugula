@@ -17,6 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
+import { allowSessions } from "./session-grant";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("sessions");
@@ -145,10 +146,23 @@ test("Acme with chat on, a hosted workspace, and #general", async ({ browser }) 
       )
       .run(`hw_${randomBytes(16).toString("hex")}`, project, machine, now + 86_400_000, me, now, now),
   );
+  sql((db) => allowSessions(db, project, team));
   const ch = await api(alice, "POST", `/api/chat/teams/${team}/channels`, { name: "general" });
   expect(ch.status, JSON.stringify(ch.body)).toBe(200);
   general = (ch.body as { id: string }).id;
   expect((await api(alice, "POST", `/api/chat/rooms/${general}/members`, { accounts: [bobAccount] })).status).toBe(200);
+});
+
+test("with no standing grant, @arugula starts nothing and the thread says how to give one", async () => {
+  sql((db) => db.prepare("DELETE FROM run_grants WHERE project_id = ?").run(project));
+  await room(bob);
+  const parent = await say(bob, "@arugula fix the canary");
+  expect(sessionOn(parent)).toBeUndefined();
+  const thread = await api(bob, "GET", `/api/chat/rooms/${general}/messages?thread=${parent}`);
+  const lines = (thread.body as { messages: { via?: string; text: string }[] }).messages.filter((m) => m.via === "system");
+  expect(lines.map((m) => m.text).join("\n")).toContain("standing grant");
+  expect(lines.map((m) => m.text).join("\n")).toContain("Devices and machines");
+  sql((db) => allowSessions(db, project, team));
 });
 
 let first: Ses;

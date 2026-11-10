@@ -290,6 +290,47 @@ session's card shows the failure and its last lines. It's one field in the
 project's settings, and `--finish` on `cloud edit`; it isn't part of the
 spec's hash, so changing it needs no rebuild.
 
+**Sessions run under the project's standing grant** (aru-099 and aru-115,
+amended 2026-11-04). An owner allows them as they allow runs: *Allow runs*
+on Control's page, under Devices and machines, Runs on cloud workspaces, with
+a passkey (`arugula runs grant show` says whether a project has one). Each
+session's work carries the grant on every pull, and the box checks it against
+what it pinned, `runs.instruct` included, before it takes the session and as
+each turn's prompt goes to the agent.
+
+- **With no grant** (none yet, expired, revoked, or for an earlier
+  delegation), `@arugula`, `session_start`, Try 3, `@codex review`, Move to…
+  and a reply start nothing, and the thread or the route's answer says an
+  owner gives the project a grant, and how. A queued session (a rebuilt box's,
+  say) fails, saying so. A session already going stays: its turn finishes,
+  prompts that were queued are dropped and said, its thread is told once, and
+  a grant given later lets it go on. CI's failures and reviews wait for one.
+- **A revoke ends live sessions** and refuses follow-ups and new ones.
+  *Also stop the runs going* (`running stop`) ends them at once, mid-turn
+  too; without it (`running finish`) a turn under way finishes, and its
+  session ends with it, and one with no turn under way ends at once. A stop
+  ends a push under way too. A grant signed after the revoke doesn't bring back
+  a session it ended. Revoking a grant another has replaced ends nothing that
+  runs under the other. The platform ends them as the revoke arrives, and the
+  box does as it hears the revoke, without waiting on control. A restart
+  finishes the cleanup of a session that ended before it was done.
+- **Any turn, from anywhere.** The box checks as the prompt goes to the agent,
+  whatever queued it: a follow-up, a mention, a person typing in the block.
+  Refused, what was queued is dropped and the card says why. A turn an agent
+  starts by itself is checked as it's seen, on a look a few times a second that
+  waits on nothing else; if it isn't allowed, or can't be checked yet, its agent
+  goes and its conversation stays, for a reply to open again. After a restart a
+  turn waits until a pull has answered; if the check needs what a refresh would
+  bring and control can't be reached, it waits too, and fails only when a
+  refresh that got through still refuses.
+- **Which grant.** A box that has seen a newer grant refuses an older one. The
+  order is the time a grant signs, and the platform takes a new one only past
+  every grant the project has had (the page signs one past the last, so a
+  device's clock doesn't matter).
+- **At a release,** a box from this release against a platform from before it
+  fails a new session or a follow-up, saying why, for the minutes a release
+  takes to deploy, or after rolling the platform back.
+
 **A session's agent asks no permission** on its box: Claude Code runs in
 `bypassPermissions` (Codex in `full-access`), and the block allows anything
 that still asks. The box is the blast radius (its own user, the firewall,

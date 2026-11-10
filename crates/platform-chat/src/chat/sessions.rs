@@ -13,6 +13,9 @@
 //! - **Who** ([`crate::triggers::may_start`], the rule schedules and event
 //!   rules fire by): an owner or editor of the project, on the hosted
 //!   beta's list. Anyone else gets a line saying why, and no session.
+//! - **Under what** ([`crate::sessions::grant`]): the project's standing
+//!   grant. With none, a line says an owner gives one, and how, and no
+//!   session starts; a reply prompts nothing.
 //! - **Which box** ([`crate::sessions::pool`], Arugula #214): the
 //!   project's "agents run on" setting (`Db::agents_run_on`), else its
 //!   only workspace, else the pool: the session picks one of those with
@@ -328,6 +331,10 @@ async fn start(
     let boxes = pool::candidates(app, project)?;
     if boxes.is_empty() {
         say(app, room, thread, NO_BOX)?;
+        return Ok(());
+    }
+    if let Some(line) = crate::sessions::grant::barred(app, project).await? {
+        say(app, room, thread, &line)?;
         return Ok(());
     }
     // On a native issue, its title and the GitHub repo it went to may name
@@ -654,6 +661,11 @@ async fn launch(
     w: &HostedWorkspace,
     repo: Option<&str>,
 ) -> Result<()> {
+    // The grant may have gone since the ask: every start comes through here.
+    if let Some(line) = crate::sessions::grant::barred(app, project).await? {
+        say(app, room, thread, &line)?;
+        return Ok(());
+    }
     let ask = waiting_ask(app, room, thread, project, i64::MAX).await?.map(|(m, _)| m.text).unwrap_or_default();
     let words: Vec<&str> = ask.split_whitespace().filter(|w| !w.starts_with('@')).collect();
     // On a native issue, the branch is named for the issue (M265).
@@ -754,6 +766,13 @@ pub(crate) async fn reply(
             Err(e) => anyhow::bail!("asking the hub who's in the project: {}", e.1),
         }
     }
+    if let Some(line) = crate::sessions::grant::barred_for(app, s).await? {
+        info!(session = s.id, "a reply in a session's thread prompted nothing: no standing grant");
+        if let Some(room) = app.db.chat_room(&s.room)? {
+            say(app, &room, s.parent_seq, &line)?;
+        }
+        return Ok(Replied::Refused(line));
+    }
     let now = now_ms();
     let open = match agent {
         Some(_) => open_ask(app, s)?,
@@ -819,6 +838,7 @@ pub async fn issue_agent(
         Some(Cannot::Outside) => return Err(none()),
         Some(why) => return Err(err(StatusCode::FORBIDDEN, &refusal("you", why).replace("you isn't", "you aren't"))),
     }
+    crate::sessions::grant::must_run(&app, &i.project).await?;
     let axum::Json(room) = super::open_object(&app, &account, &issue).await?;
     if app.db.session_on_thread(&room.id, 0)?.is_some() {
         return Err(err(
