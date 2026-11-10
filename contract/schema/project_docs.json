@@ -334,6 +334,13 @@
     "MachineDoc": {
       "description": "`PUT` [`MACHINE_DOC`]: the whole Doc as the machine has it now. The\nsections replace the copy's; the same content again changes nothing.",
       "properties": {
+        "layout": {
+          "description": "How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when\nit isn't `doc`, so a control from before layouts still takes the Doc;\nabsent, or a name the reader doesn't know, is `doc`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sections": {
           "items": {
             "$ref": "#/$defs/MachineSection"

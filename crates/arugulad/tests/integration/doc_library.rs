@@ -105,6 +105,14 @@ fn a_doc_survives_its_block_a_restart_and_a_new_block_with_its_picture_and_link(
         (Some("Q3 plan"), true, true)
     );
     assert!(row["by"].as_str().unwrap().starts_with("mcp:"), "{row}");
+    // A Doc that never said reads `doc`; one whose `meta.json` says `tabs`
+    // lists as that, and keeps it through the restart (Arugula #827).
+    assert_eq!(row["layout"], "doc", "{row}");
+    let meta_path = lib(&w.d, &id).join("meta.json");
+    let mut meta: Value = serde_json::from_slice(&std::fs::read(&meta_path).unwrap()).unwrap();
+    meta["layout"] = json!("tabs");
+    std::fs::write(&meta_path, meta.to_string()).unwrap();
+    assert_eq!(rows(&w.d).iter().find(|r| r["id"] == id.as_str()).unwrap()["layout"], "tabs");
 
     // ...and a restart.
     w.d.stop();
@@ -116,6 +124,7 @@ fn a_doc_survives_its_block_a_restart_and_a_new_block_with_its_picture_and_link(
     assert_eq!(after["assets"][0]["name"], "dot.png");
     assert_eq!(after["title"], before["title"]);
     assert!(after["shared"].is_object(), "its share menu is back: {after}");
+    assert_eq!(after["layout"], "tabs", "{after}");
     let read = call(&w.d, again, "doc_asset", json!({ "name": "dot.png" }));
     assert!(read["data"].as_str().unwrap().len() > 8);
 

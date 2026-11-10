@@ -274,6 +274,10 @@ discards a draft; `dropped` stays where it's stored or on the wire.
 | **Team Doc made from a copy** | Share with…: a project Doc made from a copy's title, sections and pictures as they were, in a project its owner writes in. The team owns and edits it; it records the copy it came from and both revs | Platform `project_docs` (`made_from_*`) | `pdc_` |
 | **Shared Doc** | An encrypted snapshot behind a link, frozen until someone updates it | Hub `doc_links`; the key stays out of control | 32 hex |
 
+A Doc has a layout (doc, tabs or prototype; doc when it says none),
+kept in its `meta.json`. A Doc's tabs are its sections: in code and on the
+wire they stay "sections", because "tab" there is a session's tab.
+
 A library Doc has one truth, on its machine (aru-134, aru-135). What follows
 from that, settled in native #673:
 

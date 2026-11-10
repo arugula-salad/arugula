@@ -1009,6 +1009,50 @@ pub struct AgentCan {
     pub example: String,
 }
 
+/// How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+/// or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+/// layout this build doesn't know (a newer peer's) reads as `doc`, never as
+/// an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum DocLayout {
+    #[default]
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayout {
+    pub fn is_doc(&self) -> bool {
+        *self == DocLayout::Doc
+    }
+
+    /// The name it has on the wire and in `meta.json`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DocLayout::Doc => "doc",
+            DocLayout::Tabs => "tabs",
+            DocLayout::Prototype => "prototype",
+        }
+    }
+
+    /// The layout named `s`; one this build doesn't know is `doc`.
+    pub fn from_name(s: &str) -> DocLayout {
+        match s {
+            "tabs" => DocLayout::Tabs,
+            "prototype" => DocLayout::Prototype,
+            _ => DocLayout::Doc,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DocLayout {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(DocLayout::from_name(&String::deserialize(d)?))
+    }
+}
+
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
 /// that shows it now, `shared` its link's dates and id (never its key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1032,6 +1076,10 @@ pub struct DocRow {
     /// Its sections, for the list's picture of its shape and its outline.
     #[serde(default)]
     pub sections: Vec<DocSectionShape>,
+    /// How it is laid out; `doc` for a Doc that never said, and from a
+    /// daemon from before layouts.
+    #[serde(default)]
+    pub layout: DocLayout,
     /// Its copy on the platform (#418), once this machine has copied it up:
     /// readable there with this machine asleep. Null until then, and again
     /// once the machine has left control; a daemon from before native #673
@@ -2818,5 +2866,21 @@ mod wire {
         same(&Empty {}, json!({}));
         let back: Empty = serde_json::from_value(json!({})).unwrap();
         assert_eq!(back, Empty {});
+    }
+
+    /// A Doc's layout (Arugula #827): `doc` when it's missing, and a name
+    /// from a newer peer reads as `doc` rather than failing the row.
+    #[test]
+    fn a_doc_layout_defaults_and_forgives() {
+        let row = |extra: serde_json::Value| -> DocRow {
+            let mut v = json!({ "id": "a", "title": "T", "made": 1, "updated": 2, "by": "me" });
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(v).unwrap()
+        };
+        assert_eq!(row(json!({})).layout, DocLayout::Doc);
+        assert_eq!(row(json!({ "layout": "tabs" })).layout, DocLayout::Tabs);
+        assert_eq!(row(json!({ "layout": "prototype" })).layout, DocLayout::Prototype);
+        assert_eq!(row(json!({ "layout": "gallery" })).layout, DocLayout::Doc);
+        assert_eq!(serde_json::to_value(DocLayout::Prototype).unwrap(), json!("prototype"));
     }
 }

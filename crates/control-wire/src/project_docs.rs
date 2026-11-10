@@ -336,6 +336,12 @@ pub struct MachineSection {
 pub struct MachineDoc {
     pub title: String,
     pub sections: Vec<MachineSection>,
+    /// How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
+    /// it isn't `doc`, so a control from before layouts still takes the Doc;
+    /// absent, or a name the reader doesn't know, is `doc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<String>,
 }
 
 /// Where a machine's copy is, answering `PUT` [`MACHINE_DOC`].
@@ -384,4 +390,31 @@ pub fn machine_doc(machine_doc: &str) -> String {
 /// [`MACHINE_DOC_ASSET`] for `name` of the machine's Doc `machine_doc`.
 pub fn machine_doc_asset(machine_doc: &str, name: &str) -> String {
     format!("/api/daemon/docs/{machine_doc}/assets/{name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A control from before layouts: the body as `MachineDoc` was.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct OldMachineDoc {
+        title: String,
+        sections: Vec<MachineSection>,
+    }
+
+    #[test]
+    fn a_machine_doc_names_its_layout_only_off_doc_and_an_older_control_takes_it() {
+        let doc =
+            |layout: Option<&str>| MachineDoc { title: "T".into(), sections: vec![], layout: layout.map(Into::into) };
+        let plain = serde_json::to_value(doc(None)).unwrap();
+        assert!(plain.get("layout").is_none(), "a plain Doc's body is what it was");
+        let tabs = serde_json::to_value(doc(Some("tabs"))).unwrap();
+        assert_eq!(tabs["layout"], "tabs");
+        // Not refused by a reader that doesn't list it, and an old body reads here.
+        assert_eq!(serde_json::from_value::<OldMachineDoc>(tabs.clone()).unwrap().title, "T");
+        assert_eq!(serde_json::from_value::<MachineDoc>(plain).unwrap().layout, None);
+        assert_eq!(serde_json::from_value::<MachineDoc>(tabs).unwrap().layout.as_deref(), Some("tabs"));
+    }
 }

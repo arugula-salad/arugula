@@ -2291,6 +2291,14 @@ export type DocContentAsset = { name: string, mime: string, size: number, rev: n
 export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
 
 /**
+ * How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+ * or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+ * layout this build doesn't know (a newer peer's) reads as `doc`, never as
+ * an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+ */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
+/**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
  */
 export type DocLinkUrl = { url: string, };
@@ -2345,6 +2353,11 @@ summary: string,
  * Its sections, for the list's picture of its shape and its outline.
  */
 sections: Array<DocSectionShape>, 
+/**
+ * How it is laid out; `doc` for a Doc that never said, and from a
+ * daemon from before layouts.
+ */
+layout: DocLayout, 
 /**
  * Its copy on the platform (#418), once this machine has copied it up:
  * readable there with this machine asleep. Null until then, and again
