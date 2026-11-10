@@ -127,7 +127,7 @@ impl Moves {
             None => "Arugula".to_owned(),
         };
         let who = writes::Who { person, agent: None };
-        let close = TrackerWrite::Close { item: t.id, close_as: TrackerClose::Completed };
+        let close = TrackerWrite::Close { item: t.id.clone(), close_as: TrackerClose::Completed };
         let landed = match writes::send(app, &m.project, &c, &close, &who).await {
             Ok(landed) => landed,
             // The item or the connection went while it was sent.

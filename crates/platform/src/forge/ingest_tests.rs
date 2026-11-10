@@ -812,8 +812,10 @@ async fn the_poller_moves_the_plane_item_a_merged_pr_names() {
     assert!(worker.tick(&app.db).await.unwrap());
     assert!(!worker.tick(&app.db).await.unwrap());
     let sent = fake.sent();
-    assert_eq!(sent.len(), 1, "{sent:?}");
+    // The move, then its comment (#852).
+    assert_eq!(sent.len(), 2, "{sent:?}");
     assert_eq!((sent[0].item.as_deref(), sent[0].state.as_deref()), (Some("item-2"), Some("st-done")));
+    assert_eq!(sent[1].item.as_deref(), Some("item-2"));
 }
 
 /// A newly linked repo is backfilled on its poller's first turn, with
