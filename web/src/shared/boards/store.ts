@@ -16,6 +16,8 @@ export class BoardError extends Error {
     readonly status: number,
     message: string,
     readonly reason?: string,
+    /** `stale_order`'s body: the group's rows as they are now. */
+    readonly rows?: string[],
   ) {
     super(message);
   }
@@ -29,6 +31,8 @@ export interface ForgeChecks {
 }
 
 export const STALE_REV = "stale_rev";
+/** A reorder that read the group's rows before someone else moved them. */
+export const STALE_ORDER = "stale_order";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
@@ -37,8 +41,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
-  const j = (await res.json().catch(() => ({}))) as T & { error?: string; reason?: string };
-  if (!res.ok) throw new BoardError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j.reason);
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string; reason?: string; rows?: string[] };
+  if (!res.ok) throw new BoardError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j.reason, j.rows);
   return j;
 }
 
@@ -77,7 +81,7 @@ export const boards = {
   removeDoc: (id: string, doc: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/docs/${enc(doc)}`),
   /** A project's Docs, for the picker (the Docs page's list). */
   docs: (project: string) => call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`),
-  /** The boards that list a project Doc, for the Doc's page: none when boards are off. */
+  /** The boards that list a project Doc, for the Doc's page. */
   ofDoc: (project: string, doc: string) => call<BoardsOfDoc>("GET", `/api/projects/${enc(project)}/docs/${enc(doc)}/boards`),
   /** Answer an ask with one of its options, or with text when it has none: the person it names, or an owner or editor for them. */
   answer: (id: string, ask: string, a: { option: string } | { text: string }) =>
@@ -96,6 +100,9 @@ export const boards = {
   /** Move a row to a group (`zone`, null: none), or a group among groups (`before`, null: last). */
   move: (id: string, entry: string, rev: number, m: { zone?: string | null; before?: string | null }) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { rev, before: null, ...m }),
+  /** A row goes before `before` (last in its group for null) in the group whose rows `seen` lists, in the order they were read; refused `stale_order` if they have moved. */
+  reorder: (id: string, entry: string, before: string | null, seen: string[]) =>
+    call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { before, seen }),
   /** Move a row to a lane by hand (#494; owners and editors). Next, Doing and Review hold until the row's work changes its lane; Done closes the row's native issue (`reason`: completed, not_planned or duplicate), and moving out of Done reopens it. */
   setLane: (id: string, row: string, lane: BoardLane, reason?: string) =>
     call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/lane`, { lane, reason: reason ?? null }),
@@ -107,7 +114,7 @@ export const boards = {
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
     return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);
   },
-  /** The project's live Plane connections (#359), for a zone's New issue…: none when there are none, or boards are off. */
+  /** The project's live Plane connections (#359), for a zone's New issue…: none when there are none. */
   async plane(project: string): Promise<{ id: string; identifier: string }[]> {
     try {
       const v = await call<TrackerConnections>("GET", `/api/projects/${enc(project)}/trackers`);

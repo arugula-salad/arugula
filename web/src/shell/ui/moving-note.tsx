@@ -7,6 +7,7 @@
 
 import { useState } from "preact/hooks";
 import { movingTo } from "../control";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 const KEY = "arugula.moving-dismissed";
 
@@ -33,12 +34,12 @@ export function MovingNote() {
   return (
     <div class="ws-stale maintenance-note control-moving" role="status" data-control-moving>
       <span>
-        Arugula control is moving to <a href={to.href}>{to.host}</a>. Sign in there, then approve that browser from this one; this address stops
+        Arugula cloud is moving to <a href={to.href}>{to.host}</a>. Sign in there, then approve that browser from this one; this address stops
         working once everyone has moved.
       </span>
-      <button type="button" class="link small control-moving-dismiss" data-control-moving-dismiss aria-label="Dismiss" title="Dismiss" onClick={dismiss}>
-        ✕
-      </button>
+      <IconButton label="Dismiss" class="link small control-moving-dismiss" data-control-moving-dismiss onClick={dismiss}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </div>
   );
 }

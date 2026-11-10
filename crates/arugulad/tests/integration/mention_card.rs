@@ -5,6 +5,8 @@
 //! read, `read_thread`, is `agent_mentions`' unit test). Against a fake
 //! control (its relay socket sends the `agents.mention` op) and a real
 //! daemon.
+// `Daemon::stop` is Unix only.
+#![cfg(unix)]
 
 use std::{
     sync::{Arc, Mutex},
@@ -156,7 +158,7 @@ fn an_inbox_mention_reaches_the_owners_swarm_over_the_wire_and_dismissing_it_cle
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::default();
     let url = serve(&rt, f.clone());
-    let mut d = arugulad!("mentioncard").no_wisp().no_tailscale().wait_secs(30).start();
+    let mut d = arugulad!("mentioncard").no_provider().no_tailscale().wait_secs(30).start();
     d.stop();
     enroll(&d.state, &url);
     d.start();

@@ -34,15 +34,9 @@
   margin: 0;
 }
 
-.list-head .page-title h1 {
-  font: 800 30px/1 var(--f-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
 .list-where {
   align-self: flex-end;
-  font: 500 11px/1.5 var(--f-mono);
+  font: 500 var(--text-xs)/1.5 var(--f-mono);
   color: var(--dim);
 }
 
@@ -61,13 +55,13 @@
   border-radius: var(--btn-radius);
   background: none;
   color: var(--dim);
-  font: 500 11px/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--f-mono);
   text-align: left;
 }
 
 .list-count b {
   display: block;
-  font: 700 19px/1.05 var(--f-mono);
+  font: 700 var(--text-xl)/1.05 var(--f-mono);
   font-variant-numeric: tabular-nums;
   color: var(--fg);
 }
@@ -138,7 +132,7 @@ button.list-count:hover {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
   color: var(--dim);
-  font: 500 10px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
 }
 
 .list-status {
@@ -164,6 +158,7 @@ button.list-count:hover {
 }
 
 .list-rows {
+  padding-top: 6px;
   outline: 0;
 }
 
@@ -177,8 +172,8 @@ button.list-count:hover {
   padding: 10px var(--space-5) var(--space-1);
   background: var(--bg);
   color: var(--dim);
-  font: 700 13px/1 var(--f-display);
-  letter-spacing: 0.09em;
+  font: 600 var(--text-xs)/1 var(--f-ui);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -190,7 +185,7 @@ button.list-count:hover {
 }
 
 .list-group-title.named {
-  font: 600 13px/1 var(--f-ui);
+  font: 600 var(--text-md)/1 var(--f-ui);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -198,7 +193,7 @@ button.list-count:hover {
 .list-group-title small {
   min-width: 0;
   overflow: hidden;
-  font: 500 10.5px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   letter-spacing: 0;
   text-overflow: ellipsis;
   text-transform: none;
@@ -207,65 +202,22 @@ button.list-count:hover {
 
 .list-group-n {
   flex: none;
-  font: 500 10px/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
   letter-spacing: 0;
 }
 
-/* The row. A bar only where it differs from its neighbours. */
-.list-row,
-.list-item {
-  --c: transparent;
-  position: relative;
-  padding: var(--space-2) var(--space-5);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+/* The row is a Card (shared/ui/card.css): a small box, its tone's bar, hover
+   and selection the card's. A Doc's is a dense one, on one line. */
+.list-row.card {
+  display: grid;
+  gap: 2px 14px;
+  margin: 0 var(--space-5) 6px;
 }
 
 .list-row {
-  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 14px;
   cursor: pointer;
   scroll-margin-top: 32px;
-}
-
-.list-row::before,
-.list-item::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
-}
-
-.list-row.live,
-.list-item.live {
-  --c: var(--accent);
-}
-
-.list-row.warn,
-.list-item.warn {
-  --c: var(--warn);
-}
-
-.list-row.bad,
-.list-item.bad {
-  --c: var(--danger);
-}
-
-.list-row:hover {
-  background: color-mix(in srgb, var(--raised) 45%, transparent);
-}
-
-.list-row[aria-selected="true"] {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
-}
-
-.list-row[aria-selected="true"]:not(.bad, .warn)::before {
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
 }
 
 .list-rows:focus-visible .list-row[aria-selected="true"] {
@@ -283,7 +235,7 @@ button.list-count:hover {
 .list-row-title {
   min-width: 0;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: var(--text-md);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -292,7 +244,7 @@ button.list-count:hover {
 .list-row-age {
   justify-self: end;
   color: var(--dim);
-  font: 500 11px/1.6 var(--f-mono);
+  font: 500 var(--text-xs)/1.6 var(--f-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -301,7 +253,7 @@ button.list-count:hover {
   min-width: 0;
   overflow: hidden;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -313,17 +265,88 @@ button.list-count:hover {
   align-items: center;
   gap: 6px;
   color: var(--dim);
-  font: 500 10.5px/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--f-mono);
   white-space: nowrap;
 }
 
-/* A section's row: the same look, with its buttons at the right, or under
+/* A box on a row (Arugula #818), in the margin at the row's left: seen on
+   hover or on the keys' row, and always once any is ticked (and on a screen with no hover). */
+.list-row-check {
+  position: absolute;
+  left: calc(-1 * var(--space-5) + 2px);
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.list-row-check[data-on="true"],
+.list-row-check[data-on="mixed"] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* The tick, and the dash of a half-ticked group. */
+.list-row-check[data-on="true"]::after {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 7px;
+  margin: 0 auto;
+  border: solid var(--surface);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(0.5px) rotate(45deg);
+}
+
+.list-row-check[data-on="mixed"]::after {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 1.5px;
+  margin: 4.5px auto 0;
+  background: var(--surface);
+}
+
+.list-row:hover .list-row-check,
+.list-rows:focus-visible .list-row[aria-selected="true"] .list-row-check,
+.list-row-check[data-on="true"],
+.list-row-check[data-on="mixed"],
+.ticking .list-row-check,
+.list-group:hover .list-row-check {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .list-row-check {
+    opacity: 1;
+  }
+}
+
+/* A group's box sits in the header's own padding: the header spans the list. */
+.list-group-check {
+  left: 2px;
+  top: 60%;
+}
+
+.list-selection:empty {
+  display: none;
+}
+
+/* A section's row, a Card too: with its buttons at the right, or under
    it when the pane is too narrow for both. */
-.list-item {
-  display: flex;
+.list-item.card {
+  flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
+  margin: 0 var(--space-5) 6px;
 }
 
 .list-item-text {
@@ -332,7 +355,7 @@ button.list-count:hover {
 }
 
 .list-item-title {
-  font-size: 13.5px;
+  font-size: var(--text-md);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -343,7 +366,7 @@ button.list-count:hover {
 
 .list-item-detail {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -353,27 +376,6 @@ button.list-count:hover {
   flex-wrap: wrap;
   gap: 6px;
   max-width: 100%;
-}
-
-.list-tag {
-  flex: none;
-  font: 500 10.5px/1.3 var(--f-mono);
-  color: var(--dim);
-}
-
-.list-tag.live {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.list-tag.info {
-  color: var(--info);
-}
-
-.list-tag svg {
-  width: 10px;
-  height: 10px;
-  vertical-align: -1px;
 }
 
 /* The preview. */
@@ -398,7 +400,7 @@ button.list-count:hover {
 
 .list-preview-head h2 {
   margin: 0;
-  font: 700 26px/1.08 var(--f-display);
+  font: 700 var(--text-xl)/1.08 var(--f-display);
   overflow-wrap: anywhere;
 }
 
@@ -408,7 +410,7 @@ button.list-count:hover {
   gap: var(--space-1) var(--space-3);
   margin-top: 6px;
   color: var(--dim);
-  font: 500 11px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
 }
 
 .list-preview-actions {
@@ -419,10 +421,35 @@ button.list-count:hover {
   margin-top: var(--space-3);
 }
 
+/* The preview as a column bar (Arugula #659): the facts at 12px --subtle,
+   cut short before the buttons are; the hint and the buttons keep their size. */
+.list-preview-bar {
+  padding: 0 var(--space-6);
+}
+
+.list-preview-bar-facts {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--subtle);
+  font-size: var(--text-sm);
+}
+
+.list-preview-bar-facts > span + span::before {
+  content: "·";
+  margin: 0 var(--space-2);
+}
+
+.list-preview-bar .list-preview-hint {
+  flex: none;
+  margin-left: 0;
+}
+
 .list-preview-hint {
   margin-left: auto;
   color: var(--dim);
-  font: 500 11px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
 }
 
 .list-preview-hint kbd {
@@ -430,7 +457,7 @@ button.list-count:hover {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .list-preview-body {
@@ -451,8 +478,8 @@ button.list-count:hover {
 .list-preview-words p {
   max-width: 62ch;
   margin: 0 0 10px;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: var(--text-md);
+  line-height: var(--lh-prose);
 }
 
 .list-preview-words p:first-child {
@@ -461,14 +488,14 @@ button.list-count:hover {
 
 .list-preview-aside {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .list-preview-aside h3 {
   margin: 0 0 var(--space-2);
   color: var(--dim);
-  font: 700 13px/1 var(--f-display);
-  letter-spacing: 0.09em;
+  font: 600 var(--text-xs)/1 var(--f-ui);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -514,7 +541,7 @@ button.list-count:hover {
   }
 
   .list-preview-head h2 {
-    font-size: 23px;
+    font-size: var(--text-xl);
   }
 
   .list-preview-hint {
@@ -559,6 +586,37 @@ button.list-count:hover {
 @media (prefers-reduced-motion: reduce) {
   .list-handle::after {
     transition: none;
+  }
+}
+
+/* A Doc's row has no second line: its title, facts and mark share one. */
+.list-row[data-doc] {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.list-row[data-doc] .list-row-detail {
+  display: none;
+}
+
+.list-row[data-doc] .list-row-mark {
+  grid-area: 1 / 3;
+}
+
+/* A row's own button (a Doc's ⋯, Arugula #820) ends the line. */
+.list-row-actions {
+  grid-area: 1 / 4;
+  align-self: center;
+  display: flex;
+}
+
+@container list-page (max-width: 480px) {
+  .list-row[data-doc] {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .list-row-actions {
+    grid-area: 1 / 3;
   }
 }
 
@@ -611,4 +669,22 @@ button.list-count:hover {
 
 .doc-outline i.fig {
   background: var(--fg);
+}
+
+/* A row's ⋯ is a mouse target, not a button (a row is one option): the same
+   24px square as the icon buttons, dim until it's pointed at. */
+.row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--chip-radius);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.row-more:hover {
+  background: var(--raised);
+  color: var(--fg);
 }

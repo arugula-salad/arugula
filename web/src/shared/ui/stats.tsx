@@ -5,6 +5,8 @@
 // both over the same files (`tests/fixtures/docs/`), as charts do. A delta
 // always carries an arrow, so its tone is never colour alone.
 
+import { ArrowIcon } from "./icons";
+
 export const MAX_TILES = 6;
 const TEXT: [keyof Tile, number][] = [
   ["label", 40],
@@ -13,7 +15,7 @@ const TEXT: [keyof Tile, number][] = [
 ];
 const KEYS = ["label", "value", "delta", "tone"];
 const TONES = ["up", "down", "flat"];
-const ARROW = { up: "↑", down: "↓", flat: "→" } as const;
+const ARROW = { up: <ArrowIcon dir="up" size="xs" />, down: <ArrowIcon dir="down" size="xs" />, flat: <ArrowIcon dir="right" size="xs" /> } as const;
 
 export interface Tile {
   label: string;

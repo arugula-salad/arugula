@@ -45,7 +45,12 @@
 //!
 //! **A copy on the platform** (#418, [`copies`]): while the machine is in
 //! control, each Doc is copied up to its owner's personal project there,
-//! a few seconds after it changes.
+//! a few seconds after it changes. The state says so with `platform: true`
+//! (when the copy lands and when the machine leaves control, [`moved`]); the
+//! page it opens at is `doc_shares`' `platform`, the owner's to ask for, as
+//! the share link is (Arugula #708), with `copy`, the copy's project and id,
+//! which Share with… (the dialog's, from the page as the person) names it
+//! by. The machine itself never writes to a team's project.
 //!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
@@ -63,7 +68,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use arugula_proto::{BlockType, fs::READ_MAX};
+use arugula_proto::{BlockType, api::DocLayout, fs::READ_MAX};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -118,6 +123,7 @@ impl BlockKind for DocKind {
         // a restart.
         let doc = Doc::with_link(dir, config.title, true, link, Arc::new(move || ctx.changed()));
         doc.attach(own, config.share_ask);
+        LIVE.lock().unwrap().push(Arc::downgrade(&doc));
         Ok(doc)
     }
 
@@ -181,6 +187,10 @@ struct State {
     rev: u64,
     /// When it was shared with a link and last updated; the link is not here.
     shared: Option<SharedAt>,
+    /// The Doc has a copy on the platform (the page is `doc_shares`').
+    platform: bool,
+    /// How it is laid out, as its `meta.json` has it (#827).
+    layout: DocLayout,
     /// When a section was last written (ms), to tell a shared copy is older
     /// (#509); on a restart, the newest section file's time.
     filled: u64,
@@ -203,6 +213,22 @@ struct Loaded {
 }
 
 type Changed = Arc<dyn Fn() + Send + Sync>;
+
+/// The Docs blocks show now, for [`moved`] to find.
+static LIVE: Mutex<Vec<Weak<Doc>>> = Mutex::new(Vec::new());
+
+/// The Doc `id`'s copy on the platform arrived (or is forgotten): the
+/// blocks showing it say so.
+pub(crate) fn moved(id: &str, on: bool) {
+    let docs: Vec<Arc<Doc>> = {
+        let mut live = LIVE.lock().unwrap();
+        live.retain(|d| d.strong_count() > 0);
+        live.iter().filter_map(Weak::upgrade).filter(|d| d.link.doc == id).collect()
+    };
+    for d in docs {
+        d.set_platform(on);
+    }
+}
 
 pub struct Doc {
     me: Weak<Doc>,
@@ -236,10 +262,12 @@ impl Doc {
                 Err(e) => state.error = Some(e),
             }
         }
+        state.layout = library::read_meta(&dir).map_or(DocLayout::Doc, |m| m.layout);
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
             state.filled = newest_section(&dir, &state.entries);
+            state.platform = library::read_meta(&dir).is_some_and(|m| m.platform.is_some());
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -260,8 +288,26 @@ impl Doc {
         let _ = crate::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
     }
 
+    /// The Doc's layout is `layout` now: kept in its `meta.json`, and the
+    /// block, its share's next update and its copy follow. Only tests call
+    /// it: `doc_outline` sets the layout a Doc is made with.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn set_layout(&self, layout: DocLayout) -> bool {
+        let _io = self.io.lock().await;
+        let dir = self.dir.clone();
+        let kept = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await.unwrap_or(false);
+        if kept {
+            let mut st = self.state.lock().unwrap();
+            st.layout = layout;
+            st.rev += 1;
+            drop(st);
+            (self.changed)();
+        }
+        kept
+    }
+
     /// `doc_outline`: the sections, once.
-    async fn outline(&self, title: &str, sections: Vec<Planned>) -> Result<Value, String> {
+    async fn outline(&self, title: &str, sections: Vec<Planned>, layout: DocLayout) -> Result<Value, String> {
         let _io = self.io.lock().await;
         let title = title.trim();
         if title.is_empty() {
@@ -275,6 +321,9 @@ impl Doc {
         }
         if sections.len() > SECTIONS_MAX {
             return Err(format!("a Doc has at most {SECTIONS_MAX} sections, not {}", sections.len()));
+        }
+        if layout == DocLayout::Prototype && sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
         }
         let mut planned = Vec::new();
         for (i, s) in sections.into_iter().enumerate() {
@@ -305,10 +354,15 @@ impl Doc {
         let bytes = serde_json::to_vec_pretty(&outline).map_err(|e| e.to_string())?;
         write(dir, OUTLINE, bytes).await?;
         self.touched(Some(outline.title.clone())).await;
+        if !layout.is_doc() {
+            let dir = self.dir.clone();
+            let _ = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await;
+        }
         let ids: Vec<Value> = planned.iter().map(|s| json!({ "id": s.id, "heading": s.heading })).collect();
         {
             let mut st = self.state.lock().unwrap();
             st.title = outline.title;
+            st.layout = layout;
             st.entries = planned
                 .into_iter()
                 .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0 })
@@ -339,6 +393,10 @@ impl Doc {
             }
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
+            if st.layout == DocLayout::Prototype {
+                embeds::check_prototype_only(md)
+                    .map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
+            }
             embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
             if md.len() > SECTION_MAX {
                 return Err(format!(
@@ -440,7 +498,7 @@ impl Doc {
     /// lock so a fill can't land halfway.
     async fn snapshot(&self) -> Result<(String, Vec<u8>), String> {
         let _io = self.io.lock().await;
-        let (title, entries, kept) = {
+        let (title, entries, kept, layout) = {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
                 return Err(e.clone());
@@ -448,7 +506,7 @@ impl Doc {
             if st.entries.is_empty() {
                 return Err("this Doc has no outline yet: there is nothing to share".into());
             }
-            (st.title.clone(), st.entries.clone(), st.assets.clone())
+            (st.title.clone(), st.entries.clone(), st.assets.clone(), st.layout)
         };
         let mut blobs = Vec::new();
         let mut assets = Vec::new();
@@ -465,6 +523,7 @@ impl Doc {
         }
         let manifest = link::Manifest {
             title: title.clone(),
+            layout,
             entries: entries
                 .into_iter()
                 .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
@@ -485,6 +544,31 @@ impl Doc {
             st.rev += 1;
         }
         (self.changed)();
+    }
+
+    /// Say the Doc has a copy on the platform (or hasn't), and tell clients.
+    fn set_platform(&self, on: bool) {
+        {
+            let mut st = self.state.lock().unwrap();
+            if st.platform == on {
+                return;
+            }
+            st.platform = on;
+            st.rev += 1;
+        }
+        (self.changed)();
+    }
+
+    /// Where the Doc's copy on the platform is, for `doc_shares`.
+    fn platform_link(&self) -> Option<String> {
+        library::read_meta(&self.dir).and_then(|m| m.platform).map(|p| p.link)
+    }
+
+    /// The copy's project and id, for `doc_shares`: what Share with… names
+    /// it by.
+    fn platform_copy(&self) -> Option<Value> {
+        let on = library::read_meta(&self.dir).and_then(|m| m.platform)?;
+        Some(json!({ "project": on.project, "id": on.id }))
     }
 
     /// `doc_share` and `doc_share_update`: the URL.
@@ -517,15 +601,23 @@ impl Doc {
         let got = match self.link.shares().await {
             Ok(Some(s)) => {
                 self.set_shared(Some(SharedAt { made: s.made, updated: s.updated }));
-                return Ok(json!({ "url": s.url, "made": s.made, "updated": s.updated }));
+                return Ok(json!({
+                    "url": s.url, "made": s.made, "updated": s.updated,
+                    "platform": self.platform_link(), "copy": self.platform_copy(),
+                }));
             }
             Ok(None) | Err(Fail::Gone) => self.link.available().await,
             Err(Fail::Said(e)) => return Err(e),
         };
         self.set_shared(None);
         Ok(match got {
-            Ok(()) => json!({ "shared": null, "can": true }),
-            Err(why) => json!({ "shared": null, "can": false, "why": why }),
+            Ok(()) => json!({
+                "shared": null, "can": true, "platform": self.platform_link(), "copy": self.platform_copy(),
+            }),
+            Err(why) => json!({
+                "shared": null, "can": false, "why": why, "platform": self.platform_link(),
+                "copy": self.platform_copy(),
+            }),
         })
     }
 
@@ -550,6 +642,12 @@ impl Doc {
             // A section was written after the link was last updated (#509).
             "shared_older": st.shared.is_some_and(|s| st.filled > s.updated),
         });
+        if st.platform {
+            v["platform"] = json!(true);
+        }
+        if !st.layout.is_doc() {
+            v["layout"] = json!(st.layout);
+        }
         if let Some(e) = &st.error {
             v["error"] = json!(e);
         }
@@ -568,7 +666,21 @@ impl Doc {
 fn kept(state_dir: &Path, id: &str) -> Result<Arc<Doc>, String> {
     let dir = library::dir(state_dir, id)?;
     let title = library::read_meta(&dir).map(|m| m.title).unwrap_or_default();
-    Ok(Doc::with_link(dir, title, true, Link::none(state_dir.to_owned(), id.to_owned()), Arc::new(|| {})))
+    let mut link = Link::none(state_dir.to_owned(), id.to_owned());
+    link.remote = link::remote();
+    Ok(Doc::with_link(dir, title, true, link, Arc::new(|| {})))
+}
+
+/// Share the Doc `id` (or update its link) with no block showing it: the
+/// block's own `share`, run on the Doc read from its files, so both make the
+/// link by the one code path (Arugula #819). Its `shared` goes nowhere: a
+/// block opened later reads the link's entry.
+pub async fn share_kept(state_dir: PathBuf, id: String, update: bool) -> Result<Value, String> {
+    let doc = {
+        let dir = state_dir.clone();
+        crate::task::spawn_blocking(move || kept(&dir, &id)).await.map_err(|e| e.to_string())??
+    };
+    doc.share(update).await
 }
 
 /// The state a block of the Doc `id` would have now.
@@ -720,9 +832,10 @@ impl Block for Doc {
                 let title = args["title"].as_str().unwrap_or_default().to_owned();
                 let sections = serde_json::from_value::<Vec<Planned>>(args["sections"].clone())
                     .map_err(|e| format!("doc_outline needs {{title, sections: [{{heading, intent}}]}}: {e}"));
+                let layout = DocLayout::from_name(args["layout"].as_str().unwrap_or_default());
                 Box::pin(async move {
                     let me = me.ok_or("closed")?;
-                    me.outline(&title, sections?).await
+                    me.outline(&title, sections?, layout).await
                 })
             }
             "doc_fill" => {
@@ -1374,6 +1487,48 @@ mod tests {
         assert_eq!(d.summary().title.as_deref(), Some("Plan"));
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn an_outline_sets_the_layout_and_a_prototype_doc_is_one_section_of_one_prototype() {
+        let state = temp("outline-layout");
+        let make = |name: &str| {
+            let meta = library::make(&state, name, "me").unwrap();
+            let folder = library::dir(&state, &meta.id).unwrap();
+            (Doc::new(folder.clone(), name.into(), false, Arc::new(|| {})), folder)
+        };
+        let with = |layout: &str, n: usize| {
+            let mut args = plan(n);
+            args["layout"] = json!(layout);
+            args
+        };
+        let (d, folder) = make("tabs");
+        d.call("doc_outline", with("tabs", 2)).await.unwrap();
+        assert_eq!(d.state()["layout"], "tabs");
+        assert_eq!(library::read_meta(&folder).unwrap().layout, DocLayout::Tabs);
+        let (d, _) = make("plain");
+        outline(&d, 2).await.unwrap();
+        assert!(d.state().get("layout").is_none());
+
+        let (d, folder) = make("proto");
+        let e = d.call("doc_outline", with("prototype", 2)).await.unwrap_err();
+        assert_eq!(e, "a prototype Doc has one section");
+        assert!(entries(&d).is_empty() && library::read_meta(&folder).unwrap().layout.is_doc());
+        d.call("doc_outline", with("prototype", 1)).await.unwrap();
+        assert_eq!(d.state()["layout"], "prototype");
+        let page = "<!doctype html><html><body>x</body></html>";
+        let e = fill(&d, "s1", "Words and nothing else.").await.unwrap_err();
+        assert!(e.contains("a prototype Doc holds one line") && e.contains("unchanged"), "{e}");
+        assert_eq!(entries(&d)[0]["body"], Value::Null);
+        fill(&d, "s1", &format!("A tuner.\n\n```prototype\n{page}\n```")).await.unwrap();
+        // The cap is the same 64 KB.
+        let big = format!("```prototype\n{page}<!-- {} -->\n```", "x".repeat(SECTION_MAX));
+        assert!(fill(&d, "s1", &big).await.is_err());
+        // Restarted, the Doc is still a prototype Doc.
+        drop(d);
+        let again = Doc::new(folder, "proto".into(), true, Arc::new(|| {}));
+        assert!(fill(&again, "s1", "Just words.").await.is_err());
+        std::fs::remove_dir_all(state).unwrap();
+    }
 }
 
 /// Sharing a Doc (#1066), against a control that keeps what it is sent
@@ -1550,6 +1705,57 @@ mod share_tests {
         let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
         assert!(e.contains("Update") && !e.contains('\n'), "{e}");
         assert_eq!(s.fake.served.lock().unwrap().len(), 1);
+    }
+
+    /// A Doc's copy arriving on the platform (and the machine leaving) reaches the
+    /// block showing it: the state says `platform` and the link is `doc_shares`'
+    /// to give, never the state's.
+    #[tokio::test]
+    async fn a_copy_arriving_on_the_platform_reaches_the_block_showing_it() {
+        let root = temp("platform");
+        let state_dir = root.join("state");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let id = library::make(&state_dir, "Plan", "test").unwrap().id;
+        use std::sync::atomic::Ordering;
+        let told = Arc::new(AtomicUsize::new(0));
+        let n = told.clone();
+        let doc = Doc::with_link(
+            library::dir(&state_dir, &id).unwrap(),
+            "Plan".into(),
+            true,
+            Link::none(state_dir.clone(), id.clone()),
+            Arc::new(move || {
+                n.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+        LIVE.lock().unwrap().push(Arc::downgrade(&doc));
+        assert!(doc.state().get("platform").is_none(), "no copy yet");
+        assert_eq!(doc.platform_link(), None);
+
+        let on = library::OnPlatform {
+            project: "prj_1".into(),
+            id: "pdc_1".into(),
+            link: "https://app.example/p/prj_1/docs/pdc_1".into(),
+            rev: 1,
+            assets: Default::default(),
+        };
+        library::set_platform(&library::dir(&state_dir, &id).unwrap(), on.clone());
+        assert_eq!(doc.state()["platform"], true);
+        assert_eq!(told.load(Ordering::SeqCst), 1, "clients are told once");
+        assert!(!doc.state().to_string().contains("pdc_1"), "the state holds no link");
+        assert_eq!(doc.platform_link().as_deref(), Some(on.link.as_str()));
+        let said = doc.call("doc_shares", json!({})).await.unwrap();
+        assert_eq!(said["copy"], json!({ "project": "prj_1", "id": "pdc_1" }), "{said}");
+        // The same copy again says nothing.
+        library::set_platform(&library::dir(&state_dir, &id).unwrap(), on);
+        assert_eq!(told.load(Ordering::SeqCst), 1);
+
+        library::forget_platform(&state_dir);
+        assert!(doc.state().get("platform").is_none(), "the machine left control");
+        assert_eq!(doc.platform_link(), None);
+        assert_eq!(doc.call("doc_shares", json!({})).await.unwrap()["copy"], Value::Null, "no copy, no section");
+        assert_eq!(told.load(Ordering::SeqCst), 2);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
@@ -1777,5 +1983,23 @@ mod share_tests {
         // The block is gone; the key isn't (the account list still copies it).
         drop(again);
         assert_eq!(link::url_of(&s.state_dir, ID).unwrap().as_deref(), Some(url.as_str()));
+    }
+
+    #[tokio::test]
+    async fn the_blocks_state_carries_its_layout_and_a_restart_keeps_it() {
+        let state = temp("layout");
+        let meta = library::make(&state, "Plan", "me").unwrap();
+        let folder = library::dir(&state, &meta.id).unwrap();
+        let d = Doc::new(folder.clone(), "Plan".into(), false, Arc::new(|| {}));
+        assert!(d.state().get("layout").is_none(), "a plain Doc's state is what it was");
+        let before = d.state()["rev"].as_u64().unwrap();
+        assert!(d.set_layout(DocLayout::Tabs).await);
+        assert_eq!(d.state()["layout"], "tabs");
+        assert!(d.state()["rev"].as_u64().unwrap() > before, "clients are told");
+        assert!(!d.set_layout(DocLayout::Tabs).await);
+        drop(d);
+        let again = Doc::new(folder, "Plan".into(), true, Arc::new(|| {}));
+        assert_eq!(again.state()["layout"], "tabs");
+        std::fs::remove_dir_all(state).unwrap();
     }
 }

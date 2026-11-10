@@ -279,9 +279,9 @@ Run each `arugula ...` command alone, not piped or `&&`-chained, to match allow 
 /// `arugula hook` also gives on `SessionStart`, #1486; everyone's since
 /// Docs left Labs, native #204), the issues sentence
 /// (`flags::ISSUES_STEERING`) and the boards sentence
-/// (`flags::BOARDS_STEERING`, which says nothing to do where boards are
-/// off, and does no harm). Chat isn't in the instructions (#1095): how to
-/// reach a teammate's agent is in the thread tools' descriptions (#574).
+/// (`flags::BOARDS_STEERING`; everyone's since boards left Labs, native
+/// #191). Chat isn't in the instructions (#1095): how to reach a
+/// teammate's agent is in the thread tools' descriptions (#574).
 pub fn instructions() -> String {
     [
         INSTRUCTIONS_HEAD,

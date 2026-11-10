@@ -51,7 +51,7 @@ test("the old address says where control is now, with the same page there", asyn
 }) => {
   await page.goto(`http://localhost:${port}/#join=ABCDE-FGHIJ`);
   const bar = page.locator("[data-control-moving]");
-  await expect(bar).toContainText(`Arugula control is moving to 127.0.0.1:${port}`);
+  await expect(bar).toContainText(`Arugula cloud is moving to 127.0.0.1:${port}`);
   await expect(bar.getByRole("link")).toHaveAttribute(
     "href",
     `http://127.0.0.1:${port}/#join=ABCDE-FGHIJ`,
@@ -63,6 +63,6 @@ test("the old address says where control is now, with the same page there", asyn
 
 test("the new address doesn't", async ({ page }) => {
   await page.goto(`http://127.0.0.1:${port}/`);
-  await expect(page.locator("body")).not.toContainText("control is moving");
+  await expect(page.locator("body")).not.toContainText("cloud is moving");
   await expect(page.locator("[data-control-moving]")).toHaveCount(0);
 });

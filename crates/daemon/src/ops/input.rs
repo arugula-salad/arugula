@@ -98,7 +98,7 @@ impl Handle for PaneMentions {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden("only this machine's owner silences or allows mentions".into()));
         }
-        match cx.app.mux.api(|r| Api::Mentions(id, req.on, r)).await {
+        match cx.app.mux.api(|r| Api::SilenceTagged(id, req.on, r)).await {
             Some(true) => Ok(Empty {}),
             _ => Err(OpError::NoPane(id)),
         }

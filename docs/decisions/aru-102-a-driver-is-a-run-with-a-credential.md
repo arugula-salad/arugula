@@ -56,8 +56,11 @@ constrains:
 A deploy is applied by a run, and the run is what holds the credential
 (Jake, 2026-10-21, platform step 7, #1317).
 
-- **Applying an approved deploy enqueues a run** on the project's hosted
-  workspace ("A run is a platform object on a hosted workspace").
+- **Applying an approved deploy enqueues a run** on a hosted box made for that
+  deploy and deleted after it (Jake, 2026-10-22,
+  `crates/platform-deploys/src/deploys/apply.rs`), not on the project's own
+  workspace as first decided. It's still a run ("A run is a platform object on
+  a hosted workspace").
 - **A driver** plans, applies, verifies, and rolls back where its target can.
   A driver failing mid-apply marks the deploy failed, and pages the operator
   with the run's log.

@@ -181,8 +181,7 @@ recommends it stays that way. Of today's 63 top-level commands, none is one
 operation with the same arguments: each takes forms the API doesn't
 (`%N`, `-` for stdin, a default pane from `$ARUGULA_PANE`), renders its own
 summary, or spans several operations (`rules` is three routes, `shell-env`
-two, `close` reaches a remote pane's own host first, `run --home` and
-`agent` compose several calls). Deriving clap from the request type would
+two, `agent` composes several calls). Deriving clap from the request type would
 rename flags and change help, which is the drift the pilot must not cause.
 What the CLI gets is the method, the path and the types from one place.
 
@@ -217,9 +216,8 @@ operations, and may call an operation's handler.
   Hand-written routes.
 - **Binary and plain text:** `GET /api/panes/N/capture` (text),
   `GET /api/panes/N/export.cast` (asciicast), `GET /api/editors/vsix`,
-  `POST /api/panes/N/upload` (raw bytes in, with its own body limit), the
-  history pushes `POST /api/sync/N/{log,index,closed}` (raw bytes, a host
-  token). Hand-written routes.
+  `POST /api/panes/N/upload` (raw bytes in, with its own body limit).
+  Hand-written routes.
 - **Block calls:** `POST /api/blocks/N/call/METHOD`. The arguments depend on
   the block's type and the method, and `authz.rs` decides per method
   (`enter`, `login`, `checkout` … are the owner's). These stay one
@@ -232,9 +230,8 @@ operations, and may call an operation's handler.
   hand-written tools. Once the operations under them exist they call
   `O::handle(&cx, …)` instead of reaching the mux themselves, which is where
   the second copy goes away.
-- **Composed CLI commands:** `run --home`, `agent`, `close` (a remote pane's
-  host first), `send --wait`, `rules`. They stay hand-written commands, each
-  making several `call::<O>`.
+- **Composed CLI commands:** `agent`, `send --wait`, `rules`. They stay
+  hand-written commands, each making several `call::<O>`.
 - **Grouped MCP tools:** `list`, `show` and `draft` themselves stay
   hand-written: their lead text, the merged schema and the default kind.
   A kind that is one operation is declared (`list` kind `panes` in the
@@ -242,8 +239,8 @@ operations, and may call an operation's handler.
   could be). Kinds that aren't operations (`list` kind `devices`, every
   `draft` kind, the `show` kinds that open a block with extra work after)
   stay hand-written rows.
-- **Not HTTP at all:** the WebSocket (`/ws`, the share viewer's), the
-  dial-out and provider tunnels (`/h/NAME/…`, `/tunnel/…`), `/mcp` itself.
+- **Not HTTP at all:** the WebSocket (`/ws`, the share viewer's), `/mcp`
+  itself.
 
 ## Required role across surfaces
 
@@ -350,7 +347,7 @@ Branch `arch/451-ops-pilot`, three operations of different shapes:
 2. **A write with a role check:** `close`. HTTP: an editor on the pane's
    session, and an invite block refuses a guest or an agent. MCP: the
    `close` tool, where an agent block may close only what it started. CLI:
-   `arugula close`, which also closes a remote pane on its own host.
+   `arugula close`.
 3. **The awkward one:** the panes list. HTTP `GET /api/panes` answers every
    `PaneSummary` to the owner; MCP's `list` is a grouped tool and this is
    its default kind, `panes`, which confines an agent block to its tab,
@@ -401,9 +398,9 @@ what it calls; each CLI request site by its route.
   `tail`, `export.cast`, `events`, `vsix`, `upload`, and block `call`.
   So about 61 of 68.
 - **HTTP, other modules** (`fs`, `hosts`, `share`, `labs/guest_ssh`, `acl`,
-  `invite`, `setup`, `mcp/tokens`, `sync`, `resident`, about 40 more):
-  most convert the same way; the sync pushes, `fs/watch`, the share viewer
-  and the tunnels don't. Not counted route by route.
+  `invite`, `setup`, `mcp/tokens`, about 40 more):
+  most convert the same way; `fs/watch`, the share viewer and the tunnels
+  don't. Not counted route by route.
 - **MCP:** 17 tools of their own plus 18 kinds of the three grouped tools,
   35 surfaces. 7 convert cleanly: `close`, `read_thread`, `post_thread`,
   `list` kinds `panes`, `conversations` and `managoat_agents`, `show` kind
@@ -454,7 +451,7 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    `thread.read`, HTTP only), `fountain.agents`, `conversations.list` and
    `conversation.open`; `managoat_agents` stays a hand-written kind.
 7. (#578) **Operations: the other modules.** `fs` (not `watch`), `hosts`,
-   `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`, `synced`,
+   `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`,
    `sandboxes`. May split by module. After 2.
 8. (#579) **Optional: the operations table for the web client.** Emit each
    operation's method and path into `proto.gen.ts` beside its types, so

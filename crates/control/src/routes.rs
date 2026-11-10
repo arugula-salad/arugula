@@ -66,11 +66,13 @@ enum Client {
     Page,
     Daemon,
     Cli,
+    Native,
     App,
     Browser,
     Github,
     Stripe,
     Plane,
+    Chant,
     Operator,
     Product,
     Agent,
@@ -88,11 +90,12 @@ fn listed() -> BTreeSet<(String, String)> {
         let at = format!("{} {}", r.method, r.path);
         assert!(METHODS.contains(&r.method.as_str()), "routes.toml: {at}: the method is one of {METHODS:?}");
         assert!(!r.clients.is_empty(), "routes.toml: {at}: say who calls it");
-        let providers = r.clients.iter().all(|c| matches!(c, Client::Github | Client::Stripe | Client::Plane));
+        let providers =
+            r.clients.iter().all(|c| matches!(c, Client::Github | Client::Stripe | Client::Plane | Client::Chant));
         assert_eq!(
             r.auth == Auth::Webhook,
             providers,
-            "routes.toml: {at}: webhooks, and only webhooks, are GitHub's, Stripe's or Plane's"
+            "routes.toml: {at}: webhooks, and only webhooks, are GitHub's, Stripe's, Plane's or chant's"
         );
         assert!(seen.insert((r.method, r.path)), "routes.toml lists {at} twice");
     }

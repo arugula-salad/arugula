@@ -9,12 +9,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 base64 = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
-crossbeam-channel = "0.5.17"
 futures-util = { workspace = true }
 getrandom = { workspace = true }
 hkdf = { workspace = true }
@@ -40,11 +38,10 @@ rmcp = { version = "=3.5.0", default-features = false, features = ["server", "sc
 schemars = "1.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-hmac = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }
-# wss:// for connect_async (Sprites, loam): TLS with the system's roots.
+# wss:// for connect_async (loam): TLS with the system's roots.
 # Before the server had its own workspace (server/Cargo.toml) the daemon
 # got this from arugula-control's, built beside it.
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
@@ -53,11 +50,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 x509-parser = "0.18.1"
 tower = { version = "0.5.3", features = ["util"] }
 hex = { workspace = true }
-# A hosted builder's wipe (M263) looks for its secrets through the disk.
-memchr = "2.8.3"
 url = { workspace = true }
 webpki-root-certs = { workspace = true }
-zstd = { workspace = true }
 
 # ptys, signals, sockets: Unix only. Windows gets ConPTY and named pipes (M56).
 [target.'cfg(unix)'.dependencies]
@@ -74,6 +68,8 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Network
 workspace = true
 
 [dev-dependencies]
+# A push notice's envelope, opened as a browser would (control.rs's tests).
+aes-gcm = { workspace = true }
 futures-util = { workspace = true }
 arugula-proto = { workspace = true, features = ["fixtures"] }
 arugula-testkit = { path = "../testkit" }

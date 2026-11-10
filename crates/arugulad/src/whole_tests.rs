@@ -73,3 +73,9 @@ fn a_guests_agent_is_refused_every_owners_tool() {
     register();
     tools::a_guests_agent_is_refused_every_owners_tool();
 }
+
+#[test]
+fn old_argument_and_kind_names_are_read_as_the_new() {
+    register();
+    tools::old_argument_and_kind_names_are_read_as_the_new();
+}

@@ -18,7 +18,7 @@
 //! replaced is a new deploy's.
 
 use anyhow::{Context as _, Result, bail};
-use arugula_e2e::deploy::{Approval, Decision, Operation, V1, V2};
+use arugula_e2e::deploy::{Approval, Decision, Operation, V1, V2, V3, chant::Gate};
 
 use super::{
     Db,
@@ -55,13 +55,23 @@ pub struct StoredApproval {
     /// whole of its signature.
     pub passkey: Option<PasskeyProof>,
     pub at: u64,
+    /// v3 (#1985): the chant gate its statement is for, and the
+    /// statement's time.
+    pub chant: Option<Gate>,
+    pub chant_at: String,
 }
 
 impl StoredApproval {
-    /// Its format: v2 (DK4) when it names no device and holds no device
-    /// signature, else v1.
+    /// Its format: v3 (#1985) when it's for a chant gate, v2 (DK4) when it
+    /// names no device and holds no device signature, else v1.
     pub fn v(&self) -> u8 {
-        if self.device.is_empty() && self.sig.is_empty() { V2 } else { V1 }
+        if self.chant.is_some() {
+            V3
+        } else if self.device.is_empty() && self.sig.is_empty() {
+            V2
+        } else {
+            V1
+        }
     }
 
     /// The signed object it was made from.
@@ -75,15 +85,18 @@ impl StoredApproval {
             by: self.device.clone(),
             sig: self.sig.clone(),
             v: self.v(),
+            chant: self.chant.clone(),
+            at: self.chant_at.clone(),
         }
     }
 }
 
 const COLS: &str = "id, deploy_id, environment_id, seq, decision, op_hash, account, device, device_name, expires, sig, at, \
-                    passkey_id, passkey_client_data, passkey_authenticator_data, passkey_signature";
+                    passkey_id, passkey_client_data, passkey_authenticator_data, passkey_signature, chant, chant_at";
 
 fn approval_row(r: &Row) -> Result<StoredApproval> {
     let decision: String = r.get(4)?;
+    let chant: Option<String> = r.get(16)?;
     Ok(StoredApproval {
         id: r.get(0)?,
         deploy: r.get(1)?,
@@ -108,6 +121,11 @@ fn approval_row(r: &Row) -> Result<StoredApproval> {
             signature: r.get(15)?,
         })
         .filter(|p| !p.id.is_empty()),
+        chant: match chant.filter(|c| !c.is_empty()) {
+            Some(c) => Some(serde_json::from_str(&c).context("an approval's chant gate")?),
+            None => None,
+        },
+        chant_at: r.get(17)?,
     })
 }
 
@@ -158,7 +176,7 @@ impl Db {
         let stored = tx.query_row(
             &format!(
                 "INSERT INTO deploy_approvals ({COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
                  RETURNING {COLS}"
             ),
             params![
@@ -177,7 +195,9 @@ impl Db {
                 p.map_or("", |p| p.id.as_str()),
                 p.map_or("", |p| p.client_data_json.as_str()),
                 p.map_or("", |p| p.authenticator_data.as_str()),
-                p.map_or("", |p| p.signature.as_str())
+                p.map_or("", |p| p.signature.as_str()),
+                v.chant().map(serde_json::to_string).transpose()?,
+                v.chant_at()
             ],
             approval_row,
         )?;

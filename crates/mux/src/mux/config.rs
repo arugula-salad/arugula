@@ -70,13 +70,14 @@ pub struct Config {
     /// `pane_env` sets them.
     pub shell_env_skip: Vec<String>,
     /// The Claude Code conversations here (#146).
-    pub sessions: Arc<dyn super::AgentSessions>,
+    pub sessions: Arc<dyn super::Conversations>,
     /// What a pane leaves behind when it closes.
     pub pane_gone: Arc<dyn super::PaneGone>,
     /// Told of each new terminal and block, to count them.
     pub usage: Arc<dyn super::Usage>,
-    /// Told where the turn that took a mention is (#540).
-    pub turns: Arc<dyn super::Turns>,
+    /// Told where the turn that took a tagged follow-up is (#540), and
+    /// asked which waiting ones go in as one (#580).
+    pub followups: Arc<dyn super::Followups>,
 }
 
 /// How a shell takes a command to run.

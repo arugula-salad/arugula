@@ -36,15 +36,42 @@ pub struct DocSection {
     pub intent: String,
 }
 
+/// How a Doc is laid out: doc, tabs or prototype.
+#[derive(Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocLayoutArg {
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayoutArg {
+    fn name(self) -> &'static str {
+        match self {
+            DocLayoutArg::Doc => "doc",
+            DocLayoutArg::Tabs => "tabs",
+            DocLayoutArg::Prototype => "prototype",
+        }
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct DocNewArgs {
     /// The Doc's title.
     pub title: String,
-    /// Every section, in order (at most 40), so the user sees the whole outline at once.
+    /// Every section, in order (at most 40), so the user sees the whole outline at once. A prototype Doc has one, made for you if you leave this out.
+    #[serde(default)]
     pub sections: Vec<DocSection>,
+    /// How it is laid out: doc (the default, sections one after another), tabs (sections shown one at a time) or prototype (one section holding one prototype that fills the screen).
+    #[serde(default = "default_layout")]
+    pub layout: DocLayoutArg,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+}
+
+fn default_layout() -> DocLayoutArg {
+    DocLayoutArg::Doc
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -62,7 +89,7 @@ pub struct DocFillArgs {
     pub block: PaneArg,
     /// The section's id (s1, s2, … from doc new).
     pub section: String,
-    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.
+    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it. In a prototype Doc: one line, then one ```prototype fence.
     pub markdown: String,
 }
 
@@ -100,27 +127,27 @@ Grey first (stone and ink), one accent per figure. Text stays ink. For example:
 ```svg Idea to app
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" font-size="11" text-anchor="middle"><rect x="2" y="8" width="60" height="24" rx="4" fill="stone-soft" stroke="stone"/><text x="32" y="24" fill="ink">Idea</text><path d="M62 20 H98" stroke="ink"/><rect x="98" y="8" width="60" height="24" rx="4" fill="leaf-soft" stroke="leaf"/><text x="128" y="24" fill="ink">App</text></svg>
 ```
-An interactive or tunable prototype goes in a ```prototype fence (a ```html fence stays code). The fence line holds a title and height=N anywhere (120 to 2000 pixels, 480 by default), as in ```prototype Tuner height=480. It is one self-contained HTML page of at most 64 KB that runs in a sandboxed frame: inline <script> and <style>, no external src or href (so no <script src>, <link>, iframe, object, embed, base or meta http-equiv), no network, and fonts only as data: URLs. Pointer and touch work, and the viewer has a Full window button. Two calls reach out of the frame and return promises that reject with an error: arugula.copy(text) copies up to 16 KB, only from a click inside the frame; arugula.store.get(key), .set(key, value) and .all() keep settings per viewer (a key up to 128 characters, a JSON value up to 8 KB, 64 KB a section), in memory only on a shared link. Call store.all() on load to restore what the viewer set. Fill the section again to update it: every open view changes, and a share gets the new version when the person taps Update.
+An interactive or tunable prototype goes in a ```prototype fence (a ```html fence stays code). The fence line holds a title and height=N anywhere (120 to 2000 pixels, 480 by default), as in ```prototype Tuner height=480. It is one self-contained HTML page of at most 64 KB that runs in a sandboxed frame: inline <script> and <style>, no external src or href (so no <script src>, <link>, iframe, object, embed, base or meta http-equiv), no network, and fonts only as data: URLs. Pointer and touch work, and the viewer has a Full window button. Two calls reach out of the frame and return promises that reject with an error: arugula.copy(text) copies up to 16 KB, only from a click inside the frame; arugula.store.get(key), .set(key, value) and .all() keep settings per viewer (a key up to 128 characters, a JSON value up to 8 KB, 64 KB a section), in memory only on a shared link. Call store.all() on load to restore what the viewer set. Every prototype has a small kit in its page, so start from it: colors that follow the Doc's light or dark (--ar-bg, --ar-surface, --ar-raised, --ar-text, --ar-muted, --ar-border, --ar-accent, --ar-danger, --ar-ok, --ar-warn), sizes --ar-text-xs to --ar-text-lg, and the classes ar-btn (with ar-btn-primary, ar-btn-ghost), ar-chip (ar-chip-accent, -ok, -warn, -danger), ar-header, ar-row, ar-dialog, ar-menu with ar-menu-item, ar-empty and ar-toolbar. Fill the section again to update it: every open view changes, and a share gets the new version when the person taps Update.
 Every fence is checked before anything is written: a bad chart, tile, drawing or prototype is refused with one line saying what to fix, and the section stays as it was."##;
 
 /// `doc`'s kinds.
 pub static DOC: &[Kind] = &[
     Kind {
         name: "new",
-        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids (s1, s2, …): fill them in order.",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids: fill them in order. Layout: tabs for several prototypes or long parts; prototype when the whole screen is the thing.",
         schema: schema_for_type::<DocNewArgs>,
         flag: None,
     },
     kind_of::<DocsList, Docs>(),
     Kind {
         name: "open",
-        description: "Open a Doc from list in a block beside your pane, to read or go on with; fill it as after new. A Doc already open is that block, not a second one.",
+        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.",
         schema: schema_for_type::<DocOpenArgs>,
         flag: None,
     },
     Kind {
         name: "fill",
-        description: r##"Write one section (block, section id, Markdown): headings, lists, **bold**, *italic*, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
+        description: r##"Write one section in Markdown: headings, lists, emphasis, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
@@ -138,7 +165,7 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc with a link anyone can open. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once unless the user wants more."##,
+        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
@@ -204,6 +231,17 @@ pub fn register() {
 /// `doc new`: a Doc in the library, its block beside the caller's pane,
 /// then its outline.
 async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
+    let layout = a.layout;
+    // A prototype Doc is one section: made here when none is given.
+    let mut sections = a.sections;
+    if layout == DocLayoutArg::Prototype {
+        if sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
+        }
+        if sections.is_empty() {
+            sections.push(DocSection { heading: a.title.clone(), intent: "the prototype".into() });
+        }
+    }
     let state = call.app().control.state_dir().to_owned();
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
     // Two doc new make two Docs: each is made here, before its block.
@@ -241,8 +279,8 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
             return Err(e);
         }
     };
-    let sections: Vec<Value> = a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
-    let args = json!({ "title": a.title, "sections": sections });
+    let sections: Vec<Value> = sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
+    let args = json!({ "title": a.title, "sections": sections, "layout": layout.name() });
     let outlined = match call.app().mux.api(|r| Api::Block(block, r)).await.flatten() {
         Some(b) => b.call_by("doc_outline", args, Some(&call.by())).await,
         None => Err("the Doc's block closed".into()),
@@ -404,5 +442,23 @@ mod tests {
             assert!(fill.contains(name), "{name}");
         }
         assert!(DOC.iter().any(|k| k.name == "fences"));
+    }
+
+    /// #828: `layout` is an enum of the three names in the generated schema,
+    /// not a free string, and `sections` may be left out.
+    #[test]
+    fn doc_new_takes_a_layout_of_three_names() {
+        let new = DOC.iter().find(|k| k.name == "new").unwrap();
+        let schema = serde_json::to_value((new.schema)().as_ref()).unwrap().to_string();
+        assert!(schema.contains(r#""enum":["doc","tabs","prototype"]"#), "{schema}");
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "layout": "prototype" })).unwrap();
+        assert!(a.sections.is_empty() && a.layout == DocLayoutArg::Prototype);
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "sections": [] })).unwrap();
+        assert!(a.layout == DocLayoutArg::Doc);
+        let e = serde_json::from_value::<DocNewArgs>(json!({ "title": "T", "layout": "slides" }))
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(e.contains("doc") && e.contains("tabs") && e.contains("prototype"), "{e}");
     }
 }

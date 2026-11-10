@@ -1,0 +1,48 @@
+{
+  "url": "https://control.example",
+  "trust": {
+    "account": "a",
+    "root": "2fd78ba2a5780271"
+  },
+  "cert": {
+    "v": 1,
+    "account": "a",
+    "device": "c95b41d8598649c5",
+    "kind": "daemon",
+    "name": "geek",
+    "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+    "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+    "created": 1793773139410,
+    "approver": "2fd78ba2a5780271",
+    "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
+  },
+  "certs": [
+    {
+      "v": 1,
+      "account": "a",
+      "device": "2fd78ba2a5780271",
+      "kind": "browser",
+      "name": "x",
+      "noise": "a8cf8feab8f91e4547d41833ddea8c95efa2121495ffa296ebcfe5b11678171f",
+      "sign": "e07043aab33b8e513c219a3fab18e2ad1c252613136f9a58d96bd42d076d102f",
+      "created": 1793773139403,
+      "approver": "2fd78ba2a5780271",
+      "sig": "0b31658f5ee9ec23c98c1a1ceb5d42351b9bb09e6d1a11ebb317feaeccc37e9979c34685ead277087d88c6909900070f795d257bff81e78cf5ddb8fc8b184600"
+    },
+    {
+      "v": 1,
+      "account": "a",
+      "device": "c95b41d8598649c5",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "767404260f8424f3cdafddf339872dcc42da9cf8c446542943abd044a5385674",
+      "sign": "339831cd1b9c4bd0dceb6368eca304387f5e0b391d80a9a4bb39aab266240035",
+      "created": 1793773139410,
+      "approver": "2fd78ba2a5780271",
+      "sig": "665be5d950394c38b551c45055f8a60374259e323dddb707a406affb77871ee4465a0a5c3cd502964630576f66193a015477ec4c543d32489940e98f83dff00b"
+    }
+  ],
+  "revocations": [],
+  "locked": false,
+  "moved_at": 0
+}

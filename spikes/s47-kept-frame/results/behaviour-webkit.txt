@@ -1,0 +1,2 @@
+Not run on the real shell. The browser closed during sign-in on this rig (Playwright WebKit on Linux).
+probe-webkit.json and wkwebview-macos-15.5.txt have the browser facts.

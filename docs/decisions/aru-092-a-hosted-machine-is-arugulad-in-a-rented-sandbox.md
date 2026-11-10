@@ -46,7 +46,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/platform/src/compute"
-  - "path:crates/daemon/src/main.rs"
+  - "path:crates/daemon/src/lib.rs"
   - "path:crates/platform/src/hosted"
 ---
 

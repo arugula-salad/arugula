@@ -17,7 +17,7 @@ use arugula_control_wire::boards::{
 use arugula_control_wire::issues::{agent_issue, agent_project_issue};
 use std::sync::Arc;
 
-use arugula_proto::{PaneId, flags};
+use arugula_proto::PaneId;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -30,9 +30,18 @@ use crate::{control::CloudRefused, mux::Api, server::App};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
     pub issue: String,
+    /// The project the issue is in (Arugula #771): the agent's current
+    /// project, for its MCP calls (`mcp::issues`) and, as [`PROJECT_ENV`],
+    /// the `arugula` it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<WorkBoard>,
 }
+
+/// The current project of `arugula issue` and `arugula open`, set in an
+/// agent's environment from its [`Work`]'s project.
+pub const PROJECT_ENV: &str = "ARUGULA_PROJECT";
 
 /// A board with a row the block is attached to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,13 +190,10 @@ pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
 }
 
 /// Before a pane is opened on `issue`: who holds its row, if another machine's
-/// block does (Arugula #404). A machine that can't ask (boards off, not
+/// block does (Arugula #404). A machine that can't ask (not
 /// joined, no grant, control down) is told nothing: the attach says why the
 /// row isn't taken, as it always did, and refuses a race with its 409.
 pub async fn held(app: &App, home: Option<String>, issue: &str) -> Option<String> {
-    if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
-        return None;
-    }
     let enrolled = app.control.enrolled()?;
     let project = write_project(app, home).await.ok()?;
     let body = serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id() }).ok()?;
@@ -202,9 +208,6 @@ async fn attach(
     pane: PaneId,
     take: bool,
 ) -> Result<Vec<WorkBoard>, NotKept> {
-    if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
-        return Err("boards are off on this machine (Labs: boards), so the row wasn't attached".into());
-    }
     let Some(enrolled) = app.control.enrolled() else {
         return Err("this machine hasn't joined Arugula control, so the row wasn't attached".into());
     };

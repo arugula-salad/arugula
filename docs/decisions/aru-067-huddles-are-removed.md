@@ -24,7 +24,7 @@ reviews: []
 constrains:
   - "path:scripts/macos-sign"
   - "path:crates/proto/src/flags.rs"
-  - "path:crates/daemon/tests/integration/flag_gates.rs"
+  - "path:crates/arugulad/tests/integration/flag_gates.rs"
   - "path:crates/desktop/Info.plist"
 ---
 
@@ -55,5 +55,5 @@ and their tests). What stays, for a fleet whose versions are mixed:
 - **The macOS app keeps its microphone** (`NSMicrophoneUsageDescription`,
   the `audio-input` entitlement and `scripts/macos-sign`'s check): a lent
   device's `record_audio` (S33) records in the app's webview too.
-Where: `crates/proto/src/flags.rs` (`RETIRED`), `crates/daemon/tests/integration/flag_gates.rs` (`a_call_message_from_an_older_page_is_dropped`), `crates/desktop/Info.plist`.
+Where: `crates/proto/src/flags.rs` (`RETIRED`), `crates/arugulad/tests/integration/flag_gates.rs` (`a_call_message_from_an_older_page_is_dropped`), `crates/desktop/Info.plist`.
 From: Jake, 2026-10-18.

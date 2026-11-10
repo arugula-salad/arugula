@@ -28,8 +28,7 @@
 /* One control height on the list pages, the button set's (UI audit #163,
    #164): filters, the open/closed toggle and the search box beside
    Export and New issue. */
-.issues-filter,
-.issues-states button {
+.issues-filter {
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -39,23 +38,8 @@
   white-space: nowrap;
 }
 
-.issues-filter.on,
-.issues-states button[aria-pressed="true"] {
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
 .issues-states {
   display: flex;
-}
-
-.issues-states button:first-child {
-  border-radius: var(--btn-radius) 0 0 var(--btn-radius);
-}
-
-.issues-states button:last-child {
-  margin-left: -1px;
-  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
 .issues-search {
@@ -117,15 +101,11 @@ details.issues-note > summary {
   display: none;
 }
 
-.issue-row {
-  display: flex;
+/* A row is a Card (shared/ui/card.css) laid out as a line, not a column. */
+.issue-row.card {
+  flex-direction: row;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
-}
-
-.issue-row + .issue-row {
-  border-top: 1px solid var(--line);
 }
 
 .issue-row-main {
@@ -148,7 +128,7 @@ details.issues-note > summary {
 .issue-row-meta {
   display: block;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .issue-row-who {
@@ -160,17 +140,12 @@ details.issues-note > summary {
 .issue-side .msg-avatar {
   width: 20px;
   height: 20px;
-  font-size: 10px;
+  font-size: 10px; /* off-scale: avatar initials */
 }
 
 /* A label's chip (../ui/state-chip.css), beside the next. */
 .chip.issue-label {
   margin-right: 4px;
-}
-
-.issues-home-line {
-  margin: 16px 0 0;
-  font-size: 12px;
 }
 
 /* Where new issues go, in the project's settings (UI audit #163). */
@@ -208,14 +183,15 @@ details.issues-note > summary {
   display: flex;
 }
 
-/* Close issue and its ▾, one split button of the set's (buttons.css). */
+/* Close issue and its chevron, one split button of the set's (buttons.css). */
 .issue-split > button:first-child {
   border-radius: var(--btn-radius) 0 0 var(--btn-radius);
 }
 
 .issue-split > button:last-child {
+  min-width: 24px; /* axe's target size; the chevron is 12px */
   margin-left: -1px;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-1);
   border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
 }
 
@@ -234,16 +210,13 @@ details.issues-note > summary {
   flex: 1;
   min-width: 0;
   height: 32px;
-  font-size: 16px;
+  font-size: var(--t-field);
 }
 
 .issue-cols {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 200px;
   gap: 24px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
 }
 
 .issue-side {
@@ -261,7 +234,7 @@ details.issues-note > summary {
   display: flex;
   align-items: center;
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--dim);
 }
 
@@ -299,7 +272,7 @@ details.issues-note > summary {
   border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
-  font: 12px ui-monospace, monospace;
+  font: var(--text-sm) var(--f-mono);
 }
 
 /* The thread is part of the page: the page scrolls, and the box to write
@@ -354,7 +327,7 @@ details.issues-note > summary {
   align-items: baseline;
   margin: 10px 0;
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -454,10 +427,10 @@ details.issues-note > summary {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   color: var(--subtle);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .issue-foot {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }

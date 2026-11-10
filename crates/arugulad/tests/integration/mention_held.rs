@@ -75,7 +75,6 @@ fn a_mention_for_a_session_without_hooks_is_held_and_only_the_owners_deliver_typ
     let mut d = arugulad!("mentionheld")
         .env("CLAUDE_CONFIG_DIR", &cfg)
         .args(["--owner", "owner@example.com", "--tailscale-socket", "/nonexistent/sock"])
-        .args(["--wisp-token-file", "/nonexistent"])
         .wait_secs(30)
         .start();
     d.stop();

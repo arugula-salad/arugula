@@ -9,11 +9,13 @@
 // asked, and to the ones going. A row reads again when its session's live
 // event comes (`chat.onObject`), and the list now and then while any goes.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -24,9 +26,9 @@ import { names } from "../links";
 import { waveQuery, type WaveFilter } from "../paths";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
-import { toneClass } from "../swarm";
 import { ListLoading } from "./issues";
 import { Missing } from "./project";
+import { Caret, CloseIcon } from "../../shared/ui/icons";
 
 async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
   const qs = waveQuery(f);
@@ -154,7 +156,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       data-sessions={p.id}
     >
       <PageHeader
-        title="Agents"
+        title="Agent sessions"
         sub="The project's agent sessions, newest first: where each runs, its branch and last push, and what waits on you. Narrow it to a track by its issues' label, or by a tracker issue."
         stats={
           !!w?.sessions.length && (
@@ -167,21 +169,23 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       />
       <div class="issues-tools">
         <button
-          class={filter.label ? "issues-filter on" : "issues-filter"}
+          class="secondary"
+          aria-pressed={!!filter.label}
           data-sessions-label
           onClick={labelMenu}
         >
           {filter.label ? `Label: ${filter.label}` : "Label"}{" "}
-          <span class="caret">▾</span>
+          <Caret />
         </button>
         <TrackerFilter filter={filter} to={to} tracker={w?.tracker ?? null} />
         <button
-          class={filter.asker ? "issues-filter on" : "issues-filter"}
+          class="secondary"
+          aria-pressed={!!filter.asker}
           data-sessions-asker
           onClick={askerMenu}
         >
           {filter.asker ? `Asked by ${askerName}` : "Asked by"}{" "}
-          <span class="caret">▾</span>
+          <Caret />
         </button>
         <label class="issues-filter">
           <input
@@ -204,20 +208,28 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           </button>
         )}
       </div>
-      {error && (
-        <p class="control-error" role="alert">
-          {error}
-        </p>
+      {w === null && error ? (
+        <BlockError inline title="Can't read this project's sessions." detail={error} retry={() => setTick((n) => n + 1)} />
+      ) : (
+        error && (
+          <p class="control-error" role="alert">
+            {error}
+          </p>
+        )
       )}
       {w === null && !error && <ListLoading />}
-      {w?.sessions.length === 0 && (
-        <p class="dim issues-none" data-sessions-none>
-          {narrowed
-            ? "No sessions match."
-            : "No agent sessions yet. Agent on this on an issue, or @arugula in a channel, starts one."}
-        </p>
-      )}
-      <ul class="issues-list sw-cards" data-sessions-list>
+      {w?.sessions.length === 0 &&
+        (narrowed ? (
+          <EmptyLine data-sessions-none>No sessions match.</EmptyLine>
+        ) : (
+          <EmptyState
+            where="page"
+            data-sessions-none
+            title="No agent sessions yet."
+            why="Agent on this on an issue, or @arugula in a channel, starts one."
+          />
+        ))}
+      <ul class="issues-list card-list" data-sessions-list>
         {w?.sessions.map((s) => (
           <Row key={s.session} p={p} s={s} />
         ))}
@@ -241,13 +253,14 @@ function TrackerFilter({
   if (filter.tracker !== undefined)
     return (
       <button
-        class="issues-filter on"
+        class="secondary"
+        aria-pressed="true"
         data-sessions-tracker={filter.tracker}
         title="Show every session again"
         onClick={() => to({ ...filter, tracker: undefined })}
       >
         Tracker #{filter.tracker}
-        {tracker ? ` ${tracker.title}` : ""} ✕
+        {tracker ? ` ${tracker.title}` : ""} <CloseIcon size="xs" />
       </button>
     );
   return (
@@ -281,8 +294,10 @@ function Row({ p, s }: { p: PlatformProject; s: SessionRow }) {
     : null;
   const st = stateOf(s.state, false);
   return (
-    <li
-      class={`issue-row sw-card ${toneClass(st.tone)}`}
+    <Card
+      as="li"
+      class="issue-row"
+      tone={st.tone}
       data-session-row={s.session}
       data-session-state={s.state}
     >
@@ -335,9 +350,9 @@ function Row({ p, s }: { p: PlatformProject; s: SessionRow }) {
           <span class="issue-row-meta">It asks: {s.question}</span>
         )}
       </div>
-      <code class="sw-id" title={s.session}>
+      <code class="card-id" title={s.session}>
         {s.session.replace(/^ses_/, "").slice(0, 8)}
       </code>
-    </li>
+    </Card>
   );
 }

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
+use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE, now_ms};
 use arugula_core::{Intent, Role};
 use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
 use tokio::time::Instant;
@@ -28,8 +28,9 @@ impl Daemon {
             Api::MayDrive(who, pane, reply) => {
                 let _ = reply.send(self.may_drive_here(&who, pane));
             }
-            Api::ChatReaders(reply) => {
-                let _ = reply.send(self.chat_readers());
+            Api::Readers(reply) => {
+                self.settle_closed();
+                let _ = reply.send(self.readers());
             }
             Api::InviteTo(session, pane, reply) => {
                 let r = match self.mux.session(session) {
@@ -57,6 +58,17 @@ impl Daemon {
                 let _ = reply.send(ok);
             }
             Api::Tell(who, message) => self.tell(&who, ServerMsg::Notice { message }),
+            Api::Trusted(reply) => {
+                let now = now_ms();
+                let mut live: Vec<(PaneId, String, u64)> = self
+                    .trust
+                    .iter()
+                    .filter(|(_, until)| **until > now)
+                    .map(|((p, to), u)| (*p, to.clone(), *u))
+                    .collect();
+                live.sort();
+                let _ = reply.send(live);
+            }
             Api::Scope(who, session, reply) => {
                 let _ = reply.send(self.scope(&who, session));
             }
@@ -333,8 +345,11 @@ impl Daemon {
                 let _ = reply.send(self.ask_reply(pane, id, answer, by));
             }
             Api::Hook(pane, hook) => self.hook(pane, &hook),
-            Api::TakeMention(pane, hook, reply) => {
-                let _ = reply.send(self.take_mention(pane, &hook));
+            Api::TakeTagged(pane, hook, reply) => {
+                let _ = reply.send(self.take_tagged(pane, &hook));
+            }
+            Api::LastTools(reply) => {
+                let _ = reply.send(self.last_tools.clone());
             }
             Api::Live(pane, live, pid) => {
                 let changed = match live {
@@ -365,14 +380,14 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
-            Api::MentionTurn(pane, tag, turn) => {
-                self.config.turns.turn(pane, &tag, turn);
+            Api::FollowupTurn(pane, tag, turn) => {
+                self.config.followups.turn(pane, &tag, turn);
             }
             Api::FollowUp(pane, text, by, tag, reply) => {
                 let _ = reply.send(self.follow_up(pane, text, by, tag));
             }
             Api::HeldDeliver(pane, reply) => {
-                let text = self.queued.deliver_held(pane, &*self.config.turns);
+                let text = self.queued.deliver_held(pane, &*self.config.followups);
                 self.refresh_held(pane);
                 let _ = reply
                     .send(text.ok_or_else(|| format!("%{pane} holds no mention (it was delivered, or dismissed)")));
@@ -382,13 +397,13 @@ impl Daemon {
                 self.refresh_held(pane);
                 let _ = reply.send(n);
             }
-            Api::Mentions(pane, on, reply) => {
+            Api::SilenceTagged(pane, on, reply) => {
                 let known = self.panes.contains_key(&pane);
                 if known {
                     if on {
-                        self.mentions_off.remove(&pane);
+                        self.tagged_off.remove(&pane);
                     } else {
-                        self.mentions_off.insert(pane);
+                        self.tagged_off.insert(pane);
                     }
                     self.mark(pane);
                 }

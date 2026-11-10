@@ -47,12 +47,14 @@ use std::{
 use arugula_control_wire::work::{PushAsk, PushGiven, WORK_SESSION_PUSH};
 use tracing::{info, warn};
 
-use super::{AsUser, Session, good_branch};
+use super::{AgentSessionLedger, AsUser, good_branch};
 use crate::server::App;
 
 /// The most a whole push may take: the platform marks a session whose box
 /// says nothing for a minute unresponsive.
 const PUSH_MAX: Duration = Duration::from_secs(45);
+/// How often a push under way looks whether its session ended.
+const ENDED_EVERY: Duration = Duration::from_millis(250);
 /// The biggest bundle taken.
 const BUNDLE_MAX: usize = 512 * 1024 * 1024;
 
@@ -111,12 +113,62 @@ fn git(dir: &Path) -> tokio::process::Command {
 }
 
 async fn run(mut c: tokio::process::Command, what: &str) -> Result<String, String> {
-    let out = c.output().await.map_err(|e| format!("can't run git to {what}: {e}"))?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    use tokio::io::AsyncReadExt as _;
+    // In a group of its own: git hands a push to helpers of its own, and
+    // stopping one stops them all.
+    #[cfg(unix)]
+    c.process_group(0);
+    let mut child = c
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("can't run git to {what}: {e}"))?;
+    let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
+    // After `child`, so it's dropped first: the group is signalled before the
+    // child's own drop gives up its claim on the leader.
+    let mut group = KillGroup(child.id());
+    let reaped = async {
+        let status = child.wait().await;
+        // Nothing yields between the reaping and this, and this future is
+        // what could be dropped: while the guard is armed, the leader hasn't
+        // been reaped, so its id can't have gone to anyone else.
+        group.0 = None;
+        status
+    };
+    // Each drained as it fills: git blocks on a full pipe.
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let read_out = async {
+        if let Some(o) = out.as_mut() {
+            let _ = o.read_to_end(&mut stdout).await;
+        }
+    };
+    let read_err = async {
+        if let Some(e) = err.as_mut() {
+            let _ = e.read_to_end(&mut stderr).await;
+        }
+    };
+    let (status, (), ()) = tokio::join!(reaped, read_out, read_err);
+    let status = status.map_err(|e| format!("can't run git to {what}: {e}"))?;
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
     } else {
-        let said = String::from_utf8_lossy(&out.stderr);
+        let said = String::from_utf8_lossy(&stderr);
         Err(format!("git couldn't {what}: {}", said.trim().chars().take(400).collect::<String>()))
+    }
+}
+
+/// Kills a git and what it started, when what's waiting on it is dropped: a
+/// session that ended while it pushes ([`push_turn`]). It holds the group's id
+/// only while the leader is unreaped ([`run`]): after that the id could be
+/// anyone's, and helpers still running get no signal.
+struct KillGroup(Option<u32>);
+
+impl Drop for KillGroup {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0.and_then(|p| i32::try_from(p).ok()) {
+            let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid), nix::sys::signal::Signal::SIGKILL);
+        }
     }
 }
 
@@ -239,14 +291,14 @@ async fn revoke(url: &str, token: &str) {
 
 /// The ledger's place for session `l`'s push: its bundle and the daemon's
 /// own repo.
-fn place(dir: &Path, l: &Session) -> PathBuf {
+fn place(dir: &Path, l: &AgentSessionLedger) -> PathBuf {
     dir.join(super::super::DIR).join(super::DIR).join(format!("{}.push", l.session))
 }
 
 /// What a push of session `l` left, gone once the session ends: the
 /// daemon's own repo and bundle, and a bundle a cut-off push left in its
 /// user's home.
-pub async fn clean(dir: &Path, l: &Session) {
+pub async fn clean(dir: &Path, l: &AgentSessionLedger) {
     let _ = std::fs::remove_dir_all(place(dir, l));
     let bundle = Path::new(&l.user.home).join(format!(".arugula-push-{}.bundle", l.session)).display().to_string();
     let _ = super::as_user(&l.user, &["rm", "-f", "--", &bundle]).await;
@@ -256,7 +308,7 @@ pub async fn clean(dir: &Path, l: &Session) {
 /// cleaned the session's slot then, and the push may have made its place
 /// again since (its bundle, the daemon's repo). So an ended session's is
 /// cleaned again here. Whether it had ended.
-pub async fn clean_if_ended(dir: &Path, l: &Session) -> bool {
+pub async fn clean_if_ended(dir: &Path, l: &AgentSessionLedger) -> bool {
     let ended = super::read(dir, &l.session).ok().flatten().is_none_or(|now| now.ended.is_some());
     if ended {
         clean(dir, l).await;
@@ -268,7 +320,7 @@ pub async fn clean_if_ended(dir: &Path, l: &Session) -> bool {
 /// that's on GitHub now, as the checkout has it (pushed now, or before:
 /// `l.pushed_head`), `None` when there's nothing to push (no repo, or no
 /// commits of its own), or why it didn't push.
-pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String> {
+pub async fn push_turn(app: &App, l: &AgentSessionLedger) -> Result<Option<String>, String> {
     let Some(repo) = l.repo.as_deref() else { return Ok(None) };
     let remote =
         remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::super::printable(repo)))?;
@@ -330,12 +382,26 @@ pub async fn push_turn(app: &App, l: &Session) -> Result<Option<String>, String>
         }
         Err(_) => vec![],
     };
-    let pushed = tokio::time::timeout(
+    // The session ending stops the push: a revoke saying `running stop`, or
+    // a person's Stop. One that ends with its turn (`running finish`) ends
+    // after this.
+    let ended = async {
+        loop {
+            tokio::time::sleep(ENDED_EVERY).await;
+            let now = super::read(app.control.state_dir(), &l.session).ok().flatten();
+            if now.is_none_or(|now| now.ended.is_some()) {
+                return;
+            }
+        }
+    };
+    let pushing = tokio::time::timeout(
         PUSH_MAX,
         push_bundle(&mirror, &mine, &l.session, &l.branch, &l.branch, &remote, Some(&token), &shallow),
-    )
-    .await
-    .unwrap_or_else(|_| Err("the push took too long".into()));
+    );
+    let pushed = tokio::select! {
+        r = pushing => r.unwrap_or_else(|_| Err("the push took too long".into())),
+        () = ended => Err("the session ended: its push was stopped".into()),
+    };
     revoke(&revoke_at, &token).await;
     forget(token);
     let _ = std::fs::remove_file(&mine);
@@ -360,7 +426,7 @@ fn forget(token: String) {
 /// Clone session `l`'s repo into `stage`, shallow, from GitHub (module
 /// docs): for a repo linked to its project that no box's setup cloned. Its
 /// origin is the repo on GitHub, with no credentials in it.
-pub async fn clone_linked(app: &App, l: &Session, stage: &Path) -> Result<(), String> {
+pub async fn clone_linked(app: &App, l: &AgentSessionLedger, stage: &Path) -> Result<(), String> {
     let repo = l.repo.as_deref().ok_or("the session has no repo")?;
     let remote =
         remote_for(repo).ok_or_else(|| format!("{} isn't a GitHub repo's name", super::super::printable(repo)))?;
@@ -398,4 +464,74 @@ pub async fn clone_shallow(stage: &Path, remote: &str, token: Option<&str>) -> R
         c.env("ARUGULA_PUSH_TOKEN", t);
     }
     run(c, "clone it").await.map(|_| ())
+}
+
+// Process groups, `sh` and `ps`: Unix only, as the group's kill is.
+#[cfg(all(test, unix))]
+mod tests {
+    use std::time::Duration;
+
+    use super::run;
+
+    fn command(script: &str) -> tokio::process::Command {
+        let mut c = tokio::process::Command::new("sh");
+        c.args(["-c", script]).kill_on_drop(true);
+        c
+    }
+
+    fn alive(pid: &str) -> bool {
+        let out = std::process::Command::new("ps").args(["-o", "stat=", "-p", pid]).output().unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout);
+        !stat.trim().is_empty() && !stat.trim().starts_with('Z')
+    }
+
+    /// `script` runs until it has written its helper's pid to `file`, and for
+    /// `then` after, and is stopped (dropped): the pid.
+    async fn stopped_after(script: &str, file: &std::path::Path, then: Duration) -> String {
+        let written = async {
+            loop {
+                if let Ok(p) = std::fs::read_to_string(file)
+                    && p.ends_with('\n')
+                {
+                    tokio::time::sleep(then).await;
+                    return p.trim().to_owned();
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        tokio::select! {
+            r = run(command(script), "run") => panic!("it runs until it's stopped: {r:?}"),
+            pid = written => pid,
+        }
+    }
+
+    /// Stopped while its leader runs, the group goes, helper and all. Once the
+    /// leader has been reaped its id may be someone else's, so nothing is
+    /// signalled, though a helper holding its pipe keeps the wait going.
+    #[tokio::test]
+    async fn a_group_is_signalled_only_while_its_leader_is_unreaped() {
+        let dir = std::env::temp_dir().join(format!("arugula-kill-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let helper = dir.join("running.pid");
+        let script = format!("sleep 60 & echo $! > {}; wait", helper.display());
+        let pid = stopped_after(&script, &helper, Duration::ZERO).await;
+        for _ in 0..500 {
+            if !alive(&pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!alive(&pid), "the helper goes with its leader");
+
+        // Long enough for its leader, which exits at once, to be reaped.
+        let helper = dir.join("reaped.pid");
+        let script = format!("sleep 60 & echo $! > {}; exit 0", helper.display());
+        let pid = stopped_after(&script, &helper, Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(alive(&pid), "its leader was reaped: nothing was signalled");
+        let _ = std::process::Command::new("kill").args(["-KILL", &pid]).status();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

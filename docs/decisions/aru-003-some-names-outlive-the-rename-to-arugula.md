@@ -35,12 +35,12 @@ constrains:
 The product was renamed (#509). Names that something stored or running
 depends on stay "illogical" for good: the domains signed or hashed into
 certificates, rosters, proofs and push and call tokens, the Noise prologue,
-the sync key's HKDF info, the key file header, the checkpoint magic, agent
+the key file header, the checkpoint magic, agent
 blocks' MCP token MAC (`illogical block N`), control's hash of a deleted
 machine (`illogical gone daemon`), the
 browser's IndexedDB `illogical-device`, and the names a restarted daemon or
 another version finds running panes and sandboxes by (holder socket, Windows'
-pane pipe, systemd scopes, `illogical-eph-`, the resident service). The
+pane pipe, systemd scopes, `illogical-eph-`). The
 state, config, data and cache directories made under the old name are used
 where they are. Names that only cross between versions (headers,
 `ILLOGICAL_*` variables, service and binary names, download names,
@@ -48,4 +48,9 @@ where they are. Names that only cross between versions (headers,
 release (0.25) until every install was on 0.26 or later; since #534 they
 are Arugula's alone.
 Where: `crates/core/src/rename.rs`, `crates/e2e/src/frozen.rs` (pins the signed domains as hex), "Frozen (#504)" comments.
+
+Amended 2026-11-04: the sync key's HKDF info (`illogical sync v1`) was in
+this list until synced history was removed (0.67). Nothing reads or writes
+files sealed under it now; a `synced/` directory an older daemon kept is
+left as it is, with a log line at start saying it can be deleted.
 From: #504, #534.

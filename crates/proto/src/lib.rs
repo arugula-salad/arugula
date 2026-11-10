@@ -917,14 +917,14 @@ pub struct State {
 
 pub type MachineId = u32;
 
-/// A machine that blocks can run on instead of this host: today a
-/// throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
-/// deleted when that pane closes.
+/// A machine that blocks can run on instead of this host: a throwaway
+/// sandbox from the provider (a loam microVM) owned by one pane or tab,
+/// and deleted when that closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Machine {
     pub id: MachineId,
-    /// Who runs it: `wisp`.
+    /// Who runs it: `loam`.
     #[serde(default)]
     pub provider: String,
     /// The provider's name for it.
@@ -1014,9 +1014,10 @@ pub enum BlockType {
     Diff,
     /// A file on the block's machine, read-only, followed live (M11).
     File,
-    /// A pane that lives on another daemon in the host list (#17, M4's
-    /// option (a)): this layout holds its place, and clients reach its
-    /// terminal on that daemon directly. Its config is [`RemoteRef`].
+    /// From before remote blocks were removed: a place in this layout for
+    /// a pane on another daemon in the host list (#17). Still read, so a
+    /// stored layout parses; the daemon drops such a leaf as it restores
+    /// and keeps the rest.
     Remote,
     /// A chant workspace (M34): its members, records and the gates waiting
     /// in it, read through chant's read contract. Config `{root, env}`.
@@ -1051,10 +1052,6 @@ pub enum BlockType {
     /// and zones, read through Arugula control as the person looking, and
     /// drawn only while shown. Config `{board}`; the daemon keeps no row.
     Board,
-    /// Who's around, live: a team's room on arugula.stream, joined with a
-    /// room token Arugula control signs for the person looking, drawn only
-    /// while shown. Config `{team}`; the daemon keeps nobody.
-    People,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.
@@ -1070,15 +1067,6 @@ impl BlockType {
     pub fn prompted(self) -> bool {
         matches!(self, BlockType::Agent | BlockType::Chat)
     }
-}
-
-/// Where a remote block's pane lives (#17): a host in the home daemon's
-/// list, and the pane's id there.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct RemoteRef {
-    pub host: String,
-    pub pane: PaneId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

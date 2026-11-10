@@ -236,6 +236,32 @@ async fn a_person_opens_an_issue_on_github_as_themselves() {
     assert_eq!(messages(&base, &room).await.len(), 1);
 }
 
+/// A machine's send from its block checks an export as a send from the
+/// page does: it goes with the issue's title and body as they are now.
+#[tokio::test]
+async fn a_machines_send_of_an_export_takes_the_issue_as_it_is_now() {
+    let (hub, _gh, _app, base, team) = start().await;
+    hub.daemon("geek", "alice", None);
+    let id = new_issue(&base, "alice", &team, "Crash on start", "steps").await;
+    let (s, v) = export_draft(&base, "alice", &id, "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+    let draft = v["draft"]["id"].as_str().unwrap().to_owned();
+    let (s, _) =
+        call(&base, "alice", "PATCH", &format!("/api/issues/{id}"), Some(json!({ "title": "Crash on start-up" })))
+            .await;
+    assert_eq!(s, 200);
+    let r = reqwest::Client::new()
+        .post(format!("{base}/api/forge/drafts/{draft}/machine"))
+        .header("x-test-daemon", "alice geek")
+        .json(&json!({ "step": "start" }))
+        .send()
+        .await
+        .unwrap();
+    let s = r.status().as_u16();
+    let v: Value = r.json().await.unwrap();
+    assert_eq!((s, v["state"].as_str(), v["title"].as_str()), (200, Some("sending"), Some("Crash on start-up")), "{v}");
+}
+
 /// An agent drafts the export with its machine's grants, and waits for its
 /// person: no machine is asked, and its person sends it through one.
 #[tokio::test]
@@ -279,6 +305,26 @@ async fn an_agent_only_drafts_the_export() {
     assert_eq!(s, 200, "{v}");
     assert_eq!(issue(&base, "alice", &id).await["github"], json!({ "repo": "acme/app", "number": 7 }));
     let _ = app;
+}
+
+/// On an exported issue, a viewer's own comment goes to GitHub as them
+/// (a draft their device sends), and their agent's stays a native comment,
+/// saying why: a viewer's machine makes no drafts.
+#[tokio::test]
+async fn a_viewers_comment_goes_out_and_their_agents_stays() {
+    let (hub, _gh, app, base, team) = start().await;
+    let (id, room) = exported(&hub, &base, &team, "Seen by a viewer").await;
+    hub.daemon("cbox", "carol", None);
+    let v = post(&base, "carol", &room, json!({ "text": "from carol" })).await;
+    // Hers goes out as her, through one of her machines.
+    assert_eq!(v["github"]["sending"], true, "{v}");
+    assert!(v["github"]["draft"].as_str().unwrap().starts_with("dft_"), "her own draft: {v}");
+    let got = export::posted(&app, &id, &room, "carol", Some("cbox"), 43, "the agent's note").await.unwrap();
+    assert!(got.draft.is_empty(), "no draft: {got:?}");
+    assert!(got.why.as_deref().unwrap_or_default().contains("your owner only views"), "{got:?}");
+    let (_, ds) = call(&base, "carol", "GET", "/api/forge/drafts?state=all", None).await;
+    let texts: Vec<&str> = ds["drafts"].as_array().unwrap().iter().filter_map(|d| d["body"].as_str()).collect();
+    assert_eq!(texts, ["from carol"], "only hers: {ds}");
 }
 
 /// Once it's on a public repo: a person's comment goes there as them (and

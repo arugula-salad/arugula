@@ -1,12 +1,18 @@
 //! Cloud workspaces from agents (#1094): `list` kinds `cloud_workspaces`
-//! and `cloud_tabs`, `read_cloud` (a tab's transcript and requests, the
-//! machine's files, diff and git status), `cloud` (create one, open,
-//! prompt, interrupt, answer and close tabs, rebuild) and `wait` on a tab.
+//! and `cloud_agents`, `read_cloud` (an agent block's transcript and
+//! requests, the machine's files, diff and git status), `cloud` (create
+//! one, open, prompt, interrupt, answer and close agent blocks, rebuild)
+//! and `wait` on an agent block.
 //!
 //! A Cloud workspace is a hosted workspace (`hw_…`, M184): a machine of a
 //! project, `arugulad` in a rented sandbox. Each tool here goes to its
-//! machine through control (`hosted.rs`): its tabs are the agent blocks
-//! on it, by pane number. Control says which machine a workspace is, as
+//! machine through control (`hosted.rs`): its agents are the agent blocks
+//! on it, named by pane number as `agent_block` (`agent` on `open_agent`
+//! is the program to run). They were its tabs: the kind `cloud_tabs`, the
+//! kinds `open_tab` and `close_tab` and the argument `tab` are read as
+//! the new names (`arugulad-mcp`'s `ARG_ALIASES` and `KIND_ALIASES`,
+//! Arugula #668), and a result carries `cloud_tabs` and `tab` beside
+//! `cloud_agents` and `agent_block` for older callers. Control says which machine a workspace is, as
 //! this machine's owner ([`Control::cloud`](crate::control::Control::cloud)).
 //! Whoever may run things here (a teammate with run rights, a guest's
 //! agent) drives the owner's Cloud workspaces through it. That was decided
@@ -41,9 +47,10 @@ pub struct CloudWorkspaceArgs {
 pub struct CloudTabArgs {
     /// The Cloud workspace: its hw_… id or its name.
     pub cloud_workspace: String,
-    /// The tab: an agent block on its machine, by pane number (list kind
-    /// cloud_tabs).
-    pub tab: String,
+    /// The agent block, by its pane number on its machine (list kind
+    /// cloud_agents).
+    #[serde(alias = "tab")]
+    pub agent_block: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -51,8 +58,9 @@ pub struct CloudTabArgs {
 pub struct CloudEventsArgs {
     /// The Cloud workspace: its hw_… id or its name.
     pub cloud_workspace: String,
-    /// The tab: an agent block on its machine, by pane number.
-    pub tab: String,
+    /// The agent block, by its pane number on its machine.
+    #[serde(alias = "tab")]
+    pub agent_block: String,
     /// Where to start (a previous result's next_offset). Without it: the
     /// latest.
     #[serde(default)]
@@ -131,7 +139,7 @@ pub struct CloudCreateArgs {
     /// A shell script its setup runs after the packages and repositories.
     #[serde(default)]
     pub setup_script: Option<String>,
-    /// The names of the secrets its box takes as env vars (set on
+    /// The names of the secrets its machine takes as env vars (set on
     /// Control).
     #[serde(default)]
     pub secrets: Vec<String>,
@@ -155,7 +163,7 @@ pub enum CloudSize {
 pub struct CloudOpenTabArgs {
     /// The Cloud workspace: its hw_… id or its name.
     pub cloud_workspace: String,
-    /// The agent: claude (default) or codex.
+    /// Which agent program runs in it: claude (default) or codex.
     #[serde(default)]
     pub agent: Option<String>,
     /// Its model, if not the agent's default.
@@ -173,12 +181,13 @@ pub struct CloudOpenTabArgs {
 pub struct CloudPromptArgs {
     /// The Cloud workspace: its hw_… id or its name.
     pub cloud_workspace: String,
-    /// The tab: an agent block on its machine, by pane number.
-    pub tab: String,
+    /// The agent block, by its pane number on its machine.
+    #[serde(alias = "tab")]
+    pub agent_block: String,
     /// The prompt.
     pub text: String,
     /// Seconds to wait for the turn (default 100): then call wait with
-    /// the tab, until idle.
+    /// the agent_block, until idle.
     #[serde(default)]
     pub timeout: Option<f64>,
 }
@@ -188,8 +197,9 @@ pub struct CloudPromptArgs {
 pub struct CloudAnswerArgs {
     /// The Cloud workspace: its hw_… id or its name.
     pub cloud_workspace: String,
-    /// The tab: an agent block on its machine, by pane number.
-    pub tab: String,
+    /// The agent block, by its pane number on its machine.
+    #[serde(alias = "tab")]
+    pub agent_block: String,
     /// The request's id (read_cloud kind requests).
     #[serde(default)]
     pub request: Option<String>,
@@ -210,14 +220,14 @@ pub struct CloudAnswerArgs {
 /// `list`'s Cloud workspace kinds.
 pub(crate) const LIST_WORKSPACES: Kind = Kind {
     name: "cloud_workspaces",
-    description: "The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.",
+    description: "The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.",
     schema: schema_for_type::<NoArgs>,
     flag: None,
 };
 
-pub(crate) const LIST_TABS: Kind = Kind {
-    name: "cloud_tabs",
-    description: "A Cloud workspace's tabs: the agent blocks on its machine, by pane number, with their status.",
+pub(crate) const LIST_AGENTS: Kind = Kind {
+    name: "cloud_agents",
+    description: "A Cloud workspace's agent blocks, by pane number (agent_block elsewhere), with their status.",
     schema: schema_for_type::<CloudWorkspaceArgs>,
     flag: None,
 };
@@ -226,13 +236,13 @@ pub(crate) const LIST_TABS: Kind = Kind {
 pub(crate) const READ: &[Kind] = &[
     Kind {
         name: "events",
-        description: "A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.",
+        description: "An agent block's transcript as text: prompts, its messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.",
         schema: schema_for_type::<CloudEventsArgs>,
         flag: None,
     },
     Kind {
         name: "requests",
-        description: "What a tab's agent waits on someone for: a permission request with its options, or a question with its fields. cloud {kind: answer} answers it.",
+        description: "What an agent block waits on someone for: a permission request with its options, or a question with its fields. cloud {kind: answer} answers it.",
         schema: schema_for_type::<CloudTabArgs>,
         flag: None,
     },
@@ -266,37 +276,37 @@ pub(crate) const READ: &[Kind] = &[
 pub(crate) const DRIVE: &[Kind] = &[
     Kind {
         name: "create",
-        description: "A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its box is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.",
+        description: "A new Cloud workspace in a project: a machine of a size (small, or large for big builds) with these repositories checked out, packages installed and setup script run, which the project's people see too. Its machine is made and sets itself up in a pane (list kind cloud_workspaces says when it's running). Returns its id.",
         schema: schema_for_type::<CloudCreateArgs>,
         flag: None,
     },
     Kind {
-        name: "open_tab",
-        description: "A new tab in a Cloud workspace: an agent block on its machine (claude or codex) with its first prompt. Returns its pane number, the tab; wait with the tab until idle or needs_input.",
+        name: "open_agent",
+        description: "A new agent block in a Cloud workspace, on its machine (agent: claude or codex) with its first prompt. Returns its pane number, agent_block: wait with it until idle or needs_input.",
         schema: schema_for_type::<CloudOpenTabArgs>,
         flag: None,
     },
     Kind {
         name: "prompt",
-        description: "Give a tab's agent a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.",
+        description: "Give an agent block a prompt and wait for its turn: returns when it ends (with the reply), when it asks for someone (answer it), or still running after timeout. A paused machine wakes for it.",
         schema: schema_for_type::<CloudPromptArgs>,
         flag: None,
     },
     Kind {
         name: "interrupt",
-        description: "Stop the turn a tab's agent is in. The tab stays open.",
+        description: "Stop the turn an agent block is in. It stays open.",
         schema: schema_for_type::<CloudTabArgs>,
         flag: None,
     },
     Kind {
         name: "answer",
-        description: "Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).",
+        description: "Answer what an agent block asks (read_cloud kind requests): a permission request with option, a question with action (and content, its answers, to accept).",
         schema: schema_for_type::<CloudAnswerArgs>,
         flag: None,
     },
     Kind {
-        name: "close_tab",
-        description: "Close a tab: its agent block ends. The other tabs and the machine carry on.",
+        name: "close_agent",
+        description: "Close an agent block: its agent ends; the others and the machine carry on.",
         schema: schema_for_type::<CloudTabArgs>,
         flag: None,
     },
@@ -319,7 +329,7 @@ pub(super) async fn cloud_reach(app: &crate::server::App) -> crate::mcp::results
     match asked.await {
         Ok(Ok(_)) => CloudReach {
             reachable: true,
-            note: "You can drive the user's Cloud workspaces as them: list kind cloud_workspaces, read_cloud, cloud, and wait with a tab".into(),
+            note: "You can drive the user's Cloud workspaces as them: list kind cloud_workspaces, read_cloud, cloud, and wait with agent_block (one of its agent blocks, by pane number)".into(),
         },
         Ok(Err(e)) => CloudReach { reachable: false, note: e.to_string() },
         Err(_) => CloudReach { reachable: false, note: "Arugula control didn't answer in time".into() },
@@ -346,8 +356,8 @@ pub(crate) async fn list_cloud_workspaces(c: &Call<'_>) -> Out {
     done(summary, json!({ "cloud_workspaces": rows }))
 }
 
-pub(crate) async fn list_cloud_tabs(c: &Call<'_>, a: CloudWorkspaceArgs) -> Out {
-    c.hosted_tabs(a.cloud_workspace.trim()).await
+pub(crate) async fn list_cloud_agents(c: &Call<'_>, a: CloudWorkspaceArgs) -> Out {
+    c.hosted_agents(a.cloud_workspace.trim()).await
 }
 
 pub(crate) async fn read_cloud(c: &Call<'_>, kind: &str, args: Value) -> Out {

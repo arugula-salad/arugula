@@ -1,6 +1,7 @@
 import { paneIds, type Client } from "../client";
 import type { Attention, PaneId, Reason, TabView } from "../../shared/proto";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { CheckIcon } from "../../shared/ui/icons";
 
 /** The most urgent attention among a tab's panes, and why. */
 export function tabAttention(client: Client, tab: TabView): { state: Attention; reason?: Reason | null; pane?: PaneId } {
@@ -33,7 +34,7 @@ export function AttentionBadge({ state, reason, pane, client }: { state: Attenti
   const label = reason?.headline ?? (state === "done" ? "Finished" : "Needs you");
   const items = client && pane !== undefined && (reason?.actions.includes("rerun") || reason?.actions.includes("continue")) ? reasonItems(client, pane, reason) : [];
   const cls = `att ${state}${failed ? " failed" : ""}${items.length ? " acts" : ""}`;
-  const mark = failed ? "!" : state === "done" ? "✓" : "●";
+  const mark = failed ? "!" : state === "done" ? <CheckIcon size="xs" /> : "●";
   if (!items.length) {
     return (
       <span class={cls} title={label} aria-label={label}>

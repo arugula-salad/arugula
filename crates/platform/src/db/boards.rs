@@ -37,8 +37,8 @@
 use anyhow::{Result, bail};
 use arugula_control_wire::{
     boards::{
-        AttachRole, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat, EntryKind, Lane, Pointer,
-        Status,
+        AttachRole, BLOCK_STATE_STALE_MS, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat,
+        EntryKind, Lane, Pointer, Status,
     },
     chat::ChatAgent,
 };
@@ -85,6 +85,9 @@ pub enum Refused {
     Missing(&'static str),
     /// The entry's rev isn't the one named: read the board again.
     Stale { rev: u64 },
+    /// The group's rows aren't in the order the move read them: they are,
+    /// now, these (row ids).
+    Order { rows: Vec<String> },
     /// The change isn't allowed; why.
     Bad(String),
     /// The change is something its author may not do; why.
@@ -121,6 +124,30 @@ pub struct Entry {
     pub source: Option<String>,
     /// The lane a person moved the row to, if one did (#494).
     pub lane_set: Option<LaneSet>,
+}
+
+/// What a machine last said of one of its blocks ([`Db::block_states`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub pane: String,
+    pub state: BlockState,
+    /// The account the machine reported for: the block's owner.
+    pub owner: String,
+    /// When the machine saw the state, in milliseconds.
+    pub seen: u64,
+    /// The machine sends each live block's state again (Arugula #745), so
+    /// an old report means it lost the block, or control lost it.
+    pub sends_again: bool,
+}
+
+impl Reported {
+    /// Unknown at `now`: older than [`BLOCK_STATE_STALE_MS`] from a machine
+    /// that sends again, and not a close (a close is final).
+    pub fn stale(&self, now: u64) -> bool {
+        self.sends_again
+            && self.state.state != BlockWord::Closed
+            && now.saturating_sub(self.seen) > BLOCK_STATE_STALE_MS
+    }
 }
 
 /// A lane a person set on a row: `lane` (never Done), the lane the work
@@ -224,6 +251,9 @@ pub struct Move<'a> {
     pub before: Option<&'a str>,
     /// The rev it must still have.
     pub rev: Option<u64>,
+    /// The row ids of the group a row goes to, as its caller read them: the
+    /// group's whole order, not part of it.
+    pub seen: Option<&'a [String]>,
 }
 
 pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
@@ -518,6 +548,18 @@ pub struct ItemFact {
     pub state_name: Option<String>,
     /// A GitHub issue's `state_reason`.
     pub state_reason: Option<String>,
+}
+
+/// Why a merged PR closes an issue ([`Db::issues_closed_by`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClosedBy {
+    /// `Arugula #N`.
+    Native(u64),
+    /// `Closes #N`, `(#N)` in the title, or the branch: native N, or the
+    /// native issue exported as GitHub's N.
+    Number(u64),
+    /// Attached as work to the row of the issue, by a person or an agent.
+    Row,
 }
 
 /// A native issue as a board row reads it.
@@ -983,7 +1025,7 @@ impl Db {
     /// goes to), or last in it. `rev`, if named, must be the row's or
     /// group's.
     pub fn move_entry(&self, board: &str, id: &str, m: &Move, at: u64) -> Result<std::result::Result<(), Refused>> {
-        let Move { zone, before, rev } = *m;
+        let Move { zone, before, rev, seen } = *m;
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
@@ -1030,6 +1072,15 @@ impl Db {
                 params![board],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            if let Some(seen) = seen {
+                // The destination group's whole order, the row itself in it
+                // if it's there already.
+                let now: Vec<&str> = all.iter().filter(|(_, z)| *z == to).map(|(i, _)| i.as_str()).collect();
+                if now.len() != seen.len() || now.iter().zip(seen).any(|(a, b)| *a != b.as_str()) {
+                    let rows = now.into_iter().map(str::to_owned).collect();
+                    return Ok(Err(Refused::Order { rows }));
+                }
+            }
             all.retain(|(i, _)| i != id);
             let index = match before {
                 Some(b) => match all.iter().position(|(i, z)| i == b && *z == to) {
@@ -1082,6 +1133,24 @@ impl Db {
                             .to_owned(),
                     )));
                 }
+            }
+            // A row the epic's sync added goes only with its epic, in a
+            // group as on its own.
+            let synced: Vec<String> = tx.query_map(
+                "SELECT id FROM board_entries
+                 WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 AND source IS NOT NULL
+                 ORDER BY position",
+                params![board, id],
+                |r| r.get(0),
+            )?;
+            if let Some(row) = synced.first().map(|r| entry(&tx, board, r)).transpose()?.flatten() {
+                let why = super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?;
+                return bad(match synced.len() {
+                    1 => format!("this group holds a row its epic adds: move it out of the group first ({why})"),
+                    n => format!(
+                        "this group holds {n} rows its epic adds: move them out of the group first (the first: {why})"
+                    ),
+                });
             }
             super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
@@ -1229,6 +1298,27 @@ impl Db {
         )
     }
 
+    /// For each of these item ids (`iss_` or `fi_`) that a row of one of
+    /// `project`'s boards points at, the item and that board, boards in the
+    /// order [`Self::boards`] lists them.
+    pub fn boards_holding(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT e.target, b.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                 WHERE e.kind = 'row' AND e.target_kind IN ('issue', 'forge_item') AND b.project_id = ?2
+                   AND {}
+                 ORDER BY b.closed_at IS NOT NULL, b.created_at, b.id",
+                in_json(&c, "e.target", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The native issues among `ids` in `project`, as (id, number, title,
     /// closed, assignees): one read for any number (a board's rows).
     pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {
@@ -1371,22 +1461,44 @@ impl Db {
         )
     }
 
-    /// Keep what `machine` says of its block `pane`, replacing the last.
-    pub fn put_block_state(&self, machine: &str, account: &str, pane: &str, b: &BlockState, at: u64) -> Result<()> {
+    /// Keep what `machine` says of its block `pane`, as it saw it at `seen`,
+    /// replacing the last unless that was seen later (a report that waited
+    /// out an outage never undoes a newer one): whether it was kept. A field
+    /// the report leaves out keeps what was said before (a daemon that
+    /// restarted knows the state but not yet the branch). `sends_again`:
+    /// the machine sends each live block's state again, so this one can go
+    /// stale (Arugula #745).
+    pub fn put_block_state(
+        &self,
+        machine: &str,
+        account: &str,
+        pane: &str,
+        b: &BlockState,
+        seen: u64,
+        sends_again: bool,
+    ) -> Result<bool> {
         let d = b.diffstat;
-        self.c().execute(
+        Ok(self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at, title, state_since)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
+                 diff_files, diff_added, diff_removed, updated_at, title, state_since, sends_again)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?14)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
                  title = COALESCE(excluded.title, board_block_states.title),
-                 branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
-                 uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
-                 diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
+                 branch = COALESCE(excluded.branch, board_block_states.branch),
+                 head = COALESCE(excluded.head, board_block_states.head),
+                 pushed = COALESCE(excluded.pushed, board_block_states.pushed),
+                 uncommitted = COALESCE(excluded.uncommitted, board_block_states.uncommitted),
+                 diff_files = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_files ELSE excluded.diff_files END,
+                 diff_added = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_added ELSE excluded.diff_added END,
+                 diff_removed = CASE WHEN excluded.diff_files IS NULL
+                     THEN board_block_states.diff_removed ELSE excluded.diff_removed END,
                  state_since = CASE WHEN board_block_states.state = excluded.state
                      THEN COALESCE(board_block_states.state_since, board_block_states.updated_at)
                      ELSE excluded.updated_at END,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at, sends_again = excluded.sends_again
+             WHERE excluded.updated_at >= board_block_states.updated_at",
             params![
                 machine,
                 pane,
@@ -1399,16 +1511,15 @@ impl Db {
                 d.map(|d| d.files),
                 d.map(|d| d.added),
                 d.map(|d| d.removed),
-                at,
-                b.title
+                seen,
+                b.title,
+                sends_again
             ],
-        )?;
-        Ok(())
+        )? > 0)
     }
 
-    /// What `machine` last said of these `panes`, by pane, with the account
-    /// the machine reported for (the block's owner).
-    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState, String)>> {
+    /// What `machine` last said of these `panes`.
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<Reported>> {
         if panes.is_empty() {
             return Ok(vec![]);
         }
@@ -1416,7 +1527,7 @@ impl Db {
         c.query_map(
             &format!(
                 "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title,
-                        COALESCE(state_since, updated_at), account
+                        COALESCE(state_since, updated_at), account, updated_at, sends_again
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1431,12 +1542,13 @@ impl Db {
                     pushed: r.get(4)?,
                     uncommitted: r.get(5)?,
                     diffstat: match (files, r.get(7)?, r.get(8)?) {
-                        (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
+                        // No files: the last turn left no diff.
+                        (Some(files @ 1..), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
                         _ => None,
                     },
                     since: Some(r.get(10)?),
                 };
-                Ok((r.get(0)?, state, r.get(11)?))
+                Ok(Reported { pane: r.get(0)?, state, owner: r.get(11)?, seen: r.get(12)?, sends_again: r.get(13)? })
             },
         )
     }
@@ -1612,21 +1724,22 @@ impl Db {
     }
 
     /// The native issues of `project` that merging PR `pr` (of `repo`)
-    /// closes (Arugula #432), by id: those its references name, by the rule
-    /// the boards attach by (`Arugula #N` is a native issue, except written
-    /// softly; any other `#N` is the native issue exported as GitHub's #N
-    /// of `repo`, else native N unless `repo` has a GitHub issue N), and
-    /// those of the rows a person or an agent attached it to as work (a
-    /// row's issue, or any native issue of its work item). Board or no
-    /// board; open or not, for the caller to say.
-    pub fn issues_closed_by(&self, project: &str, repo: u64, pr: &str, refs: &Refs) -> Result<Vec<String>> {
+    /// closes (Arugula #432), by id, with why: those its references name
+    /// plainly, by the rule the boards attach by (`Arugula #N` is a native
+    /// issue; any other `#N` is the native issue exported as GitHub's #N of
+    /// `repo`, else native N unless `repo` has a GitHub issue N), less those
+    /// it names only softly or in passing (Arugula #743, #755); and those of
+    /// the rows a person or an agent attached it to as work (a row's issue,
+    /// or any native issue of its work item). Board or no board; open or
+    /// not, for the caller to say.
+    pub fn issues_closed_by(&self, project: &str, repo: u64, pr: &str, refs: &Refs) -> Result<Vec<(String, ClosedBy)>> {
         // Numbers are the platform's own: written into the statement.
         let list = |ns: &[u64]| ns.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
-        let mut out: Vec<String> = vec![];
-        let mut add = |ids: Vec<String>| {
-            for id in ids {
-                if !out.contains(&id) {
-                    out.push(id);
+        let mut out: Vec<(String, ClosedBy)> = vec![];
+        let mut add = |found: Vec<(String, ClosedBy)>| {
+            for (id, by) in found {
+                if !out.iter().any(|(o, _)| *o == id) {
+                    out.push((id, by));
                 }
             }
         };
@@ -1634,18 +1747,20 @@ impl Db {
         if !native.is_empty() {
             add(self.c().query_map(
                 &format!(
-                    "SELECT id FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number",
+                    "SELECT id, number FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number",
                     list(&native)
                 ),
                 params![project],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, ClosedBy::Native(r.get::<u64>(1)?))),
             )?);
         }
-        if !refs.numbers.is_empty() {
-            let n = list(&refs.numbers);
+        let numbers: Vec<u64> = refs.closing_numbers().collect();
+        if !numbers.is_empty() {
+            let n = list(&numbers);
             add(self.c().query_map(
                 &format!(
-                    "SELECT id FROM issues WHERE project_id = ?1 AND
+                    "SELECT id, CASE WHEN github_repo_id = ?2 AND github_number IN ({n}) THEN github_number ELSE number END
+                     FROM issues WHERE project_id = ?1 AND
                         ((github_repo_id = ?2 AND github_number IN ({n}))
                          OR (number IN ({n}) AND NOT EXISTS (
                              SELECT 1 FROM forge_items f
@@ -1653,7 +1768,7 @@ impl Db {
                      ORDER BY number"
                 ),
                 params![project, repo],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, ClosedBy::Number(r.get::<u64>(1)?))),
             )?);
         }
         add(self.c().query_map(
@@ -1668,7 +1783,7 @@ impl Db {
                AND a.role = 'work' AND a.source IS NULL
              ORDER BY i.id",
             params![project, pr],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, ClosedBy::Row)),
         )?);
         Ok(out)
     }

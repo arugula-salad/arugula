@@ -3,27 +3,16 @@
 //! host directly, so terminal bytes never pass through here.
 //!
 //! A host gets on the list by being added (`arugula hosts add`, by the
-//! owner), by joining with a one-time invite token (a sandbox installing
-//! itself, which has no user identity to be checked), or by being made
-//! resident in a provider's sandbox (M4b, `labs/resident.rs`). The home daemon
-//! checks on each host every minute and records when it last answered; a
-//! provider host's sandbox is asked about through its provider instead,
-//! which doesn't wake it.
+//! owner): a tailnet host, reached at its URLs, or an ssh host (M51). The
+//! home daemon checks on each tailnet host every minute and records when
+//! it last answered.
 //!
-//! Hosts without tailnet identity carry tokens, one kind per direction:
-//!
-//! - **Host tokens** (`ilh_…`, M4c), the host → us: minted here
-//!   (`arugula hosts token NAME`, or by joining as `dial_out`), kept only
-//!   as a hash in `host-tokens.json`. They let that one host dial in
-//!   (`dial.rs`) and push its history (`sync.rs`), and
-//!   nothing else.
-//! - **Provider tunnel tokens** (`ilp_…`, M4b), us → the host: minted when
-//!   a daemon is made resident in a sandbox, kept here in
-//!   `provider-tokens.json` (we present them; the host keeps the hash), and
-//!   sent by the provider tunnel (`labs/provider_tunnel.rs`) to reach it.
-//!
-//! Neither is ever in the list clients get. `hosts revoke` and `hosts rm`
-//! drop whatever a host has of both.
+//! What older daemons kept and this one drops as it starts, each with a
+//! log line: a `provider` entry (a daemon resident in a sandbox, M4b,
+//! removed in 0.67) and a `dial_out` entry (a host that dialed in with a
+//! per-host token, M4c, since removed) in `hosts.json`, keeping the
+//! other hosts; `provider-tokens.json`, `host-tokens.json` and the host
+//! invites in `invites.json`, which were credentials for those.
 
 use std::{
     path::PathBuf,
@@ -32,108 +21,97 @@ use std::{
 };
 
 use arugula_proto::flags;
-use arugula_proto::hosts::{
-    AddHost, Host, HostAnswer, HostFeatures, HostInfo, HostList, HostToken, Invite, JoinRequest, Joined, ProviderRef,
-    Transport,
-};
-use arugula_proto::op::ops::{HostAdd, HostGet, HostRemove, HostTokenMint, HostTokenRevoke, HostsList};
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::post,
-};
+use arugula_proto::hosts::{AddHost, Host, HostAnswer, HostFeatures, HostInfo, HostList, Transport};
+use arugula_proto::op::ops::{HostAdd, HostGet, HostRemove, HostsList};
+use axum::Router;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 use crate::{
     ops::OpRoutes,
-    provider::Provider,
     server::App,
     store::{now_ms, write_atomic},
 };
 
 const PROBE_EVERY: Duration = Duration::from_secs(60);
-const DEFAULT_INVITE_TTL_SECS: u64 = 3600;
 
 pub struct Hosts {
     /// This daemon's own name.
     name: String,
     path: PathBuf,
-    invites_path: PathBuf,
-    provider_tokens_path: PathBuf,
-    tokens_path: PathBuf,
     inner: Mutex<Saved>,
     http: reqwest::Client,
-    /// Where provider hosts' sandboxes are asked about.
-    provider: Option<Arc<dyn Provider>>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
 struct Saved {
     hosts: Vec<Host>,
-    /// Outstanding invites: SHA-256 of the token, and when it expires.
-    #[serde(skip)]
-    invites: Vec<(String, u64)>,
-    /// Provider hosts' tunnel tokens, by host name.
-    #[serde(skip)]
-    provider_tokens: std::collections::BTreeMap<String, String>,
-    #[serde(skip)]
-    tokens: Vec<SavedToken>,
-}
-
-/// A per-host token, as kept: its SHA-256 only.
-#[derive(Clone, Serialize, Deserialize)]
-struct SavedToken {
-    name: String,
-    digest: String,
-    created_ms: u64,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct SavedTokens {
-    tokens: Vec<SavedToken>,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct SavedInvites {
-    invites: Vec<(String, u64)>,
 }
 
 impl Hosts {
-    pub fn open(state_dir: &std::path::Path, name: String, provider: Option<Arc<dyn Provider>>) -> Arc<Self> {
+    pub fn open(state_dir: &std::path::Path, name: String) -> Arc<Self> {
         let path = state_dir.join("hosts.json");
-        let invites_path = state_dir.join("invites.json");
-        let provider_tokens_path = state_dir.join("provider-tokens.json");
-        let tokens_path = state_dir.join("host-tokens.json");
         let mut saved: Saved =
             std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
-        saved.invites = std::fs::read(&invites_path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<SavedInvites>(&b).ok())
-            .map(|s| s.invites)
-            .unwrap_or_default();
-        saved.provider_tokens =
-            std::fs::read(&provider_tokens_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
-        saved.tokens = std::fs::read(&tokens_path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<SavedTokens>(&b).ok())
-            .map(|s| s.tokens)
-            .unwrap_or_default();
+        // Hosts of kinds since removed: an older daemon's entries go, with
+        // a word, and the other hosts stay (a list that fails to parse would
+        // be emptied whole, so the transport words stay readable).
+        let gone = |t: Transport| match t {
+            Transport::Provider => Some("daemons resident in a provider's sandbox were removed (0.67)"),
+            Transport::DialOut => Some("hosts that dial in with a per-host token were removed"),
+            Transport::Tailnet | Transport::Ssh => None,
+        };
+        let old: Vec<(String, &str)> =
+            saved.hosts.iter().filter_map(|h| Some((h.name.clone(), gone(h.transport)?))).collect();
+        if !old.is_empty() {
+            saved.hosts.retain(|h| gone(h.transport).is_none());
+            for (host, why) in &old {
+                warn!(host, "dropped from hosts.json: {why}");
+            }
+            let bytes = serde_json::to_vec_pretty(&saved).expect("serialize hosts");
+            if let Err(e) = write_atomic(&path, &bytes) {
+                warn!(error = %e, "can't save the host list");
+            }
+        }
+        // Their credentials: spent, and nothing reads them.
+        for (file, what) in [
+            ("provider-tokens.json", "the tunnel tokens of resident daemons (removed in 0.67)"),
+            ("host-tokens.json", "the hashes of dial-in host tokens (removed with dial-in hosts)"),
+        ] {
+            let p = state_dir.join(file);
+            if p.exists() {
+                match std::fs::remove_file(&p) {
+                    Ok(()) => warn!(file = %p.display(), "deleted: {what}"),
+                    Err(e) => warn!(file = %p.display(), error = %e, "can't delete {what}"),
+                }
+            }
+        }
+        // `invites.json` in this list's own shape (`{"invites": [...]}`)
+        // held host invites, since removed: spent tokens, deleted. A bare
+        // list there is the waiting person invites a daemon before native
+        // #677 kept in it, which `control.rs` moves into its own file as it
+        // opens (before this list does): left alone until that file exists,
+        // then deleted as the copy it is. Anything else is left alone.
+        let invites = state_dir.join("invites.json");
+        let moved_out = state_dir.join("person-invites.json").exists();
+        let delete =
+            match std::fs::read(&invites).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+                Some(serde_json::Value::Object(o)) if o.contains_key("invites") => Some("host invites (removed)"),
+                Some(serde_json::Value::Array(_)) if moved_out => {
+                    Some("waiting person invites that control moved into person-invites.json")
+                }
+                _ => None,
+            };
+        if let Some(what) = delete {
+            match std::fs::remove_file(&invites) {
+                Ok(()) => warn!(file = %invites.display(), "deleted: {what}"),
+                Err(e) => warn!(file = %invites.display(), error = %e, "can't delete {what}"),
+            }
+        }
         let http =
             crate::roots::http().timeout(Duration::from_secs(5)).build().expect("an HTTP client with default settings");
-        Arc::new(Self {
-            name,
-            path,
-            invites_path,
-            provider_tokens_path,
-            tokens_path,
-            inner: Mutex::new(saved),
-            http,
-            provider,
-        })
+        Arc::new(Self { name, path, inner: Mutex::new(saved), http })
     }
 
     pub fn name(&self) -> &str {
@@ -147,44 +125,27 @@ impl Hosts {
     /// Add a host, or replace the one with the same name (keeping when it
     /// was first added and last seen, if its URLs are the same).
     pub fn add(&self, req: AddHost) -> Result<Host, String> {
-        if req.transport == Transport::Provider {
-            return Err("a provider host is added by making a daemon resident in its sandbox".into());
+        match req.transport {
+            Transport::Provider => {
+                return Err("daemons resident in a provider's sandbox were removed; add a tailnet or ssh host".into());
+            }
+            Transport::DialOut => {
+                return Err("hosts that dial in were removed; add a tailnet or ssh host".into());
+            }
+            Transport::Tailnet | Transport::Ssh => {}
         }
-        self.insert(validate(req, &self.name)?, None)
+        self.insert(validate(req, &self.name)?)
     }
 
-    /// Add (or replace) a host whose daemon lives in a provider's sandbox,
-    /// reached through our tunnel with `token`.
-    #[cfg(feature = "labs")]
-    pub fn add_provider(&self, name: String, at: ProviderRef, token: String) -> Result<Host, String> {
-        let req = validate(AddHost { name, urls: vec![], transport: Transport::Provider, ssh: None }, &self.name)?;
-        {
-            let mut inner = self.inner.lock().unwrap();
-            inner.provider_tokens.insert(req.name.clone(), token);
-            self.save_provider_tokens(&inner);
-        }
-        self.insert(req, Some(at))
-    }
-
-    /// A provider host: where it is, and the token its daemon wants.
-    #[cfg(feature = "labs")]
-    pub fn provider_tunnel(&self, name: &str) -> Option<(ProviderRef, String)> {
-        let inner = self.inner.lock().unwrap();
-        let at = inner.hosts.iter().find(|h| h.name == name)?.provider.clone()?;
-        Some((at, inner.provider_tokens.get(name)?.clone()))
-    }
-
-    fn insert(&self, req: AddHost, provider: Option<ProviderRef>) -> Result<Host, String> {
+    fn insert(&self, req: AddHost) -> Result<Host, String> {
         let mut inner = self.inner.lock().unwrap();
         let old = inner.hosts.iter().position(|h| h.name == req.name).map(|i| inner.hosts.remove(i));
         let host = Host {
             added_ms: old.as_ref().map_or_else(now_ms, |o| o.added_ms),
             last_seen_ms: old.as_ref().filter(|o| o.urls == req.urls).and_then(|o| o.last_seen_ms),
-            status: old.as_ref().filter(|o| o.provider == provider).and_then(|o| o.status.clone()),
             name: req.name,
             urls: req.urls,
             transport: req.transport,
-            provider,
             ssh: req.ssh,
         };
         inner.hosts.push(host.clone());
@@ -194,8 +155,7 @@ impl Hosts {
         Ok(host)
     }
 
-    /// Remove a host, and revoke its tokens: a removed host can't dial back
-    /// in, nor be reached through a provider tunnel.
+    /// Remove a host.
     pub fn remove(&self, name: &str) -> bool {
         let mut inner = self.inner.lock().unwrap();
         let before = inner.hosts.len();
@@ -203,103 +163,9 @@ impl Hosts {
         let gone = inner.hosts.len() != before;
         if gone {
             self.save(&inner);
-            if inner.provider_tokens.remove(name).is_some() {
-                self.save_provider_tokens(&inner);
-            }
             info!(name, "host removed");
         }
-        let had_token = inner.tokens.iter().any(|t| t.name == name);
-        inner.tokens.retain(|t| t.name != name);
-        if had_token {
-            self.save_tokens(&inner);
-        }
         gone
-    }
-
-    /// Mint `name`'s token, replacing any it had. A host that isn't on the
-    /// list yet goes on it as a dial-out host (it has no URL to add).
-    pub fn mint_token(&self, name: &str) -> Result<HostToken, String> {
-        let exists = self.inner.lock().unwrap().hosts.iter().any(|h| h.name == name);
-        if !exists {
-            self.add(AddHost { name: name.to_owned(), urls: vec![], transport: Transport::DialOut, ssh: None })?;
-        }
-        let token = format!("ilh_{}", hex(&random::<24>()));
-        let mut inner = self.inner.lock().unwrap();
-        inner.tokens.retain(|t| t.name != name);
-        inner.tokens.push(SavedToken { name: name.to_owned(), digest: digest(&token), created_ms: now_ms() });
-        self.save_tokens(&inner);
-        info!(name, "host token minted");
-        Ok(HostToken { name: name.to_owned(), token })
-    }
-
-    /// Revoke `name`'s tokens: its host token, and the provider tunnel
-    /// token we reach it with (a provider host stays listed, unreachable
-    /// until it's made resident again). Whether it had either.
-    pub fn revoke_token(&self, name: &str) -> bool {
-        let mut inner = self.inner.lock().unwrap();
-        let before = inner.tokens.len();
-        inner.tokens.retain(|t| t.name != name);
-        let had = inner.tokens.len() != before;
-        if had {
-            self.save_tokens(&inner);
-            info!(name, "host token revoked");
-        }
-        let had_tunnel = inner.provider_tokens.remove(name).is_some();
-        if had_tunnel {
-            self.save_provider_tokens(&inner);
-            info!(name, "provider tunnel token revoked");
-        }
-        had || had_tunnel
-    }
-
-    /// The host a token belongs to, if it is current.
-    pub fn host_for_token(&self, token: &str) -> Option<String> {
-        let want = digest(token);
-        let inner = self.inner.lock().unwrap();
-        inner.tokens.iter().find(|t| t.digest == want).map(|t| t.name.clone())
-    }
-
-    /// A dial-out host is connected: that counts as seeing it.
-    pub fn seen(&self, name: &str) {
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(h) = inner.hosts.iter_mut().find(|h| h.name == name) {
-            h.last_seen_ms = Some(now_ms());
-            self.save(&inner);
-        }
-    }
-
-    /// A one-time token a sandbox can `join` with until it expires.
-    pub fn invite(&self, ttl_secs: u64) -> Invite {
-        let token = format!("ilj_{}", hex(&random::<24>()));
-        let expires_ms = now_ms() + ttl_secs.saturating_mul(1000);
-        let mut inner = self.inner.lock().unwrap();
-        let now = now_ms();
-        inner.invites.retain(|(_, exp)| *exp > now);
-        inner.invites.push((digest(&token), expires_ms));
-        self.save_invites(&inner);
-        Invite { token, expires_ms }
-    }
-
-    /// Spend an invite on adding a host; a dial-out host gets its token.
-    pub fn join(&self, req: JoinRequest) -> Result<(Host, Option<String>), String> {
-        {
-            let mut inner = self.inner.lock().unwrap();
-            let now = now_ms();
-            inner.invites.retain(|(_, exp)| *exp > now);
-            let want = digest(&req.token);
-            let i = inner.invites.iter().position(|(d, _)| *d == want).ok_or("invalid or expired invite")?;
-            // Spent even if the host turns out to be bad: one try per token.
-            inner.invites.remove(i);
-            self.save_invites(&inner);
-        }
-        // An ssh host names where clients ssh to: only the owner adds those.
-        if req.host.transport == Transport::Ssh {
-            return Err("an invite adds a daemon, not an ssh host".into());
-        }
-        let dial_out = req.host.transport == Transport::DialOut;
-        let host = self.add(req.host)?;
-        let token = if dial_out { Some(self.mint_token(&host.name)?.token) } else { None };
-        Ok((host, token))
     }
 
     fn save(&self, inner: &Saved) {
@@ -309,71 +175,18 @@ impl Hosts {
         }
     }
 
-    fn save_provider_tokens(&self, inner: &Saved) {
-        let bytes = serde_json::to_vec(&inner.provider_tokens).expect("serialize");
-        if let Err(e) = write_atomic(&self.provider_tokens_path, &bytes) {
-            warn!(error = %e, "can't save provider tunnel tokens");
-        }
-    }
-
-    fn save_tokens(&self, inner: &Saved) {
-        let bytes = serde_json::to_vec_pretty(&SavedTokens { tokens: inner.tokens.clone() }).expect("serialize");
-        if let Err(e) = write_atomic(&self.tokens_path, &bytes) {
-            warn!(error = %e, "can't save host tokens");
-        }
-    }
-
-    fn save_invites(&self, inner: &Saved) {
-        let bytes = serde_json::to_vec(&SavedInvites { invites: inner.invites.clone() }).expect("serialize");
-        if let Err(e) = write_atomic(&self.invites_path, &bytes) {
-            warn!(error = %e, "can't save invites");
-        }
-    }
-
-    /// Ask every host who it is; note the ones that answer. A provider
-    /// host's sandbox is asked about through its provider instead, which
-    /// doesn't wake it (connecting would, and keep it awake).
+    /// Ask every host who it is; note the ones that answer.
     pub async fn probe(&self) {
-        self.ask_providers().await;
-        // Dial-out hosts have no URL: their connection says they're there
-        // (`dial.rs` marks them seen).
         let targets: Vec<(String, Vec<String>)> = self
             .inner
             .lock()
             .unwrap()
             .hosts
             .iter()
-            // Provider hosts are asked about through their provider.
             .filter(|h| h.transport == Transport::Tailnet)
             .map(|h| (h.name.clone(), h.urls.clone()))
             .collect();
         self.probe_urls(targets).await;
-    }
-
-    /// What provider hosts' sandboxes are doing, from their provider.
-    pub async fn ask_providers(&self) {
-        let sandboxes: Vec<(String, ProviderRef)> = self
-            .inner
-            .lock()
-            .unwrap()
-            .hosts
-            .iter()
-            .filter_map(|h| Some((h.name.clone(), h.provider.clone()?)))
-            .collect();
-        for (name, at) in sandboxes {
-            let status = match &self.provider {
-                Some(p) if p.name() == at.provider => match p.status(&at.sandbox).await {
-                    Ok(Some(s)) => s.status,
-                    Ok(None) => "gone".into(),
-                    Err(e) => {
-                        info!(host = name, error = %e, "can't ask the provider about a host");
-                        continue;
-                    }
-                },
-                _ => "unknown".into(),
-            };
-            self.note_status(&name, &status);
-        }
     }
 
     async fn probe_urls(&self, targets: Vec<(String, Vec<String>)>) {
@@ -404,20 +217,6 @@ impl Hosts {
         }
     }
 
-    /// What the provider says of a provider host's sandbox (and, if it's
-    /// running, that it was seen).
-    pub fn note_status(&self, name: &str, status: &str) {
-        let mut inner = self.inner.lock().unwrap();
-        let Some(h) = inner.hosts.iter_mut().find(|h| h.name == name) else { return };
-        let seen = (status == "running").then(now_ms);
-        if h.status.as_deref() == Some(status) && seen.is_none() {
-            return;
-        }
-        h.status = Some(status.to_owned());
-        h.last_seen_ms = seen.or(h.last_seen_ms);
-        self.save(&inner);
-    }
-
     pub fn spawn_probe(self: &Arc<Self>) {
         let me = Arc::downgrade(self);
         crate::task::spawn(async move {
@@ -435,7 +234,7 @@ impl Hosts {
 /// plain origins (a client appends `/ws` and `/api/...`).
 fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
     let name = req.name.trim();
-    // Names are directory names too (synced history), so not `.` or `..`.
+    // Names end up in paths (`--host NAME`), so not `.` or `..`.
     if name.is_empty()
         || name.len() > 63
         || name.starts_with('.')
@@ -449,8 +248,6 @@ fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
     req.name = name.to_owned();
     match req.transport {
         Transport::Tailnet if req.urls.is_empty() => return Err("a host needs at least one URL".into()),
-        // Reached through the home daemon, never at a URL of its own.
-        Transport::DialOut if !req.urls.is_empty() => return Err("a dial-out host has no URLs".into()),
         // Each client runs ssh to it; we keep its destination and nothing
         // else, and it must never read as one of ssh's options.
         Transport::Ssh => {
@@ -466,8 +263,6 @@ fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
             }
             req.ssh = Some(dest.to_owned());
         }
-        // Reached through the home daemon's provider tunnel; URLs are
-        // optional (tailnet ones to upgrade to).
         _ => {}
     }
     for url in &mut req.urls {
@@ -483,10 +278,6 @@ fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
     Ok(req)
 }
 
-fn random<const N: usize>() -> [u8; N] {
-    crate::push::random()
-}
-
 pub fn digest(token: &str) -> String {
     hex(&Sha256::digest(token.as_bytes()))
 }
@@ -497,26 +288,8 @@ fn hex(b: &[u8]) -> String {
 
 // ---------------------------------------------------------------- routes
 
-type AppState = State<Arc<App>>;
-
 pub fn routes() -> Router<Arc<App>> {
-    Router::new()
-        .op::<HostGet>()
-        .op::<HostsList>()
-        .op::<HostAdd>()
-        .route("/api/hosts/invite", post(invite))
-        .route(JOIN_PATH, post(join))
-        .op::<HostRemove>()
-        .op::<HostTokenMint>()
-        .op::<HostTokenRevoke>()
-}
-
-/// The one route a caller without a user identity may reach (the token in
-/// the body is the credential); see `server::guard`.
-pub const JOIN_PATH: &str = "/api/hosts/join";
-
-fn error(status: StatusCode, msg: impl Into<String>) -> Response {
-    (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
+    Router::new().op::<HostGet>().op::<HostsList>().op::<HostAdd>().op::<HostRemove>()
 }
 
 /// `GET /api/host`'s answer: [`HostInfo`], and for the owner this machine's
@@ -532,8 +305,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
         tailnet_seen: app.tailnet_seen.load(std::sync::atomic::Ordering::Relaxed),
         control: saved.map(|s| s.url.clone()),
         // The team's name once its roster is in, else its id.
-        team: saved
-            .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
+        team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
         features: Some(features(app)),
     };
     HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }
@@ -561,30 +333,6 @@ pub(crate) fn features(app: &App) -> HostFeatures {
     }
 }
 
-#[derive(Deserialize)]
-struct InviteQuery {
-    #[serde(default)]
-    ttl: Option<u64>,
-}
-
-async fn invite(State(app): AppState, Query(q): Query<InviteQuery>) -> Json<Invite> {
-    Json(app.hosts.invite(q.ttl.unwrap_or(DEFAULT_INVITE_TTL_SECS)))
-}
-
-async fn join(State(app): AppState, Json(req): Json<JoinRequest>) -> Response {
-    match app.hosts.join(req) {
-        Ok((h, token)) => {
-            let hosts = app.hosts.clone();
-            crate::task::spawn(async move { hosts.probe().await });
-            Json(Joined { host: h, owner: app.access.owner().map(str::to_owned), token }).into_response()
-        }
-        Err(e) => {
-            warn!(error = e, "refused a join");
-            error(StatusCode::FORBIDDEN, e)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,7 +353,7 @@ mod tests {
     #[test]
     fn add_replace_remove_and_persist() {
         let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
+        let h = Hosts::open(&d, "geek".into());
         h.add(req("box", "https://box.example.ts.net/")).unwrap();
         h.add(req("alpha", "http://127.0.0.1:7691")).unwrap();
         let l = h.list();
@@ -617,7 +365,7 @@ mod tests {
         assert!(h.remove("alpha"));
         assert!(!h.remove("alpha"));
         drop(h);
-        let again = Hosts::open(&d, "geek".into(), None);
+        let again = Hosts::open(&d, "geek".into());
         assert_eq!(again.list().hosts.len(), 1);
         assert_eq!(again.list().hosts[0].urls, ["https://box2.example.ts.net"]);
         std::fs::remove_dir_all(d).unwrap();
@@ -626,7 +374,7 @@ mod tests {
     #[test]
     fn bad_hosts_are_refused() {
         let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
+        let h = Hosts::open(&d, "geek".into());
         assert!(h.add(req("geek", "https://x.example")).is_err(), "our own name");
         assert!(h.add(req("", "https://x.example")).is_err());
         assert!(h.add(req("a b", "https://x.example")).is_err());
@@ -637,108 +385,90 @@ mod tests {
         assert!(h.add(AddHost { name: "x".into(), urls: vec![], transport: Transport::Tailnet, ssh: None }).is_err());
         assert!(h.add(req("..", "https://x.example")).is_err(), "a directory name");
         assert!(h.add(req(".x", "https://x.example")).is_err());
-        let dial = |urls: Vec<String>| AddHost { name: "d".into(), urls, transport: Transport::DialOut, ssh: None };
-        assert!(h.add(dial(vec!["https://x.example".into()])).is_err(), "dial-out hosts have no URL");
+        let dial = AddHost { name: "d".into(), urls: vec![], transport: Transport::DialOut, ssh: None };
+        assert!(h.add(dial).unwrap_err().contains("removed"), "dial-in hosts were removed");
         assert!(h.list().hosts.is_empty());
         std::fs::remove_dir_all(d).unwrap();
     }
 
+    /// An older daemon's `hosts.json` may hold a daemon made resident in a
+    /// provider's sandbox (M4b, removed in 0.67) or a host that dialed in
+    /// (M4c, since removed): those entries are dropped and the others
+    /// kept, since a list that fails to parse is emptied whole; their
+    /// credential files are deleted.
     #[test]
-    fn invites_are_single_use_and_survive_a_restart() {
+    fn old_provider_and_dial_out_hosts_are_dropped_and_the_other_hosts_kept() {
         let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
-        let inv = h.invite(60);
-        assert!(inv.token.starts_with("ilj_"));
-        let join =
-            |h: &Hosts, token: &str| h.join(JoinRequest { token: token.into(), host: req("box", "https://b.x") });
-        assert!(join(&h, "ilj_wrong").is_err());
+        std::fs::write(
+            d.join("hosts.json"),
+            serde_json::json!({ "hosts": [
+                { "name": "box", "urls": ["https://box.example.ts.net"], "transport": "tailnet", "added_ms": 5, "last_seen_ms": 6 },
+                { "name": "res", "urls": [], "transport": "provider",
+                  "provider": { "provider": "wisp", "sandbox": "s1", "port": 7681 }, "status": "cold", "added_ms": 7 },
+                { "name": "sbx", "urls": [], "transport": "dial_out", "added_ms": 9, "last_seen_ms": 10 },
+                { "name": "bare", "urls": [], "transport": "ssh", "ssh": "illo@box-bare", "added_ms": 8 }
+            ] })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(d.join("provider-tokens.json"), r#"{"res":"ilp_secret"}"#).unwrap();
+        std::fs::write(d.join("host-tokens.json"), r#"{"tokens":[{"name":"sbx","digest":"ab","created_ms":1}]}"#)
+            .unwrap();
+        std::fs::write(d.join("invites.json"), r#"{"invites":[["abcd",9999999999999]]}"#).unwrap();
+        let h = Hosts::open(&d, "geek".into());
+        let l = h.list();
+        assert_eq!(l.hosts.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["box", "bare"]);
+        assert_eq!((l.hosts[0].transport, l.hosts[0].last_seen_ms), (Transport::Tailnet, Some(6)));
+        assert_eq!((l.hosts[1].transport, l.hosts[1].ssh.as_deref()), (Transport::Ssh, Some("illo@box-bare")));
+        for f in ["provider-tokens.json", "host-tokens.json", "invites.json"] {
+            assert!(!d.join(f).exists(), "{f} is deleted: a spent credential");
+        }
+        // Written back without them, so the next start has nothing to drop.
+        let saved = std::fs::read_to_string(d.join("hosts.json")).unwrap();
+        assert!(!saved.contains("\"res\"") && !saved.contains("\"sbx\"") && !saved.contains("provider"), "{saved}");
         drop(h);
-        let h = Hosts::open(&d, "geek".into(), None);
-        assert_eq!(join(&h, &inv.token).unwrap().1, None, "no token for a tailnet host");
-        assert!(join(&h, &inv.token).is_err(), "spent");
-        let expired = h.invite(0);
-        assert!(join(&h, &expired.token).is_err(), "expired");
-        // The token itself is never stored.
-        let saved = std::fs::read_to_string(d.join("invites.json")).unwrap_or_default();
-        assert!(!saved.contains(&expired.token));
+        let again = Hosts::open(&d, "geek".into());
+        assert_eq!(again.list().hosts.len(), 2);
+        // Nothing adds either now.
+        for t in [Transport::Provider, Transport::DialOut] {
+            let req = AddHost { name: "y".into(), urls: vec![], transport: t, ssh: None };
+            assert!(again.add(req).unwrap_err().contains("removed"));
+        }
         std::fs::remove_dir_all(d).unwrap();
     }
 
+    /// Upgrading from a daemon before native #677, whose `invites.json`
+    /// holds the waiting person invites as a bare list: control moves them
+    /// into `person-invites.json` as it opens, and only once that file
+    /// exists does this list delete the old copy. Until then it's left
+    /// alone, whatever else is in the state dir.
     #[test]
-    fn host_tokens_are_hashed_scoped_revocable_and_replaced() {
+    fn a_waiting_person_invite_list_in_invites_json_is_left_until_control_moved_it() {
         let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
-        let t = h.mint_token("sbx").unwrap();
-        assert!(t.token.starts_with("ilh_"));
-        let entry = h.list().hosts.into_iter().find(|x| x.name == "sbx").unwrap();
-        assert_eq!((entry.transport, entry.urls.len()), (Transport::DialOut, 0));
-        assert_eq!(h.host_for_token(&t.token).as_deref(), Some("sbx"));
-        assert_eq!(h.host_for_token("ilh_nope"), None);
-        let other = h.mint_token("other").unwrap();
-        assert_eq!(h.host_for_token(&other.token).as_deref(), Some("other"), "each token names one host");
-        // Survives a restart; only the hash is on disk.
-        drop(h);
-        let h = Hosts::open(&d, "geek".into(), None);
-        assert_eq!(h.host_for_token(&t.token).as_deref(), Some("sbx"));
-        let saved = std::fs::read_to_string(d.join("host-tokens.json")).unwrap();
-        assert!(!saved.contains(&t.token) && saved.contains(&digest(&t.token)));
-        // Modes are Unix's; Windows has the profile's ACL.
-        #[cfg(unix)]
-        assert_eq!(
-            std::os::unix::fs::PermissionsExt::mode(
-                &std::fs::metadata(d.join("host-tokens.json")).unwrap().permissions()
-            ) & 0o777,
-            0o600
-        );
-        // A new one replaces the old.
-        let t2 = h.mint_token("sbx").unwrap();
-        assert_eq!(h.host_for_token(&t.token), None);
-        assert_eq!(h.host_for_token(&t2.token).as_deref(), Some("sbx"));
-        assert!(h.revoke_token("sbx"));
-        assert!(!h.revoke_token("sbx"));
-        assert_eq!(h.host_for_token(&t2.token), None);
-        // Removing a host revokes its token.
-        assert!(h.remove("other"));
-        assert_eq!(h.host_for_token(&other.token), None);
-        // Joining as dial-out hands one out.
-        let inv = h.invite(60);
-        let req = AddHost { name: "joiner".into(), urls: vec![], transport: Transport::DialOut, ssh: None };
-        let (_, token) = h.join(JoinRequest { token: inv.token, host: req }).unwrap();
-        assert_eq!(h.host_for_token(&token.unwrap()).as_deref(), Some("joiner"));
-        std::fs::remove_dir_all(d).unwrap();
-    }
-
-    #[cfg(feature = "labs")]
-    #[test]
-    fn revoking_or_removing_a_provider_host_drops_both_kinds_of_token() {
-        let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
-        let at = ProviderRef { provider: "wisp".into(), sandbox: "s1".into(), port: 7681 };
-        let host = h.add_provider("res".into(), at.clone(), "ilp_x".into()).unwrap();
-        assert_eq!(host.transport, Transport::Provider);
-        assert!(h.add(AddHost { name: "y".into(), urls: vec![], transport: Transport::Provider, ssh: None }).is_err());
-        let ilh = h.mint_token("res").unwrap().token;
-        assert_eq!(h.provider_tunnel("res").unwrap().1, "ilp_x");
-        // Neither token is in what clients get.
-        let listed = serde_json::to_string(&h.list()).unwrap();
-        assert!(!listed.contains("ilp_x") && !listed.contains(&ilh));
-        assert!(h.revoke_token("res"));
-        assert!(h.provider_tunnel("res").is_none() && h.host_for_token(&ilh).is_none());
-        assert_eq!(h.list().hosts.len(), 1, "revoking keeps the host");
-        h.add_provider("res".into(), at, "ilp_y".into()).unwrap();
-        drop(h);
-        let h = Hosts::open(&d, "geek".into(), None);
-        assert_eq!(h.provider_tunnel("res").unwrap().1, "ilp_y", "kept across a restart");
-        assert!(h.remove("res"));
-        assert!(h.provider_tunnel("res").is_none());
-        assert!(!std::fs::read_to_string(d.join("provider-tokens.json")).unwrap().contains("ilp_y"));
+        let list = r#"[{"session":1,"who":"x","role":"viewer"}]"#;
+        std::fs::write(d.join("invites.json"), list).unwrap();
+        let _ = Hosts::open(&d, "geek".into());
+        assert_eq!(std::fs::read_to_string(d.join("invites.json")).unwrap(), list, "left for control");
+        // Control moved it: the copy goes.
+        std::fs::write(d.join("person-invites.json"), list).unwrap();
+        let _ = Hosts::open(&d, "geek".into());
+        assert!(!d.join("invites.json").exists(), "the moved-out copy is deleted");
+        assert_eq!(std::fs::read_to_string(d.join("person-invites.json")).unwrap(), list, "the move is untouched");
+        // The host list's own shape goes at once, with or without that file.
+        std::fs::write(d.join("invites.json"), r#"{"invites":[["abcd",9999999999999]]}"#).unwrap();
+        let _ = Hosts::open(&d, "geek".into());
+        assert!(!d.join("invites.json").exists(), "spent host invites are deleted");
+        // Anything else there is nobody's to delete.
+        std::fs::write(d.join("invites.json"), r#"{"something":"else"}"#).unwrap();
+        let _ = Hosts::open(&d, "geek".into());
+        assert!(d.join("invites.json").exists());
         std::fs::remove_dir_all(d).unwrap();
     }
 
     #[test]
     fn ssh_hosts_keep_only_their_destination() {
         let d = dir();
-        let h = Hosts::open(&d, "geek".into(), None);
+        let h = Hosts::open(&d, "geek".into());
         let ssh = |urls: Vec<String>, dest: Option<&str>| AddHost {
             name: "box".into(),
             urls,

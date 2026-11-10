@@ -8,6 +8,8 @@
 // - One primary button, in the preview. The row itself is the target, and
 //   what's destructive is behind ⋯ there.
 // - The counts are the filters, `/` searches, ↑↓ and j/k move, Enter opens.
+// - A list can opt in to `selectable` (Arugula #818): a box on each row, for
+//   acting on several at once. Its own bar (`selection`) says what to do.
 // - What must be answered without selecting anything (a request waiting for
 //   you) has buttons of its own, so it isn't a row of the list: it's a
 //   section above it. Sections below it hold what's beside the list's point.
@@ -16,8 +18,11 @@
 // never the window's width: a page can be narrow on a wide screen. Too narrow
 // for both, the list stands alone and a row opens its preview in its place.
 
+import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { Bar } from "./bar";
+import { ChevronIcon } from "./icons";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -30,6 +35,9 @@ const HOVER_MS = 140;
 const KEYS_HOLD_MS = 400;
 
 export type ListTone = "live" | "bad" | "warn";
+
+/** The card tone a row's takes. */
+const ROW_TONES = { live: "accent", bad: "danger", warn: "warn" } as const;
 
 /** One count over the list. With `key`, it's a filter. */
 export interface ListCount {
@@ -62,14 +70,25 @@ export function ListCounts({ counts, on, pick }: { counts: ListCount[]; on: stri
 /** What a row says, in the places every list's row says it. */
 export interface ListRowParts {
   tone?: ListTone;
+  /** One line, as a Doc's row is: a small box with no second line. */
+  dense?: boolean;
   title: ComponentChildren;
   /** Beside the title: only what's unusual about it. */
   tags?: ComponentChildren;
   age?: ComponentChildren;
+  /** What its box says it's for, when the list is `selectable`: "Select Plan". */
+  name?: string;
   /** The dim line under it. */
   detail?: ComponentChildren;
   /** The row's picture of its data, at the right of that line. */
   mark?: ComponentChildren;
+  /** At the row's end: a ⋯ button, say. It's the row's own to press: a click
+   * or double click on it must not select or open the row (`stopPropagation`).
+   * A row is one option, so it holds no button: make it a mouse target with
+   * `data-row-more` (and `aria-hidden`), which the ContextMenu key (or
+   * Shift+F10) on the selected row and a right click on a row press. The row
+   * says so itself: `aria-haspopup="menu"` and `aria-keyshortcuts`. */
+  actions?: ComponentChildren;
   /** Its `data-*` hooks. */
   attrs?: Record<string, string>;
 }
@@ -100,6 +119,10 @@ export interface ListPageProps<T> {
   keyOf: (item: T) => string;
   row: (item: T) => ListRowParts;
   preview: (item: T) => ComponentChildren;
+  /** What shows a row's preview: the pointer resting on it (the default), or
+   * only a click, for a preview that's costly to draw (a Doc). The keys move
+   * the selection either way. */
+  previewOn?: "hover" | "click";
   /** Enter, or a double click. */
   onOpen: (item: T) => void;
   /** Where the divider's position is kept. */
@@ -117,6 +140,24 @@ export interface ListPageProps<T> {
   pane?: ComponentChildren;
   /** The row to select, when the page knows better: one just saved. */
   select?: string | null;
+  /** A box on each row (on hover, and always once one is ticked), for
+   * acting on several. The box is a mark for the mouse (a control in an
+   * option fails `nested-interactive`): the option says `aria-checked`, and
+   * Space ticks it. Shift-click ticks the range between two, in the order
+   * on the screen after search and grouping; a group's box ticks its group;
+   * Space ticks the row the keys are on, Ctrl/Cmd+A ticks every row shown
+   * (again, with all ticked, it clears), and Esc clears. Turned off, it
+   * forgets what was ticked, and so does a row that a search hides. */
+  selectable?: boolean;
+  /** Under the search while `selectable`, even with nothing ticked (its own
+   * results stay): the bar that acts on `items`, in the order shown. */
+  selection?: (ticked: ListTicked<T>) => ComponentChildren;
+}
+
+/** What a `selectable` list has ticked. */
+export interface ListTicked<T> {
+  items: T[];
+  clear: () => void;
 }
 
 const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("input, textarea, select, [contenteditable]");
@@ -141,7 +182,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, selectable, selection }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -154,8 +195,39 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   const keyed = useRef(0);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(hover.current), []);
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  /** The box a shift-click's range starts from. */
+  const anchor = useRef<string | null>(null);
 
   const flat = groups.flatMap((g) => g.items);
+  // Only what's on the screen stays ticked: a hidden row can't be acted on.
+  const shownKeys = flat.map(keyOf).join("\n");
+  useEffect(() => {
+    if (ticked.size === 0) return;
+    const shown = new Set(flat.map(keyOf));
+    const kept = selectable ? [...ticked].filter((k) => shown.has(k)) : [];
+    if (kept.length !== ticked.size) setTicked(new Set(kept));
+    if (kept.length === 0) anchor.current = null;
+  }, [selectable, shownKeys]);
+  const clearTicks = () => {
+    setTicked(new Set());
+    anchor.current = null;
+  };
+  /** Tick or untick `keys`, all together. */
+  const tick = (keys: string[], on: boolean) =>
+    setTicked((was) => {
+      const next = new Set(was);
+      for (const k of keys) on ? next.add(k) : next.delete(k);
+      return next;
+    });
+  /** A box was clicked: alone, or with shift, the range from the last one. */
+  const tickAt = (key: string, on: boolean, range: boolean) => {
+    const keys = flat.map(keyOf);
+    const from = anchor.current === null ? -1 : keys.indexOf(anchor.current);
+    const to = keys.indexOf(key);
+    tick(range && from >= 0 && to >= 0 ? keys.slice(Math.min(from, to), Math.max(from, to) + 1) : [key], on);
+    anchor.current = key;
+  };
   const selected = flat.find((i) => keyOf(i) === picked) ?? flat[0];
   const selectedKey = selected === undefined ? null : keyOf(selected);
   // An id can't hold a space, and a key can (a path).
@@ -188,10 +260,19 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     scrollTo.current = false;
   }, [selectedKey]);
 
-  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery });
-  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery };
+  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) });
+  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+A in the list ticks every row shown; again, with all ticked, it clears.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a" && !e.defaultPrevented && !covered() && live.current.selectable && live.current.flat.length > 0 && list.current?.contains(e.target as Node) && !inField(e.target)) {
+        e.preventDefault();
+        const s = live.current;
+        const keys = s.flat.map(s.keyOf);
+        if (keys.every((k) => s.ticked.has(k))) s.clearTicks();
+        else s.tickAll(keys);
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || covered()) return;
       const s = live.current;
       const searching = e.target === box.current;
@@ -201,7 +282,10 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         return;
       }
       if (e.key === "Escape") {
-        if (searching) {
+        if (!searching && s.selectable && s.ticked.size > 0) {
+          e.preventDefault();
+          s.clearTicks();
+        } else if (searching) {
           e.preventDefault();
           s.setQuery("");
           list.current?.focus({ preventScroll: true });
@@ -212,6 +296,20 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         return;
       }
       if (inField(e.target) && !searching) return;
+      // A button's Space is its own.
+      if (e.key === " " && !searching && s.selectable && s.selectedKey !== null && !(e.target as Element | null)?.closest?.("button, a, [role='separator']")) {
+        e.preventDefault();
+        s.tickAt(s.selectedKey, !s.ticked.has(s.selectedKey), false);
+        return;
+      }
+      if ((e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && s.selectedKey !== null) {
+        const more = document.getElementById(rowId(s.selectedKey))?.querySelector<HTMLElement>("[data-row-more]");
+        if (more) {
+          e.preventDefault();
+          more.click();
+        }
+        return;
+      }
       const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
       const letter = !searching && (e.key === "j" || e.key === "k");
       if ((arrow || letter) && s.flat.length) {
@@ -266,7 +364,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
 
   const hovered = (key: string, e: PointerEvent) => {
     // A form in the preview's place stays, so what's under the pointer can't show.
-    if (e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
+    if (previewOn === "click" || e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
     clearTimeout(hover.current);
     hover.current = setTimeout(() => {
       if (performance.now() - keyed.current > KEYS_HOLD_MS) setPicked(key);
@@ -277,21 +375,47 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     const key = keyOf(item);
     const r = row(item);
     return (
-      <div
+      <Card
         key={key}
         id={rowId(key)}
         role="option"
         aria-selected={key === selectedKey}
-        class={r.tone ? `list-row ${r.tone}` : "list-row"}
+        // Ticked is not current (`aria-selected` follows the keys' row), so it's
+        // `aria-checked`, which an option takes. The box below is only its mark.
+        aria-checked={selectable ? ticked.has(key) : undefined}
+        aria-haspopup={r.actions ? "menu" : undefined}
+        aria-keyshortcuts={r.actions ? "Shift+F10 ContextMenu" : undefined}
+        class="list-row"
+        tone={r.tone && ROW_TONES[r.tone]}
+        dense={r.dense}
         {...r.attrs}
         onClick={() => {
           setPicked(key);
           if (narrow) setDetail(true);
         }}
         onDblClick={() => !narrow && onOpen(item)}
+        onContextMenu={(e) => {
+          const more = (e.currentTarget as HTMLElement).querySelector<HTMLElement>("[data-row-more]");
+          if (!more) return;
+          e.preventDefault();
+          more.click();
+        }}
         onPointerMove={(e) => hovered(key, e)}
         onPointerLeave={() => clearTimeout(hover.current)}
       >
+        {selectable && (
+          <span
+            class="list-row-check"
+            aria-hidden="true"
+            data-on={String(ticked.has(key))}
+            data-list-check
+            onClick={(e) => {
+              e.stopPropagation();
+              tickAt(key, !ticked.has(key), e.shiftKey);
+            }}
+            onDblClick={(e) => e.stopPropagation()}
+          />
+        )}
         <div class="list-row-top">
           <span class="list-row-title">{r.title}</span>
           {r.tags}
@@ -299,10 +423,12 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         <span class="list-row-age">{r.age}</span>
         <div class="list-row-detail">{r.detail}</div>
         <span class="list-row-mark">{r.mark}</span>
-      </div>
+        {r.actions && <span class="list-row-actions">{r.actions}</span>}
+      </Card>
     );
   };
 
+  const tickedItems = flat.filter((i) => ticked.has(keyOf(i)));
   const style = width ? ({ "--list-w": `${width}px` } as Record<string, string>) : undefined;
   return (
     <div ref={root} class={detail || pane ? "list-page detail" : "list-page"} style={style} data-list-page>
@@ -329,14 +455,16 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             </label>
           </div>
           {notice}
+          {selectable && selection && <div class="list-selection" role="status" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}
           <div class="list-scroll">
             {status ?? null}
             {flat.length > 0 && (
-              <div ref={list} class="list-rows" role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
+              <div ref={list} class={ticked.size > 0 ? "list-rows ticking" : "list-rows"} role="listbox" aria-multiselectable={selectable ? true : undefined} tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
                 {groups.map((g, i) =>
                   g.items.length === 0 ? null : g.title ? (
                     <div key={g.key ?? g.title} role="group" aria-labelledby={`list-group-${i}`} {...g.attrs}>
                       <div class="list-group" id={`list-group-${i}`}>
+                        {selectable && <GroupCheck items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
                         <span class={g.named ? "list-group-title named" : "list-group-title"}>
                           {g.title}
                           {g.detail && <small>{g.detail}</small>}
@@ -359,7 +487,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             <aside class="list-preview" aria-label={pane ? "Form" : "Preview"} data-list-preview>
               {detail && !pane && (
                 <button type="button" class="link list-back" data-list-back onClick={() => setDetail(false)}>
-                  <span aria-hidden="true">‹ </span>
+                  <ChevronIcon dir="left" />{" "}
                   {label}
                 </button>
               )}
@@ -394,15 +522,58 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   );
 }
 
-/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them. */
-export function ListPreview({ title, facts, actions, children, aside, ...attrs }: { title: ComponentChildren; facts?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+/** A group's box: ticks the group, and is half-ticked when some of it is. Like
+ * a row's, it's a mark for the mouse: the group holds rows, and the keys tick those. */
+function GroupCheck({ items, ticked, tick }: { items: string[]; ticked: ReadonlySet<string>; tick: (keys: string[], on: boolean) => void }) {
+  const n = items.filter((k) => ticked.has(k)).length;
+  return (
+    <span
+      class="list-row-check list-group-check"
+      aria-hidden="true"
+      data-on={n === items.length ? "true" : n > 0 ? "mixed" : "false"}
+      data-list-group-check
+      onClick={(e) => {
+        e.stopPropagation();
+        tick(items, n !== items.length);
+      }}
+    />
+  );
+}
+
+/** A preview's top and body: the name, its facts, its buttons, its words, and what's beside them.
+ *
+ * With a `title`, the head is the list's own: the name large, then the facts and
+ * the buttons under it. Without one, the preview's words carry the name
+ * themselves (a Doc's own head is the title), and the head is a column bar
+ * (Arugula #659): the facts at the left (`factsTip` says the rest on hover),
+ * then the hint, the one primary and the icon buttons at the right, ⋯ last. */
+export function ListPreview({ title, facts, factsTip, hint, actions, children, aside, ...attrs }: { title?: ComponentChildren; facts?: ComponentChildren; factsTip?: string; hint?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; aside?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
     <>
-      <header class="list-preview-head" {...attrs}>
-        <h2>{title}</h2>
-        {facts && <div class="list-preview-facts">{facts}</div>}
-        {actions && <div class="list-preview-actions">{actions}</div>}
-      </header>
+      {title === undefined ? (
+        <Bar
+          class="list-preview-bar"
+          {...attrs}
+          actions={
+            <>
+              {hint}
+              {actions}
+            </>
+          }
+        >
+          {facts && (
+            <span class="list-preview-bar-facts" title={factsTip}>
+              {facts}
+            </span>
+          )}
+        </Bar>
+      ) : (
+        <header class="list-preview-head" {...attrs}>
+          <h2>{title}</h2>
+          {facts && <div class="list-preview-facts">{facts}</div>}
+          {actions && <div class="list-preview-actions">{actions}</div>}
+        </header>
+      )}
       <div class={aside ? "list-preview-body" : "list-preview-body solo"}>
         <div class="list-preview-words">{children}</div>
         {aside && <div class="list-preview-aside">{aside}</div>}
@@ -424,17 +595,17 @@ export function ListSection({ title, n, children, ...attrs }: { title: string; n
   );
 }
 
-/** A row of a `ListSection`: it looks like the list's, and it isn't a target,
+/** A row of a `ListSection`: a card like the list's, and it isn't a target,
  * so it can hold buttons. */
 export function ListItem({ tone, title, detail, actions, children, ...attrs }: { tone?: ListTone; title: ComponentChildren; detail?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
   return (
-    <div class={tone ? `list-item ${tone}` : "list-item"} {...attrs}>
+    <Card class="list-item" tone={tone && ROW_TONES[tone]} {...attrs}>
       <div class="list-item-text">
         <div class="list-item-title">{title}</div>
         {detail && <div class="list-item-detail">{detail}</div>}
         {children}
       </div>
       {actions && <div class="list-item-actions">{actions}</div>}
-    </div>
+    </Card>
   );
 }

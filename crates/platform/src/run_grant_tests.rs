@@ -333,7 +333,11 @@ async fn expiry_and_the_live_delegation() {
     let v = read(&base, "alice", &project).await;
     assert_eq!((v["grant"].is_null(), v["offer"].as_bool()), (true, Some(true)));
     assert_eq!(start(&base, "alice", &project, "dev").await.1["reason"], "no_grant");
-    assert_eq!(sign(&base, "alice", &project, &g).await.0, 201);
+    // Machines go by the time a grant signs: an earlier one isn't kept.
+    let (st, v) = sign(&base, "alice", &project, &grant_under(&d1, "alice", soon.made - 1, now_ms() + DAY)).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some("grant_older")), "{v}");
+    let next = grant_under(&d1, "alice", now_ms(), now_ms() + 90 * DAY);
+    assert_eq!(sign(&base, "alice", &project, &next).await.0, 201);
     // The project's delegation changes: the grant is stale, offered again,
     // and one under the new delegation replaces it.
     let d2 = delegation(&project, "team:t1", &keys, 2);

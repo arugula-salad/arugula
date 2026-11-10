@@ -2,12 +2,13 @@
 // first (`GET /api/projects/{project}/deploys`, a page at a time), each
 // row opening its own page (./deploy). Its bar has a place for it
 // (Discovery 5): before, the only way in was Project settings ›
-// Environments › Deploy…. With none yet it says what a deploy is and offers
+// Environments › Deploy…. With none yet it says what a deploy is in a line and offers
 // the next step: Deploy… where there's an environment and the reader plans,
 // else Make an environment for an owner, else who does.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
+import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -15,7 +16,6 @@ import { names } from "../links";
 import { follow, followRow, pathOf } from "../router";
 import { session } from "../session";
 import { historyPath, lastMoved, rowNote, shortRef, type DeployHistory, type DeploySummary, type Environment } from "../deploys-text";
-import { deployTone, toneClass } from "../swarm";
 import { roleIn } from "../settings/environments";
 import { DeployState, planner } from "./deploy";
 import { Missing } from "./project";
@@ -27,8 +27,7 @@ async function get<T>(path: string): Promise<T> {
   return v;
 }
 
-/** What a deploy is, in one sentence: the empty page's, and the project
- * home's. */
+/** What a deploy is, in one sentence: the empty page's. */
 export const DEPLOYS_MEAN = "A deploy puts a commit on one of the project's environments, once an owner approves it with a passkey.";
 
 const PAGE = 25;
@@ -81,48 +80,41 @@ export function DeploysPage({ project }: { project: string }) {
             </a>
           )
         }
-        sub={
-          <>
-            Every environment's, newest first. Environments are in the project's{" "}
-            <a href={envPath} onClick={(e) => follow(e, envPath)}>
-              settings
-            </a>
-            .
-          </>
-        }
       />
       {err && (
         <p class="control-error" role="alert">
           {err}
         </p>
       )}
-      {!err && (!page || !envs) && <p class="dim">Loading…</p>}
+      {!err && (!page || !envs) && <BlockLoading inline what="deploys" />}
       {page && envs && page.deploys.length === 0 && (
-        <div class="platform-empty" data-deploys-none>
-          <p>{DEPLOYS_MEAN}</p>
-          {envs.length === 0 ? (
-            role === "owner" ? (
-              <>
-                <p class="dim">It needs an environment to go to first: where it goes, and the driver that applies it.</p>
+        <EmptyState
+          where="page"
+          data-deploys-none
+          title="No deploys yet."
+          why={
+            envs.length === 0
+              ? `A deploy needs an environment to go to first.${role === "owner" ? "" : " A project's owners make those."}`
+              : plans
+                ? DEPLOYS_MEAN
+                : "A team's owners and editors plan deploys; you can read them here."
+          }
+          action={
+            envs.length === 0 ? (
+              role === "owner" && (
                 <a class="primary" href={envPath} data-deploys-make-env onClick={(e) => follow(e, envPath)}>
                   Make an environment
                 </a>
-              </>
+              )
             ) : (
-              <p class="dim" data-deploys-why>
-                It needs an environment first, and a project's owners make those.
-              </p>
+              plans && (
+                <a class="primary" href={deployPath} data-deploys-start onClick={(e) => follow(e, deployPath)}>
+                  Deploy…
+                </a>
+              )
             )
-          ) : plans ? (
-            <a class="primary" href={deployPath} data-deploys-start onClick={(e) => follow(e, deployPath)}>
-              Deploy…
-            </a>
-          ) : (
-            <p class="dim" data-deploys-why>
-              A team's owners and editors plan deploys; you can read them here.
-            </p>
-          )}
-        </div>
+          }
+        />
       )}
       {!!page?.deploys.length && (
         <table class="settings-table deploy-table deploys-table" data-deploys-list>
@@ -154,7 +146,7 @@ export function DeploysPage({ project }: { project: string }) {
 function Row({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   return (
-    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
+    <tr class="deploy-row" data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
       <td>
         <DeployState state={d.state} />
       </td>

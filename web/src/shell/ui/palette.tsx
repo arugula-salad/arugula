@@ -10,16 +10,19 @@
 // editors, studio apps) keep their keys: the chord works once focus is
 // back on the page.
 
+import { openPlatform, platformOrigin } from "../platform-links";
+import { openSettings } from "./settings-route";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { fuzzy } from "../../shared/fuzzy";
+import { Modal } from "../../shared/ui/modal";
 import { countView } from "../../shared/telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { showSession } from "./shell/session-sidebar";
-import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "./shell/icons";
+import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "../../shared/ui/icons";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
@@ -35,6 +38,7 @@ import { needsYou } from "../../shared/needs-you";
 import { ago } from "../../shared/time";
 import { getFleet } from "./hosts";
 import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
+import { Chip } from "../../shared/ui/state-chip";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -65,27 +69,21 @@ export interface Command {
 type Mode = "commands" | "output";
 
 let open: { client: Client; phone: boolean; mode: Mode; query: string } | null = null;
-/** What had the keys before it opened: Escape gives them back (M111). */
-let back: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
 export function openPalette(client: Client, phone = false, mode: Mode = "commands", query = "") {
   countView("palette");
   closeMenu();
-  if (!open) back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   open = { client, phone, mode, query };
   changed();
 }
 
-/** Closed without running anything: the focus goes back where it was (a
- * command run puts it on the pane, or on what it opens). */
-function closePalette(restore = true) {
+/** Closed: the Modal gives the focus back to what had it, unless a command
+ * run put it on the pane, or on what it opens. */
+function closePalette() {
   open = null;
   changed();
-  const to = back;
-  back = null;
-  if (restore && to?.isConnected) to.focus();
 }
 
 /** The chord (ui/keys.ts): opens it, and again closes it. */
@@ -370,6 +368,9 @@ function places(client: Client, phone: boolean): Command[] {
     go("team", "Go to Agents: Team", () => openAgentsPage("team"));
   }
   if (!client.state?.roles) go("docs", "Go to Docs", openDocsPage);
+  if (!phone) go("settings", "Go to Settings", () => openSettings());
+  // The design reference (#693) is on the platform page, so only where there is one.
+  if (platformOrigin()) go("design", "Go to Design reference", () => openPlatform("/design"), "every shared piece of the UI");
   return out;
 }
 
@@ -478,12 +479,14 @@ function useOutputSearch(client: Client, on: boolean, query: string) {
   return { found, busy };
 }
 
-function Palette({ client, phone, mode, initial, close }: { client: Client; phone: boolean; mode: Mode; initial: string; close: (restore?: boolean) => void }) {
+function Palette({ client, phone, mode, initial, close }: { client: Client; phone: boolean; mode: Mode; initial: string; close: () => void }) {
   const output = mode === "output";
   const [query, setQuery] = useState(initial);
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // A command ran: it put the focus where it goes, so shutting doesn't.
+  const ran = useRef(false);
   const [recent] = useState(recents);
   const pane = client.active();
   const info = pane === undefined ? undefined : client.info(pane);
@@ -540,7 +543,8 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
     if (!c || c.disabled) return;
     // A hit is found again by searching, not kept as a recent pick.
     if (c.group !== "Output" && c.key !== "Search/output-for") remember(c.key);
-    close(false);
+    ran.current = true;
+    close();
     // The panes are under the swarm and agents: show them, unless it's a
     // place's (it goes there itself).
     if (!c.place) {
@@ -556,10 +560,7 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(rows.length - 1, s + 1));
     } else if (e.key === "ArrowUp") {
@@ -572,87 +573,85 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
   };
 
   return (
-    <div class="prompt-backdrop picker-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close(false)}>
-      {/* The dialog is the box itself, its input a combobox over the
-          list (UI audit #176). */}
-      <div class={phone ? "picker palette phone" : "picker palette"} role="dialog" aria-modal="true" aria-label="Command palette" onKeyDown={onKey}>
-        <div class="palette-search"><SearchIcon size={20} /><input
-          ref={input}
-          class="picker-filter"
-          placeholder={output ? "Search the output of every pane" : "Type a command, a tab or a pane"}
-          role="combobox"
-          aria-label={output ? "Search output" : "Command"}
-          data-palette-mode={mode}
-          aria-expanded="true"
-          aria-autocomplete="list"
-          aria-controls="palette-results"
-          aria-activedescendant={rows[sel] ? `palette-result-${sel}` : undefined}
-          aria-keyshortcuts={ariaKeys(keyHint("palette"))}
-          value={query}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSel(0);
-          }}
-        />
-        </div>
-        {output ? (
-          <div class="palette-results-heading" data-output-asked={search.found ? search.found.asked.map((a) => a.machine).join(",") : undefined}>
-            <span>{search.busy ? "Searching…" : search.found ? askedText(search.found.asked) : "Output"}</span>
-            {search.found && <span>{rows.length} found</span>}
-          </div>
-        ) : (
-          <div class="palette-results-heading"><span>{query ? "Search results" : "Commands & destinations"}</span><span>{rows.length} available</span></div>
-        )}
-        <ul id="palette-results" class="picker-list" role="listbox" aria-label={output ? "Output" : "Commands"} ref={listRef}>
-          {rows.length === 0 && (
-            <li class="picker-empty" data-output-empty={output ? "" : undefined}>
-              {!output
-                ? "Nothing matches"
-                : query.trim().length < 2
-                  ? "Type what was printed: the output of every pane, on each machine of yours that's connected"
-                  : search.busy || !search.found
-                    ? "Searching…"
-                    : "No output matches"}
-            </li>
-          )}
-          {rows.map((c, i) => (
-            <li
-              key={c.key}
-              id={`palette-result-${i}`}
-              role="option"
-              aria-selected={i === sel}
-              aria-disabled={c.disabled}
-              class={`picker-row palette-row${i === sel ? " selected" : ""}${c.disabled ? " disabled" : ""}${c.danger ? " danger" : ""}`}
-              data-command={c.key}
-              title={c.detail}
-              onPointerMove={() => i !== sel && setSel(i)}
-              onClick={() => run(c)}
-            >
-              <span class="palette-command-icon" aria-hidden="true">{iconOf(c)}</span>
-              <span class="palette-command-text">
-              <span class="picker-label">
-                {c.label}
-                {/* A switch that's on: a badge after it, not a dot glued
-                    to its first word (UI audit #176). */}
-                {c.checked && <span class="palette-badge">on</span>}
-              </span>
-              {c.detail && <span class="palette-detail">{c.detail}</span>}
-              <span class="palette-group">{kindOf(c)}</span></span>
-              {recent.includes(c.key) && !query && <span class="palette-recent">recent</span>}
-              {c.shortcut && <kbd class="menu-key">{c.shortcut}</kbd>}
-            </li>
-          ))}
-        </ul>
-        <footer class="palette-help"><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> {output ? "Show it in its pane" : "Run command"}</span><span><kbd>Esc</kbd> Close</span></footer>
-        {phone && (
-          <div class="picker-actions">
-            <button onClick={() => close()}>Cancel</button>
-          </div>
-        )}
+    // The dialog is the box itself, its input a combobox over the list (UI
+    // audit #176).
+    <Modal bare close={close} label="Command palette" returnFocus={() => !ran.current} class={phone ? "picker palette phone" : "picker palette"} root={{ onKeyDown: onKey }}>
+      <div class="palette-search"><SearchIcon size="lg" /><input
+        ref={input}
+        class="picker-filter"
+        placeholder={output ? "Search the output of every pane" : "Type a command, a tab or a pane"}
+        role="combobox"
+        aria-label={output ? "Search output" : "Command"}
+        data-palette-mode={mode}
+        aria-expanded="true"
+        aria-autocomplete="list"
+        aria-controls="palette-results"
+        aria-activedescendant={rows[sel] ? `palette-result-${sel}` : undefined}
+        aria-keyshortcuts={ariaKeys(keyHint("palette"))}
+        value={query}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck={false}
+        onInput={(e) => {
+          setQuery(e.currentTarget.value);
+          setSel(0);
+        }}
+      />
       </div>
-    </div>
+      {output ? (
+        <div class="palette-results-heading" data-output-asked={search.found ? search.found.asked.map((a) => a.machine).join(",") : undefined}>
+          <span>{search.busy ? "Searching…" : search.found ? askedText(search.found.asked) : "Output"}</span>
+          {search.found && <span>{rows.length} found</span>}
+        </div>
+      ) : (
+        <div class="palette-results-heading"><span>{query ? "Search results" : "Commands & destinations"}</span><span>{rows.length} available</span></div>
+      )}
+      <ul id="palette-results" class="picker-list" role="listbox" aria-label={output ? "Output" : "Commands"} ref={listRef}>
+        {rows.length === 0 && (
+          <li class="picker-empty" data-output-empty={output ? "" : undefined}>
+            {!output
+              ? "Nothing matches"
+              : query.trim().length < 2
+                ? "Type what was printed: the output of every pane, on each machine of yours that's connected"
+                : search.busy || !search.found
+                  ? "Searching…"
+                  : "No output matches"}
+          </li>
+        )}
+        {rows.map((c, i) => (
+          <li
+            key={c.key}
+            id={`palette-result-${i}`}
+            role="option"
+            aria-selected={i === sel}
+            aria-disabled={c.disabled}
+            class={`picker-row palette-row${i === sel ? " selected" : ""}${c.disabled ? " disabled" : ""}${c.danger ? " danger" : ""}`}
+            data-command={c.key}
+            title={c.detail}
+            onPointerMove={() => i !== sel && setSel(i)}
+            onClick={() => run(c)}
+          >
+            <span class="palette-command-icon" aria-hidden="true">{iconOf(c)}</span>
+            <span class="palette-command-text">
+            <span class="picker-label">
+              {c.label}
+              {/* A switch that's on: a badge after it, not a dot glued
+                  to its first word (UI audit #176). */}
+              {c.checked && <Chip kind="tag" tone="accent" class="palette-on">on</Chip>}
+            </span>
+            {c.detail && <span class="palette-detail">{c.detail}</span>}
+            <span class="palette-group">{kindOf(c)}</span></span>
+            {recent.includes(c.key) && !query && <span class="palette-recent">recent</span>}
+            {c.shortcut && <kbd class="menu-key">{c.shortcut}</kbd>}
+          </li>
+        ))}
+      </ul>
+      <footer class="palette-help"><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> {output ? "Show it in its pane" : "Run command"}</span><span><kbd>Esc</kbd> Close</span></footer>
+      {phone && (
+        <div class="picker-actions">
+          <button onClick={() => close()}>Cancel</button>
+        </div>
+      )}
+    </Modal>
   );
 }

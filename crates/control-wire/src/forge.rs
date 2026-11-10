@@ -289,7 +289,7 @@ pub enum DaemonOp {
     /// (`@<machine>/<session>`, #577). The owner decides what is said
     /// (`sharing.json`'s `agent_sessions`).
     #[serde(rename = "agents.sessions")]
-    AgentSessions(AgentSessionsAsk),
+    MachineAgents(MachineAgentsAsk),
     /// A teammate mentioned this machine in a room its agents can't read
     /// (#578): the daemon raises a card asking its owner to let them. The
     /// grant itself is the owner's own act, made over their control session.
@@ -306,7 +306,7 @@ impl DaemonOp {
             DaemonOp::HostedArchive(_) => "hosted.archive",
             DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
             DaemonOp::AgentMention(_) => "agents.mention",
-            DaemonOp::AgentSessions(_) => "agents.sessions",
+            DaemonOp::MachineAgents(_) => "agents.sessions",
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
         }
     }
@@ -352,6 +352,21 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_line: Option<String>,
+    /// With a reply (#649): the other agents in the thread, as people read
+    /// them ("wake (Aaron's, Mac mini)"), so a session can see who's here
+    /// before it starts on something. An older daemon ignores it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
+}
+
+/// What a machine's session is doing (#645).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MachineAgentState {
+    Working,
+    Idle,
+    NeedsInput,
 }
 
 /// A mention of this machine that its agents can't read the room for (#578).
@@ -383,7 +398,7 @@ pub struct AgentGrantAsk {
 /// An agent asks which sessions of a machine it may mention (#577).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentSessionsAsk {
+pub struct MachineAgentsAsk {
     /// The room the mention would be in.
     pub room: String,
     /// When the asker's session is on this machine (#575): its name, so the
@@ -391,6 +406,25 @@ pub struct AgentSessionsAsk {
     /// wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_session: Option<String>,
+    /// For a thread's strip (#645): only the sessions of these names
+    /// ([`session_slug`]), silenced or not, and however many. Empty: the list
+    /// a mention picks from. An older daemon ignores it and answers that.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub only: Vec<String>,
+}
+
+/// A session's name as `@machine/name` matches it: lowercase, its letters and
+/// digits, the rest one dash.
+pub fn session_slug(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            out.push(c);
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_owned()
 }
 
 /// The most sessions an `agents.sessions` answer lists.
@@ -399,7 +433,7 @@ pub const SESSIONS_LISTED: usize = 20;
 /// A session of a machine a teammate's agent may mention (#577).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct MachineSession {
+pub struct MachineAgent {
     /// What `@machine/name` matches: the session's name, as a slug.
     pub name: String,
     /// The tab it is in, when the tab has a name.
@@ -412,6 +446,13 @@ pub struct MachineSession {
     /// With the owner's `work`: the issue it was started on (`#540`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_on: Option<String>,
+    /// What it's doing now (#645); absent from an older daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<MachineAgentState>,
+    /// With the owner's `work`: the name of the tool it last ran (#645),
+    /// never its arguments or output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,
@@ -512,7 +553,7 @@ pub enum OpAnswer {
     Sessions {
         shared: bool,
         #[serde(default)]
-        sessions: Vec<MachineSession>,
+        sessions: Vec<MachineAgent>,
     },
     /// It doesn't know the op (a daemon from before it).
     Unknown,

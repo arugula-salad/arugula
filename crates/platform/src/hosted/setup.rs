@@ -6,11 +6,15 @@
 //!
 //! - **The plan** ([`plan`]) is the spec, with what to clone each repo with
 //!   and the values of the env its spec takes from its secrets. A GitHub
-//!   repo linked to the project is cloned with a read-only installation
-//!   token for that repo alone, minted now (an hour; M167's helper logs
-//!   it). Any other repo is cloned with the workspace's `GIT_TOKEN` secret
-//!   (and `GIT_USERNAME`, else `x-access-token`), when it has one. The
-//!   daemon hands them to git in its environment for the clone alone:
+//!   repo linked to the project is cloned with an installation token for
+//!   that repo's contents alone, read-only, minted for this box (an hour;
+//!   M167's helper logs it under the machine), with where the box revokes
+//!   it once its clones are done. Only while the box hasn't said it's
+//!   past its clones, and one per machine and repo each few minutes
+//!   ([`GithubApp::box_clone_token`]). Any other repo is cloned
+//!   with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
+//!   `x-access-token`), when it has one.
+//!   The daemon hands them to git in its environment for the clone alone:
 //!   nothing is written to the box's disk.
 //! - **What it's built from.** Reading the plan marks the box built from
 //!   that spec, so "rebuild needed" follows the spec the box really ran.
@@ -28,12 +32,12 @@
 
 use std::collections::BTreeMap;
 
-use arugula_control_wire::hosted::{SETUP_REASONS, SetupPlan, SetupRepo, SetupReport};
+use arugula_control_wire::hosted::{SETUP_REASONS, SetupPlan, SetupRepo, SetupReport, SetupStatus, clones_done};
 use tracing::{info, warn};
 
 use crate::{
     Platform,
-    forge::{Caller, Repo},
+    forge::{Caller, GithubApp},
 };
 
 /// The secret a non-GitHub repo (or one not linked to the project) is
@@ -74,14 +78,16 @@ pub fn github_repo(url: &str) -> Option<String> {
     Some(format!("{owner}/{name}"))
 }
 
-/// A read-only installation token for `url`, when it's a GitHub repo
-/// linked to `project` and the platform has the App.
-async fn app_token(app: &Platform, project: &str, url: &str) -> Option<String> {
-    let gh = app.github.as_ref()?;
+/// A token for `machine` to clone `url` with, and where it revokes it,
+/// when it's a GitHub repo linked to `project` and the platform has the
+/// App: its contents, read-only, the machine's own
+/// ([`GithubApp::box_clone_token`]), never the platform's cached one.
+async fn app_token(app: &Platform, project: &str, machine: &str, url: &str) -> Option<(String, String)> {
+    let gh: &GithubApp = app.github.as_ref()?;
     let name = github_repo(url)?;
     let link = app.db.linked_repo_named(&name).ok().flatten().filter(|l| l.project_id == project)?;
-    match gh.hand_out(&Caller::of(app, "platform"), link.installation_id, Repo::Id(link.repo_id)).await {
-        Ok(t) => Some(t.secret().to_owned()),
+    match gh.box_clone_token(&Caller::of(app, machine), machine, link.installation_id, link.repo_id).await {
+        Ok((t, _)) => Some((t, gh.revoke_url())),
         Err(e) => {
             warn!(project, repo = name, error = %format!("{e:#}"), "no installation token for a hosted workspace's clone");
             None
@@ -109,14 +115,24 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
     let secrets_of = w.parent.clone().unwrap_or_else(|| w.id.clone());
     let token = secret(app, project, &secrets_of, GIT_TOKEN)?;
     let user = secret(app, project, &secrets_of, GIT_USERNAME)?.filter(|u| !u.is_empty());
+    // The box said it's done cloning: no more App tokens until it's rebuilt.
+    let cloning = w
+        .setup
+        .as_ref()
+        .is_none_or(|s| SetupStatus::parse(&s.status).is_some_and(|status| !clones_done(status, &s.step)));
     let mut repos = Vec::new();
     for url in &w.spec.repos {
-        let r = if let Some(t) = app_token(app, project, url).await {
+        let app_token = match cloning {
+            true => app_token(app, project, machine, url).await,
+            false => None,
+        };
+        let r = if let Some((t, revoke)) = app_token {
             SetupRepo {
                 url: url.clone(),
                 via: "github_app".into(),
                 username: Some(TOKEN_USER.into()),
                 password: Some(t),
+                revoke: Some(revoke),
             }
         } else if let Some(t) = &token {
             SetupRepo {
@@ -124,9 +140,10 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
                 via: "secret".into(),
                 username: Some(user.clone().unwrap_or_else(|| TOKEN_USER.into())),
                 password: Some(t.clone()),
+                revoke: None,
             }
         } else {
-            SetupRepo { url: url.clone(), via: "none".into(), username: None, password: None }
+            SetupRepo { url: url.clone(), via: "none".into(), ..SetupRepo::default() }
         };
         repos.push(r);
     }

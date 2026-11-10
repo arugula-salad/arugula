@@ -47,9 +47,13 @@ const AGENT_BOARD_READS: (&str, usize) = ("board-agent-read", 3_600);
 /// Writes a machine's agents make, per hour: each lands at once and shows
 /// on everyone's board, so fewer than reads.
 pub(super) const AGENT_BOARD_WRITES: (&str, usize) = ("board-agent-write", 600);
-/// Block reports a machine makes, per hour: its daemon sends a block's
-/// changes a few seconds apart at most.
+/// Block reports a machine makes, per hour, that change something: its
+/// daemon sends a block's changes a few seconds apart at most.
 const AGENT_BLOCK_REPORTS: (&str, usize) = ("board-block-state", 2_400);
+/// Block reports a machine makes, per hour, all told: most say again what
+/// was said, as its daemon sends each live block every five minutes
+/// (Arugula #745), 12 an hour, so this is a thousand blocks' worth.
+const AGENT_BLOCK_REPEATS: (&str, usize) = ("board-block-state-again", 12_000);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
@@ -60,7 +64,6 @@ fn actor(d: &Machine) -> Actor<'_> {
 /// the tools aren't granted).
 pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> J<wire::BoardReach> {
     app.limits.check_daemon(AGENT_BOARD_READS, &d.daemon)?;
-    super::gate(&app, &d.account).await?;
     let mut by: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     for g in app.db.board_grants_of(&d.daemon, &d.account)? {
         by.entry(g.scope_id).or_default().push(g.power);
@@ -254,6 +257,18 @@ pub async fn relate(
     Ok(Json(super::relations::add(&app, actor(&d), &project, &n).await?))
 }
 
+/// `POST /api/daemon/projects/{project}/relations/batch`: links added and
+/// removed together (`issues.write` over the project), each on its own.
+pub async fn link(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(b): Json<wire::LinkBatch>,
+) -> J<wire::LinksDone> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::relations::batch(&app, actor(&d), &project, &b).await?))
+}
+
 /// `DELETE /api/daemon/projects/{project}/relations/{relation}`: a relation
 /// this machine's agents made.
 pub async fn unrelate(
@@ -269,26 +284,55 @@ pub async fn unrelate(
 /// `PUT /api/daemon/block-state`: the state of one of the signing machine's
 /// own agent blocks. The machine is the signer's, never the body's, so one
 /// machine can't set another's block. Refused (403) unless the machine holds
-/// `boards.write` over a project of its owner's; 404 with the `boards` flag
-/// off for the owner.
+/// `boards.write` over a project of its owner's.
 pub async fn put_block_state(
     State(app): State<Arc<Platform>>,
     d: Machine,
     Json(mut p): Json<wire::PutBlockState>,
 ) -> J<serde_json::Value> {
-    app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
-    super::gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_BLOCK_REPEATS, &d.daemon)?;
     may_report(&app, &d).await?;
     p.pane = super::plain_pane(&p.pane).to_owned();
     super::name_ok(&p.pane, "pane")?;
     let block = wire::BlockState::from(p.block);
     state_ok(&block)?;
-    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, arugula_e2e::now_ms())?;
+    // As of when the machine saw it: a report that waited out an outage is
+    // as old as it says. A daemon from before Arugula #745 says no age: now.
+    let now = arugula_e2e::now_ms();
+    let seen = now.saturating_sub(p.age_ms.unwrap_or(0));
+    // A report that says again what a fresh one said changes no board: it
+    // counts against the repeats alone, and tells no reader.
+    let before = app.db.block_states(&d.daemon, &[&p.pane])?.pop();
+    let again = before.is_some_and(|b| !b.stale(now) && says_again(&b.state, &block));
+    if !again {
+        app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
+    }
+    let kept = app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, seen, p.age_ms.is_some())?;
+    if again || !kept {
+        return Ok(Json(serde_json::json!({})));
+    }
     match app.db.boards_on_block(&d.daemon, &p.pane) {
         Ok(boards) => boards.iter().for_each(|(b, project)| super::changed(&app, project, b)),
         Err(e) => tracing::warn!(error = %e, "boards: finding those on a block"),
     }
     Ok(Json(serde_json::json!({})))
+}
+
+/// Whether `now` says nothing `was` didn't: the same state, and each other
+/// field the same or left out (a left-out field keeps what was said).
+fn says_again(was: &wire::BlockState, now: &wire::BlockState) -> bool {
+    fn same<T: PartialEq>(was: &Option<T>, now: &Option<T>) -> bool {
+        now.is_none() || now == was
+    }
+    was.state == now.state
+        && same(&was.title, &now.title)
+        && same(&was.branch, &now.branch)
+        && same(&was.head, &now.head)
+        && same(&was.pushed, &now.pushed)
+        && same(&was.uncommitted, &now.uncommitted)
+        // A diffstat of no files is none: the last turn left no diff.
+        && (now.diffstat.is_none()
+            || was.diffstat.filter(|d| d.files > 0) == now.diffstat.filter(|d| d.files > 0))
 }
 
 /// `POST /api/daemon/projects/{project}/attach-block`: attach one of the

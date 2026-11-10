@@ -41,10 +41,16 @@
 //! expires <ms: by when the apply must start>
 //! ```
 //!
-//! v1 (M218), which the platform no longer takes but still reads and
-//! checks, named the signing device too (`by <device id>`, its last line)
+//! v1 (M218), which the platform no longer takes or applies but still
+//! reads, named the signing device too (`by <device id>`, its last line)
 //! and carried that device's Ed25519 signature beside the passkey's
-//! assertion.
+//! assertion. No machine applies one (DK8).
+//!
+//! **v3** (#1985) approves a chant→Fly deploy: its bytes are chant's gate
+//! statement for the gate the deploy's plan stopped at, with a binding line
+//! naming the deploy, the operation's hash and `expires` ([`chant`]), so the
+//! one passkey assertion is chant's approval too. Only `once`: a deny stays
+//! v2, since chant has nothing to record.
 //!
 //! Values here are ids, hex and one-word references (the platform refuses a
 //! deploy whose source holds a space or a newline), so none is base64. Each
@@ -56,6 +62,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "deploy_apps_platform.rs"]
 pub mod apps_platform;
+#[path = "deploy_chant.rs"]
+pub mod chant;
 #[path = "deploy_planter.rs"]
 pub mod planter;
 
@@ -275,18 +283,28 @@ pub struct Approval {
     /// v2, whose passkey assertion is its signature.
     #[serde(default)]
     pub sig: String,
-    /// Its format, [`V1`] or [`V2`]: absent is v1 (every approval from
-    /// before DK4).
+    /// Its format, [`V1`], [`V2`] or [`V3`]: absent is v1 (every approval
+    /// from before DK4).
     #[serde(default = "v1", skip_serializing_if = "is_v1")]
     pub v: u8,
+    /// v3: the chant gate it approves, as the deploy's plan box read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chant: Option<chant::Gate>,
+    /// v3: the statement's time, as chant writes one (`--at`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub at: String,
 }
 
 /// M218's approval: a device's signature over its bytes, with a passkey's
 /// assertion beside it. Read and checked for history only (aru-126).
 pub const V1: u8 = 1;
 /// DK4's (#385, aru-126): a user-verified passkey assertion over its bytes
-/// is the whole of it. The only kind the platform takes now.
+/// is the whole of it. What the platform takes for every deploy but a
+/// chant→Fly apply, and for every deny.
 pub const V2: u8 = 2;
+/// #1985's: a passkey assertion over chant's gate statement, bound to the
+/// deploy ([`chant`]). A chant→Fly deploy's approval (not a roll back's).
+pub const V3: u8 = 3;
 
 fn v1() -> u8 {
     V1
@@ -317,6 +335,8 @@ impl Approval {
             by: signer.id(),
             sig: String::new(),
             v: V1,
+            chant: None,
+            at: String::new(),
         };
         a.sig = hex::encode(signer.signature(a.body().as_bytes()));
         a
@@ -335,12 +355,42 @@ impl Approval {
             by: String::new(),
             sig: String::new(),
             v: V2,
+            chant: None,
+            at: String::new(),
         }
     }
 
-    /// The bytes it's over. Frozen once shipped: see `frozen.rs`.
+    /// A v3 approval of `deploy`'s `op` by `account`, made at `at` (as
+    /// chant writes a time): chant's statement for `gate`, bound to the
+    /// deploy. Always `once`.
+    pub fn v3(deploy: &str, op: &Operation, account: &str, expires: u64, at: &str, gate: &chant::Gate) -> Self {
+        Self {
+            deploy: deploy.to_owned(),
+            op: op.hash(),
+            account: account.to_owned(),
+            decision: Decision::Once,
+            expires,
+            by: String::new(),
+            sig: String::new(),
+            v: V3,
+            chant: Some(gate.clone()),
+            at: at.to_owned(),
+        }
+    }
+
+    /// A v3's binding line: the deploy, the operation's hash, `expires`.
+    pub fn binding(&self) -> String {
+        chant::binding(&self.deploy, &self.op, self.expires)
+    }
+
+    /// The bytes it's over. Frozen once shipped: see `frozen.rs`. A v3's
+    /// are chant's gate statement ([`chant`]); one without its gate has
+    /// none (it isn't well formed).
     pub fn body(&self) -> String {
         match self.v {
+            V3 => {
+                self.chant.as_ref().map(|g| g.statement(&self.account, &self.at, &self.binding())).unwrap_or_default()
+            }
             V1 => format!(
                 "arugula deploy approval v1\ndeploy {}\nop {}\naccount {}\ndecision {}\nexpires {}\nby {}\n",
                 self.deploy,
@@ -363,16 +413,28 @@ impl Approval {
     }
 
     /// No field holds a space or a newline, so it has one body only: a v1
-    /// names its device and signature, a v2 neither. Any other version
-    /// isn't one.
+    /// names its device and signature, a v2 neither. A v3 names neither
+    /// too, approves once, and carries a well-formed chant gate and a time
+    /// as chant writes one. Any other version isn't one.
     pub fn well_formed(&self) -> bool {
         let word = |f: &String| !f.is_empty() && f.len() <= 200 && f.bytes().all(|b| b.is_ascii_graphic());
+        let plain = self.chant.is_none() && self.at.is_empty();
         match self.v {
-            V1 => [&self.deploy, &self.op, &self.account, &self.by, &self.sig].into_iter().all(word),
+            V1 => [&self.deploy, &self.op, &self.account, &self.by, &self.sig].into_iter().all(word) && plain,
             V2 => {
                 [&self.deploy, &self.op, &self.account].into_iter().all(word)
                     && self.by.is_empty()
                     && self.sig.is_empty()
+                    && plain
+            }
+            V3 => {
+                [&self.deploy, &self.op, &self.account].into_iter().all(word)
+                    && self.by.is_empty()
+                    && self.sig.is_empty()
+                    && self.decision == Decision::Once
+                    && chant::timestamp_ms(&self.at).is_some()
+                    && self.chant.as_ref().is_some_and(|g| g.well_formed() && self.at >= g.recorded)
+                    && self.binding().len() <= chant::BINDING_MAX
             }
             _ => false,
         }
@@ -385,7 +447,8 @@ impl Approval {
     }
 
     /// The WebAuthn challenge its passkey assertion signs (M218): SHA-256
-    /// of [`Approval::body`], base64url without padding.
+    /// of [`Approval::body`], base64url without padding. For a v3 it's
+    /// chant's statement's challenge, as `chant approve --statement` prints.
     pub fn passkey_challenge(&self) -> String {
         use base64::Engine as _;
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(self.body().as_bytes()))
@@ -421,7 +484,7 @@ pub struct Pinned<'a> {
 /// from what it pinned, rather than take the platform's word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyRefusal {
-    /// The approval isn't well formed.
+    /// The approval isn't a well-formed v2 or v3.
     Form,
     /// It's another deploy's.
     Deploy,
@@ -482,9 +545,8 @@ impl ApplyRefusal {
 /// What a machine checks before it applies `deploy`'s operation `op` (M219;
 /// DK4, aru-126), against what it pinned (`pinned`) and at `now` by its own
 /// clock:
-/// - the approval is well formed (v2, or a v1 made before DK4), `once`,
-///   for this deploy, over exactly this operation, and not past its
-///   `expires`;
+/// - the approval is a well-formed v2 or v3, `once`, for this deploy, over
+///   exactly this operation, and not past its `expires`;
 /// - its account is an owner of the project, as the machine pinned them;
 /// - its passkey assertion (`passkey`) checks out against the account's
 ///   passkey log as the machine pinned it (from control, at enrollment or
@@ -500,10 +562,9 @@ impl ApplyRefusal {
 ///   approval is recorded before its deploy's box is made and enrolls.
 ///
 /// No device signs it, and the devices that certified one play no part
-/// (aru-126). A v1 approval (a device's signature with a passkey's
-/// assertion, made before DK4, at most 7 days old) is checked by its
-/// passkey alone, as a v2 is: its device's signature adds nothing a
-/// passkey doesn't. Against whoever runs the platform this is
+/// (aru-126). A v1 (a device's signature with a passkey's assertion, from
+/// before DK4) is refused as not well formed: every one has expired (DK8).
+/// Against whoever runs the platform this is
 /// tamper-evident, not tamper-proof: control enrolled this machine and
 /// sent what it pinned.
 pub fn check_apply(
@@ -515,7 +576,7 @@ pub fn check_apply(
     carried: Option<&crate::passkey::Log>,
     now: u64,
 ) -> Result<(), ApplyRefusal> {
-    if !approval.well_formed() {
+    if approval.v == V1 || !approval.well_formed() {
         return Err(ApplyRefusal::Form);
     }
     if approval.deploy != deploy {
@@ -631,6 +692,46 @@ mod tests {
         assert_eq!(serde_json::from_value::<Approval>(json).unwrap(), a);
     }
 
+    /// #1985: a v3 is chant's gate statement, bound to the deploy, its
+    /// operation and its expiry; it approves once only, and only with its
+    /// gate and a time no earlier than the gate's pending fact.
+    #[test]
+    fn a_v3_is_chants_statement_bound_to_the_deploy() {
+        let g = chant::tests::gate();
+        let at = "2026-11-02T10:05:00.000Z";
+        let a = Approval::v3("dep_1", &op(), "acct", 5, at, &g);
+        assert_eq!(a.body(), g.statement("acct", at, &format!("arugula deploy dep_1 op {} expires 5", op().hash())));
+        assert!(a.body().ends_with(&format!("\nbinding arugula deploy dep_1 op {} expires 5", op().hash())));
+        assert!(a.well_formed());
+        assert!(!a.body().ends_with('\n'), "chant's statement has no final newline");
+        let deny = Approval { decision: Decision::Deny, ..a.clone() };
+        assert!(!deny.well_formed(), "a deny stays v2");
+        assert!(!Approval { chant: None, ..a.clone() }.well_formed());
+        assert!(!Approval { at: "2026-11-02T09:59:59.999Z".into(), ..a.clone() }.well_formed(), "before its fact");
+        assert!(!Approval { at: "now".into(), ..a.clone() }.well_formed());
+        assert!(!Approval { by: "d".into(), ..a.clone() }.well_formed());
+        // Each bound field changes the bytes, so the challenge.
+        for other in [
+            Approval { deploy: "dep_2".into(), ..a.clone() },
+            Approval { op: "00".repeat(32), ..a.clone() },
+            Approval { expires: 6, ..a.clone() },
+            Approval { account: "other".into(), ..a.clone() },
+            Approval { at: "2026-11-02T10:05:00.001Z".into(), ..a.clone() },
+        ] {
+            assert_ne!(other.passkey_challenge(), a.passkey_challenge(), "{other:?}");
+        }
+        // A v2's fields stay off it, and a v3's off a v2.
+        let v2 = Approval::v2("dep_1", &op(), "acct", Decision::Once, 5);
+        assert!(!Approval { at: at.into(), ..v2.clone() }.well_formed());
+        assert!(!Approval { chant: Some(g.clone()), ..v2.clone() }.well_formed());
+        let json = serde_json::to_value(&a).unwrap();
+        assert_eq!(json["v"], 3);
+        assert_eq!(serde_json::from_value::<Approval>(json).unwrap(), a);
+        assert!(serde_json::to_value(&v2).unwrap().get("chant").is_none());
+        assert!(chant::approved_in_chant("chant-fly", false));
+        assert!(!chant::approved_in_chant("chant-fly", true) && !chant::approved_in_chant("fake", false));
+    }
+
     /// The page checks the same fixture (`web/scripts/deploy.fixture.json`):
     /// the operation's bytes and hash, a v2 approval's bytes and passkey
     /// challenge, and a v1's bytes and signature from the same key (Ed25519
@@ -645,6 +746,8 @@ mod tests {
         let dep = "dep_00112233445566778899aabbccddeeff";
         let a = Approval::v1(&k, dep, &op(), "acct1", Decision::Once, 1_800_000_000_000);
         let v2 = Approval::v2(dep, &op(), "acct1", Decision::Once, 1_800_000_000_000);
+        let v3 =
+            Approval::v3(dep, &op(), "acct1", 1_800_000_000_000, "2026-11-02T10:05:00.000Z", &chant::tests::gate());
         let got = serde_json::json!({
             "seed": hex::encode([7u8; 32]),
             "sign": hex::encode(k.sign_public()),
@@ -654,6 +757,9 @@ mod tests {
             "approval_v2": v2,
             "approval_v2_body": v2.body(),
             "approval_v2_challenge": v2.passkey_challenge(),
+            "approval_v3": v3,
+            "approval_v3_body": v3.body(),
+            "approval_v3_challenge": v3.passkey_challenge(),
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/scripts/deploy.fixture.json");
         if std::env::var_os("ARUGULA_WRITE_FIXTURE").is_some() {
@@ -864,15 +970,19 @@ mod tests {
             Err(ApplyRefusal::PasskeyLog),
             "none pinned"
         );
-        // A v1 from before DK4 applies by its passkey; its device isn't
-        // looked at.
+        // A v3 (#1985) applies by its passkey over chant's statement, and
+        // is bound like a v2: to this deploy, this operation, its expiry.
+        let v3 = Approval::v3("dep_1", &op(), "a", now + 1, "2026-11-02T10:05:00.000Z", &chant::tests::gate());
+        assert_eq!(check(&team, &logs, &origins, &v3, pk(&k2, &v3), None), Ok(()));
+        assert_eq!(check(&team, &logs, &origins, &v3, pk(&k2, &good), None), no(Refusal::Challenge), "a v2's");
+        let later = Approval { expires: now + 2, ..v3.clone() };
+        assert_eq!(check(&team, &logs, &origins, &later, pk(&k2, &v3), None), no(Refusal::Challenge), "expiry");
+        let past = Approval::v3("dep_1", &op(), "a", now, "2026-11-02T10:05:00.000Z", &chant::tests::gate());
+        assert_eq!(check(&team, &logs, &origins, &past, pk(&k2, &past), None), Err(ApplyRefusal::Expired));
+        // A v1 from before DK4 applies no more (DK8), even with its own
+        // passkey's assertion over it.
         let v1 = Approval::v1(&cli, "dep_1", &op(), "a", Decision::Once, now + 1);
-        assert_eq!(check(&team, &logs, &origins, &v1, pk(&k2, &v1), None), Ok(()));
-        assert_eq!(
-            check(&team, &logs, &origins, &v1, pk(&k2, &good), None),
-            no(Refusal::Challenge),
-            "a v2's assertion"
-        );
+        assert_eq!(check(&team, &logs, &origins, &v1, pk(&k2, &v1), None), Err(ApplyRefusal::Form));
         assert_eq!(
             check(&team, &logs, &origins, &good, pk(&k2, &v1), None),
             no(Refusal::Challenge),

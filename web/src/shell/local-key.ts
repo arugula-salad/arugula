@@ -49,15 +49,13 @@ export function ownUrl(url: string | URL, page: { href: string; host: string }):
   }
 }
 
-/** `url` if it is our daemon's API (`/api/…`, `/ws`), or its ways through
- * to other hosts (`/h/<name>/…`, `/tunnel/<name>/…`; the daemon strips the
- * key before passing a request on, and other sites' redirects from the
- * answer): what the key goes to. */
+/** `url` if it is our daemon's API (`/api/…`, `/ws`): what the key goes
+ * to. Nothing else on our origin gets it. */
 export function ownApiUrl(url: string | URL, page: { href: string; host: string }): URL | null {
   const u = ownUrl(url, page);
   if (!u) return null;
   const p = u.pathname;
-  return /^\/(api\/|ws$)/.test(p) || /^\/(h|tunnel)\/[^/]+\/(api\/|ws$)/.test(p) ? u : null;
+  return /^\/(api\/|ws$)/.test(p) ? u : null;
 }
 
 /** A WebSocket URL with the key in it, when it is our daemon's. */
@@ -165,6 +163,16 @@ async function keyless(): Promise<boolean> {
 
 // The app waits for that answer, and doesn't start on its way out: its own
 // changes to the address (a hash, replaceState) would cancel the navigation.
-if (typeof window !== "undefined" && onLoopback(location) && install() && (await keyless())) {
-  await new Promise(() => {});
+async function start(): Promise<void> {
+  if (typeof window !== "undefined" && onLoopback(location) && install() && (await keyless())) {
+    await new Promise(() => {});
+  }
 }
+
+let started: Promise<void> | undefined;
+/** The page key on the page's requests, once however often it's asked for. */
+export const startPageKey = () => (started ??= start());
+
+// A read-only link's page touches no key until it's opened (`ui/link-note.tsx`):
+// main.tsx asks for it then.
+if (typeof window === "undefined" || !location.hash.startsWith("#link=")) await startPageKey();

@@ -20,7 +20,7 @@ import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
 import { useBoards } from "../pages/boards";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -226,7 +226,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       more={
         <>
           <p>
-            Connecting takes a Plane API key from the person who connects it. Control reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
+            Connecting takes a Plane API key from the person who connects it. Arugula reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
             reading the project at once and removes the key; what was read of it goes within a day.
           </p>
           <p>
@@ -246,7 +246,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
         <p data-plane-waiting>
           {waiting} agent {waiting === 1 ? "write is" : "writes are"} waiting for approval in{" "}
           <a href={triage} onClick={(e) => follow(e, triage)}>
-            Triage
+            Not on a board
           </a>
           .
         </p>
@@ -369,7 +369,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                           <span>Epics become boards</span>
                         </label>
                         <span class="dim">Each open epic in this Plane project gets a board that keeps itself up to date. Off, the boards stay but stop following.</span>
-                        {list !== "off" && following(c) !== null && (
+                        {following(c) !== null && (
                           <span class="dim" data-plane-epics-count>
                             {epicsLine(following(c)!)}
                           </span>

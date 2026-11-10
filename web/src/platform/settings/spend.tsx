@@ -13,7 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
 import { useProductNames } from "./linked";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 interface Line {
   account: string | null;

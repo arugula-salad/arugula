@@ -5,6 +5,7 @@
 // eye). It lies over the tabs and panes, which stay laid out under it, so
 // no terminal changes size; clicking a pane goes to it.
 
+import { EmptyLine } from "../../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
@@ -14,7 +15,7 @@ import { AttentionBadge } from "../attention";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { escapeTaken } from "../../../shared/ui/menu";
 import { closeOverview, overviewRoute } from "../places";
-import { BranchIcon } from "./icons";
+import { BranchIcon } from "../../../shared/ui/icons";
 import { showSession, summarize } from "./session-sidebar";
 
 /** Whether `#overview` is up, kept current with the route. */
@@ -94,7 +95,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
   }, [client]);
   const rows = state.sessions.map((s) => summarize(client, s));
   const panes = rows.reduce((n, r) => n + r.panes, 0);
-  const needs = state.panes.filter((p) => p.attention === "needs_input" && p.type !== "remote").length;
+  const needs = state.panes.filter((p) => p.attention === "needs_input").length;
   const active = client.active();
   return (
     <section class="ws-overview" aria-label={`Sessions on ${host}`} data-overview tabIndex={-1} ref={root}>
@@ -117,11 +118,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
           Back to panes
         </button>
       </header>
-      {rows.length === 0 && (
-        <div class="ws-empty" role="status">
-          <p>No sessions on {host}.</p>
-        </div>
-      )}
+      {rows.length === 0 && <EmptyLine role="status">No sessions on {host}.</EmptyLine>}
       <div class="ws-ov-grid">
         {rows.map((row) => {
           const s = row.session;
@@ -144,7 +141,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
               </header>
               {row.context && (
                 <p class="ws-ov-context" title={row.context}>
-                  {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
+                  {row.context.startsWith("Multiple") ? null : <BranchIcon size="xs" />}
                   <span class="ws-ellipsis">{row.context}</span>
                 </p>
               )}

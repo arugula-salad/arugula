@@ -1,4 +1,5 @@
 # name method path
+access.get GET /api/access
 acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
 agent_can.get GET /api/agent-can
@@ -16,6 +17,7 @@ host.get GET /api/host
 hosted_setup.get GET /api/hosted/setup
 hosts.list GET /api/hosts
 ide.get GET /api/ide
+links.list GET /api/links
 machines.list GET /api/machines
 notify.get GET /api/notify
 pane.detection GET /api/panes/{id}/detection
@@ -33,5 +35,4 @@ sharing.get GET /api/sharing
 shell_env.get GET /api/hosts/self/shell-env
 studio.apps GET /api/studio/apps
 studio.get GET /api/studio
-synced.list GET /api/synced
 team_pins.get GET /api/team-pins

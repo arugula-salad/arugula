@@ -293,14 +293,14 @@ async fn a_gone_projects_key_is_dropped() {
 #[tokio::test]
 async fn a_sessions_turn_is_its_askers() {
     use crate::db::{
-        sessions::{NewPrompt, NewSession, Source},
+        sessions::{NewAgentSession, NewPrompt, Source},
         sql::{Sql as _, params},
     };
     let (hub, _fake, app, base, project) = serve(&["anthropic"], CAPS).await;
     let w = &ready(&hub, &app, &base, &project, "bob", "box-b").await;
     let other = &ready(&hub, &app, &base, &project, "bob", "box-c").await;
     let session = |workspace: &str, parent_seq: u64| {
-        let new = NewSession {
+        let new = NewAgentSession {
             project: &project,
             room: "ch_general",
             parent_seq,

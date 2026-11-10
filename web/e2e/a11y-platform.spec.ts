@@ -2,7 +2,7 @@
 // issues, an issue, triage, boards and a board, Docs and a Doc, a chat
 // room, the inbox, every project's boards, the project's settings and the
 // account's, each at 1440 and 400 px, light and dark. Alice owns team
-// Acme, with chat's and boards' Labs flags on, three issues (one on the
+// Acme, with chat on, three issues (one on the
 // board Launch), a Doc and #general with a message in it. A local control
 // (team-fixture.ts, `--platform-host app.localhost`), as
 // boards-platform.spec.ts runs it. What's checked and the known list:
@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
 
   // #general, with a line in it.
   await home(alice);
@@ -75,7 +75,7 @@ test.beforeAll(async ({ browser }) => {
   await platform(`${project}/boards`);
   await alice.locator("[data-board-new-title]").fill("Launch");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
   await platform(`${project}/triage`);
   await alice.locator("[data-triage-row]", { hasText: "Fix the installer" }).locator("[data-triage-add]").click();
@@ -94,6 +94,14 @@ test.beforeAll(async ({ browser }) => {
   await doc.locator("[data-doc-markdown-input]").fill("Ship **0.64** this week.");
   await doc.locator("[data-doc-save]").click();
   await expect(doc.locator(".doc-section[data-section=s1] .doc-heading")).toHaveText("Goals");
+
+  // A private Doc, for Mine (it opens on Team, and Mine's rows have boxes and a ⋯).
+  await platform("/docs");
+  await alice.locator("[data-doc-new-open]").click();
+  await alice.locator("[data-doc-new-title]").fill("Private notes");
+  await alice.locator("[data-doc-new-project]").selectOption({ label: "Yours, private" });
+  await alice.locator("[data-doc-new]").click();
+  await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText("Private notes", { timeout: 15_000 });
 
   await prepare(alice);
 });
@@ -127,3 +135,24 @@ place("project-docs", () => `${project}/docs`, (p) => p.locator("[data-docs-page
 place("all-docs", () => "/docs", (p) => p.locator("[data-docs-page] [data-doc]"));
 place("project-doc", () => docPath, (p) => p.locator("[data-doc-page] .doc-section[data-section=s1]"));
 place("chat", () => `/chat/${room}`, (p) => p.locator("[data-room-view]").getByText("The release is cut from main."));
+
+// Mine's rows carry a box (selectable) and a ⋯ (actions): a control inside an
+// option fails nested-interactive, so the option holds the ticked state
+// (aria-checked) and the box and ⋯ are marks (Arugula #823).
+test("docs-mine-ticked", async () => {
+  await everyWay(alice, "docs-mine-ticked", async () => {
+    await platform("/docs");
+    await alice.locator("[data-list-count=mine]").click();
+    const row = alice.locator("[data-list-rows] [data-doc]", { hasText: "Private notes" });
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(row).toHaveAttribute("aria-haspopup", "menu");
+    await expect(row).toHaveAttribute("aria-keyshortcuts", "Shift+F10 ContextMenu");
+    await row.locator("[data-list-check]").click();
+    await expect(row).toHaveAttribute("aria-checked", "true");
+    // The box and the ⋯ are marks: hidden from assistive tech, and not in the tab order.
+    for (const mark of [row.locator("[data-list-check]"), row.locator("[data-row-more]")]) {
+      await expect(mark).toHaveAttribute("aria-hidden", "true");
+      await expect(mark).not.toHaveAttribute("tabindex", /.*/);
+    }
+  });
+});

@@ -44,9 +44,11 @@ test("find: / narrows a 60-row board to a row in a folded lane and Enter opens i
   await t.start(["--platform-host", "app.localhost"]);
   const app = t.base.replace("//127.0.0.1", "//app.localhost");
   const alice = await t.person(browser, "alice");
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await alice.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   await alice.goto(`${app}/`);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   const project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];

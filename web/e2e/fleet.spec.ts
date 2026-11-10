@@ -1,6 +1,6 @@
 // M25: the fleet in one page. The page holds a summaries-only connection to
 // every host on the home daemon's list, merged into one list of panes:
-// three machines (stand-ins for geek, jake-mini and a resident sandbox)
+// three machines (stand-ins for geek, jake-mini and a third box)
 // show together, on the laptop and on the phone. A machine that stops
 // answering greys within 10 s, its panes still listed, and comes back when
 // it does. A link that dies right after its hello backs off. Twenty
@@ -291,24 +291,18 @@ test("twenty machines come back after a wake without a burst of failures", async
   for (const name of many) expect((await hostStates(page))[name]).toBe("connected");
 });
 
-test("a sleeping sandbox isn't woken to be counted; past the cap, the rest wait with a notice", async ({ page }) => {
+test("past the cap, the rest wait with a notice", async ({ page }) => {
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => window.__arugula?.fleet?.connections ?? 0)).toBeGreaterThan(0);
   const r = await page.evaluate(() => {
     const f = window.__arugula.fleet;
     const before = f.connections;
     const refs = f.list.map((h) => ({ name: h.name, id: h.id, transport: h.transport }));
-    // A sandbox its provider says is cold: listed, never connected.
-    f.setHosts([...refs, { name: "vm", transport: "provider", status: "cold" }]);
-    const vm = f.host("vm")!.state;
-    const after = f.connections;
     // Thirty more than the cap allows.
     const more = Array.from({ length: 30 }, (_, i) => ({ name: `x${i}`, transport: "tailnet" }));
     f.setHosts([...refs, ...more]);
-    return { vm, before, after, capped: f.list.filter((h) => h.state === "capped").length, connections: f.connections, notice: f.notice };
+    return { before, capped: f.list.filter((h) => h.state === "capped").length, connections: f.connections, notice: f.notice };
   });
-  expect(r.vm).toBe("asleep");
-  expect(r.after).toBe(r.before);
   expect(r.connections).toBe(24);
   expect(r.capped).toBe(r.before + 30 - 24);
   expect(r.notice).toContain("24 of");

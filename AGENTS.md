@@ -6,7 +6,9 @@ reach them from a browser, a phone, the desktop app or a shell. One daemon,
 
 Building, running and releasing are in [docs/development.md](docs/development.md);
 tests in [docs/testing.md](docs/testing.md); contributing in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). What each noun means and where its truth
+lives is in [docs/data-model.md](docs/data-model.md): read it before adding a
+noun or reusing a word.
 
 ## Size the work to the task
 
@@ -15,6 +17,14 @@ gets the smallest thing that answers it: no new tests, no pull request and no
 full `just check` unless the task asks for them. New tests are for changes to
 behaviour that ships, and then only for that behaviour, not the code around
 it. When unsure, do the small version and say what you left out.
+
+## Keeping up
+
+[docs/capabilities/](docs/capabilities/README.md) has a record for each major
+feature: where it runs, who owns its state and what proves it. Read the record
+before tracing a feature from scratch, and trust it only as far as its
+`verified_through` commit. You don't need to update a record in your PR: a
+weekly agent keeps them. `just map` prints what the code and CI say now.
 
 ## Crates
 
@@ -91,7 +101,7 @@ Each has a `README.md` with where to start reading.
   `work` keeps what others read without it (`printable`, the fenced ports,
   the session users and the sessions' ledger as it's read).
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
-  workspaces, VMs and resident daemons, guest ssh, agent recipes and
+  workspaces, VMs, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
   through `lab_hooks.rs` (the `Hooks` trait, whose defaults are a build
   without Labs); its operations are `Handle<Labs>`. The binary registers it
@@ -140,6 +150,9 @@ never compiles the daemon, the mux or Ghostty: build them with
   the platform's broker settles hosted calls at it, and the daemon estimates
   what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
+- `native/ios`: the iPhone app (SwiftUI on `native/core`, aru-132). `just
+  native-phone DEVICE` signs and installs it from a Mac; `ARUGULA_NATIVE_SIM_HOST=MAC
+  just testnet test control native-sim` taps through it on a simulator.
 - `native/core`: what native clients share (signing, channels, panes, the
   terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
   input. `just native-check`, and `just native-ios` on a Mac.
@@ -160,9 +173,10 @@ nothing marked `mux:` names the edge or the block kinds.
   (`api.rs`), MCP (`mcp/`, what everything shares, and `arugulad-mcp`, the
   server, the table and the tools' calls, reached through `mcp/`'s `Mcp`; its tools for what lives in control, such as
   Cloud workspaces, conversations, native issues, runs and deploys, are
-  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
-  (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
-  control (`control.rs`), Windows' named pipe (`pipe.rs`).
+  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the WebSocket
+  transport under control's relay and the peer channels (`relay_ws.rs`),
+  end-to-end channels from client devices (`e2e.rs`), enrolment in control
+  (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
@@ -175,13 +189,16 @@ nothing marked `mux:` names the edge or the block kinds.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
-  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `chat_readers.rs`,
+  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `readers.rs`,
   `machines.rs`, `info.rs`, `config.rs`, and the traits it calls out
-  through, `outside.rs`. Chat is control's (M125): the mux only lists who
-  reads each pane's and session's thread (`chat_readers.rs`), and, in the
-  daemon,
-  gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
-  (`push.rs`).
+  through, `outside.rs`. Chat is control's (M125), and the mux names none
+  of it (#675): it lists who may read each pane and session (`readers.rs`),
+  which the daemon's `chat_readers.rs` tells control as thread readers, and
+  queues a follow-up for a pane with an opaque `Tag` it never reads
+  (`followups.rs`), reporting its turn through `Followups`; rooms, threads
+  and mention routing are the daemon's (`agent_mentions.rs`). In the
+  daemon too: gates waiting for a person (`gate.rs`), hands (`hand.rs`),
+  Web Push (`push.rs`).
 - **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
   Windows' pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
   keeping terminals open across restarts (`holder.rs`, `shim.rs`, `sys.rs`),
@@ -197,14 +214,14 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
-  Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
-  `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
-  tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
+  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
+  the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
+  loam adapter, `labs/loam.rs`, and `labs/sandboxes.rs` in Labs), tailscaled
+  (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
   box, enrolling, redialling on resume, busy and idle for control; it
@@ -251,7 +268,7 @@ removed").
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `sandbox-providers`, `studio`, `chant-workspaces`, `additional-forges`,
-`agent-delegation`, `boards` (DECISIONS.md "Four Labs flags stay, renamed; the rest
+`agent-delegation` (DECISIONS.md "Four Labs flags stay, renamed; the rest
 graduate or retire"). Their old names, `vms`, `workspaces`, `forges` and
 `agents`, are aliases forever (`flags::ALIASES`, mirrored for control as
 `wire::FLAG_ALIASES`): every name that comes in goes through
@@ -261,7 +278,8 @@ so an old file naming it is ignored: `fountain` (daemon-side Managoat,
 removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
 (DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
 rethink, `chat` (control's, on by team; the import of a machine's old threads went with it), `docs`, `guest-ssh` (now a machine sharing setting, Guest SSH access, in `sharing.json`: `arugula_proto::sharing`, off by default, the owner's alone; the old flag's word is kept once), `swarm-themes`
-(the swarm's views, under Theme); `studio` stays until the platform covers
+(the swarm's views, under Theme), and `boards` (native #191: a project's boards
+and epics are on for everyone; agents' `boards.read`/`boards.write` grants still gate them); `studio` stays until the platform covers
 its connector. They're named
 flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
@@ -277,8 +295,8 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
-only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
-daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the loam adapter, machines and the
+sandboxes list) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
@@ -298,6 +316,13 @@ the way `labs` is. Both are crates the binary registers (#232): the surface asks
 (nothing, or "isn't in this build"), so no call site needs a `cfg`.
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
+
+## Building UI
+
+Read [docs/design/language.md](docs/design/language.md) before you build or
+restyle a page, pane, dialog, list or menu in `web/`: it names the shared
+component for each piece (type, colour, buttons, headers, rows, chips,
+dialogs, menus, empty states) and what not to invent.
 
 ## Commands
 
@@ -342,15 +367,24 @@ lints the daemon with neither, and with each alone.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
 
+## Release notes
+
+A pull request that changes what people using Arugula get adds a file in
+`docs/notes/` (`docs/notes/README.md` has the format): its `line` says, in one
+sentence, what it means for them. A change nobody would notice says so in a commit
+message instead: `Release-note: none, WHY`. The `notes` check fails until it has one
+or the other; a change only to docs, tests, CI or scripts needs neither. Releases
+are built from these, so nobody writes a release's notes at the end.
+
 ## Changing CI, and a red main
 
-- A pull request that changes `.github/`, the `justfile`,
-  `chant.workspace.json`, `.config/nextest.toml` or the CI scripts
-  (`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a
-  passing check.yml run on its head commit before it merges. Add the
-  `full-check` label, and after another push remove it and add it again.
-  binaries.yml's `ci-branch-run` job fails the pull request until it has
-  one (docs/development.md, "Changing CI").
+- main takes pull requests through GitHub's merge queue: `gh pr merge N`
+  queues one, and it lands once its group passes the whole suite, about
+  20 minutes later. If its group fails, the pull request leaves the queue;
+  read the group's run, fix it, and queue it again. A CI change is tested
+  the same way, so it needs no branch run first (docs/development.md,
+  "Merging through the queue"). The `full-check` label runs check.yml on the
+  branch for an earlier answer.
 - When main goes red and the same job fails again on its retry, revert
   the commit that broke it within about 30 minutes and bring the change
   back with its fix in a new pull request. Don't fix forward while others

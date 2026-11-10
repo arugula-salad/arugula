@@ -84,7 +84,9 @@ impl FromRequestParts<Arc<App>> for Session {
     async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
         // A CLI device's signature (M49): no cookie, so no origin to check.
         match parts.extensions.get::<Signed>() {
-            Some(Signed(Ok(cert))) if cert.kind == Kind::Cli => {
+            // And a native app's (aru-131): `check_daemon` finds no other
+            // browser, and `clients::gate` has looked at the route.
+            Some(Signed(Ok(cert))) if matches!(cert.kind, Kind::Cli | Kind::Browser) => {
                 if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
                     a.set(&cert.account);
                 }
@@ -408,7 +410,7 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
     let (id, ms, sig, msg) = signed_parts(parts, h, body)?;
     let cert = match app.db.daemon_cert(id)? {
         Some(c) => c,
-        None => match cli_cert(app, id)? {
+        None => match cli_cert(app, id)?.map_or_else(|| native_cert(app, id), |c| Ok(Some(c)))? {
             Some(c) => c,
             None if app.db.daemon_account_deleted(id)? => {
                 return Err(err(StatusCode::UNAUTHORIZED, "this machine's account was deleted"));
@@ -434,7 +436,21 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
 /// An approved CLI device (M49) that its account still trusts: one that
 /// was revoked, or whose approver was, signs nothing here.
 fn cli_cert(app: &App, id: &str) -> Result<Option<Cert>, ApiError> {
-    let Some(cert) = app.db.approved_cert(id, Kind::Cli)? else { return Ok(None) };
+    trusted_device(app, id, Kind::Cli)
+}
+
+/// A native app (aru-131), with native clients on: a `browser` device that
+/// paired by code as one, its account still trusting it. A page's key isn't
+/// one, so a key taken from a page signs nothing here.
+fn native_cert(app: &App, id: &str) -> Result<Option<Cert>, ApiError> {
+    if !app.cfg.native_clients || !app.db.is_native_device(id)? {
+        return Ok(None);
+    }
+    Ok(trusted_device(app, id, Kind::Browser)?.filter(|c| !c.from_app()))
+}
+
+fn trusted_device(app: &App, id: &str, kind: Kind) -> Result<Option<Cert>, ApiError> {
+    let Some(cert) = app.db.approved_cert(id, kind)? else { return Ok(None) };
     let Some(root) = app.db.account(&cert.account)?.and_then(|a| a.root) else { return Ok(None) };
     let (certs, _) = app.db.devices(&cert.account)?;
     let revs = app.db.revocations(&cert.account)?;

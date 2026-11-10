@@ -14,7 +14,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, menuItems, open, paneEl, ready } from "./helpers";
+import { closeContexts, closeSettingsPage, menuItem, menuItems, open, paneEl, ready, openSettingsPage, settingsRow } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -29,13 +29,13 @@ test.afterAll(closeContexts);
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-developer-"));
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
-  writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
+  writeFileSync(join(state, "loam-key"), "loam_e2e-key");
   daemon = spawn(
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", state, "--shell", "bash --norc --noprofile", "--no-manager-env"],
       ...["--owner", OWNER, "--tailscale-socket", "/nonexistent/tailscaled.sock"],
-      ...["--wisp-url", "http://127.0.0.1:9", "--wisp-token-file", join(state, "wisp-token")],
+      ...["--loam-url", "http://127.0.0.1:9", "--loam-key-file", join(state, "loam-key")],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
     { stdio: "ignore" },
@@ -48,7 +48,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards", "live-presence"] as const;
+const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -83,18 +83,11 @@ async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> 
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agent-delegation"),
-      // Boards are control's (aru-116): the page only knows the flag.
-      boards: c.flag("boards"),
-      // Live presence is control's too (#341): the switch follows control's
-      // say, so here the page only knows the flag.
-      live: c.flag("live-presence"),
     };
   });
   if (page_says.workspaces) out.push("chant-workspaces");
   if (page_says.forges) out.push("additional-forges");
   if (page_says.agents) out.push("agent-delegation");
-  if (page_says.boards) out.push("boards");
-  if (page_says.live) out.push("live-presence");
   return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
 
@@ -108,12 +101,11 @@ async function start(page: Page) {
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Developer settings" });
 
-test("a fresh daemon's machine menu offers Developer settings, and #developer opens them", async ({ page }) => {
+test("a fresh daemon's Settings offers Developer settings, and #developer opens them", async ({ page }) => {
   const pane = await start(page);
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   expect(await shown(page, pane)).toEqual([]);
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Developer settings…" }).click();
+  await settingsRow(page, "Developer settings…");
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page).locator("[data-flag]")).toHaveCount(FLAGS.length);
   await page.keyboard.press("Escape");
@@ -148,20 +140,19 @@ test("turning chant workspaces on in the dialog turns on them, and nothing else,
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("with a flag on, the account menu still offers them; off takes chant workspaces away again", async ({ page }) => {
+test("with a flag on, Settings still offers them; off takes chant workspaces away again", async ({ page }) => {
   const pane = await start(page);
   expect(await workspacesFlag(page)).toBe(true);
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Developer settings…" }).click();
+  await settingsRow(page, "Developer settings…");
   await expect(dialog(page).locator('[data-flag="chant-workspaces"] input')).toBeChecked();
   await dialog(page).locator('[data-flag="chant-workspaces"] input').uncheck();
   await expect.poll(() => workspacesFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
+  await closeSettingsPage(page);
   expect(await shown(page, pane)).toEqual([]);
   // Still offered, all off.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toBeVisible();
+  await expect((await openSettingsPage(page)).getByRole("button", { name: "Developer settings…" })).toBeVisible();
 });
 
 test("each flag turns on its own feature and no other", async ({ page }) => {
@@ -252,15 +243,33 @@ test("guest ssh is a sharing setting, off by default: the machine's settings tur
   expect(off.status).toBe(404);
   expect(off.text).toContain("`arugulad sharing guest-ssh on`");
 
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  await settingsRow(page, "Guest SSH access…");
   const sw = sharingDialog(page).getByRole("switch", { name: "Guest SSH access on this machine" });
   await expect(sw).not.toBeChecked();
   await sw.check();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.guestSsh())).toBe(true);
   expect(JSON.parse(readFileSync(join(state, "sharing.json"), "utf8"))).toEqual({ guest_ssh: true });
   await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+  await closeSettingsPage(page);
   expect(await shown(page, pane)).toEqual(["guest-ssh"]);
+});
+
+test("what a machine shares of its agent sessions is work by default, and the owner can turn it down", async ({ page }) => {
+  await start(page);
+  await settingsRow(page, "Guest SSH access…");
+  const menu = sharingDialog(page).locator("[data-sharing-agent-sessions]");
+  await expect(menu).toHaveValue("work");
+  await expect(menu).toBeEnabled();
+  await menu.selectOption("names");
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "sharing.json"), "utf8")).agent_sessions).toBe("names");
+  await expect(menu).toHaveValue("names");
+  // With mentions off nothing is shared, so the choice is moot.
+  await sharingDialog(page).locator("[data-sharing-agent-mentions]").uncheck();
+  await expect(menu).toBeDisabled();
+  await sharingDialog(page).locator("[data-sharing-agent-mentions]").check();
+  await menu.selectOption("work");
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "sharing.json"), "utf8")).agent_sessions).toBe("work");
+  await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
 });
 
 test("an ssh invite from the pane's menu works with Guest SSH access on, and is refused once it's off", async ({ page }) => {

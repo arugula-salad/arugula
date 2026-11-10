@@ -177,6 +177,39 @@ pub fn fences(md: &str) -> Vec<Fence> {
     fences_in(&md.split('\n').collect::<Vec<_>>())
 }
 
+/// The longest line of description a prototype Doc's section holds.
+const PROTOTYPE_LINE_MAX: usize = 200;
+
+/// Whether `md` is what a prototype Doc's section holds: at most one short
+/// line of description, then one ```prototype fence, and nothing else. The
+/// fence itself is [`check`]'s.
+pub fn check_prototype_only(md: &str) -> Result<(), String> {
+    const HOLDS: &str = "a prototype Doc holds one line of description and one ```prototype fence, nothing else";
+    let md = normal(md);
+    let lines: Vec<&str> = md.split('\n').collect();
+    let fenced = fences_in(&lines);
+    let [fence] = fenced.as_slice() else { return Err(HOLDS.into()) };
+    if fence.lang != "prototype" {
+        return Err(HOLDS.into());
+    }
+    let mut words = Vec::new();
+    for (n, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() || fence.lines.contains(&n) {
+            continue;
+        }
+        if n > fence.lines.start {
+            return Err(HOLDS.into());
+        }
+        words.push(*line);
+    }
+    match words.as_slice() {
+        [] => Ok(()),
+        [line] if line.trim().chars().count() <= PROTOTYPE_LINE_MAX => Ok(()),
+        [_] => Err(format!("a prototype Doc's description is one line of at most {PROTOTYPE_LINE_MAX} characters")),
+        _ => Err(HOLDS.into()),
+    }
+}
+
 fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -981,6 +1014,32 @@ mod tests {
         assert_eq!(check("```text\n<script src=x>\n```"), Ok(()));
         // An html fence is code, whatever is in it.
         assert_eq!(check("```html\n<script src=x></iframe><iframe>\n```"), Ok(()));
+    }
+
+    #[test]
+    fn a_prototype_doc_holds_a_line_and_a_prototype_fence() {
+        let page = "<!doctype html><html><body>x</body></html>";
+        for good in [
+            format!("```prototype\n{page}\n```"),
+            format!("A tuner.\n```prototype T height=300\n{page}\n```\n"),
+            format!("A tuner.\n\n```prototype\n{page}\n```\n\n"),
+        ] {
+            assert_eq!(check_prototype_only(&good), Ok(()), "{good}");
+        }
+        let long = "w".repeat(PROTOTYPE_LINE_MAX + 1);
+        for bad in [
+            String::new(),
+            "Only words.".into(),
+            "```chart\n{}\n```".into(),
+            format!("A.\n\nB.\n\n```prototype\n{page}\n```"),
+            format!("A.\nB.\n```prototype\n{page}\n```"),
+            format!("```prototype\n{page}\n```\nAfter."),
+            format!("```prototype\n{page}\n```\n```prototype\n{page}\n```"),
+            format!("```prototype\n{page}\n```\n```svg\n<svg/>\n```"),
+            format!("{long}\n```prototype\n{page}\n```"),
+        ] {
+            assert!(check_prototype_only(&bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

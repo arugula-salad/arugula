@@ -3,6 +3,7 @@
 // a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
 // the layers over them (menus, dialogs, the palette).
 
+import { EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -13,6 +14,8 @@ import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
+import { SettingsPage } from "./settings-page";
+import { openSettings, settingsRoute } from "./settings-route";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
@@ -20,6 +23,7 @@ import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { SharingLayer } from "./sharing";
 import { AgentGrantsLayer } from "./agent-grants";
+import { AccessLayer } from "./access";
 import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
@@ -54,9 +58,6 @@ import { useHoverToSwitchTabs } from "./panes/drop";
 import { currentPlace } from "./places";
 import { shellTitle } from "./titles";
 
-/** How long a hidden page keeps its connection to a sandbox host. */
-const HIDDEN_GRACE_MS = 10_000;
-
 export function App({ client, cell }: { client: Client; cell: Cell }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
@@ -65,19 +66,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useEffect(() => {
     // Focusing the window doesn't take the size from another window
     // (#333): typing here, showing a tab or "use this size" does.
-    // A sandbox host sleeps when nothing holds it awake, and an open
-    // connection does: let go of it while the page is hidden.
-    let hidden: number | undefined;
     const visible = () => {
-      clearTimeout(hidden);
       if (document.visibilityState === "visible") client.wake();
-      else if (directory.sleeps) hidden = window.setTimeout(() => client.sleep(), HIDDEN_GRACE_MS);
     };
     document.addEventListener("visibilitychange", visible);
-    return () => {
-      clearTimeout(hidden);
-      document.removeEventListener("visibilitychange", visible);
-    };
+    return () => document.removeEventListener("visibilitychange", visible);
   }, [client]);
 
   // Following someone stops as soon as you do something yourself.
@@ -94,8 +87,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   }, [client]);
 
   useHoverToSwitchTabs(client);
-  // The machine menu's "This machine" items are this client's.
-  useEffect(() => setMachineItems(() => machineSettingsItems(client)), [client]);
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
@@ -103,6 +94,16 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
+  // The machine menu's "This machine" items are this client's: one row to the
+  // Settings page where the rail has one (Arugula #695), else the rows.
+  useEffect(
+    () =>
+      setMachineItems(() => {
+        const mine = machineSettingsItems(client);
+        return ws && mine.length ? [{ label: "Machine settings…", run: () => openSettings("machine") }] : mine;
+      }),
+    [client, ws],
+  );
   // M111: `#overview` lies over the tabs and panes (not on a phone).
   const overview = useOverview();
   useLayoutEffect(() => {
@@ -133,7 +134,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
-      {state && <DocsPageLayer client={client} />}
+      <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -142,6 +143,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <DeveloperLayer />
       <SharingLayer />
       <AgentGrantsLayer />
+      <AccessLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -194,6 +196,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
+            {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
+            {state && <DocsPageLayer client={client} inWorkspace />}
             {/* M111: between the header and the footer, over the panes. */}
             <AttentionDrawer client={client} />
           </div>
@@ -227,6 +231,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
+      <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -235,6 +240,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <DeveloperLayer />
       <SharingLayer />
       <AgentGrantsLayer />
+      <AccessLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -261,20 +267,28 @@ function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   const guest = !!client.state?.roles;
   return (
     <div class="empty" data-no-sessions>
-      <p class="empty-title">{guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}</p>
-      <p class="dim">
-        {guest
-          ? "When its owner shares a session with you, it shows here."
-          : "A session holds tabs, and each tab its panes: shells, agents, editors."}
-      </p>
-      {directory.control && (
-        <p data-no-sessions-host>Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.</p>
-      )}
-      {!guest && (
-        <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
-          New session
-        </button>
-      )}
+      <EmptyState
+        where="page"
+        title={guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}
+        why={
+          guest
+            ? "When its owner shares a session with you, it shows here."
+            : "A session holds tabs, and each tab its panes: shells, agents, editors."
+        }
+        action={
+          !guest && (
+            <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+              New session
+            </button>
+          )
+        }
+      >
+        {directory.control && (
+          <p class="empty-state-why" data-no-sessions-host>
+            Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.
+          </p>
+        )}
+      </EmptyState>
       <HintEmpty client={client} />
     </div>
   );
@@ -331,9 +345,20 @@ function AgentsPageLayer({ client }: { client: Client }) {
   return <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
 }
 
+/** The Settings page (Arugula #695), while its route is up. */
+function SettingsPageLayer({ client }: { client: Client }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  return settingsRoute() ? <SettingsPage client={client} /> : null;
+}
+
 /** The Docs page (#1494): a chunk of its own, fetched while its route is
  * up. Not Labs' since native #204. */
-function DocsPageLayer({ client }: { client: Client }) {
+function DocsPageLayer({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [, setTick] = useState(0);
   const [page, setPage] = useState<typeof import("./docs-page") | null>(null);
   useEffect(() => {
@@ -346,5 +371,5 @@ function DocsPageLayer({ client }: { client: Client }) {
     if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
   }, [on]);
   if (!on || !page) return null;
-  return <page.DocsPage client={client} />;
+  return <page.DocsPage client={client} inWorkspace={inWorkspace} />;
 }

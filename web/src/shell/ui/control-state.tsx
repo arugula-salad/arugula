@@ -81,7 +81,7 @@ export function useControlState(client: Client) {
 }
 
 function hostOf(url?: string): string {
-  if (!url) return "control";
+  if (!url) return "Arugula cloud";
   try {
     return new URL(url).host;
   } catch {
@@ -102,9 +102,9 @@ export function controlLine(s: ControlState): string {
     case "joined":
       return s.connected ? `In ${placeOf(s)}: connected` : s.error ? `In ${placeOf(s)}: not connected` : `In ${placeOf(s)}: connecting`;
     case "dropped":
-      return `Dropped by control: no longer in ${placeOf(s)}`;
+      return `Dropped by Arugula cloud: no longer in ${placeOf(s)}`;
     default:
-      return "Not joined to Arugula control";
+      return "Not joined to Arugula cloud";
   }
 }
 
@@ -202,7 +202,7 @@ export function ControlBanner({ client }: { client: Client }) {
   return (
     <div class="control-dropped" role="alert" data-control-dropped>
       <p>
-        <b>This machine is no longer in {placeOf(s)}.</b> Control dropped it
+        <b>This machine is no longer in {placeOf(s)}.</b> Arugula cloud dropped it
         {s.dropped_ms ? (
           <>
             {" "}
@@ -212,7 +212,7 @@ export function ControlBanner({ client }: { client: Client }) {
           ""
         )}
         : it left, or was removed.
-        {s.said ? <span class="control-dropped-said"> Control says: {s.said}</span> : null}
+        {s.said ? <span class="control-dropped-said"> Arugula cloud says: {s.said}</span> : null}
         {s.code ? (
           <span data-control-dropped-code>
             {" "}

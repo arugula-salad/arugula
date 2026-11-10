@@ -10,10 +10,22 @@
 //!   (aru-041). One export at a time per issue, and none once it's on
 //!   GitHub. Its title and body are the issue's, read again as it's sent.
 //! - **A person sends it** through aru-085's path ([`super::send`]): a
-//!   one-use user token, else one of their machines. Sent ([`sent`]), the
-//!   issue's GitHub origin is set (`issues.github_*`) and its timeline gets
-//!   `exported`, as the person who sent it. The mirror then has the GitHub
-//!   issue, and work items take the two as one (`db::work_items`).
+//!   one-use user token, else one of their machines. The transaction that
+//!   ends the send sets the issue's GitHub origin (`issues.github_*`) and
+//!   its timeline's `exported`, as the person who sent it
+//!   (`Db::end_send`). The sent issue must be in the draft's repo, and
+//!   opened since the hold by the person: otherwise the draft ends failed,
+//!   its URL kept, and nothing is linked.
+//! - **Never twice** ([`before_send`], before any hold, from a send or a
+//!   block's card): not while another export of the issue was sent, even
+//!   one GitHub's answer named no link for; nor while a refused send's URL
+//!   stands (it may be on GitHub as that, and nothing links it later:
+//!   discarding the draft lets it be opened again, as a second issue if
+//!   that one is there);
+//!   nor when the draft's last hold ran out with no end and the mirror has
+//!   an issue in its repo with its title, opened since (that send may have
+//!   opened it; by anyone, as a machine's `gh` login may not be the
+//!   person's).
 //! - **The native issue stays** as it was: open or closed, with its number,
 //!   timeline and thread, and a link to where it now lives. Nothing else of
 //!   it is kept in step with GitHub (title, body, state, labels and
@@ -57,7 +69,7 @@ use arugula_control_wire::{
     chat::{ChatLive, ChatToGithub},
     projects as wire,
 };
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 use arugula_forge_github::Github;
 use axum::http::StatusCode;
 use serde_json::Value;
@@ -74,7 +86,7 @@ use crate::{
     Platform,
     db::{
         forge::{DraftRow, LinkedRepo, NewDraftRow, SENDING_MS},
-        issues::{Actor, Crossed, GithubOrigin, Issue, Outgoing},
+        issues::{Actor, Crossed, Issue, Outgoing},
     },
 };
 
@@ -91,9 +103,21 @@ fn conflict(why: &str) -> ApiError {
 
 /// GitHub's number in an issue's URL (`…/issues/12`).
 pub fn issue_number(url: &str) -> Option<u64> {
+    issue_at(url).map(|(_, n)| n)
+}
+
+/// The repo (`OWNER/NAME`) and number an issue's URL names: the page's
+/// (`https://github.com/OWNER/NAME/issues/12`) or the API's
+/// (`…/repos/OWNER/NAME/issues/12`).
+pub fn issue_at(url: &str) -> Option<(String, u64)> {
     let path = url.split(['#', '?']).next()?.trim_end_matches('/');
-    let (rest, n) = path.rsplit_once('/')?;
-    rest.ends_with("/issues").then(|| n.parse().ok()).flatten()
+    let path = path.split_once("://").map_or(path, |(_, rest)| rest);
+    let parts: Vec<&str> = path.split('/').skip(1).collect();
+    let [.., owner, name, "issues", n] = parts.as_slice() else { return None };
+    if owner.is_empty() || name.is_empty() || *owner == "repos" {
+        return None;
+    }
+    Some((format!("{owner}/{name}"), n.parse().ok()?))
 }
 
 /// GitHub's id of a comment in its URL (`…#issuecomment-34`).
@@ -149,9 +173,12 @@ pub(super) async fn draft(
     if let Some(g) = &issue.github {
         return Err(conflict(&format!("it's on GitHub already, as {}#{}", g.repo, g.number)));
     }
+    if app.db.export_drafts_sent(&issue.id)? {
+        return Err(conflict("it was sent to GitHub already: its link waits on GitHub's answer"));
+    }
     let link = target(app, &issue, &b.repo)?;
-    let v = Viewer::of(app, &d.account).await?;
-    let checked = viewer::check(app, &v, std::slice::from_ref(&link)).await?;
+    let mut v = Viewer::of(app, &d.account).await?;
+    let checked = viewer::check(app, &mut v, std::slice::from_ref(&link)).await?;
     if !checked.readable.has(link.repo_id) {
         return Err(err(StatusCode::FORBIDDEN, &format!("GitHub doesn't let you read {}", link.full_name)));
     }
@@ -214,6 +241,10 @@ pub(super) fn before_send(app: &Platform, d: &DraftRow) -> Result<(), ApiError> 
             g.repo, g.number
         )));
     }
+    // A send that may have opened it already: never a second copy.
+    if let Some(why) = app.db.export_blocked(d, now_ms())? {
+        return Err(conflict(&why));
+    }
     app.db.refresh_export_draft(&d.id, issue.title.trim(), &issue.body, now_ms())?;
     Ok(())
 }
@@ -242,9 +273,10 @@ async fn sent(app: &Platform, d: &DraftRow) {
             let Some(number) = issue_number(url) else {
                 return warn!(draft = d.id, issue = native, "an export sent to a URL that names no issue");
             };
-            let to = GithubOrigin { repo: d.full_name.clone(), repo_id: d.repo_id, number };
-            match app.db.set_issue_github(native, &to, Actor::person(&d.author), now) {
-                Ok(Some((i, _))) => {
+            // The send's end set its origin, in the same transaction
+            // (`Db::end_send`): here it's told.
+            match app.db.issue(native) {
+                Ok(Some(i)) if i.github.as_ref().is_some_and(|g| g.repo_id == d.repo_id && g.number == number) => {
                     info!(
                         issue = i.id,
                         repo = d.repo_id,
@@ -255,8 +287,8 @@ async fn sent(app: &Platform, d: &DraftRow) {
                     app.chat.object_changed(&app.db, &format!("project:{}", i.project), &i.id);
                     crate::boards::issue_changed(app, &i.id);
                 }
-                Ok(None) => warn!(issue = native, number, "an export sent for an issue on GitHub already"),
-                Err(e) => warn!(issue = native, error = format!("{e:#}"), "setting an issue's GitHub origin"),
+                Ok(_) => warn!(issue = native, number, "an export sent for an issue on GitHub already, or gone"),
+                Err(e) => warn!(issue = native, error = format!("{e:#}"), "reading an exported issue"),
             }
         }
         "comment" => {
@@ -525,9 +557,23 @@ pub async fn posted(
         Ok(_) => return stays(format!("{} isn't linked to its project now: it stays here", g.repo)),
         Err(e) => return stays(format!("{e:#}")),
     };
+    // A viewer's own comment goes out as them; their agent's makes no
+    // draft (`drafts`' rule), and stays a native comment.
+    if machine.is_some() {
+        match super::links::membership(app, author, &i.project, true).await {
+            Ok((_, TeamRole::Viewer)) => {
+                return stays(format!(
+                    "your owner only views this project, so this comment stays here, not on {}",
+                    g.repo
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => return stays(e.1),
+        }
+    }
     let made = async {
-        let v = Viewer::of(app, author).await?;
-        let checked = viewer::check(app, &v, std::slice::from_ref(&link)).await?;
+        let mut v = Viewer::of(app, author).await?;
+        let checked = viewer::check(app, &mut v, std::slice::from_ref(&link)).await?;
         let new = NewDraftRow {
             project_id: &link.project_id,
             author,
@@ -592,6 +638,10 @@ mod tests {
         assert_eq!(issue_number("https://github.com/acme/app/issues/12#issuecomment-5"), Some(12));
         assert_eq!(issue_number("https://github.com/acme/app/pull/12"), None);
         assert_eq!(issue_number("https://github.com/acme/app/issues"), None);
+        assert_eq!(issue_at("https://github.com/acme/app/issues/12"), Some(("acme/app".into(), 12)));
+        assert_eq!(issue_at("https://api.github.com/repos/acme/app/issues/12"), Some(("acme/app".into(), 12)));
+        assert_eq!(issue_at("https://github.com/acme/issues/12"), None);
+        assert_eq!(issue_at("https://github.com/evil/other/issues/12"), Some(("evil/other".into(), 12)));
         assert_eq!(comment_id("https://github.com/acme/app/issues/12#issuecomment-34"), Some(34));
         assert_eq!(comment_id("https://github.com/acme/app/issues/12"), None);
         assert!(same("a\r\nb \n", "a\nb"));

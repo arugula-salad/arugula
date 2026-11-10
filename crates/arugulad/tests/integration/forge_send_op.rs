@@ -179,7 +179,7 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
     let f = Fake::default();
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("forgesendop")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_GITHUB_API", format!("{url}/github"))
         .args(["--direct-url", "http://127.0.0.1:0"])
@@ -238,7 +238,7 @@ fn a_blocks_card_sends_a_platform_draft() {
     });
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("forgecard")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("ARUGULA_FORGE_POLL_MS", "200,200")
         .env("ARUGULA_GITHUB_API", format!("{url}/github"))

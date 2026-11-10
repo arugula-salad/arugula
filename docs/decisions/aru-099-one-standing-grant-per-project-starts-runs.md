@@ -27,7 +27,7 @@ options:
     tradeoff: "Every new spec needs an owner's device, for a scope the project's hosted workspaces already bound."
 choice:
   option: "a"
-  reason: "One grant per project, so scheduled runs start with every device asleep and a revoke stops new ones; deploys still need an approval every time (Jake, 2026-10-21, platform step 7)."
+  reason: "One grant per project, so scheduled runs start with every device asleep and a revoke stops new ones; deploys still need an approval every time (Jake, 2026-10-21, platform step 7). Amended (Jake, 2026-11-04): agent sessions run under it too, the box checking it, and a revoke ends them."
 rejected:
   - option: "b"
     why: "Scheduled and event runs are the point of the step, and they'd stop whenever the owner is away."
@@ -53,6 +53,9 @@ reviews: []
 constrains:
   - "path:crates/platform/src/grants.rs"
   - "path:crates/platform-api/src/auth.rs"
+  - "path:crates/platform/src/run_grant.rs"
+  - "path:crates/platform-chat/src/sessions/grant.rs"
+  - "path:crates/daemon/src/hosted/runs.rs"
 ---
 
 # One standing grant per project starts runs
@@ -84,6 +87,32 @@ assertion over its bytes from a project owner's passkey, not an owner
 device's signature, and hosted `arugulad` checks it against the account's
 published passkey keys. Grants signed by a device before the switch stay
 valid until they expire; renewing one makes a passkey-signed grant.
+**Amended: agent sessions run under it, and a revoke ends them** (Jake,
+2026-11-04). A thread's agent session ("A thread's agent session runs on the
+project's hosted box", aru-115) is instructions to the box as much as an
+agent run is, so it runs under this grant's `runs.instruct`, and an agent
+run needs `runs.instruct` as well as `runs.start`.
+
+- **The box checks it.** A session's work carries the project's live grant,
+  on every pull, and hosted `arugulad` checks it against what it pinned
+  before it takes the session and before each turn.
+- **With none,** `@arugula` starts nothing, and the thread says an owner
+  gives the project a grant, and how. A grant that expires or goes away with
+  no revoke stops new turns, not the session: the turn under way finishes,
+  and a follow-up is refused until an owner gives one.
+- **A revoke ends live sessions** and refuses follow-ups and new ones.
+  `running stop` ends them at once, mid-turn too. `running finish` lets a
+  turn under way finish, and its session ends with it; one with no turn
+  under way ends at once, and a stop ends a push under way too. The platform
+  ends them as the revoke arrives, and the box ends them itself as it hears
+  the revoke, without waiting on control. A revoke of a grant another has
+  replaced ends nothing that runs under the other.
+- **The newest grant counts.** A box that has seen a newer grant refuses an
+  older one, by the time each signs; the platform takes a new one only past
+  every grant the project has had.
+
+The cost: every project that wants `@arugula` needs an owner's passkey first,
+so a project with no grant loses it until one is given.
 
 Where: the standing project grant (Arugula #7, M211, native), `crates/platform/src/grants.rs`.
 From: #1317 (platform step 7), the plan in #1290, S37 (q3), M88 (#970, parked in #1002).

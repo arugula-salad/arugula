@@ -3,6 +3,8 @@
 //! then `read`. Against a fake control (the relay socket sends the
 //! `agents.mention` op and takes the daemon's answer and its turn reports)
 //! and a real daemon with a fake-ACP agent block.
+// `Daemon::stop` is Unix only, and so is every module that uses its helpers.
+#![cfg(unix)]
 
 use std::sync::{Arc, Mutex};
 
@@ -98,8 +100,8 @@ fn mention(id: &str, seq: i64, text: &str) -> String {
 }
 
 /// A reply, message `seq` under the thread of `parent` in room `ch_x`, to
-/// the block's agent (#580).
-fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
+/// the session called Worker (#580).
+pub(super) fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
     json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
         "seq": seq, "parent": parent, "author": "Ada", "text": text, "session": "worker",
         "root_line": format!("root {parent}") } })
@@ -131,7 +133,7 @@ fn boot(name: &str, prompt: &str) -> (tokio::runtime::Runtime, Fake, arugula_tes
     let _ = std::fs::remove_dir_all(&sessions);
     std::fs::create_dir_all(&sessions).unwrap();
     let mut d = arugulad!(name)
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .env("FAKE_ACP_DIR", &sessions)
         .env_remove("CLAUDE_CONFIG_DIR")

@@ -9,6 +9,7 @@ mod replay;
 #[cfg(unix)]
 mod testnet;
 
+mod access_view;
 mod agent_screens;
 mod agents;
 mod agents_real;
@@ -30,7 +31,6 @@ mod control_moves;
 mod control_state;
 mod conversations;
 mod crash;
-mod dialout;
 mod doc;
 mod doc_copies;
 mod doc_library;
@@ -87,14 +87,13 @@ mod hosts;
 mod ide;
 mod invite;
 mod local_auth;
-#[cfg(feature = "labs")]
-mod machines;
 mod mcp;
 mod memory;
 mod mention_agent_block;
 mod mention_card;
 #[cfg(unix)]
 mod mention_held;
+mod mention_merge;
 mod mention_tool_call;
 mod pipe;
 mod program_status;
@@ -103,10 +102,11 @@ mod questions;
 mod reboot;
 #[cfg(feature = "labs")]
 mod recipes;
-mod resident;
+mod remote_layout;
 mod resume;
 mod review;
 mod session_history;
+mod session_links;
 // Stand-in shell scripts for Claude Code, Node and npm.
 #[cfg(unix)]
 mod setup;
@@ -120,8 +120,6 @@ mod telemetry;
 mod upgrade;
 mod version;
 mod vm_layout;
-#[cfg(feature = "labs")]
-mod vm_reboot;
 mod waits;
 mod windows;
 #[cfg(feature = "labs")]

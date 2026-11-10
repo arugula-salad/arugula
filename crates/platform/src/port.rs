@@ -41,7 +41,8 @@ pub use arugula_platform_api::port::{Archived, Deleted, PlatformPort, PublicPrev
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
 /// `public_preview` and `public_ports`; deploys' runs (M219)
 /// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`; chat's missed
-/// mentions (#419) `daemon_came`.
+/// mentions (#419) `daemon_came`; a hosted machine the hub removed
+/// (Arugula #744) `hosted_removed`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         let _ = (account, start);
@@ -63,6 +64,7 @@ impl PlatformPort for Platform {
                 db::projects::erase_account(&tx, deleted)?;
                 db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::issues::erase_account(&tx, deleted)?;
+                db::ci_alerts::erase_account(&tx, deleted)?;
                 db::boards::erase_account(&tx, deleted)?;
                 db::project_docs::erase_account(&tx, deleted)?;
                 // Before the runs go: their files in the run-log bucket.
@@ -99,6 +101,7 @@ impl PlatformPort for Platform {
                 self.chat.changed();
             }
             billing::sync_seats(self, team).await;
+            crate::ci_alerts::roster_changed(self, team).await;
             Ok(())
         })
     }
@@ -285,6 +288,13 @@ impl PlatformPort for Platform {
                 }
                 None => crate::features::chat().daemon_came(self, daemon).await,
             }
+            Ok(())
+        })
+    }
+
+    fn hosted_removed<'a>(&'a self, workspace: &'a str, machine: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            crate::hosted::machine_removed(self, workspace, machine)?;
             Ok(())
         })
     }

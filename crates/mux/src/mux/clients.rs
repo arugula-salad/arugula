@@ -4,7 +4,7 @@
 use super::{AskReply, Daemon, Dirty, PaneView, SAVE_DEBOUNCE, Seen, Sent, TYPING, exec_tag, seed};
 use crate::{
     acl::Principal,
-    pane::{Start, ToClient, Want},
+    pane::{Start, Subscriber, ToClient, Want},
     store::{PaneLog, PaneMeta},
 };
 use arugula_core::{Effect, Intent, Role};
@@ -26,6 +26,13 @@ const URGENT: Duration = Duration::from_millis(40);
 /// Pane fields a summary leaves out (M23): a client that needs them reads
 /// the pane.
 const NOT_IN_SUMMARIES: &[&str] = &["epoch", "policy", "resumes", "integration"];
+
+/// A client's access is gone: it hears why, and is hung up on.
+pub(super) fn hang_up(sub: &Subscriber) {
+    let message = "your access was removed".to_owned();
+    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
+    let _ = sub.ctrl.send(ToClient::Close);
+}
 
 impl Daemon {
     pub(super) fn message(&mut self, client: ClientId, msg: ClientMsg) {
@@ -269,9 +276,6 @@ impl Daemon {
             .collect();
         let effects = self.mux.apply(intent.clone()).map_err(|e| refused(e.to_string()))?;
         let was = std::mem::replace(&mut self.was, was);
-        for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
-            self.config.acl.forget_session(gone);
-        }
         info!(?client, ?intent, "intent");
         let rects = self.mux.pane_rects();
         for e in effects {
@@ -364,6 +368,13 @@ impl Daemon {
                     }
                 }
                 Effect::Kill { pane } => {
+                    // Its thread's readers are still worked out (`readers.rs`).
+                    // Its session's shares are still there (`sessions_gone`
+                    // comes after).
+                    if let Some(&(Some(session), private, _)) = self.was.get(&pane) {
+                        let readers = self.readers_at_close(session, private);
+                        self.closed.pane(pane, session, private, crate::store::now_ms(), readers);
+                    }
                     self.ids.lock().unwrap().remove(&pane);
                     if let Some(p) = self.panes.remove(&pane) {
                         p.close();
@@ -395,10 +406,11 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
-                    self.mentions_off.remove(&pane);
+                    self.tagged_off.remove(&pane);
                     self.held.remove(&pane);
                     self.queued.gone(pane);
-                    self.mentions_told.remove(&pane);
+                    self.midturn_told.remove(&pane);
+                    self.last_tools.remove(&pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);
                     self.links.remove(&pane);
@@ -410,6 +422,9 @@ impl Daemon {
                 }
             }
         }
+        // After the panes that went: who read them is taken before their
+        // sessions' shares go.
+        self.sessions_gone(before);
         self.reap_machines();
         self.was = was;
         self.changed();
@@ -859,15 +874,15 @@ impl Daemon {
     /// Grants changed: hang up on whoever has nothing left, let go of panes
     /// they no longer see, and show everyone their state.
     pub(super) fn acl_changed(&mut self) {
+        // Whoever lost a closed pane's thread has lost it for good.
+        self.settle_closed();
         let acl = self.config.acl.clone();
         let gone: Vec<ClientId> =
             self.clients.iter().filter(|(_, c)| !acl.knows(&c.principal)).map(|(id, _)| *id).collect();
         for id in gone {
             if let Some(sub) = self.clients.remove(&id) {
                 info!(client = id, who = sub.principal.id(), "access revoked: disconnecting");
-                let message = "your access was removed".to_owned();
-                let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
-                let _ = sub.ctrl.send(ToClient::Close);
+                hang_up(&sub);
             }
             self.focus.remove(&id);
             for p in self.panes.values() {

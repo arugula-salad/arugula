@@ -58,7 +58,7 @@ test("a new project's home: each empty section's button does its step", async ({
 
   // Make an environment: the form, open.
   await alice.goto(home$);
-  await expect(alice.locator("[data-project-envs-none]")).toContainText("where the project deploys to");
+  await expect(alice.locator("[data-project-envs-none]")).toContainText("Where the project deploys");
   await alice.locator("[data-project-make-env]").click();
   await expect(alice).toHaveURL(/\/settings#environments$/);
   await expect(alice.locator("[data-environment-form]")).toBeVisible();
@@ -97,7 +97,7 @@ test("a new project's home: each empty section's button does its step", async ({
   // Deploys has a place in the bar; with no environment, its owner makes one.
   await alice.locator("[data-platform-deploys]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/deploys$/);
-  await expect(alice.locator("[data-deploys-none]")).toContainText("A deploy puts a commit");
+  await expect(alice.locator("[data-deploys-none]")).toContainText("A deploy needs an environment to go to first");
   await alice.locator("[data-deploys-make-env]").click();
   await expect(alice.locator("[data-environment-form]")).toBeVisible();
 
@@ -133,4 +133,11 @@ test("a viewer: Ask an owner for chat, and why they can't start a run", async ({
   await vic.locator("[data-platform-runs]").click();
   await expect(vic.locator("[data-runs-none]")).toContainText("owners and editors start its runs");
   await expect(vic.locator("[data-runs-none-start]")).toHaveCount(0);
+
+  // Chat is off for vic, and the project's Docs and issues are theirs to
+  // read all the same (Arugula #746).
+  await platform(vic, `/p/${project}`);
+  await expect(vic.locator("[data-project-docs-link]")).toBeVisible({ timeout: 15_000 });
+  await platform(vic, `/p/${project}/issues`);
+  await expect(vic.locator("[data-issues-none]")).toBeVisible({ timeout: 15_000 });
 });

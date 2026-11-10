@@ -7,7 +7,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
-import { askText } from "../ui/menu";
+import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { usePlatformApi } from "../platform-api";
 import { authorLabel } from "./agents";
 import { handled } from "./escape";
@@ -65,7 +65,7 @@ function Popover({
   return (
     <span class="chat-pop-wrap" ref={root}>
       <button
-        class={open ? "chat-info on" : "chat-info"}
+        class={open ? "chat-info bar-btn on" : "chat-info bar-btn"}
         title={title}
         aria-label={label}
         aria-expanded={open}
@@ -155,6 +155,28 @@ export function AboutButton({ room, toast }: { room: ChatRoom; toast: (s: string
       )}
     </Popover>
   );
+}
+
+/** The pins as a menu row, for a bar too narrow for the 📌: it opens a menu
+ * of them, each a jump to its message (and, to who may write, an unpin), under `anchor`'s ⋯. */
+export function pinsItem(room: ChatRoom, nav: { openRoom: (room: string, seq?: number) => void }, toast: (s: string) => void, anchor: () => HTMLElement | null): MenuItem | null {
+  if (!room.pins && !chat.pinsOf(room.id)?.length) return null;
+  return {
+    label: `Pinned messages (${room.pins})`,
+    run: () =>
+      void chat.loadPins(room.id).then(() => {
+        const pins = chat.pinsOf(room.id) ?? [];
+        const at = anchor()?.getBoundingClientRect();
+        const name = (p: (typeof pins)[number]) => preview(p.message.text) || "A quote from a pane";
+        const items: MenuItem[] = pins.length
+          ? pins.flatMap((p) => [
+              { label: name(p), detail: authorLabel(p.message), run: () => nav.openRoom(room.id, p.message.seq) },
+              ...(room.writable ? [{ label: `Unpin “${name(p)}”`, run: () => void chat.pin(room.id, p.message.seq, false).catch((e: Error) => toast(e.message)) }] : []),
+            ])
+          : [{ label: "Nothing is pinned", disabled: true, run: () => {} }];
+        openMenu({ clientX: Math.max(8, (at?.right ?? 240) - 260), clientY: (at?.bottom ?? 40) + 4, preventDefault: () => {} }, items);
+      }),
+  };
 }
 
 /** The 📌 and its count, when the room has pins: opens them, newest first,

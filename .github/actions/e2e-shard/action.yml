@@ -21,6 +21,10 @@ inputs:
   total:
     description: How many shards (strategy.job-total)
     required: true
+  only:
+    description: Spec files to deal out, separated by spaces (default every spec)
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -28,6 +32,39 @@ runs:
       run: scripts/ci-env use
     - shell: bash
       run: just bootstrap
+    # The browsers' system packages, which `just browsers` apt-installs on a
+    # runner whose image lacks them (no /etc/arugula-ci/browser-deps): 111 MB,
+    # nearly all of it WebKit's, and the runners' Ubuntu mirror can serve it
+    # at 33 kB/s, which held a shard 55 min (#775). apt keeps what it fetches
+    # in a directory of ours and installs from it next time; a package the
+    # mirror has updated since is all it fetches. A key per Playwright and
+    # runner image, each starting from the last one's.
+    - name: Where apt keeps the browsers' packages
+      id: debs
+      shell: bash
+      run: |
+        if [ "$(uname -s)" != Linux ] || [ -e /etc/arugula-ci/browser-deps ]; then exit 0; fi
+        dir=$RUNNER_TEMP/apt-archives
+        mkdir -p "$dir/partial"
+        # Root fetches, as the cache's directory is ours rather than _apt's.
+        sudo tee /etc/apt/apt.conf.d/90arugula-archives >/dev/null <<EOF
+        Dir::Cache::Archives "$dir";
+        Binary::apt::APT::Keep-Downloaded-Packages "true";
+        APT::Keep-Downloaded-Packages "true";
+        APT::Sandbox::User "root";
+        EOF
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+        # The runner's image, from its environment: a composite action's env
+        # context has only what a workflow set.
+        echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+        echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+        echo "playwright=$(node -p 'require("./web/node_modules/@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      if: steps.debs.outputs.dir != ''
+      with:
+        path: ${{ steps.debs.outputs.dir }}/*.deb
+        key: browser-debs-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.playwright }}-${{ steps.debs.outputs.image }}
+        restore-keys: browser-debs-${{ steps.debs.outputs.os }}-
     - name: Playwright's browsers
       shell: bash
       run: just browsers
@@ -37,12 +74,18 @@ runs:
         port=$(scripts/free-port)
         cd web
         mapfile -t files < <(node scripts/e2e-shard.mjs "$SHARD" "$TOTAL")
+        # A chosen set can leave a shard nothing to do (specs E2E_SET leaves out).
+        if [ ${#files[@]} -eq 0 ] && [ -n "$E2E_ONLY" ]; then
+          echo "shard $SHARD of $TOTAL has none of the chosen specs"
+          exit 0
+        fi
         # No files would run every spec in every shard.
         [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
         E2E_PORT=$port pnpm exec playwright test "${files[@]}"
       env:
         SHARD: ${{ inputs.shard }}
         TOTAL: ${{ inputs.total }}
+        E2E_ONLY: ${{ inputs.only }}
         E2E_CHROMIUM: "1"
         E2E_SET: rest
         E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json

@@ -6,10 +6,8 @@
 //! re-exported here; this file is the routes and the handlers.
 //!
 //! **Who.** `/api/fs/…` is part of the owner's API: share-link viewers only
-//! ever reach `/share/<token>` and its socket, host tokens only the dial-in
-//! and sync paths, and everything else needs the owner (`server.rs`'s
-//! `guard`). Through `/h/NAME` and `/tunnel/NAME` the home daemon checks
-//! the owner before forwarding.
+//! ever reach `/share/<token>` and its socket, and everything else needs
+//! the owner (`server.rs`'s `guard`).
 
 use std::{
     collections::{BTreeMap, HashSet},

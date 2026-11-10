@@ -146,7 +146,7 @@ pub struct Turn {
 
 /// A session this box took, in `<state>/work/sessions/ID.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Session {
+pub struct AgentSessionLedger {
     pub session: String,
     pub project: String,
     pub workspace: String,
@@ -160,6 +160,11 @@ pub struct Session {
     #[serde(default)]
     pub block: Option<u32>,
     pub taken_at: u64,
+    /// The project's standing grant it last checked out under (aru-115, as
+    /// amended), for the revokes that end it. `None` in a ledger from before
+    /// a session's work carried one, until a pull lists one that checks out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<arugula_e2e::project_grant::ProjectGrant>,
     /// This box's latest report number in it.
     pub n: u64,
     /// Its state by this box's own reports.
@@ -167,6 +172,12 @@ pub struct Session {
     /// It ended, and why: this box stops following it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// It ended, and what it left (its agent, what its user runs, its
+    /// slot's files) hasn't all gone yet: a restart finishes that. Written
+    /// with `ended`, and cleared once it's done. Its slot goes to nobody else
+    /// until then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cleanup_owed: bool,
     /// Every prompt handed to its agent: none is handed again.
     #[serde(default)]
     pub handed: Vec<String>,
@@ -208,7 +219,7 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// The model its agent says it's on now, and the last a report said:
-    /// a report says it again when the two differ ([`Session::push`]).
+    /// a report says it again when the two differ ([`AgentSessionLedger::push`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_now: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,7 +246,7 @@ pub struct Parked {
     pub agent_session: Option<String>,
 }
 
-impl Session {
+impl AgentSessionLedger {
     /// Where it is, by this box's own reports.
     pub fn now(&self) -> State {
         State::parse(&self.state).unwrap_or(State::Queued)
@@ -254,7 +265,7 @@ pub fn path(dir: &Path, id: &str) -> Option<PathBuf> {
 }
 
 /// Session `id`'s ledger: `Ok(None)` only when there's none.
-pub fn read(dir: &Path, id: &str) -> std::io::Result<Option<Session>> {
+pub fn read(dir: &Path, id: &str) -> std::io::Result<Option<AgentSessionLedger>> {
     let Some(p) = path(dir, id) else { return Err(std::io::Error::other("not a session's id")) };
     match std::fs::read(p) {
         Ok(b) => serde_json::from_slice(&b).map(Some).map_err(std::io::Error::other),
@@ -264,9 +275,9 @@ pub fn read(dir: &Path, id: &str) -> std::io::Result<Option<Session>> {
 }
 
 /// Every session in the ledger that reads.
-pub fn all(dir: &Path) -> Vec<Session> {
+pub fn all(dir: &Path) -> Vec<AgentSessionLedger> {
     let Ok(entries) = std::fs::read_dir(dir.join(super::DIR).join(DIR)) else { return vec![] };
-    let mut out: Vec<Session> = entries
+    let mut out: Vec<AgentSessionLedger> = entries
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -279,6 +290,30 @@ pub fn all(dir: &Path) -> Vec<Session> {
 }
 
 /// The sessions this box holds now (taken, not ended), parked ones too.
-pub fn live(dir: &Path) -> Vec<Session> {
+pub fn live(dir: &Path) -> Vec<AgentSessionLedger> {
     all(dir).into_iter().filter(|l| l.ended.is_none()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ledger a release saved, every field set, loads and saves back as
+    /// it was: a renamed type drops no field.
+    #[test]
+    fn release_ledger_loads() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/work-session-ledger.json");
+        let bytes = std::fs::read(&fixture).unwrap();
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let id = was["session"].as_str().unwrap();
+        let dir = std::env::temp_dir().join(format!("arugula-ledger-release-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let at = path(&dir, id).unwrap();
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(&at, &bytes).unwrap();
+        let l = read(&dir, id).unwrap().unwrap();
+        assert_eq!((l.n, l.events.len(), l.now()), (3, 1, State::Working));
+        assert_eq!(serde_json::to_value(&l).unwrap(), was);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

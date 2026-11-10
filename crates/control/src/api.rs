@@ -716,6 +716,13 @@ pub async fn join(
         Kind::Cli => {
             return Err(err(StatusCode::BAD_REQUEST, "a CLI joins with its key's proof and nothing else"));
         }
+        // A native app (aru-131) pairs the CLI's way, as a `browser` device.
+        Kind::Browser
+            if app.cfg.native_clients
+                && !b.cert.from_app()
+                && b.urls.is_empty()
+                && b.team.is_none()
+                && b.proof.is_some() => {}
         _ => return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate")),
     }
     check_urls(&b.urls)?;
@@ -878,16 +885,24 @@ pub async fn join_approve(
         return Err(err(StatusCode::BAD_REQUEST, "that's not the daemon that asked"));
     }
     approval_ok(&app, &s.account, &c, "join_approve")?;
-    // The CLI (M49): one of the account's devices from now on, like a
-    // browser it approved. The account's machines learn of it now.
-    if c.kind == Kind::Cli {
+    // The CLI (M49), or a native app (aru-131): one of the account's devices
+    // from now on, like a browser it approved. The account's machines learn
+    // of it now.
+    if matches!(c.kind, Kind::Cli | Kind::Browser) {
         if b.team.is_some() {
-            return Err(err(StatusCode::BAD_REQUEST, "a CLI joins your account, not a team"));
+            return Err(err(StatusCode::BAD_REQUEST, "a device joins your account, not a team"));
+        }
+        if c.kind == Kind::Browser && !app.cfg.native_clients {
+            return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate"));
         }
         app.db.put_device(&c, true, now_ms())?;
+        if c.kind == Kind::Browser {
+            app.db.put_native_device(&s.account, &c.device, now_ms())?;
+        }
         app.db.approve_join(&code, &c, None, b.mac.as_deref())?;
         nudge(&app, &s.account);
-        app.analytics.capture(&s.account, "cli joined", json!({ "with_code": b.mac.is_some() }));
+        let event = if c.kind == Kind::Cli { "cli joined" } else { "native app joined" };
+        app.analytics.capture(&s.account, event, json!({ "with_code": b.mac.is_some() }));
         return Ok(Json(json!({ "approved": true, "device": c.device })));
     }
     let known = app.db.device_known(&c.device)?;
@@ -982,6 +997,44 @@ fn in_team(app: &App, account: &str, id: &str, owner: bool, no: &str) -> Result<
 
 /// How far a move's time may be from control's clock.
 const MOVE_SKEW_MS: u64 = 10 * 60 * 1000;
+
+/// *Rename* on a machine (#500): its owner's, or, for a team's machine, its
+/// team's owners'. The name is a display name (its id is who it is, and
+/// nothing authorizes by name), so no device signs it. Its old name keeps
+/// working in `@mentions`; a name another machine of its owner or team goes
+/// by is refused.
+pub async fn rename_daemon(
+    State(app): State<Arc<App>>,
+    s: Session,
+    Path(id): Path<String>,
+    Json(b): Json<wire::machine::MachineRename>,
+) -> R {
+    let (owner, d) = app.db.daemon_row(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
+    if owner != s.account {
+        let team = app.db.daemon_team(&id)?;
+        let Some(t) = team else {
+            return Err(err(StatusCode::FORBIDDEN, "only the machine's owner renames it"));
+        };
+        in_team(&app, &s.account, &t, true, "only the machine's owner and the team's owners rename it")?;
+    }
+    let name = wire::machine::clean_name(&b.name).map_err(|why| err(StatusCode::BAD_REQUEST, why))?;
+    match app.db.rename_daemon(&id, &name)? {
+        crate::db::Renamed::Done => {}
+        crate::db::Renamed::Gone => return Err(err(StatusCode::NOT_FOUND, "no such machine")),
+        crate::db::Renamed::Taken(other) => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                &format!(
+                    "another machine here is already called {other}: @{} would reach both",
+                    wire::machine::handle(&name)
+                ),
+            ));
+        }
+    }
+    app.relay.nudge(std::slice::from_ref(&id));
+    app.analytics.capture(&s.account, "machine renamed", json!({ "own": owner == s.account }));
+    Ok(Json(json!({ "id": id, "name": name, "was": d.name })))
+}
 
 /// *Move to…* on a machine (#100): its own account moves it into a team
 /// it's in, between them, or back to the account (#332: members too).

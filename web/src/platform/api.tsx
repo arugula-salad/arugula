@@ -5,6 +5,7 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
+import { chatGo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
 import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -32,7 +33,10 @@ export const platformApi: PlatformApi = {
       const project = barProject(current());
       go(project ? pathOf({ page: "project", project }, names) : "/");
     },
-    openRoom: (room, msg, thread) => go(roomPath(room, msg, thread)),
+    openRoom: (room, msg, thread) => chatGo(roomPath(room, msg, thread)),
+    up: () => swipeUp(),
+    down: () => swipeDown(),
+    goTo: swipeGo,
     openChatView(view, q = "") {
       const r = chatIn(view, q);
       if (!r) return;
@@ -46,8 +50,8 @@ export const platformApi: PlatformApi = {
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.
-  goToPane: () => toast(`Panes open on Control (${new URL(controlOrigin()).host}), where your machines are`),
-  goToSession: () => toast(`Sessions open on Control (${new URL(controlOrigin()).host}), where your machines are`),
+  goToPane: () => toast(`Panes open on your machines (${new URL(controlOrigin()).host})`),
+  goToSession: () => toast(`Sessions open on your machines (${new URL(controlOrigin()).host})`),
   Bar: PlatformBar,
   controlHref: (hash) => `${controlOrigin()}/#${hash}`,
   sessionHref: (project, ses) => pathOf({ page: "session", project, session: ses }, names),

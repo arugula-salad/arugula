@@ -53,7 +53,9 @@
 //!   it's stopped.
 //! - **Revokes stop runs.** A revoke that says `running stop`, relayed or
 //!   with a pull, stops the runs going under the grants it covers
-//!   ([`stop_revoked`]).
+//!   ([`stop_revoked`]), and ends the sessions going under them. Any other
+//!   revoke ends those too, once a turn under way does
+//!   ([`sessions::stop_revoked`]).
 //! - **Its log and artifacts** go to the run-log bucket as it runs and
 //!   when it ends, before its end is reported (M213, [`crate::run_logs`]).
 //! - **Busy while it runs** ([`running`]): the machine says it's working
@@ -61,7 +63,9 @@
 //!   pause mid-run.
 //! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
 //!   with session users takes up to three at once, beside its one run at a
-//!   time, each an ACP agent block run as its own session user.
+//!   time, each an ACP agent block run as its own session user, under the
+//!   project's standing grant, checked here before it's taken and as each
+//!   turn's prompt goes to its agent, whatever queued it.
 //!
 //! This is the crate `arugulad-work` (#232), beside the other feature crates
 //! on the base: the binary calls [`register`], which installs the base's
@@ -85,13 +89,13 @@ use std::{
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
     work::{
-        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery,
+        ReadyRun, Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkQuery,
         session_users_take,
     },
 };
 use arugula_e2e::{
     now_ms,
-    project_grant::ProjectGrant,
+    project_grant::{INSTRUCT, ProjectGrant, START},
     run::{Event, Op, State},
 };
 use arugula_proto::{Policy, StartedBy, api::RunRequest};
@@ -112,6 +116,7 @@ use crate::{
 
 pub mod agent_run;
 mod deploy;
+mod run_files;
 mod run_logs;
 pub mod sessions;
 
@@ -602,7 +607,13 @@ pub fn pane_command(
 /// the revokes it carries kept first ([`crate::hosted::runs::allows`]). An
 /// approved run (one with no grant) waits for M218's check of its
 /// approval: until then it doesn't start here (fail closed).
-pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
+pub fn grant(app: &App, item: &ReadyRun) -> Result<(), Refused> {
+    grant_for(app, item, START)
+}
+
+/// Whether the project's standing grant gives `cap` over `item`, as
+/// [`grant`] asks.
+fn grant_for(app: &App, item: &ReadyRun, cap: &str) -> Result<(), Refused> {
     if item.state != State::Pending.as_str() {
         return Err(Refused("approval_unchecked", "this machine can't check a run's approval yet".into()));
     }
@@ -613,7 +624,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
         project: item.project.clone(),
         workspace: item.workspace.clone(),
         run: Some(item.run.clone()),
-        cap: "runs.start".into(),
+        cap: cap.into(),
         grant: g,
         revokes: item.revokes.clone(),
         passkey_log: item.passkey_log.clone(),
@@ -625,7 +636,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
 /// it's a hosted machine in control.
 pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
     let e = app.control.enrolled()?;
-    let pin = e.saved.hosted.as_ref()?;
+    let pin = e.saved.hosted()?;
     Some((e.keys.clone(), pin.cert.device.clone(), pin.cert.project.clone(), pin.cert.workspace.clone()))
 }
 
@@ -633,7 +644,7 @@ pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, Str
 /// operation): the operation, and the directory its copy is made from.
 pub fn check(
     app: &App,
-    item: &WorkItem,
+    item: &ReadyRun,
     me: &str,
     project: &str,
     workspace: &str,
@@ -644,19 +655,28 @@ pub fn check(
     if hex::encode(Sha256::digest(item.op.as_bytes())) != item.op_hash {
         return Err(Refused("op_hash", "the operation's bytes don't hash to the run's operation hash".into()));
     }
-    // A deploy's box (M219) takes its one deploy's run, nothing else.
-    if deploy::deploy_box(app) && item.deploy.is_none() {
+    // A deploy's box (M219) takes its one deploy's run (or, #1985, its
+    // plan's), nothing else.
+    if deploy::deploy_box(app) && item.deploy.is_none() && item.deploy_plan.is_none() {
         return Err(Refused("deploy_box", "this box was made for one deploy, and takes nothing else".into()));
     }
     // A deploy's run (M219) goes by its owner's approval of the deploy,
-    // checked here against what this machine pinned; any other run by the
-    // project's standing grant.
-    match &item.deploy {
-        Some(d) => deploy::check(app, item, d)?,
-        None => grant(app, item)?,
+    // checked here against what this machine pinned; its plan run (#1985)
+    // by what a plan may do; any other run by the project's standing grant.
+    match (&item.deploy, &item.deploy_plan) {
+        (Some(d), None) => deploy::check(app, item, d)?,
+        (None, Some(p)) => deploy::check_plan(app, item, p)?,
+        (None, None) => grant(app, item)?,
+        (Some(_), Some(_)) => {
+            return Err(Refused("op_deploy", "a run is a deploy's apply or its plan, not both".into()));
+        }
     }
     let op = parse_op(&item.op, me)?;
-    deploy::matches(&op, item.deploy.as_ref())?;
+    // An agent's run tells it what to do: that's `runs.instruct` as well.
+    if item.deploy.is_none() && op.instruction.is_some() {
+        grant_for(app, item, INSTRUCT)?;
+    }
+    deploy::matches(&op, item.deploy.as_ref(), item.deploy_plan.as_ref())?;
     let src = op.directory.as_deref().map(|d| source_dir(d, &arugula_mux::sys::home())).transpose()?;
     Ok((op, src))
 }
@@ -874,7 +894,7 @@ fn tab_name(run: &str, op_hash: &str, shown: &str) -> String {
 
 /// Take `item`, once: a run in the ledger already (or one whose entry
 /// can't be read) is only reported. One run goes at a time.
-async fn take(app: &Arc<App>, item: WorkItem) {
+async fn take(app: &Arc<App>, item: ReadyRun) {
     let dir = app.control.state_dir().to_owned();
     let Some((keys, me, project, workspace)) = me(app) else { return };
     if !good_id(&item.run) {
@@ -895,7 +915,11 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         taken_at: now_ms(),
         grant: item.grant.clone(),
         turn: None,
-        deploy: item.deploy.as_ref().map(|d| d.deploy.clone()),
+        deploy: item
+            .deploy
+            .as_ref()
+            .map(|d| d.deploy.clone())
+            .or_else(|| item.deploy_plan.as_ref().map(|p| p.deploy.clone())),
         agent: false,
         events: vec![],
         logs: Default::default(),
@@ -1273,6 +1297,7 @@ async fn send_all(app: &App, open: &mut BTreeSet<String>) {
 /// left, then pull, take what's ready (one run at a time), stop what a
 /// revoke covers, and send what's unsent.
 pub fn start(app: Arc<App>) {
+    let _ = sessions::APP.set(app.clone());
     crate::task::spawn(async move {
         let dir = app.control.state_dir().to_owned();
         let every = pull_every();
@@ -1287,6 +1312,9 @@ pub fn start(app: Arc<App>) {
             warn!(why, "hosted: sessions and runs can't be kept off the daemon's ports yet");
         }
         sessions::resume(&app).await;
+        if sessions::takes() {
+            sessions::watch(app.clone());
+        }
         let mut open: BTreeSet<String> = all(&dir)
             .into_iter()
             .filter(|l| l.state == State::Running.as_str() || l.events.iter().any(|k| !k.answered))
@@ -1296,7 +1324,8 @@ pub fn start(app: Arc<App>) {
             send_all(&app, &mut open).await;
             // A snapshot's builder (M263) takes nothing: it sets up, wipes
             // itself and goes.
-            let builder = app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder));
+            let builder =
+                app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.builds_snapshot()));
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).
@@ -1314,6 +1343,7 @@ pub fn start(app: Arc<App>) {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
                         crate::hosted::runs::keep_revokes(&app, &w.revokes);
+                        sessions::stop_revoked(&app);
                         for item in w.items {
                             if run_going() {
                                 break;
@@ -1363,6 +1393,16 @@ impl crate::work::Work for Engine {
 
     fn stop_revoked(&self, app: &App) {
         stop_revoked(app);
+        if let Some(app) = sessions::APP.get() {
+            sessions::stop_revoked(app);
+        }
+    }
+
+    fn session_turn(
+        &self,
+        session: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+        Box::pin(sessions::turn_allowed(session))
     }
 
     fn running(&self) -> bool {
@@ -1463,6 +1503,8 @@ mod tests {
 
     /// The agent's login reaches the run on its standard input, from a file
     /// the outer shell removes: never on a command line.
+    // Its command is read back through `sh`.
+    #[cfg(unix)]
     #[test]
     fn an_agent_runs_claude_with_its_login_on_stdin() {
         let op = Op { instruction: Some("fix the build".into()), ..Op::default() };

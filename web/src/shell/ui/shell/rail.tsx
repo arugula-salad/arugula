@@ -12,13 +12,12 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
 import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
-import { settingsItems } from "../commands";
-import { openMenu } from "../../../shared/ui/menu";
+import { openSettings } from "../settings-route";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
 import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -46,21 +45,22 @@ export function Rail({ client }: { client: Client }) {
   // Back to the page you left there (Arugula #638), or the list on a first visit.
   const PROJECTS_PATH = "/?back";
   const projects = platformHref(PROJECTS_PATH);
+  const DOCS_PATH = "/docs";
+  const teamDocs = platformHref(DOCS_PATH);
   const panes = () => {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
   };
-  const settings = (e: MouseEvent) => {
+  const settings = () => {
     countView("settings");
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client, { machine: true }), e.currentTarget as HTMLElement);
+    openSettings();
   };
   const items: (RailItem | false)[] = [
     // Only where control has a platform page. Its own tab, or this window in
     // the app (openPlatform); a modified click is the browser's.
     !!projects && {
       label: "Projects",
-      tip: "Projects: their issues, boards, runs, deploys and chat, on the platform page",
+      tip: "Projects: their issues, boards, runs, deploys and chat",
       here: false,
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
@@ -68,7 +68,8 @@ export function Rail({ client }: { client: Client }) {
       target: "arugula-platform",
       onClick: () => openPlatform(PROJECTS_PATH),
     },
-    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "docs" || at === "agents", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
+    // A machine's Docs light the rail's Docs, or Panes where there's none (Arugula #796).
+    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "agents" || (at === "docs" && !teamDocs), hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
     {
       label: "Swarm",
       aria: `Swarm: ${SWARM_ABOUT}`,
@@ -81,12 +82,24 @@ export function Rail({ client }: { client: Client }) {
     threads && {
       label: "Chat",
       aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
-      tip: "Chat: every thread, on every machine, on the platform page",
+      tip: "Chat: every thread, on every machine",
       here: false,
       hook: "data-open-chat",
       icon: <ChatIcon />,
       count: { n, mention },
       onClick: () => openChat(),
+    },
+    // The platform's /docs: the team's Docs and the reader's from every machine.
+    // This machine's own are its bar's.
+    !!teamDocs && {
+      label: "Docs",
+      tip: "Docs: your team's Docs, and yours from your machines",
+      here: at === "docs",
+      hook: "data-open-docs-all",
+      icon: <DocsIcon />,
+      href: teamDocs,
+      target: "arugula-platform",
+      onClick: () => openPlatform(DOCS_PATH),
     },
   ];
   const brand = (
@@ -101,7 +114,7 @@ export function Rail({ client }: { client: Client }) {
     </button>
   );
   const bottom: RailItem[] = [
-    { label: "Settings", tip: "Appearance, notifications and this machine's settings", here: false, hook: "data-open-settings", icon: <SettingsIcon />, onClick: settings },
+    { label: "Settings", tip: "Settings: this device, this machine and your account", here: at === "settings", hook: "data-open-settings", icon: <SettingsIcon />, onClick: settings },
   ];
   return <SharedRail brand={brand} items={items.filter((i): i is RailItem => !!i)} bottom={bottom} />;
 }

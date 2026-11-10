@@ -1,38 +1,34 @@
 // The emoji picker (#105): a search box, the categories and the ones used
 // lately (per device, `recentEmoji`). The composer opens it beside its
 // text; the reactions (#104) open the same one and take what `pick` hands
-// them. It sits above its anchor on a desktop and fills the width of a phone
-// from the bottom, where a thumb reaches. The table behind it loads when the
-// picker opens (`./emoji`).
+// them. It is a `Popover` (shared/ui/menu.tsx): under its button, or over it
+// when there's no room, and a sheet along the bottom of a phone, where a
+// thumb reaches. The table behind it loads when the picker opens (`./emoji`).
 
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
+import { Popover } from "../ui/menu";
 import { findEmoji, recentEmoji, rememberEmoji, useEmoji } from "./emoji";
-import { handled } from "./escape";
 
-/** `pick`: the character chosen (already remembered as recent). `close`:
- * Escape, a click outside, or the same button again is the caller's too. */
-export function EmojiPicker({ pick, close, above }: { pick: (char: string) => void; close: () => void; above?: boolean }) {
+/** `from`: the button that opens it. `pick`: the character chosen (already
+ * remembered as recent). `close`: it shut by Escape or a press elsewhere; the
+ * same button again is the caller's too (`pressedShut`). */
+export function EmojiPicker({ from, pick, close }: { from: { current: HTMLElement | null }; pick: (char: string) => void; close: () => void }) {
+  return (
+    <Popover from={from} label="Emoji" attrs={{ "data-emoji-picker": true }} onClose={close}>
+      <EmojiPanel pick={pick} />
+    </Popover>
+  );
+}
+
+function EmojiPanel({ pick }: { pick: (char: string) => void }) {
   const table = useEmoji(true);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<number | "recent">(() => (recentEmoji().length ? "recent" : 0));
-  const root = useRef<HTMLDivElement>(null);
-  const search = useRef<HTMLInputElement>(null);
   // Read once per opening: what's picked now shows up the next time.
   const recent = useMemo(recentEmoji, []);
   // On a phone the keyboard would cover the grid the moment the search box
   // took focus: leave it for the person to tap.
-  useEffect(() => {
-    if (matchMedia("(hover: hover)").matches) search.current?.focus();
-  }, []);
-  useEffect(() => {
-    const away = (e: PointerEvent) => {
-      const t = e.target as Element | null;
-      // The button that opens it toggles it itself.
-      if (!root.current?.contains(t) && !t?.closest("[data-emoji-button]")) close();
-    };
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [close]);
+  const hover = matchMedia("(hover: hover)").matches;
 
   const shown: { char: string; name: string }[] = useMemo(() => {
     if (!table) return [];
@@ -50,22 +46,10 @@ export function EmojiPicker({ pick, close, above }: { pick: (char: string) => vo
   };
 
   return (
-    <div
-      class={above ? "emoji-picker above" : "emoji-picker"}
-      ref={root}
-      role="dialog"
-      aria-label="Emoji"
-      data-emoji-picker
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          handled(e);
-          close();
-        }
-      }}
-    >
+    <div class="emoji-picker">
       <input
-        ref={search}
         type="search"
+        data-autofocus={hover || undefined}
         class="emoji-search"
         placeholder="Search emoji"
         aria-label="Search emoji"

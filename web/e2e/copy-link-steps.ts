@@ -1,15 +1,16 @@
-// The Copy link button (#411) on a board's page and a project Doc's page: one
-// click copies the page's team link and says "Copied ✓" in place. Alice owns
-// team Acme, with chat's and boards' Labs flags on; her board and Doc are
+// The Copy link button (#411) on a board's page, and a project Doc's page's
+// (Arugula #820: one of the Doc's three actions): one
+// click copies the page's team link and says "Copied" in place. Alice owns
+// team Acme, with chat on; her board and Doc are
 // made through the platform's API. A local control (team-fixture.ts,
 // `--platform-host app.localhost`), as boards-platform.spec.ts. Chrome reads
 // the link back from the clipboard; WebKit can't read it in a test, so
 // there the button's `data-link` (what it copies) stands in, and it says
-// "Copied ✓" only once the write succeeded.
+// "Copied" only once the write succeeded.
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl } from "./team-fixture";
+import { TeamControl, opened } from "./team-fixture";
 
 export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
   const t = new TeamControl(name);
@@ -38,7 +39,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     await expect(alice.locator(ready)).toBeVisible({ timeout: 15_000 });
   }
 
-  /** One click on Copy link: "Copied ✓" in place, and the link it copied. */
+  /** One click on Copy link: "Copied" in place, and the link it copied. */
   async function copyLink(expected: string, shot: string) {
     const button = alice.locator("[data-copy-link]");
     const main = button.locator("[data-copy-link-main]");
@@ -48,7 +49,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     await expect(main).toContainText("Copy link");
     if (shots) await alice.screenshot({ path: `test-results/copy-link-${shot}.png` });
     await main.click();
-    await expect(main).toContainText("Copied ✓");
+    await expect(main).toContainText("Copied");
     if (shots) await alice.screenshot({ path: `test-results/copy-link-${shot}-copied.png` });
     if (clipboard) expect(await alice.evaluate(() => navigator.clipboard.readText())).toBe(expected);
     // And back to "Copy link" a moment later.
@@ -63,9 +64,9 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     if (clipboard) await alice.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: app });
     await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
     const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-    for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+    await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
 
-    await alice.goto(`${app}/`);
+    alice = await opened(alice, `${app}/`);
     await expect(alice.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
     await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
     project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];
@@ -73,7 +74,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     const made = await api("POST", `/api/projects/${project}/boards`, { title: "Launch" });
     expect(made.status).toBe(200);
     const board = made.body!.board.id as string;
-    await open(`/p/${project}/boards/${board}`, "[data-board-page] [data-board-title]");
+    await open(`/p/${project}/boards/${board}`, "[data-board-page] [data-board-heading]");
     await copyLink(`${app}/p/${project}/boards/${board}`, "board");
   });
 
@@ -86,7 +87,17 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     // The page's address names the Doc by id and a slug; the link is that address,
     // once the page has put the slug in (WebKit reads the address before that).
     await alice.waitForURL(new RegExp(`/docs/${doc}-[a-z0-9-]+$`));
-    await copyLink(alice.url(), "doc");
-    await expect(alice.locator("[data-copy-link]")).toHaveAttribute("data-link", new RegExp(`^${app}/p/${project}[^/]*/docs/${doc}`));
+    // The Doc's page has the Doc's three actions (Arugula #820), whose Copy link is an icon.
+    const button = alice.locator("[data-doc-page] [data-doc-copy-link]");
+    await expect(button).toHaveCount(1);
+    await expect(button).toHaveAttribute("data-link", alice.url());
+    await expect(button).toHaveAttribute("title", "Copy link");
+    if (shots) await alice.screenshot({ path: "test-results/copy-link-doc.png" });
+    await button.click();
+    await expect(button).toContainText("Copied");
+    if (shots) await alice.screenshot({ path: "test-results/copy-link-doc-copied.png" });
+    if (clipboard) expect(await alice.evaluate(() => navigator.clipboard.readText())).toBe(alice.url());
+    await expect(button).not.toContainText("Copied", { timeout: 5_000 });
+    expect(alice.url()).toMatch(new RegExp(`^${app}/p/${project}[^/]*/docs/${doc}`));
   });
 }

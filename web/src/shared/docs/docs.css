@@ -8,6 +8,11 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  /* A Doc's page is as wide as the frame, not the section's usual 880px
+     column: the Doc centres its own measure (#783), and the container it is
+     measured in is this, so the wider tiers can be reached. */
+  padding-inline: 24px;
+  container: doc / inline-size;
 }
 
 /* The block fills its pane; on the page it's as tall as what it says, a
@@ -18,24 +23,25 @@
   border-radius: 10px;
 }
 
-.project-doc-head {
-  max-width: 760px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 16px;
-  box-sizing: border-box;
-  overflow-wrap: anywhere;
+.project-doc-row {
+  font-size: var(--text-sm);
 }
 
-.project-doc-row {
-  font-size: 12px;
+/* A copy of a machine's Doc (#678): read-only here, and said so above it. */
+.project-doc-copy {
+  max-width: var(--lead-measure);
+  width: 100%;
+  margin: 0 auto 8px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  font-size: var(--text-md);
 }
 
 .project-doc-form {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-width: 760px;
+  max-width: var(--lead-measure);
   min-width: 0;
   margin-top: 14px;
 }
@@ -60,7 +66,7 @@
 .project-doc-writer textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--mono, monospace);
+  font-family: var(--f-mono);
 }
 
 .project-doc-writer select {
@@ -71,20 +77,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.project-doc-confirm {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
-/* The list's preview (platform/pages/docs.tsx) names the Doc above, with its
-   buttons; the sheet below it is only the sections. */
-.docs-preview .doc-title {
-  display: none;
 }
 
 /* The Docs list fills the page's frame, as the machine's page does. */
@@ -108,4 +100,37 @@
 
 .docs-list .project-doc-form {
   margin: var(--space-3) 0 0;
+}
+
+/* The bar over Mine's rows once any is ticked (Arugula #818), and what each Doc's share came to. */
+.docs-share-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  font-size: var(--text-sm);
+}
+
+.docs-share-results {
+  flex: 1 0 100%;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-share-results li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.docs-share-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }

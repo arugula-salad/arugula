@@ -64,9 +64,14 @@ test.describe("a shared Doc", () => {
     const block = page.locator(`[data-doc-block="${d}"]`);
     await expect(block.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
     // The bar is the block's header, beside the body.
+    // Arugula #650: the share button's dialog holds it, with a dot on the button.
     const older = page.locator("[data-doc-bar-older]");
-    await expect(page.locator("[data-doc-bar-shared]")).toBeVisible();
+    const shareButton = page.locator(`[data-doc-bar="${d}"] [data-doc-bar-share]`);
+    await shareButton.click();
+    await expect(page.locator("[data-doc-link-url]")).toBeVisible();
     await expect(older).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(shareButton).not.toHaveAttribute("data-older", /.*/);
 
     // A viewer on the link, with a clock of its own to drive its checks.
     const v = await visitor(browser);
@@ -84,6 +89,8 @@ test.describe("a shared Doc", () => {
     // A refill: the block shows the new version and the older-copy prompt,
     // and the link is as it was.
     await fill(r.post, d, "s1", body("two"));
+    await expect(shareButton).toHaveAttribute("data-older", "");
+    await shareButton.click();
     await expect(older).toHaveText("Shared copy is older · Update");
     await expect(page.frameLocator(`[data-doc-block="${d}"] [data-prototype-frame]`).locator("#v")).toHaveText("two");
     expect((await meta()).ver).toBe(1);

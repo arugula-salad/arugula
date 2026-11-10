@@ -12,17 +12,12 @@ pub struct Args {
     since: Option<String>,
     #[arg(long, default_value_t = 50)]
     limit: usize,
-    /// Another host's history, as synced here (`all`: every host's).
-    #[arg(long, value_name = "HOST")]
-    synced: Option<String>,
 }
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
-    let Ctx { sock, json_out, gone, .. } = ctx;
-    let synced_q = |flag| super::synced_q(flag, &gone);
-    let Args { re, since, limit, synced } = args;
+    let Ctx { sock, json_out, .. } = ctx;
+    let Args { re, since, limit } = args;
     let mut q = vec![format!("re={}", enc(&re)), format!("limit={limit}")];
-    q.extend(synced_q(synced));
     if let Some(s) = since {
         q.push(format!("since={}", duration(&s)?));
     }
@@ -34,10 +29,9 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     }
     for h in &hits {
         let cmd = h.command.as_ref().map(|c| format!("  ({c})")).unwrap_or_default();
-        let host = h.host.as_ref().map(|h| format!("{h}:")).unwrap_or_default();
         match &h.doc {
-            Some(doc) => println!("{host}doc {doc}@{}: {}", h.offset, h.line),
-            None => println!("{host}%{}@{}: {}{cmd}", h.pane, h.offset, h.line),
+            Some(doc) => println!("doc {doc}@{}: {}", h.offset, h.line),
+            None => println!("%{}@{}: {}{cmd}", h.pane, h.offset, h.line),
         }
     }
     Ok(0)

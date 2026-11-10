@@ -4,7 +4,7 @@
 // reads and writes through the store's `call`, so there is one place a
 // request leaves from.
 
-import type { ChatLive, ChatMessage, ChatMessages, ChatPost, ChatPosted, ChatThreads } from "../proto";
+import type { ChatLive, ChatMessage, ChatMessages, ChatPost, ChatPosted, ChatPostTarget, ChatThreadAgents, ChatThreads } from "../proto";
 import { followed, mergeReplies, readTo } from "./threads";
 
 type Call = <T>(method: string, path: string, body?: unknown) => Promise<T>;
@@ -132,9 +132,10 @@ export class ThreadState {
 
   /** Write a reply. The thread reads it back, and the room's list does when
    * it was also sent there (the store's job). */
-  async post(room: string, parent: number, text: string, also: boolean, files?: string[] | null): Promise<ChatPosted> {
+  async post(room: string, parent: number, text: string, also: boolean, files?: string[] | null, to?: ChatPostTarget[]): Promise<ChatPosted> {
     const body: ChatPost = { text, parent, also };
     if (files?.length) body.files = files;
+    if (to) body.to = to;
     const posted = await this.call<ChatPosted>("POST", `/api/chat/rooms/${enc(room)}/messages`, body);
     await this.newer(room, parent);
     this.soon();
@@ -152,6 +153,11 @@ export class ThreadState {
     this.changed();
     await this.call("POST", `/api/chat/rooms/${enc(room)}/threads/${parent}/read`, { seq }).catch(() => {});
     this.soon();
+  }
+
+  /** The agents in a thread and what each is doing (#646). */
+  agents(room: string, parent: number): Promise<ChatThreadAgents> {
+    return this.call<ChatThreadAgents>("GET", `/api/chat/rooms/${enc(room)}/threads/${parent}/agents`);
   }
 
   /** Follow or stop: it shows at once, and the server's answer replaces it. */

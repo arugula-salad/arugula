@@ -45,7 +45,8 @@ pub struct IssueItemArgs {
     pub item: String,
     /// A native issue's project for "#N", or a Plane item's for IDENT-N: its
     /// id (prj_…) or personal.
-    /// Default: the one this clone's GitHub repo is linked to, else the
+    /// Default: the project of the issue you were started on (start_agent's
+    /// issue), else the one this clone's GitHub repo is linked to, else the
     /// user's personal project.
     #[serde(default)]
     pub project: Option<String>,
@@ -173,9 +174,9 @@ pub struct IssueArgs {
 pub struct OpenOnGithubArgs {
     /// The native issue: "#N" (in the current project) or "iss_…".
     pub issue: String,
-    /// Its project for "#N": its id (prj_…) or personal. Default: the one
-    /// this clone's GitHub repo is linked to, else the user's personal
-    /// project.
+    /// Its project for "#N": its id (prj_…) or personal. Default: the
+    /// project of the issue you were started on, else the one this clone's
+    /// GitHub repo is linked to, else the user's personal project.
     #[serde(default)]
     #[allow(dead_code)] // `forge_ops` reads it, finding the issue's id.
     pub project: Option<String>,
@@ -208,7 +209,7 @@ pub(crate) const READ: &[Kind] = &[
         name: "tracker_fields",
         description: "What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.",
         schema: schema_for_type::<TrackerFieldsArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "checks",

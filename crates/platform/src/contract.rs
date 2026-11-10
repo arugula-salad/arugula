@@ -116,7 +116,8 @@ async fn principals(f: &dyn Fixture) {
     assert!(resolve(Principal::Cli { account: "acct-pa".into(), device: "cli-none".into() }).await.is_none());
 
     let d = Principal::Daemon { account: "acct-pa".into(), daemon: "dmn-pa".into() };
-    let box_ = Daemon { id: "dmn-pa".into(), account: "acct-pa".into(), team: None, name: "pa-box".into() };
+    let box_ =
+        Daemon { id: "dmn-pa".into(), account: "acct-pa".into(), team: None, name: "pa-box".into(), aliases: vec![] };
     assert_eq!(resolve(d.clone()).await.expect("its machine").daemon, Some(box_));
     let theirs = Principal::Daemon { account: "acct-pb".into(), daemon: "dmn-pa".into() };
     assert!(resolve(theirs).await.is_none(), "another account's machine");
@@ -217,6 +218,7 @@ async fn daemons(f: &dyn Fixture) {
         account: "acct-ma".into(),
         team: team.map(Into::into),
         name: name.into(),
+        aliases: vec![],
     };
     assert_eq!(got, [d("dmn-m1", None, "m-uno"), d("dmn-m2", Some("t-m"), "m-two")]);
 

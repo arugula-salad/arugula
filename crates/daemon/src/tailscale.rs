@@ -135,12 +135,6 @@ impl LocalApi {
         Ok(serde_json::from_slice(&body)?)
     }
 
-    /// Only the tailnet sandbox supervisor (Labs) asks.
-    #[cfg(all(unix, feature = "labs"))]
-    pub async fn status(&self) -> anyhow::Result<Status> {
-        parse_status(&self.status_json().await?).context("tailscaled isn't logged in")
-    }
-
     /// The status once tailscaled has settled: while it says it is still
     /// starting (it was started beside us, as in a sandbox after a reboot),
     /// wait up to `within`.
@@ -154,12 +148,6 @@ impl LocalApi {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-    }
-
-    /// `Running` once logged in and connected; `NeedsLogin`, `Starting`, …
-    #[cfg(all(unix, feature = "labs"))]
-    pub async fn backend_state(&self) -> anyhow::Result<String> {
-        Ok(self.status_json().await?.get("BackendState").and_then(Value::as_str).unwrap_or_default().to_owned())
     }
 
     /// Who is at `addr` (the far end of a TCP connection we accepted), or

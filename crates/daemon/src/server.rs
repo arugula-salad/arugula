@@ -52,12 +52,8 @@ pub struct App {
     /// Claude Code's IDE (M28), if on.
     pub ide: Option<Arc<dyn crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
-    /// Dial-out hosts connected to us (M4c).
-    pub dial_outs: Arc<crate::dial::DialOuts>,
     /// Read-only share links.
     pub shares: Arc<crate::share::Shares>,
-    /// History other hosts synced to us.
-    pub synced: Arc<crate::sync::Synced>,
     /// Enrollment in Arugula control: trusted devices, the relay.
     pub control: Arc<crate::control::Control>,
     /// Who else may reach which sessions (M12).
@@ -90,7 +86,6 @@ impl App {
         ide: Option<Arc<dyn crate::editors::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
-        synced: Arc<crate::sync::Synced>,
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
@@ -105,9 +100,7 @@ impl App {
             push,
             ide,
             hosts,
-            dial_outs: Default::default(),
             shares,
-            synced,
             control,
             acl,
             mcp,
@@ -133,16 +126,15 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
         .merge(crate::hosts::routes())
         .merge(crate::share::api_routes())
         .merge(crate::acl::api::routes())
+        .merge(crate::acl::api::link_routes())
         .merge(crate::setup::routes())
         .merge(crate::update::routes())
         .merge(crate::selfupdate::routes())
 }
 
-/// Plus what makes it a home daemon: hosts dialing in and pushing history,
-/// the way through to dial-out hosts (`/h/NAME`), its provider's sandboxes,
-/// and the provider tunnel to resident daemons in them (`/tunnel/NAME`).
+/// Plus what makes it a home daemon: its provider's sandboxes.
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
-    crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
+    crate::lab_hooks::labs().home_routes(own_routes(app))
 }
 
 /// Over TCP (loopback, behind `tailscale serve`, or a tailnet address):
@@ -190,13 +182,6 @@ pub fn local_router(app: Arc<App>) -> Router {
 /// is all it can do there, not drive the daemon.
 pub fn editors_router(app: Arc<App>) -> Router {
     crate::editors::local_routes(Router::new()).with_state(app)
-}
-
-/// Over the tunnel to the home daemon (a dial-out host): the home daemon
-/// checked who is asking. Our own WebSocket and API only: nothing that
-/// would make this host a way to anywhere else (no `/h/`, no dialing in).
-pub fn tunnel_router(app: Arc<App>) -> Router {
-    Router::new().route("/ws", get(local_ws)).merge(own_routes(&app)).with_state(app)
 }
 
 /// Inside an end-to-end channel (`e2e.rs`): the device was checked by the
@@ -271,7 +256,6 @@ async fn guard(
     let class = match class(&req, &app.access) {
         Class::Shell
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && !req.headers().contains_key("tailscale-user-login")
                 && !app.access.is_public_host(req.headers()) =>
         {
@@ -286,7 +270,6 @@ async fn guard(
         Class::Owner => {
             // serve's identity header, on loopback: only from tailscaled.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && req.headers().contains_key("tailscale-user-login")
                 && !crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -298,7 +281,6 @@ async fn guard(
             // From serve: a person's request (the header), or a tagged
             // node's (none, for a tailnet name), which is refused below.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && (req.headers().contains_key("tailscale-user-login") || app.access.is_public_host(req.headers()))
                 && crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -326,7 +308,7 @@ async fn guard(
         Class::Viewer => app.access.check_viewer(req.headers(), &peer),
         Class::Token => Ok(()),
         // The link carries the credential; a browser on this machine only.
-        Class::SignIn if peer == crate::access::Peer::Local && !app.access.tunnelled() => Ok(()),
+        Class::SignIn if peer == crate::access::Peer::Local => Ok(()),
         Class::SignIn => Err((StatusCode::FORBIDDEN, "sign-in links are for this machine's browsers".into())),
         // A browser asking first, for one of our origins (`cors` answers
         // it; it carries no credentials, and its answer gives nothing away).
@@ -340,7 +322,7 @@ async fn guard(
     if let Some(f) = forwarded {
         app.identify.saw_forwarded(&f).await;
     }
-    // Checked: nothing past here (a handler, a dial-out host's proxy) sees
+    // Checked: nothing past here (a handler) sees
     // it, but the sign-in link's page, which hands it back.
     if !signin {
         req.headers_mut().remove(crate::access::PAGE_KEY_HEADER);
@@ -364,7 +346,6 @@ async fn guard(
             // rather than any 401 an API call answers for its own reasons.
             if status == StatusCode::UNAUTHORIZED
                 && peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && app.access.needs_local_token()
             {
                 res.headers_mut().insert("x-arugula-sign-in", HeaderValue::from_static("/auth"));
@@ -374,7 +355,7 @@ async fn guard(
     };
     // serve authenticates by source, so any page the owner visits could frame
     // the logged-in app (clickjacking). Nothing frames us legitimately.
-    // (A stricter policy already set, on a dial-out host's answer, stays.)
+    // (A stricter policy already set stays.)
     let h = res.headers_mut();
     h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static("frame-ancestors 'none'"));
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
@@ -429,13 +410,9 @@ enum Class {
     Owner,
     /// A share link's viewer: the viewer page, its socket and static files.
     Viewer,
-    /// A host's, without a user identity: the token it carries (an invite,
-    /// or its per-host token) is the credential, checked by the handler.
-    /// Or an end-to-end channel, whose handshake is the credential.
-    /// Joining is how a tagged sandbox node adds itself; dialing in and
-    /// pushing history are how a dial-out host reaches us. A forge's
-    /// webhook (M40) is signed with a secret only this daemon and the forge
-    /// hold.
+    /// Without a user identity: an end-to-end channel, whose handshake is
+    /// the credential, checked by the handler; or a forge's webhook (M40),
+    /// signed with a secret only this daemon and the forge hold.
     Token,
     /// MCP with a bearer token (M16): an MCP client without a tailnet
     /// identity of its own, or an agent block's.
@@ -473,12 +450,7 @@ fn class(req: &Request, access: &Access) -> Class {
     {
         return Class::Preflight;
     }
-    if (m == Method::POST && path == crate::hosts::JOIN_PATH)
-        || (m == Method::GET && path == crate::dial::DIAL_PATH)
-        || (m == Method::GET && path == crate::e2e::PATH)
-        || path.starts_with(crate::sync::PUSH_PREFIX)
-        || (m == Method::POST && crate::lab_hooks::labs().is_hook(path))
-    {
+    if (m == Method::GET && path == crate::e2e::PATH) || (m == Method::POST && crate::lab_hooks::labs().is_hook(path)) {
         Class::Token
     } else if path == crate::mcp::PATH
         && req.headers().get(header::AUTHORIZATION).is_some()
@@ -739,10 +711,10 @@ mod tests {
         page_key_from_query(&mut r);
         assert_eq!(r.uri().to_string(), "/ws?surface=web");
         assert_eq!(r.headers()["x-arugula-key"], "ilp_abc");
-        let mut r = req("/h/box/ws?arugula_key=ilp_abc", true);
+        let mut r = req("/ws?arugula_key=ilp_abc", true);
         r.headers_mut().insert("x-arugula-key", HeaderValue::from_static("ilp_other"));
         page_key_from_query(&mut r);
-        assert_eq!(r.uri().to_string(), "/h/box/ws");
+        assert_eq!(r.uri().to_string(), "/ws");
         assert_eq!(r.headers()["x-arugula-key"], "ilp_abc", "the page's own key wins");
         // Only for a WebSocket: elsewhere it stays put and counts for nothing.
         let mut r = req("/api/panes?arugula_key=ilp_abc", false);

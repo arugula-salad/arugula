@@ -67,7 +67,7 @@ export function EmailSection({ back }: { back?: string }) {
           <span data-email-address>{e.email ?? "No email"}</span>
           <span class="dim">
             {!e.sends
-              ? "this control doesn't send email"
+              ? "this server doesn't send email"
               : e.email && e.verified
                 ? `security notices go here, ${where}`
                 : "add one so a reset of your devices reaches you"}

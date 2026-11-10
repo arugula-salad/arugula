@@ -120,6 +120,7 @@ impl Daemon {
     /// Write the layout and pane details if anything changed since the last
     /// write.
     pub(super) fn save(&mut self) {
+        self.save_closed();
         // Whichever notices a new directory or command tells the clients
         // (at the next tick).
         self.refresh_meta();
@@ -254,7 +255,7 @@ impl Daemon {
             answered: self.answered.get(&p.id).cloned(),
             inbox: self.inbox.contains_key(&p.id),
             unhooked,
-            mentions_off: self.mentions_off.contains(&p.id),
+            mentions_off: self.tagged_off.contains(&p.id),
             live: self.live.get(&p.id).cloned().map(Box::new),
             link: self.links.get(&p.id).cloned(),
             restored: self.restored.contains(&p.id),

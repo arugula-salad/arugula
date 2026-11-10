@@ -23,47 +23,20 @@ pub enum Command {
     /// a Mac with no GUI login (reached over ssh) the agent runs in the
     /// background session: it outlives the ssh login but not a reboot;
     /// --system starts it at boot instead.
-    /// With --tailnet (no systemd): joins the tailnet with a
-    /// userspace tailscaled and runs the daemon there, both kept running by
-    /// `arugulad sandbox`.
     Install {
         /// Write and enable the unit without starting it now.
         #[arg(long)]
         no_start: bool,
         /// Only put arugulad and arugula in ~/.local/bin, and that on your
         /// shell's PATH: no service (a machine without systemd).
-        #[arg(long, conflicts_with_all = ["system", "tailnet", "no_start"])]
+        #[arg(long, conflicts_with_all = ["system", "no_start"])]
         no_service: bool,
         /// macOS: a LaunchDaemon that runs it as you from boot, with nobody
         /// logged in (/Library/LaunchDaemons/arugulad.USER.plist). Runs
         /// sudo, which may ask for your password. `arugulad uninstall`
         /// removes it.
-        #[arg(long, conflicts_with = "tailnet")]
+        #[arg(long)]
         system: bool,
-        /// A Tailscale auth key (ephemeral, tagged), as `file:PATH`, `-` for
-        /// stdin, or the key itself (kept off command lines it starts).
-        #[arg(long, value_name = "AUTHKEY")]
-        tailnet: Option<String>,
-        /// The home daemon's URL: its page may use this daemon.
-        #[arg(long, requires = "tailnet")]
-        home: Option<String>,
-        /// An invite from the home daemon (`arugula hosts invite`), or
-        /// `file:PATH`: adds this daemon to its host list.
-        #[arg(long, requires = "home")]
-        join: Option<String>,
-        /// The tailnet login allowed in [default: the home daemon's owner,
-        /// learned when joining].
-        #[arg(long, requires = "tailnet")]
-        owner: Option<String>,
-        /// This machine's tailnet name (and host name in lists).
-        #[arg(long, requires = "tailnet")]
-        hostname: Option<String>,
-        /// The daemon's port on loopback.
-        #[arg(long, default_value_t = 7681, requires = "tailnet")]
-        port: u16,
-        /// Don't put it behind `tailscale serve` (plain http only).
-        #[arg(long, requires = "tailnet")]
-        no_serve: bool,
         /// Drop the daemon arguments an earlier install wrote, instead of
         /// keeping them when none are given.
         #[arg(long)]
@@ -77,9 +50,6 @@ pub enum Command {
     /// background agent or the --system LaunchDaemon, which needs sudo; on
     /// Linux the systemd user service). The binaries and panes' state stay.
     Uninstall,
-    /// Keep tailscaled and the daemon running, as `install --tailnet` set
-    /// them up (for machines without systemd); stops on SIGTERM.
-    Sandbox,
     /// Add this machine to your account on an Arugula control
     /// (`https://control.example.com`): prints a link to approve from a
     /// device that's signed in, and finishes once that device approves (an
@@ -232,7 +202,7 @@ pub(crate) struct RunArgs {
     #[arg(long, hide = true)]
     pub(crate) no_relay: bool,
 
-    /// A hosted workspace's box (M180): headless, enrolls itself with the
+    /// A Cloud workspace's hosted machine (M180): headless, enrolls itself with the
     /// ticket in ARUGULA_HOSTED_TICKET or its sandbox id, at
     /// ARUGULA_CONTROL_URL (else --control), and tells control when it's
     /// working.
@@ -310,32 +280,14 @@ pub(crate) struct RunArgs {
     /// and exit codes.
     #[arg(long)]
     pub(crate) no_shell_integration: bool,
-    /// The wispd that VM panes get their machines from.
-    #[arg(long, env = "ARUGULA_WISP_URL", default_value = DEFAULT_WISP_URL, hide = true)]
-    pub(crate) wisp_url: String,
-    /// Its API token. VM panes are off without one. Default:
-    /// `$XDG_DATA_HOME/wisp/token`.
-    #[arg(long, env = "ARUGULA_WISP_TOKEN_FILE", hide = true)]
-    pub(crate) wisp_token_file: Option<PathBuf>,
-    /// The loam API VM panes get their machines from instead of wispd
-    /// (`https://api.loam.inevitable.fyi`, say). Given, it's the provider.
+    /// The loam API VM panes get their machines from
+    /// (`https://api.loam.inevitable.fyi`, say). VM panes are off without it.
     #[arg(long, env = "LOAM_API_URL", hide = true)]
     pub(crate) loam_url: Option<String>,
     /// The loam project key it uses (`loam_…`), in a file of its own [default:
     /// ~/.config/arugula/loam-key].
     #[arg(long, env = "ARUGULA_LOAM_KEY_FILE", hide = true)]
     pub(crate) loam_key_file: Option<PathBuf>,
-    /// Where the static binaries (`just static`) to copy into a sandbox
-    /// are, when making a daemon resident there [default:
-    /// $XDG_DATA_HOME/arugula/static].
-    #[arg(long, env = "ARUGULA_STATIC_DIR", hide = true)]
-    pub(crate) static_dir: Option<PathBuf>,
-    /// A resident daemon in a sandbox (set when it's made resident): the
-    /// SHA-256 of the token the home daemon's tunnel presents. Connections
-    /// from this machine (the provider's proxy arrives on loopback) need
-    /// it; the Unix socket doesn't.
-    #[arg(long, value_name = "HEX", hide = true)]
-    pub(crate) provider_token_sha256: Option<String>,
     /// An Anthropic API key for Claude Code agents in VMs, passed to them as
     /// ANTHROPIC_API_KEY [default: ~/.config/arugula/anthropic-key].
     #[arg(long, env = "ARUGULA_ANTHROPIC_KEY_FILE", hide = true)]
@@ -382,9 +334,6 @@ pub(crate) struct RunArgs {
 
     #[command(flatten)]
     pub(crate) editors: EditorArgs,
-
-    #[command(flatten)]
-    pub(crate) reach: ReachArgs,
 }
 
 /// Editor blocks: VS Code as code-server, served like browser blocks
@@ -402,42 +351,6 @@ pub(crate) struct EditorArgs {
     /// Where code-server releases are downloaded from.
     #[arg(long, env = "ARUGULA_CODE_SERVER_RELEASES", default_value = crate::editors::RELEASES, hide = true)]
     pub(crate) code_server_releases: String,
-}
-
-/// Reaching a home daemon from a host that can only dial out, and
-/// keeping history there.
-#[derive(clap::Args, Debug)]
-pub(crate) struct ReachArgs {
-    /// Dial out to this home daemon (`wss://home.example.ts.net`) and serve this
-    /// daemon through it, for when nothing can connect in. Redials with
-    /// backoff; this daemon works on its own meanwhile.
-    #[arg(long, env = "ARUGULA_PEER", requires = "token")]
-    pub(crate) peer: Option<String>,
-    /// The per-host token for --peer (and --sync), in a file. Mint one on
-    /// the home daemon with `arugula hosts token NAME`.
-    #[arg(long, env = "ARUGULA_TOKEN_FILE", value_name = "FILE")]
-    pub(crate) token: Option<PathBuf>,
-    /// An invite (`arugula hosts invite`) to trade for a token when the
-    /// --token file doesn't exist yet; the token is saved there.
-    #[arg(long, requires = "peer")]
-    pub(crate) join: Option<String>,
-    /// Push closed panes' history to the home daemon, which keeps it
-    /// encrypted after this host is gone.
-    #[arg(long, requires = "token")]
-    pub(crate) sync: bool,
-    /// Push open panes' history too, as it grows.
-    #[arg(long, requires = "sync")]
-    pub(crate) sync_live: bool,
-    /// Where to push [default: the --peer's https:// origin].
-    #[arg(long, requires = "sync")]
-    pub(crate) sync_to: Option<String>,
-    /// Seconds between pushes.
-    #[arg(long, default_value_t = 30, requires = "sync")]
-    pub(crate) sync_every: u64,
-    /// Home daemon: the key ring synced history is sealed with [default:
-    /// <state>/synced/key, made on first use, 0600].
-    #[arg(long, env = "ARUGULA_SYNC_KEY_FILE")]
-    pub(crate) sync_key_file: Option<PathBuf>,
 }
 
 /// Browser blocks on ports: each is served on its own origin by a listener
@@ -476,17 +389,12 @@ pub(crate) struct BlockArgs {
     pub(crate) block_acme_directory: String,
 }
 
-/// Where wispd listens unless told otherwise.
-pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
-
 /// Options that work but stay out of `--help` unless the machine has turned
 /// their Labs flag on: the studio file and the sandbox provider. (Guest
 /// ssh's left Labs, native #205: always listed.) The others that are
 /// `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 5] = [
+const LABS_OPTIONS: [(&str, &str); 3] = [
     ("studio_file", flags::STUDIO),
-    ("wisp_url", flags::SANDBOX_PROVIDERS),
-    ("wisp_token_file", flags::SANDBOX_PROVIDERS),
     ("loam_url", flags::SANDBOX_PROVIDERS),
     ("loam_key_file", flags::SANDBOX_PROVIDERS),
 ];
@@ -531,7 +439,7 @@ mod tests {
     use clap::CommandFactory;
 
     /// `arugulad --help` is for strangers: no milestone or issue numbers, no
-    /// names of our own machines, and what needs a wispd or the studio isn't
+    /// names of our own machines, and what needs loam or the studio isn't
     /// listed. Guest ssh's options are: it left Labs (native #205).
     #[test]
     fn help_has_no_internal_numbers_or_names_and_hides_what_a_stranger_cant_use() {
@@ -556,15 +464,7 @@ mod tests {
             }
         }
         let top = &texts[0];
-        for flag in [
-            "--wisp-url",
-            "--wisp-token-file",
-            "--loam-url",
-            "--loam-key-file",
-            "--studio-file",
-            "--guest-machines",
-            "--static-dir",
-        ] {
+        for flag in ["--loam-url", "--loam-key-file", "--studio-file", "--guest-machines"] {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
         assert!(top.contains("--guest-ssh ") && top.contains("--guest-ssh-host"), "{top}");
@@ -582,9 +482,8 @@ mod tests {
     /// passes the bool; it reads neither the filesystem nor the environment.
     #[test]
     fn labs_unhides_its_options_and_only_those() {
-        let labs = ["--wisp-url", "--wisp-token-file", "--loam-url", "--loam-key-file", "--studio-file"];
-        let hidden_internals =
-            ["--guest-machines", "--static-dir", "--log-file", "--no-relay", "--provider-token-sha256"];
+        let labs = ["--loam-url", "--loam-key-file", "--studio-file"];
+        let hidden_internals = ["--guest-machines", "--log-file", "--no-relay"];
         let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));
         for flag in labs {

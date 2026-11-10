@@ -1,10 +1,39 @@
 // Where an `@machine` mention got to (#502): one quiet line under the
 // message per machine it names. Control says it when the machine's daemon
-// answers, and again when the machine's agent replies in the thread.
+// answers, and again when the machine's agent replies in the thread. Each
+// is a status chip in the tone of its state.
 
 import type { ChatMentionStatus, ChatMessage, ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
-import { MachineIcon } from "./icons";
+import { ChevronIcon, MachineIcon } from "../ui/icons";
+import { Chip, type Tone } from "../ui/state-chip";
+
+/** A state's tone: working accent, read and answered ok, the ones that wait
+ * or went elsewhere warn, a dropped turn danger, and what was only sent or
+ * handed over is neutral. */
+export function mentionTone(state: ChatMentionStatus["state"]): Tone {
+  switch (state) {
+    case "working":
+      return "accent";
+    case "read":
+    case "answered":
+      return "ok";
+    case "dropped":
+      return "danger";
+    case "fell_back":
+    case "waiting":
+    case "queued":
+    case "no_such_session":
+    case "offline":
+    case "chain":
+    case "not_granted":
+      return "warn";
+    case "sending":
+    case "delivered":
+    case "silenced":
+      return "muted";
+  }
+}
 
 /** The line's words: what the daemon said, in the sender's terms. */
 export function mentionStatusText(s: ChatMentionStatus): string {
@@ -13,7 +42,9 @@ export function mentionStatusText(s: ChatMentionStatus): string {
     case "sending":
       return `Sending to ${who}…`;
     case "delivered":
-      return s.session ? `Delivered to ${who}/${s.session}` : `Delivered to ${who}`;
+      // #643: a session that took it at once is `working`, so this one has
+      // it waiting: for its next tool call (#644), or an older daemon's turn end.
+      return s.session ? `${who}/${s.session}: reads this at its next step` : `Delivered to ${who}`;
     case "fell_back":
       return `${who}: went to ${s.session ?? "another session"} (no session called ${s.asked ?? "that"})`;
     case "waiting":
@@ -53,13 +84,15 @@ export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
     <div class="mention-status" role="group" aria-label="Agent mentions">
       {lines.map((s) => (
         <div key={s.machine} class={`mention-line ${s.state}`} data-mention-status={s.state} data-machine={s.machine} title={s.reply ? `Reply ${s.reply}` : undefined}>
-          <MachineIcon size={12} />
+          <MachineIcon size="xs" />
           {s.state === "answered" ? (
-            <button type="button" class="mention-link" onClick={() => nav.openRoom(room.id, undefined, m.parent ?? m.seq)}>
-              {mentionStatusText(s)} ›
-            </button>
+            <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, undefined, m.parent ?? m.seq)}>
+              {mentionStatusText(s)} <ChevronIcon dir="right" />
+            </Chip>
           ) : (
-            <span>{mentionStatusText(s)}</span>
+            <Chip tone={mentionTone(s.state)} dot>
+              {mentionStatusText(s)}
+            </Chip>
           )}
         </div>
       ))}

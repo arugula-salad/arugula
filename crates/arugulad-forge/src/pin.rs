@@ -25,16 +25,24 @@
 //!   text, and asks again when something is new or after [`LOOK_AGAIN`].
 //!   There are still no PRs that refer to an issue. "You" is the owner's
 //!   GitHub login as the platform has it, without their teams.
-//! - **Falling back.** The platform says it isn't linked (or the item is
-//!   gone): the pin goes and the block reads GitHub again. The platform
-//!   can't be reached: what it said last stays, marked stale, for
-//!   [`STALE`]; with nothing to show yet (a restart), or after that, the
-//!   block reads GitHub until the platform answers again. A block is never
-//!   blank because the platform is down.
+//! - **Falling back.** The platform says it isn't linked, or has no item
+//!   the owner may read (a 404): the pin goes and the block reads GitHub
+//!   again, with the person's own `gh`. The platform can't be reached:
+//!   what it said last stays, marked stale, for [`STALE`]; with nothing to
+//!   show yet (a restart), or after that, the block reads GitHub until the
+//!   platform answers again, and keeps the pin for then. The platform
+//!   refuses the read (a 400 or 409): GitHub at once, the pin kept the
+//!   same way. A block is never blank because the platform is down. Every
+//!   fallback shows what the person's own GitHub login may read, which is
+//!   what the viewer check asks GitHub too.
 //!
-//! Writes a person sends from a pinned block still go out with their `gh`
-//! (as M170 leaves them) until sending is the platform's (M168), and *Diff*
-//! and *Checkout* still fetch with the person's git.
+//! Writes a person sends from a pinned block go out with their `gh`, as
+//! every block's do (the platform is told first, [`platform::sending`]);
+//! from the phone the platform sends with a one-use token of theirs,
+//! falling back to their machine (M168, [`super::send_op`]). *Diff* and
+//! *Checkout* fetch with the person's git. The boundary between the two
+//! readers is written down in docs/data-model.md, "Forge items: two read
+//! paths".
 
 use std::time::{Duration, Instant};
 

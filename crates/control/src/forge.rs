@@ -10,10 +10,11 @@
 //!   "repos": []}`, so no old daemon errors. A daemon told nothing is live
 //!   on nothing, and its blocks poll GitHub with its own login. Linked
 //!   repos' blocks are pins onto the platform's mirror (M172).
-//! - **Hosted boxes.** `POST /api/daemon/github/token {repo}` (a daemon's
-//!   signature): the platform's read-only installation token for one
-//!   repository (`PlatformPort::github_token`), for an account GitHub
-//!   gives access to it.
+//! - **Machines with no `gh` login.** `POST /api/daemon/github/token
+//!   {repo}` (a person's daemon's signature; a hosted machine's is refused
+//!   here): the platform's read-only installation token for one repository
+//!   (`PlatformPort::github_token`), for an account GitHub gives access to
+//!   it.
 
 use std::sync::Arc;
 
@@ -51,8 +52,9 @@ fn platform_has_no_app() {
     );
 }
 
-/// `POST /api/daemon/github/token {repo}`: a hosted box (no `gh` login)
-/// reads through the App, for repositories its account may. The platform
+/// `POST /api/daemon/github/token {repo}`: a person's machine with no `gh`
+/// login reads through the App, for repositories its account may. A hosted
+/// machine's signature doesn't open it. The platform
 /// holds the App's key and answers (M161).
 pub async fn daemon_token(
     State(app): State<Arc<App>>,

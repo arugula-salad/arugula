@@ -1,13 +1,13 @@
 // A person's picture in chat: their GitHub avatar as control serves it
 // (never github's own host), or their initials on their color while it
-// loads and when they have none. An agent shows its owner's, with a small
-// machine badge. A dot says who's around (#110).
+// loads and when they have none. An agent shows its owner's, with the agent
+// icon in a teal-ringed circle on its corner. A dot says who's around (#110).
 
 import { useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { presence } from "./presence";
-import { LiveFace } from "../live/face";
+import { MachineIcon } from "../ui/icons";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {
@@ -84,8 +84,6 @@ export function MsgAvatar({
           }}
         />
       )}
-      {/* #344: their live face over the picture while they're live (a person's; an agent isn't them). */}
-      {account && !agent && <LiveFace account={account} />}
     </span>
   );
   if (!dot && !agent) return face;
@@ -93,8 +91,8 @@ export function MsgAvatar({
     <span class={agent ? "avatar-wrap by-agent" : "avatar-wrap"}>
       {face}
       {agent && (
-        <span class="avatar-badge" title="An agent" aria-hidden="true">
-          ▣
+        <span class="avatar-mark" data-agent-mark title="An agent" aria-hidden="true">
+          <MachineIcon size="xs" />
         </span>
       )}
       {dot && <Dot account={agent ? undefined : account} machine={agent} />}

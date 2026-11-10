@@ -14,6 +14,7 @@ import { ConnectionChip } from "./shell/context-header";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
+import { openSettings } from "./settings-route";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
@@ -21,8 +22,7 @@ import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
-import { LiveSwitch, liveItems } from "../../shared/live/switch";
-import { SearchIcon } from "./shell/icons";
+import { Caret, SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -115,15 +115,16 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
       // One label and title in every bar (UI audit #170); the panes' head
       // draws it as a search field.
       title={`Every command for this pane, tab and session (${keyHint("palette")})`}
-      // Its name is "Commands": the chord beside it is for the eye, and
-      // would otherwise make it a button named "…+Shift+P".
-      aria-label="Commands"
+      // No aria-label: its name is what it shows, "Commands" and the chord,
+      // so voice control's "click Commands" and a screen reader agree.
       aria-keyshortcuts={ariaKeys(keyHint("palette"))}
       onClick={() => openPalette(client)}
     >
       {search && <SearchIcon />}
       <span>Commands</span>
-      <kbd aria-hidden="true">{keyHint("palette")}</kbd>
+      {/* A space between them, so the name reads "Commands Ctrl+Shift+P". */}
+      {" "}
+      <kbd>{keyHint("palette")}</kbd>
     </button>
   );
 }
@@ -135,26 +136,30 @@ export function AccountButton({ client }: { client: Client | null }) {
   const login = account?.login() ?? null;
   const ref = useRef<HTMLButtonElement>(null);
   const expanded = useMenuOpenFrom(ref);
+  // Where the rail has Settings, this is who you are (Arugula #695); with no
+  // rail (a phone, no machine shown) it's the way to the settings too.
+  const rail = !usePhone() && !!client?.state;
   const open = (e: MouseEvent) => {
-    countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mine: MenuItem[] = account ? [{ header: accountHeader(login), name: !!login }, ...account.items(), "separator"] : [];
-    const items: MenuItem[] = [...mine, ...presenceItems(liveItems()), ...settingsItems(client)];
+    const settings: MenuItem[] = rail ? [{ label: "Settings", run: () => openSettings() }] : settingsItems(client);
+    if (!rail) countView("settings");
+    const items: MenuItem[] = [...mine, ...presenceItems(), ...settings];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
+  // A daemon's own page has no account: the rail's Settings is all there is.
+  if (rail && !account) return null;
   return (
     <>
-      {/* #341: live presence, beside the account, with its Labs flag. */}
-      <LiveSwitch />
       <button
         ref={ref}
         class="account-button"
         aria-haspopup="menu"
         aria-expanded={expanded}
-        title={login ? "Your account and settings" : "Settings"}
-        aria-label={login ? `Account: ${login}` : "Settings"}
+        title={login ? "Your account" : "Settings"}
+        aria-label={login ? undefined : "Settings"}
         data-account-menu
         onClick={open}
         onContextMenu={open}
@@ -163,7 +168,7 @@ export function AccountButton({ client }: { client: Client | null }) {
           {login ? login.slice(0, 1).toUpperCase() : "⚙"}
           {login && <AccountPicture />}
         </span>
-        {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
+        {login && <span class="account-login" data-signed-in-as>{login}</span>} <Caret />
       </button>
     </>
   );

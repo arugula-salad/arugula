@@ -1,0 +1,57 @@
+name: release-train
+
+# The daemon's release, when something's worth telling people
+# (scripts/release-train). It starts when chant's tick finishes on main, so a
+# commit that turns green is looked at within minutes, and the script keeps 2
+# hours between releases. The cron is only a backstop: from Nov 7 to Nov 9
+# GitHub ran 12 of ~280 of the tick's scheduled runs and 9 of ~17 of this
+# one's, while the tick's workflow_run fired 188 times (Arugula #794). The
+# repository variable ARUGULA_RELEASE_TRAIN=on turns it on. A manual run does
+# the same without the gap, and is how to send one now.
+on:
+  workflow_run:
+    workflows: ["chant-ci-green"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch: {}
+
+# One at a time: a release's rare jobs take longer than a look.
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+
+permissions:
+  # scripts/release starts and watches rare-nightly.yml. CI_GREEN_TOKEN can't.
+  actions: write
+  contents: read
+
+jobs:
+  train:
+    # A tick that failed tagged nothing new.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # The rare jobs twice over: testnet alone can take 30 minutes each time.
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # All of main and every tag: the notes come from the range since the last.
+          fetch-depth: 0
+          # For git, the tag and the release's record on main. Not the job's own
+          # token: a tag it pushed would set off no workflow, and it can't bypass
+          # the ruleset for that record.
+          token: ${{ secrets.CI_GREEN_TOKEN }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - run: scripts/release-train
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARUGULA_RELEASE_TRAIN: ${{ vars.ARUGULA_RELEASE_TRAIN }}
+          ARUGULA_TRAIN_GAP_MINUTES: ${{ github.event_name == 'workflow_dispatch' && '0' || '120' }}

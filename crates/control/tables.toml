@@ -80,10 +80,6 @@ sees = "The operator's Infisical, which materializes secrets into home-cloud's K
 name = "Stripe"
 sees = "Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes."
 
-[parties.arugula_stream]
-name = "arugula.stream"
-sees = "When control has an arugula.stream app (People blocks, live presence), arugula.stream's relay gets, for each person with a People block open, their account id, the name their team's roster gives them, and the team's id (the room is `team:<id>`), and for as long as they're there, who else is. With live presence (the `live-presence` Labs flag) on Watching or Live, it gets the same for every one of their teams for as long as any of their pages is open, with no People block open. With their camera on (a People block's, or live presence's Live), their avatar's movements or their outline go through it to the others in the room (lines and numbers made in the browser, never a picture); voice, and video in voice or a call, go through LiveKit Cloud, arugula.stream's media service. Control keeps nothing of it. Off when control has no app."
-
 # ---- the machine plane: accounts, devices, the directory, teams
 
 [[table]]
@@ -199,7 +195,7 @@ name = "passkeys"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF."
+what = "A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF, and the device its PRF keys are, once a browser holding it said (#641)."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -229,6 +225,15 @@ plane = "machine"
 process = "hub"
 holds = "metadata"
 what = "A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "native_devices"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Which browser-kind devices paired by code as native apps, whose signatures count (aru-131)."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -400,7 +405,7 @@ name = "hosted_machines"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed."
+what = "A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), when it was last seen and removed. Its `urls` column is never read: a hosted machine is reached only through the relay."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -436,7 +441,7 @@ name = "settings"
 plane = "machine"
 process = "hub"
 holds = "plaintext"
-what = "Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation."
+what = "Control's own VAPID key pair, which signs the pushes it sends, its hosted key (M178), which signs the hosted machines enrolled under a project's delegation, and which one-time data steps it has taken."
 with_account = "none"
 seen_by = ["litestream"]
 
@@ -574,6 +579,16 @@ with_account = "kept"
 note = "Only until the platform confirms it erased its part, usually at once; then the row goes."
 seen_by = ["litestream"]
 
+[[table]]
+name = "untold_hosted_removals"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Hosted machines an owner removed, or that went with a deleted account, that the platform hasn't been told of yet (Arugula #744): the machine's id, its workspace's id, and when. Written in the removal's transaction, told at once and again every 30 seconds until the platform takes it, which fails the workspace and ends its runs and sessions."
+with_account = "kept"
+note = "Only until the platform takes it, usually at once; then the row goes. It names a machine and a workspace, not the account."
+seen_by = ["litestream"]
+
 # ---- the platform plane: what has to exist while every machine is asleep
 
 [[table]]
@@ -650,6 +665,17 @@ what = "The full-text index of chat messages and their quotes (SQLite FTS5; on P
 why_asleep = "Control searches chat itself, with every machine asleep."
 with_account = "partly"
 note = "As chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_grant_never"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A room where a machine's owner said never to let its agents read it, when someone mentioned the machine there (#578)."
+why_asleep = "A later mention there says not granted, and asks no one, with every machine asleep."
+with_account = "deleted"
+note = "Names a room and a machine, never a message. Dropped with the room, and with its machine's account."
 seen_by = ["litestream"]
 
 [[table]]
@@ -744,7 +770,7 @@ name = "chat_presence"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "When a person's pages were last heard from and last used, whether they chose away or offline (#110), and their live presence choice, off or watching (#341)."
+what = "When a person's pages were last heard from and last used, whether they chose away or offline (#110). Its `live` column (live presence, #341) is from before live presence was removed: nothing reads or writes it."
 why_asleep = "Who's around, with every machine asleep."
 with_account = "deleted"
 seen_by = ["litestream"]
@@ -901,7 +927,7 @@ name = "team_members"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines."
+what = "Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines. Only `team_id` and `account_id` are read, to notice who left; `role`, `name` and `roster_version` are written with each roster and read by nothing (the platform asks the hub for roles and names)."
 why_asleep = "What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep."
 with_account = "deleted"
 seen_by = ["litestream"]
@@ -911,7 +937,7 @@ name = "grants"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A grant: a subject (a machine, or an agent grant token, M230), a power over a scope (an account or a project), who gave it, when, and when it was revoked. The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, and over its boards boards.read and boards.write, off until its owner gives one over a scope the owner reads."
+what = "A grant: a subject (a machine, or an agent grant token, M230), a power over a scope (an account or a project), who gave it, when, and when and by whom it was revoked (its giver, or an owner of the project it's over, Arugula #683). The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, and over its boards boards.read and boards.write, off until its owner gives one over a scope the owner reads."
 why_asleep = "Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues or starts and reads runs, which work with every other machine asleep."
 with_account = "deleted"
 note = "Grants to its machines, over it, or that it gave."
@@ -990,10 +1016,56 @@ name = "github_webhook_deliveries"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Kept 7 days, so a redelivery is recognised after a restart."
+what = "Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Plane's deliveries (`plane:<id>`) and chant's CI events (`ci:<project>:<event id>`, native #774) are kept here too. Kept 7 days, so a redelivery is recognised after a restart."
 why_asleep = "GitHub's webhooks arrive whether or not any machine is up."
 with_account = "none"
 seen_by = ["litestream", "github"]
+
+# ---- CI alerts as native issues (native #774): chant's signed CI events
+# open, comment on and close a project's red-branch issue
+
+[[table]]
+name = "ci_alerts"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's CI alerts, made with their first key: whether they're on (when the key in use was made, and who made it), whether a red issue assigns the people it mentions, and when the last signed event arrived. Turning them off clears the key's time and keeps the rest. The key is sealed in `project_secrets` (`ci_alerts/key`), never here."
+why_asleep = "chant's tick posts its events whether or not any machine is up."
+with_account = "partly"
+note = "A project that went with the account takes its row. Elsewhere the row stays and stops naming the account as who made the key."
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_people"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Whom a project's new red issue mentions (and assigns), in order: accounts."
+why_asleep = "They're told when an event arrives, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_greens"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each branch's newest green CI alerts were told of in a project: the commit and when chant sent the event. A red, culprit or stale event sent before it changes nothing."
+why_asleep = "Events arrive with every machine asleep, and are put in order by it."
+with_account = "partly"
+note = "A project that went with the account takes its rows; others name no account."
+seen_by = ["litestream"]
+
+[[table]]
+name = "ci_alert_issues"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each red issue CI alerts opened for a project's branch: the issue's id, the commit it went red at, when it was opened and when a green commit (or a person) closed it. A unique index keeps one open row per branch, as the platform's machines take events side by side."
+why_asleep = "The next event comments on it or closes it, with every machine asleep."
+with_account = "partly"
+note = "A project that went with the account takes its rows; others name no account."
+seen_by = ["litestream"]
 
 [[table]]
 name = "github_installations"
@@ -1010,7 +1082,7 @@ name = "linked_repos"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease, last backfill and reconcile, failures in a row, and where a turn that ran out of pages stopped."
+what = "A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease, last backfill and reconcile, failures in a row, where a turn that ran out of pages stopped, and when its last full pass started."
 why_asleep = "Its PRs and issues are kept current by webhooks and a poller on the platform, and read from it, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who linked it. Repos linked to its personal project are unlinked, and their rows purged within 24 hours; a team project's stay linked."
@@ -1021,7 +1093,7 @@ name = "tracker_connections"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A Plane project connected to a project: the workspace, Plane's project id and identifier, its name, the negative id its mirrored items stand under, whether agents' writes are approved one by one or allowed, who connected it and when, when it was disconnected and when its rows are purged, and its backfill's lease, last finish, failures in a row and where a turn that ran out of pages stopped. The API key and webhook secret are sealed in `project_secrets`, never here."
+what = "A Plane project connected to a project: the workspace, Plane's project id and identifier, its name, the negative id its mirrored items stand under, for each kind of agent write (create, comment, edit, state, fields) whether it waits for a person or lands at once and what footer a write carries (#423; the older one-word setting stays, no longer read), whether its epics become boards (#483), what the Plane project offers a work item (its states, modules, types and labels) and when that was fetched (#422), when its last webhook delivery arrived (#417), who connected it and when, when it was disconnected and when its rows are purged, and its backfill's lease, last finish, failures in a row and where a turn that ran out of pages stopped. The API key and webhook secret are sealed in `project_secrets`, never here."
 why_asleep = "Its work items are kept on the platform and read from it, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who connected it. A connection of a project that went with the account is disconnected, and its rows purged within 24 hours."
@@ -1072,7 +1144,7 @@ name = "forge_content"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author, what GitHub says the author is to the repo (author_association, M256), and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, and an unlink or an uninstall purges them within a day."
+what = "A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author, what GitHub says the author is to the repo (author_association, M256), and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, a deleted item's text goes with it, and an unlink or an uninstall purges them within a day."
 why_asleep = "A project that opted in searches PR text with every machine asleep."
 with_account = "none"
 seen_by = ["litestream", "github"]
@@ -1093,7 +1165,7 @@ name = "inbox_items"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, a mention in its thread; on a native issue an assignment or a mention, M202), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it. No text: a mention's words stay in its message."
+what = "A member's inbox: an item (a linked repo's PR or issue, a native issue, or a run), why it's there (on a linked repo's item: a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, or a mention in its thread; on a native issue: an assignment, or a mention in its body or its thread, M202; on a run: it failed, for whoever started it and the project's owners, M215), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it; a native issue's only for its project's members. No text: a mention's words stay in its message."
 why_asleep = "The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen."
 with_account = "deleted"
 seen_by = ["litestream"]
@@ -1378,7 +1450,7 @@ name = "boards"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's board: its title, goal and done note, who made and closed it (a person, or the machine of their agent) and when."
+what = "A project's board: its title, goal and done note, who made and closed it (a person, or the machine of their agent) and when; for a board made from a Plane epic, the epic's mirrored id and what it and its connection were called, and how many children a full board left out (#483); and the machine and session that lead it, and since when (#414)."
 why_asleep = "A board shows on a teammate's phone with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest stay, with no creator."
@@ -1389,7 +1461,7 @@ name = "board_entries"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A board's rows, in order: a row's one-line note, its status, and what it points at (a forge item, an issue, a run or a Cloud workspace by id, or an agent block by machine and pane); each with its rev, which a write must name; and, for a row an agent added, its machine. A row has no zone: its lane follows the work and is never stored. Zone entries are only in a database from before lanes, until the start clears them."
+what = "A board's groups and rows, in order. A group is a zone entry of kind group: a named section the board's author set (aru-125). A row: its one-line note, what it points at (a forge item, an issue, a run or a Cloud workspace by id, an agent block by machine and pane, or a link by its URL), its group if it has one, the work item its issue is (#405), whether an epic's sync added it (#483), a status from before lanes, which writes no longer set, and a lane a person set by hand with the lane the work derived then, who and when (#494); each with its rev, which a write must name; and, for a row an agent added, its machine. Otherwise a row's lane follows the work and is never stored. Zones that were lanes in all but name went at the first start after lanes."
 why_asleep = "A board's rows are read and edited from a phone with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest stay: they name no account."
@@ -1466,7 +1538,7 @@ name = "work_relations"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A typed edge between two work items of a project (Arugula #403): blocks, relates, duplicate_of or discovered_from, from an issue or a mirrored item to another, who made it (a person, an agent, or Plane or GitHub for an edge read from there), the account and the machine, and when. Only blocks gates a row's being ready."
+what = "A typed edge between two work items of a project (Arugula #403): blocks, before, relates, duplicate_of or discovered_from, from an issue or a mirrored item to another, who made it (a person, an agent, or Plane or GitHub for an edge read from there), the account and the machine, and when. Only blocks gates a row's being ready."
 why_asleep = "A board says what a row waits for, and which rows can start, on a phone with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. Where it only made one, its name goes."
@@ -1539,6 +1611,17 @@ note = "Those of deploys that go with its projects go."
 seen_by = ["litestream"]
 
 [[table]]
+name = "deploy_plans"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A chant-fly deploy's plan (#1985): who asked for its approval and when, its plan run and that run's box, when the run's machine was given each of its two tokens (GitHub tokens minted for it, once each: one that reads, to fetch the commit, then one that writes, to push chant's ledger), and the chant gate the plan stopped at (op, gate, chant's plan digest, its run and time) or why it didn't get there. No secret: the tokens are minted for the run and never kept."
+why_asleep = "A chant-fly deploy's plan runs on a box of its own before anyone approves it, and the ask is recorded once it planned, with every owner's device asleep."
+with_account = "partly"
+note = "Those of deploys that go with its projects go."
+seen_by = ["litestream"]
+
+[[table]]
 name = "platform_migrations"
 plane = "platform"
 process = "platform"
@@ -1555,11 +1638,21 @@ name = "hosted_workspaces"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when; and how its box's setup goes (M183): its status, its step, the pane it runs in, and a failed setup's reason as a fixed code, never the pane's text."
+what = "A hosted workspace (M179), told apart by its `purpose`: a Cloud workspace for people (`workspace`), one a deploy runs on (`deploy`, M219) or a snapshot's builder (`snapshot`, M263). Its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when; and how its box's setup goes (M183): its status, its step, the pane it runs in, and a failed setup's reason as a fixed code, never the pane's text."
 why_asleep = "The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted."
 seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_removed_machines"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted machine the hub says an owner removed (Arugula #744): the workspace, the machine and when, until the platform's worker fails the workspace."
+why_asleep = "The platform's worker fails the workspace, and ends its runs and sessions, with every machine asleep."
+with_account = "none"
+seen_by = ["litestream"]
 
 [[table]]
 name = "hosted_workspace_secrets"
@@ -1588,7 +1681,7 @@ name = "project_secrets"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. And a project's own secrets (`project/<NAME>`, M230), set by name by agents with no machine, each with who last set it and through which agent token."
+what = "A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. And a project's own secrets (`project/<NAME>`, M230), set by name by agents with no machine, each with who last set it and through which agent token. And its CI alerts key (`ci_alerts/key`, native #774), which checks chant's signed events."
 why_asleep = "Deploys run with every machine off."
 with_account = "partly"
 note = "A personal project's secrets go with it, and so do a disbanded team's; other teams' stay."
@@ -1635,7 +1728,7 @@ holds = "metadata"
 what = "When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end."
 why_asleep = "The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost."
 with_account = "none"
-note = "It names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed."
+note = "It names no account: a workspace's project and box ids only. It stays when the workspace goes: it's the platform's own meter, which it checks against E2B's record in hosted_usage_provider."
 seen_by = ["litestream", "e2b"]
 
 [[table]]

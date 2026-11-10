@@ -12,6 +12,10 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 retries = 1
 failure-output = "immediate-final"
 fail-fast = false
-# The quarantined tests (.config/quarantine.toml), left out: `just
-# quarantine` writes this line from it; quarantine-nightly.yml runs them.
-default-filter = "all()"
+
+# A JUnit file per run, target/nextest/ci/junit-server.xml (the two workspaces
+# share a target dir, so each has its own name): quarantine-nightly.yml's
+# `chant ci quarantine report` reads it. The quarantined tests are left out
+# by the -E filterset CI passes (docs/testing.md, "Quarantine").
+[profile.ci.junit]
+path = "junit-server.xml"

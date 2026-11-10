@@ -37,6 +37,12 @@ export interface ChatNav {
   openRoom(room: string, msg?: number, thread?: number): void;
   /** Activity, the threads I follow, or search results for `q`. */
   openChatView(view: "activity" | "saved" | "search" | "threads", q?: string): void;
+  /** A phone's swipe between levels (#816); a host that omits them has none.
+   * `up`: where a swipe right goes (null: nowhere). `down`: where a swipe
+   * left goes (null: nowhere, the drag rubber-bands). `goTo` commits one. */
+  up?(): string | null;
+  down?(): string | null;
+  goTo?(path: string): void;
   /** A message's link, to copy; a reply's names its thread. */
   roomLink(room: string, seq: number, thread?: number): string;
   /** A room's address, for its row's `href` (UI audit #185). */
@@ -63,6 +69,11 @@ export interface PlatformApi {
    * when it can't. */
   goToPane(machine: string, pane: string, quote: string | null): void;
   goToSession(machine: string): void;
+  /** The pane an agent's tab (`session`, as its post named it) is, on a
+   * machine this page reaches; undefined when the page can't open it (not
+   * the reader's, not shared with them, or no such tab now). `up` says
+   * whether the machine answers. */
+  agentPane(machine: string, session: string): { pane: string; up: boolean } | undefined;
   /** The page's bar, with what a view puts in it. */
   Bar: ComponentType<{ children?: ComponentChildren }>;
   /** Pick lines from one of the reader's panes to quote, where the page
@@ -84,12 +95,13 @@ export interface PlatformApi {
 const none = () => () => {};
 
 /** A page with no machines: what the platform page has, and the default. */
-export const noMachines: Pick<PlatformApi, "machine" | "paneTitle" | "sessionName" | "goToPane" | "goToSession"> = {
+export const noMachines: Pick<PlatformApi, "machine" | "paneTitle" | "sessionName" | "goToPane" | "goToSession" | "agentPane"> = {
   machine: () => undefined,
   paneTitle: () => "",
   sessionName: () => "",
   goToPane: () => {},
   goToSession: () => {},
+  agentPane: () => undefined,
 };
 
 export const PlatformApiContext = createContext<PlatformApi>({

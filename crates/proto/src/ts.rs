@@ -8,11 +8,11 @@ use std::{any::TypeId, collections::HashSet, path::PathBuf};
 use ts_rs::{Config, TS, TypeVisitor};
 
 use crate::{
-    ClientMsg, RemoteRef, ServerMsg,
+    ClientMsg, ServerMsg,
     api::{
         ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
-        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
-        ShareRequest, TeamPins, TeamPinsRequest,
+        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse,
+        SessionLink, Share, ShareRequest, TeamPins, TeamPinsRequest,
     },
     flags::{FlagInfo, FlagSetRequest},
     forge::ForgeState,
@@ -57,9 +57,12 @@ fn generate() -> String {
     c.visit::<FlagInfo>();
     c.visit::<crate::api::DocLinkUrl>();
     c.visit::<crate::api::DocRow>();
+    c.visit::<crate::api::DocOnPlatform>();
     c.visit::<crate::api::AgentCan>();
+    c.visit::<crate::api::AccessView>();
     c.visit::<crate::api::DocOpenRequest>();
     c.visit::<crate::api::DocOpened>();
+    c.visit::<crate::api::DocShareRequest>();
     c.visit::<crate::api::DocPreview>();
     c.visit::<crate::api::DocContent>();
     c.visit::<crate::api::DocAsset>();
@@ -95,10 +98,10 @@ fn generate() -> String {
     c.visit::<NotifyPref>();
     c.visit::<ShareRequest>();
     c.visit::<Share>();
+    c.visit::<SessionLink>();
     c.visit::<GuestInviteRequest>();
     c.visit::<GuestInvite>();
     c.visit::<ForgeState>();
-    c.visit::<RemoteRef>();
     c.visit::<crate::workspace::Record>();
     c.visit::<crate::workspace::MemberWhy>();
     c.visit::<crate::workspace::Lease>();
@@ -107,6 +110,8 @@ fn generate() -> String {
         use arugula_control_wire::chat::*;
         c.visit::<ChatRooms>();
         c.visit::<ChatRoomDetail>();
+        c.visit::<ChatThreadAgents>();
+        c.visit::<ChatPostTarget>();
         c.visit::<ChatMessages>();
         c.visit::<ChatNewChannel>();
         c.visit::<ChatNewDm>();
@@ -166,6 +171,10 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::TrackerHistory>();
     c.visit::<arugula_control_wire::projects::TrackerEvent>();
     c.visit::<arugula_control_wire::projects::TrackerPendingWrite>();
+    // CI alerts as native issues (native #774).
+    c.visit::<arugula_control_wire::projects::CiAlerts>();
+    c.visit::<arugula_control_wire::projects::CiAlertsSettings>();
+    c.visit::<arugula_control_wire::projects::CiAlertsKey>();
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
     c.visit::<arugula_control_wire::projects::ForgeContent>();
@@ -232,9 +241,12 @@ fn generate() -> String {
         c.visit::<BoardView>();
         c.visit::<PutEntry>();
         c.visit::<MoveEntry>();
+        c.visit::<StaleOrder>();
         c.visit::<SetLane>();
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
+        c.visit::<AddMany>();
+        c.visit::<AddedMany>();
         c.visit::<BoardSettings>();
         c.visit::<DocBoards>();
     }
@@ -245,7 +257,8 @@ fn generate() -> String {
         c.visit::<DocView>();
         c.visit::<NewDoc>();
         c.visit::<DocWrite>();
-        c.visit::<MoveProjectDoc>();
+        c.visit::<DocCopies>();
+        c.visit::<DocCopy>();
     }
     c.decls.sort();
     let mut out = String::from(

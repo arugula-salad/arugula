@@ -69,6 +69,13 @@
             "null"
           ]
         },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",
@@ -121,26 +128,6 @@
         "seq",
         "author",
         "text"
-      ],
-      "type": "object"
-    },
-    "AgentSessionsAsk": {
-      "description": "An agent asks which sessions of a machine it may mention (#577).",
-      "properties": {
-        "from_session": {
-          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "room": {
-          "description": "The room the mention would be in.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "room"
       ],
       "type": "object"
     },
@@ -287,7 +274,7 @@
           "type": "object"
         },
         {
-          "$ref": "#/$defs/AgentSessionsAsk",
+          "$ref": "#/$defs/MachineAgentsAsk",
           "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
           "properties": {
             "op": {
@@ -656,7 +643,7 @@
       ],
       "type": "object"
     },
-    "MachineSession": {
+    "MachineAgent": {
       "description": "A session of a machine a teammate's agent may mention (#577).",
       "properties": {
         "active_ms_ago": {
@@ -672,8 +659,26 @@
           "description": "What `@machine/name` matches: the session's name, as a slug.",
           "type": "string"
         },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineAgentState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
         "tab": {
           "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
           "type": [
             "string",
             "null"
@@ -689,6 +694,42 @@
       },
       "required": [
         "name"
+      ],
+      "type": "object"
+    },
+    "MachineAgentState": {
+      "description": "What a machine's session is doing (#645).",
+      "enum": [
+        "working",
+        "idle",
+        "needs_input"
+      ],
+      "type": "string"
+    },
+    "MachineAgentsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -770,7 +811,7 @@
             "sessions": {
               "default": [],
               "items": {
-                "$ref": "#/$defs/MachineSession"
+                "$ref": "#/$defs/MachineAgent"
               },
               "type": "array"
             },

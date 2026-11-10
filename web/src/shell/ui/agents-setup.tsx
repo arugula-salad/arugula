@@ -23,6 +23,7 @@ import type { PaneId } from "../../shared/proto";
 import { adapterReady, type Adapter } from "./adapter";
 import { openGettingStarted } from "./welcome";
 import { ClaudePlugin } from "./claude-plugin";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 const SAID_KEY = "arugula.agents-nudge";
 
@@ -155,7 +156,7 @@ const putAway = new Set<PaneId>();
  * spoken from it: only the owner's own daemon can set it up, and only
  * while its settings lack the hooks (a Claude started before them needs a
  * restart, which Set up can't do). */
-export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
+export function HooksOffer({ client, id }: { client: Client; id: PaneId }) {
   const info = client.info(id);
   const mine = !client.e2e && !client.state?.roles;
   const wants = mine && !!info?.unhooked && info.attention === "needs_input" && !putAway.has(id);
@@ -180,7 +181,7 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
     setSaid({ ok: o.ok, text: o.ok ? `${o.said} Start Claude again here to use them.` : o.said });
   };
   return (
-    <div class="hooks-chip" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
+    <div class="hooks-offer" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
       <span>{said ? said.text : "Its questions could be cards here and on your phone."}</span>
       {!said && (
         <button class="primary" disabled={busy} onClick={() => void setUp()} data-hooks-chip-setup>
@@ -197,10 +198,9 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
           Getting started…
         </button>
       )}
-      <button
+      <IconButton
+        label="Hide"
         class="link"
-        aria-label="Hide"
-        title="Hide"
         onClick={() => {
           putAway.add(id);
           setSaid(null);
@@ -208,8 +208,8 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
         }}
         data-hooks-chip-hide
       >
-        ✕
-      </button>
+        <CloseIcon size="sm" />
+      </IconButton>
       {plugin && !said && <ClaudePlugin lead="Claude Code's plugin brings the hooks and Arugula's tools. In Claude Code, then start it again here:" />}
     </div>
   );

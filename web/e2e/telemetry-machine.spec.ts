@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open } from "./helpers";
+import { closeContexts, open, settingsRow } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -48,13 +48,13 @@ test.afterAll(() => {
 
 type Info = { on: boolean; why: string; via?: string; preview: { events: { event: string; views?: Record<string, number> }[] } };
 const info = async (): Promise<Info> => (await (await fetch(`${base}/api/telemetry`)).json()) as Info;
-const card = (p: Page) => p.getByRole("dialog", { name: "Help improve Arugula?" });
+const card = (p: Page) => p.getByRole("region", { name: "Help improve Arugula?" });
 const optIn = (p: Page) => p.addInitScript(() => Object.assign(window, { __arugulaTelemetry: true }));
 
 /** The page, connected and drawn, then a moment for the card to come. */
 async function load(page: Page) {
   await open(page);
-  await expect(page.locator(".ws-head [data-account-menu]")).toBeVisible();
+  await expect(page.locator(".ws-rail [data-open-settings]")).toBeVisible();
   await page.waitForTimeout(500);
 }
 
@@ -120,8 +120,7 @@ test("the settings switch flips it, and No turns it off for good", async ({ page
   await load(page);
   await expect(card(page)).toHaveCount(0);
   const settings = async () => {
-    await page.locator(".ws-head [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Usage and crash reports…" }).click();
+    await settingsRow(page, "Usage and crash reports…");
     return page.getByRole("dialog", { name: "Usage and crash reports" });
   };
   let dialog = await settings();

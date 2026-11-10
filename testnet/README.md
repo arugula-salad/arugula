@@ -18,6 +18,8 @@ just testnet up control        # the ssh profile, plus arugula-control and its f
 just testnet test ssh          # the ssh claims run on control's stack too
 just testnet test control relay # M52 end to end
 just testnet test control cli  # M49: the CLI logged in, reaching a direct and a relayed box
+just testnet test control native # a native app, played by native/core: pairs by code, startup call, chat, a relayed terminal, on this release's daemon and an older one
+ARUGULA_NATIVE_SIM_HOST=jake-mini just testnet test control native-sim # the iPhone app itself on a simulator on a Mac, tapped through by its UI test, against this stack
 just testnet test control team # #254: the CLI reaching a team machine of another account
 just testnet test control hosted # M178: a project's delegation, a hosted box enrolled under it
 just testnet test control platform # M140: chat and Cloud through control's own site
@@ -345,3 +347,16 @@ transcript is in `.state/window/transcript.txt`. Run it with its own
 
 The `ssh` profile's boxes never have Arugula built in: tests put it there
 over ssh from the client (`just static`), which is what `bare` guards.
+
+## A chant-fly plan's ledger across a box's users
+
+`testnet/hosted/plan-ledger-users.sh` runs what arugulad does after a
+chant-fly plan's step (#1985) on the hosted box's image, as its two users,
+with no control stack: `user` (arugulad's) can't open the run's home, and
+gets the bundle from `runner` through `crates/arugulad-work/src/run_file_read.sh`
+(only a regular file of runner's own, not a link, under the cap); a
+leftover of runner's that left its process group is found by `pgrep -u
+runner` and ended by `sudo -n -u runner kill -KILL -- -1`; runner can't read
+the environment of `user`'s process that holds the push's token; and git
+pushes with the token from its environment only. It needs Docker, and
+builds the image itself.

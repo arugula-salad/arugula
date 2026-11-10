@@ -77,14 +77,33 @@ test("a push for a failure offers Dismiss", async ({ browser }) => {
   await open(page);
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()))).toBe(true);
   await page.evaluate(() => navigator.serviceWorker.ready);
+  // getNotifications() in the moment a notification is saved but not yet on
+  // display takes it as closed and deletes its record, and every later call is
+  // empty, though the worker's showNotification() succeeded (Chromium's
+  // PlatformNotificationContextImpl). So no polling: ask once, after the worker
+  // has shown it. Nothing in the app asks.
+  await expect.poll(() => context.serviceWorkers().length).toBeGreaterThan(0);
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    const sw = self as unknown as { registration: ServiceWorkerRegistration; shown?: Promise<void> };
+    const show = sw.registration.showNotification.bind(sw.registration);
+    sw.shown = new Promise((resolve) => {
+      sw.registration.showNotification = (...args) => {
+        const showing = show(...args);
+        void showing.finally(resolve);
+        return showing;
+      };
+    });
+  });
   const cdp = await context.newCDPSession(page);
-  await cdp.send("ServiceWorker.enable");
-  const registrationId = await new Promise<string>((resolve) => {
+  const registered = new Promise<string>((resolve) => {
     cdp.on("ServiceWorker.workerRegistrationUpdated", (e) => {
       const r = e.registrations.find((x) => !x.isDeleted);
       if (r) resolve(r.registrationId);
     });
   });
+  await cdp.send("ServiceWorker.enable");
+  const registrationId = await registered;
   // What the daemon sends for a failure (see crates/daemon/tests/integration/attention.rs).
   const payload = {
     title: "Failed",
@@ -98,14 +117,14 @@ test("a push for a failure offers Dismiss", async ({ browser }) => {
     registrationId,
     data: JSON.stringify(payload),
   });
-  const shown = () =>
-    page.evaluate(async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      const ns = (await reg?.getNotifications()) ?? [];
-      return ns.map((n) => ({ title: n.title, body: n.body, actions: (n as unknown as { actions: { action: string }[] }).actions.map((x) => x.action) }));
-    });
+  await worker.evaluate(() => (self as unknown as { shown: Promise<void> }).shown);
+  const shown = await page.evaluate(async () => {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const ns = (await reg?.getNotifications()) ?? [];
+    return ns.map((n) => ({ title: n.title, body: n.body, actions: (n as unknown as { actions: { action: string }[] }).actions.map((x) => x.action) }));
+  });
   // M11: Rerun from the notification, as from the phone's Needs you.
-  await expect.poll(shown).toEqual([{ title: "Failed", body: payload.body, actions: ["rerun", "dismiss"] }]);
+  expect(shown).toEqual([{ title: "Failed", body: payload.body, actions: ["rerun", "dismiss"] }]);
   await context.close();
 });
 

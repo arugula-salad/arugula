@@ -3,8 +3,8 @@
 //! checks that before the handler runs); the logic stays in `acl::api`.
 
 use arugula_proto::{
-    api::{AclSetRequest, Empty, LinkRequest},
-    op::ops::{AclGet, AclSet, LinkMint},
+    api::{AclSetRequest, Empty, LinkRequest, LinksQuery, SessionLink},
+    op::ops::{AclGet, AclSet, LinkMint, LinkRevoke, LinksList},
 };
 use serde_json::Value;
 
@@ -25,5 +25,18 @@ impl Handle for AclSet {
 impl Handle for LinkMint {
     async fn handle(cx: &Cx<'_>, _: (), req: LinkRequest) -> Result<Value, OpError> {
         Ok(crate::acl::api::link(cx.app, req).await?)
+    }
+}
+
+impl Handle for LinksList {
+    async fn handle(cx: &Cx<'_>, _: (), q: LinksQuery) -> Result<Vec<SessionLink>, OpError> {
+        Ok(crate::acl::api::links(cx.app, q.session))
+    }
+}
+
+impl Handle for LinkRevoke {
+    async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<Empty, OpError> {
+        crate::acl::api::revoke_link(cx.app, &id)?;
+        Ok(Empty {})
     }
 }

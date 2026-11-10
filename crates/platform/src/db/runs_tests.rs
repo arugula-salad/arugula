@@ -459,8 +459,9 @@ fn artifacts_are_kept_by_name() {
     assert_eq!(got[0].size, u64::from(u32::MAX) + 1);
 }
 
-/// Deleting an account takes its projects' runs, with their events and
-/// artifacts, and its name off the runs that stay.
+/// Deleting an account takes its projects' runs, with their events,
+/// artifacts and everyone's inbox entries on them, and its name off the
+/// runs that stay.
 #[test]
 fn deleting_an_account_takes_its_runs_and_its_name() {
     let db = Db::test();
@@ -487,6 +488,15 @@ fn deleting_an_account_takes_its_runs_and_its_name() {
         )
         .unwrap()
         .unwrap();
+    // Another member's inbox entries on a run that goes, and on one that stays.
+    for run in [&mine.id, &theirs.id] {
+        db.c()
+            .execute(
+                "INSERT INTO inbox_items (account, item, reason, created_at, updated_at) VALUES ('bob', ?1, 'run_failed', 1, 1)",
+                params![run],
+            )
+            .unwrap();
+    }
     let gone = Deleted { account: "alice".into(), machines: vec!["geek".into()], disbanded: vec![] };
     {
         let mut c = db.c();
@@ -504,4 +514,7 @@ fn deleting_an_account_takes_its_runs_and_its_name() {
     assert_eq!(db.run_events(&theirs.id).unwrap().len(), 1, "the runs that stay keep their history");
     assert_eq!(db.run(&scheduled.id).unwrap().unwrap().started_by, "sch_1");
     assert_eq!(db.mentions("alice"), Vec::<String>::new());
+    let inbox: Vec<String> =
+        db.c().query_map("SELECT item FROM inbox_items ORDER BY item", params![], |r| r.get(0)).unwrap();
+    assert_eq!(inbox, std::slice::from_ref(&theirs.id), "an inbox entry on a run that went goes with it");
 }

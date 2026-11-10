@@ -169,8 +169,8 @@ fn approval_of(db: &Db, deploy: &str) -> Result<Option<StoredApproval>> {
 /// Whether the approval still holds at apply time (DK4): not past its
 /// `expires`, the approver an owner of the project now, and its passkey
 /// still in the account's published log, not removed since: its assertion
-/// checked again against the log at `now`. A v1 (from before DK4) is
-/// checked by its passkey too, never its device. `Err(None)`: the hub
+/// checked again against the log at `now`. A v1 (from before DK4) holds
+/// no more: every one has expired since (DK8). `Err(None)`: the hub
 /// didn't answer, so ask again later.
 async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject, now: u64) -> Result<(), Option<String>> {
     let why = |e: arugula_control_common::ApiError| {
@@ -178,6 +178,9 @@ async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject, now: u64)
     };
     if now >= a.expires {
         return Err(Some("its approval expired".into()));
+    }
+    if a.v() == arugula_e2e::deploy::V1 {
+        return Err(Some("it's from before passkey-only approvals: approve it again".into()));
     }
     if super::role(app, &a.account, p, true).await.map_err(why)? != Some(TeamRole::Owner) {
         return Err(Some("the approver isn't an owner of the project now".into()));
@@ -257,11 +260,18 @@ pub const LOG_WAIT_MS: u64 = 2 * 60_000;
 /// canceled it while the box ran it) waits at most [`LOG_WAIT_MS`] after
 /// its end, by when the box has sent what it had or never will.
 fn logs_pending(app: &Platform, deploy: &str, now: u64) -> Result<Option<u64>> {
+    let run = app.db.deploy_run(deploy)?.map(|dr| dr.run);
+    logs_pending_of(app, run.as_deref(), now)
+}
+
+/// [`logs_pending`] for run `run` of a deploy's box (its apply's, or its
+/// plan's, #1985).
+pub(crate) fn logs_pending_of(app: &Platform, run: Option<&str>, now: u64) -> Result<Option<u64>> {
     if app.run_logs.is_none() {
         return Ok(None);
     }
-    let Some(dr) = app.db.deploy_run(deploy)? else { return Ok(None) };
-    let Some(run) = app.db.run(&dr.run)? else { return Ok(None) };
+    let Some(run) = run else { return Ok(None) };
+    let Some(run) = app.db.run(run)? else { return Ok(None) };
     if run.started_at.is_none() {
         return Ok(None);
     }
@@ -432,7 +442,7 @@ async fn step(app: &Arc<Platform>, db: &Db, job: &mut LeasedJob, now: u64) -> Re
     }
     let machine = w.machine.clone().unwrap_or_default();
     let op = Op {
-        deploy: Some(DeployApply { deploy: d.id.clone(), driver: driver.name().into(), op: a.op.clone() }),
+        deploy: Some(DeployApply { deploy: d.id.clone(), driver: driver.name().into(), op: a.op.clone(), plan: false }),
         ..Op::default()
     }
     .encode(&machine);
@@ -460,12 +470,10 @@ fn approve_run(
     a: &StoredApproval,
     now: u64,
 ) -> Result<std::result::Result<(), crate::db::runs::Refused>> {
-    // Who approved it, for the run's `approved` event: v1's device, or
-    // v2's passkey (DK4).
-    let by = match &a.passkey {
-        Some(pk) if a.v() == arugula_e2e::deploy::V2 => format!("passkey:{}", pk.id),
-        _ => a.device.clone(),
-    };
+    // Who approved it, for the run's `approved` event: the passkey of a v2
+    // (DK4) or a v3 (#1985, chant's statement); `recheck` takes no v1
+    // (DK8).
+    let by = a.passkey.as_ref().map(|pk| format!("passkey:{}", pk.id)).unwrap_or_default();
     let approval = deploy_approval(run, &a.id, &by);
     Ok(db.move_run(&run.id, &Move::Approved { from: RunState::Pending, at: now, approval: &approval })?.map(|_| ()))
 }
@@ -511,14 +519,14 @@ pub fn deploy_work(db: &Db, run: &str) -> Result<Option<DeployWork>> {
 
 /// What a run's box reported its apply did (M220): its last event's
 /// `result`, `Null` when none.
-fn reported_result(db: &Db, run: &Run) -> Result<Value> {
+pub(crate) fn reported_result(db: &Db, run: &Run) -> Result<Value> {
     let last = db.run_events(&run.id)?.pop();
     let detail: Value = last.and_then(|e| serde_json::from_str(&e.detail).ok()).unwrap_or_default();
     Ok(detail.get("result").cloned().unwrap_or_default())
 }
 
 /// Why a run ended, from its last event: its reason, or its exit code.
-fn why_it_ended(db: &Db, run: &Run) -> Result<String> {
+pub(crate) fn why_it_ended(db: &Db, run: &Run) -> Result<String> {
     let last = db.run_events(&run.id)?.pop();
     let detail: Value = last.and_then(|e| serde_json::from_str(&e.detail).ok()).unwrap_or_default();
     Ok(match (detail["reason"].as_str(), detail["exit"].as_i64()) {
@@ -729,6 +737,10 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
     }
     if run.state != RunState::Running {
         return refused("the run isn't running");
+    }
+    // A chant→Fly deploy's plan run (#1985): a minted token per step.
+    if let Some(p) = db.deploy_plan_of_run(&run.id)? {
+        return super::plan::secrets(app, m, &run, &p, ask.plan_step).await;
     }
     let Some(dr) = db.deploy_run_of(&run.id)? else { return refused("the run isn't a deploy's") };
     let Some(d) = db.deploy(&dr.deploy)? else { return refused("no such deploy") };

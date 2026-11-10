@@ -236,7 +236,7 @@ export function Previews({ p, w }: { p: PlatformProject; w: Workspace }) {
       <h2>Public previews</h2>
       <p class="dim">A public port opens at an address of its own, for anyone with it, signed out, for 7 days.</p>
       {got === null && !err && <p class="dim">Loading…</p>}
-      {got && !got.previews && <p class="dim" data-hosted-previews-off>Public previews aren't set up on this control.</p>}
+      {got && !got.previews && <p class="dim" data-hosted-previews-off>Public previews aren't set up on this server.</p>}
       {got && (
         <ul class="hosted-rows">
           {got.ports.map((x) => (

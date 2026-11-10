@@ -1,0 +1,10 @@
+browser playwright chromium 153.0.8010.12
+today's headers + frame-ancestors control            {"separateProcess":false,"originAgentCluster":true}
+Origin-Agent-Cluster on the frame only               {"separateProcess":true,"originAgentCluster":true}
+Origin-Agent-Cluster on both                         {"separateProcess":true,"originAgentCluster":true}
+a real cross-site frame, for reference               {"separateProcess":false,"originAgentCluster":true}
+browser chrome 153.0.8010.52
+today's headers + frame-ancestors control            {"separateProcess":false,"originAgentCluster":true}
+Origin-Agent-Cluster on the frame only               {"separateProcess":true,"originAgentCluster":true}
+Origin-Agent-Cluster on both                         {"separateProcess":true,"originAgentCluster":true}
+a real cross-site frame, for reference               {"separateProcess":true,"originAgentCluster":true}

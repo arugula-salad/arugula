@@ -1,0 +1,6 @@
+chromium  stranger.example.org     refused
+chromium  control.example.com      framed
+firefox   stranger.example.org     refused
+firefox   control.example.com      framed
+webkit    stranger.example.org     refused
+webkit    control.example.com      framed

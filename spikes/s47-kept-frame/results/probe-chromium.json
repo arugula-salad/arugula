@@ -1,0 +1,141 @@
+{
+ "chromium": {
+  "version": "153.0.8010.12",
+  "today's headers (DENY + 'none') frame?": {
+   "blocked": true
+  },
+  "frame-ancestors control, control frames it?": {
+   "loaded": "https://app.example.com/?framing=control",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "cookie the frame sets, frame's request carries it": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "top-level app sees the frame's cookie": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "top-level app sees the frame's localStorage": "1",
+  "frame sees top-level's cookie": {
+   "host": "app.example.com",
+   "cookies": "framed_set=1; top_set=1",
+   "site": "same-origin",
+   "dest": "empty"
+  },
+  "frame sees top-level's localStorage": "1",
+  "new framed document request carries the session cookie": {
+   "loaded": "https://app.example.com/?framing=control",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "frame reads parent.document": {
+   "err": "SecurityError: Failed to read a named property 'document' from 'Window': Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame."
+  },
+  "frame reads parent.localStorage": {
+   "err": "SecurityError: Failed to read a named property 'localStorage' from 'Window': Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame."
+  },
+  "frame sets document.domain, reads parent": {
+   "err": "SecurityError: Failed to read a named property 'document' from 'Window': Blocked a frame with origin \"https://app.example.com\" from accessing a cross-origin frame."
+  },
+  "frame fetches control with credentials": {
+   "err": "TypeError: Failed to fetch"
+  },
+  "frame origin-keyed (no header)": true,
+  "frame origin-keyed (Origin-Agent-Cluster)": true,
+  "frame moves the top page with no click": {
+   "call": "SecurityError",
+   "topNow": "https://control.example.com/"
+  },
+  "hop: hub redirects (302) under frame-ancestors 'none'": {
+   "loaded": "https://app.example.com/?framing=control&code=1",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "hop: hub redirects (302) under frame-ancestors 'self'": {
+   "loaded": "https://app.example.com/?framing=control&code=1",
+   "origin": "https://app.example.com",
+   "docRequest": {
+    "cookies": "framed_set=1; top_set=1",
+    "site": "same-site",
+    "dest": "iframe"
+   }
+  },
+  "hop: hub's page under frame-ancestors 'none'": {
+   "blocked": true
+  },
+  "hop: hub's page under frame-ancestors 'self'": {
+   "loaded": "hop page",
+   "origin": "https://control.example.com"
+  },
+  "GitHub-like stranger in a frame": {
+   "blocked": true
+  },
+  "display:none frame": {
+   "visibility": "visible",
+   "hasFocus": false,
+   "width": 300,
+   "timersIn2s": 20,
+   "rafIn2s": 0
+  },
+  "visibility:hidden frame": {
+   "visibility": "visible",
+   "width": 300,
+   "timersIn2s": 20,
+   "rafIn2s": 120
+  },
+  "history": {
+   "before": 2,
+   "after": 4,
+   "topAfterBack": "https://control.example.com/",
+   "frameAfterBack": "/p/one"
+  },
+  "powers without allow=": {
+   "camera": false,
+   "microphone": false,
+   "clipboard-write": false,
+   "publickey-credentials-get": false,
+   "fullscreen": false
+  },
+  "powers with allow=": {
+   "camera": true,
+   "microphone": true,
+   "clipboard-write": true,
+   "publickey-credentials-get": true,
+   "fullscreen": true
+  },
+  "passkey get: top-level control": {
+   "origin": "https://control.example.com",
+   "crossOrigin": false
+  },
+  "passkey get: top-level app (related origin)": {
+   "origin": "https://app.example.com",
+   "crossOrigin": false
+  },
+  "passkey get: framed app, no allow=": {
+   "err": "NotAllowedError: The 'publickey-credentials-get' feature is not enabled in this document. Permissions Policy may be used to delegate Web Authentication capabilities to cross-origin child frames."
+  },
+  "passkey get: framed app, allow=": {
+   "origin": "https://app.example.com",
+   "crossOrigin": true,
+   "topOrigin": "https://control.example.com"
+  }
+ }
+}

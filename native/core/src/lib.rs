@@ -2,8 +2,18 @@
 //! request, the encrypted channel to a daemon, a pane's stream and the
 //! terminal that draws it (aru-132). Screens don't belong here.
 //!
+//! - [`control`]: pairing by code, and requests to control, signed.
+//! - [`link`]: a Noise channel to a machine through control's relay, its
+//!   requests and its panes.
+//! - [`Pane`]: one pane's terminal.
+//!
 //! A client's keys stay in the platform's keychain, so nothing here reads or
 //! writes a key file: [`device`] takes them as bytes (aru-131).
+
+pub mod control;
+pub mod ffi;
+pub mod link;
+mod net;
 
 use anyhow::Result;
 use ed25519_dalek::SigningKey;
@@ -12,6 +22,7 @@ use libghostty_vt::{
     key::{self, Key, Mods},
 };
 
+pub use arugula_control_wire as wire;
 pub use arugula_e2e::{
     self as e2e,
     cert::request_auth,

@@ -48,10 +48,10 @@
 //!
 //! **Approvals from before DK4 (v1)** named the device that signed them too,
 //! with its signature beside the passkey's assertion. They still read and
-//! show, and their events keep the log's chain; a v1 recorded before the
-//! switch still applies within its life (7 days at most), by its passkey.
-//! New ones are v2 only: a page that sends a device signature is told to
-//! reload ([`OLD_APPROVAL`]).
+//! show, and their events keep the log's chain, but none applies now
+//! (DK8): the last expired 7 days after the switch. New ones are v2 only:
+//! a page that sends a device signature is told to reload
+//! ([`OLD_APPROVAL`]).
 //!
 //! **Applied by M219** (`deploys::apply`): an approval enqueues the
 //! deploy's job, which checks the approval's `expires`, the owner's role
@@ -82,6 +82,7 @@
 pub mod agent;
 pub mod apply;
 pub mod catalog;
+pub mod plan;
 
 use std::sync::Arc;
 
@@ -136,6 +137,9 @@ pub const STALE: &str = "stale";
 /// deploy to the environment was asked for; its approval ran out before it
 /// was applied; the reader's account has no passkey.
 pub const NOT_PENDING: &str = "not_pending";
+/// A chant→Fly deploy's (#1985): chant's plan of it didn't get to its gate,
+/// or it was asked for before chant planned it.
+pub const CHANT_PLAN: &str = "chant_plan";
 pub const SUPERSEDED: &str = "superseded";
 pub const EXPIRED: &str = "expired";
 pub const NO_PASSKEY: &str = "no_passkey";
@@ -207,6 +211,24 @@ fn environment_json(e: &Environment) -> Value {
     })
 }
 
+/// The chant gate a chant→Fly deploy's approval is asked for (#1985): its
+/// newest `requested` event's, which its plan run found.
+pub(crate) fn asked_gate(events: &[crate::db::deploys::Event]) -> Option<arugula_e2e::deploy::chant::Gate> {
+    let e = events.iter().rev().find(|e| e.kind == EventKind::Requested.as_str())?;
+    serde_json::from_value(e.detail_json().ok()?.get("chant")?.clone()).ok()
+}
+
+/// Whether `d` is approved over chant's statement (v3, #1985): a chant→Fly
+/// apply. A roll back goes through no gate.
+fn in_chant(app: &Platform, d: &Deploy, env: &Environment) -> Result<bool, ApiError> {
+    Ok(in_chant_with(env, app.db.deploy_roll_back(&d.id)?.is_some()))
+}
+
+/// [`in_chant`], for a caller that read whether it's a roll back already.
+fn in_chant_with(env: &Environment, roll_back: bool) -> bool {
+    arugula_e2e::deploy::chant::approved_in_chant(&env.driver, roll_back)
+}
+
 /// When approval was last asked for (#333): its newest `requested` event.
 fn requested_at(events: &[crate::db::deploys::Event]) -> Option<u64> {
     events.iter().rev().find(|e| e.kind == EventKind::Requested.as_str()).map(|e| e.at)
@@ -243,10 +265,33 @@ pub(crate) async fn deploy_json(
                     "id": p.id, "client_data_json": p.client_data_json,
                     "authenticator_data": p.authenticator_data, "signature": p.signature,
                 })),
+                "chant": a.chant, "chant_at": a.chant_at,
             })
         })
         .collect();
     let history = app.db.deploy_history(&d.id)?;
+    // A chant→Fly deploy's plan (#1985): where it is, and the gate its
+    // approval is asked for, which the passkey signs chant's statement of.
+    let in_chant = in_chant_with(env, roll_back.is_some());
+    let gate = asked_gate(&history);
+    let chant = if in_chant {
+        let plan = app.db.deploy_plan(&d.id)?;
+        let state = match &plan {
+            None => "not_asked",
+            Some(p) if p.planning() => "planning",
+            Some(p) if p.failed.is_some() => "failed",
+            Some(_) => "planned",
+        };
+        json!({
+            "state": state,
+            "gate": gate.clone().or_else(|| plan.as_ref().and_then(|p| p.gate.clone())),
+            "why": plan.as_ref().and_then(|p| p.failed.clone()),
+            "run": plan.as_ref().and_then(|p| p.run.clone()),
+            "relay": arugula_e2e::deploy::chant::RELAY,
+        })
+    } else {
+        Value::Null
+    };
     // The `planned` event as stored, so a page can hash it again and check
     // it's the one the operation names (who planned it, from hashed bytes).
     let planned_event = history.iter().find(|e| e.kind == "planned").map(|e| {
@@ -350,7 +395,12 @@ pub(crate) async fn deploy_json(
         "operation": { "body": op.body(), "hash": op.hash() },
         "planned_event": planned_event,
         "stale": stale,
-        "may_approve": reader_owns && d.state == crate::db::deploys::State::Pending && stale.is_none(),
+        "may_approve": reader_owns
+            && d.state == crate::db::deploys::State::Pending
+            && stale.is_none()
+            && (!in_chant || gate.is_some()),
+        "chant": chant,
+        "approval_v": if in_chant { arugula_e2e::deploy::V3 } else { arugula_e2e::deploy::V2 },
         "approvals": approvals.iter().map(|a| {
             let mut a = a.clone();
             a["name"] = name(a["account"].as_str().unwrap_or_default()).into();
@@ -645,18 +695,58 @@ pub async fn plan_route(
 /// to each of the project's owners.
 pub(crate) async fn request(app: &Platform, by: &Actor, id: &str) -> J {
     let account = by.account().unwrap_or_default();
-    let (_, env, p, role) = deploy_as(app, account, id, true).await?;
+    let (d, env, p, role) = deploy_as(app, account, id, true).await?;
     let key = asker(&p.id, by);
+    // An agent is never offered approval, whoever its owner is.
+    let owns = matches!(by, Actor::Person(_)) && role == TeamRole::Owner;
+    // A chant→Fly deploy (#1985): chant plans it first, on a box with no
+    // Fly token, and the ask is recorded with the gate it stopped at once
+    // it has (`apply::plan`). Asked again, it's asked with that gate.
+    let mut detail = json!({});
+    if in_chant(app, &d, &env)? {
+        match app.db.deploy_plan(&d.id)? {
+            Some(plan) if plan.planning() => return Ok(Json(deploy_json(app, &d, &env, &p, owns).await?)),
+            Some(plan) => match plan.gate {
+                Some(g) => detail = json!({ "chant": g }),
+                None => {
+                    let why = plan.failed.unwrap_or_default();
+                    return Err(refusal(
+                        StatusCode::CONFLICT,
+                        CHANT_PLAN,
+                        &format!("chant's plan of this deploy didn't get to its gate: {why}. Plan another deploy."),
+                    ));
+                }
+            },
+            None if d.state == crate::db::deploys::State::Planned => {
+                app.limits.check_account(PROJECT_ASKS, &key)?;
+                app.db.ask_deploy_plan(&d.id, &by.encode(), now_ms())?;
+                info!(deploy = d.id, "a chant-fly deploy's approval was asked for: chant plans it first");
+                return Ok(Json(deploy_json(app, &d, &env, &p, owns).await?));
+            }
+            // Asked for before chant planned deploys first: there's no gate
+            // to ask with, and an owner's card would be one they can't
+            // approve.
+            None => {
+                return Err(refusal(
+                    StatusCode::CONFLICT,
+                    CHANT_PLAN,
+                    &format!(
+                        "this deploy is {} with no plan of chant's, so there's nothing for an owner to approve. Plan \
+                         another deploy.",
+                        d.state.as_str()
+                    ),
+                ));
+            }
+        }
+    }
     app.limits.check_account(PROJECT_ASKS, &key)?;
-    let r = app.db.record_deploy(id, EventKind::Requested, by, now_ms(), json!({}));
+    let r = app.db.record_deploy(id, EventKind::Requested, by, now_ms(), detail);
     if !matches!(r, Ok(Ok(_))) {
         // Not asked after all: it doesn't count.
         app.limits.uncount_account(PROJECT_ASKS, &key);
     }
     let r = r?.map_err(refused)?;
     push_owners(app, by, &r.deploy, &env, &p).await;
-    // An agent is never offered approval, whoever its owner is.
-    let owns = matches!(by, Actor::Person(_)) && role == TeamRole::Owner;
     Ok(Json(deploy_json(app, &r.deploy, &env, &p, owns).await?))
 }
 
@@ -672,7 +762,7 @@ pub async fn request_route(State(app): State<Arc<Platform>>, s: Person, Path(id)
 /// asked", and a tap opens the deploy where they approve it, on whichever
 /// device is at hand. The push names the environment and the source, never
 /// the plan's text. In the background: a failure is only logged.
-async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, p: &IssueProject) {
+pub(crate) async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, p: &IssueProject) {
     let to = match owners(app, p).await {
         Ok(to) => to,
         Err(e) => return warn!(deploy = %d.id, error = format!("{e:#}"), "deploy: the project's owners"),
@@ -886,19 +976,15 @@ pub async fn waiting(State(app): State<Arc<Platform>>, s: Person) -> J {
 }
 
 /// The passkeys live in `log` at `at`, by credential id, oldest first: what
-/// the page may offer the browser (`allowCredentials`). Not a check of the
-/// log's chain: the approval's [`verify`] makes that.
+/// the page may offer the browser (`allowCredentials`). Read with the
+/// chain checked (`arugula_e2e::passkey::live`), as the approval's
+/// [`verify`] reads it.
 fn live_passkeys(log: &arugula_e2e::passkey::Log, at: u64) -> Vec<String> {
-    use arugula_e2e::passkey::Change;
-    let mut live: Vec<String> = vec![];
-    for e in log.events.iter().filter(|e| e.at <= at) {
-        match e.event {
-            Change::Added if !live.contains(&e.credential) => live.push(e.credential.clone()),
-            Change::Added => {}
-            Change::Removed => live.retain(|c| c != &e.credential),
-        }
-    }
-    live
+    // A log that doesn't hold together offers none: no approval over it
+    // would verify.
+    arugula_e2e::passkey::live(log, at)
+        .map(|l| l.into_iter().map(|e| e.credential.clone()).collect())
+        .unwrap_or_default()
 }
 
 /// `GET /api/deploys/{id}/can-decide`: whether the reader may approve or
@@ -910,7 +996,7 @@ fn live_passkeys(log: &arugula_e2e::passkey::Log, at: u64) -> Vec<String> {
 ///
 /// `{deploy, can, reason, why, do, passkeys, rp}`: when `can` is false,
 /// `reason` is a code ([`NOT_PENDING`], [`STALE`], [`SUPERSEDED`],
-/// [`EXPIRED`], [`NOT_AN_OWNER`], [`NO_PASSKEY`]), `why` says it and `do`
+/// [`EXPIRED`], [`CHANT_PLAN`], [`NOT_AN_OWNER`], [`NO_PASSKEY`]), `why` says it and `do`
 /// what to do instead (`newer`: the deploy that superseded it). When it's
 /// true, `passkeys` are the account's live passkeys' credential ids and `rp`
 /// the RP ID they're bound to (control's host, aru-078), for the page's
@@ -944,9 +1030,20 @@ pub async fn can_decide(State(app): State<Arc<Platform>>, s: BrowserPerson, Path
             })
         }
         S::Expired => Some(no(EXPIRED, "Its approval ran out before it was applied.".into(), "Plan it again and ask.")),
-        S::Planned => {
-            Some(no(NOT_PENDING, "Nobody has asked for its approval yet.".into(), "Ask for its approval first."))
-        }
+        S::Planned => match app.db.deploy_plan(&d.id)? {
+            Some(plan) if plan.planning() => Some(no(
+                NOT_PENDING,
+                "chant is planning it on a box of its own; its approval is asked for once it has.".into(),
+                "Wait for chant's plan.",
+            )),
+            // Its plan failed: asking again is refused too.
+            Some(plan) if plan.failed.is_some() => Some(no(
+                CHANT_PLAN,
+                format!("chant's plan of it didn't get to its gate: {}", plan.failed.unwrap_or_default()),
+                "Plan another deploy.",
+            )),
+            _ => Some(no(NOT_PENDING, "Nobody has asked for its approval yet.".into(), "Ask for its approval first.")),
+        },
         S::Approved | S::Denied => {
             Some(no(NOT_PENDING, format!("It was {} already.", d.state.as_str()), "Nothing: it's decided."))
         }
@@ -962,6 +1059,15 @@ pub async fn can_decide(State(app): State<Arc<Platform>>, s: BrowserPerson, Path
     // The stale rule on a pending one: something was applied since its plan.
     if let Err(Refusal::Stale { .. }) = app.db.may_approve(&d.id)? {
         return Ok(Json(stale()));
+    }
+    // A chant→Fly deploy asked for before chant planned it (#1985): there's
+    // no statement of chant's to sign.
+    if in_chant(&app, &d, &env)? && asked_gate(&app.db.deploy_history(&d.id)?).is_none() {
+        return Ok(Json(no(
+            CHANT_PLAN,
+            "It was asked for before chant planned it, so there's no chant plan to approve.".into(),
+            "Plan it again and ask.",
+        )));
     }
     // The roster now, as the approval's check reads it.
     if role(&app, &s.account, &p, true).await? != Some(TeamRole::Owner) {
@@ -999,11 +1105,15 @@ pub struct Signed {
     by: Option<String>,
     #[serde(default)]
     sig: Option<String>,
+    /// A chant→Fly deploy's approval (v3, #1985): the statement's time, as
+    /// chant writes one. Its gate is the one the ask names.
+    #[serde(default)]
+    at: Option<String>,
 }
 
 async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: Signed) -> J {
     app.limits.check_account(APPROVALS, account)?;
-    let (_, env, p, _) = deploy_as(app, account, id, false).await?;
+    let (d, env, p, _) = deploy_as(app, account, id, false).await?;
     if b.by.is_some() || b.sig.is_some() {
         return Err(refusal(
             StatusCode::BAD_REQUEST,
@@ -1012,6 +1122,27 @@ async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: 
              approve again",
         ));
     }
+    // A chant→Fly deploy is approved over chant's statement for the gate
+    // its plan stopped at (v3, #1985); a deny, and any other deploy, v2.
+    let (v, chant, at) = if decision == Decision::Once && in_chant(app, &d, &env)? {
+        let gate = asked_gate(&app.db.deploy_history(id)?).ok_or_else(|| {
+            refusal(
+                StatusCode::CONFLICT,
+                CHANT_PLAN,
+                "it was asked for before chant planned it, so there's no chant plan to approve: plan it again and ask",
+            )
+        })?;
+        let at = b.at.clone().ok_or_else(|| {
+            refusal(
+                StatusCode::BAD_REQUEST,
+                OLD_APPROVAL,
+                "a chant-fly deploy is approved over chant's own statement: reload the page and approve again",
+            )
+        })?;
+        (arugula_e2e::deploy::V3, Some(gate), at)
+    } else {
+        (arugula_e2e::deploy::V2, None, String::new())
+    };
     let a = Approval {
         deploy: id.to_owned(),
         op: b.op,
@@ -1020,7 +1151,9 @@ async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: 
         expires: b.expires,
         by: String::new(),
         sig: String::new(),
-        v: arugula_e2e::deploy::V2,
+        v,
+        chant,
+        at,
     };
     // The owner's role now, the operation, and the passkey against the
     // account's log: `verify`, the only maker of a `VerifiedApproval`.

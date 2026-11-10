@@ -249,11 +249,12 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
             }
         };
         let set = app.acl.set_full(b.session, &person.id, &person.name, Some(want), "owner", from, person.root.clone());
+        // An error too: it may have happened all the same (`Acl::commit`).
+        app.mux.send(Cmd::AclChanged);
+        app.control.poke();
         if let Err(e) = set {
             return Err(no(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
-        app.mux.send(Cmd::AclChanged);
-        app.control.poke();
     }
     let drive = match b.drive_minutes.filter(|_| !co_owner) {
         Some(m) => Some(app.mux.api(|r| Api::Trust(pane, person.id.clone(), m, r)).await.unwrap_or(false)),

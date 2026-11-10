@@ -40,7 +40,18 @@ arugula grants restore geek     # they can again (a new grant; the old one stays
 or through control's API, as a signed-in person or a CLI device (a
 machine's signature isn't accepted here): `GET /api/grants`,
 `POST /api/grants/{id}/revoke`, and `POST /api/grants
-{"daemon": "<machine id>", "power": "cloud.drive"}`. Grants are per machine,
+{"daemon": "<machine id>", "power": "cloud.drive"}`. A grant over a
+project is also revoked by any owner of that project, whoever gave it, a
+machine's or a token's (Arugula #683): `arugula grants revoke grt_…` with
+the grant's id, or the same route; it reaches the project's grants only,
+never one over an account (a teammate's `cloud.drive`, their DMs) or
+another project's, and the grant says who revoked it. The giver's devices
+are told (a giver who no longer reads the project learns only what of
+theirs was revoked, not the project's name or the owner's), and a
+machine's grant is still theirs to give again (an owner who means it
+takes them out of the team); a token's powers are set at its mint, so
+that's a new token. A revoke refuses the next call; a run, an agent
+session or a deploy approval already under way carries on. Grants are per machine,
 since the daemon signs every MCP call as itself; narrowing one to the
 owner's own agents is a later daemon change. A machine that's removed loses
 its grants, and one that joins again gets a new one. Grants live in
@@ -141,9 +152,16 @@ hosted machine; the hub asks the platform) and says how it goes at `POST
 step and a fixed reason code). Control never gets the pane's text: `cloud
 ls` and `open` say "failed at <step>: open the setup pane", and `--wait`
 reads a failed setup's last lines from the box over the relay, end to end. A GitHub repo linked to the project is
-cloned with a read-only installation token for that repo alone, minted for
-the clone; any other with the workspace's `GIT_TOKEN` secret (and
-`GIT_USERNAME`, else `x-access-token`). The daemon hands them to git in its
+cloned with an installation token that reads that repo's contents alone,
+minted for this box, which the box revokes once its clones are done. It's
+given only while the box hasn't said it's past its clones, and that stays
+so until the box is rebuilt. Each box gets one per repo every five
+minutes: the platform keeps it in memory that long, so asking again gives
+the same token. Unlinking the repo revokes it too, on a best-effort basis:
+the platform process that handles the unlink revokes the tokens it holds,
+and a token another process minted ends within the hour. Any other repo is
+cloned with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
+`x-access-token`). The daemon hands them to git in its
 environment for the clone alone, from a file in memory the setup removes as
 it reads it: nothing lands in a repo's config or on the disk. The spec's
 `env` names take their values from the workspace's secrets, for the setup
@@ -271,6 +289,47 @@ step. When that turn's finish step fails too, nothing is pushed, and the
 session's card shows the failure and its last lines. It's one field in the
 project's settings, and `--finish` on `cloud edit`; it isn't part of the
 spec's hash, so changing it needs no rebuild.
+
+**Sessions run under the project's standing grant** (aru-099 and aru-115,
+amended 2026-11-04). An owner allows them as they allow runs: *Allow runs*
+on Control's page, under Devices and machines, Runs on cloud workspaces, with
+a passkey (`arugula runs grant show` says whether a project has one). Each
+session's work carries the grant on every pull, and the box checks it against
+what it pinned, `runs.instruct` included, before it takes the session and as
+each turn's prompt goes to the agent.
+
+- **With no grant** (none yet, expired, revoked, or for an earlier
+  delegation), `@arugula`, `session_start`, Try 3, `@codex review`, Move to…
+  and a reply start nothing, and the thread or the route's answer says an
+  owner gives the project a grant, and how. A queued session (a rebuilt box's,
+  say) fails, saying so. A session already going stays: its turn finishes,
+  prompts that were queued are dropped and said, its thread is told once, and
+  a grant given later lets it go on. CI's failures and reviews wait for one.
+- **A revoke ends live sessions** and refuses follow-ups and new ones.
+  *Also stop the runs going* (`running stop`) ends them at once, mid-turn
+  too; without it (`running finish`) a turn under way finishes, and its
+  session ends with it, and one with no turn under way ends at once. A stop
+  ends a push under way too. A grant signed after the revoke doesn't bring back
+  a session it ended. Revoking a grant another has replaced ends nothing that
+  runs under the other. The platform ends them as the revoke arrives, and the
+  box does as it hears the revoke, without waiting on control. A restart
+  finishes the cleanup of a session that ended before it was done.
+- **Any turn, from anywhere.** The box checks as the prompt goes to the agent,
+  whatever queued it: a follow-up, a mention, a person typing in the block.
+  Refused, what was queued is dropped and the card says why. A turn an agent
+  starts by itself is checked as it's seen, on a look a few times a second that
+  waits on nothing else; if it isn't allowed, or can't be checked yet, its agent
+  goes and its conversation stays, for a reply to open again. After a restart a
+  turn waits until a pull has answered; if the check needs what a refresh would
+  bring and control can't be reached, it waits too, and fails only when a
+  refresh that got through still refuses.
+- **Which grant.** A box that has seen a newer grant refuses an older one. The
+  order is the time a grant signs, and the platform takes a new one only past
+  every grant the project has had (the page signs one past the last, so a
+  device's clock doesn't matter).
+- **At a release,** a box from this release against a platform from before it
+  fails a new session or a follow-up, saying why, for the minutes a release
+  takes to deploy, or after rolling the platform back.
 
 **A session's agent asks no permission** on its box: Claude Code runs in
 `bypassPermissions` (Codex in `full-access`), and the block allows anything
@@ -403,6 +462,10 @@ rule take them (`outsiders`). Each rule starts at most 20 runs an hour,
 unless it says otherwise (`max_per_hour`). A schedule or a rule fires only
 while the person who made it is still an owner or editor of the project,
 on `ARUGULA_HOSTED_ACCOUNTS`; otherwise it passes with no run and says why.
+Deleting a cloud workspace turns off its specs' schedules and rules, and a
+schedule says "its cloud workspace is gone". Moving the spec to another
+workspace turns those schedules back on. Its rules stay off: turn each one
+on again by hand (*Turn on* on the Runs page).
 What an event's source says is untrusted text, written by whoever caused
 it: it's shown quoted, and never reaches a run's environment, command or
 an agent's prompt unquoted. A push rule needs the
@@ -673,7 +736,23 @@ own version; one this control doesn't speak is a 400 that says which it
 does. Reads (`pr.get`, `issue.get`, `item.list`, `checks.get`) and drafts
 (`draft.create`, `draft.list`, `draft.get`, `draft.discard`) go through the
 same viewer check as the routes above (M165), for a person or a machine with
-a live `cloud.drive` grant (for its owner). Sends (`draft.send`,
+a live `cloud.drive` grant (for its owner). A viewer of the project
+reads items and drafts and drafts for themselves (the page, `arugula pr
+comment` as them), and sends their own with their own GitHub rights, even
+after a demotion; an agent drafts only for an owner or editor, so an
+agent on a viewer's machine, or a CLI that says an agent runs it (as
+`arugula` does with `CLAUDECODE` or `AI_AGENT` set), makes no draft on
+the platform (403, `viewer_write`), whatever the machine was granted.
+The CLI's case rests on the client saying so. A viewer, and a viewer's
+machine, discards only the viewer's own drafts. A block's own drafts on
+a viewer's machine stay on the block, and its card sends them with the
+person's own `gh`, which the platform can't see. The block lists every
+platform draft its owner may read, and its card asks only about the
+owner's own (`GET /api/forge/repos/{owner}/{name}` says the role; a
+daemon from before asks about others' too, and a drop then fails on the
+card, saying so). On an
+exported issue, a viewer's own comment goes to GitHub as them; their
+agent's stays a native comment, saying why. Sends (`draft.send`,
 `pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's
 only: a machine is refused (403, `reason: "agents_draft"`). A person's goes
 out as them through one of their machines (M168, below): a terminal has no
@@ -728,11 +807,12 @@ which the mirror doesn't keep. Unlinked repos, Forgejo,
 GitLab and machines outside control read as before. The platform says it's
 unlinked: the block reads GitHub again. The platform can't be reached: the
 block shows what it said last for 10 minutes, then reads GitHub until it
-answers (after a restart, at once: a block is never blank). A person's
-comment, review or merge from a pinned block still goes out with their `gh`
-until sends are the platform's (M168). A machine reporting for M171's
-shadow period (`ARUGULA_INBOX_SHADOW`) doesn't pin, so its report stays
-GitHub's word.
+answers (after a restart, at once: a block is never blank); a refusal
+reads GitHub at once. A person's comment, review or merge from a pinned
+block goes out with their `gh`, as every block's does; from the phone the
+platform sends with a one-use token of theirs (M168). Which path owns
+which of a block's parts is in docs/data-model.md, "Forge items: two read
+paths".
 
 **No pokes from control (M174, #1220).** Until then, a machine's GitHub
 blocks heard the App's webhooks from control as pokes, and read at once.
@@ -1113,9 +1193,8 @@ Settings (each starts with a letter or a digit):
 - `chant_dir` (the chant member, from the repository's root) defaults to
   `.`, and `chant_op` to `release`. `fly_config` (a `fly.toml` in the
   repository) is used by a roll back.
-- `chant_gates`: the only gates the driver approves, comma separated.
-  Left out, it approves each gate of the op it stops at, never another
-  op's.
+- `chant_gates`: the only gates its plan may stop at, comma separated.
+  Left out, the op's own gate, never another op's.
 - `npm_scripts: "true"` lets `npm ci` run install scripts. Without it,
   `npm ci --ignore-scripts`.
 - `chant_github: "true"` gives the op `GITHUB_TOKEN` too, for an op that
@@ -1148,29 +1227,104 @@ Secrets:
   `git fetch`, `push` and `ls-remote` use it, through a credential helper
   for `https://github.com`.
 
-**The repository's chant op runs with `FLY_API_TOKEN`** in its environment:
-that's how it deploys. `npm ci` and `chant components release` get neither
-token. The plan says all of this, and the deploy's page shows it
-(`plan_text`). The approval dialog checks that the text hashes to the
-plan it signs, and says not to approve if it doesn't.
+**The repository's chant op runs with `FLY_API_TOKEN`** in its environment
+when the deploy applies: that's how it deploys. `npm ci`, `chant approve`,
+`chant plan stale` and `chant components release` get neither token. The
+plan says all of this, and the deploy's page shows it (`plan_text`). The
+approval dialog checks that the text hashes to the plan it signs, and says
+not to approve if it doesn't.
 
-On the box, the driver:
-1. checks out the commit by its full id, exactly;
-2. runs `npm ci` and `chant run <op> --json` in the chant member;
-3. at each gate, runs `chant approve <op> <gate> --approver <account>
-   --relayed-by arugula --note "..." --plan <digest>`, then runs the op
-   again. The note names the platform's deploy, approval, approving
-   device, operation hash and run. The digest is the plan chant's run
-   recorded: the `planDigest` of its pending fact in
-   `_gates/<op>.jsonl` on `chant/lifecycle`. A gate with no plan digest,
-   or one the run's `approve` hint disagrees with, isn't approved, so a
-   chant op's gates need a plan.
+**chant plans it first** (#1985, aru-126). Asking for a chant-fly deploy's
+approval doesn't ask anyone yet: the platform runs its plan on a box of its
+own (`<deploy>-plan`), which gets no `FLY_API_TOKEN`:
+1. With a `GITHUB_TOKEN` minted for the run that only reads, the box's
+   daemon reads origin's `chant/lifecycle` itself (`before`), and the
+   driver's `plan-fetch` step checks out the commit by its full id, exactly,
+   with chant's ledger at `before`. Nothing of the commit's runs.
+2. The driver's `plan` step, with no token at all, runs `npm ci` and `chant
+   run <op> --json` in the chant member, which stops at the op's gate (only
+   `chant_gates`' when it names some) and records its pending fact with
+   chant's plan digest in a ledger on the box. An op that needs Fly or
+   GitHub before its gate fails here, and so does one with no gate. It
+   leaves what chant added (`before..tip`) as a bundle, and says on fd 3
+   which gate it stopped at: chant's version, the op, the gate, its
+   environment, the plan digest, its checkpoint, the chant run and when it
+   recorded it.
+3. The box kills everything the run user runs, and `pgrep -u` must find
+   nothing; else the plan fails here, before any token that writes exists.
+4. The daemon, as its own user, in a directory of its own, takes the bundle
+   as data. The run's home is the run user's (0700), so the run user hands
+   it over (`sudo -n -u <run user>`, `crates/arugulad-work/src/run_file_read.sh`):
+   only a regular file with one name that it owns, not a link, at most 32
+   MiB, streamed. The daemon checks it with git reading no configuration but
+   its own, `git fsck --strict` first. Its commits are one line on top of
+   `before` (or new from nothing when origin had none). Each only appends
+   whole lines to the two files chant writes when an op stops at a gate,
+   under this deploy's member's prefix (`_members/<member>/` when the
+   repository's root `chant.workspace.json` makes `chant_dir` a member's,
+   read at the commit by `plan-fetch`; else none) and environment
+   (`chant_env`, or `local` for an op with no `Env` label):
+   `<prefix>_gates/<op>.jsonl` and `<prefix><env>/runs__<op>.jsonl`. In all
+   they add this run's pending fact and at most its run record, each with
+   exactly the keys chant writes there and values from the gate, run, commit
+   and time (`origin` `cli`, `expiresAt` after the fact by at most 30 days).
+   The gate must be one `chant_gates` names, from a chant whose layout is
+   verified (`VERIFIED_CHANT`, 0.124.64 to 0.124.70); another chant, a gate
+   that resumes from a checkpoint, or a workspace layout other than those
+   (nested, example groups, `.jsonc`) is refused as not supported for
+   planning yet.
+5. Only then does it ask for a `GITHUB_TOKEN` minted for the run that writes
+   its contents, and pushes `chant/lifecycle` itself, the token in its own
+   git's environment only, leased on `before`. A ledger that moved since says
+   so ("plan it again"), apart from a token or permission failure.
+
+So the run user never holds a token that writes, and none exists until
+nothing of the commit's code is left (#1985's reviews). The platform gives
+each token once, the one that writes only after the one that reads and only
+while whoever asked may still ask.
+
+The platform records the ask then, as its `requested` event, with that gate
+in its detail (`{"chant": …}`), and the owners get their cards. A plan that
+didn't get to its gate leaves the deploy planned, saying why on its page
+(`chant.why`): plan another. A deploy's JSON says where its plan is
+(`chant.state`: `planning`, `planned` or `failed`) and that it's approved
+as v3 (`approval_v`).
+
+The owner's passkey signs chant's own gate statement for that plan, the
+bytes `chant approve <op> <gate> --statement` prints, as
+`arugula:<account>`, relayed by `arugula`, ending with a binding line:
+`binding arugula deploy <deploy> op <operation hash> expires <ms>`. That's
+approval v3: one assertion is the deploy's approval and chant's. A deny is
+v2 still. chant counts the signature only for a passkey that
+`.chant/trust.json` lists at base for `arugula:<account>`, under
+`passkeys`; `arugula chant trust-entry` prints yours, to paste there (a
+protected write in chant). Keep a signers file at base too, even an empty
+one.
+
+Then the apply, on another box, once the box checked the approval against
+what it pinned:
+1. checks the Fly token and checks out the commit, as above, and runs
+   `npm ci`;
+2. runs `chant plan stale <digest>`, and stops if anything applied to the
+   plan's targets since it was recorded (a laptop's apply, another CI's);
+3. runs `chant approve <op> <gate> --actor arugula:<account> --relayed-by
+   arugula --plan <digest> [--env <env>] --binding <binding> --at <time>
+   --statement`, and stops unless its challenge is the one the passkey
+   signed;
+4. runs the same with `--note "…" --signature -`, the passkey's assertion
+   on its standard input, which chant checks against `.chant/trust.json`;
+5. runs `chant run <op> --json` again, which applies. A gate it stops at
+   again stops the deploy: the plan changed, or it's another gate, which
+   is a deploy of its own.
+
+The driver needs chant 0.124.64 or newer, the first that signs and checks
+a binding line, as the chant member pins it; it refuses an older one.
 
 chant's records then say:
-- the gate's resolution: `resolvedBy` is the approver's account id (not
-  their email), `relayedBy` is `arugula`, with the note and the plan's
-  digest;
-- the release: `actor` is `arugula`, `approver` is the account id.
+- the gate's resolution: `resolvedBy` is `arugula:<account>`, `relayedBy`
+  is `arugula`, with the note, the plan's digest, the binding and the
+  passkey's seal (`kind: webauthn`, version 3);
+- the release: `actor` is `arugula`, `approver` is `arugula:<account>`.
 
 The driver finds the release record this run added for the commit in
 `chant_env`, pushes chant's ledger, and checks the app with `flyctl
@@ -1184,7 +1338,8 @@ healthy, the entry reached origin, and the record is tied to what Fly runs.
 
 **Rolling back** is a new deploy, planned with `"roll_back": true` and the
 commit to go back to. That commit must be one the environment ran, and the
-image comes from that deploy's log. It's approved like any other deploy.
+image comes from that deploy's log. It's approved with a v2 approval: it
+goes through no gate of chant's, so it has no plan run.
 The box runs `flyctl deploy --app <app> --image <image>` and checks the app
 runs that image, healthy. Then `chant components release` records the
 release again in chant's ledger, as the approver, and the run links that
@@ -1203,17 +1358,68 @@ cache delay), grant or not.
 arugula grants add geek threads.read threads.post --project acme
 arugula grants add geek threads.read --dms
 arugula grants revoke geek threads.post --project acme
+arugula grants ls --project acme    # who can do what in acme: its Access view
 ```
 
 or a switch per machine and project (and one for your DMs) under Settings,
 Agents in conversations, on the platform page. Through the API it's `POST
 /api/grants {"daemon", "power", "scope": {"kind": "project", "id"}}` (or
-`{"kind": "account"}` for your DMs). Every call an agent makes asks for the
+`{"kind": "account"}` for your DMs). A write power that does nothing
+for a viewer's agents (`issues.write`, `trackers.write`, `runs.start`,
+`runs.command`) is refused (403 `viewer_write`) while you only view the
+project, since every write would be refused anyway, and `arugula grants
+add` gives nothing when any power in its list would be; one that still
+does something there (`deploys.plan` reads deploys, `boards.write` reads
+boards, `sessions.start` follows sessions and stops your own) is given and
+listed with what it does (`limited` in the JSON: `idle` or `reads only`,
+and why; under its switch on the platform page). One given before a
+demotion stays, with its limit, and is whole again once an owner makes you
+an editor. Every call an agent makes asks for the
 grant again (`grants::agent_may`), so a revoked one refuses the next call,
 with a message naming the machine and how to grant it. What an agent posts
 is its owner's, labelled "Jake's agent on geek" wherever it shows, and stays
 labelled after a revoke. Every room an agent grant reaches says so to
 everyone in it: "Jake's agents on geek can read and post here".
+
+**A project's Access view (Arugula #682).** Any member of a project reads
+who can do what there in one place: `arugula grants ls --project acme`, or
+Access under the project's settings on the platform page, both from `GET
+/api/projects/{id}/grants`. It lists the project roles (the team's roster
+as control's copy stands; each machine checks the roster itself); whose
+machines hold `cloud.drive`, one row per member, since every machine
+joined to an account holds it over the account from its join and acts as
+its owner, within the owner's role, on everything a `CloudDriver` route
+serves: the project's cloud workspaces (opening, deleting;
+their specs, secrets, ports, previews and transcripts; making or rebuilding one needs
+the hosted allowlist too) and its linked repos and their pull requests,
+issues and drafts, and it reads the project's Plane connections, its
+inference keys and its Claude spend (setting those is a person's); a
+viewer's machine reads what a viewer reads, can wake a paused cloud
+workspace, makes no drafts, and discards only its owner's own; no one
+revokes it per project
+(its owner does, per machine, with `arugula grants revoke`); the other
+powers over the project (every live grant, machines' and agent tokens',
+whose each is and what it does now if less than the power: a write power
+on a viewer's, by the grants list's own definition, a giver who left the
+project or is locked out of it, a machine that isn't its giver's now; a
+giver who left is "a former member", unnamed, and neither is their
+machine or token named, nor is a machine that isn't its giver's any more;
+a locked-out member is named and said to be locked out; a machine's id,
+like a grant's, is the owners'); what an owner allowed (the delegation
+for cloud workspaces on control, the standing run grant with its expiry,
+confirmed with a passkey, stale when it names an earlier delegation and
+not working when the owner who confirmed it isn't one of the project's
+owners now) and the project's cloud workspaces, where an owner or editor
+has full use and a viewer watches, or only owners get in while the team
+is locked. An owner's revoke of a grant whose giver left the project
+(`POST /api/grants/{id}/revoke`) answers the same way: the giver and
+their machine unnamed. Each part says whose word it
+is. It's read-only and changes nothing of what's enforced; it never
+lists another account's grant over their DMs, a token, a signature or a
+secret, and a token's or a grant's id (what a revoke needs) only to the
+project's owners. Someone who isn't in the project gets "no such
+project", as every project route answers them. 600 reads an hour per
+account.
 
 Grants bound what a machine's own signature can do (its MCP calls), not
 what a shell on it can do with your CLI login. The CLI's device key lives
@@ -1255,7 +1461,15 @@ snippet's allow list and the post in its ask list; an agent a guest stands
 behind is refused. `@` and a machine's name (`@geek`, or `@geek's agent`)
 in a room its `threads.read` grant reaches is a mention of its agents
 (posting or `issues.write` alone isn't: they couldn't read it), kept as
-`machine:<id>` among the message's mentions. It pushes no person; the agents
+`machine:<id>` among the message's mentions. A machine's name is a display name
+(#500): its owner, or its team's owners, rename it (`arugula machine rename
+mini`, `POST /api/daemons/{id}/name`, or *Rename machine…* in Settings), and
+the mention word follows the name (`Aarons-Mac-mini.local` is
+`@aarons-mac-mini.local`, `mini` is `@mini`). The word it had keeps working
+(control keeps each machine's old words), unless another machine of the
+owner or team is called that now; two of them can't have the same word. The
+`@` list offers the new name only, and a machine's id is what it is: a
+reconnect never resets the name. It pushes no person; the agents
 are told over their machine's connection (below). `capabilities`
 says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
@@ -1358,8 +1572,9 @@ pushes an object change on the Doc's thread). Its members read; a team's
 owners and editors make, write (a section's body replaced, or a section
 added at the end) and delete, and a viewer's page has no form. A section
 is at most 64 KB, a Doc 40 sections and 1 MiB, a project 1,000 Docs.
-Nothing shares one outside its project. They come with chat, as native
-issues do. The routes are `GET`/`POST /api/projects/{project}/docs` and
+Nothing shares one outside its project. Membership and roles decide who
+reads them, as for native issues, whatever a person's chat setting says
+(Arugula #746). The routes are `GET`/`POST /api/projects/{project}/docs` and
 `GET`/`PUT`/`DELETE /api/projects/{project}/docs/{id}`
 (`crates/platform/src/project_docs.rs`). A session's agent makes them
 too (above); a machine's agents don't yet, and a machine's own Docs stay
@@ -1385,7 +1600,7 @@ owner must be one of the project's owners or editors on
 like any trigger's, or waits for an approval without one. No power is an
 approval of anything: a deploy's is an owner's passkey (M218, DK4). The MCP
 tools are `start_run` (a spec, a command or an instruction, on one of the
-project's hosted boxes), `read_run` (a run's state, timeline and a page of
+project's Cloud workspaces, `cloud_workspace`, which was `box`), `read_run` (a run's state, timeline and a page of
 its log by byte offset, or a project's latest runs) and `wait` with `run`
 (until it ends, then the log's tail). `start_run` is in the permission
 snippet's ask list, `read_run` in its allow list, and an agent a guest
@@ -1421,8 +1636,8 @@ A reply answers a question the session waits on (its ask then says
 prompt credited to the owner. Neither power approves anything: while a
 session waits on a permission, the reply is queued for after it, and a
 person allows or denies. The MCP tools are `session_start` (`issue` or
-`room`/`thread`, `prompt`, `project`) `session_reply` (`session`,
-`text`) and `session_stop` (`session`, `reason`: it ends the session now,
+`room`/`thread`, `prompt`, `project`) `session_reply` (`agent_session`,
+`text`) and `session_stop` (`agent_session`, `reason`: it ends the session now,
 cancelling the turn under way, as the card's Stop does, and the thread says
 "Stopped by <owner>'s agent on <machine>: <reason>"; only for a session the
 owner asked for, with either grant; a session that has ended is left as it is),
@@ -1436,7 +1651,7 @@ machine holds the grant.
 
 **Following a wave (Fleet 5).** A project's sessions are one list, a wave
 of them, on the platform page's Sessions (beside Runs, `GET
-/api/projects/{project}/sessions`): each one's state, box, branch and
+/api/projects/{project}/sessions`): each one's state, Cloud workspace, branch and
 HEAD, when it last pushed, who started it, and what waits on the reader
 (its question or a permission for owners and editors, CI that failed
 again, its PR to send for its asker). It narrows by its issue's label, by
@@ -1444,11 +1659,11 @@ a tracker issue (`tracker=N`: the issues its body names as `#N`, those
 whose body names it, and itself), by who asked and to the ones going,
 among the project's latest 500. A machine's agents read the same with
 `sessions.start`, `sessions.reply` or `threads.read` over the project (any
-of them): MCP's `list` kind `sessions` (`GET
+of them): MCP's `list` kind `agent_sessions` (`GET
 /api/daemon/projects/{project}/sessions`, `mine` for those its own agents
 started), `read_session` (`GET /api/daemon/sessions/{ses}`: the row, its
-latest turn, and its last answer whole as its box sent it, where the
-thread keeps only the end), and `wait` with `session` (`POST
+latest turn, and its last answer whole as its machine sent it, where the
+thread keeps only the end), and `wait` with `agent_session` (`POST
 /api/daemon/sessions/wait`, `until: done`): it answers once any of the
 sessions named has settled (its turn finished and no prompt queued for
 the next, or it waits on a person, or it ended), with each settled one
@@ -1494,9 +1709,17 @@ aru-038): machines' agents still use their daemon's.
   The API is `GET`/`POST /api/agent-tokens` (`POST` from the page only),
   `POST /api/agent-tokens/{id}/revoke` and `GET
   /api/agent-tokens/{id}/calls`.
-- **A project's owners see every token over it,** whoever minted it, and
-  revoke its reach there (`GET /api/projects/{project}/agent-tokens`, `POST
-  …/agent-tokens/{id}/revoke`; the project's settings page). A token's
+- **Every member of a project sees the tokens over it,** whoever minted
+  them: that one holds powers there, its name, who minted it and what it
+  may do, in the project's Access view (Arugula #682). Its id, which only
+  a revoke needs, is the project's owners', who revoke its reach there
+  (`GET /api/projects/{project}/agent-tokens`, `POST
+  …/agent-tokens/{id}/revoke`; the project's settings page), or one of
+  its grants by the grant's id (`POST /api/grants/{id}/revoke`, Arugula
+  #683). The minter's devices are told, and the token's grants say who
+  revoked each (`revoked_by` in `GET /api/agent-tokens`; the page and
+  `arugula agent-tokens` say so on a live token): a token's powers are set
+  when it's minted, so reach there again is a new token. A token's
   grants over a team's project are revoked when its owner leaves the team
   (with the roster's projection, `db::agent_tokens::revoke_departed`).
 - **The same checks as a machine's agents.** Each tool is the route a
@@ -1563,3 +1786,78 @@ project's (`app/<app>/<KEY>`), and the platform projects it into the
 operator's Infisical when the projection is on
 (`crates/platform-agents/src/infisical.rs`). The code is
 `crates/platform-agents/src/redone.rs` and `agent_mcp_redone.rs`.
+
+## Boards
+
+A project's work is managed on boards, and an epic is a board
+([aru-122](decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md)).
+They're control's, so they work with every machine asleep.
+
+**Grants.** Boards are on for everyone (they left Labs, native #191). An
+agent's machine needs the Boards grant over the project: *Settings → Agents*,
+Boards set to read, or to read and write, or `arugula grants add <machine>
+boards.read --project <prj_…>` (and `boards.write`, which reads too).
+
+**Running work on a board.**
+
+- Make a board on the project's Boards page, and zones on it. *+ Add PROOFS*
+  makes the zone for evidence; a row there counts as proven when it links
+  evidence (an https URL: a CI page, a report), points at a run that
+  succeeded or at a merged PR.
+- *+ Add row* in a zone picks from the project's issues, PRs and runs across
+  its linked repos, or a zone's menu has *New issue…*, which files one and
+  puts it there.
+- An issue or PR row reads as a card with its assignees.
+- **Triage** lists the project's open issues that are on no board. With
+  it takes Issues' place in the bar.
+
+**Epics.** Give a board a goal (*Add a goal*) and its progress reads "3 of 5
+issues done": only issue rows count, an issue is done when it's closed at its
+source, one issue counts once however many rows point at it, and a row the
+reader can't read counts toward neither number. *Close epic…* asks "What can
+a person now do?" and keeps the answer as the done note; *Reopen* keeps the
+note. A closed board's rows stay editable, and the lists fold closed epics
+under *Done (N)*. A team's owners and editors change things; viewers see
+everything.
+
+**Agents.** `board_read` lists a project's boards and reads one (zones, rows,
+ids and revs). `board_write` lands at once, labelled as the person's agent on
+that machine, never as them: a board it makes or closes says so, as a row it
+adds does. It may make a board (an epic, with a goal and its zones), set its
+title and goal, close it with a done note and open it again; make, rename,
+move and delete zones (PROOFS too); add rows, set any row's note and status,
+move rows, and remove or repoint a row it added. It may not delete a zone that
+holds a row someone else added, or remove or repoint such a row. The person's
+role is still the ceiling: a viewer's machine makes nothing, whatever it was
+granted. A note, a pointer or a zone's title names the `rev` that `board_read`
+showed, and one that moved on asks to read again. Agents are told to run work
+of more than one ticket on a board, keep its rows current and close it with a
+note (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools are in
+`crates/arugulad-control-tools/src/boards.rs`, the rules in
+`crates/platform/src/boards.rs` (aru-123).
+
+**Plane.** A project's owner or editor connects a Plane project in project
+settings (*Plane*, after *Linked repos*): its workspace slug, the project's id
+or identifier, and an API key, with an optional webhook secret. Control asks
+Plane for the project with the key first, and keeps nothing if Plane refuses
+it. The key and the secret are sealed in `project_secrets` and never read
+back; no machine or agent route touches them. A Plane project is connected to
+one project at a time. Its work items are read into the mirror (`forge_items`,
+`provider = 'plane'`), a completed or cancelled state as closed. The
+connection's *agent writes* is *Approve each write* (the default) or *Allow
+all writes*. *Disconnect* removes the secrets at once and the items after the
+grace period, as unlinking a repo does
+([aru-124](decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md);
+`crates/platform/src/trackers/`).
+
+People and agents write back: create an item, comment, close (completed or
+cancelled), reopen, and edit its title or body. An owner's or editor's own
+write lands at once; *New issue in Plane…* in a zone's menu makes one there.
+An agent's needs `trackers.write` over the project (its `tracker_write` tool)
+and never goes past what its owner may do by hand. Under *Approve each write*
+it waits at the top of the project's Triage, where a person approves, edits or
+drops it; under *Allow all writes* it lands at once. Each body and comment ends
+with a line saying who it was for ("via Arugula, by ‹person›'s agent on
+‹machine›"), added as it's sent, so an edit can't take it off. Bodies and
+comments go to Plane as escaped HTML; titles as plain text
+(`crates/platform/src/trackers/writes.rs`).

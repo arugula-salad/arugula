@@ -30,7 +30,8 @@ import {
   type Enrollment,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
-import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
@@ -63,7 +64,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, ClosureStore, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -76,9 +77,6 @@ export interface ControlInfo {
   vapid: string;
   /** Where control is now, when it answers at more than one URL (#507). */
   primary?: string;
-  /** Control passes an approving device's MAC to a waiting one (#761),
-   * so a waiting browser shows a code rather than a fingerprint. */
-  device_secret?: number;
   /** Blocks get origins of their own, `https://b-<site_key>.<this>` (M50);
    * absent when control doesn't serve blocks. */
   block_domain?: string;
@@ -190,6 +188,7 @@ const ROSTERS_KEY = "arugula.control.rosters";
 /** Each account's certificates and removals as this page last held them,
  * and when it first saw each (`TrustStore`). */
 const HELD_CERTS_KEY = "arugula.control.held-certs";
+const CLOSURES_KEY = "arugula.control.delegations-ended";
 const ROOT_CHANGES_KEY = "arugula.control.root-changes";
 
 function readKey<T>(key: string, empty: T): T {
@@ -843,8 +842,8 @@ const REFUSED: Record<string, string> = {
   recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
   needs_browser: "Only a browser or a phone approves a browser, a phone or recovery codes. The desktop app and the Arugula CLI approve machines, CLIs and apps: approve this one from a browser.",
   recovery_spent: "That recovery code let a device in already, and each one lets in one device. Use your other recovery code, or approve this browser from one of your devices.",
-  clock: "This device's clock is too far from control's for the approval to count. Check the clock, reload and approve again.",
-  no_chain: "Control's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
+  clock: "This device's clock is too far from Arugula cloud's for the approval to count. Check the clock, reload and approve again.",
+  no_chain: "Arugula cloud's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
   no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
 };
 
@@ -1313,9 +1312,11 @@ export class ControlSession {
     this.request = cert;
     // #761: a code to show while it waits, whose secret control never
     // sees: the approving device answers it, and this browser checks the
-    // answer before it pins the root. Not for the first device (nothing
-    // approves it), nor one the app's sign-in signed already.
-    const secret = root !== null && !signed && this.info.device_secret ? deviceSecretFor(k.id) : null;
+    // answer before it pins the root. Made whatever control says of itself
+    // or of the account: with no answer, the person checks the account
+    // (`vouched`). A first device doesn't get as far as showing it; only
+    // one the app's sign-in signed already has none.
+    const secret = signed ? null : deviceSecretFor(k.id);
     this.deviceCode = secret ? `${await joinCode(cert)}.${secret}` : null;
     // #326: here to approve a machine, which this browser can't until it's
     // one of the account's devices: the device that approves it is shown
@@ -1323,6 +1324,11 @@ export class ControlSession {
     let join = joinInHash();
     const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join, ...(secret ? { features: DEVICE_SECRET } : {}) });
     let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
+    // Taken as the account's first device: its root can only be this key.
+    // Told there were no devices and kept waiting, another browser got
+    // there first (two signing in at once), and this one is approved as
+    // any other is.
+    const takenAsFirst = root === null && r.approved;
     if (signed && !r.approved) {
       // An older control keeps it waiting: approve it with the same
       // signature (a control that refused it leaves it to a device).
@@ -1362,19 +1368,23 @@ export class ControlSession {
         r = await ask();
       }
     }
-    if (root === null) await this.makeRecoveryCodes();
     // Pin the root as control reports it now, and check that our own
     // certificate chains back to it.
     const all = await api<{ trust: { account: string; root: string }; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
     // #758: the app's window takes the root the browser that signed it
     // pinned, not control's word for it.
-    if (signed && all.trust.root !== signed.root) throw new Error("control says this account's root is a different device than the browser that signed this app in has: not trusting it");
-    // #761: the device that approved it answered its code, for this root.
-    // A recovery code approves it without one (this browser holds that).
-    if (secret && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
+    if (signed && all.trust.root !== signed.root) throw new Error("Arugula cloud says this account's root is a different device than the browser that signed this app in has: not trusting it");
+    // This browser's own key as the root: nothing else can sign for it
+    // (`evaluate` wants its self-signed certificate), and nothing approved it.
+    const own = all.trust.root === k.id;
+    if (takenAsFirst && !own) throw new Error("Arugula cloud took this browser as the account's first device, then named another as its root: not trusting it");
     const trusted = await evaluate(all.trust, all.certs, all.revocations);
     const mine = trusted.get(k.id);
-    if (!mine) throw new Error("control approved this device, but the approval doesn't check out");
+    if (!mine) throw new Error("Arugula cloud approved this device, but the approval doesn't check out");
+    // #761: the device that approved it answered its code, for this root.
+    // A recovery code approves it without one (this browser holds that).
+    if (secret && !own && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
+    if (root === null && own) await this.makeRecoveryCodes();
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
     dropDeviceSecret();
@@ -1443,9 +1453,9 @@ export class ControlSession {
    * device's MAC under this browser's secret. A MAC that checks out: yes.
    * A wrong one (control's own account, or the code mistyped): no, and
    * the secret goes, so there's one guess per code; the `unvouched` screen
-   * says to enroll again. None (approved from a page from before codes):
-   * the person checks the account's fingerprint on that screen, the old
-   * way, and says so with `vouchFor`. */
+   * says to enroll again. None (approved from a page from before codes,
+   * or a control that doesn't pass it on): the person checks the account's
+   * fingerprint on that screen, the old way, and says so with `vouchFor`. */
   private async vouched(secret: string, mine: Cert, all: { trust: { account: string; root: string }; certs: Cert[] }): Promise<boolean> {
     const got = await api<{ cert: Cert; mac?: string }>(`/api/devices/${mine.device}`);
     if (got.mac && (await deviceMacOk(secret, all.trust, mine, got.mac))) return true;
@@ -1782,7 +1792,7 @@ export class ControlSession {
       // (M29), from what this page checked.
       const ws = this.info.url.replace(/^http/, "ws");
       void saveWorkerDirectory(
-        this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}` })),
+        this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}` })),
       ).catch(() => {});
     } catch (err) {
       if (err instanceof HttpError && err.status === 401) {
@@ -1838,6 +1848,8 @@ export class ControlSession {
   private rosters = new RosterStore(() => localStorage, ROSTERS_KEY, () => !!this.enrollment?.held);
   /** Each account's certificates and removals as last held (`TrustStore`). */
   private held = new TrustStore(() => localStorage, HELD_CERTS_KEY, () => !!this.enrollment?.held);
+  /** Control's word of delegations that ended, as heard (`ClosureStore`). */
+  private closures = new ClosureStore(() => localStorage, CLOSURES_KEY);
 
   async loadTeams() {
     let loaded = true;
@@ -1968,18 +1980,20 @@ export class ControlSession {
     const owners = team
       ? { team: team.roster, certs: team.certs }
       : { account: { account: e.account, root: e.root }, certs: devs.certs, revocations: devs.revocations };
-    const ok = await acceptHosted(e.account, proof, owners);
+    const ok = await acceptHostedHolding(e.account, proof, owners, this.closures);
     if (!ok.ok) return [];
     const c = proof.cert;
     // Its keys, to open a channel with; never in the account's trust.
-    const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise, sign: c.sign, created: c.created, approver: "", sig: "" };
-    return [{ ...entry, cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];
+    const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise.toLowerCase(), sign: c.sign.toLowerCase(), created: c.created, approver: "", sig: "" };
+    // Reached only through the relay: no direct URLs, whatever the
+    // directory said.
+    return [{ ...entry, urls: [], cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];
   }
 
   // ---- project delegations (M178)
 
   /** Control's hosted key and the delegations of this account's projects. */
-  async delegations(): Promise<{ key: string; delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; by_account: string }[] }> {
+  async delegations(): Promise<{ key: string; delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; ended?: boolean; by_account: string }[] }> {
     return api("/api/hosted/delegations");
   }
 
@@ -2010,7 +2024,11 @@ export class ControlSession {
    * key signs it. It takes the place of the project's grant, if it has one
    * (renewing). Call it from a click. */
   async signRunGrant(d: Delegation, days: number): Promise<void> {
-    const made = Date.now();
+    // Past the project's last grant, whatever this device's clock says: hosted
+    // machines go by this time to tell which grant is newest.
+    const view = await this.runGrant(d.project);
+    const last = [view.grant, ...view.past].reduce((m, g) => Math.max(m, g?.grant.made ?? 0), 0);
+    const made = Math.max(Date.now(), last + 1);
     const g = await newGrant(d, this.account, expiresIn(days, made), undefined, made);
     const grant = { ...g, passkey: await passkeyOver(await passkeyChallenge(grantBody(g))) };
     await api(`/api/projects/${encodeURIComponent(d.project)}/runs/grant`, { grant }, platformFetch);
@@ -2128,7 +2146,7 @@ export class ControlSession {
   async changeTeam(team: string, change: (members: Roster["members"]) => Roster["members"], name?: string) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (t.rosterProblem) throw new Error("control's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
+    if (t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
     const prev = t.roster;
     // Used presigned invites stay listed until they'd have expired anyway,
     // so none works twice.
@@ -2292,7 +2310,7 @@ export class ControlSession {
   async lockTeam(team: string, locked: boolean) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (!locked && t.rosterProblem) throw new Error("control's list of this team's members doesn't check out here; unlocking waits until it does");
+    if (!locked && t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't check out here; unlocking waits until it does");
     // After the lock this page checked and holds (never dated far ahead).
     const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (this.held.lock(team)?.at ?? 0) + 1) }, this.keys);
     await api(`/api/teams/${team}/lock`, { locked, lock });
@@ -2372,7 +2390,7 @@ export class ControlSession {
     // M50: blocks on control's block origins, where control serves them.
     const blockDomain = this.info.block_domain;
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its
@@ -2516,6 +2534,15 @@ export class ControlSession {
     await this.refresh();
   }
 
+  /** Rename a machine (Arugula #500): its owner's, or its team's owners'.
+   * Only the display name changes, and `@old` keeps reaching it. Control
+   * refuses a name another of the owner's (or the team's) machines has. */
+  async renameDaemon(daemon: string, name: string): Promise<string> {
+    const r = await api<{ name: string }>(`/api/daemons/${daemon}/name`, { name });
+    await this.refresh();
+    return r.name;
+  }
+
   /** Turn a daemon's join down: it stops waiting. */
   /** M48: a desktop app asking to sign in as this account (`#app=`):
    * where it asked from, and whether that's this browser's network. An
@@ -2563,7 +2590,7 @@ export class ControlSession {
     const r = await api<{ redirect: string }>(`/api/app-login/${encodeURIComponent(id)}/allow`, {});
     const url = new URL(r.redirect);
     if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
-      throw new Error("control sent the sign-in somewhere other than the app on this computer: not following it");
+      throw new Error("Arugula cloud sent the sign-in somewhere other than the app on this computer: not following it");
     if (a.device && this.signsApp(a)) {
       try {
         const cert: Cert = {

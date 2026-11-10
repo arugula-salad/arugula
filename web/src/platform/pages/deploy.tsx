@@ -22,6 +22,9 @@ import {
   DEFAULT_LIFE_MS,
   NotHere,
   checkDeploy,
+  approvalFor,
+  approvalPosted,
+  type ChantGate,
   passkeyOver,
   passkeysNotHere,
   type Approval,
@@ -41,7 +44,8 @@ import { controlOrigin, session } from "../session";
 import { names } from "../links";
 import { follow, followRow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
-import { deployTone, toneClass } from "../swarm";
+import { deployTone } from "../swarm";
+import { cardToneClass } from "../../shared/ui/card";
 import { where } from "../where";
 import { noteWaitingDeploys } from "../inbox-count";
 
@@ -216,9 +220,12 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
     try {
       const account = session.me?.account;
       if (!account) throw new Error("sign in first");
-      const a: Approval = { v: 2, deploy: phase.deploy, op: phase.hash, account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const now = Date.now();
+      // A chant-fly deploy's `once` signs chant's statement of the gate its
+      // check read (#1985).
+      const a: Approval = approvalFor({ ...d, id: phase.deploy, operation: { ...d.operation, hash: phase.hash }, chant: phase.ok.chant ? { state: "planned", gate: phase.ok.chant, why: null } : null }, account, decision, now, now + DEFAULT_LIFE_MS);
       const passkey = await passkeyOver(a, phase.rp, phase.cd.passkeys);
-      const after = await post<Deploy>(`/api/deploys/${phase.deploy}/${decision === "once" ? "approve" : "deny"}`, { op: a.op, expires: a.expires, passkey });
+      const after = await post<Deploy>(`/api/deploys/${phase.deploy}/${decision === "once" ? "approve" : "deny"}`, { ...approvalPosted(a), passkey });
       onDecided(after, decision);
     } catch (e) {
       if (e instanceof NotHere) setPhase({ kind: "elsewhere", why: e.message });
@@ -292,11 +299,11 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
           {folded}
           <div class="deploy-actions" data-deploy-decide="elsewhere">
             <a class="primary" href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
-              Approve on Control
+              Approve on your machines page
             </a>
             <p class="dim deploy-why" data-deploy-why-elsewhere>
               {shown.why.charAt(0).toUpperCase() + shown.why.slice(1)}.{" "}
-              {app ? "This opens Control's page in your browser, where your passkey approves or denies it." : "Control's page asks for your passkey, and approves or denies it there."}
+              {app ? "This opens your machines page in your browser, where your passkey approves or denies it." : "Your machines page asks for your passkey, and approves or denies it there."}
             </p>
           </div>
         </>
@@ -313,7 +320,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
           {d.subject || d.expected_version ? (
             // Not signed: beside the checked facts, never in place of them (#333).
             <p class="dim" data-deploy-reading>
-              The platform reads this as: {deployTitle(d)}
+              Arugula reads this as: {deployTitle(d)}
             </p>
           ) : null}
           {ok.plan.rollBack ? (
@@ -335,6 +342,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
             <p class="dim">
               Its hash <code class="deploy-digest" data-deploy-op-hash>{d.operation.hash}</code>
             </p>
+            {ok.chant ? <ChantPlan g={ok.chant} /> : null}
           </div>
           {err ? (
             <p class="control-error" data-deploy-error>
@@ -351,7 +359,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
             <p class="dim deploy-why">
               Or{" "}
               <a href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
-                approve on Control
+                approve on your machines page
               </a>
               , if your passkey isn't offered here.
             </p>
@@ -393,7 +401,7 @@ export function DeployCard({
   const path = `/deploys/${d.id}`;
   const project = pathOf({ page: "project", project: d.project.id }, names);
   return (
-    <article class={headless ? "deploy-card" : `deploy-card sw-card ${toneClass(deployTone(d.state))}`} data-deploy-card={d.id} data-deploy-state={d.state}>
+    <article class={headless ? "deploy-card" : `deploy-card card ${cardToneClass(deployTone(d.state))}`} data-deploy-card={d.id} data-deploy-state={d.state}>
       {!headless && (
         <header class="deploy-card-head">
           <h2>
@@ -576,7 +584,7 @@ export function DeployRow({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   const at = lastMoved(d);
   return (
-    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
+    <tr class="deploy-row" data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
       <td>
         <DeployState state={d.state} />
       </td>
@@ -625,11 +633,24 @@ export function WaitingDeploys({ list }: { list: Deploy[] | null }) {
       <h2>
         Deploys waiting for you <span class="dim">{list.length}</span>
       </h2>
-      <div class="deploy-cards sw-cards">
+      <div class="deploy-cards card-list">
         {list.map((d) => (
           <DeployCard key={d.id} d={d} link />
         ))}
       </div>
     </div>
+  );
+}
+
+/** What chant planned for a chant-fly deploy (#1985): the gate its plan
+ * stopped at and chant's plan digest, which an approval signs chant's own
+ * statement of. */
+function ChantPlan({ g }: { g: ChantGate }) {
+  return (
+    <p class="dim" data-deploy-chant={g.plan}>
+      chant planned it: op <code>{g.op}</code> stopped at gate <code>{g.gate}</code> with plan{" "}
+      <code class="deploy-digest">{g.plan}</code>. Approving signs chant's own statement of that plan, which chant checks again
+      before it applies.
+    </p>
   );
 }

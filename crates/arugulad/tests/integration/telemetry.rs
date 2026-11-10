@@ -11,7 +11,7 @@ const OWNER: &str = "me@example.com";
 /// testkit's `ARUGULA_TELEMETRY=off`, nextest, CI), and reports go nowhere.
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
     arugulad!(tag)
-        .no_wisp()
+        .no_provider()
         .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"])
         .env_remove("ARUGULA_TELEMETRY")
         .env_remove("NEXTEST_RUN_ID")

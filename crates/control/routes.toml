@@ -59,12 +59,15 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github`, `stripe` and
-#   `plane` (their webhooks), `operator` (by hand), `product` (another product
+#   `plane` (their webhooks), `chant` (a chant tick's signed events), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
 #   (an agent with no machine, with an agent grant token, M230), `apple`
 #   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
 #   device's signature is refused (401, `page_only`) on every route that
 #   doesn't list `cli` (`clients::gate`).
+#   `native` is a native app, a `browser` device paired by code as one: its
+#   signature counts only where this lists it, with `--native-clients` on
+#   (`clients::gate`, aru-131). contract/api/native.json describes these.
 # - `note`: anything the rest doesn't say.
 #
 # Not routes, so not here: what a block's origin or the docs origin is
@@ -344,7 +347,7 @@ method = "GET"
 path = "/api/me"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
@@ -532,7 +535,7 @@ method = "GET"
 path = "/api/devices"
 process = "hub"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "POST"
@@ -588,7 +591,7 @@ method = "POST"
 path = "/api/join"  # wire::JOIN
 process = "hub"
 auth = "join_proof"
-clients = ["daemon", "cli"]
+clients = ["daemon", "cli", "native"]
 note = "No account yet: the machine's key signs a proof, and a person approves the code it shows."
 
 [[route]]
@@ -596,7 +599,7 @@ method = "GET"
 path = "/api/join/{code}"  # wire::JOIN_POLL
 process = "hub"
 auth = "poll_token"
-clients = ["daemon", "cli"]
+clients = ["daemon", "cli", "native"]
 note = "With the token the join handed out."
 
 [[route]]
@@ -626,6 +629,13 @@ path = "/api/daemons/{id}/team"
 process = "hub"
 auth = "session"
 clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/daemons/{id}/name"
+process = "hub"
+auth = "session"
+clients = ["page", "cli"]
 
 [[route]]
 method = "GET"
@@ -695,7 +705,7 @@ method = "GET"
 path = "/api/directory"
 process = "hub"
 auth = "session_or_daemon"
-clients = ["page", "daemon", "cli"]
+clients = ["page", "daemon", "cli", "native"]
 
 [[route]]
 method = "POST"
@@ -709,14 +719,14 @@ method = "GET"
 path = "/api/people"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/flags"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
@@ -730,7 +740,7 @@ method = "GET"
 path = "/api/teams"
 process = "hub"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "POST"
@@ -752,7 +762,7 @@ method = "GET"
 path = "/api/teams/{id}/rosters"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "the versions after the one a member's page last checked, with the owner proofs kept beside those that changed the owners (DK7)"
 
 [[route]]
@@ -1000,7 +1010,7 @@ path = "/api/hosted/delegations"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again."
+note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again. Refused while the project has another live one."
 
 [[route]]
 method = "POST"
@@ -1008,7 +1018,7 @@ path = "/api/hosted/delegations/revoke"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Any owner's own device's signed revocation: nothing more enrolls under it."
+note = "Any owner's own device's signed revocation, judged as it arrives: nothing more enrolls under it. The answer says whether it was the first and whether it's kept."
 
 [[route]]
 method = "POST"
@@ -1170,7 +1180,15 @@ path = "/plane/webhook/{connection}"
 process = "platform"
 auth = "webhook"
 clients = ["plane"]
-note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. Behind the boards Labs flag. The URL is set in Plane's webhook settings."
+note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. The URL is set in Plane's webhook settings."
+
+[[route]]
+method = "POST"
+path = "/ci/notify/{project}"  # wire::projects::CI_NOTIFY
+process = "platform"
+auth = "webhook"
+clients = ["chant"]
+note = "chant's CI events for a project (native #774), checked by the platform against the project's own sealed CI alerts key (`x-chant-signature`, HMAC-SHA256 over `<x-chant-timestamp>.<body>`, the timestamp within 5 minutes); an unknown project, alerts off and a bad signature are the same 401. Bodies up to 64 KiB; limited per client address by the hub (`limit::CI_NOTIFY`) and per project by the platform. A repeated event id is a no-op. They open, comment on and close the project's red-branch issue. The URL is shown in the project's settings and given to chant's tick as a secret."
 
 [[route]]
 method = "POST"
@@ -1202,7 +1220,7 @@ method = "GET"
 path = "/api/relay/c/{id}"
 process = "hub"
 auth = "session_or_daemon"
-clients = ["page", "daemon", "cli"]
+clients = ["page", "daemon", "cli", "native"]
 note = "A machine reaches a hosted workspace's machine only with a live cloud.drive grant (M184, PlatformPort::machine_drives)."
 
 [[route]]
@@ -1210,7 +1228,7 @@ method = "GET"
 path = "/api/relay/m"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 # ---- platform: chat
 
@@ -1219,42 +1237,42 @@ method = "GET"
 path = "/api/chat"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/live"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/live/open"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/search"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/sidebar"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "PUT"
 path = "/api/chat/sidebar"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
@@ -1264,33 +1282,25 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
-method = "POST"
-path = "/api/chat/presence/token"
-process = "platform"
-auth = "session"
-clients = ["page"]
-note = "a People block's room token for arugula.stream (team members only)"
-
-[[route]]
 method = "GET"
 path = "/api/chat/avatar/{account}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/targets"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/teams/{team}/channels"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The channel browser: the team's public channels, joined or not. Private ones are never listed."
 
 [[route]]
@@ -1298,63 +1308,63 @@ method = "POST"
 path = "/api/chat/teams/{team}/channels"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/teams/{team}/dms"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/rooms/{id}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "PATCH"
 path = "/api/chat/rooms/{id}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "PATCH"
 path = "/api/chat/rooms/{id}/messages/{seq}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "DELETE"
 path = "/api/chat/rooms/{id}/messages/{seq}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/files"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A file or image for the next message (#107): the bytes are the body, `?name=` its name. Kept for its uploader for an hour; at most 10 MB, 10 to a message, and 256 MB of files per team."
 
 [[route]]
@@ -1362,7 +1372,7 @@ method = "GET"
 path = "/api/chat/rooms/{id}/files/{file}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A file of a room the reader reads, and no one else (404): pictures, video and audio inline, the rest as an attachment, always with `nosniff`. `?download=1` saves any. Honours `Range`."
 
 [[route]]
@@ -1370,7 +1380,7 @@ method = "GET"
 path = "/api/chat/rooms/{id}/previews"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Link previews (#108) under the messages named by `seqs`, for the reader: cards for their own objects, and Open Graph for web links."
 
 [[route]]
@@ -1378,7 +1388,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/messages/{seq}/previews"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A message's author takes its previews off, or puts them back."
 
 [[route]]
@@ -1386,7 +1396,7 @@ method = "GET"
 path = "/api/chat/previews/image"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The image of a page that was read for a preview, fetched by the platform so readers never contact the site. Takes the room and message the card is under; only a reader of that message gets it."
 
 [[route]]
@@ -1409,7 +1419,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Adds the caller's emoji (body `{emoji}`); the same twice is not an error. Answers the message."
 
 [[route]]
@@ -1417,7 +1427,7 @@ method = "DELETE"
 path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Takes the caller's `?emoji=` back; none to take back is not an error."
 
 [[route]]
@@ -1425,7 +1435,7 @@ method = "PUT"
 path = "/api/chat/rooms/{id}/topic"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A channel's topic and/or description (#119); a change posts a system line. A team can leave it to its owners."
 
 [[route]]
@@ -1433,7 +1443,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/grant-never"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The owner of a machine says its agents are never to be asked to read this room (#578); what waited for them is not granted for good. A machine can't say it of itself."
 
 [[route]]
@@ -1441,7 +1451,7 @@ method = "GET"
 path = "/api/chat/rooms/{id}/pins"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The room's pinned messages, the newest pin first."
 
 [[route]]
@@ -1449,7 +1459,7 @@ method = "PUT"
 path = "/api/chat/rooms/{id}/messages/{seq}/pin"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Pins the message (anyone who may post); pinning twice is not an error. Posts a system line."
 
 [[route]]
@@ -1457,7 +1467,7 @@ method = "DELETE"
 path = "/api/chat/rooms/{id}/messages/{seq}/pin"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Unpins it; none to take off is not an error."
 
 [[route]]
@@ -1465,7 +1475,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/join"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Into a public channel; a private one is 404."
 
 [[route]]
@@ -1473,7 +1483,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/leave"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Out of a channel or a DM."
 
 [[route]]
@@ -1481,7 +1491,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/members"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A channel's creator and its team's owners add people of the team."
 
 [[route]]
@@ -1489,7 +1499,7 @@ method = "DELETE"
 path = "/api/chat/rooms/{id}/members/{account}"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A channel's creator and its team's owners remove a member."
 
 [[route]]
@@ -1497,22 +1507,30 @@ method = "POST"
 path = "/api/chat/rooms/{id}/read"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/threads"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The threads the caller follows, most recently active first, with their unread counts (#106)."
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/threads/{seq}/agents"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The agents in the thread of message `seq` and what each is doing, for the strip at its top (#645). Control asks each machine's daemon and keeps none of the live part."
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/threads/{seq}/read"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Moves the caller's read mark in the thread of message `seq` forward. Answers that message."
 
 [[route]]
@@ -1520,7 +1538,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/threads/{seq}/follow"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Follows the thread of message `seq` (body `{following}`), or stops. Answers that message."
 
 [[route]]
@@ -1528,7 +1546,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/mute"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The old switch: muting is the `nothing` level, unmuting goes back to the default. The page uses /level."
 
 [[route]]
@@ -1536,7 +1554,7 @@ method = "POST"
 path = "/api/chat/rooms/{id}/level"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
@@ -1557,56 +1575,56 @@ method = "POST"
 path = "/api/chat/rooms/{id}/unread"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/saved"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "PUT"
 path = "/api/chat/rooms/{id}/messages/{seq}/saved"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "PATCH"
 path = "/api/chat/rooms/{id}/messages/{seq}/saved"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "DELETE"
 path = "/api/chat/rooms/{id}/messages/{seq}/saved"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/typing"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
 path = "/api/chat/keywords"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "PUT"
 path = "/api/chat/keywords"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 
 [[route]]
 method = "GET"
@@ -1671,6 +1689,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Labelled as the owner's agent on the machine; nobody is woken."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms/{id}/threads/{seq}/agents"  # wire::chat::agent_thread_agents
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The agents in a thread and what each is doing, for an agent reading it (#649)."
 
 [[route]]
 method = "GET"
@@ -1758,6 +1784,15 @@ path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
+note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project. A grant whose giver doesn't read the project now answers with neither the giver nor their machine named (former_giver), as the project's Access view does."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/grants"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's Access view: its roster roles (through the platform's cache, as agent_may reads them); whose machines hold cloud.drive (given on join, never revoked per project: they act as their owner, within the owner's role, on the project's cloud workspaces and linked repos and their items and drafts, and read its Plane connections, inference keys and spend; a viewer's reads, wakes a paused workspace, makes no drafts and discards only its owner's own); every live grant over the project (machines' and agent tokens', with whose each is and what it does now if less than the power; a giver who left is a former member, unnamed, their machine too, as is a machine that isn't its giver's now; a machine's id is the owners', as a grant's is); the delegation and the standing run grant with its expiry (stale when it names an earlier delegation, and not working when its signer isn't an owner now); and its cloud workspaces (owners and editors have full use, owners alone while the team is locked). For any member; a stranger gets no such project. A token's or a grant's id, which only a revoke needs, is in the answer for the project's owners alone. Never a token, a signature or a secret: who, what and when. Read-only; 600 reads an hour per account."
 
 # ---- platform: agents with no machine (M230, platform step 8)
 # An owner mints a bearer agent grant token over projects they read, with an
@@ -1805,7 +1840,7 @@ path = "/api/projects/{project}/agent-tokens"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Every live agent token over the project, whoever minted it, with its powers there: the project's owners."
+note = "Every live agent token over the project, whoever minted it, with its powers there and its id (to revoke): the project's owners. Every member sees the same tokens, without ids, in GET /api/projects/{project}/grants."
 
 [[route]]
 method = "POST"
@@ -1994,7 +2029,7 @@ method = "GET"
 path = "/api/projects"  # wire::projects::PROJECTS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 
 [[route]]
 method = "GET"
@@ -2030,11 +2065,35 @@ note = "A linked repo's settings (M166): content mirroring on (a member who main
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's CI alerts (native #774), for its members: whether they're on, their URL, whom a red issue mentions and the open red issues. Never the key."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/ci-alerts"  # wire::projects::PROJECT_CI_ALERTS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Whom a project's red issue mentions or assigns, or CI alerts off, which removes the key (native #774): an owner or editor."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/ci-alerts/key"  # wire::projects::PROJECT_CI_ALERTS_KEY
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "CI alerts on with a new key, or the key rotated (native #774): an owner or editor. The key is sealed here and is in this answer only."
+
+[[route]]
+method = "GET"
 path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "A project's connected Plane projects (Arugula #356), for its members, behind the boards Labs flag: metadata only, never a key."
+note = "A project's connected Plane projects (Arugula #356), for its members: metadata only, never a key."
 
 [[route]]
 method = "POST"
@@ -2042,7 +2101,7 @@ path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Connects a Plane project (Arugula #356): an owner or editor, behind the boards Labs flag. Plane is asked with the key first; the key and webhook secret are sealed here and never read back."
+note = "Connects a Plane project (Arugula #356): an owner or editor. Plane is asked with the key first; the key and webhook secret are sealed here and never read back."
 
 [[route]]
 method = "PATCH"
@@ -2066,7 +2125,7 @@ path = "/api/projects/{project}/trackers/{connection}/history"  # wire::projects
 process = "platform"
 auth = "cloud_driver"
 clients = ["page"]
-note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members, behind the boards Labs flag."
+note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members."
 
 [[route]]
 method = "POST"
@@ -2074,7 +2133,7 @@ path = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry"  # wire
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Queues a failed move to Done again (Arugula #441): an owner or editor, behind the boards Labs flag. A job that isn't that connection's failed move is a 404."
+note = "Queues a failed move to Done again (Arugula #441): an owner or editor. A job that isn't that connection's failed move is a 404."
 
 [[route]]
 method = "POST"
@@ -2082,7 +2141,7 @@ path = "/api/projects/{project}/trackers/{connection}/writes"  # wire::projects:
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A person's write to a connected Plane project (Arugula #359): create, comment, close, reopen or edit a work item. An owner or editor, behind the boards Labs flag; it lands at once, with a footer naming them. The key is never in the answer."
+note = "A person's write to a connected Plane project (Arugula #359): create, comment, close, reopen or edit a work item. An owner or editor; it lands at once, with a footer naming them. The key is never in the answer."
 
 [[route]]
 method = "GET"
@@ -2138,7 +2197,7 @@ path = "/api/projects/{project}/workspaces"
 process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
-note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id."
+note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id; created_by names its maker only while they're a member now (null for a former member)."
 
 [[route]]
 method = "POST"
@@ -2154,7 +2213,7 @@ path = "/api/projects/{project}/workspaces/{id}"
 process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
-note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box."
+note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box. created_by names its maker only while they're a member now."
 
 [[route]]
 method = "DELETE"
@@ -2289,7 +2348,7 @@ method = "GET"
 path = "/api/sessions/{ses}"  # wire::sessions::SESSION
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "An agent session's card and history (M257): its project's members."
 
 [[route]]
@@ -2297,7 +2356,7 @@ method = "POST"
 path = "/api/sessions/{ses}/stop"  # wire::sessions::SESSION_STOP
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Stop an agent session (M257): its project's owners and editors. Control's stopped move; its box stops the agent."
 
 [[route]]
@@ -2305,7 +2364,7 @@ method = "POST"
 path = "/api/sessions/{ses}/actions"  # wire::sessions::SESSION_ACTIONS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Ask an agent session's box to answer its question, approve or deny its permission, or cancel its turn (M257): its project's owners and editors; the first answer wins."
 
 [[route]]
@@ -2313,7 +2372,7 @@ method = "GET"
 path = "/api/sessions/{ses}/pr"  # wire::sessions::SESSION_PR
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "An agent session's pull request as its asker drafts it (M259): kept, or prefilled from the repo's PR template and the session's turns. Its asker only, while they may read the repo."
 
 [[route]]
@@ -2321,7 +2380,7 @@ method = "PUT"
 path = "/api/sessions/{ses}/pr"  # wire::sessions::SESSION_PR
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Keep an agent session's PR draft (M259): its asker only, until it's sent."
 
 [[route]]
@@ -2329,7 +2388,7 @@ method = "POST"
 path = "/api/sessions/{ses}/pr/send"  # wire::sessions::SESSION_PR_SEND
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Send an agent session's PR as its asker (M259): POST repos/{repo}/pulls with a one-use user token (via browser), else one of their machines with gh. A machine is refused (403, agents_draft); with no way it waits (409, no_way)."
 
 [[route]]
@@ -2337,7 +2396,7 @@ method = "POST"
 path = "/api/sessions/{ses}/try"  # wire::sessions::SESSION_TRY
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Try 3 (M264): two siblings of an agent session re-run its first prompt beside it, each in a slot of its box, on the harnesses asked for (claude, codex). Owners and editors who may start work on hosted workspaces; once per session."
 
 [[route]]
@@ -2345,7 +2404,7 @@ method = "POST"
 path = "/api/sessions/{ses}/pick"  # wire::sessions::SESSION_PICK
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Keep one of a Try 3's sessions (M264): the others stop, not picked. Owners and editors; once."
 
 [[route]]
@@ -2377,7 +2436,7 @@ method = "POST"
 path = "/api/issues/{issue}/agent"  # wire::sessions::ISSUE_AGENT
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Agent on this (M265): @arugula written in a native issue's thread as the caller, starting a session there. Owners and editors on the hosted beta; refused while a session is going on the issue."
 
 [[route]]
@@ -2409,7 +2468,7 @@ method = "GET"
 path = "/api/projects/{project}/sessions"  # wire::sessions::PROJECT_SESSIONS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A project's wave of agent sessions (Fleet 5): each one's state, box, branch, last push and what waits on the reader, newest first; narrowed by its issue's label, a tracker issue, who asked, or the ones going. Any member."
 
 [[route]]
@@ -2441,7 +2500,7 @@ method = "POST"
 path = "/api/sessions/{ses}/move"  # wire::sessions::SESSION_MOVE
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Move to… (Arugula #214): a queued or done session to another of its project's workspaces with its repo, queued there from the thread. Its asker, owners and editors; never mid-turn."
 
 [[route]]
@@ -2449,7 +2508,7 @@ method = "GET"
 path = "/api/chat/rooms/{room}/asks/{seq}"  # wire::sessions::ASK
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "An ask's form (Arugula #214): which repo a thread's @arugula works in, its choices, and whether it's answered. Whoever reads its room."
 
 [[route]]
@@ -2457,7 +2516,7 @@ method = "POST"
 path = "/api/chat/rooms/{room}/asks/{seq}"  # wire::sessions::ASK
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Answer an ask (Arugula #214): its asker's choice starts the session on the best box with that repo. Its asker only; once."
 
 [[route]]
@@ -2465,7 +2524,7 @@ method = "GET"
 path = "/api/runs/{run}"  # wire::runs::RUN
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A run with its timeline, artifacts and the pane it runs in: its project's members. With since and wait, answers once it has a later event or has ended (at most 15 s): at most 8 open per account, 2000 an hour."
 
 [[route]]
@@ -2473,7 +2532,7 @@ method = "GET"
 path = "/api/runs/{run}/log"  # wire::runs::RUN_LOG
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A page of a run's durable log, by byte offset or its tail (M213 keeps it; until then kept: false, naming the run's pane): its project's members."
 
 [[route]]
@@ -2499,7 +2558,7 @@ method = "GET"
 path = "/api/projects/{project}/runs/grant"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A project's standing grant for runs, its past ones, the project's live delegation (the hub's word), and whether one is offered (a hosted workspace and no live grant, or one under an old delegation) or due for renewal, for its members."
 
 [[route]]
@@ -2507,7 +2566,7 @@ method = "POST"
 path = "/api/projects/{project}/runs/grant"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "An owner's grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation), expire within 366 days, and be signed with a passkey of one of the project's owners (v2, DK6: a user-verified assertion over its bytes, checked against the account's published passkey log; hosted machines check again). One live grant a project. Not a machine's cloud.drive: agents never sign one."
 
 [[route]]
@@ -2515,7 +2574,7 @@ method = "POST"
 path = "/api/projects/{project}/runs/grant/revoke"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Any owner's revoke, signed with their passkey as for the grant (v3, DK6), of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
 
 [[route]]
@@ -2668,7 +2727,7 @@ path = "/api/workspaces"
 process = "platform"
 auth = "cloud_driver"
 clients = ["daemon"]
-note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up."
+note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up. created_by names a maker only while they're a member now."
 
 [[route]]
 method = "GET"
@@ -2691,7 +2750,7 @@ method = "GET"
 path = "/api/projects/{project}/items"  # wire::projects::PROJECT_ITEMS
 process = "platform"
 auth = "cloud_driver"
-clients = ["page", "cli", "daemon"]
+clients = ["page", "cli", "native", "daemon"]
 note = "A project's PRs and issues (M165): each repo checked against the reader's own GitHub access; a private one only if GitHub says they have it."
 
 [[route]]
@@ -2731,7 +2790,7 @@ method = "GET"
 path = "/api/projects/{project}/drafts"  # wire::projects::PROJECT_DRAFTS
 process = "platform"
 auth = "cloud_driver"
-clients = ["page", "cli", "daemon"]
+clients = ["page", "cli", "native", "daemon"]
 note = "A project's drafts on linked repos (M170), through the viewer check on each draft's repo."
 
 [[route]]
@@ -2756,7 +2815,7 @@ path = "/api/forge/drafts"  # wire::projects::FORGE_DRAFTS
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. A machine's import_key makes a second upload answer with the first. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
+note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. An agent drafts only for an owner or editor of the repo's project: a viewer's machine, or a CLI that names an agent, is refused (403, viewer_write), while the viewer themselves still drafts. A machine's import_key makes a second upload answer with the first, before anything else is decided. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
 
 [[route]]
 method = "GET"
@@ -2772,7 +2831,7 @@ path = "/api/forge/drafts/{id}/discard"  # wire::projects::FORGE_DRAFT_DISCARD
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "Discards a draft (M170): its author, or anyone the viewer check lets read it."
+note = "Discards a draft (M170): its author, or an owner or editor the viewer check lets read it. A viewer, and a viewer's machine, discards only the viewer's own (403 on another's)."
 
 [[route]]
 method = "POST"
@@ -2796,7 +2855,7 @@ path = "/api/forge/repos/{owner}/{name}"  # wire::projects::FORGE_REPO
 process = "platform"
 auth = "cloud_driver"
 clients = ["daemon"]
-note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. Always a 200; another project's repo is no linked repo."
+note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. A 200 whenever the platform can answer; another project's repo is no linked repo. When it's linked for them, role says the reader's role in the project (owner, editor or viewer): a viewer's machine keeps its blocks' drafts, and its cards ask only about the owner's own."
 
 [[route]]
 method = "POST"
@@ -2811,7 +2870,7 @@ method = "GET"
 path = "/api/inbox"  # wire::projects::INBOX
 process = "platform"
 auth = "cloud_driver"
-clients = ["page", "cli", "daemon"]
+clients = ["page", "cli", "native", "daemon"]
 note = "The reader's inbox (M171), the operation `inbox.list`: linked repos' items that want something of them, each repo checked against the reader's own GitHub access."
 
 [[route]]
@@ -2819,29 +2878,20 @@ method = "POST"
 path = "/api/inbox/{item}"  # wire::projects::INBOX_ITEM
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Marks a person's inbox entries for an item seen or done (M171), through the viewer check: an item they may not read is a 404."
-
-[[route]]
-method = "POST"
-path = "/api/inbox/shadow"  # wire::projects::INBOX_SHADOW
-process = "platform"
-auth = "daemon"
-clients = ["daemon"]
-note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
 
 # ---- platform: boards (boards, step 1)
 # A project's boards, for its members: a team's owners and editors change
-# them, its viewers read them; anyone else gets 404. Behind the `boards`
-# Labs flag (the account's, else a team's): without it every route here
-# answers 404. `{project}` is a project's id or `personal`.
+# them, its viewers read them; anyone else gets 404. Boards left Labs
+# (native #191): they are on for everyone. `{project}` is a project's id or `personal`.
 
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A project's boards: open ones first, then closed ones, each oldest first. Each has its goal, done note and progress (its rows with an issue or a PR, those in Done and those proven)."
 
 [[route]]
@@ -2849,7 +2899,7 @@ method = "POST"
 path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Makes a board in the project: owners and editors."
 
 [[route]]
@@ -2873,7 +2923,7 @@ method = "GET"
 path = "/api/boards/{id}"  # wire::boards::BOARD
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A board as its four lanes (Next, Doing, Review, Done) with their rows, each row with its attachments and, on Done, its proof: any member."
 
 [[route]]
@@ -2881,7 +2931,7 @@ method = "PATCH"
 path = "/api/boards/{id}"  # wire::boards::BOARD
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Sets the board's title or goal (an empty goal clears it): owners and editors, people only."
 
 [[route]]
@@ -2889,7 +2939,7 @@ method = "POST"
 path = "/api/boards/{id}/close"  # wire::boards::BOARD_CLOSE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Closes the board with a done note, not empty: owners and editors, people only. Closing a closed board replaces the note and keeps the first closed_at. Its issues and rows are left alone."
 
 [[route]]
@@ -2897,7 +2947,7 @@ method = "POST"
 path = "/api/boards/{id}/reopen"  # wire::boards::BOARD_REOPEN
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Opens a closed board again and keeps its done note: owners and editors, people only."
 
 [[route]]
@@ -2905,15 +2955,23 @@ method = "PUT"
 path = "/api/boards/{id}/entries"  # wire::boards::BOARD_ENTRIES
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Adds a row, or changes a row's note or pointer (owners and editors). A change names the rev it read and is refused with 409 stale_rev if the row moved on. A zone, a title and a status are refused (lanes follow the work). Adding a PR that references the issue of a row on the board attaches it to that row; adding an issue that PR rows reference takes those rows in as its work."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/entries/many"  # wire::boards::BOARD_ENTRIES_MANY
+process = "platform"
+auth = "session"
+clients = ["page", "native"]
+note = "Adds many rows at once, each as a single add does (owners and editors, people only): the pointers given, or the untriaged items of a query but the except pointers. More than 500 is a 400, narrow the filter. Answers how many rows were added and how many PRs attached, and the board."
 
 [[route]]
 method = "DELETE"
 path = "/api/boards/{id}/entries/{entry}"  # wire::boards::BOARD_ENTRY
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Deletes a row and what is attached to it: owners and editors."
 
 [[route]]
@@ -2921,7 +2979,7 @@ method = "POST"
 path = "/api/boards/{id}/entries/{entry}/move"  # wire::boards::BOARD_ENTRY_MOVE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Refused, 400: lanes follow the work. A row's lane comes from the live state of its issue, PR, agent block and run."
 
 [[route]]
@@ -2929,7 +2987,7 @@ method = "POST"
 path = "/api/boards/{id}/attachments"  # wire::boards::BOARD_ATTACHMENTS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Attaches work (a PR, an agent block or a run) or proof (a run or a link) to a row: owners and editors. An item on the board already is not attached again."
 
 [[route]]
@@ -2937,7 +2995,7 @@ method = "DELETE"
 path = "/api/boards/{id}/attachments/{attachment}"  # wire::boards::BOARD_ATTACHMENT
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Takes an attachment off its row: owners and editors."
 
 [[route]]
@@ -2945,7 +3003,7 @@ method = "POST"
 path = "/api/boards/{id}/docs"  # wire::boards::BOARD_DOCS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Links a Doc (a project Doc of the board's project, or a machine's Doc block) to the board's Docs strip, or with `row` to that row: owners and editors. One linked there already is not linked again; at most 20 in each."
 
 [[route]]
@@ -2953,7 +3011,7 @@ method = "DELETE"
 path = "/api/boards/{id}/docs/{doc}"  # wire::boards::BOARD_DOC
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Takes a Doc off the board's Docs strip or a row: owners and editors."
 
 [[route]]
@@ -2961,7 +3019,7 @@ method = "POST"
 path = "/api/boards/{id}/docs/{doc}/move"  # wire::boards::BOARD_DOC_MOVE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Moves a Doc along its Docs strip or row: owners and editors."
 
 [[route]]
@@ -2969,7 +3027,7 @@ method = "GET"
 path = "/api/projects/{project}/docs/{doc}/boards"  # wire::boards::PROJECT_DOC_BOARDS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "The boards of the project that list a project Doc, in the strip or on a row: members. Empty with boards off."
 
 [[route]]
@@ -2977,23 +3035,23 @@ method = "POST"
 path = "/api/boards/{id}/rows/{row}/ask"  # wire::boards::BOARD_ROW_ASK
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
-note = "Asks a member of the project a question on a row (Arugula #367): owners and editors, behind the boards Labs flag. One open ask per row (409), and only on a row with an issue or a PR (422)."
+clients = ["page", "cli", "native"]
+note = "Asks a member of the project a question on a row (Arugula #367): owners and editors. One open ask per row (409), and only on a row with an issue or a PR (422)."
 
 [[route]]
 method = "PUT"
 path = "/api/boards/{id}/rows/{row}/lane"  # wire::boards::BOARD_ROW_LANE
 process = "platform"
 auth = "session"
-clients = ["page"]
-note = "Moves a row to a lane by hand (Arugula #494): owners and editors, behind the boards Labs flag. Next, Doing and Review hold until the row's work changes its derived lane; Done closes the row's native issue and moving out of Done reopens it (issues.write). A GitHub or Plane item, or a row with no issue, is 422 for Done. People only: no daemon route."
+clients = ["page", "native"]
+note = "Moves a row to a lane by hand (Arugula #494): owners and editors. Next, Doing and Review hold until the row's work changes its derived lane; Done closes the row's native issue and moving out of Done reopens it (issues.write). A GitHub or Plane item, or a row with no issue, is 422 for Done. People only: no daemon route."
 
 [[route]]
 method = "POST"
 path = "/api/boards/{id}/asks/{ask}/answer"  # wire::boards::BOARD_ASK_ANSWER
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Answers an ask with one of its options, or text when it has none: the person it names, or an owner or editor for them (403 otherwise). People only: a machine's signature is 401, and an agent has no route to answer. The answer is kept in the row's history."
 
 [[route]]
@@ -3002,7 +3060,7 @@ path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors, behind the boards Labs flag. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+note = "Relates two items of the project (Arugula #403): blocks, before, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a cycle of blocks and before edges are 409."
 
 [[route]]
 method = "DELETE"
@@ -3017,21 +3075,21 @@ method = "GET"
 path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
 process = "platform"
 auth = "session"
-clients = ["page"]
-note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at."
+clients = ["page", "native"]
+note = "The project's work items for a board's picker and Triage: its native issues, the GitHub issues and PRs of linked repos the reader may read, and its runs, newest first; untriaged=true keeps open issues no row of its boards points at, and then pages by cursor (order new or old) and answers the total, the labels with counts (label narrows to one) and each item's labels."
 
 # ---- platform: project Docs (aru-118)
 # A project's own Docs, for its members: a team's owners and editors make,
-# write and delete them, its viewers read them; anyone else gets 404. With
-# chat, as native issues are. `{project}` is a project's id or `personal`;
-# a Doc of another project is no Doc at all.
+# write and delete them, its viewers read them; anyone else gets 404, whatever
+# a member's chat setting (Arugula #746), as for native issues. `{project}`
+# is a project's id or `personal`; a Doc of another project is no Doc at all.
 
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/docs"  # wire::project_docs::PROJECT_DOCS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A project's Docs, the latest changed first."
 
 [[route]]
@@ -3039,7 +3097,7 @@ method = "POST"
 path = "/api/projects/{project}/docs"  # wire::project_docs::PROJECT_DOCS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Makes a Doc, with its outline (written sections and pending ones): owners and editors."
 
 [[route]]
@@ -3047,7 +3105,7 @@ method = "GET"
 path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A Doc with its sections in order: any member."
 
 [[route]]
@@ -3055,15 +3113,39 @@ method = "PUT"
 path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Renames a Doc, writes a section (its body replaced) or adds one at the end: owners and editors. Capped at 64 KB a section, 40 sections and 1 MiB a Doc."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The team Docs made from one of the person's own Docs (Share with…), a machine's copy or one written on the platform, in the projects the reader still reads. Only the Doc's owner, from their personal project: anyone else is refused."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT_DOC_COPIES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Share with…: makes a new, ordinary Doc in the project `to` from the Doc's title, sections and pictures as they are now, and records where it came from. The Doc is one of the person's own, a machine's copy or one written on the platform; only its owner, who writes Docs in `to`; 409 with the team Doc's id when one was made from this Doc there already."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/docs/{id}/copies/{to}"  # wire::project_docs::PROJECT_DOC_COPY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Update copy: the team Doc in `to` made from this Doc takes its title, sections and pictures as they are now. Only the Doc's owner, who still writes Docs in `to`; 409 `edited` when the team edited it since and `replace` isn't set."
 
 [[route]]
 method = "DELETE"
 path = "/api/projects/{project}/docs/{id}"  # wire::project_docs::PROJECT_DOC
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Deletes a Doc: owners and editors."
 
 [[route]]
@@ -3071,29 +3153,23 @@ method = "GET"
 path = "/api/projects/{project}/docs/{id}/assets/{name}"  # wire::project_docs::PROJECT_DOC_ASSET
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "A Doc's picture (PNG, JPEG, GIF or WebP), for any member of its project and no one else (404), always with `nosniff`."
-
-[[route]]
-method = "POST"
-path = "/api/projects/{project}/docs/{id}/move"  # wire::project_docs::PROJECT_DOC_MOVE
-process = "platform"
-auth = "session"
-clients = ["page"]
-note = "Moves a Doc to another project, `{to}` an id or `personal`: owners and editors of both (a personal project counts). It keeps its id, pictures and where it came from. Never an agent session."
 
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors
-# change them, its viewers read them; anyone else gets 404. Behind chat's
-# Labs flag, as their threads (object threads, M196) are. `{project}` is a
-# project's id or `personal`.
+# change them, its viewers read them; anyone else gets 404, whatever a
+# member's chat setting (Arugula #746). Their comments are their threads
+# (object threads, M196), which stay chat's: the export leaves them out
+# while chat is off for the reader. `{project}` is a project's id or
+# `personal`.
 
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/issues"  # wire::issues::PROJECT_ISSUES
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A page of a project's issues, newest first, filtered by state, labels, assignee, author and search words."
 
 [[route]]
@@ -3101,7 +3177,7 @@ method = "POST"
 path = "/api/projects/{project}/issues"  # wire::issues::PROJECT_ISSUES
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Opens an issue, numbered in the project: owners and editors."
 
 [[route]]
@@ -3110,14 +3186,14 @@ path = "/api/projects/{project}/issues/export"  # wire::issues::PROJECT_ISSUES_E
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Every issue in a project with its timeline and comments, as JSON or Markdown: any member."
+note = "Every issue in a project with its timeline and comments, as JSON or Markdown: any member. The comments are left out, saying so, while chat is off for the reader."
 
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/issues/{number}"  # wire::issues::PROJECT_ISSUE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "One of a project's issues by its number."
 
 [[route]]
@@ -3141,7 +3217,7 @@ method = "GET"
 path = "/api/issues/{id}"  # wire::issues::ISSUE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "One issue by its id, for its project's members."
 
 [[route]]
@@ -3149,7 +3225,7 @@ method = "PATCH"
 path = "/api/issues/{id}"  # wire::issues::ISSUE
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "Changes an issue's title, body, state, labels or assignees, writing its timeline: owners and editors."
 
 [[route]]
@@ -3157,7 +3233,7 @@ method = "GET"
 path = "/api/issues/{id}/events"  # wire::issues::ISSUE_EVENTS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "An issue's timeline."
 
 # ---- platform: native issues for a machine's agents (M200)
@@ -3220,7 +3296,7 @@ auth = "daemon"
 clients = ["daemon"]
 
 # ---- platform: boards for a machine's agents (boards, step 3)
-# MCP's board tools, signed by the machine, behind the `boards` Labs flag.
+# MCP's board tools, signed by the machine.
 # The owner's role in the project is the ceiling, and the machine needs its
 # grant over it: `boards.read` to read, `boards.write` to change (which
 # reads too), asked on every call. An agent makes boards, sets a board's
@@ -3405,6 +3481,14 @@ clients = ["daemon"]
 note = "Relates two items of the project for a machine's agent (Arugula #403): needs `issues.write` over the project (403 without), the owner's role is the ceiling, and the edge says an agent made it."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/relations/batch"  # wire::boards::AGENT_PROJECT_RELATIONS_BATCH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Adds and removes up to 50 links between items of the project for a machine's agent (Arugula #761), each on its own, and answers what became of every one: added, already there, removed, not there, or refused with why. Needs `issues.write` over the project (403 without). A reference is `#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id. A cycle of `before` and `blocks` links is refused; only links this machine's agents made come off."
+
+[[route]]
 method = "DELETE"
 path = "/api/daemon/projects/{project}/relations/{relation}"  # wire::boards::AGENT_PROJECT_RELATION
 process = "platform"
@@ -3497,7 +3581,7 @@ method = "GET"
 path = "/api/deploys/waiting"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Deploys waiting for the reader's approval, in projects they own."
 
 [[route]]
@@ -3505,7 +3589,7 @@ method = "GET"
 path = "/api/deploys/{id}"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
+clients = ["page", "cli", "native"]
 note = "A deploy with its operation's bytes and hash, approvals and log, for its project's members."
 
 [[route]]
@@ -3521,7 +3605,7 @@ method = "POST"
 path = "/api/deploys/{id}/approve"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Approves it once: an owner by the roster now, from a browser's session only (a CLI's login is refused), with a user-verified passkey assertion over the approval's bytes (v2, DK4), from control's page or the platform page (related origins, DK5), checked against the account's published passkey log. No device signs it. The stale rule is checked in the same transaction."
 
 [[route]]
@@ -3529,7 +3613,7 @@ method = "POST"
 path = "/api/deploys/{id}/deny"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Denies it, confirmed with a passkey as an approval is."
 
 [[route]]
@@ -3537,7 +3621,7 @@ method = "GET"
 path = "/api/deploys/{id}/can-decide"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "native"]
 note = "Whether the reader may approve or deny it now (DK5), asked before the page raises a passkey prompt: pending, not stale or superseded or expired, an owner by the roster now, with a passkey in the account's log; else why and what to do. A browser's session only."
 
 # A machine's agents: plan, ask and read, never approve. The owner's role is

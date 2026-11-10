@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     Platform,
-    boards::{FLAG, epics},
+    boards::epics,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params, trackers as rows},
 };
@@ -33,7 +33,6 @@ async fn world() -> World {
     let hub = Arc::new(TestHub::default());
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
-    hub.flag_named("team:t1", FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     let (s, made) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
     assert_eq!(s, 200, "{made}");
@@ -334,6 +333,49 @@ async fn a_persons_row_is_theirs_and_a_synced_row_cannot_be_removed_by_hand() {
     assert_eq!(s, 400, "{v}");
     assert!(v.to_string().contains("ARUGU-11 is a child of ARUGU-10 in Plane: change its parent there"), "{v}");
     assert!(w.rows(&id).await.iter().any(|r| r.1 == 11));
+
+    // Nor by removing a group it was moved into.
+    let (s, v) = call(
+        &w.base,
+        "bob",
+        "PUT",
+        &format!("/api/boards/{id}/entries"),
+        Some(json!({ "entry": "zone", "title": "Later" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let group = v["groups"][0]["id"].as_str().unwrap().to_owned();
+    let (s, v) =
+        call(&w.base, "bob", "POST", &format!("/api/boards/{id}/entries/{row}/move"), Some(json!({ "zone": group })))
+            .await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = call(&w.base, "bob", "DELETE", &format!("/api/boards/{id}/entries/{group}"), None).await;
+    assert_eq!(s, 400, "{v}");
+    let e = v["error"].as_str().unwrap();
+    assert!(
+        e.starts_with("this group holds a row its epic adds") && e.contains("ARUGU-11 is a child of ARUGU-10"),
+        "{v}"
+    );
+    assert!(w.rows(&id).await.iter().any(|r| r.1 == 11));
+    // With two, it says how many.
+    let v = w.board(&id).await;
+    let row13 = v["zones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|z| z["rows"].as_array().unwrap())
+        .find(|r| r["live"]["number"] == 13)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (s, v) =
+        call(&w.base, "bob", "POST", &format!("/api/boards/{id}/entries/{row13}/move"), Some(json!({ "zone": group })))
+            .await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = call(&w.base, "bob", "DELETE", &format!("/api/boards/{id}/entries/{group}"), None).await;
+    assert_eq!(s, 400, "{v}");
+    assert!(v["error"].as_str().unwrap().starts_with("this group holds 2 rows its epic adds"), "{v}");
 }
 
 /// With the switch off the boards stay and nothing follows; turned on, the

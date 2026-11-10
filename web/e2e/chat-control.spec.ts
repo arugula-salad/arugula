@@ -38,6 +38,8 @@ let app = "";
 let general = "";
 let bobAccount = "";
 let quotedPane = 0;
+/** The pane thread's room (it has Members and Go to pane). */
+let paneRoom = "";
 
 const chatOn = (p: Page) => p.evaluate(() => window.__arugula.chat.on);
 const roomsOf = (p: Page) => p.evaluate(() => window.__arugula.chat.rooms.map((r) => ({ id: r.id, kind: r.kind, name: r.name, unread: r.unread, mentions: r.mentions })));
@@ -112,10 +114,11 @@ test("a team with chat on, and a machine of Alice's", async ({ browser }) => {
   // The shell draws no chat page of its own: `#chat` isn't a place of its.
   await expect(alice.locator("[data-chat-control]")).toHaveCount(0);
 
-  // The rail is the whole app, whatever the flags (Arugula #640): a machine's
-  // Docs and Recipes are its bar's, and every project's boards are All projects'.
+  // The rail is the whole app, whatever the flags (Arugula #640): its Docs is
+  // the platform's (#418), a machine's own Docs and Recipes are its bar's, and
+  // every project's boards are All projects'.
   const places = () => alice.locator(".ws-rail > .ws-rail-button .ws-rail-label").allTextContents();
-  await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Settings"]);
+  await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Docs", "Settings"]);
   await expect(alice.locator("[data-machine-docs]")).toBeVisible();
   await expect(alice.locator("[data-machine-recipes]")).toBeVisible();
 });
@@ -214,6 +217,11 @@ test("Bob has it live, mentioned; the chip doesn't open for him", async () => {
   // Activity lists the mention after a reload, though he's read it.
   await platform(bob, "/chat/activity");
   await bob.reload();
+  // A view's head is the same bar (#760): the phone's 44px, one row.
+  const activityHead = bob.locator("[data-chat-activity-view] .chat-head");
+  await expect(activityHead).toBeVisible();
+  expect((await activityHead.boundingBox())!.height).toBe(44);
+  expect(await activityHead.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(bob.locator(`[data-chat-activity-view] [data-hit-room="${general}"]`)).toContainText("the mean test fails", { timeout: 15_000 });
 });
 
@@ -226,6 +234,7 @@ test("a pane's thread opens beside it, quotes its pane, and only its machine's o
   const drawer = alice.locator("[data-room-drawer]");
   await expect(drawer).toBeVisible();
   const room = (await drawer.getAttribute("data-room-drawer"))!;
+  paneRoom = room;
   // The quote: the pane read end to end, and the lines kept.
   await drawer.locator("[data-quote-pane]").click();
   await drawer.locator(`[data-quote-from="alices:${quotedPane}"]`).click();
@@ -244,6 +253,97 @@ test("a pane's thread opens beside it, quotes its pane, and only its machine's o
   // Bob reads no thread of a machine he can't reach: control says 404.
   const seen = await bob.evaluate(async (r) => (await fetch(`/api/chat/rooms/${r}`)).status, room);
   expect(seen).toBe(404);
+});
+
+test("a room's bar keeps one row: under 600px Members is in ⋯ (and a pane's Go to pane), and they come back when it widens", async () => {
+  test.setTimeout(120_000);
+  expect(paneRoom).not.toBe("");
+  const size = aliceChat.viewportSize()!;
+  // On the platform page the room is the window less the rail and the
+  // sidebar: wide, both are in the row; at 720px the room is under 420 (Members folds there, see ROOM_FOLD)
+  // (a computer's still) and Members is in ⋯, which opens Details.
+  await aliceChat.setViewportSize({ width: 1280, height: 800 });
+  await platform(aliceChat, `/chat/${general}`);
+  const head = aliceChat.locator(`[data-room-view="${general}"] .chat-head`);
+  await expect(head).toBeVisible();
+  await expect(head.locator(".chat-members")).toBeVisible();
+  await expect(head.locator("[data-hbar-more]")).toHaveCount(0);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await aliceChat.setViewportSize({ width: 720, height: 800 });
+  await expect.poll(async () => (await head.boundingBox())!.width, { timeout: 5_000 }).toBeLessThan(420);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await expect(head.locator(".chat-members")).toHaveCount(0);
+  const more = head.locator("[data-hbar-more]");
+  await expect(more).toBeVisible();
+  await more.click();
+  await expect(aliceChat.locator("[data-chat-details-panel]")).toHaveCount(0);
+  await aliceChat.getByRole("menuitem", { name: /^Members/ }).click();
+  await expect(aliceChat.locator("[data-chat-details-panel]")).toBeVisible();
+  await aliceChat.locator("[data-chat-details-panel] .thread-close").click();
+  await aliceChat.setViewportSize({ width: 1280, height: 800 });
+  await expect(head.locator(".chat-members")).toBeVisible();
+  await expect(head.locator("[data-hbar-more]")).toHaveCount(0);
+  // The next tests have the page as it was.
+  await aliceChat.setViewportSize(size);
+
+  // A chat block pinned to the pane's thread, split beside the pane: a
+  // narrow slot, so Go to pane is in ⋯ and not in the row, in a bar that's
+  // still 34px (it draws as a phone's room, but on a computer).
+  await alice.bringToFront();
+  const opened = await call(alice, "POST", "/api/blocks", { type: "team_chat", config: { room: paneRoom, pinned: true }, split: quotedPane, local: true });
+  expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+  const id = (opened.body as { block: number }).block;
+  await alice.evaluate((p) => window.__arugula.client.setActive(p), quotedPane);
+  const bar = alice.locator(`[data-chat-block="${id}"] [data-room-view="${paneRoom}"] .chat-head`);
+  await expect(bar).toBeVisible({ timeout: 15_000 });
+  expect((await bar.boundingBox())!.width).toBeLessThan(600);
+  expect((await bar.boundingBox())!.height).toBe(34);
+  await expect(bar.locator("[data-chat-go]")).toHaveCount(0);
+  await bar.locator("[data-hbar-more]").click();
+  await expect(alice.getByRole("menuitem", { name: "Go to pane" })).toBeVisible();
+  await alice.keyboard.press("Escape");
+  await alice.evaluate((p) => window.__arugula.client.intent({ op: "close_pane", pane: p }), id);
+});
+
+test("a room's head never overflows with a thread open beside it: its star, bell and pins go into ⋯ in order, and a long name ends in an ellipsis", async () => {
+  test.setTimeout(120_000);
+  const longName = "a-channel-with-a-very-long-name-that-someone-chose-for-the-whole-team";
+  const made = await api(aliceChat, "POST", `/api/chat/teams/${team}/channels`, { name: longName, topic: "A long topic that goes on and on about everything in the channel" });
+  expect(made.status).toBe(200);
+  const room = (made.body as { id: string }).id;
+  await withBob(room);
+  const { seq } = await say(aliceChat, room, "a message with a thread, in a room with a very long name");
+  expect((await api(aliceChat, "POST", `/api/chat/rooms/${room}/messages`, { text: "a reply", parent: seq })).status).toBe(200);
+  expect((await api(aliceChat, "PUT", `/api/chat/rooms/${room}/messages/${seq}/pin`)).status).toBe(200);
+  const size = aliceChat.viewportSize()!;
+  const over = (sel: string) => aliceChat.locator(sel).first().evaluate((el) => el.scrollWidth - el.clientWidth);
+  for (const width of [1000, 1280]) {
+    await aliceChat.setViewportSize({ width, height: 800 });
+    await platform(aliceChat, `/chat/${room}?thread=${seq}`);
+    const head = aliceChat.locator(`[data-room-view="${room}"] .chat-head`);
+    const thread = aliceChat.locator(`[data-thread-panel="${seq}"] .chat-head`);
+    await expect(head).toBeVisible();
+    await expect(thread).toBeVisible();
+    await expect.poll(() => over(`[data-room-view="${room}"] .chat-head`), { timeout: 5_000 }).toBeLessThanOrEqual(0);
+    expect(await over(`[data-thread-panel="${seq}"] .chat-head`)).toBeLessThanOrEqual(0);
+    expect((await head.boundingBox())!.height).toBe(34);
+    // The title is cut with an ellipsis, not the head's edge.
+    expect(await head.locator(".hbar-title").evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
+    // The agents chip's neighbours stay: Details is in the row at both.
+    await expect(head.locator("[data-chat-details]")).toBeVisible();
+    if (width === 1000) {
+      // About 264px of room: the bell, star and pins are all in ⋯.
+      await expect(head.locator("[data-room-bell], [data-room-star], [data-chat-pins]")).toHaveCount(0);
+      await head.locator("[data-hbar-more]").click();
+      await expect(aliceChat.getByRole("menuitem", { name: /^Pinned messages/ })).toBeVisible();
+      await expect(aliceChat.getByRole("menuitem", { name: "Star" })).toBeVisible();
+      await expect(aliceChat.getByRole("menuitem", { name: /^Notifications:/ })).toBeVisible();
+      await aliceChat.getByRole("menuitem", { name: /^Notifications:/ }).click();
+      await expect(aliceChat.getByText("Notify me about #a-channel-with")).toBeVisible();
+      await head.locator(".hbar-title").click();
+    }
+  }
+  await aliceChat.setViewportSize(size);
 });
 
 test("with every daemon stopped, they write in #general and a DM, from the web and a phone", async () => {
@@ -268,7 +368,7 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await platform(aliceChat, `/chat/${general}`);
   const chip = page.locator("[data-room-view] .thread-quote").first();
   await chip.click();
-  await expect(aliceChat.locator("[data-platform-toast]")).toContainText("on Control");
+  await expect(aliceChat.locator("[data-platform-toast]")).toContainText("on your machines");
   await platform(aliceChat, `/dm/${dmId}`);
   await expect(dm.locator(".thread-msg").last()).toContainText("are you there?", { timeout: 15_000 });
 
@@ -276,7 +376,7 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await platform(bob, "/chat");
   const list = bob.locator("[data-chat-control]");
   await expect(list.locator(`[data-chat-room="${dmId}"]`)).toBeVisible({ timeout: 15_000 });
-  await expect(list.locator(`[data-chat-room="${dmId}"] .chat-count`)).toHaveText("1");
+  await expect(list.locator(`[data-chat-room="${dmId}"] .count`)).toHaveText("1");
   await list.locator(`[data-chat-room="${dmId}"]`).click();
   await expect(list.locator(".thread-msg").last()).toContainText("are you there?");
   const box = list.getByRole("textbox", { name: "Message alice" });
@@ -331,6 +431,15 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await room.locator("[data-emoji-picker] .emoji-search").fill("tada");
   await room.locator('[data-emoji-picker] [data-emoji="🎉"]').click();
   await expect(box).toHaveValue("a🎉b");
+  // The caret is just after what the picker put in. The picker takes the
+  // focus (its search box), Escape shuts it and the focus is back on its button.
+  await box.pressSequentially("x");
+  await expect(box).toHaveValue("a🎉xb");
+  await room.locator("[data-emoji-button]").click();
+  await expect(room.locator("[data-emoji-picker] .emoji-search")).toBeFocused();
+  await room.page().keyboard.press("Escape");
+  await expect(room.locator("[data-emoji-picker]")).toHaveCount(0);
+  await expect(room.locator("[data-emoji-button]")).toBeFocused();
   await box.fill(":joy: :+1:");
   await box.press("Enter");
   await expect(room.locator(".thread-msg").last()).toContainText("😂 👍");
@@ -347,6 +456,8 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await list.locator("[data-emoji-button]").click();
   const sheet = list.locator("[data-emoji-picker]");
   await expect(sheet).toBeVisible();
+  // This page hasn't loaded the emoji table yet: opening the picker loads it, and it draws.
+  await expect(sheet.locator("[data-emoji]").first()).toBeVisible({ timeout: 30_000 });
   // A sheet along the bottom: the phone's width, and no wider.
   expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
 });
@@ -516,8 +627,13 @@ test("polish: ↑ edits the last message and Esc cancels, ⋯ has the rest, a sc
   // Esc finds the room at the bottom and leaves it be.
   await scrollUp();
   await expect(room.locator("[data-jump-newest]")).toBeVisible();
+  // Esc scrolls smoothly, which headless Chrome sometimes abandons after one
+  // frame (it does on main too: top stays at 11 of 751); reduced motion
+  // takes the room's own instant path, which is what this checks.
+  await aliceChat.emulateMedia({ reducedMotion: "reduce" });
   await aliceChat.keyboard.press("Escape");
   await expect(room.locator("[data-jump-newest]")).toHaveCount(0);
+  await aliceChat.emulateMedia({ reducedMotion: "no-preference" });
 
   // Compact: no pictures, and a row's time, name and text share a line.
   await aliceChat.evaluate(() => (document.documentElement.dataset.density = "compact"));
@@ -639,26 +755,30 @@ test("topic and pins: Alice sets a topic and pins two messages, Bob sees both li
     await expect(msg.locator("[data-pinned-mark]")).toBeVisible();
   }
   await expect(room.locator("[data-pins-count]")).toHaveText("2");
-  // Bob has the count and the marks live, and a phone's width holds.
-  await expect(list.locator("[data-pins-count]")).toHaveText("2", { timeout: 15_000 });
+  // Bob has the marks live, and a phone's width holds. The head has no room
+  // for the 📌 there (#760): its count is in ⋯, with the pins.
+  const bobHead = list.locator("[data-room-view] .chat-head");
   await expect(list.locator(`[data-msg="${first}"] [data-pinned-mark]`)).toBeVisible({ timeout: 15_000 });
   await expect(list.locator('[data-system="pin"]')).toHaveCount(2);
+  await expect(bobHead.locator("[data-chat-pins]")).toHaveCount(0);
+  const bobMore = async () => {
+    await bobHead.locator("[data-hbar-more]").click();
+  };
+  await bobMore();
+  await expect(bob.getByRole("menuitem", { name: "Pinned messages (2)" })).toBeVisible({ timeout: 15_000 });
 
-  // Bob opens the pins (newest first) and jumps to the older one.
-  await list.locator("[data-chat-pins]").click();
-  const pins = list.locator("[data-chat-pins-card] [data-pin]");
-  await expect(pins).toHaveCount(2);
-  await expect(pins.first()).toHaveAttribute("data-pin", String(second));
-  const card = await list.locator("[data-chat-pins-card]").boundingBox();
-  expect(card!.x + card!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
-  await pins.nth(1).locator("[data-pin-jump]").click();
+  // Bob opens the pins and jumps to the older one.
+  await bob.getByRole("menuitem", { name: "Pinned messages (2)" }).click();
+  await expect(bob.getByRole("menuitem", { name: /^freeze starts friday/ })).toBeVisible();
+  await bob.getByRole("menuitem", { name: /^the runbook lives in the wiki/ }).click();
   await expect(bob).toHaveURL(new RegExp(`msg=${first}`));
   await expect(list.locator(`[data-msg="${first}"]`)).toBeVisible();
   expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
   // Unpinning is live too, and the system line says so.
-  await list.locator("[data-chat-pins]").click();
-  await list.locator(`[data-pin="${first}"] [data-pin-remove]`).click();
+  await bobMore();
+  await bob.getByRole("menuitem", { name: "Pinned messages (2)" }).click();
+  await bob.getByRole("menuitem", { name: /^Unpin “the runbook/ }).click();
   await expect(room.locator("[data-pins-count]")).toHaveText("1", { timeout: 15_000 });
   await expect(room.locator('[data-system="unpin"]')).toHaveCount(1);
   // Deleting a pinned message drops its pin.
@@ -680,7 +800,7 @@ test("a mention pushes, and the push's tap opens the room at the message", async
   expect(posted.pushed).toContainEqual({ account: bobAccount, why: "mention" });
   expect(posted.unreached).toEqual([]);
   // His list counts it as a mention, live.
-  await expect(bob.locator(`[data-chat-control] [data-chat-room="${deploys}"] .chat-count.mention`)).toHaveText("@1", { timeout: 15_000 });
+  await expect(bob.locator(`[data-chat-control] [data-chat-room="${deploys}"] .count-mention`)).toHaveText("@1", { timeout: 15_000 });
   // What sw.ts opens for that push (`chat: {room, seq}`), on control's page.
   await bob.goto(`${t.base}/#chat=${deploys}&msg=${posted.seq}`);
   const msg = bob.locator(`[data-chat-control] [data-msg="${posted.seq}"]`);
@@ -855,7 +975,6 @@ test("a board's link unfurls into a card of the board: its bar, n of m done, who
   test.setTimeout(150_000);
   const shots = join(process.env.TMPDIR ?? tmpdir(), "627-shots");
   mkdirSync(shots, { recursive: true });
-  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
   await platform(aliceChat, `/chat/${general}`);
   // Alice's personal project, which Bob is not in.
   let board: { status: number; body: any } = { status: 0, body: null };
@@ -918,12 +1037,20 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   const plain = await alice.evaluate((r) => window.__arugula.chat.post(r, "no mention here"), quiet);
   expect(plain.pushed).toEqual([]);
   await expect(row).toHaveClass(/unread/, { timeout: 15_000 });
-  await expect(row.locator(".chat-count")).toHaveCount(0);
-  // The bell sets it to every message; the next one pushes him.
+  await expect(row.locator(".count")).toHaveCount(0);
+  // The bell sets it to every message; the next one pushes him. A phone's
+  // head has no room for the bell (#760): it's a row of the ⋯.
   await row.click();
-  await list.locator("[data-room-bell]").click();
+  const bellRow = bob.getByRole("menuitem", { name: /^Notifications/ });
+  const bobHead = list.locator("[data-room-view] .chat-head");
+  await expect(bobHead.locator("[data-room-bell]")).toHaveCount(0);
+  await bobHead.locator("[data-hbar-more]").click();
+  await bellRow.click();
   await chatMenuItem(bob, "All messages").click();
-  await expect(list.locator("[data-room-bell]")).toHaveAttribute("data-room-level", "all");
+  await bobHead.locator("[data-hbar-more]").click();
+  await expect(bob.getByRole("menuitem", { name: "Notifications: All messages" })).toBeVisible();
+  // (A phone's menu is a sheet over a scrim: a press on it closes it.)
+  await bob.mouse.click(200, 300);
   // Out of the room: nobody's pushed for a room they have open.
   await platform(bob, "/chat");
   const loud = await alice.evaluate((r) => window.__arugula.chat.post(r, "now with feeling"), quiet);
@@ -933,9 +1060,13 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
   // Pausing for an hour: the bell is a moon, and Alice's DM row with him
   // shows one too.
   await row.click();
-  await list.locator("[data-room-bell]").click();
+  await bobHead.locator("[data-hbar-more]").click();
+  await bellRow.click();
   await chatMenuItem(bob, "1 hour").click();
-  await expect(list.locator("[data-room-bell]")).toHaveText("🌙");
+  await bobHead.locator("[data-hbar-more]").click();
+  await expect(bob.getByRole("menuitem", { name: /^Notifications are paused/ })).toBeVisible();
+  // (A phone's menu is a sheet over a scrim: a press on it closes it.)
+  await bob.mouse.click(200, 300);
   const dm = await alice.evaluate(([tm, b]) => window.__arugula.chat.newDm(tm, b).then((r) => r.id), [team, bobAccount]);
   await platform(aliceChat, "/chat");
   await expect(aliceChat.locator(`[data-chat-control] [data-chat-room="${dm}"] [data-dnd]`)).toBeVisible({ timeout: 15_000 });
@@ -965,6 +1096,32 @@ test("threads: Alice starts one, Bob answers from his phone, each sees it live; 
   // The reply is the thread's, not the room's; the parent says it has one.
   await expect(room.locator(".thread-msg", { hasText: "not me" })).toHaveCount(0);
   await expect(msg.locator("[data-thread-footer]")).toContainText("1 reply", { timeout: 15_000 });
+  // The panel's head is a bar (#760): one 34px row with Follow and Close in
+  // it; only a panel under 300px puts Follow in ⋯ (forced here: the panel
+  // is 400px wide).
+  const head = panel.locator(".chat-head");
+  expect((await head.boundingBox())!.width).toBeGreaterThanOrEqual(300);
+  expect((await head.boundingBox())!.height).toBe(34);
+  await expect(head.locator("[data-thread-follow]")).toBeVisible();
+  await expect(head.locator("[data-thread-close]")).toBeVisible();
+  await expect(head.locator("[data-hbar-more]")).toHaveCount(0);
+  await panel.evaluate((el) => {
+    el.style.flex = "none";
+    el.style.width = "260px";
+  });
+  await expect(head.locator("[data-thread-follow]")).toHaveCount(0);
+  expect((await head.boundingBox())!.height).toBe(34);
+  expect(await head.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect(head.locator("[data-thread-close]")).toBeVisible();
+  await head.locator("[data-hbar-more]").click();
+  await expect(aliceChat.getByRole("menuitem", { name: "Stop following" })).toBeVisible();
+  // (Escape would close the panel too.)
+  await head.locator(".hbar-title").click();
+  await panel.evaluate((el) => {
+    el.style.flex = "";
+    el.style.width = "";
+  });
+  await expect(head.locator("[data-thread-follow]")).toBeVisible();
 
   // Bob, on his phone, finds the footer and opens the thread: the whole screen.
   await platform(bob, "/chat");
@@ -1068,7 +1225,7 @@ test("files: Alice pastes a screenshot and Bob's phone sees it inline; she drops
   });
   await expect(chip).toHaveCount(2);
   await expect(room.locator('[data-attach-chip="plan.pdf"] progress')).toHaveCount(0, { timeout: 15_000 });
-  await room.locator('[data-attach-chip="plan.pdf"] [data-attach-remove]').click();
+  await room.locator('[data-attach-chip="plan.pdf"] [data-chip-remove]').click();
   await expect(chip).toHaveCount(1);
   await room.locator("[data-attach-input]").setInputFiles({ name: "plan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% e2e\n") });
   await expect(room.locator('[data-attach-chip="plan.pdf"]')).toBeVisible();

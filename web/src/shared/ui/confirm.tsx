@@ -2,8 +2,8 @@
 // passkey) ask in their own dialog. They used to ask in place, on the
 // button itself, so a double-click removed a machine for good (#328).
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { useModal } from "./modal";
+import { useEffect, useState } from "preact/hooks";
+import { Modal } from "./modal";
 
 /** How long the dialog ignores clicks after it opens: the second click of
  * a double-click lands here. */
@@ -27,27 +27,32 @@ export function ConfirmRemove({
   busy?: boolean;
 }) {
   const [ready, setReady] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  // Over the dialog it came from: Escape cancels this one only (UI audit #150).
-  useModal(ref, cancel);
   useEffect(() => {
     const t = setTimeout(() => setReady(true), SETTLE_MS);
     return () => clearTimeout(t);
   }, []);
+  // Over the dialog it came from: Escape cancels this one only (UI audit #150).
   return (
-    <div class="prompt-backdrop" onClick={(e) => ready && e.target === e.currentTarget && cancel()}>
-      <div ref={ref} class="prompt control-prompt" role="alertdialog" aria-modal="true" aria-label={title} data-confirm-dialog>
-        <h2>{title}</h2>
-        {children}
-        <div class="prompt-buttons">
+    <Modal
+      alert
+      x={false}
+      title={title}
+      label={title}
+      close={cancel}
+      backdropClose={ready}
+      root={{ "data-confirm-dialog": true }}
+      buttons={
+        <>
           <button class="secondary" data-cancel-remove onClick={cancel}>
             Cancel
           </button>
           <button class="primary danger" data-confirm-remove disabled={!ready || busy} onClick={go}>
             {label}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </Modal>
   );
 }

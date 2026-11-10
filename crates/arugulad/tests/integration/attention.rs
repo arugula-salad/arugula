@@ -192,8 +192,7 @@ fn last_msg_is(d: &Daemon, id: u64, text: &str) -> bool {
 #[test]
 fn an_invite_card_pushes_the_owner_only() {
     const FRIEND: &str = "friend@example.com";
-    let args =
-        ["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_with(&args);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());

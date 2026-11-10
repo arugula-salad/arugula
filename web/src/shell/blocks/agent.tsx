@@ -1,12 +1,13 @@
 import { AgentMessage } from "../../shared/agent-message";
 // Agent blocks (M6b): an agent run as messages, thoughts and tool-call
-// cards, with its commands' output in a read-only terminal, permission
+// cards, with its commands' output as text (in a read-only terminal if it
+// has colours or redraws its line), permission
 // requests as approve/deny cards, questions and forms as cards (M6c), and a
 // composer, which takes images and files pasted, dropped or picked (M71).
 // Works the same on a phone.
 
 import { render, type ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Client } from "../client";
@@ -23,6 +24,9 @@ import { platformHref } from "../platform-links";
 import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./agent-context";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
+import { Chip, ObjectChip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export interface Tool {
   type: "tool";
@@ -70,9 +74,9 @@ function WorkChip({ work }: { work: NonNullable<AgentState["work"]> }) {
   const href = c.path ? platformHref(c.path) : undefined;
   const more = (work.boards?.length ?? 0) > 1 ? ` (and ${work.boards!.length - 1} more board${work.boards!.length > 2 ? "s" : ""})` : "";
   return href ? (
-    <a class="work-chip" href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</a>
+    <ObjectChip href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</ObjectChip>
   ) : (
-    <span class="work-chip" title={`Started on ${work.issue}`} data-work-chip>{c.label}</span>
+    <ObjectChip title={`Started on ${work.issue}`} data-work-chip>{c.label}</ObjectChip>
   );
 }
 
@@ -163,14 +167,14 @@ function WornBar({ s }: { s: AgentState }) {
       <span class="agent-worn-as" title={`${from}${w.model ? ` (${w.model})` : ""}`}>as {w.agent}</span>
       <span class="ws-tags">
         {w.skills.map((k) => (
-          <span key={`s-${k}`} class="ws-tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
+          <Chip key={`s-${k}`} kind="tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
             {k}
-          </span>
+          </Chip>
         ))}
         {w.servers.map((m) => (
-          <span key={`m-${m.name}`} class="ws-tag worn-mcp" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
+          <Chip key={`m-${m.name}`} kind="tag" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
             ⚙ {m.name}
-          </span>
+          </Chip>
         ))}
       </span>
       {missing.length > 0 && (
@@ -204,6 +208,12 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace
 
 /** Tool cards older than this many show plain text instead of a terminal. */
 const LIVE_TERMINALS = 30;
+
+/** Output only a terminal can draw: escape codes, or a carriage return that
+ * overwrites its line. Most has neither (Claude Code's never does), and a
+ * `<pre>` draws that for far less: each terminal adds `<style>` tags, which
+ * make the browser restyle the whole page, every other block's included. */
+const NEEDS_TERMINAL = /\x1b|\r(?!\n)/;
 
 export function money(n: number, currency: string | null) {
   const sym = !currency || currency === "USD" ? "$" : `${currency} `;
@@ -260,12 +270,25 @@ function Output({ data }: { data: string }) {
   return <div class="agent-output" ref={host} />;
 }
 
+/** A command's output with no terminal: scrolled to its end, as a terminal
+ * is, by the box's reversed column rather than by measuring it. */
+function PlainOutput({ data }: { data: string }) {
+  return (
+    <pre class="agent-tool-text agent-tool-tail">
+      <span>{data}</span>
+    </pre>
+  );
+}
+
 function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path: string) => void }) {
   const [open, setOpen] = useState(true);
   const icon = t.name === "AskUserQuestion" ? "?" : { execute: "$", edit: "✎", read: "◱", delete: "✕", move: "→", search: "⌕", fetch: "↓", think: "…" }[t.kind] ?? "⚙";
   const body = t.output || t.text;
+  // Every update draws every card: look through the output, or strip it, once.
+  const terminal = useMemo(() => NEEDS_TERMINAL.test(t.output), [t.output]);
+  const plain = useMemo(() => (terminal ? strip(t.output) : t.output), [terminal, t.output]);
   return (
-    <div class={`agent-tool ${t.status}`} data-tool={t.id}>
+    <div class={`agent-tool ${t.status}${live && terminal ? " agent-tool-term" : ""}`} data-tool={t.id}>
       <button class="agent-tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span class="agent-tool-icon">{icon}</span>
         <span class="agent-tool-title">{t.title || t.kind || "tool"}</span>
@@ -292,7 +315,7 @@ function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path:
             </div>
           )}
           {t.output ? (
-            live ? <Output data={t.output} /> : <pre class="agent-tool-text">{strip(t.output)}</pre>
+            live && terminal ? <Output data={t.output} /> : <PlainOutput data={plain} />
           ) : body ? (
             <pre class="agent-tool-text">{body}</pre>
           ) : null}
@@ -361,7 +384,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
           <label>
             Allow {p.tool}
             <input name="prefix" value={prefix} placeholder="any" onInput={(e) => setPrefix(e.currentTarget.value)} />
-            <span class="hint">{prefix.trim() ? "commands starting with this" : "anything"}</span>
+            <span class="dim">{prefix.trim() ? "commands starting with this" : "anything"}</span>
           </label>
           <label>
             <select name="scope" value={scope} onChange={(e) => setScope(e.currentTarget.value as "cwd" | "everywhere")}>
@@ -377,7 +400,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
               Cancel
             </button>
           </div>
-          <p class="hint">On this machine; forget it from the account menu, Permission rules…</p>
+          <p class="dim">On this machine; forget it from Settings, Permission rules…</p>
         </form>
       )}
     </div>
@@ -434,9 +457,9 @@ function Attached({ file, remove }: { file: File; remove: () => void }) {
   return (
     <span class="agent-attached-file" title={file.name}>
       {url ? <img src={url} alt={file.name} /> : <span class="agent-attached-name">{file.name || "file"}</span>}
-      <button type="button" aria-label={`Remove ${file.name || "file"}`} onClick={remove}>
-        ×
-      </button>
+      <IconButton label={`Remove ${file.name || "file"}`} onClick={remove}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </span>
   );
 }
@@ -576,7 +599,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   // by the composer says it, so the note it repeats doesn't (UI audit #178).
   const last = s.entries.length - 1;
   const repeats = !!s.error && s.entries[last]?.type === "note" && s.entries[last].text.toLowerCase().includes(s.error.toLowerCase());
-  const chip = archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
+  const chip = archived ? "Archived" : s.pending.length || open.length ? null : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
   return (
     <div
       class="agent"
@@ -590,16 +613,16 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         setAttached([...attached, ...files]);
       }}
     >
-      <div class="agent-bar">
-        <span class={`agent-status ${s.status}`}>{chip}</span>
-        <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
+      <Bar sub class="agent-bar">
+        {chip && <span class={`agent-status ${s.status}`}>{chip}</span>}
+        <span class="agent-name" aria-description={chip ? undefined : "Needs you"} title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
         </span>
         {s.work && <WorkChip work={s.work} />}
         {s.vm && (
-          <span class="host-tag" title="Runs on this tab's throwaway VM">
+          <Chip kind="tag" tone="info" class="chip-gap" title="Runs on this tab's throwaway VM">
             VM
-          </span>
+          </Chip>
         )}
         <span class="agent-spacer" />
         {ctx && <ContextStrip c={ctx} />}
@@ -632,7 +655,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             Fork
           </button>
         )}
-      </div>
+      </Bar>
       <WornBar s={s} />
       {opened && (
         <div class="agent-import">
@@ -677,6 +700,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
+              // While its card shows, the card says it; this row would say
+              // it again. Answered, the row is the transcript's record.
+              if (e.name === "AskUserQuestion" && open.length > 0 && e.status !== "completed" && e.status !== "failed") return null;
               // An archived Managoat conversation's paths were in its
               // sandbox, not here.
               const openAt = client.state?.roles || archived ? undefined : (path: string) => void openFile(client, id, path, null);
@@ -684,7 +710,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             }
           }
         })}
-        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">{s.current_tool ? `Running ${s.current_tool.title}…` : "Working…"}</div>}
+        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">Working…</div>}
         {s.queued.length > 0 && <div class="agent-note">Queued: {s.queued.join(" · ")}</div>}
       </div>
       {s.error && <div class="agent-error">{s.error}</div>}

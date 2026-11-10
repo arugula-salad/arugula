@@ -1,7 +1,7 @@
 // Issues on boards, phase 1 (#289-#292), as a person meets them. Alice owns
-// team Acme, with chat's and boards' Labs flags on, and three native issues,
-// one hers. The bar says Triage (not Issues) and Boards, and Triage lists the
-// three. She makes the board Launch, which has the four lanes (Next, Doing,
+// team Acme, with chat on, and three native issues,
+// one hers. With no `boards` flag (they left Labs, #191), the bar says Boards (no Triage, no Issues), and Boards' "Not on a
+// board" section (#656) lists the three. She makes the board Launch, which has the four lanes (Next, Doing,
 // Review, Done) and no way to make a zone; Add to board… on the first issue
 // leaves it off Triage and draws it as a card in Next. She adds a row
 // through the item picker (type, ArrowDown, Enter), edits only its note, and
@@ -19,12 +19,19 @@
 // Groups (aru-125, decision 6): a board whose author made groups shows each as
 // a section with its progress and the four lanes of its rows under it, the
 // rows with none last; a board without any looks as it did.
+// #313: with a machine of Alice's that has no Boards grant, the Boards page says
+// its agents can't see the boards and links to Settings → Agents; the grant
+// takes the line away, and a viewer never sees it.
 
+import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
-import { TeamControl, home } from "./team-fixture";
+import { TeamControl, home, live } from "./team-fixture";
 
 const t = new TeamControl("boards");
+/** A folder to write the Boards page's screenshot to, when set. */
+const SHOTS = process.env.BOARDS_SHOTS;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 test.describe.configure({ mode: "serial" });
 test.afterAll(async ({ browser }) => {
@@ -71,17 +78,21 @@ const zone = (p: Page, title: string): Locator => p.locator("[data-board-zone]")
 const row = (p: Page, title: string): Locator => p.locator("[data-board-row]").filter({ has: p.locator("[data-board-title]", { hasText: title }) });
 const triaged = (p: Page, title: string): Locator => p.locator("[data-triage-row]").filter({ hasText: title });
 
-test("with boards on, the bar says Triage and Boards, and Triage lists the untriaged", async ({ browser }) => {
+test("with no Labs flag set, the bar has Boards and no Triage, and Not on a board lists the untriaged", async ({ browser }) => {
   test.setTimeout(180_000);
   await t.start(["--platform-host", "app.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await alice.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   // Bob, a viewer.
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  // Steps is the default at this width (#763); this spec is about the lanes.
+  await bob.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
   await bob.goto(link);
   await bob.locator("[data-accept-invite]").click();
   await alice.evaluate(() => window.__arugula.control!.refresh());
@@ -90,6 +101,8 @@ test("with boards on, the bar says Triage and Boards, and Triage lists the untri
   await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(2);
 
   await platform(alice);
+  // All projects' bar has Boards too, with no flag set (#191).
+  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards", { timeout: 15_000 });
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
   project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];
@@ -102,40 +115,55 @@ test("with boards on, the bar says Triage and Boards, and Triage lists the untri
   }
 
   await platform(alice, alice.url().replace(app, ""));
-  await expect(alice.locator("[data-platform-triage]")).toHaveText("Triage", { timeout: 15_000 });
-  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards");
-  await expect(alice.locator("[data-platform-issues]")).toHaveCount(0);
+  // Boards left Labs (#191): nothing set a `boards` flag on this team or her account (the rail is main's #640: no Boards button).
+  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards", { timeout: 15_000 });
+  // Triage and Issues are not places of the bar any more (#656).
+  await expect(alice.locator("[data-platform-triage], [data-platform-issues]")).toHaveCount(0);
 
-  await alice.locator("[data-platform-triage]").click();
-  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
-  await expect(alice.locator("[data-triage-row]")).toHaveCount(3, { timeout: 15_000 });
+  await alice.locator("[data-platform-boards]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board3", { timeout: 15_000 });
+  await expect(alice.locator("[data-triage-row]")).toHaveCount(3);
   for (const title of [FIRST, SECOND, THIRD]) await expect(triaged(alice, title)).toBeVisible();
-  await expect(triaged(alice, FIRST).locator(".triage-who")).toHaveText("alice");
 
   await alice.locator("[data-triage-all]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/issues$/);
   await expect(alice.locator("[data-issue-row]")).toHaveCount(3);
 });
 
-test("a board Launch has the four lanes and takes the first issue from Triage as a card in Next", async () => {
+test("a board Launch has the four lanes and takes the first issue from Not on a board as a card in Next", async () => {
   test.setTimeout(90_000);
   await alice.locator("[data-platform-boards]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
   await alice.locator("[data-board-new-title]").fill("Launch");
   await alice.locator("[data-board-new]").click();
-  await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
 
   // Always the four lanes, in order, and no way to make, rename or move a zone.
   await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
   await expect(alice.locator("[data-board-add-zone], [data-board-add-proofs], [data-board-zone-menu]")).toHaveCount(0);
 
-  await alice.locator("[data-platform-triage]").click();
-  await expect(alice.locator("[data-triage-row]")).toHaveCount(3, { timeout: 15_000 });
+  // Boards lists Launch, then "Not on a board 3". ＋ adds… moves the first issue: the row
+  // leaves the section AND the board's card moves, both without a reload (#656).
+  await alice.locator("[data-platform-boards]").click();
+  const launch = alice.locator("[data-board-card]", { has: alice.locator("[data-board-link]", { hasText: "Launch" }) });
+  await expect(launch).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board3", { timeout: 15_000 });
+  const order = await alice.evaluate(() => {
+    const at = (q: string) => document.querySelector(q)!;
+    const before = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return before(at("[data-boards]"), at("[data-boards-untriaged]"));
+  });
+  expect(order).toBe(true);
+  const progress = launch.locator("[data-board-progress]");
+  await expect(progress).toContainText("No work yet");
   await triaged(alice, FIRST).locator("[data-triage-add]").click();
   await alice.getByRole("menuitem", { name: "Launch" }).click();
   await expect(triaged(alice, FIRST)).toHaveCount(0);
   await expect(alice.locator("[data-triage-row]")).toHaveCount(2);
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board2");
+  await expect(progress).toContainText("0 of 1 done", { timeout: 15_000 });
 
   await alice.locator("[data-platform-boards]").click();
   await alice.locator("[data-board-link]", { hasText: "Launch" }).click();
@@ -203,7 +231,8 @@ test("New issue… makes a native issue and a card row for it in Next", async ()
 test("a viewer on a phone sees what is untriaged and the board's cards, with no sideways scroll", async () => {
   test.setTimeout(90_000);
   await home(bob);
-  await platform(bob, `/p/${project}/triage`);
+  await platform(bob, `/p/${project}/boards`);
+  await bob.locator("[data-boards-tabs] [role=tab]").last().click();
   await expect(bob.locator("[data-triage-row]")).toHaveCount(1, { timeout: 15_000 });
   await expect(triaged(bob, THIRD)).toBeVisible();
   await expect(bob.locator("[data-triage-add]")).toHaveCount(0);
@@ -212,6 +241,30 @@ test("a viewer on a phone sees what is untriaged and the board's cards, with no 
   for (const title of [FIRST, SECOND, NEW]) await expect(row(bob, title)).toHaveCount(1, { timeout: 15_000 });
   const wide = await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(wide).toBeLessThanOrEqual(0);
+});
+
+test("/triage opens the Boards page scrolled to Not on a board, and /boards counts it per project (#656)", async () => {
+  test.setTimeout(90_000);
+  // A window short enough that the section is below the fold on /boards.
+  await alice.setViewportSize({ width: 1100, height: 200 });
+  await platform(alice, `/p/${project}/boards`);
+  const head = alice.locator("[data-boards-untriaged] h2");
+  await expect(head).toHaveText("Not on a board1", { timeout: 15_000 });
+  await expect(head).not.toBeInViewport();
+
+  await platform(alice, `/p/${project}/triage`);
+  await expect(alice.locator("[data-boards-page]")).toBeVisible();
+  await expect(alice.locator("#triage")).toBeInViewport({ timeout: 15_000 });
+  await expect(alice.locator("[data-platform-boards]")).toHaveAttribute("aria-current", "page");
+  await alice.setViewportSize({ width: 1280, height: 720 });
+
+  // Every project's Boards: "1 not on a board", linking to the section.
+  await platform(alice, "/boards");
+  const link = alice.locator(`[data-all-boards-untriaged="${project}"]`);
+  await expect(link).toHaveText("1 not on a board", { timeout: 15_000 });
+  await link.click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
+  await expect(alice.locator("[data-triage-row]")).toHaveCount(1);
 });
 
 test("Alice sets the board's goal, and it shows under the title with the issues' progress", async () => {
@@ -234,11 +287,11 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch 1.0");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch 1.0", { timeout: 15_000 });
+  await expect(page.locator("h1 [data-board-heading]")).toHaveText("Launch 1.0", { timeout: 15_000 });
   await page.locator("[data-board-rename]").click();
   await alice.locator(".prompt input").fill("Launch");
   await alice.locator(".prompt input").press("Enter");
-  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+  await expect(page.locator("h1 [data-board-heading]")).toHaveText("Launch", { timeout: 15_000 });
 });
 
 test("closing one of the board's issues moves its row to Done, not yet proven, until evidence is attached", async () => {
@@ -250,14 +303,15 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
   expect(closed.status).toBe(200);
   await platform(alice, boardPath);
   const page = alice.locator("[data-board-page]");
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 0 proven", { timeout: 15_000 });
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done", { timeout: 15_000 });
   await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuenow", "1");
   // Nobody moved it: the closed issue is in Done, and the others stay in Next.
   await expect(zone(alice, "Done").locator(row(alice, FIRST))).toHaveCount(1);
   await expect(zone(alice, "Next").locator(row(alice, FIRST))).toHaveCount(0);
   await expect(zone(alice, "Next").locator("[data-board-row]")).toHaveCount(2);
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "not-proven");
-  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("not proven yet");
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("no proof");
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("title", "not proven yet");
   // There is no PROOFS zone to fold. The row's menu offers a move by hand
   // (#494), but nobody needed it: the lane followed the issue.
   await expect(alice.locator('[data-zone-kind="proofs"]')).toHaveCount(0);
@@ -270,9 +324,11 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
     pointer: { kind: "link", url: "https://ci.example.com/runs/1" },
   });
   expect(att.status).toBe(200);
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven", { timeout: 15_000 });
-  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "evidence");
-  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toContainText("ci.example.com/runs/1");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done", { timeout: 15_000 });
+  // The evidence is the row's one "Proof" link; the tag gives way to it.
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveCount(0);
+  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toHaveText("Proof");
+  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toHaveAttribute("title", "ci.example.com/runs/1");
 });
 
 test("Alice closes the board with a note, finds it under Done, and reopens it", async () => {
@@ -306,7 +362,7 @@ test("Alice closes the board with a note, finds it under Done, and reopens it", 
   await expect(alice.locator("[data-board-close]")).toBeVisible();
   await alice.locator("[data-platform-boards]").click();
   await expect(alice.locator("[data-boards] [data-board-link]", { hasText: "Launch" })).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
+  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 done");
   await expect(alice.locator("[data-boards-done]")).toHaveCount(0);
   // The note is kept when the board is open again.
   const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
@@ -322,7 +378,7 @@ test("a viewer on a phone sees the goal, progress and Done, with no buttons and 
   await platform(bob, boardPath);
   const page = bob.locator("[data-board-page]");
   await expect(page.locator("[data-board-goal]")).toHaveText(GOAL, { timeout: 15_000 });
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done");
   await expect(page.locator("[data-board-done]")).toContainText("Done");
   for (const hook of ["close", "reopen", "goal-edit", "rename"]) await expect(page.locator(`[data-board-${hook}]`)).toHaveCount(0);
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -345,17 +401,57 @@ test("/boards lists every project's boards by project, folded under Done the sam
     // Only Acme has boards: Alice's own project isn't listed.
     await expect(page.locator("[data-all-boards-project]")).toHaveCount(1);
     await expect(acme.locator("[data-boards-done] summary")).toHaveText("Done (1)");
-    // The counts over the page, and a board a card with its state.
-    await expect(page.locator("[data-boards-stats]")).toHaveText("0 open1 done");
+    // No counts over the page (#656), and a board a card with its state.
+    await expect(page.locator("[data-boards-stats]")).toHaveCount(0);
     await acme.locator("[data-boards-done] summary").click();
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
     // A board's title in a list is its link.
     await expect(acme.locator("a[data-board-link]")).toHaveAttribute("href", /\/boards\/brd_[0-9a-f]+/);
-    await expect(acme.locator("[data-boards-done] li.board-card.sw-card.sw-muted")).toContainText("Done");
+    await expect(acme.locator("[data-boards-done] li[data-board-card]")).toContainText("Launch");
+    await expect(acme.locator("[data-boards-done] [data-board-progress]")).toHaveCount(0);
     expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
   await alice.locator("[data-all-boards-project-link]").click();
   await expect(alice.locator("[data-boards-page]")).toBeVisible({ timeout: 15_000 });
+});
+
+test("board cards are the compact ones: three or more to a row at 1280px, the title 14px, the goal on one line (#704)", async () => {
+  test.setTimeout(90_000);
+  for (const n of [1, 2, 3, 4]) {
+    const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: `Compact ${n}` });
+    expect(made.status).toBe(200);
+    const edited = await api(alice, "PATCH", `/api/boards/${made.body!.board.id}`, { goal: `Compact ${n} has a goal that is long enough to need more than one line in a card of this size.` });
+    expect(edited.status).toBe(200);
+  }
+  await alice.setViewportSize({ width: 1280, height: 800 });
+  await platform(alice, `/p/${project}/boards`);
+  const cards = alice.locator("ul.board-list:is([data-boards], [data-project-boards]) > li[data-board-card]");
+  await expect(cards.filter({ hasText: "Compact 4" })).toHaveCount(1, { timeout: 15_000 });
+  const m = await cards.evaluateAll((els) => {
+    const tops = els.map((e) => Math.round(e.getBoundingClientRect().top));
+    const el = els.find((e) => e.textContent?.includes("Compact 1"))!;
+    const css = (sel: string) => getComputedStyle(el.querySelector(sel)!);
+    const box = getComputedStyle(el);
+    return {
+      firstRow: tops.filter((t) => t === tops[0]).length,
+      title: css(".card-title").fontSize,
+      goal: css(".card-meta").fontSize,
+      goalWraps: css(".card-meta").whiteSpace,
+      count: css("[data-board-progress]").fontSize,
+      pad: `${box.paddingTop} ${box.paddingRight}`,
+      radius: box.borderRadius,
+      width: el.getBoundingClientRect().width,
+      height: el.getBoundingClientRect().height,
+      bar: el.querySelector(".board-bar")?.getBoundingClientRect().height ?? 0,
+    };
+  });
+  expect(m.firstRow).toBeGreaterThanOrEqual(3);
+  expect(m.title).toBe("13px");
+  expect(m.goal).toBe("12px");
+  expect(m.goalWraps).toBe("nowrap");
+  expect(m.pad).toBe("10px 12px");
+  expect(m.height).toBeLessThan(110);
+  if (SHOTS) await alice.screenshot({ path: `${SHOTS}/compact-boards.png`, animations: "disabled" });
 });
 
 test("a board with a long title and goal wraps in a card on a phone, with no sideways scroll", async () => {
@@ -367,14 +463,11 @@ test("a board with a long title and goal wraps in a card on a phone, with no sid
   expect(edited.status).toBe(200);
   for (const path of ["/boards", `/p/${project}/boards`]) {
     await platform(bob, path);
-    const card = bob.locator("li.board-card.sw-card.sw-ok", { hasText: "extraordinarily" });
+    const card = bob.locator("li[data-board-card]", { hasText: "extraordinarily" });
     await expect(card).toHaveCount(1, { timeout: 15_000 });
     await expect(card).toBeVisible();
-    await expect(card).toContainText("Open");
-    // The card's entry animation (swarm.css) settles: it isn't left at opacity 0.
-    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).opacity), { timeout: 5_000 }).toBe("1");
     await expect(card.locator("[data-board-progress]")).toHaveText("No work yet");
-    await expect(bob.locator("[data-boards-stats]")).toHaveText("1 open1 done");
+    await expect(bob.locator("[data-boards-stats]")).toHaveCount(0);
     expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/${path === "/boards" ? "all-boards" : "project-boards"}.png`, animations: "disabled" });
   }
@@ -604,16 +697,16 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await platform(alice, managed);
   const lanes = alice.locator("[data-board-group] .board-lanes");
   await expect(lanes).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-board-zone] ul.sw-cards")).toHaveCount(4);
+  await expect(alice.locator("[data-board-zone] ul.card-list")).toHaveCount(4);
   // A group's title is a heading above the lanes, and a row's title is a smaller, plainer one.
   const px = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(22);
+  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(19);
   expect(await px(alice.locator("[data-board-zone] h2").first())).toBeLessThan(18);
   expect(await px(alice.locator("[data-board-row] [data-board-title]").first())).toBeLessThanOrEqual(15);
   // The bar is the lane's tone; a row that waits on Alice keeps its lane's tone with a ring, and the header counts it.
   const card = row(alice, SHIPPED);
-  await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
-  await expect(card.locator(".chip")).toHaveCount(0);
+  await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bcard\b.*\bcard-ok\b/);
+  await expect(card.locator(".chip:not(.chip-tag)")).toHaveCount(0);
   // Its title is the issue's page, and its `#N` is dim text, not a link.
   await expect(card.locator("[data-board-title]")).toHaveAttribute("href", /\/issues\/iss_[0-9a-f]+$/);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
@@ -624,20 +717,21 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await platform(alice, managed);
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
-  await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/);
+  await expect(row(alice, OPEN)).toHaveClass(/\bcard-muted\b/);
   await expect(row(alice, OPEN)).toHaveAttribute("data-needs-you", "");
-  await expect(card.locator(".sw-chip")).toContainText("example.com/branch");
-  await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
+  await expect(card.locator("[data-board-attachment]")).toHaveText("Proof");
+  await expect(card.locator("[data-board-attachment]")).toHaveAttribute("title", "example.com/branch");
+  await expect(alice.locator("[data-board-stats]")).not.toContainText("done");
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you");
   await row(alice, OPEN).locator("[data-board-ask-option='Yes']").click();
-  await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/, { timeout: 15_000 });
+  await expect(row(alice, OPEN)).toHaveClass(/\bcard-muted\b/, { timeout: 15_000 });
   await expect(alice.locator("[data-board-needs-you]")).toHaveCount(0);
   // A second question, left open: it is in the header's count, and its card keeps its lane's tone and gets the ring.
   const price = await issue("Decide the price");
   expect((await api(alice, "POST", `/api/boards/${id}/rows/${price.id}/ask`, { who: me, question: "Free or paid?", options: ["Free", "Paid"] })).status).toBe(200);
   await platform(alice, managed);
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you", { timeout: 15_000 });
-  await expect(row(alice, "Decide the price")).toHaveClass(/\bsw-muted\b/);
+  await expect(row(alice, "Decide the price")).toHaveClass(/\bcard-muted\b/);
   await expect(row(alice, "Decide the price")).toHaveAttribute("data-needs-you", "");
 
   // Add a group, rename it, move it up, and delete it again.
@@ -727,7 +821,7 @@ test("in a board 760px wide the lanes are two per row and every card title keeps
     expect(across).toBe(lanes);
     const m = await alice.evaluate(() => {
       const probe = document.createElement("span");
-      const first = document.querySelector<HTMLElement>(".board-card [data-board-title]")!;
+      const first = document.querySelector<HTMLElement>("[data-board-row] [data-board-title]")!;
       probe.style.cssText = `position:absolute;visibility:hidden;width:14ch;font:${getComputedStyle(first).font}`;
       document.body.append(probe);
       const ch = probe.getBoundingClientRect().width;
@@ -735,7 +829,7 @@ test("in a board 760px wide the lanes are two per row and every card title keeps
       const lanes = document.querySelector<HTMLElement>(".board-lanes")!;
       return {
         ch,
-        titles: [...document.querySelectorAll(".board-card [data-board-title]")].map((t) => t.getBoundingClientRect().width),
+        titles: [...document.querySelectorAll("[data-board-row] [data-board-title]")].map((t) => t.getBoundingClientRect().width),
         scroll: lanes.scrollWidth - lanes.clientWidth,
         // The menu stays at its head's top-right, however the title and chip wrap.
         menus: [...document.querySelectorAll(".board-card-head")].map((h) => {
@@ -749,9 +843,10 @@ test("in a board 760px wide the lanes are two per row and every card title keeps
     expect(m.scroll).toBeLessThanOrEqual(0);
     for (const b of m.menus) (expect(b.right).toBeLessThanOrEqual(8), expect(b.top).toBeLessThanOrEqual(8));
   }
-  // The proof tag is on the sub line, not the head.
-  await expect(alice.locator(".board-card-head [data-board-proof]")).toHaveCount(0);
-  await expect(alice.locator(".board-sub [data-board-proof]")).toHaveCount(2);
+  // A proved row has one "Proof" (its link, or the tag where there is none), on the sub lines, not the head.
+  await expect(alice.locator(".board-card-head :is([data-attach-role=proof], [data-board-proof])")).toHaveCount(0);
+  await expect(alice.locator(":is([data-attach-role=proof], [data-board-proof])")).toHaveCount(2);
+  await expect(alice.locator("[data-board-proof]")).not.toHaveText(/proven/);
 });
 
 test("a card's title opens the drawer with the item's body, its comments and the PR's checks", async () => {
@@ -790,11 +885,12 @@ test("a card's title opens the drawer with the item's body, its comments and the
   );
   await platform(alice, managed);
   const card = row(alice, SHIPPED);
-  await expect(card).toHaveClass(/\bsw-accent\b/, { timeout: 15_000 });
-  // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
+  await expect(card).toHaveClass(/\bcard-accent\b/, { timeout: 15_000 });
+  // One chip per agent: its title, and its state unless it is working (the Doing lane says that; the chip's title keeps it). Its branch and the rest come only when it has stopped, dim beside the chip.
   const working = card.locator('[data-board-block="working"]');
-  await expect(working).toHaveText(/^Lexer lane\s*working$/);
-  await expect(card.getByText("working", { exact: true })).toHaveCount(1);
+  await expect(working).toHaveText("Lexer lane");
+  await expect(working).toHaveAttribute("title", "working");
+  await expect(card.getByText("working", { exact: true })).toHaveCount(0);
   await expect(card).not.toContainText("640");
   await expect(card).not.toContainText("641");
   await expect(card.locator('[data-board-block="idle"]')).toHaveText(/^agent\s*idle$/);
@@ -958,4 +1054,251 @@ test("a Plane connection's agent writes: the middle preset, a kind per row, the 
   expect(patches.at(-1)).toEqual({ attribution: "none" });
   await shoot("plane-policy-custom");
   await alice.unroute(new RegExp(`/api/projects/${project}/trackers(/tc_0123)?$`));
+});
+
+// #656: Not on a board with many tickets. The project gets 40 more untriaged
+// issues and a board "Bulk"; every add moves both halves of the page.
+test("Not on a board: ＋, a multi-select, a drag and select-all each move the list and the board's card, and the box keeps its scroll (#656)", async () => {
+  test.setTimeout(150_000);
+  await alice.setViewportSize({ width: 1280, height: 720 });
+  for (let n = 1; n <= 40; n++) {
+    const made = await api(alice, "POST", `/api/projects/${project}/issues`, { title: `Bulk ticket ${String(n).padStart(2, "0")}`, body: "", labels: [], assignees: [] });
+    expect(made.status).toBe(200);
+  }
+  await platform(alice, `/p/${project}/boards`);
+  await alice.locator("[data-board-new-title]").fill("Bulk");
+  await alice.locator("[data-board-new]").click();
+  await expect(alice.locator("[data-board-page] [data-board-heading]")).toHaveText("Bulk", { timeout: 15_000 });
+  await alice.locator("[data-platform-boards]").click();
+
+  const count = alice.locator("[data-triage-count]");
+  await expect(count).toBeVisible({ timeout: 15_000 });
+  const n0 = Number(await count.textContent());
+  expect(n0).toBeGreaterThanOrEqual(40);
+  const bulk = alice.locator("[data-board-card]", { has: alice.locator("[data-board-link]", { hasText: "Bulk" }) });
+  const progress = bulk.locator("[data-board-progress]");
+  await expect(progress).toContainText("No work yet");
+  const rows = alice.locator("[data-triage-row]");
+  await expect(rows).toHaveCount(n0);
+
+  // The whole card is the link, not only its title.
+  const at = (await bulk.boundingBox())!;
+  await bulk.click({ position: { x: at.width - 6, y: at.height - 6 } });
+  await expect(alice).toHaveURL(/\/boards\/brd_/);
+  await alice.locator("[data-platform-boards]").click();
+  await expect(count).toBeVisible({ timeout: 15_000 });
+
+  // ＋ adds one: the row leaves, the count drops, the card counts it, and a toast says where.
+  const one = rows.filter({ hasText: "Bulk ticket 40" });
+  await one.locator("[data-triage-add]").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  await expect(one).toHaveCount(0);
+  await expect(count).toHaveText(String(n0 - 1));
+  await expect(progress).toContainText("0 of 1 done", { timeout: 15_000 });
+  await expect(alice.locator("[data-platform-toast]").filter({ hasText: /is on Bulk, in Next/ })).toBeVisible();
+
+  // The box scrolls on its own, and selecting, a Shift range and an add keep its place.
+  const box = alice.locator("[data-triage-box]");
+  await expect(box).toHaveCSS("overflow-y", "auto");
+  await box.evaluate((e) => (e.scrollTop = 120));
+  const top = await box.evaluate((e) => e.scrollTop);
+  expect(top).toBeGreaterThan(0);
+  const third = rows.nth(5);
+  await third.click({ position: { x: 300, y: 5 } });
+  await expect(third.locator("input[type=checkbox]")).toBeChecked();
+  await rows.nth(8).click({ position: { x: 300, y: 5 }, modifiers: ["Shift"] });
+  await expect(alice.locator("[data-triage-selected]")).toHaveText("4 selected");
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+  // Select-all shows a mixed state, then every row; Esc clears.
+  const all = alice.locator("[data-triage-all-box]");
+  expect(await all.evaluate((e: HTMLInputElement) => e.indeterminate)).toBe(true);
+  await all.check();
+  await expect(alice.locator("[data-triage-selected]")).toHaveText(`${n0 - 1} selected`);
+  expect(await all.evaluate((e: HTMLInputElement) => e.indeterminate)).toBe(false);
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-triage-selbar]")).toHaveCount(0);
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+
+  // A multi-select goes with the bar's Add to board.
+  await rows.nth(5).click({ position: { x: 300, y: 5 } });
+  await rows.nth(8).click({ position: { x: 300, y: 5 }, modifiers: ["Shift"] });
+  const many = alice.waitForRequest((r) => r.url().includes("/entries/many"));
+  await alice.locator("[data-triage-selbar] .untri-go").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  // An explicit selection is its pointers, in one call.
+  expect(JSON.parse((await many).postData()!).pointers).toHaveLength(4);
+  await expect(count).toHaveText(String(n0 - 5));
+  await expect(rows).toHaveCount(n0 - 5);
+  await expect(progress).toContainText("0 of 5 done", { timeout: 15_000 });
+  await expect(alice.locator("[data-platform-toast]").filter({ hasText: "4 issues are on Bulk, in Next" })).toBeVisible();
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+
+  // A drag onto the board's card.
+  const first = rows.first();
+  await first.hover();
+  await alice.mouse.down();
+  const cardBox = await bulk.boundingBox();
+  await bulk.hover();
+  await bulk.hover({ position: { x: 20, y: 12 } });
+  await expect(bulk).toHaveClass(/drop-over/);
+  // The one drop-target outline (#696): dashed, drawn inside, so the card doesn't move.
+  await expect(bulk).toHaveCSS("outline-style", "dashed");
+  await expect(bulk).toHaveCSS("outline-width", "2px");
+  expect(await bulk.boundingBox()).toEqual(cardBox);
+  await alice.mouse.up();
+  await expect(count).toHaveText(String(n0 - 6));
+  await expect(progress).toContainText("0 of 6 done", { timeout: 15_000 });
+
+  // The rest, selected by one box and dragged on.
+  await all.check();
+  await rows.first().dragTo(bulk);
+  await expect(count).toHaveText("0", { timeout: 15_000 });
+  await expect(alice.locator("[data-triage-none]")).toBeVisible();
+  await expect(progress).toContainText(`0 of ${n0} done`, { timeout: 15_000 });
+});
+
+test("on a phone the page is two tabs, /triage opens Not on a board, and the bar has no Triage (#656)", async () => {
+  test.setTimeout(90_000);
+  for (let n = 1; n <= 12; n++) await api(alice, "POST", `/api/projects/${project}/issues`, { title: `Phone ticket ${n}`, body: "", labels: [], assignees: [] });
+  if (SHOTS) {
+    // The light look is the app's Latte palette, set as Settings does.
+    for (const scheme of ["light", "dark"] as const) {
+      await alice.evaluate((l) => (l ? localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "soft" })) : localStorage.removeItem("arugula-appearance")), scheme === "light");
+      await platform(alice, `/p/${project}/boards`);
+      await expect(alice.locator("[data-triage-count]")).toBeVisible({ timeout: 15_000 });
+      await alice.locator("#triage").scrollIntoViewIfNeeded();
+      await alice.screenshot({ path: `${SHOTS}/boards-not-on-a-board-wide-${scheme}.png`, animations: "disabled" });
+    }
+  }
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await platform(alice, `/p/${project}/boards`);
+  const tabs = alice.locator("[data-boards-tabs] [role=tab]");
+  await expect(tabs).toHaveCount(2, { timeout: 15_000 });
+  await expect(tabs.first()).toContainText("Boards");
+  await expect(tabs.last()).toContainText("Not on a board");
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  await expect(alice.locator("[data-boards]")).toBeVisible();
+  await expect(alice.locator("[data-boards-untriaged]")).toBeHidden();
+  await tabs.last().click();
+  await expect(alice.locator("[data-boards]")).toBeHidden();
+  await expect(alice.locator("[data-boards-untriaged]")).toBeVisible();
+  await expect(alice.locator("[data-boards-untriaged] h2")).toBeHidden();
+  await expect(alice.locator("[data-triage-box]")).toHaveCSS("overflow-y", "visible");
+
+  await platform(alice, `/p/${project}/triage`);
+  await expect(alice.locator("[data-boards-tabs] [role=tab]").last()).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+  await expect(alice.locator("[data-boards-untriaged]")).toBeVisible();
+  await expect(alice.locator("[data-platform-triage], [data-platform-issues]")).toHaveCount(0);
+  if (SHOTS) await alice.screenshot({ path: `${SHOTS}/boards-not-on-a-board-390.png`, animations: "disabled" });
+  await alice.setViewportSize({ width: 1280, height: 720 });
+});
+
+test("with more than 100 not on a board: the filter, order and labels are the server's, more loads at the foot of the box without moving it, and select-all takes the unloaded rows in one call (#656, #661)", async () => {
+  test.setTimeout(240_000);
+  await alice.setViewportSize({ width: 1280, height: 720 });
+  for (let n = 1; n <= 120; n++) {
+    const made = await api(alice, "POST", `/api/projects/${project}/issues`, { title: `Scale ticket ${String(n).padStart(3, "0")}`, body: "", labels: [n <= 30 ? "alpha" : "beta"], assignees: [] });
+    expect(made.status).toBe(200);
+  }
+  await platform(alice, `/p/${project}/boards`);
+  const count = alice.locator("[data-triage-count]");
+  await expect(count).toBeVisible({ timeout: 15_000 });
+  let total = Number(await count.textContent());
+  expect(total).toBeGreaterThan(120);
+  const rows = alice.locator("[data-triage-row]");
+  await expect(rows).toHaveCount(100);
+  // The facet is the server's: the chips carry the labels' counts.
+  const chip = (l: string) => alice.locator(`[data-triage-label="${l}"]`);
+  await expect(chip("alpha")).toContainText("30");
+  await expect(chip("beta")).toContainText("90");
+
+  // Near the foot of the box the next page loads, and the box stays where it was.
+  const box = alice.locator("[data-triage-box]");
+  await box.scrollIntoViewIfNeeded();
+  await box.evaluate((e) => (e.scrollTop = e.scrollHeight - e.clientHeight - 100));
+  const top = await box.evaluate((e) => e.scrollTop);
+  expect(top).toBeGreaterThan(1000);
+  await expect(rows).toHaveCount(total, { timeout: 15_000 });
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+  // A row in view, by the mouse: a locator's click would scroll the box itself.
+  const at = (await box.boundingBox())!;
+  await alice.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+  await expect(alice.locator("[data-triage-selected]")).toHaveText("1 selected");
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+  await alice.keyboard.press("Escape");
+
+  // Filtering and ordering are asked of the server, over all the matches.
+  await chip("alpha").click();
+  await expect(count).toHaveText("30");
+  await expect(rows).toHaveCount(30);
+  await expect(chip("beta")).toContainText("90");
+  // After an add the total and the facet are read again: ＋ on one alpha row, and alpha counts 29.
+  await rows.first().locator("[data-triage-add]").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  await expect(count).toHaveText("29");
+  await expect(chip("alpha")).toContainText("29");
+  await expect(chip("beta")).toContainText("90");
+  total -= 1;
+  await chip("alpha").click();
+  await expect(count).toHaveText(String(total));
+  await alice.locator("[data-triage-filter]").fill("Phone ticket");
+  await expect(count).toHaveText("12");
+  await alice.locator("[data-triage-order]").selectOption("oldest");
+  await expect(rows.first().locator(".untri-title")).toHaveText("Phone ticket 1");
+  await alice.locator("[data-triage-order]").selectOption("newest");
+  await alice.locator("[data-triage-filter]").fill("");
+  await expect(count).toHaveText(String(total));
+  await expect(rows).toHaveCount(100);
+
+  // Select-all covers the unloaded rows; one left out; one call by query with the exception.
+  const bulk = alice.locator("[data-board-card]", { has: alice.locator("[data-board-link]", { hasText: "Bulk" }) });
+  const progress = bulk.locator("[data-board-progress]");
+  const before = Number(/of (\d+) done/.exec((await progress.textContent())!)![1]);
+  await alice.locator("[data-triage-all-box]").check();
+  await expect(alice.locator("[data-triage-selected]")).toHaveText(`${total} selected`);
+  await rows.nth(3).click({ position: { x: 300, y: 5 } });
+  await expect(alice.locator("[data-triage-selected]")).toHaveText(`${total - 1} selected`);
+  const posts: string[] = [];
+  alice.on("request", (r) => r.method() !== "GET" && r.url().includes("/entries") && posts.push(`${r.method()} ${r.url().replace(/.*\/api\//, "")}`));
+  const many = alice.waitForRequest((r) => r.url().includes("/entries/many"));
+  await alice.locator("[data-triage-selbar] .untri-go").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  const body = JSON.parse((await many).postData()!);
+  expect(body.untriaged.project).toBe(project);
+  expect(body.except).toHaveLength(1);
+  await expect(count).toHaveText("1", { timeout: 15_000 });
+  await expect(rows).toHaveCount(1);
+  await expect(progress).toContainText(`0 of ${before + total - 1} done`, { timeout: 15_000 });
+  await expect(alice.locator("[data-platform-toast]").filter({ hasText: `${total - 1} issues are on Bulk, in Next` })).toBeVisible();
+  expect(posts.filter((p) => !p.includes("/entries/many"))).toEqual([]);
+});
+
+test("a machine with no Boards grant is named under the header, with a link to Settings → Agents, until it has one (#313)", async () => {
+  test.setTimeout(180_000);
+  await t.addMachine(alice, "quiet");
+  await home(alice);
+  await expect.poll(() => live(alice, ["quiet"]), { timeout: 30_000 }).toBe(true);
+  const machine = await alice.evaluate(() => window.__arugula.fleet.host("quiet")!.id!);
+
+  await platform(alice, `/p/${project}/boards`);
+  const hint = alice.locator("[data-boards-blind]");
+  await expect(hint).toHaveText("Agents on quiet can't see these boards. Let them", { timeout: 15_000 });
+  if (SHOTS) await alice.screenshot({ path: `${SHOTS}/boards-grant-hint.png` });
+  // A viewer can't give the grant, so isn't told, though the machine is his.
+  await t.addMachine(bob, "bobs");
+  await platform(bob, `/p/${project}/boards`);
+  await expect(bob.locator("[data-boards-page]")).toBeVisible();
+  await expect(bob.locator("[data-boards-blind]")).toHaveCount(0);
+
+  await hint.locator("[data-boards-blind-link]").click();
+  await expect(alice).toHaveURL(/\/settings#agents$/);
+  await expect(alice.locator("[data-settings-section=agents]")).toBeVisible({ timeout: 15_000 });
+
+  // Read is enough: the line is gone after a reload.
+  expect((await api(alice, "POST", "/api/grants", { daemon: machine, power: "boards.read", scope: { kind: "project", id: project } })).status).toBe(200);
+  const grants = alice.waitForResponse((r) => new URL(r.url()).pathname === "/api/grants" && r.request().method() === "GET");
+  await platform(alice, `/p/${project}/boards`);
+  await grants;
+  await expect(alice.locator("[data-boards]")).toBeAttached({ timeout: 15_000 });
+  await expect(alice.locator("[data-boards-blind]")).toHaveCount(0);
 });

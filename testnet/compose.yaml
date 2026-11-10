@@ -200,6 +200,8 @@ services:
       # ARUGULA_TESTNET_BLOCK_DOMAIN=blocks.localhost serves
       # b-<key>.blocks.localhost on control's port (M186's previews).
       ARUGULA_CONTROL_BLOCK_DOMAIN: ${ARUGULA_TESTNET_BLOCK_DOMAIN:-}
+      # Native apps may pair and sign (aru-131).
+      ARUGULA_NATIVE_CLIENTS: "1"
       # Public previews (M187), off unless a test asks for them:
       # ARUGULA_TESTNET_PREVIEW_DOMAIN=previews.localhost serves
       # <id>.previews.localhost on control's port.

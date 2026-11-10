@@ -61,7 +61,10 @@
 //!   project's owners, a browser all the way back to its account's root.
 //! - **What it covers.** `runs.start` and `runs.instruct` ([`CAPS`]) on the
 //!   hosted workspaces of the project, under the delegation it names. A
-//!   new delegation needs a new grant. It never covers a deploy (aru-101).
+//!   run starts under `runs.start`; what tells an agent what to do needs
+//!   `runs.instruct` too: an agent run, and every turn of a thread's agent
+//!   session (aru-115, as amended). A new delegation needs a new grant. It
+//!   never covers a deploy (aru-101).
 //! - **Revoking** is S37's: a revoke by any owner, relayed by the platform.
 //!   It names no grant: it takes back every grant for the project under its
 //!   delegation made at or before its `at`, v1 or v2 (M211's first revoke
@@ -71,7 +74,9 @@
 //!   bring a grant back by leaving the revoke out later, or by dropping its
 //!   signer's certificate or passkey. It stops new runs; `running stop`
 //!   also asks for the ones running to stop (decision 3: revoking and
-//!   stopping are separate, so it says which).
+//!   stopping are separate, so it says which). Agent sessions end either
+//!   way: `running stop` at once, `running finish` when a turn under way
+//!   does.
 //! - **Control can drop a revoke** (S37's threat model): a machine that
 //!   never heard it keeps honouring the grant until it expires. Grants
 //!   expire (90 days unless the owner picks), which bounds that.
@@ -98,8 +103,12 @@ use crate::{
     team::TeamRole,
 };
 
+/// Start runs: a command, or an agent's.
+pub const START: &str = "runs.start";
+/// Tell an agent what to do: an agent run, a session's turn.
+pub const INSTRUCT: &str = "runs.instruct";
 /// What the grant gives, as signed: start runs, and instruct them.
-pub const CAPS: &[&str] = &["runs.instruct", "runs.start"];
+pub const CAPS: &[&str] = &[INSTRUCT, START];
 /// What the grant is over: the project's hosted workspaces.
 pub const RESOURCE: &str = "hosted";
 /// Who holds it: the platform, which starts runs under it.
@@ -655,7 +664,7 @@ impl GrantRefusal {
         GrantRefusal::Revoked,
     ];
 
-    pub fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             GrantRefusal::Form => "grant_form",
             GrantRefusal::WrongProject => "grant_wrong_project",
@@ -705,6 +714,8 @@ impl GrantRefusal {
 pub struct Revokes<'a> {
     /// Its delegation's revocations, as it pinned them.
     pub delegation: &'a [crate::hosted::DelegationRevoke],
+    /// Control's word that its delegation ended, as it pinned it.
+    pub closed: &'a [crate::hosted::DelegationClosed],
     /// Revokes that came with the ask: they count only if one of the
     /// project's owners signed them, trusted now.
     pub sent: &'a [GrantRevoke],
@@ -760,7 +771,7 @@ pub fn check(
     if g.expires.is_some_and(|e| e <= now) {
         return Err(GrantRefusal::Expired);
     }
-    if revokes.delegation.iter().any(|r| r.revokes(d, owners)) {
+    if revokes.delegation.iter().any(|r| r.revokes(d, owners)) || revokes.closed.iter().any(|c| c.closes(d)) {
         return Err(GrantRefusal::DelegationRevoked);
     }
     if revokes.kept.iter().any(|r| r.covers(g)) || revokes.sent.iter().any(|r| r.revokes(g, signers, now)) {
@@ -1092,6 +1103,16 @@ mod tests {
         // Not by an editor.
         let spite = [crate::hosted::DelegationRevoke::new(&d, 120, &w.editor.keys)];
         let revokes = Revokes { delegation: &spite, ..Default::default() };
+        assert_eq!(check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200), Ok(()));
+        // Control's word that it ended stops them too. Nobody else's does.
+        let word = [HostedKey::from_seed(&[1; 32]).close(&d, 120)];
+        let revokes = Revokes { closed: &word, ..Default::default() };
+        assert_eq!(
+            check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200),
+            Err(GrantRefusal::DelegationRevoked)
+        );
+        let other = [HostedKey::from_seed(&[2; 32]).close(&d, 120)];
+        let revokes = Revokes { closed: &other, ..Default::default() };
         assert_eq!(check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200), Ok(()));
     }
 

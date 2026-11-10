@@ -274,11 +274,11 @@ impl BlockCtx {
         }
     }
 
-    /// Say where the turn that took a mention is (#611): the mux tells the
-    /// same place a terminal's turns go (#540).
-    pub fn mention_turn(&self, tag: crate::mux::MentionTag, turn: crate::mux::Turn) {
+    /// Say where the turn that took a tagged follow-up is (#611): the mux
+    /// tells the same place a terminal's turns go (#540).
+    pub fn followup_turn(&self, tag: crate::mux::Tag, turn: crate::mux::Turn) {
         if let Some(cmds) = &self.cmds {
-            let _ = cmds.send(crate::mux::Cmd::Api(crate::mux::Api::MentionTurn(self.id, tag, turn)));
+            let _ = cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowupTurn(self.id, tag, turn)));
         }
     }
 

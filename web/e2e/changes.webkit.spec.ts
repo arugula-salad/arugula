@@ -36,7 +36,7 @@ test.beforeAll(async () => {
   git("add", ".");
   git("commit", "-qm", "init");
   push = await FakePush.start();
-  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {

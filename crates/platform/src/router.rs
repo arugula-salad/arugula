@@ -43,6 +43,8 @@ fn routes() -> Routes {
         .route("/api/notify/prefs", get(crate::notify::prefs).post(crate::notify::set_prefs))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
+        // A project's Access view (Arugula #682): who can do what here.
+        .route("/api/projects/{project}/grants", get(crate::project_grants::list))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(
@@ -79,7 +81,6 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
         .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))
-        .route(arugula_control_wire::projects::INBOX_SHADOW, post(forge::inbox::shadow))
         .route(arugula_control_wire::projects::INBOX_ITEM, post(forge::inbox::mark))
         // Native issues (M195).
         .route(issues::PROJECT_ISSUES, get(crate::issues::list_route).post(crate::issues::create_route))
@@ -105,6 +106,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
         .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
+        .route(boards::BOARD_ENTRIES_MANY, post(crate::boards::add_many_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
         .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))
         .route(boards::BOARD_ATTACHMENTS, post(crate::boards::attach_route))
@@ -121,6 +123,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))
+        .route(boards::AGENT_PROJECT_RELATIONS_BATCH, post(crate::boards::agent::link))
         .route(boards::AGENT_PROJECT_RELATION, axum::routing::delete(crate::boards::agent::unrelate))
         .route(boards::PROJECT_RELATIONS, post(crate::boards::relations::add_route))
         .route(boards::PROJECT_RELATION, axum::routing::delete(crate::boards::relations::remove_route))
@@ -148,7 +151,11 @@ fn routes() -> Routes {
                 .delete(crate::project_docs::delete_route),
         )
         .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
-        .route(project_docs::PROJECT_DOC_MOVE, post(crate::project_docs::move_route))
+        .route(
+            project_docs::PROJECT_DOC_COPIES,
+            get(crate::project_docs::copies_route).post(crate::project_docs::share_route),
+        )
+        .route(project_docs::PROJECT_DOC_COPY, put(crate::project_docs::update_route))
         .route(
             project_docs::MACHINE_DOC,
             put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),
@@ -160,6 +167,16 @@ fn routes() -> Routes {
         )
         .route("/github/webhook", post(forge::webhook))
         .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
+        // CI alerts as native issues (native #774).
+        .route(
+            arugula_control_wire::projects::CI_NOTIFY,
+            post(crate::ci_alerts::notify).layer(axum::extract::DefaultBodyLimit::max(crate::ci_alerts::BODY_MAX)),
+        )
+        .route(
+            arugula_control_wire::projects::PROJECT_CI_ALERTS,
+            get(crate::ci_alerts::show).patch(crate::ci_alerts::settings),
+        )
+        .route(arugula_control_wire::projects::PROJECT_CI_ALERTS_KEY, post(crate::ci_alerts::make_key))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))

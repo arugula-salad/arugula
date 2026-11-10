@@ -6,7 +6,8 @@
 //! platform, like issues and chat; nothing here leaves the project.
 //!
 //! A project in a path is its id (`prj_…`), or `personal` for the reader's
-//! own. Native Docs come with chat, as native issues do.
+//! own. Membership and roles alone say who reads them, as for native
+//! issues: a person's chat setting doesn't (Arugula #746).
 //!
 //! **Who may do what:** its members read; a team's owners and editors make,
 //! write and delete (a personal project's account does all of it); a viewer
@@ -23,8 +24,23 @@
 //! **A copy from a machine** (#418): a machine copies a Doc of its own up to
 //! its owner's personal project ([`MACHINE_DOC`]), keyed by the machine and
 //! its own Doc id, so the same machine Doc always lands on the same `pdc_`.
-//! Private until a person moves it into a team's project
-//! ([`PROJECT_DOC_MOVE`]). A machine can't reach another machine's copies.
+//! It stays private to the owner: the route that moved a Doc between
+//! projects is gone (native #673), and a Doc of a team's is made there. A
+//! machine can't reach another machine's copies.
+//! The machine's Doc is the truth and the copy is read-only (Arugula #678):
+//! a write to it over [`PROJECT_DOC`] is refused, by a person or an agent
+//! session, naming the machine; only the machine's own puts change it, and
+//! the copy goes with the Doc (native #673): the machine's `DELETE`
+//! [`MACHINE_DOC`] takes it down. A person who writes in the project may
+//! delete a copy too (`DELETE` [`PROJECT_DOC`]); the machine's next change
+//! makes a new one.
+//!
+//! **Share with…** makes a team Doc from a copy: a snapshot of its
+//! title, sections and pictures as a new, ordinary Doc in a project of the
+//! owner's choosing ([`PROJECT_DOC_COPIES`]), which the team owns and edits.
+//! It records where it came from ([`MadeFrom`]); the copy stays the machine's
+//! truth, and **Update copy** ([`PROJECT_DOC_COPY`]) replaces the team Doc
+//! from the copy again, when its owner asks. Nothing is live.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,14 +51,23 @@ use crate::chat::ChatAgent;
 pub const PROJECT_DOCS: &str = "/api/projects/{project}/docs";
 /// `GET`: a Doc with its sections in order, [`DocView`]; `PUT` [`DocWrite`]:
 /// rename it, or write or add a section, answered [`DocView`]; `DELETE`:
-/// it goes (owners and editors).
+/// it goes (owners and editors; a copy too).
 pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
+
+/// A Doc's team Docs. `POST` [`ShareCopy`]: Share with… makes one in the
+/// project `to`, answered [`DocView`] (409 [`Shared`] when there is one
+/// already); `GET`: the team Docs made from it, [`DocCopies`]. Only the
+/// Doc's owner, for a Doc in their personal project, a machine's copy or
+/// one written here.
+pub const PROJECT_DOC_COPIES: &str = "/api/projects/{project}/docs/{id}/copies";
+/// `PUT` [`UpdateCopy`]: Update copy, the team Doc in project `to` made
+/// from this Doc takes its title, sections and pictures as they are now,
+/// answered [`DocCopy`]; 409 [`Edited`] when the team edited it since and
+/// `replace` isn't set. Only the Doc's owner, who still writes in `to`.
+pub const PROJECT_DOC_COPY: &str = "/api/projects/{project}/docs/{id}/copies/{to}";
 
 /// `GET`: one of a Doc's pictures, the bytes (any member).
 pub const PROJECT_DOC_ASSET: &str = "/api/projects/{project}/docs/{id}/assets/{name}";
-/// `POST` [`MoveProjectDoc`]: move a Doc to another project, [`DocView`] (a person
-/// who may write in both; never an agent session).
-pub const PROJECT_DOC_MOVE: &str = "/api/projects/{project}/docs/{id}/move";
 /// `PUT` [`MachineDoc`]: a machine copies one of its Docs up for its owner,
 /// answered [`MachineDocPlaced`]; `DELETE`: it takes its copy down.
 pub const MACHINE_DOC: &str = "/api/daemon/docs/{machine_doc}";
@@ -88,9 +113,33 @@ pub struct Doc {
     pub rev: u64,
     pub created_at: u64,
     pub updated_at: u64,
-    /// The machine this Doc is a copy from, or null for one made here.
+    /// The machine this Doc is a copy from, or null for one made here. A
+    /// copy is read-only here: the machine's Doc is the truth (#678).
     #[serde(default)]
     pub machine: Option<String>,
+    /// That machine's name, when control knows it: null for a Doc made
+    /// here, or once the machine left. Older pages don't read it.
+    #[serde(default)]
+    pub machine_name: Option<String>,
+    /// For a team Doc made from a Doc of its owner's (Share with…): where
+    /// from. Null for any other Doc, and from an older platform.
+    #[serde(default)]
+    pub made_from: Option<MadeFrom>,
+}
+
+/// The Doc a team Doc was made from: a machine's copy, or one written here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocMadeFrom"))]
+pub struct MadeFrom {
+    /// The source Doc's project (its owner's personal one) and its id.
+    pub project: String,
+    pub id: String,
+    /// The name of the machine the source is a copy from, when control knows
+    /// it; null for a source written here. Only what the platform could
+    /// tell; the source itself is its owner's to read.
+    #[serde(default)]
+    pub machine_name: Option<String>,
 }
 
 /// One picture of a Doc, without its bytes: the shape a machine Doc's
@@ -137,6 +186,11 @@ pub struct DocView {
     pub assets: Vec<Asset>,
     /// Whether the reader may write it.
     pub writer: bool,
+    /// Whether the reader may delete it: a person who writes in the
+    /// project, a copy included (native #673). An older platform sends
+    /// none; the page then takes `writer`.
+    #[serde(default)]
+    pub deleter: bool,
 }
 
 /// `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -193,13 +247,73 @@ pub struct DocWrite {
     pub markdown: Option<String>,
 }
 
-/// `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
+/// `POST` [`PROJECT_DOC_COPIES`]: Share with… this project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct MoveProjectDoc {
-    /// A project's id, or `personal` for the mover's own.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ShareProjectDoc"))]
+pub struct ShareCopy {
+    /// The project (`prj_…`) the team Doc is made in: one where the person
+    /// writes Docs, and not their personal one.
     pub to: String,
+}
+
+/// The 409 to a [`ShareCopy`] when a team Doc was made from the Doc in that
+/// project already.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocShared"))]
+pub struct Shared {
+    pub error: String,
+    /// The team Doc that is there.
+    pub id: String,
+}
+
+/// A team Doc made from a Doc of its owner's, as its owner sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocCopy"))]
+pub struct DocCopy {
+    pub project: String,
+    pub project_name: String,
+    /// The team Doc's id, and its page on the platform's page.
+    pub id: String,
+    pub link: String,
+    /// When it was made, and when it last changed (ms since the epoch).
+    pub made: u64,
+    pub updated: u64,
+    /// The source changed since: its rev is above the one recorded.
+    pub stale: bool,
+    /// The team changed it since: its rev is above the one recorded.
+    pub edited: bool,
+}
+
+/// `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
+/// first, in the projects its owner still reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocCopies"))]
+pub struct DocCopies {
+    pub copies: Vec<DocCopy>,
+}
+
+/// `PUT` [`PROJECT_DOC_COPY`]: Update copy.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "UpdateProjectDocCopy"))]
+pub struct UpdateCopy {
+    /// Replace the team's edits too. Without it, a team Doc edited since is
+    /// left alone and answered [`Edited`].
+    #[serde(default)]
+    pub replace: bool,
+}
+
+/// The 409 to an [`UpdateCopy`] that would replace the team's edits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocEdited"))]
+pub struct Edited {
+    pub error: String,
+    pub edited: bool,
 }
 
 /// A section of a machine's Doc, as it copies it up: the machine's own
@@ -224,6 +338,12 @@ pub struct MachineSection {
 pub struct MachineDoc {
     pub title: String,
     pub sections: Vec<MachineSection>,
+    /// How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
+    /// it isn't `doc`, so a control from before layouts still takes the Doc;
+    /// absent, or a name the reader doesn't know, is `doc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<String>,
 }
 
 /// Where a machine's copy is, answering `PUT` [`MACHINE_DOC`].
@@ -254,9 +374,14 @@ pub fn project_doc_asset(project: &str, id: &str, name: &str) -> String {
     format!("/api/projects/{project}/docs/{id}/assets/{name}")
 }
 
-/// [`PROJECT_DOC_MOVE`] for `id` in `project`.
-pub fn project_doc_move(project: &str, id: &str) -> String {
-    format!("/api/projects/{project}/docs/{id}/move")
+/// [`PROJECT_DOC_COPIES`] for the copy `id` in `project`.
+pub fn project_doc_copies(project: &str, id: &str) -> String {
+    format!("/api/projects/{project}/docs/{id}/copies")
+}
+
+/// [`PROJECT_DOC_COPY`] for the team Doc of copy `id` in `to`.
+pub fn project_doc_copy(project: &str, id: &str, to: &str) -> String {
+    format!("/api/projects/{project}/docs/{id}/copies/{to}")
 }
 
 /// [`MACHINE_DOC`] for the machine's Doc `machine_doc`.
@@ -267,4 +392,31 @@ pub fn machine_doc(machine_doc: &str) -> String {
 /// [`MACHINE_DOC_ASSET`] for `name` of the machine's Doc `machine_doc`.
 pub fn machine_doc_asset(machine_doc: &str, name: &str) -> String {
     format!("/api/daemon/docs/{machine_doc}/assets/{name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A control from before layouts: the body as `MachineDoc` was.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct OldMachineDoc {
+        title: String,
+        sections: Vec<MachineSection>,
+    }
+
+    #[test]
+    fn a_machine_doc_names_its_layout_only_off_doc_and_an_older_control_takes_it() {
+        let doc =
+            |layout: Option<&str>| MachineDoc { title: "T".into(), sections: vec![], layout: layout.map(Into::into) };
+        let plain = serde_json::to_value(doc(None)).unwrap();
+        assert!(plain.get("layout").is_none(), "a plain Doc's body is what it was");
+        let tabs = serde_json::to_value(doc(Some("tabs"))).unwrap();
+        assert_eq!(tabs["layout"], "tabs");
+        // Not refused by a reader that doesn't list it, and an old body reads here.
+        assert_eq!(serde_json::from_value::<OldMachineDoc>(tabs.clone()).unwrap().title, "T");
+        assert_eq!(serde_json::from_value::<MachineDoc>(plain).unwrap().layout, None);
+        assert_eq!(serde_json::from_value::<MachineDoc>(tabs).unwrap().layout.as_deref(), Some("tabs"));
+    }
 }

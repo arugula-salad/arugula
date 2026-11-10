@@ -51,7 +51,6 @@ test("a narrow Board block in a wide window filters by label with clicks alone",
   await alice.setViewportSize({ width: 1500, height: 900 });
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
   await home(alice);
   await t.addMachine(alice, "alices", team);
   await expect.poll(() => live(alice, ["alices"]), { timeout: 30_000 }).toBe(true);
@@ -115,8 +114,8 @@ test("a narrow Board block in a wide window filters by label with clicks alone",
 
   await blk.locator('[data-board-facet-button="label"]').click();
   await blk.locator('[data-board-facet-value="docs"]').check();
-  // The open list sits inline, its checkboxes their own size: not stretched like the box.
-  expect((await blk.locator('[data-board-facet-value="docs"]').boundingBox())!.width).toBeLessThan(40);
+  // The open menu's tick keeps its own size: not stretched like the box.
+  expect((await blk.locator('[data-board-facet-value="docs"] .menu-lead').boundingBox())!.width).toBeLessThan(40);
   await expect(blk.locator("[data-board-row]")).toHaveCount(2);
   await expect(blk.locator("[data-board-find-count]")).toHaveText("2 of 4 rows");
   await shot(alice, "block-narrow-filtered");
@@ -124,6 +123,8 @@ test("a narrow Board block in a wide window filters by label with clicks alone",
   await blk.locator("[data-board-find-clear]").click();
   await expect(blk.locator("[data-board-row]")).toHaveCount(4);
   await expect(blk.locator("[data-board-find-clear]")).toHaveCount(0);
+  // The menu shut when Clear was pressed; opened again, nothing in it is ticked.
+  await blk.locator('[data-board-facet-button="label"]').click();
   await expect(blk.locator('[data-board-facet-value="docs"]')).not.toBeChecked();
 
   // The board's page, wide: one row, no key.

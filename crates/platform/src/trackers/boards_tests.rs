@@ -15,7 +15,6 @@ use super::{
     fake::item,
 };
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params, trackers::NewConnection},
     forge::viewer,
@@ -75,10 +74,8 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     let hub = Arc::new(TestHub::default());
     let (_fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
-    hub.flag_named("team:t1", FLAG, true);
     hub.team("t3", &[("erin", TeamRole::Owner)]);
     hub.flag("team:t3", true);
-    hub.flag_named("team:t3", FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     let other = crate::projects::team_project(&app, "t3").await.unwrap().unwrap();
 
@@ -200,7 +197,6 @@ async fn a_plane_state_group_moves_the_row_and_cancelled_is_done_and_not_proven(
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor)]);
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     let (s, made) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
     assert_eq!(s, 200, "{made}");
@@ -270,7 +266,6 @@ async fn a_plane_blocked_by_shows_on_the_row_and_stays_read_only() {
     let hub = Arc::new(TestHub::default());
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
-    hub.flag_named("team:t1", FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     // Plane says item-1 blocks item-2 (and, from the other side, item-2 is blocked by it).
     fake.set_blocks(vec![("item-1", "item-2")]);
