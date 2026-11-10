@@ -1,6 +1,6 @@
 ---
 section: Fixed
-title: A Doc you wrote here goes into a team once, with its pictures
+title: A Doc from the platform goes into a team once, with pictures
 line: Sharing a Doc written on the platform with a team again says it's already there, and its pictures come with it.
 try: {"route": "/docs"}
 needs: control
