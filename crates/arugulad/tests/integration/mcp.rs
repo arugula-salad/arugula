@@ -3256,6 +3256,7 @@ async fn an_agent_reads_and_writes_a_board() {
     assert!(read.get("zones").is_none(), "the JSON only when verbose: {read}");
     let text = read["summary"].as_str().unwrap();
     assert!(text.starts_with("Launch (brd_1): 2/3 done, 1 proven, 2 group(s)\nLaunch\n"), "{text}");
+    assert!(text.contains("In project prj_1."), "a bare brd_ id needs no project, and the answer names it: {text}");
     assert!(text.contains("# Phase 1"), "{text}");
     assert!(text.contains("Next") && text.contains("○ #12"), "rows by their items: {text}");
     assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");

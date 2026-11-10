@@ -432,7 +432,7 @@ async fn an_agent_links_its_machines_docs() {
     let mine = json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "  Perf notes  " });
 
     let (st, v) = geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine }))).await;
-    assert_eq!(st, 403, "no grant: {v}");
+    assert_eq!(st, 404, "no grant (a board it can't see is no board): {v}");
     grant_write(&base, "a", "geek", &t).await;
     let (st, v) = geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine }))).await;
     assert_eq!(st, 200, "{v}");

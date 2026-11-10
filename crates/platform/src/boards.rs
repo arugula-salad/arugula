@@ -240,6 +240,12 @@ async fn board_place(app: &Platform, by: Actor<'_>, id: &str, write: bool) -> Re
     let board = app.db.board(id)?.ok_or_else(no_board)?;
     match place(app, by, &board.project, write).await {
         Err(e) if e.0 == StatusCode::NOT_FOUND => Err(no_board()),
+        // An agent with no grant over the project can't see the board: it
+        // answers as a board that isn't there, never naming the project.
+        Err(e) if e.0 == StatusCode::FORBIDDEN && by.agent.is_some() => match place(app, by, &board.project, false).await {
+            Err(_) => Err(no_board()),
+            Ok(_) => Err(e),
+        },
         r => r.map(|_| board),
     }
 }
