@@ -1,6 +1,6 @@
 ---
 section: Changed
-title: An agent session pushes only for someone who can push to the repo
+title: A session pushes only for someone who can push to the repo
 line: The platform mints an agent session's push token only when the person who asked for the session can push to that repository on GitHub right now.
 headline: no
 ---
