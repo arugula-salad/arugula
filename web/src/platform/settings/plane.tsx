@@ -271,6 +271,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                 <th scope="col">Agent writes</th>
                 <th scope="col">Webhook</th>
                 <th scope="col">Epics</th>
+                <th scope="col">Close on merge</th>
                 <th scope="col">
                   <span class="settings-hidden">Disconnect</span>
                 </th>
@@ -374,6 +375,28 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                             {epicsLine(following(c)!)}
                           </span>
                         )}
+                      </div>
+                    )}
+                  </td>
+                  <td data-col="Close on merge">
+                    {c.purge_after === null && (
+                      <div class="plane-epics" data-plane-close-on-merge={c.id}>
+                        <label class="settings-switch">
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            class="sw-switch"
+                            data-plane-close-on-merge-switch={c.id}
+                            checked={c.close_on_merge}
+                            disabled={busy || !changes}
+                            onChange={(e) => {
+                              const close_on_merge = e.currentTarget.checked;
+                              void act(() => call("PATCH", `${base}/${c.id}`, { close_on_merge }));
+                            }}
+                          />
+                          <span>Close on merge</span>
+                        </label>
+                        <span class="dim">A merged PR that names an item moves it to Done and says so in a comment. An item a person reopened is never closed again.</span>
                       </div>
                     )}
                   </td>

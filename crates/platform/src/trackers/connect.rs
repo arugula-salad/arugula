@@ -98,6 +98,7 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         waiting_writes: app.db.tracker_writes_waiting_count(&c.id)?,
         failed_moves: app.db.plane_moves_failed_count(&c.id)?,
         epics_as_boards: c.epics_as_boards,
+        close_on_merge: c.close_on_merge,
     })
 }
 
@@ -219,10 +220,11 @@ pub async fn settings(
         && b.attribution.is_none()
         && b.webhook_secret.is_none()
         && b.epics_as_boards.is_none()
+        && b.close_on_merge.is_none()
     {
         return Err(err(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "write_policy, attribution, agent_writes, webhook_secret or epics_as_boards",
+            "write_policy, attribution, agent_writes, webhook_secret, epics_as_boards or close_on_merge",
         ));
     }
     if b.agent_writes.as_deref().is_some_and(|w| !matches!(w, "approve" | "allow")) {
@@ -273,6 +275,12 @@ pub async fn settings(
             return Err(not_connected());
         }
         info!(%account, %project, connection = %id, %attribution, "changed what a Plane write's footer says");
+    }
+    if let Some(on) = b.close_on_merge {
+        if !app.db.set_tracker_close_on_merge(&project, &id, on)? {
+            return Err(not_connected());
+        }
+        info!(%account, %project, connection = %id, on, "changed whether a merged PR closes a Plane item");
     }
     if let Some(on) = b.epics_as_boards {
         let was = app.db.tracker_connection(&project, &id)?.is_some_and(|c| c.epics_as_boards);

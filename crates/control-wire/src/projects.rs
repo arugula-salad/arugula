@@ -883,6 +883,10 @@ pub struct TrackerConnection {
     /// turned off; off, the boards stay and stop following.
     #[serde(default = "yes")]
     pub epics_as_boards: bool,
+    /// Whether a merged PR that names an item moves it to Done (#852). On
+    /// unless turned off.
+    #[serde(default = "yes")]
+    pub close_on_merge: bool,
 }
 
 fn yes() -> bool {
@@ -938,6 +942,9 @@ pub struct TrackerSettings {
     /// Whether each open epic has a board that follows it.
     #[serde(default)]
     pub epics_as_boards: Option<bool>,
+    /// Whether a merged PR moves the items it names to Done.
+    #[serde(default)]
+    pub close_on_merge: Option<bool>,
 }
 
 impl std::fmt::Debug for TrackerSettings {
@@ -948,6 +955,7 @@ impl std::fmt::Debug for TrackerSettings {
             .field("attribution", &self.attribution)
             .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
             .field("epics_as_boards", &self.epics_as_boards)
+            .field("close_on_merge", &self.close_on_merge)
             .finish()
     }
 }
@@ -1263,4 +1271,7 @@ pub struct TrackerReachConnection {
     /// Whether each open epic has a board that follows it (#483).
     #[serde(default = "yes")]
     pub epics_as_boards: bool,
+    /// Whether a merged PR moves the items it names to Done (#852).
+    #[serde(default = "yes")]
+    pub close_on_merge: bool,
 }

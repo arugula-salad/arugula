@@ -695,6 +695,7 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
                     epics_as_boards: c.epics_as_boards,
                     agent_writes: policy::summary(&c.write_policy).into(),
                     write_policy: c.write_policy,
+                    close_on_merge: c.close_on_merge,
                 })
                 .collect();
             projects.push(TrackerReachProject { id, name, connections });

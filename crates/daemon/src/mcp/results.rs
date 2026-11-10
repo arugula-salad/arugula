@@ -154,6 +154,14 @@ pub struct TrackerReachConnection {
     /// Absent when control predates the setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epics_as_boards: Option<bool>,
+    /// Whether a merged PR that names an item moves it to Done (and says so
+    /// in a comment). A person may switch it off per connection.
+    #[serde(default = "yes")]
+    pub close_on_merge: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The projects in control whose boards agents here reach: through grants
