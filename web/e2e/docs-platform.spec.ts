@@ -529,6 +529,13 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await alice.locator("[data-list-rows]").focus();
   await alice.keyboard.press("Escape");
   await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
+  // Ctrl/Cmd+A ticks every row shown, and again clears; the bar says how many.
+  await alice.keyboard.press("ControlOrMeta+a");
+  await expect(alice.locator("[data-docs-selected]")).toHaveText(`${all} selected`);
+  await expect(alice.locator("[data-list-selection]")).toHaveAttribute("role", "status");
+  await expect(alice.locator("[data-list-rows] [data-doc][aria-checked=true]")).toHaveCount(all);
+  await alice.keyboard.press("ControlOrMeta+a");
+  await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
   // Space ticks the row the keys are on.
   await alice.keyboard.press("Space");
   await expect(alice.locator("[data-docs-selected]")).toHaveText("1 selected");

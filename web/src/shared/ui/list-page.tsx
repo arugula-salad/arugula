@@ -145,7 +145,8 @@ export interface ListPageProps<T> {
    * option fails `nested-interactive`): the option says `aria-checked`, and
    * Space ticks it. Shift-click ticks the range between two, in the order
    * on the screen after search and grouping; a group's box ticks its group;
-   * Space ticks the row the keys are on, and Esc clears. Turned off, it
+   * Space ticks the row the keys are on, Ctrl/Cmd+A ticks every row shown
+   * (again, with all ticked, it clears), and Esc clears. Turned off, it
    * forgets what was ticked, and so does a row that a search hides. */
   selectable?: boolean;
   /** Under the search while `selectable`, even with nothing ticked (its own
@@ -259,10 +260,19 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
     scrollTo.current = false;
   }, [selectedKey]);
 
-  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks });
-  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks };
+  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) });
+  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+A in the list ticks every row shown; again, with all ticked, it clears.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a" && !e.defaultPrevented && !covered() && live.current.selectable && live.current.flat.length > 0 && list.current?.contains(e.target as Node) && !inField(e.target)) {
+        e.preventDefault();
+        const s = live.current;
+        const keys = s.flat.map(s.keyOf);
+        if (keys.every((k) => s.ticked.has(k))) s.clearTicks();
+        else s.tickAll(keys);
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || covered()) return;
       const s = live.current;
       const searching = e.target === box.current;
@@ -445,7 +455,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             </label>
           </div>
           {notice}
-          {selectable && selection && <div class="list-selection" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}
+          {selectable && selection && <div class="list-selection" role="status" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}
           <div class="list-scroll">
             {status ?? null}
             {flat.length > 0 && (
