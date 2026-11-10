@@ -94,11 +94,11 @@ export function onRoute(fn: () => void): () => void {
 }
 
 /** Go to `path`: a new history entry, or this one replaced (typing in
- * search, or putting the slug right). */
-export function go(path: string, replace = false) {
+ * search, or putting the slug right). `state` marks the entry (./chat-nav). */
+export function go(path: string, replace = false, state: unknown = null) {
   if (path === location.pathname + location.search) return changed();
-  if (replace) history.replaceState(null, "", path);
-  else history.pushState(null, "", path);
+  if (replace) history.replaceState(state, "", path);
+  else history.pushState(state, "", path);
   changed();
 }
 

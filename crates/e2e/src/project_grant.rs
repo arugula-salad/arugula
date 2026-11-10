@@ -705,6 +705,8 @@ impl GrantRefusal {
 pub struct Revokes<'a> {
     /// Its delegation's revocations, as it pinned them.
     pub delegation: &'a [crate::hosted::DelegationRevoke],
+    /// Control's word that its delegation ended, as it pinned it.
+    pub closed: &'a [crate::hosted::DelegationClosed],
     /// Revokes that came with the ask: they count only if one of the
     /// project's owners signed them, trusted now.
     pub sent: &'a [GrantRevoke],
@@ -760,7 +762,7 @@ pub fn check(
     if g.expires.is_some_and(|e| e <= now) {
         return Err(GrantRefusal::Expired);
     }
-    if revokes.delegation.iter().any(|r| r.revokes(d, owners)) {
+    if revokes.delegation.iter().any(|r| r.revokes(d, owners)) || revokes.closed.iter().any(|c| c.closes(d)) {
         return Err(GrantRefusal::DelegationRevoked);
     }
     if revokes.kept.iter().any(|r| r.covers(g)) || revokes.sent.iter().any(|r| r.revokes(g, signers, now)) {
@@ -1092,6 +1094,16 @@ mod tests {
         // Not by an editor.
         let spite = [crate::hosted::DelegationRevoke::new(&d, 120, &w.editor.keys)];
         let revokes = Revokes { delegation: &spite, ..Default::default() };
+        assert_eq!(check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200), Ok(()));
+        // Control's word that it ended stops them too. Nobody else's does.
+        let word = [HostedKey::from_seed(&[1; 32]).close(&d, 120)];
+        let revokes = Revokes { closed: &word, ..Default::default() };
+        assert_eq!(
+            check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200),
+            Err(GrantRefusal::DelegationRevoked)
+        );
+        let other = [HostedKey::from_seed(&[2; 32]).close(&d, 120)];
+        let revokes = Revokes { closed: &other, ..Default::default() };
         assert_eq!(check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200), Ok(()));
     }
 

@@ -1,4 +1,4 @@
-/* A board's Steps view (Arugula #763, #786): the sequence chart, one line to a row with its bar in its step's column, and arrows for the held row's links. Slate and Latte's tokens only. */
+/* A board's Steps view (Arugula #763, #786, #824): the sequence chart, one line to a row with its bar in its place's column (a done row stays in its place, struck through), and arrows for the held row's links. Slate and Latte's tokens only. */
 .board-views {
   display: inline-flex;
   width: max-content;
@@ -11,7 +11,7 @@
   padding-right: 28px;
 }
 
-/* The chart: a title column of --lw, then --n equal columns (✓, then the steps) sharing the rest. */
+/* The chart: a title column of --lw, then --n equal columns (1 to the last place) sharing the rest. */
 .steps-chart {
   position: relative;
   overflow: hidden;
@@ -27,17 +27,6 @@
   pointer-events: none;
   overflow: visible;
   z-index: 2;
-}
-
-/* Step 1's column, tinted across the whole chart. */
-.steps-band {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--lw) + (100% - var(--lw)) / var(--n));
-  width: calc((100% - var(--lw)) / var(--n));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  pointer-events: none;
 }
 
 .steps-head,
@@ -91,7 +80,7 @@
   background: var(--bg);
 }
 
-/* The step track: it takes what the title cell leaves, and its --n columns are equal. */
+/* The track: it takes what the title cell leaves, and its --n columns are equal. */
 .steps-trk {
   position: relative;
   flex: 1;
@@ -112,11 +101,6 @@
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
-}
-
-.steps-col[data-steps-now] {
-  color: var(--fg);
-  font-weight: 700;
 }
 
 /* A bar fills its column, inset 3px. */
@@ -222,6 +206,12 @@
   text-overflow: ellipsis;
 }
 
+/* A done row's title is struck through and muted. */
+.steps-row[data-lane="done"] .step-title {
+  text-decoration: line-through;
+  color: var(--dim);
+}
+
 .step-said {
   flex: none;
   color: var(--warn);
@@ -298,6 +288,17 @@
 }
 
 .step-head-discovered_from path {
+  fill: var(--ok);
+}
+
+/* An arrow out of a done row, of a kind that makes a row wait (before, blocks), is met: solid, thin and green. It comes after the kinds' rules so it wins over them. */
+.step-link-met {
+  stroke: var(--ok);
+  stroke-width: 1.25;
+  stroke-dasharray: none;
+}
+
+.step-head-met path {
   fill: var(--ok);
 }
 

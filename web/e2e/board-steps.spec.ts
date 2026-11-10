@@ -1,8 +1,9 @@
-// A board's Steps view (Arugula #763, #786): the sequence chart. Alice owns team Acme, with a board of
+// A board's Steps view (Arugula #763, #786, #824): the sequence chart. Alice owns team Acme, with a board of
 // two phases: "Phase A" holds Design (link: before Build, relates, duplicate,
 // discovered), nine fillers beside it in step 1 (so step 1 folds after 8), and
 // Build (step 2, which blocks Ship); "Phase B" holds Ship (step 3) and the
-// rows Design is linked to. Hovering a row draws its links, each kind its own
+// rows Design is linked to; "Phase D" holds a chain, A and B done, then C
+// and D open, which keeps its places 1 to 4 and strikes the done titles. Hovering a row draws its links, each kind its own
 // way, with its ends on the bars' boxes through an unfold and a resize; an
 // agent on a row shows live; a row is dragged inside its step; and a second
 // client that read the group before someone else moved it is told. At 390 px
@@ -47,10 +48,13 @@ let app = "";
 let project = "";
 let board = "";
 let phaseA = "";
+let phaseD = "";
 let alice: Page;
 /** Row ids by title. */
 const rowOf: Record<string, string> = {};
 const LONG = "Rework the whole importer so a row with a very long title still leaves room for its agent";
+/** A done, then B done, then C and D open: places 1 to 4, though C's step is 1 and D's 2. */
+const CHAIN = ["Chain A", "Chain B", "Chain C", "Chain D"];
 const FILLERS = Array.from({ length: 9 }, (_, i) => `Filler ${i + 1}`);
 
 /** The block an agent on Design reports; the board is read with it in place of a daemon's report (a spec can't sign as a machine). */
@@ -59,14 +63,14 @@ let agent: { state: string } = { state: "working" };
 /** A row's line. */
 const bar = (p: Page, title: string) => p.locator(`[data-step-row="${rowOf[title]}"]`);
 
-/** The ids of the lines of a phase's step, in the order drawn. */
-const column = (p: Page, phase: string, step: number) =>
-  p.locator(`[data-steps-phase="${phase}"] [data-step-row][data-step="${step}"]`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.stepRow!));
+/** The ids of the lines of a phase's column, in the order drawn. */
+const column = (p: Page, phase: string, place: number) =>
+  p.locator(`[data-steps-phase="${phase}"] [data-step-row][data-place="${place}"]`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.stepRow!));
 
 const grip = (p: Page) => p.locator("[data-steps-grip]");
 const gripWidth = async (p: Page) => Number(await grip(p).getAttribute("aria-valuenow"));
 
-/** The width of each column of the header (✓, then the steps), and the title column's. */
+/** The width of each column of the header (1 to the last place). */
 const columns = (p: Page) => p.locator("[data-steps-col]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
 
 /** Drag the handle by `dx` pixels with the mouse. */
@@ -87,16 +91,21 @@ async function ends(p: Page) {
     const base = chart.getBoundingClientRect();
     const box = (id: string) => {
       const r = chart.querySelector(`[data-step-bar="${id}"]`)!.getBoundingClientRect();
-      return { left: r.left - base.left, right: r.right - base.left, cy: (r.top + r.bottom) / 2 - base.top };
+      return { left: r.left - base.left, right: r.right - base.left, top: r.top - base.top, bottom: r.bottom - base.top, cy: (r.top + r.bottom) / 2 - base.top };
     };
     return [...chart.querySelectorAll<SVGPathElement>("path[data-link-kind]")].map((el) => {
       const g = el.parentElement as unknown as SVGGElement;
-      const n = el.getAttribute("d")!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+      const len = el.getTotalLength();
+      // An elbow's last 12px are level, so the 8px head lies on the line it ends.
+      const [s, e, head] = [el.getPointAtLength(0), el.getPointAtLength(len), el.getPointAtLength(Math.max(0, len - 12))];
       const a = box(g.dataset.linkFrom!);
       const b = box(g.dataset.linkTo!);
-      // Out of the right edge into the left of a bar further right, the other way round for one further left, else round the right.
-      const [x1, x2] = b.left >= a.right ? [a.right, b.left] : b.right <= a.left ? [a.left, b.right] : [a.right, b.right];
-      return { kind: el.dataset.linkKind!, from: g.dataset.linkFrom!, to: g.dataset.linkTo!, got: [n[0], n[1], n.at(-2)!, n.at(-1)!], want: [x1, a.cy, x2, b.cy] };
+      // To another column: an elbow down out of the bottom (up out of the top) of the bar, 10px inside the edge facing the other, into its near side. In one column: round the right.
+      const dir = b.left >= a.right ? 1 : b.right <= a.left ? -1 : 0;
+      const half = (a.right - a.left) / 2;
+      const sx = dir > 0 ? Math.max(a.left + half, a.right - 10) : Math.min(a.left + half, a.left + 10);
+      const want = dir ? [sx, b.cy > a.cy ? a.bottom : a.top, dir > 0 ? b.left : b.right, b.cy] : [a.right, a.cy, b.right, b.cy];
+      return { kind: el.dataset.linkKind!, from: g.dataset.linkFrom!, to: g.dataset.linkTo!, got: [s.x, s.y, e.x, e.y, head.y], want: [...want, dir ? b.cy : head.y] };
     });
   });
 }
@@ -129,6 +138,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   phaseA = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase A" })).body!.groups[0].id as string;
   const phaseB = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase B" })).body!.groups[1].id as string;
   const phaseC = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase C" })).body!.groups[2].id as string;
+  phaseD = (await api(alice, "PUT", `/api/boards/${board}/entries`, { entry: "zone", title: "Phase D" })).body!.groups[3].id as string;
   const titles: [string, string][] = [
     ["Design", phaseA],
     ...FILLERS.map((f): [string, string] => [f, phaseA]),
@@ -139,6 +149,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
     ["Found in testing", phaseB],
     [LONG, phaseB],
     ["Already shipped", phaseC],
+    ...CHAIN.map((c): [string, string] => [c, phaseD]),
   ];
   const issue: Record<string, string> = {};
   for (const [title, group] of titles) {
@@ -156,6 +167,11 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   await link("Design", "Docs", "relates");
   await link("Design", "Old duplicate", "duplicate_of");
   await link("Design", "Found in testing", "discovered_from");
+  await link("Chain A", "Chain B", "before");
+  await link("Chain B", "Chain C", "blocks");
+  await link("Chain C", "Chain D", "before");
+  // A and B are finished: the platform's steps leave them out, and the chart keeps their places.
+  for (const c of CHAIN.slice(0, 2)) expect((await api(alice, "PATCH", `/api/issues/${issue[c]}`, { state: "closed" })).status).toBe(200);
 
   // The board is read with an agent on Design; what it says is `agent`'s.
   await alice.route(/\/api\/boards\/brd_[0-9a-f]+$/, async (route) => {
@@ -180,7 +196,7 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
   await expect(alice.locator("[data-board-zone]")).toHaveCount(0);
 
   // Phases and steps: Phase A's step 1 shows eight of ten behind "+2 more"; Build is step 2 and Ship step 3.
-  await expect(alice.locator('[data-steps-phase] h2')).toHaveText(["Phase A", "Phase B", "Phase C"]);
+  await expect(alice.locator('[data-steps-phase] h2')).toHaveText(["Phase A", "Phase B", "Phase C", "Phase D"]);
   expect(await column(alice, phaseA, 1)).toHaveLength(8);
   // A line carries the glyph, the number and the title, and no agent or marks.
   await expect(bar(alice, "Design").locator("[data-step-agent], [data-board-mark]")).toHaveCount(0);
@@ -290,11 +306,10 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   await expect(phone.locator("[data-steps]")).toBeVisible();
   await expect(phone.locator('[data-board-view="steps"]')).toHaveAttribute("aria-pressed", "true");
   await expect(phone.locator("[data-board-zone]")).toHaveCount(0);
-  // One chart: ✓ and three steps, with the title column at the phone's default; a phase's done rows are counted, not drawn.
+  // One chart: columns 1 to 4 (no ✓), with the title column at the phone's default; the done rows are drawn, in their places.
   await expect(phone.locator("[data-steps-col]")).toHaveCount(4);
   expect(await gripWidth(phone)).toBe(150);
-  await expect(phone.locator('[data-step-row][data-lane="done"]')).toHaveCount(0);
-  await expect(phone.locator("[data-steps-done]")).toHaveCount(0);
+  await expect(phone.locator('[data-step-row][data-lane="done"]')).toHaveCount(3);
   expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   // A tap draws the row's arrows; another tap opens its drawer.
@@ -345,7 +360,7 @@ async function insideLine(p: Page, title: string) {
   }));
 }
 
-test("a line carries only its glyph, number and title, and nothing crosses its right edge; a phase with nothing open has only done lines", async () => {
+test("a line carries only its glyph, number and title, and nothing crosses its right edge; a phase with nothing open has only done lines, drawn on a phone too", async () => {
   test.setTimeout(240_000);
   const page = alice;
   for (const width of [1280, 390]) {
@@ -370,17 +385,16 @@ test("a line carries only its glyph, number and title, and nothing crosses its r
   await expect(drawer.locator("[data-board-drawer-attachments] [data-board-block]")).toBeVisible();
   await page.locator("[data-board-drawer-close]").click();
 
-  // Phase C has one row, done: its head says so. On a phone no line is drawn under it; on a desktop its line has the bar in ✓.
-  await page.setViewportSize({ width: 390, height: 900 });
+  // Phase C has one row, done: it is drawn, on a phone as on a desktop, with its bar faded green.
   const c = page.locator("[data-steps-phase]", { has: page.locator("h2", { hasText: "Phase C" }) });
-  await expect(c.locator("[data-steps-done]")).toHaveCount(0);
-  await expect(c.locator("[data-step-row]")).toHaveCount(0);
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(c.locator("[data-step-row]")).toHaveCount(1);
-  await expect(c.locator("[data-step-bar]")).toHaveAttribute("data-bar", "done");
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(c.locator("[data-step-row]")).toHaveCount(1);
+    await expect(c.locator("[data-step-bar]")).toHaveAttribute("data-bar", "done");
+  }
 });
 
-test("at 1280 px each open row's bar is in its step's column and a done row's is in ✓", async () => {
+test("at 1280 px each row's bar is in its place's column, done or open, and there is no ✓ column or now band", async () => {
   test.setTimeout(240_000);
   const page = alice;
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -391,8 +405,8 @@ test("at 1280 px each open row's bar is in its step's column and a done row's is
     const cols = [...document.querySelectorAll<HTMLElement>("[data-steps-col]")].map((e) => e.getBoundingClientRect());
     return [...document.querySelectorAll<HTMLElement>("[data-step-row]")].map((line) => {
       const bar = line.querySelector("[data-step-bar]")!.getBoundingClientRect();
-      const col = cols[Number(line.dataset.step)];
-      return { id: line.dataset.stepRow!, lane: line.dataset.lane!, step: Number(line.dataset.step), left: bar.left - col.left, right: col.right - bar.right, top: bar.top, bottom: bar.bottom, line: line.getBoundingClientRect() };
+      const col = cols[Number(line.dataset.place) - 1];
+      return { id: line.dataset.stepRow!, lane: line.dataset.lane!, place: Number(line.dataset.place), left: bar.left - col.left, right: col.right - bar.right, top: bar.top, bottom: bar.bottom, line: line.getBoundingClientRect() };
     });
   });
   // Every bar fills its column, inset 3px.
@@ -404,16 +418,84 @@ test("at 1280 px each open row's bar is in its step's column and a done row's is
     expect(f.bottom).toBeLessThanOrEqual(f.line.bottom);
   }
   const by = (title: string) => found.find((f) => f.id === rowOf[title])!;
-  expect([by("Design").step, by("Build").step, by("Ship").step]).toEqual([1, 2, 3]);
-  // The done row is in ✓ (column 0), and only a done row is.
-  expect(by("Already shipped")).toMatchObject({ lane: "done", step: 0 });
-  expect(found.filter((f) => f.step === 0).map((f) => f.lane)).toEqual(["done"]);
-  expect(found.filter((f) => f.lane !== "done").every((f) => f.step >= 1)).toBe(true);
-  await expect(page.locator('[data-step-bar][data-bar="done"]')).toHaveCount(1);
+  expect([by("Design").place, by("Build").place, by("Ship").place]).toEqual([1, 2, 3]);
+  // Columns are 1 to the last place; none is a ✓, and nothing marks a "now" column.
+  await expect(page.locator("[data-steps-col]")).toHaveText(["1", "2", "3", "4"]);
+  await expect(page.locator("[data-steps-band], [data-steps-now]")).toHaveCount(0);
+  // The row the board shows done is in its place, not in a column of its own.
+  expect(by("Already shipped")).toMatchObject({ lane: "done", place: 1 });
+  await expect(page.locator('[data-step-bar][data-bar="done"]')).toHaveCount(3);
   // The longest open chain is ringed.
   const chain = ((await api(page, "GET", `/api/boards/${board}`)).body!.chain ?? []) as string[];
   for (const id of chain) await expect(page.locator(`[data-step-bar="${id}"]`)).toHaveAttribute("data-crit", "");
   await shot(page, "1280-chart");
+});
+
+/** The colour `--ok` is, as a computed colour. */
+const ok = (p: Page) =>
+  p.evaluate(() => {
+    const e = document.createElement("i");
+    e.style.color = "var(--ok)";
+    document.body.append(e);
+    const c = getComputedStyle(e).color;
+    e.remove();
+    return c;
+  });
+
+/** The computed stroke of the arrow from one chain row to another, and its head. */
+const arrow = (p: Page, from: string, to: string) =>
+  p.locator(`g[data-link-from="${rowOf[from]}"][data-link-to="${rowOf[to]}"] path[data-link-kind]`).evaluate((e) => ({ stroke: getComputedStyle(e).stroke, dash: getComputedStyle(e).strokeDasharray, width: getComputedStyle(e).strokeWidth, head: e.getAttribute("marker-end") }));
+
+test("a done row keeps its place and its title is struck through; the arrow out of it is green, the others keep their kind's colour", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  // The platform: places 1 to 4 over the closed rows' links, steps over the open rows only (C is ready, D waits).
+  const rows = (await api(page, "GET", `/api/boards/${board}`)).body!.zones.flatMap((z: any) => z.rows) as any[];
+  const at = (t: string) => rows.find((r) => r.id === rowOf[t]);
+  expect(CHAIN.map((t) => at(t).place)).toEqual([1, 2, 3, 4]);
+  expect(CHAIN.map((t) => at(t).step)).toEqual([undefined, undefined, 1, 2]);
+  expect(CHAIN.map((t) => at(t).lane === "done")).toEqual([true, true, false, false]);
+  // Each bar is in its place's column; the looks come from the lane and the step: done is faded green, C (step 1) is its lane's, D (step 2, waiting) is outlined.
+  for (const [i, t] of CHAIN.entries()) await expect(bar(page, t)).toHaveAttribute("data-place", String(i + 1));
+  expect(await Promise.all(CHAIN.map((t) => bar(page, t).locator("[data-step-bar]").getAttribute("data-bar")))).toEqual(["done", "done", "next", "wait"]);
+  const cols = await page.locator("[data-steps-col]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()));
+  for (const [i, t] of CHAIN.entries()) {
+    const b = (await bar(page, t).locator("[data-step-bar]").boundingBox())!;
+    expect(b.x, `${t} is in column ${i + 1}`).toBeGreaterThanOrEqual(cols[i].left);
+    expect(b.x + b.width).toBeLessThanOrEqual(cols[i].right + 0.5);
+  }
+  // The done titles are struck through, and only they.
+  const strike = (t: string) => bar(page, t).locator("[data-step-title]").evaluate((e) => getComputedStyle(e).textDecorationLine);
+  expect(await Promise.all(CHAIN.map(strike))).toEqual(["line-through", "line-through", "none", "none"]);
+
+  // Hovering C draws the arrow from B (done: met, green, solid, with a green head) and the arrow to D (open: its kind's colour).
+  const green = await ok(page);
+  await bar(page, "Chain C").hover();
+  await expect(page.locator("path[data-link-kind]")).toHaveCount(2);
+  const met = await arrow(page, "Chain B", "Chain C");
+  expect(met).toMatchObject({ stroke: green, dash: "none", width: "1.25px" });
+  expect(met.head).toMatch(/-met\)$/);
+  const open = await arrow(page, "Chain C", "Chain D");
+  expect(open.stroke).not.toBe(green);
+  await onTheBars(page, ["blocks", "before"]);
+  await shot(page, "1280-chain-c");
+  // A done row has arrows too: A's goes to B and is green.
+  await bar(page, "Chain A").hover();
+  expect((await arrow(page, "Chain A", "Chain B")).stroke).toBe(green);
+  await page.mouse.move(2, 2);
+
+  // At 390 px the done rows are drawn, in their places, and the page doesn't scroll sideways; a tap on C draws its arrows.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(bar(page, "Chain A")).toBeVisible();
+  await expect(bar(page, "Chain B")).toBeVisible();
+  expect(await strike("Chain A")).toBe("line-through");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await bar(page, "Chain C").click();
+  expect((await arrow(page, "Chain B", "Chain C")).stroke).toBe(green);
+  await shot(page, "390-chain-c");
 });
 
 test("dragging the title column's handle by 200 px narrows every step column equally and the width is kept; keys, the clamp and a double-click", async () => {

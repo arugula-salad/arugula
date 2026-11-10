@@ -294,7 +294,7 @@ test.describe("the list", () => {
     const bar = p.locator(".list-preview-bar");
     await expect(bar.locator("button")).toHaveCount(5);
     const order = await bar.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
-    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share…", "Open in browser", "More for Short note"]);
+    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share with a link", "Open in browser", "More for Short note"]);
 
     // Open in browser opens what Copy link copies, in a new tab.
     await page.context().route(link, (route) => route.fulfill({ body: "the copy" }));
@@ -307,9 +307,13 @@ test.describe("the list", () => {
     await expect(none).toBeDisabled();
     await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
 
-    // Share is a block's: the Doc opens beside, then the share dialog.
-    await (await preview(page, "Short note")).locator("button[aria-label='Share…']").click();
+    // Share goes by the Doc's id (Arugula #819): its dialog, and no pane opens.
+    const panes = async () => ((await (await page.request.get("/api/panes")).json()) as unknown[]).length;
+    const before = await panes();
+    await (await preview(page, "Short note")).locator("button[aria-label='Share with a link']").click();
     await expect(page.locator("[data-doc-share-dialog]")).toBeVisible();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    expect(await panes()).toBe(before);
   });
 
   test("the preview has exactly one title, and a bar of the house's buttons over it (Arugula #659)", async ({ page }) => {

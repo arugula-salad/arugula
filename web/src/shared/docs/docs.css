@@ -101,3 +101,36 @@
 .docs-list .project-doc-form {
   margin: var(--space-3) 0 0;
 }
+
+/* The bar over Mine's rows once any is ticked (Arugula #818), and what each Doc's share came to. */
+.docs-share-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  font-size: var(--text-sm);
+}
+
+.docs-share-results {
+  flex: 1 0 100%;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-share-results li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.docs-share-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

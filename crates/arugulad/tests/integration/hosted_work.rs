@@ -256,6 +256,7 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         cert,
         delegation: f.delegation.clone(),
         revocations: vec![],
+        closed: vec![],
         team: None,
         roster: None,
         certs: Default::default(),

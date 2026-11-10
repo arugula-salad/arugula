@@ -1,6 +1,7 @@
 // The Steps view's words and arithmetic (Arugula #763): phases (the board's
-// groups) with their open rows by step, a row's links as arrows, and a
-// reorder as the move the platform takes. Plain functions, for the view and
+// groups) with their rows by place (a done row stays where its links put
+// it, #824), a row's links as arrows, and a reorder as the move the
+// platform takes. Plain functions, for the view and
 // its tests (scripts/boards.test.mjs).
 
 import type { BoardGroup, BoardRow, BoardView, RelationKind } from "../proto";
@@ -13,7 +14,7 @@ export type BoardMode = "lanes" | "steps";
 /** The width at which Steps is the default, in CSS pixels (a phone). */
 export const STEPS_DEFAULT_WIDTH = 390;
 
-/** Step 1 shows this many rows, then folds behind "+M more". */
+/** Column 1 shows this many rows, then folds behind "+M more". */
 export const STEP_ONE_SHOWN = 8;
 
 /** The view this viewer picked, else Steps on a phone and Lanes elsewhere. Storage that refuses reads as no pick. */
@@ -78,15 +79,13 @@ export function clampTitle(width: number, chart: number, phone: boolean): number
 /** What a reorder refused as stale says on the moved row. */
 export const MOVED_FIRST = "moved first by someone else";
 
-/** A phase: a group (none: the rows with no group) with its open rows by step and the count of its done rows. */
+/** A phase: a group (none: the rows with no group) with its rows by place and the count of its done rows. */
 export interface Phase {
   group: BoardGroup | null;
   /** The count of done rows. */
   done: number;
-  /** The done rows, in the order the board holds them: drawn in the chart's ✓ column, and only counted on a phone. */
-  finished: BoardRow[];
-  /** Open rows by step, in the order the board holds them inside each. */
-  steps: { step: number; rows: BoardRow[] }[];
+  /** Rows by place (the chart's column), done or open. Inside a place the done rows come first, then the open rows in the order the board holds them. */
+  places: { place: number; rows: BoardRow[] }[];
 }
 
 /** Every row of the view, flat. */
@@ -100,6 +99,9 @@ function groupOf(v: Pick<BoardView, "groups">, r: Pick<BoardRow, "group">): stri
 /** A row's step: the platform's, else 1 (a note has no item and so no step; it is still open work). */
 export const stepOf = (r: Pick<BoardRow, "step">): number => r.step ?? 1;
 
+/** The column a row is drawn in (#824): its place, which counts done rows and closed links so finishing work moves nothing; else its step. */
+export const placeOf = (r: Pick<BoardRow, "place" | "step">): number => r.place ?? stepOf(r);
+
 /** The row ids of group `group` (null: no group) in the order the board stores them. Empty when the platform doesn't say (`order`). */
 export function groupOrder(v: Pick<BoardView, "groups" | "zones" | "order">, group: string | null): string[] {
   const rows = new Map(rowsOf(v).map((r) => [r.id, r]));
@@ -109,7 +111,7 @@ export function groupOrder(v: Pick<BoardView, "groups" | "zones" | "order">, gro
   });
 }
 
-/** The phases of a board: its groups in order, then the rows with none. Inside a step the rows keep the order the board holds, which a person's drag changes (the platform's `sequence` puts what unblocks most first, which a drag couldn't move). */
+/** The phases of a board: its groups in order, then the rows with none. Inside a place the done rows come first, then the open rows keep the order the board holds, which a person's drag changes (the platform's `sequence` puts what unblocks most first, which a drag couldn't move). */
 export function phases(v: Pick<BoardView, "groups" | "zones" | "order" | "sequence">): Phase[] {
   const all = rowsOf(v);
   const index = new Map((v.order?.length ? v.order : (v.sequence ?? [])).map((id, i) => [id, i]));
@@ -120,25 +122,24 @@ export function phases(v: Pick<BoardView, "groups" | "zones" | "order" | "sequen
   for (const g of slots) {
     const mine = all.filter((r) => groupOf(v, r) === (g?.id ?? null));
     if (g === null && mine.length === 0) continue;
-    const open = mine.filter((r) => r.lane !== "done").sort((a, b) => at(a) - at(b));
-    const byStep = new Map<number, BoardRow[]>();
-    for (const r of open) byStep.set(stepOf(r), [...(byStep.get(stepOf(r)) ?? []), r]);
+    const byPlace = new Map<number, BoardRow[]>();
+    const done = (r: BoardRow) => (r.lane === "done" ? 0 : 1);
+    for (const r of [...mine].sort((a, b) => done(a) - done(b) || at(a) - at(b))) byPlace.set(placeOf(r), [...(byPlace.get(placeOf(r)) ?? []), r]);
     out.push({
       group: g,
-      done: mine.length - open.length,
-      finished: mine.filter((r) => r.lane === "done").sort((a, b) => at(a) - at(b)),
-      steps: [...byStep.entries()].sort((a, b) => a[0] - b[0]).map(([step, rows]) => ({ step, rows })),
+      done: mine.filter((r) => r.lane === "done").length,
+      places: [...byPlace.entries()].sort((a, b) => a[0] - b[0]).map(([place, rows]) => ({ place, rows })),
     });
   }
   return out;
 }
 
-/** The highest step of any open row. */
-export const lastStep = (ps: Phase[]): number => Math.max(1, ...ps.flatMap((p) => p.steps.map((s) => s.step)));
+/** The highest place of any row. */
+export const lastPlace = (ps: Phase[]): number => Math.max(1, ...ps.flatMap((p) => p.places.map((s) => s.place)));
 
-/** A step's rows as shown: step 1 shows `STEP_ONE_SHOWN` of them until it is unfolded; the rest are `more`. */
-export function shown<T>(step: number, rows: T[], unfolded: boolean): { rows: T[]; more: number } {
-  if (step !== 1 || unfolded || rows.length <= STEP_ONE_SHOWN) return { rows, more: 0 };
+/** A column's rows as shown: column 1 shows `STEP_ONE_SHOWN` of them until it is unfolded; the rest are `more`. */
+export function shown<T>(place: number, rows: T[], unfolded: boolean): { rows: T[]; more: number } {
+  if (place !== 1 || unfolded || rows.length <= STEP_ONE_SHOWN) return { rows, more: 0 };
   return { rows: rows.slice(0, STEP_ONE_SHOWN), more: rows.length - STEP_ONE_SHOWN };
 }
 
@@ -151,7 +152,7 @@ export interface Reorder {
   seen: string[];
 }
 
-/** Where a row of `step` goes when it is dropped before `target` in the step, or last in it when `target` is null. `group` is its group's rows as stored. Null when that leaves the group as it is. Only the position inside the group changes: the step is worked out again from the links. */
+/** Where a row of a column goes when it is dropped before `target` in it (`step`: the ids of the column's open rows), or last in it when `target` is null. `group` is its group's rows as stored. Null when that leaves the group as it is. Only the position inside the group changes: the step is worked out again from the links. */
 export function reorder(group: string[], step: string[], id: string, target: string | null): Reorder | null {
   const rest = step.filter((s) => s !== id);
   if (target !== null && !rest.includes(target)) return null;
@@ -171,7 +172,7 @@ export function reorder(group: string[], step: string[], id: string, target: str
   return { before, seen: group };
 }
 
-/** A row one place up or down in its step (the drawer's ↑ and ↓), or null at the end. */
+/** A row one place up or down among its column's open rows (the drawer's ↑ and ↓), or null at the end. */
 export function nudge(group: string[], step: string[], id: string, up: boolean): Reorder | null {
   const i = step.indexOf(id);
   if (i < 0) return null;
@@ -205,13 +206,15 @@ export function linksOf(r: BoardRow, rows: BoardRow[], drawn: Set<string>): Link
   return out;
 }
 
-/** Where row `id` sits: its group's rows as stored (for `seen`) and the ids of its step in the order shown. Null for a row the view doesn't draw (done, or without `order`). */
+/** Where row `id` sits: its group's rows as stored (for `seen`) and the ids of the open rows of its column in the order shown. Null for a row that can't be moved: a done row, or one the view has no `order` for. */
 export function stepPlace(v: Pick<BoardView, "groups" | "zones" | "order" | "sequence">, id: string): { group: string[]; step: string[] } | null {
   for (const p of phases(v)) {
-    for (const s of p.steps) {
+    for (const s of p.places) {
       if (!s.rows.some((r) => r.id === id)) continue;
+      const open = s.rows.filter((r) => r.lane !== "done");
+      if (!open.some((r) => r.id === id)) return null;
       const group = groupOrder(v, p.group?.id ?? null);
-      return group.length ? { group, step: s.rows.map((r) => r.id) } : null;
+      return group.length ? { group, step: open.map((r) => r.id) } : null;
     }
   }
   return null;

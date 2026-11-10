@@ -142,11 +142,22 @@ jobs:
   # phases, with one re-run of a failed job (ci.green.mergeQueue.retries). So this workflow has no merge_group trigger: its chant-verdict,
   # skipped on a group, would count as passed there.
   chant-verdict:
-    # desktop-xvfb is skipped on most pull requests: a skipped job doesn't stop
-    # this, only a failed or cancelled one. desktop-changes is here too, so
+    # It always runs on a pull request and fails when a job it needs failed or
+    # was cancelled: a required check that's skipped counts as passed, so
+    # skipping it on a failure let #2312 merge with its notes check red and
+    # hold the release train (#795). desktop-xvfb is skipped on most pull
+    # requests, and a skipped job passes here. desktop-changes is here too, so
     # its failing can't pass as desktop-xvfb skipped.
-    if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    if: github.event_name == 'pull_request' && always()
     needs: [binaries, quick, notes, desktop-changes, desktop-xvfb]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "binaries, quick and notes passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          red=$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value.result)"')
+          if [ -n "$red" ]; then
+            echo "$red"
+            exit 1
+          fi
+          echo "binaries, quick and notes passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"

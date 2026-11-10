@@ -281,7 +281,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board";
 
 /**
  * [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
@@ -751,6 +751,14 @@ relations?: Array<BoardRowRelation>,
  */
 step?: number, 
 /**
+ * The column the row sits in on the Steps chart (Arugula #824): the
+ * same longest-path layout as [`Row::step`], but over every row with an
+ * issue or a PR, done ones included, using their ordering edges whether
+ * the other end is open or closed. So finishing work never moves a row.
+ * Absent for a row with no issue or PR.
+ */
+place?: number, 
+/**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
@@ -1108,12 +1116,7 @@ export type ChatAskAnswer = { choice: string, };
  * sets their choice (absent: leave it). `machines`: whose online state
  * the page wants too (the machines its messages' agents are on).
  */
-export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, 
-/**
- * The reader's live presence choice, when they changed it (kept with
- * `live-presence` on; ignored with it off).
- */
-live: LivePresence | null, machines: Array<string>, };
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
 
 /**
  * A public channel in the browser (#118).
@@ -1513,12 +1516,7 @@ export type ChatPresence = {
 /**
  * The reader's own choice.
  */
-mode: PresenceMode, 
-/**
- * The reader's live presence choice, with the `live-presence` Labs flag
- * on for them; absent with it off, which is how a page learns the flag.
- */
-live?: LivePresence | null, people: Array<ChatPresent>, machines_online: Array<string>, };
+mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
 
 /**
  * One teammate's presence.
@@ -2349,6 +2347,12 @@ platform?: DocOnPlatform, };
  * a figure and not words, or a prototype's code reads as a long essay.
  */
 export type DocSectionShape = { heading: string, words: number, figures: number, };
+
+/**
+ * `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+ * now (it has one already); otherwise the Doc gets a link.
+ */
+export type DocShareRequest = { update: boolean, };
 
 /**
  * When a Doc was shared with a link, and last updated.
@@ -3539,14 +3543,6 @@ process?: string,
  * Started from the pane asked about (it or a process under it).
  */
 pane?: boolean, };
-
-/**
- * Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
- * account so every page agrees: `off` (the default), in no arugula.stream
- * room; `watching`, in your teams' rooms, seeing their live faces. Live
- * (your camera) isn't kept: it's per window, on top of `watching`.
- */
-export type LivePresence = "off" | "watching";
 
 /**
  * A machine that blocks can run on instead of this host: a throwaway
@@ -6053,6 +6049,7 @@ export const OPS = {
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
   "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
+  "doc.share": { method: "POST", path: "/api/docs/{id}/share" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
@@ -6154,7 +6151,6 @@ export const FLAGS = [
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
   { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
-  { name: "live-presence", title: "Live presence", about: "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.", default: false, local_only: false },
 ] as const;
 
 /** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old

@@ -234,6 +234,33 @@ until 5756aaa21, while other work landed. A failure that passes on the
 retry is a flaky test, which goes in the quarantine (testing.md,
 "Quarantine").
 
+### CI alerts as native issues
+
+Arugula can turn chant's CI events into native issues for any project (native
+#774, #2277): a red branch opens one "main is red" issue, the bisect's culprit
+and a branch still red after `staleAfter` hours comment on it, and the next
+green commit closes it. The control side is live; Arugula's own repo doesn't
+use it yet, and ci-red's issue above is still what tells you main is red.
+
+To turn it on for a repository:
+
+1. In the project's settings, open **CI alerts** and click **Turn on**. It
+   shows the URL chant's tick posts to and a key that signs its events. The
+   key is shown once; **Rotate key** makes a new one and **Turn off** removes it.
+2. Add both as repository secrets, for Arugula's repo
+   `ARUGULA_CI_NOTIFY_URL` and `ARUGULA_CI_NOTIFY_KEY`.
+3. Tick the people a new red issue mentions (and assigns, if you choose).
+4. Name them in `ci.green.notify` in `chant.workspace.json` (`webhook`, `key`,
+   `events`, `staleAfter`), pass the two secrets to the tick's step in
+   `chant-ci-green.yml`, and merge. For Arugula's repo that change is waiting
+   in #2278, a draft: don't merge it before steps 1 to 3, so the tick never
+   runs with a notify config and no secrets.
+
+Events are signed (`x-chant-signature`, HMAC-SHA256 over
+`<x-chant-timestamp>.<body>`, within 5 minutes), and an unknown project, alerts
+that are off and a bad signature all get the same 401. Once a real red and green
+have gone through, ci-red's 6-hour timer goes (#1987).
+
 ### Merging through the queue
 
 Main moves while a wave's rollup is tested, and each time the lead
@@ -391,8 +418,9 @@ before the tag, however fast main moves, and merges landing meanwhile change
 nothing: the pick is fixed when you name it. After the tag, a commit adds the
 notes and the client fixtures to main.
 
-`release-train.yml` does this on its own every 4 hours (`scripts/release-train`,
-#724), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
+`release-train.yml` does this on its own each time chant's tick finishes on main,
+at most once every 2 hours after the last release (`scripts/release-train`, #724,
+Arugula #794), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
 commit with the daemon's green tag goes out as a patch, with notes built from what
 its pull requests added to `docs/notes/` (`scripts/release-notes.mjs`), if they added
 any. Its rare jobs run first, and a failure holds the release while merges go on. A
