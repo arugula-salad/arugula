@@ -387,7 +387,7 @@ async fn mirror_relations(
     now: u64,
 ) -> anyhow::Result<Option<()>> {
     let kept = read_relations(app, &job.id, &job.workspace_slug, &job.source_project_id, provider, items, now, || {
-        Ok(app.db.renew_backfill(job, now_ms())?)
+        app.db.renew_backfill(job, now_ms())
     })
     .await?;
     Ok(kept.then_some(()))
