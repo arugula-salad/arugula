@@ -265,6 +265,14 @@ pub(crate) fn title_ok(t: &str) -> Result<String, ApiError> {
     one_line(t, "title", wire::TITLE_MAX, false)
 }
 
+/// A layout a person or an agent names: `doc`, `tabs` or `prototype`.
+fn layout_ok(l: Option<&str>) -> Result<Option<&str>, ApiError> {
+    match l {
+        None | Some("doc" | "tabs" | "prototype") => Ok(l),
+        Some(_) => Err(bad("a layout is doc, tabs or prototype")),
+    }
+}
+
 pub(crate) fn heading_ok(h: &str) -> Result<String, ApiError> {
     one_line(h, "heading", wire::HEADING_MAX, false)
 }
@@ -318,6 +326,7 @@ pub(crate) fn doc_wire(d: &db::Stored, names: &Names) -> wire::Doc {
             id: m.doc.clone(),
             machine_name: None,
         }),
+        layout: d.layout.clone(),
     }
 }
 
@@ -392,7 +401,9 @@ pub async fn create(app: &Platform, by: By<'_>, project: &str, new: &wire::NewDo
         By::Person(a) => (a, None),
         By::Session { session, .. } => ("", Some(session)),
     };
-    let n = db::NewDoc { project: &place.project, title: &title, made_by, made_by_session, sections: &sections };
+    let layout = layout_ok(new.layout.as_deref())?;
+    let n =
+        db::NewDoc { project: &place.project, title: &title, made_by, made_by_session, sections: &sections, layout };
     let doc = app.db.create_project_doc(&n, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
     view(app, by, &place, &doc).await
 }
@@ -421,12 +432,14 @@ pub async fn write(
     let title = w.title.as_deref().map(title_ok).transpose()?;
     let heading = w.heading.as_deref().map(heading_ok).transpose()?;
     let intent = w.intent.as_deref().map(intent_ok).transpose()?;
+    let layout = layout_ok(w.layout.as_deref())?;
     let write = db::Write {
         title: title.as_deref(),
         section: w.section.as_deref(),
         heading: heading.as_deref(),
         intent: intent.as_deref(),
         body: w.markdown.as_deref(),
+        layout,
     };
     let doc = app.db.write_project_doc(id, &write, now_ms())?.map_err(refused)?;
     changed(app, &place.project, id);

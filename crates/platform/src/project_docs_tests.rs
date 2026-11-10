@@ -181,7 +181,7 @@ fn section<'a>(id: &'a str, heading: &'a str, body: Option<&'a str>) -> MachineS
 fn copy_in(app: &crate::Platform, project: &str, account: &str, title: &str, body: &str) -> String {
     let sections = [section("a", "Goals", Some(body)), section("b", "Risks", None)];
     let key = MachineKey { machine: "geek", doc: "d1" };
-    let d = MachineDoc { title, sections: &sections };
+    let d = MachineDoc { title, sections: &sections, layout: None };
     let (doc, _) = app.db.put_machine_doc(key, project, account, &d, 10, DOCS_MAX).unwrap().unwrap();
     app.db.put_project_doc_asset(&doc.id, "chart.png", "image/png", PNG, 11).unwrap().unwrap();
     doc.id
@@ -250,7 +250,7 @@ async fn sharing_a_copy_makes_a_team_doc_and_update_copy_refreshes_it() {
     // The machine changes the copy: now it's stale too. Update copy asks first.
     let sections = [section("a", "Goals", Some("Ship it, twice.")), section("c", "Notes", Some("More."))];
     let key = MachineKey { machine: "geek", doc: "d1" };
-    let d = MachineDoc { title: "Release plan 2", sections: &sections };
+    let d = MachineDoc { title: "Release plan 2", sections: &sections, layout: None };
     app.db.put_machine_doc(key, &pa, "a", &d, 20, DOCS_MAX).unwrap().unwrap();
     let (_, l) = call(&base, "a", "GET", &copies("personal", &copy), None).await;
     assert_eq!((&l["copies"][0]["stale"], &l["copies"][0]["edited"]), (&json!(true), &json!(true)));
@@ -417,7 +417,7 @@ async fn an_owner_removed_from_the_team_cannot_update_its_copy() {
     let team = b["doc"]["id"].as_str().unwrap().to_owned();
     // The machine moves on.
     let sections = [section("a", "Goals", Some("v2"))];
-    let d = MachineDoc { title: "Plan", sections: &sections };
+    let d = MachineDoc { title: "Plan", sections: &sections, layout: None };
     app.db.put_machine_doc(MachineKey { machine: "geek", doc: "d1" }, &pa, "a", &d, 20, DOCS_MAX).unwrap().unwrap();
     let up = format!("{}/{w}", copies("personal", &copy));
 
@@ -438,4 +438,76 @@ async fn an_owner_removed_from_the_team_cannot_update_its_copy() {
     assert_eq!(l["copies"].as_array().unwrap().len(), 0, "{l}");
     let (_, d) = call(&base, "c", "GET", &path(&w, &team), None).await;
     assert_eq!(bodies(&d), [json!("v1"), Value::Null], "the team's Doc is as it was: {d}");
+}
+
+/// A Doc made as `tabs` reads back as it, a plain one names no layout, an
+/// edit that omits it leaves it and one that names `doc` clears it, and a
+/// layout that isn't one is refused (#826).
+#[tokio::test]
+async fn a_doc_keeps_its_layout_through_make_read_and_write() {
+    let (_hub, _app, base, t, _u) = seeded().await;
+    let (st, v) = make(&base, "a", &t, json!({ "title": "Plain" })).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["doc"].get("layout").is_none(), "a plain Doc's body is what it was: {v}");
+    let (st, v) =
+        make(&base, "a", &t, json!({ "title": "Tabbed", "layout": "tabs", "sections": [{ "heading": "A" }] })).await;
+    assert_eq!((st, &v["doc"]["layout"]), (200, &json!("tabs")), "{v}");
+    let id = v["doc"]["id"].as_str().unwrap().to_owned();
+    let (_, v) = call(&base, "b", "GET", &path(&t, &id), None).await;
+    assert_eq!(v["doc"]["layout"], "tabs");
+    let (_, l) = call(&base, "b", "GET", &format!("/api/projects/{t}/docs"), None).await;
+    assert!(l["docs"].as_array().unwrap().iter().any(|d| d["id"] == json!(id) && d["layout"] == "tabs"), "{l}");
+
+    // Omitted: left as it is. Alone, a layout is a change.
+    let (st, v) = put(&base, "b", &t, &id, json!({ "title": "Tabbed, renamed" })).await;
+    assert_eq!((st, &v["doc"]["layout"]), (200, &json!("tabs")), "{v}");
+    let (st, v) = put(&base, "b", &t, &id, json!({ "layout": "prototype" })).await;
+    assert_eq!((st, &v["doc"]["layout"]), (200, &json!("prototype")), "{v}");
+    let (st, v) = put(&base, "b", &t, &id, json!({ "layout": "doc" })).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["doc"].get("layout").is_none(), "doc is plain: {v}");
+    // A name nobody draws is refused, on make and on write.
+    assert_eq!(put(&base, "b", &t, &id, json!({ "layout": "grid" })).await.0, 400);
+    assert_eq!(make(&base, "a", &t, json!({ "title": "X", "layout": "grid" })).await.0, 400);
+}
+
+/// A machine's put is the whole Doc: its layout is set, changed, and, when a
+/// put doesn't name one (an older daemon), `doc` and not what it was. Share
+/// with… and Update copy carry it (#826).
+#[tokio::test]
+async fn a_machines_put_sets_the_layout_and_a_missing_one_is_doc() {
+    let (_hub, app, base, t, _u) = seeded().await;
+    let pa = personal(&app, "a").await;
+    let sections = [section("a", "Goals", Some("Ship it.")), section("b", "Risks", None)];
+    let key = MachineKey { machine: "geek", doc: "d1" };
+    let put_as = |layout: Option<&str>, at: u64| {
+        let d = MachineDoc { title: "Plan", sections: &sections, layout };
+        app.db.put_machine_doc(key, &pa, "a", &d, at, DOCS_MAX).unwrap().unwrap()
+    };
+    let (doc, changed) = put_as(Some("tabs"), 10);
+    assert_eq!((doc.layout.as_deref(), changed), (Some("tabs"), true));
+    let (same, changed) = put_as(Some("tabs"), 11);
+    assert_eq!((same.layout.as_deref(), changed, same.rev), (Some("tabs"), false, doc.rev));
+
+    // Share with… makes the team Doc as it is laid out.
+    let (st, v) = call(&base, "a", "POST", &copies("personal", &doc.id), Some(json!({ "to": t }))).await;
+    assert_eq!((st, &v["doc"]["layout"]), (200, &json!("tabs")), "{v}");
+    let team = v["doc"]["id"].as_str().unwrap().to_owned();
+
+    // The machine puts the layout again as prototype; Update copy carries it.
+    let (doc, changed) = put_as(Some("prototype"), 20);
+    assert_eq!((doc.layout.as_deref(), changed, doc.rev > same.rev), (Some("prototype"), true, true));
+    let up = format!("{}/{t}", copies("personal", &doc.id));
+    let (st, v) = call(&base, "a", "PUT", &up, Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "b", "GET", &path(&t, &team), None).await;
+    assert_eq!(v["doc"]["layout"], "prototype");
+
+    // An older daemon's put names none: the copy is `doc` again.
+    let (doc, changed) = put_as(None, 30);
+    assert_eq!((doc.layout, changed), (None, true));
+    let (st, v) = call(&base, "a", "PUT", &up, Some(json!({ "replace": true }))).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "b", "GET", &path(&t, &team), None).await;
+    assert!(v["doc"].get("layout").is_none(), "{v}");
 }

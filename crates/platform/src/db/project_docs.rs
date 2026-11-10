@@ -53,6 +53,18 @@ pub struct Stored {
     /// the copy and its project, the copy's rev at the snapshot and this
     /// Doc's own rev right after it.
     pub made_from: Option<MadeFrom>,
+    /// `tabs` or `prototype`; none is a plain Doc.
+    pub layout: Option<String>,
+}
+
+/// A layout as kept: `tabs` or `prototype`, and none for `doc` or a name
+/// that isn't known, so a stored layout is always one a page draws.
+pub fn layout_kept(name: &str) -> Option<&'static str> {
+    match name {
+        "tabs" => Some("tabs"),
+        "prototype" => Some("prototype"),
+        _ => None,
+    }
 }
 
 /// Where a team Doc was made from, and the revs it was made at.
@@ -101,6 +113,8 @@ pub struct MachineKey<'a> {
 pub struct MachineDoc<'a> {
     pub title: &'a str,
     pub sections: &'a [MachineSection<'a>],
+    /// Missing is `doc`: a put is the whole Doc.
+    pub layout: Option<&'a str>,
 }
 
 /// One of a machine Doc's sections, under the machine's own id.
@@ -118,6 +132,7 @@ pub struct NewDoc<'a> {
     pub made_by: &'a str,
     pub made_by_session: Option<&'a str>,
     pub sections: &'a [NewSection<'a>],
+    pub layout: Option<&'a str>,
 }
 
 /// What a write changes; see `wire::project_docs::DocWrite`.
@@ -128,6 +143,8 @@ pub struct Write<'a> {
     pub heading: Option<&'a str>,
     pub intent: Option<&'a str>,
     pub body: Option<&'a str>,
+    /// Sets the layout; none leaves it.
+    pub layout: Option<&'a str>,
 }
 
 /// Why a change to a Doc wasn't made.
@@ -147,7 +164,7 @@ pub enum Refused {
 const COLS: &str = "d.id, d.project_id, d.title, d.made_by, d.made_by_session, d.rev, d.created_at, d.updated_at, \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id), \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id AND s.body IS NOT NULL), \
-                    d.machine, d.machine_doc, d.made_from_project, d.made_from_doc, d.made_from_rev, d.made_rev";
+                    d.machine, d.machine_doc, d.made_from_project, d.made_from_doc, d.made_from_rev, d.made_rev, d.layout";
 
 fn doc_row(r: &Row) -> Result<Stored> {
     let made_from = match (r.get::<Option<String>>(12)?, r.get::<Option<String>>(13)?) {
@@ -173,6 +190,7 @@ fn doc_row(r: &Row) -> Result<Stored> {
         machine: r.get(10)?,
         machine_doc: r.get(11)?,
         made_from,
+        layout: r.get(16)?,
     })
 }
 
@@ -227,6 +245,7 @@ struct CopyRead {
     project: String,
     title: String,
     rev: u64,
+    layout: Option<String>,
     sections: Vec<Section>,
     /// Name, type and bytes.
     assets: Vec<(String, String, Vec<u8>)>,
@@ -235,14 +254,14 @@ struct CopyRead {
 /// The Doc `src` with its sections and pictures, its row held; none for
 /// a Doc that isn't there.
 fn read_copy(c: &impl Sql, src: &str) -> Result<Option<CopyRead>> {
-    let row: Option<(String, String, u64)> = c
+    let row: Option<(String, String, u64, Option<String>)> = c
         .query_row(
-            &format!("SELECT project_id, title, rev FROM project_docs WHERE id = ?1{}", c.for_update()),
+            &format!("SELECT project_id, title, rev, layout FROM project_docs WHERE id = ?1{}", c.for_update()),
             params![src],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((project, title, rev)) = row else {
+    let Some((project, title, rev, layout)) = row else {
         return Ok(None);
     };
     let sections = sections_of(c, src)?;
@@ -251,7 +270,7 @@ fn read_copy(c: &impl Sql, src: &str) -> Result<Option<CopyRead>> {
         params![src],
         |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?, r.get::<Vec<u8>>(2)?)),
     )?;
-    Ok(Some(CopyRead { project, title, rev, sections, assets }))
+    Ok(Some(CopyRead { project, title, rev, layout, sections, assets }))
 }
 
 /// Put a copy's sections (numbered from `after` + 1) and pictures into the
@@ -324,9 +343,9 @@ impl Db {
         }
         let id = new_id();
         tx.execute(
-            "INSERT INTO project_docs (id, project_id, title, made_by, made_by_session, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-            params![id, n.project, n.title, n.made_by, n.made_by_session, at],
+            "INSERT INTO project_docs (id, project_id, title, made_by, made_by_session, created_at, updated_at, layout)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
+            params![id, n.project, n.title, n.made_by, n.made_by_session, at, n.layout.and_then(layout_kept)],
         )?;
         for (i, s) in n.sections.iter().enumerate() {
             tx.execute(
@@ -364,8 +383,10 @@ impl Db {
     /// heading), or a new section at the end. Its size is counted after
     /// the change, against what is there.
     pub fn write_project_doc(&self, id: &str, w: &Write, at: u64) -> Result<std::result::Result<Stored, Refused>> {
-        if w.title.is_none() && w.section.is_none() && w.heading.is_none() {
-            return Ok(Err(Refused::Bad("nothing to change: give a title, or a section or a heading".into())));
+        if w.title.is_none() && w.section.is_none() && w.heading.is_none() && w.layout.is_none() {
+            return Ok(Err(Refused::Bad(
+                "nothing to change: give a title, a layout, or a section or a heading".into(),
+            )));
         }
         if w.section.is_some() && w.body.is_none() && w.heading.is_none() && w.intent.is_none() {
             return Ok(Err(Refused::Bad("give the section's markdown (or its heading)".into())));
@@ -375,14 +396,17 @@ impl Db {
         }
         let mut c = self.c();
         let tx = c.immediate()?;
-        let Some(doc) = tx
-            .query_row(&format!("SELECT title FROM project_docs WHERE id = ?1{}", tx.for_update()), params![id], |r| {
-                r.get::<String>(0)
-            })
+        let Some((doc, was)) = tx
+            .query_row(
+                &format!("SELECT title, layout FROM project_docs WHERE id = ?1{}", tx.for_update()),
+                params![id],
+                |r| Ok((r.get::<String>(0)?, r.get::<Option<String>>(1)?)),
+            )
             .optional()?
         else {
             return Ok(Err(Refused::Missing("no such Doc")));
         };
+        let layout = w.layout.map_or(was, |l| layout_kept(l).map(str::to_owned));
         let mut sections = sections_of(&tx, id)?;
         let title = w.title.unwrap_or(&doc);
         match w.section {
@@ -436,8 +460,8 @@ impl Db {
             )?;
         }
         tx.execute(
-            "UPDATE project_docs SET title = ?2, rev = rev + 1, updated_at = ?3 WHERE id = ?1",
-            params![id, title, at],
+            "UPDATE project_docs SET title = ?2, rev = rev + 1, updated_at = ?3, layout = ?4 WHERE id = ?1",
+            params![id, title, at, layout],
         )?;
         let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
         tx.commit()?;
@@ -530,9 +554,9 @@ impl Db {
         let id = new_id();
         tx.execute(
             "INSERT INTO project_docs (id, project_id, title, made_by, created_at, updated_at, made_from_project,
-                                       made_from_doc, made_from_rev, made_rev)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, 1)",
-            params![id, to, from.title, made_by, at, from.project, src, from.rev],
+                                       made_from_doc, made_from_rev, made_rev, layout)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, 1, ?9)",
+            params![id, to, from.title, made_by, at, from.project, src, from.rev, from.layout],
         )?;
         put_copy(&tx, &id, 0, &from, &std::collections::HashMap::new(), at)?;
         let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
@@ -586,8 +610,8 @@ impl Db {
         // is what "edited since" is counted from.
         tx.execute(
             "UPDATE project_docs SET title = ?2, rev = rev + 1, made_rev = rev + 1, updated_at = ?3,
-                    made_from_project = ?4, made_from_rev = ?5 WHERE id = ?1",
-            params![id, from.title, at, from.project, from.rev],
+                    made_from_project = ?4, made_from_rev = ?5, layout = ?6 WHERE id = ?1",
+            params![id, from.title, at, from.project, from.rev, from.layout],
         )?;
         let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
         tx.commit()?;
@@ -647,14 +671,15 @@ impl Db {
         if held.is_none() {
             return Ok(Err(Refused::Missing("no such project")));
         }
-        let found: Option<(String, String, String)> = tx
+        let layout = d.layout.and_then(layout_kept);
+        let found: Option<(String, String, String, Option<String>)> = tx
             .query_row(
                 &format!(
-                    "SELECT id, project_id, title FROM project_docs WHERE machine = ?1 AND machine_doc = ?2{}",
+                    "SELECT id, project_id, title, layout FROM project_docs WHERE machine = ?1 AND machine_doc = ?2{}",
                     tx.for_update()
                 ),
                 params![key.machine, key.doc],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()?;
         let (id, changed) = match found {
@@ -668,21 +693,22 @@ impl Db {
                 }
                 let id = new_id();
                 tx.execute(
-                    "INSERT INTO project_docs (id, project_id, title, made_by, machine, machine_doc, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-                    params![id, project, d.title, made_by, key.machine, key.doc, at],
+                    "INSERT INTO project_docs (id, project_id, title, made_by, machine, machine_doc, created_at, updated_at, layout)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+                    params![id, project, d.title, made_by, key.machine, key.doc, at, layout],
                 )?;
                 for (i, s) in d.sections.iter().enumerate() {
                     insert_section(&tx, &id, i, s, at)?;
                 }
                 (id, true)
             }
-            Some((id, there, title)) => {
+            Some((id, there, title, was)) => {
                 if there != project {
                     return Ok(Err(Refused::Bad("the Doc moved meanwhile: try again".into())));
                 }
                 let have = sections_of(&tx, &id)?;
-                let mut changed = title != d.title || have.len() != d.sections.len();
+                // A put is the whole Doc: no layout in it is `doc`, not what was.
+                let mut changed = title != d.title || have.len() != d.sections.len() || was.as_deref() != layout;
                 // Row by row: a section kept as it was keeps its rev.
                 for (i, s) in d.sections.iter().enumerate() {
                     match have.iter().position(|h| h.id == s.id) {
@@ -711,8 +737,8 @@ impl Db {
                 }
                 if changed {
                     tx.execute(
-                        "UPDATE project_docs SET title = ?2, rev = rev + 1, updated_at = ?3 WHERE id = ?1",
-                        params![id, d.title, at],
+                        "UPDATE project_docs SET title = ?2, rev = rev + 1, updated_at = ?3, layout = ?4 WHERE id = ?1",
+                        params![id, d.title, at, layout],
                     )?;
                 }
                 (id, changed)

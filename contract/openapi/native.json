@@ -9452,6 +9452,13 @@
             "description": "`pdc_` and 32 hex characters.",
             "type": "string"
           },
+          "layout": {
+            "description": "How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when\nit isn't `doc`: absent, or a name the reader doesn't know, is `doc`,\nand an older page ignores it and draws the column.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "machine": {
             "default": null,
             "description": "The machine this Doc is a copy from, or null for one made here. A\ncopy is read-only here: the machine's Doc is the truth (#678).",
@@ -9627,7 +9634,7 @@
         "type": "object"
       },
       "DocWrite": {
-        "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
+        "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
         "properties": {
           "heading": {
             "default": null,
@@ -9638,6 +9645,13 @@
           },
           "intent": {
             "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "layout": {
+            "description": "Sets the layout (`doc`, `tabs` or `prototype`); omitted leaves it as\nit is.",
             "type": [
               "string",
               "null"
@@ -11366,6 +11380,13 @@
       "NewDoc": {
         "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
         "properties": {
+          "layout": {
+            "description": "`doc`, `tabs` or `prototype`; missing is `doc`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sections": {
             "default": [],
             "items": {

@@ -338,6 +338,7 @@ fn new_doc(title: &str) -> arugula_control_wire::project_docs::NewDoc {
             },
             NewSection { heading: "Next".into(), intent: "what to do".into(), markdown: None },
         ],
+        layout: None,
     }
 }
 

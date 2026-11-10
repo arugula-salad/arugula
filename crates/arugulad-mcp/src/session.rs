@@ -331,7 +331,7 @@ impl Server {
             .into_iter()
             .map(|s| NewSection { heading: s.heading, intent: s.intent, markdown: s.markdown })
             .collect();
-        let doc = NewDoc { title: a.title, sections };
+        let doc = NewDoc { title: a.title, sections, layout: None };
         let (view, url) = self.doc(session, SessionIssuesOp::DocCreate { doc }).await?;
         doc_done("Made", &view, &url)
     }

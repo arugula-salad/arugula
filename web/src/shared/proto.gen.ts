@@ -3732,7 +3732,11 @@ assignees: Array<string>, };
 /**
  * `POST` [`PROJECT_DOCS`]: make a Doc.
  */
-export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSection>, };
+export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSection>, 
+/**
+ * `doc`, `tabs` or `prototype`; missing is `doc`.
+ */
+layout?: string, };
 
 /**
  * A new Doc's section: a heading, and its Markdown now or an intent for
@@ -4474,7 +4478,13 @@ machine_name: string | null,
  * For a team Doc made from a Doc of its owner's (Share with…): where
  * from. Null for any other Doc, and from an older platform.
  */
-made_from: ProjectDocMadeFrom | null, };
+made_from: ProjectDocMadeFrom | null, 
+/**
+ * How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
+ * it isn't `doc`: absent, or a name the reader doesn't know, is `doc`,
+ * and an older page ignores it and draws the column.
+ */
+layout?: string, };
 
 /**
  * One picture of a Doc, without its bytes: the shape a machine Doc's
@@ -4584,12 +4594,17 @@ writer: boolean,
 deleter: boolean, };
 
 /**
- * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,
+ * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
  * that section's body becomes `markdown` (and its heading `heading`, when
  * given); with no `section` but a `heading`, a section is added at the
  * end, written when `markdown` is given and pending otherwise.
  */
-export type ProjectDocWrite = { title: string | null, section: string | null, heading: string | null, intent: string | null, markdown: string | null, };
+export type ProjectDocWrite = { title: string | null, section: string | null, heading: string | null, intent: string | null, markdown: string | null, 
+/**
+ * Sets the layout (`doc`, `tabs` or `prototype`); omitted leaves it as
+ * it is.
+ */
+layout?: string, };
 
 export type ProjectMember = { account: string, 
 /**
