@@ -25,6 +25,8 @@ members = [
     "../crates/arugula-platform",
     "../crates/control",
     "../crates/control-common",
+    # The load test's generator (#530): not shipped.
+    "../crates/control-load",
     "../crates/platform",
     "../crates/platform-agents",
     "../crates/platform-all",

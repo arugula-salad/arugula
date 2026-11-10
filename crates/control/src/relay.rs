@@ -309,7 +309,11 @@ impl Relay {
         if side == Side::Daemon {
             self.open.daemons.fetch_add(1, Ordering::Relaxed);
         }
-        if self.open.full.swap(false, Ordering::Relaxed) {
+        // Room again once it's below 90% of the ceiling, not at the first
+        // socket that closes (#530: at the ceiling, full and room flapped
+        // in the log every second).
+        let room = self.caps.total == 0 || all.load(Ordering::Relaxed) < self.caps.total * 9 / 10;
+        if room && self.open.full.swap(false, Ordering::Relaxed) {
             info!(refused = self.open.refused.load(Ordering::Relaxed), "the relay has room again");
         }
         Ok(Ticket {

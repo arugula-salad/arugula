@@ -48,5 +48,10 @@ hex = { workspace = true }
 schemars = "1.0"
 tokio = { workspace = true, features = ["full"] }
 
+[features]
+# A staging control for the load test (#530): client addresses it names
+# skip the per-address limits (`Limits::exempt`). Never in a release build.
+loadtest = []
+
 [lints]
 workspace = true

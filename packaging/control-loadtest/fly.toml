@@ -1,0 +1,52 @@
+# The load test's staging copy of control's hub (#530): packaging/control's
+# fly.toml, sized the same (one shared-cpu-1x, 1 GB, the same connection
+# limits and relay ceiling), with nothing that reaches anyone real. No
+# GitHub App, no SMTP, no PostHog, no Litestream, no blocks or previews
+# domain, no platform page host: none of their secrets or variables are set.
+# Its binary is a `loadtest` build (crates/control/src/loadtest.rs), which
+# starts only at a `-loadtest` host and lets the generators' addresses
+# (ARUGULA_LOADTEST_EXEMPT_IPS, a secret) past the per-address limits.
+#
+# Secrets (fresh, never prod's): ARUGULA_PLATFORM_KEY (the platform's
+# too), ARUGULA_LOADTEST_EXEMPT_IPS. docs/control-ops.md, "Load testing",
+# has bringing it up, scaling it to zero and tearing it down.
+app = "arugula-control-loadtest"
+primary_region = "ewr"
+kill_signal = "SIGTERM"
+kill_timeout = "15s"
+
+[env]
+  ARUGULA_CONTROL_URL = "https://arugula-control-loadtest.fly.dev"
+  ARUGULA_CONTROL_LISTEN = "0.0.0.0:7690"
+  ARUGULA_CONTROL_DB = "/data/control.db"
+  ARUGULA_CONTROL_PROXY_HEADER = "Fly-Client-IP"
+  ARUGULA_RELAY_MAX_TOTAL = "5000"
+  # The platform out of process, through Flycast, as in production.
+  ARUGULA_PLATFORM = "http://arugula-platform-loadtest.flycast:7700"
+
+[[mounts]]
+  source = "control_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 7690
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 6000
+    hard_limit = 8000
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/control.json"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

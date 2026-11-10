@@ -513,6 +513,18 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
         conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
     }
+    // Lookups by a device's id alone, and by a machine's account or team
+    // (#530): every signed request from a machine or the CLI finds its
+    // certificate by id (`approved_cert`), and every page's directory lists
+    // its account's machines, each by reading the whole table. With 5,000
+    // machines enrolled that alone kept a core busy. Here, after the columns
+    // the migrations above add.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS devices_id ON devices (id);
+         CREATE INDEX IF NOT EXISTS daemons_account ON daemons (account);
+         CREATE INDEX IF NOT EXISTS daemons_team ON daemons (team);
+         CREATE INDEX IF NOT EXISTS revocations_account ON revocations (account);",
+    )?;
     Ok(())
 }
 
@@ -3295,6 +3307,31 @@ mod tests {
         drop(db);
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    /// What every signed request and every page's directory look up is
+    /// found by an index, not by reading the whole table (#530).
+    #[test]
+    fn hot_lookups_use_an_index() {
+        let db = Db::memory();
+        let c = db.conn();
+        for q in [
+            "SELECT cert FROM devices WHERE id = 'd' AND kind = 'daemon' AND approved = 1",
+            "SELECT EXISTS (SELECT 1 FROM devices WHERE id = 'd')",
+            "SELECT id, name, urls, last_seen FROM daemons WHERE account = 'a' ORDER BY name",
+            "SELECT id FROM daemons WHERE team = 't'",
+            "SELECT body FROM revocations WHERE account = 'a'",
+        ] {
+            let plan: Vec<String> = c
+                .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+                .unwrap()
+                .query_map([], |r| r.get(3))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert!(plan.iter().any(|p| p.starts_with("SEARCH")), "{q}: {plan:?}");
+            assert!(!plan.iter().any(|p| p.starts_with("SCAN") && !p.contains("CONSTANT ROW")), "{q}: {plan:?}");
         }
     }
 

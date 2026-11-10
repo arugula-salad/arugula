@@ -3506,6 +3506,56 @@ curl -sG https://api.fly.io/prometheus/personal/api/v1/query \
   -H "Authorization: FlyV1 $(fly auth token)" --data-urlencode 'query=arugula_relay_sockets'
 ```
 
+### Load testing (#530)
+
+The load test runs against a staging copy of control, never the hosted
+one: `arugula-control-loadtest` (the hub, `packaging/control-loadtest/fly.toml`)
+and `arugula-platform-loadtest` (the platform, `platform.fly.toml` beside
+it) on their own Managed Postgres 17 (`fly mpg create --pg-major-version 17`:
+the platform's schema needs it), `arugula-platform-loadtest-db17`, each
+sized as production is. Their secrets are made for them (a fresh
+`ARUGULA_PLATFORM_KEY`, the generators' addresses), and nothing that
+reaches a third party is set: no GitHub App, SMTP, PostHog, Stripe, E2B or
+Litestream.
+
+The hub there is a `loadtest` build (`crates/control/src/loadtest.rs`):
+the addresses in `ARUGULA_LOADTEST_EXEMPT_IPS` skip the per-address limits
+(10 sign-ups and 30 joins an hour), so one host can sign up thousands of
+people and enrol their machines through the real routes. A release never
+has the feature, and a `loadtest` build refuses to start unless every URL
+it answers at is a loopback one or a `-loadtest` host.
+
+The generator is `crates/control-load` (`arugula-control-load`, its
+README): fake daemons dialed in to the relay, pages on `/api/relay/m`
+with pane output at a busy pane's pace (#443), and a sign-up burst.
+`crates/control-load/fly-watch.sh` records what Fly sees (memory, CPU,
+connections, the edge's response times) alongside. Run both on geek under
+`nice -n 19`, and watch its load: CI's pods share it.
+
+Bringing it up (from a checkout, with `just web` built):
+
+```sh
+t=x86_64-unknown-linux-musl
+export ZIG_MUSL_ARCH=x86_64 "CC_${t//-/_}=$PWD/scripts/zig-cc-musl" "AR_${t//-/_}=$PWD/scripts/zig-ar"
+scripts/server-cargo build --release --target $t -p arugula-control -p arugula-platform \
+  --features arugula-control/loadtest
+# The platform first, then the hub, each from a context of its own.
+ctx=$(mktemp -d); cp $CARGO_TARGET_DIR/$t/release/arugula-platform packaging/platform/Dockerfile "$ctx"/
+cp packaging/control-loadtest/platform.fly.toml "$ctx"/fly.toml
+(cd "$ctx" && fly deploy --local-only --ha=false --no-public-ips && fly scale count 2 --yes)
+ctx=$(mktemp -d); cp $CARGO_TARGET_DIR/$t/release/arugula-control packaging/control/Dockerfile "$ctx"/
+cp packaging/control-loadtest/fly.toml "$ctx"/fly.toml
+(cd "$ctx" && fly deploy --local-only --ha=false)
+```
+
+Once they're deployed, `fly scale count 0 --yes` on each (`-a
+arugula-control-loadtest`, `-a arugula-platform-loadtest`) stops them
+between uses (the hub's volume stays), and `fly scale count 1` (the hub)
+and `fly scale count 2` (the platform) bring them back. Its Postgres keeps
+running (and billing, $38 a month) until it's destroyed. Tearing it all
+down: `fly apps destroy` both apps, then `fly mpg destroy` the cluster
+(`fly mpg list` has its id).
+
 ### Shared Docs
 
 A person shares one Doc with a link (#1064). The machine encrypts the

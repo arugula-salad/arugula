@@ -29,6 +29,8 @@ arugula-platform-all = { workspace = true }
 # Embed web/dist and web/dist-platform even in a debug build: the hub's
 # `debug-embed` (CI's e2e shards run binaries another job built).
 debug-embed = ["arugula-control-base/debug-embed"]
+# The load test's staging build (#530, crates/control/src/loadtest.rs).
+loadtest = ["arugula-control-base/loadtest"]
 
 [lints]
 workspace = true

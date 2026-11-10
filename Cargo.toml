@@ -12,6 +12,7 @@ exclude = [
     "crates/arugula-platform",
     "crates/control",
     "crates/control-common",
+    "crates/control-load",
     "crates/platform",
     "crates/platform-agents",
     "crates/platform-all",
