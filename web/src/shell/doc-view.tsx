@@ -41,6 +41,8 @@ function viewOf(o: Opened, ver: number, was: DocState | null): View {
   });
   const state: DocState = {
     title: manifest.title,
+    made: manifest.made,
+    updated: manifest.updated,
     // A section whose body changed gets a new rev, so its body is a new
     // element, as a refill is in the app (#509).
     entries: manifest.entries.map((e) => {

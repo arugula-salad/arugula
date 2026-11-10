@@ -15,6 +15,7 @@ import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
 import { ProtoScope } from "../ui/prototype-bridge";
 import { BlockError, BlockLoading } from "../ui/block-states";
+import { DocTimes, madeAt } from "./doc-times";
 
 export interface Section {
   id: string;
@@ -53,6 +54,12 @@ export interface DocState {
   platform?: boolean;
   /** How the Doc is laid out; absent is `doc` (Arugula #827). */
   layout?: "doc" | "tabs" | "prototype";
+  /** When it was made and last changed (ms), and by whom (Arugula #825): the
+   * header says them. A daemon from before them, and a share from before
+   * them, send none. */
+  made?: number | null;
+  updated?: number | null;
+  by?: string;
   error?: string;
 }
 
@@ -99,9 +106,10 @@ function DocImage({ load, cached, name, alt, rev }: { load: ImageLoader; cached?
 /** The Doc, drawn. The block (a daemon's state, its pictures asked for by
  * name) and the viewer behind a share link (a snapshot's, #1066) both draw
  * it, each with its own `load`; `cached` is the block's pictures already
- * here, so a redraw doesn't flash. `byline` is who made it and when, for
- * the header (#253), from a view that knows: the block's state and a
- * share's snapshot don't say, so only a project Doc's page passes one. */
+ * here, so a redraw doesn't flash. `byline` is who made it, for the
+ * header (#253), from a view that knows: the block's state and a share's
+ * snapshot don't say, so only a project Doc's page passes one. When it was
+ * made and last changed is the state's (`made`, `updated`), under it. */
 export function DocBlock({
   id,
   s,
@@ -139,6 +147,7 @@ export function DocBlock({
   if (!s) return <BlockLoading what="the Doc" />;
   if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
   const done = s.entries.filter((e) => e.body !== null).length;
+  const times = madeAt(s) || s.updated ? <DocTimes doc={s} /> : null;
   return (
     <div class="doc" data-doc-block={id}>
       <div class="doc-page">
@@ -151,10 +160,12 @@ export function DocBlock({
           ) : (
             <h1 class="doc-title">{s.title || "Untitled"}</h1>
           )}
-          {(byline || s.entries.length === 0 || done < s.entries.length) && (
+          {(byline || times || s.entries.length === 0 || done < s.entries.length) && (
             <p class="doc-meta">
               {byline}
-              {byline && (s.entries.length === 0 || done < s.entries.length) && " · "}
+              {byline && times && " · "}
+              {times}
+              {(byline || times) && (s.entries.length === 0 || done < s.entries.length) && " · "}
               {s.entries.length === 0 ? (
                 <span class="doc-wait">Waiting for the outline…</span>
               ) : (

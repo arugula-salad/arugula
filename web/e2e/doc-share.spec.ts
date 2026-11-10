@@ -47,6 +47,8 @@ async function seeTheDoc(page: Page, drawing = false) {
   const block = page.locator("[data-doc-block]");
   await expect(block.locator(".doc-title")).toHaveText(`Report ${MARK}`, { timeout: 15_000 });
   await expect(block.locator('[data-section="s1"]')).toContainText(`Findings ${MARK}`);
+  // When it was made rides in the snapshot (Arugula #825).
+  await expect(block.locator("[data-doc-times]")).toContainText("Created");
   const img = block.locator('[data-section="s1"] img.doc-image');
   await expect(img).toBeVisible();
   await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth)).toBe(40);

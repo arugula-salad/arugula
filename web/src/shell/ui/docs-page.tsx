@@ -30,7 +30,7 @@ import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } fro
 import { openMenu } from "../../shared/ui/menu";
 import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { PageHeader } from "../../shared/ui/page-header";
-import { Time } from "../../shared/ui/time";
+import { DocRowTime, DOC_SORTS, sortTime, useDocSort } from "../../shared/docs/doc-sort";
 import { AppBar } from "./app-bar";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
@@ -47,7 +47,7 @@ interface Read {
 const NO_FRESH = new Map<string, number>();
 
 /** A Doc as the Doc block's renderer takes it. */
-const stateOf = (c: DocContent): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined });
+const stateOf = (c: DocContent, row: DocRow): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined, made: row.made, updated: row.updated, by: row.by });
 
 /** The page, while the route says so and this is the machine's owner. In
  * the workspace (`inWorkspace`) it sits under the workspace's header, beside
@@ -95,7 +95,7 @@ function Shape({ sections }: { sections: DocSectionShape[] }) {
   );
 }
 
-/** Which of the page's groups a Doc falls in, by the day it was last changed. */
+/** Which of the page's groups a Doc falls in, by the day of the time it's sorted by. */
 function ageGroup(updated: number, now: number): string {
   const day = new Date(now);
   day.setHours(0, 0, 0, 0);
@@ -115,6 +115,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
   const [deleting, setDeleting] = useState<DocRow | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useDocSort();
   /** The Docs read so far, by id. */
   const reads = useRef(new Map<string, Read>());
 
@@ -181,14 +182,14 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
   const groups = useMemo(() => {
     const now = Date.now();
     const out: ListGroup<DocRow>[] = [];
-    for (const r of shown) {
-      const title = ageGroup(r.updated, now);
+    for (const r of [...shown].sort((a, b) => sortTime(b, sort) - sortTime(a, sort))) {
+      const title = ageGroup(sortTime(r, sort), now);
       const last = out[out.length - 1];
       if (last?.title === title) last.items.push(r);
       else out.push({ title, items: [r] });
     }
     return out;
-  }, [shown]);
+  }, [shown, sort]);
 
   const counts: ListCount[] = [
     { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
@@ -242,6 +243,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
         searchLabel="Search titles and headings"
         query={query}
         setQuery={setQuery}
+        sort={{ options: DOC_SORTS, value: sort, onSort: setSort }}
         groups={groups}
         keyOf={(r) => r.id}
         previewOn="click"
@@ -277,7 +279,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
               )}
             </>
           ),
-          age: <Time at={r.updated} title="Updated" />,
+          age: <DocRowTime doc={r} by={sort} />,
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
@@ -315,7 +317,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
         const res = await client.request(OPS["doc.read"].method, opPath("doc.read", { id: doc.id }));
         const v = res.ok ? await res.json<DocContent>().catch(() => null) : null;
         if (!v || !live || mine !== latest) return;
-        const next = stateOf(v);
+        const next = stateOf(v, doc);
         if (JSON.stringify(next) !== JSON.stringify(kept.state)) setState((kept.state = next));
       } catch {
         // The Doc on screen stays.

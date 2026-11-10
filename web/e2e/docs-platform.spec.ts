@@ -112,6 +112,9 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   await expect(page.locator(".doc-title")).toHaveText("Release plan");
   await expect(page).toHaveAttribute("data-writer", "true");
   await expect(page.locator("[data-doc-maker]")).toHaveText("you");
+  // Made and first written inside a minute: just when it was made (Arugula #825).
+  await expect(page.locator("[data-doc-times]")).toHaveText(/^Created \w+ \d+$/);
+  await expect(page.locator("[data-doc-created] time")).toHaveAttribute("title", /\d{4}.*\d:\d\d/);
 
   // A first section, with a chart.
   await page.locator("[data-doc-heading-input]").fill("Goals");
@@ -825,4 +828,42 @@ test("someone in no team sees their machine's copies on /docs", async ({ browser
   const page = carol.locator("[data-doc-page]");
   await expect(page.locator(".doc-section[data-section=s1] strong")).toHaveText("carolbox", { timeout: 15_000 });
   await expect(page.locator("[data-doc-copy]")).toContainText("carolbox");
+});
+
+test("the project's Docs sort by updated or created, within the list, and a Doc's page says both times (Arugula #825)", async () => {
+  test.setTimeout(90_000);
+  const project = /\/p\/(prj_[0-9a-f]+)/.exec(docPath)![1];
+  await platform(alice, `/p/${project}/docs`);
+  // Two Docs, made one after the other; then the first is written, so it is the last touched.
+  const made = await alice.evaluate(async (p) => {
+    const send = async (method: string, path: string, body: unknown) => (await fetch(`/api/projects/${p}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+    const first = await send("POST", "/docs", { title: "Sorting first", sections: [] });
+    await new Promise((r) => setTimeout(r, 1100));
+    const second = await send("POST", "/docs", { title: "Sorting second", sections: [] });
+    await new Promise((r) => setTimeout(r, 1100));
+    await send("PUT", `/docs/${first.doc.id}`, { title: null, section: null, heading: "Body", intent: null, markdown: "Words." });
+    return first.doc.id as string;
+  }, project);
+  await alice.reload();
+  await alice.locator("[data-list-search]").fill("Sorting");
+  const titles = () => alice.locator("[data-doc] [data-doc-title]").allTextContents();
+  const sort = alice.locator("[data-list-sort]");
+  await expect(sort).toHaveValue("updated");
+  await expect.poll(titles).toEqual(["Sorting first", "Sorting second"]);
+  await expect(alice.locator("[data-doc]").first().locator(".list-row-age")).toContainText(/^edited /);
+
+  await sort.selectOption("created");
+  await expect.poll(titles).toEqual(["Sorting second", "Sorting first"]);
+  await expect(alice.locator("[data-doc]").first().locator(".list-row-age")).toContainText(/^created /);
+  expect(await alice.evaluate(() => localStorage.getItem("docs-sort"))).toBe("created");
+  await alice.reload();
+  await expect(alice.locator("[data-list-sort]")).toHaveValue("created");
+
+  // The preview and the Doc's own page say the time too.
+  await alice.locator("[data-list-search]").fill("Sorting first");
+  await alice.locator("[data-doc]").first().click();
+  await expect(alice.locator("[data-list-preview] [data-doc-times]")).toContainText("Created");
+  await alice.goto(`${app}${docPath.replace(/pdc_[0-9a-f]+/, made)}`);
+  await expect(alice.locator("[data-doc-page] [data-doc-times]")).toContainText("Created");
+  await alice.evaluate(() => localStorage.removeItem("docs-sort"));
 });
