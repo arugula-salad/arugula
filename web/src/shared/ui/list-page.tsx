@@ -85,8 +85,9 @@ export interface ListRowParts {
   /** At the row's end: a ⋯ button, say. It's the row's own to press: a click
    * or double click on it must not select or open the row (`stopPropagation`).
    * A row is one option, so it holds no button: make it a mouse target with
-   * `data-row-more`, which the ContextMenu key (or Shift+F10) on the selected
-   * row and a right click on a row press. */
+   * `data-row-more` (and `aria-hidden`), which the ContextMenu key (or
+   * Shift+F10) on the selected row and a right click on a row press. The row
+   * says so itself: `aria-haspopup="menu"` and `aria-keyshortcuts`. */
   actions?: ComponentChildren;
   /** Its `data-*` hooks. */
   attrs?: Record<string, string>;
@@ -140,7 +141,9 @@ export interface ListPageProps<T> {
   /** The row to select, when the page knows better: one just saved. */
   select?: string | null;
   /** A box on each row (on hover, and always once one is ticked), for
-   * acting on several. Shift-click ticks the range between two, in the order
+   * acting on several. The box is a mark for the mouse (a control in an
+   * option fails `nested-interactive`): the option says `aria-checked`, and
+   * Space ticks it. Shift-click ticks the range between two, in the order
    * on the screen after search and grouping; a group's box ticks its group;
    * Space ticks the row the keys are on, and Esc clears. Turned off, it
    * forgets what was ticked, and so does a row that a search hides. */
@@ -367,6 +370,11 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         id={rowId(key)}
         role="option"
         aria-selected={key === selectedKey}
+        // Ticked is not current (`aria-selected` follows the keys' row), so it's
+        // `aria-checked`, which an option takes. The box below is only its mark.
+        aria-checked={selectable ? ticked.has(key) : undefined}
+        aria-haspopup={r.actions ? "menu" : undefined}
+        aria-keyshortcuts={r.actions ? "Shift+F10 ContextMenu" : undefined}
         class="list-row"
         tone={r.tone && ROW_TONES[r.tone]}
         dense={r.dense}
@@ -386,15 +394,14 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
         onPointerLeave={() => clearTimeout(hover.current)}
       >
         {selectable && (
-          <input
-            type="checkbox"
+          <span
             class="list-row-check"
-            aria-label={r.name ? `Select ${r.name}` : "Select"}
-            checked={ticked.has(key)}
+            aria-hidden="true"
+            data-on={String(ticked.has(key))}
             data-list-check
             onClick={(e) => {
               e.stopPropagation();
-              tickAt(key, e.currentTarget.checked, e.shiftKey);
+              tickAt(key, !ticked.has(key), e.shiftKey);
             }}
             onDblClick={(e) => e.stopPropagation()}
           />
@@ -442,12 +449,12 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
           <div class="list-scroll">
             {status ?? null}
             {flat.length > 0 && (
-              <div ref={list} class={ticked.size > 0 ? "list-rows ticking" : "list-rows"} role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
+              <div ref={list} class={ticked.size > 0 ? "list-rows ticking" : "list-rows"} role="listbox" aria-multiselectable={selectable ? true : undefined} tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
                 {groups.map((g, i) =>
                   g.items.length === 0 ? null : g.title ? (
                     <div key={g.key ?? g.title} role="group" aria-labelledby={`list-group-${i}`} {...g.attrs}>
                       <div class="list-group" id={`list-group-${i}`}>
-                        {selectable && <GroupCheck title={g.title} items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
+                        {selectable && <GroupCheck items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
                         <span class={g.named ? "list-group-title named" : "list-group-title"}>
                           {g.title}
                           {g.detail && <small>{g.detail}</small>}
@@ -505,22 +512,19 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   );
 }
 
-/** A group's box: ticks the group, and is half-ticked when some of it is. */
-function GroupCheck({ title, items, ticked, tick }: { title: string; items: string[]; ticked: ReadonlySet<string>; tick: (keys: string[], on: boolean) => void }) {
+/** A group's box: ticks the group, and is half-ticked when some of it is. Like
+ * a row's, it's a mark for the mouse: the group holds rows, and the keys tick those. */
+function GroupCheck({ items, ticked, tick }: { items: string[]; ticked: ReadonlySet<string>; tick: (keys: string[], on: boolean) => void }) {
   const n = items.filter((k) => ticked.has(k)).length;
   return (
-    <input
-      type="checkbox"
+    <span
       class="list-row-check list-group-check"
-      aria-label={`Select all of ${title}`}
-      checked={n === items.length}
-      ref={(el) => {
-        if (el) el.indeterminate = n > 0 && n < items.length;
-      }}
+      aria-hidden="true"
+      data-on={n === items.length ? "true" : n > 0 ? "mixed" : "false"}
       data-list-group-check
       onClick={(e) => {
         e.stopPropagation();
-        tick(items, e.currentTarget.checked);
+        tick(items, n !== items.length);
       }}
     />
   );

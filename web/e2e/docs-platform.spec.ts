@@ -501,7 +501,12 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await boxes.nth(0).click();
   await boxes.nth(2).click({ modifiers: ["Shift"] });
   await expect(alice.locator("[data-docs-selected]")).toHaveText("3 selected");
-  await expect(alice.locator("[data-list-rows] [data-list-check]:checked")).toHaveCount(3);
+  await expect(alice.locator("[data-list-rows] [data-list-check][data-on=true]")).toHaveCount(3);
+  // A screen reader hears it on the option: ticked is aria-checked, apart from the keys' row (aria-selected).
+  await expect(alice.locator("[data-list-rows]")).toHaveAttribute("aria-multiselectable", "true");
+  await expect(alice.locator("[data-list-rows] [data-doc][aria-checked=true]")).toHaveCount(3);
+  await expect(alice.locator("[data-list-rows] [data-doc][aria-checked=false]")).toHaveCount(all - 3);
+  await expect(boxes.nth(0)).toHaveAttribute("aria-hidden", "true");
   await alice.locator("[data-docs-clear]").click();
   await alice.locator("[data-list-search]").fill("Bulk");
   await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveCount(2);
@@ -539,7 +544,7 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await expect(alice.locator("[data-docs-share-bar]")).toHaveCount(0);
 
   // Three: both copies, and Private notes (written here).
-  for (const title of ["Bulk one", "Bulk two", "Private notes"]) await row(title).locator("[data-list-check]").check();
+  for (const title of ["Bulk one", "Bulk two", "Private notes"]) await row(title).locator("[data-list-check]").click();
   await expect(alice.locator("[data-docs-selected]")).toHaveText("3 selected");
   await shot(alice, "docs-share-bar.png");
   // One team to write in: the button names it.
@@ -556,7 +561,7 @@ test("Mine's Docs are shared into the team together, each with its outcome (Arug
   await shot(alice, "docs-share-results.png");
   // The selection cleared, the originals stay in Mine, and Team grew by two.
   await expect(alice.locator("[data-docs-selected]")).toHaveCount(0);
-  await expect(alice.locator("[data-list-rows] [data-list-check]:checked")).toHaveCount(0);
+  await expect(alice.locator("[data-list-rows] [data-list-check][data-on=true]")).toHaveCount(0);
   await expect(row("Private notes")).toHaveCount(1);
   await expect(team).toHaveText(String(teamWas + 2), { timeout: 15_000 });
   // A made Doc's link opens the team's Doc.
@@ -596,6 +601,9 @@ test("a Mine Doc is shared from its row's menu and from its preview, without ope
   await more.click();
   await expect(alice.getByRole("menuitem")).toHaveText(["Copy link", "Share with Acme", "Share with…", "Open in browser"]);
   await expect(row("Row share")).toHaveAttribute("aria-selected", "false");
+  // The row says it has a menu and how the keys reach it, as it holds no button.
+  await expect(row("Row share")).toHaveAttribute("aria-haspopup", "menu");
+  await expect(row("Row share")).toHaveAttribute("aria-keyshortcuts", "Shift+F10 ContextMenu");
   await expect(alice).toHaveURL(/\/docs$/);
   await alice.getByRole("menuitem", { name: "Share with Acme" }).click();
   await expect(toast).toHaveText("Row share: Made", { timeout: 30_000 });

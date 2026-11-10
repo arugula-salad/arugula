@@ -277,15 +277,47 @@ button.list-count:hover {
   top: 50%;
   transform: translateY(-50%);
   margin: 0;
-  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
   cursor: pointer;
   opacity: 0;
 }
 
+.list-row-check[data-on="true"],
+.list-row-check[data-on="mixed"] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* The tick, and the dash of a half-ticked group. */
+.list-row-check[data-on="true"]::after {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 7px;
+  margin: 0 auto;
+  border: solid var(--surface);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(0.5px) rotate(45deg);
+}
+
+.list-row-check[data-on="mixed"]::after {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 1.5px;
+  margin: 4.5px auto 0;
+  background: var(--surface);
+}
+
 .list-row:hover .list-row-check,
 .list-rows:focus-visible .list-row[aria-selected="true"] .list-row-check,
-.list-row-check:focus-visible,
-.list-row-check:checked,
+.list-row-check[data-on="true"],
+.list-row-check[data-on="mixed"],
 .ticking .list-row-check,
 .list-group:hover .list-row-check {
   opacity: 1;
