@@ -131,6 +131,11 @@ impl FakeTracker {
         self.state.lock().unwrap().items = items;
     }
 
+    /// The items the project holds now.
+    pub fn items(&self) -> Vec<Item> {
+        self.state.lock().unwrap().items.clone()
+    }
+
     /// Which items block which, as (blocker, blocked) tracker ids.
     pub fn set_blocks(&self, blocks: Vec<(&str, &str)>) {
         self.state.lock().unwrap().blocks = blocks.into_iter().map(|(a, b)| (a.into(), b.into())).collect();

@@ -19,7 +19,9 @@
 //!   failure in a row.
 //! - **The reconcile** ([`reconcile`]) is the same lease once a connection
 //!   is backfilled: every [`rows::RECONCILE_MS`] it reads the items updated since
-//!   the newest it holds (less a minute) and writes what a webhook missed.
+//!   the newest it holds (less a minute) and writes what a webhook missed,
+//!   and sweeps a slice of the open items' relations (a relation made in Plane
+//!   moves no `updated_at`).
 //!   The webhooks ([`super::webhook`]) write through [`ingest_page`] too.
 //! - **Disconnecting** sets `unlinked_at` and `purge_after` (ingest stops
 //!   at the next write) and removes the sealed secrets at once; the purge
@@ -339,36 +341,78 @@ pub fn ingest_page(
     })
 }
 
-/// Read the `blocked_by` and `blocking` relations of the items of a page
-/// and store them as `connection`'s `plane` edges (#403): one request each,
-/// within Plane's rate limit and the lease. An item the tracker no longer has
-/// is skipped; any other failure ends the turn like a failed page.
-/// `None` when the claim was lost.
-async fn mirror_relations(
+/// Read the `blocked_by` and `blocking` relations of `items` and store them
+/// as `connection`'s `plane` edges (#403): one request each. An item the
+/// tracker no longer has is skipped; any other failure is the caller's.
+/// `keep` runs before each read and says whether to go on (a turn renews its
+/// lease there); `false` ends it, and this returns `false` too.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn read_relations(
     app: &Platform,
-    job: &Backfill,
+    connection: &str,
+    workspace: &str,
+    project: &str,
     provider: &dyn super::TrackerProvider,
-    items: &[super::Item],
+    items: &[String],
     now: u64,
-) -> anyhow::Result<Option<()>> {
+    mut keep: impl FnMut() -> anyhow::Result<bool>,
+) -> anyhow::Result<bool> {
     let mut changed: Vec<String> = vec![];
-    for it in items {
-        if !app.db.renew_backfill(job, now_ms())? {
-            return Ok(None);
+    for id in items {
+        if !keep()? {
+            return Ok(false);
         }
-        let rel = match provider.relations(&job.workspace_slug, &job.source_project_id, &it.id).await {
+        let rel = match provider.relations(workspace, project, id).await {
             Ok(r) => r,
             Err(TrackerError::NotFound | TrackerError::NotYet(_)) => continue,
             Err(e) => return Err(e.into()),
         };
-        changed.extend(app.db.plane_relations_set(&job.id, &it.id, &rel.blocked_by, &rel.blocking, now)?);
+        changed.extend(app.db.plane_relations_set(connection, id, &rel.blocked_by, &rel.blocking, now)?);
     }
     changed.sort();
     changed.dedup();
     if !changed.is_empty() {
         crate::boards::items_changed(app, &changed);
     }
-    Ok(Some(()))
+    Ok(true)
+}
+
+/// [`read_relations`] for the ids of `items` within a turn's lease, which
+/// each read renews. `None` when the claim was lost.
+async fn mirror_relations(
+    app: &Platform,
+    job: &Backfill,
+    provider: &dyn super::TrackerProvider,
+    items: &[String],
+    now: u64,
+) -> anyhow::Result<Option<()>> {
+    let kept = read_relations(app, &job.id, &job.workspace_slug, &job.source_project_id, provider, items, now, || {
+        Ok(app.db.renew_backfill(job, now_ms())?)
+    })
+    .await?;
+    Ok(kept.then_some(()))
+}
+
+fn ids_of(items: &[super::Item]) -> Vec<String> {
+    items.iter().map(|i| i.id.clone()).collect()
+}
+
+/// Relations read per reconcile for items that didn't change.
+const SWEEP: usize = 40;
+
+/// The slice of the open items whose relations this reconcile reads again.
+/// Adding a relation in Plane leaves both items' `updated_at` alone, so
+/// neither a reconcile's list nor (without a relation webhook) a delivery
+/// says so; each turn takes the next [`SWEEP`] open items, by the clock, so
+/// every open item is read within `open / SWEEP` reconciles, and a relation
+/// Plane dropped goes too.
+fn sweep_slice(open: Vec<String>, now: u64) -> Vec<String> {
+    if open.len() <= SWEEP {
+        return open;
+    }
+    let turn = (now / rows::RECONCILE_MS) as usize;
+    let from = turn.wrapping_mul(SWEEP) % open.len();
+    open.iter().cycle().skip(from).take(SWEEP).cloned().collect()
 }
 
 /// Read the items of each of the project's modules and set the modules of
@@ -493,7 +537,7 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
         };
         crate::boards::items_changed(app, &changed);
         crate::boards::epics::from_epics(app, &job.id, &changed).await;
-        if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
+        if mirror_relations(app, job, &*provider, &ids_of(&page.items), now).await?.is_none() {
             return Ok(None);
         }
         cursor = page.next;
@@ -603,7 +647,7 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
         };
         crate::boards::items_changed(app, &changed);
         crate::boards::epics::from_epics(app, &job.id, &changed).await;
-        if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
+        if mirror_relations(app, job, &*provider, &ids_of(&page.items), now).await?.is_none() {
             return Ok(None);
         }
         total += changed.len();
@@ -616,6 +660,10 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
     }
     if cursor.is_some() {
         warn!(connection = %job.id, pages = RECONCILE_PAGES, "a Plane reconcile hit its page cap with more changed");
+    }
+    let open = sweep_slice(app.db.tracker_open_items(&job.id)?, now);
+    if mirror_relations(app, job, &*provider, &open, now).await?.is_none() {
+        return Ok(None);
     }
     if let Some(f) = &fields
         && mirror_modules(app, job, &*provider, &f.modules).await?.is_none()

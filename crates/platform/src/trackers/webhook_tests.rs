@@ -421,3 +421,49 @@ async fn a_secret_set_after_connecting_takes_deliveries_and_the_row_says_when() 
     assert_eq!(s, 200, "{v}");
     assert!(v["connections"][0]["last_delivery_at"].as_u64().is_some_and(|t| t >= before), "{v}");
 }
+
+/// How many `plane` blocks edges the project holds.
+fn plane_edges(app: &Platform) -> u64 {
+    app.db
+        .c()
+        .query_row("SELECT COUNT(*) FROM work_relations WHERE source = 'plane' AND kind = 'blocks'", &[], |r| r.get(0))
+        .unwrap()
+}
+
+/// A relation made in Plane moves neither item's `updated_at`, so a webhook
+/// for either end must read the item's relations itself, or the edge only
+/// arrives with a full backfill.
+#[tokio::test]
+async fn a_webhook_reads_the_items_relations() {
+    let hub = Arc::new(TestHub::default());
+    let w = world(&hub).await;
+    assert_eq!(plane_edges(&w.app), 0);
+    // Made in Plane after the backfill; the items are as they were.
+    w.fake.set_blocks(vec![("item-1", "item-2")]);
+    let (s, v) = signed(&w.base, &w.conn, "d-rel", "workitem.updated", &updated("pl-proj-1", "item-2")).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(plane_edges(&w.app), 1, "the webhook left the edge unread");
+}
+
+/// A reconcile lists only items updated since the newest held, so a relation
+/// added to untouched items is read by its slow sweep of the open items.
+#[tokio::test]
+async fn a_reconcile_sweeps_open_items_for_relations() {
+    let hub = Arc::new(TestHub::default());
+    let w = world(&hub).await;
+    // A newer item is held, so a reconcile lists nothing of items 1 and 2.
+    let far = item(9, "Nine", "started", 1_000_000);
+    connect::ingest_page(&w.app, &w.conn, w.mirror, None, std::slice::from_ref(&far), 1).unwrap().unwrap();
+    let mut all = vec![far];
+    all.extend(w.fake.items());
+    w.fake.set_items(all);
+    w.fake.set_blocks(vec![("item-1", "item-2")]);
+    let due = now_ms() + RECONCILE_MS + 1;
+    assert!(matches!(connect::reconcile(&w.app, due).await.unwrap(), Some(Reconciled::Done { .. })));
+    assert_eq!(plane_edges(&w.app), 1, "the reconcile left the edge unread");
+    // And a relation Plane dropped goes the same way.
+    w.fake.set_blocks(vec![]);
+    let later = due + RECONCILE_MS + 1;
+    assert!(matches!(connect::reconcile(&w.app, later).await.unwrap(), Some(Reconciled::Done { .. })));
+    assert_eq!(plane_edges(&w.app), 0);
+}

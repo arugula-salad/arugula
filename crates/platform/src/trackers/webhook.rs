@@ -14,7 +14,8 @@
 //!   so a payload for another project is ignored.
 //! - **A change is re-read**: the payload's fields aren't trusted (its state
 //!   may be an id only), so a created or updated work item is read with
-//!   `get` and written through [`ingest_page`]. A deleted one's row goes.
+//!   `get` and written through [`ingest_page`], and its relations are read
+//!   with it (Plane's don't move `updated_at`). A deleted one's row goes.
 //!
 //! Only the connection, event and delivery are logged, never the payload,
 //! the signature or the secret.
@@ -160,10 +161,25 @@ async fn apply(app: &Platform, c: &Connection, what: &Change<'_>) -> anyhow::Res
             let provider = app.trackers.plane(&key);
             match provider.get(&c.workspace_slug, &c.source_project_id, item).await {
                 Ok(it) => {
+                    let id = it.id.clone();
                     let changed = super::connect::ingest_page(app, &c.id, c.mirror_id, None, &[it], now)?;
                     let changed = changed.unwrap_or_default();
                     crate::boards::items_changed(app, &changed);
                     crate::boards::epics::from_epics(app, &c.id, &changed).await;
+                    // Plane's relations don't move the item's `updated_at` and
+                    // aren't in the payload: read them with the item.
+                    let ids = [id];
+                    super::connect::read_relations(
+                        app,
+                        &c.id,
+                        &c.workspace_slug,
+                        &c.source_project_id,
+                        &*provider,
+                        &ids,
+                        now,
+                        || Ok(true),
+                    )
+                    .await?;
                     Ok(changed.len())
                 }
                 // Gone by the time it was read: the same as deleted.
