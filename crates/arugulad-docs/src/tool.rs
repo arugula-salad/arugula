@@ -36,15 +36,42 @@ pub struct DocSection {
     pub intent: String,
 }
 
+/// How a Doc is laid out: doc, tabs or prototype.
+#[derive(Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocLayoutArg {
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayoutArg {
+    fn name(self) -> &'static str {
+        match self {
+            DocLayoutArg::Doc => "doc",
+            DocLayoutArg::Tabs => "tabs",
+            DocLayoutArg::Prototype => "prototype",
+        }
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct DocNewArgs {
     /// The Doc's title.
     pub title: String,
-    /// Every section, in order (at most 40), so the user sees the whole outline at once.
+    /// Every section, in order (at most 40), so the user sees the whole outline at once. A prototype Doc has one, made for you if you leave this out.
+    #[serde(default)]
     pub sections: Vec<DocSection>,
+    /// How it is laid out: doc (the default, sections one after another), tabs (sections shown one at a time) or prototype (one section holding one prototype that fills the screen).
+    #[serde(default = "default_layout")]
+    pub layout: DocLayoutArg,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+}
+
+fn default_layout() -> DocLayoutArg {
+    DocLayoutArg::Doc
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -62,7 +89,7 @@ pub struct DocFillArgs {
     pub block: PaneArg,
     /// The section's id (s1, s2, … from doc new).
     pub section: String,
-    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.
+    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it. In a prototype Doc: one line, then one ```prototype fence.
     pub markdown: String,
 }
 
@@ -107,7 +134,7 @@ Every fence is checked before anything is written: a bad chart, tile, drawing or
 pub static DOC: &[Kind] = &[
     Kind {
         name: "new",
-        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids (s1, s2, …): fill them in order.",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids (s1, s2, …): fill them in order. Choose layout tabs for several prototypes or long separate parts, prototype when the whole screen is the thing, as an artifact is: one section, filled with one line and one ```prototype fence.",
         schema: schema_for_type::<DocNewArgs>,
         flag: None,
     },
@@ -204,6 +231,17 @@ pub fn register() {
 /// `doc new`: a Doc in the library, its block beside the caller's pane,
 /// then its outline.
 async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
+    let layout = a.layout;
+    // A prototype Doc is one section: made here when none is given.
+    let mut sections = a.sections;
+    if layout == DocLayoutArg::Prototype {
+        if sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
+        }
+        if sections.is_empty() {
+            sections.push(DocSection { heading: a.title.clone(), intent: "the prototype".into() });
+        }
+    }
     let state = call.app().control.state_dir().to_owned();
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
     // Two doc new make two Docs: each is made here, before its block.
@@ -241,8 +279,8 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
             return Err(e);
         }
     };
-    let sections: Vec<Value> = a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
-    let args = json!({ "title": a.title, "sections": sections });
+    let sections: Vec<Value> = sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
+    let args = json!({ "title": a.title, "sections": sections, "layout": layout.name() });
     let outlined = match call.app().mux.api(|r| Api::Block(block, r)).await.flatten() {
         Some(b) => b.call_by("doc_outline", args, Some(&call.by())).await,
         None => Err("the Doc's block closed".into()),
@@ -404,5 +442,23 @@ mod tests {
             assert!(fill.contains(name), "{name}");
         }
         assert!(DOC.iter().any(|k| k.name == "fences"));
+    }
+
+    /// #828: `layout` is an enum of the three names in the generated schema,
+    /// not a free string, and `sections` may be left out.
+    #[test]
+    fn doc_new_takes_a_layout_of_three_names() {
+        let new = DOC.iter().find(|k| k.name == "new").unwrap();
+        let schema = serde_json::to_value((new.schema)().as_ref()).unwrap().to_string();
+        assert!(schema.contains(r#""enum":["doc","tabs","prototype"]"#), "{schema}");
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "layout": "prototype" })).unwrap();
+        assert!(a.sections.is_empty() && a.layout == DocLayoutArg::Prototype);
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "sections": [] })).unwrap();
+        assert!(a.layout == DocLayoutArg::Doc);
+        let e = serde_json::from_value::<DocNewArgs>(json!({ "title": "T", "layout": "slides" }))
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(e.contains("doc") && e.contains("tabs") && e.contains("prototype"), "{e}");
     }
 }

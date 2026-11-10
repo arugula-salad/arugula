@@ -289,8 +289,8 @@ impl Doc {
     }
 
     /// The Doc's layout is `layout` now: kept in its `meta.json`, and the
-    /// block, its share's next update and its copy follow. Nothing in MCP
-    /// sets it yet.
+    /// block, its share's next update and its copy follow. Only tests call
+    /// it: `doc_outline` sets the layout a Doc is made with.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn set_layout(&self, layout: DocLayout) -> bool {
         let _io = self.io.lock().await;
@@ -307,7 +307,7 @@ impl Doc {
     }
 
     /// `doc_outline`: the sections, once.
-    async fn outline(&self, title: &str, sections: Vec<Planned>) -> Result<Value, String> {
+    async fn outline(&self, title: &str, sections: Vec<Planned>, layout: DocLayout) -> Result<Value, String> {
         let _io = self.io.lock().await;
         let title = title.trim();
         if title.is_empty() {
@@ -321,6 +321,9 @@ impl Doc {
         }
         if sections.len() > SECTIONS_MAX {
             return Err(format!("a Doc has at most {SECTIONS_MAX} sections, not {}", sections.len()));
+        }
+        if layout == DocLayout::Prototype && sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
         }
         let mut planned = Vec::new();
         for (i, s) in sections.into_iter().enumerate() {
@@ -351,10 +354,15 @@ impl Doc {
         let bytes = serde_json::to_vec_pretty(&outline).map_err(|e| e.to_string())?;
         write(dir, OUTLINE, bytes).await?;
         self.touched(Some(outline.title.clone())).await;
+        if !layout.is_doc() {
+            let dir = self.dir.clone();
+            let _ = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await;
+        }
         let ids: Vec<Value> = planned.iter().map(|s| json!({ "id": s.id, "heading": s.heading })).collect();
         {
             let mut st = self.state.lock().unwrap();
             st.title = outline.title;
+            st.layout = layout;
             st.entries = planned
                 .into_iter()
                 .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0 })
@@ -385,6 +393,10 @@ impl Doc {
             }
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
+            if st.layout == DocLayout::Prototype {
+                embeds::check_prototype_only(md)
+                    .map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
+            }
             embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
             if md.len() > SECTION_MAX {
                 return Err(format!(
@@ -820,9 +832,10 @@ impl Block for Doc {
                 let title = args["title"].as_str().unwrap_or_default().to_owned();
                 let sections = serde_json::from_value::<Vec<Planned>>(args["sections"].clone())
                     .map_err(|e| format!("doc_outline needs {{title, sections: [{{heading, intent}}]}}: {e}"));
+                let layout = DocLayout::from_name(args["layout"].as_str().unwrap_or_default());
                 Box::pin(async move {
                     let me = me.ok_or("closed")?;
-                    me.outline(&title, sections?).await
+                    me.outline(&title, sections?, layout).await
                 })
             }
             "doc_fill" => {
@@ -1473,6 +1486,48 @@ mod tests {
         assert_eq!(d.config(), json!({ "title": "Plan" }));
         assert_eq!(d.summary().title.as_deref(), Some("Plan"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_outline_sets_the_layout_and_a_prototype_doc_is_one_section_of_one_prototype() {
+        let state = temp("outline-layout");
+        let make = |name: &str| {
+            let meta = library::make(&state, name, "me").unwrap();
+            let folder = library::dir(&state, &meta.id).unwrap();
+            (Doc::new(folder.clone(), name.into(), false, Arc::new(|| {})), folder)
+        };
+        let with = |layout: &str, n: usize| {
+            let mut args = plan(n);
+            args["layout"] = json!(layout);
+            args
+        };
+        let (d, folder) = make("tabs");
+        d.call("doc_outline", with("tabs", 2)).await.unwrap();
+        assert_eq!(d.state()["layout"], "tabs");
+        assert_eq!(library::read_meta(&folder).unwrap().layout, DocLayout::Tabs);
+        let (d, _) = make("plain");
+        outline(&d, 2).await.unwrap();
+        assert!(d.state().get("layout").is_none());
+
+        let (d, folder) = make("proto");
+        let e = d.call("doc_outline", with("prototype", 2)).await.unwrap_err();
+        assert_eq!(e, "a prototype Doc has one section");
+        assert!(entries(&d).is_empty() && library::read_meta(&folder).unwrap().layout.is_doc());
+        d.call("doc_outline", with("prototype", 1)).await.unwrap();
+        assert_eq!(d.state()["layout"], "prototype");
+        let page = "<!doctype html><html><body>x</body></html>";
+        let e = fill(&d, "s1", "Words and nothing else.").await.unwrap_err();
+        assert!(e.contains("a prototype Doc holds one line") && e.contains("unchanged"), "{e}");
+        assert_eq!(entries(&d)[0]["body"], Value::Null);
+        fill(&d, "s1", &format!("A tuner.\n\n```prototype\n{page}\n```")).await.unwrap();
+        // The cap is the same 64 KB.
+        let big = format!("```prototype\n{page}<!-- {} -->\n```", "x".repeat(SECTION_MAX));
+        assert!(fill(&d, "s1", &big).await.is_err());
+        // Restarted, the Doc is still a prototype Doc.
+        drop(d);
+        let again = Doc::new(folder, "proto".into(), true, Arc::new(|| {}));
+        assert!(fill(&again, "s1", "Just words.").await.is_err());
+        std::fs::remove_dir_all(state).unwrap();
     }
 }
 
