@@ -588,7 +588,16 @@ mod tests {
     }
 
     fn meta_by(by: &str) -> Meta {
-        Meta { id: "0".repeat(16), title: "t".into(), made: 10, updated: 20, by: by.into(), shape: None, platform: None, layout: DocLayout::Doc }
+        Meta {
+            id: "0".repeat(16),
+            title: "t".into(),
+            made: 10,
+            updated: 20,
+            by: by.into(),
+            shape: None,
+            platform: None,
+            layout: DocLayout::Doc,
+        }
     }
 
     #[test]
