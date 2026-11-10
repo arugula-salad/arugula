@@ -30,9 +30,18 @@ use crate::{control::CloudRefused, mux::Api, server::App};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
     pub issue: String,
+    /// The project the issue is in (Arugula #771): the agent's current
+    /// project, for its MCP calls (`mcp::issues`) and, as [`PROJECT_ENV`],
+    /// the `arugula` it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<WorkBoard>,
 }
+
+/// The current project of `arugula issue` and `arugula open`, set in an
+/// agent's environment from its [`Work`]'s project.
+pub const PROJECT_ENV: &str = "ARUGULA_PROJECT";
 
 /// A board with a row the block is attached to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

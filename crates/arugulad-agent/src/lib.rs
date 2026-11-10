@@ -2040,6 +2040,12 @@ impl Agent {
                 // #304: the member's agent session, which chant judges its
                 // writes by.
                 env.extend(session_env(&inner.cfg));
+                // Arugula #771: the `arugula issue` it runs looks in its
+                // issue's project, as its MCP calls do.
+                if let Some(p) = inner.cfg.work.as_ref().and_then(|w| w.project.clone()) {
+                    env.retain(|(n, _)| n != board_attach::PROJECT_ENV);
+                    env.push((board_attach::PROJECT_ENV.to_owned(), p));
+                }
                 // M44 and #128: what the session's `${…}`s stand for, in the
                 // adapter's environment (its own and its children's: never
                 // on a command line).

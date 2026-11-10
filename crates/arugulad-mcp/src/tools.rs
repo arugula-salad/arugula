@@ -372,7 +372,7 @@ pub struct StartAgentArgs {
     /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
     #[serde(default)]
     pub worktree: Option<WorktreeArgs>,
-    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
+    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
     /// With issue: take the row over when another machine's agent already works it. Without it, an issue another machine's agent holds refuses the start, naming who holds it; with it, that agent is folded under "earlier agents" and this one holds the row.
@@ -572,8 +572,9 @@ pub struct ReadForgeArgs {
     /// control: "#N" (in the current project) or "iss_…".
     pub block: PaneArg,
     /// A native issue's project for "#N": its id (prj_…) or personal.
-    /// Default: the one this clone's GitHub repo is linked to, else the
-    /// user's personal project.
+    /// Default: the project of the issue you were started on, else the one
+    /// this clone's GitHub repo is linked to, else the user's personal
+    /// project.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -3044,7 +3045,7 @@ impl ToolCall<'_, '_> {
         };
         let home = match (&issue, &inferred) {
             (None, None) => None,
-            _ => project.or(self.current_project(None).await.ok()),
+            _ => project.clone().or(self.current_project(None).await.ok()),
         };
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
@@ -3053,6 +3054,11 @@ impl ToolCall<'_, '_> {
         }
         if let Some(i) = &issue {
             config["work"] = json!({ "issue": i });
+            // Arugula #771: its "#N" is in the issue's project, whatever
+            // its clone is linked to.
+            if let Some(p) = &project {
+                config["work"]["project"] = json!(p);
+            }
         }
         if let Some(c) = &a.command {
             config["command"] = json!(c);
