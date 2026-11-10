@@ -3655,6 +3655,16 @@ impl Block for Agent {
         arugulad_base::hosted::archive::closed(&self.ctx.rt, self.transcript());
         let mut g = self.inner.lock().unwrap();
         g.closing = true;
+        // #662: the run loop stops at `closing`, before `Msg::Closed` could
+        // tell its mentions. The running turn's is dropped, unless its
+        // answer is already in (#606's held turn); what's queued never goes.
+        let ran = if g.result_in { mux::Turn::Ended } else { mux::Turn::Dropped(mux::DropWhy::Exited) };
+        for tag in std::mem::take(&mut g.mention_turn) {
+            self.ctx.followup_turn(tag.to_tag(), ran);
+        }
+        for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+            self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
+        }
         if let Some(l) = g.link.take() {
             l.stop();
         }
