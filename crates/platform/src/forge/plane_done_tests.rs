@@ -137,12 +137,16 @@ async fn a_merged_pr_moves_the_plane_item_to_done() {
 
     assert_eq!(w.run(now()).await, 1);
     let sent = w.fake.sent();
-    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent.len(), 2, "{sent:?}");
     assert_eq!(
         (sent[0].kind.as_str(), sent[0].item.as_deref(), sent[0].state.as_deref(), sent[0].html.as_deref()),
         ("state", Some("item-2"), Some("st-done"), None),
-        "a state change alone: no comment, no body, no footer"
+        "the state change carries no body"
     );
+    assert_eq!((sent[1].kind.as_str(), sent[1].item.as_deref()), ("comment", Some("item-2")));
+    let html = sent[1].html.as_deref().unwrap();
+    assert!(html.contains("Arugula moved this to Done: acme/site#70 merged."), "{html}");
+    assert!(html.contains("via Arugula"), "the connection's footer applies: {html}");
     assert_eq!(w.group(2).as_deref(), Some("completed"));
     let v = read(&w.base, "bob", &w.board).await;
     assert_eq!(on(&v, &second).0, "lane_done", "{v}");
@@ -156,7 +160,7 @@ async fn a_merged_pr_moves_the_plane_item_to_done() {
     merged(&w.app, 88, &[70]).await;
     assert_eq!(w.jobs().len(), 1, "one job to a PR and item");
     assert_eq!(w.run(now()).await, 0);
-    assert_eq!(w.fake.sent().len(), 1, "nothing sent twice");
+    assert_eq!(w.fake.sent().len(), 2, "nothing sent twice");
 }
 
 /// `part of ARUGU-1`, `refs` and `see`, a PR closed unmerged and a key no
@@ -190,7 +194,7 @@ async fn only_a_plain_name_on_a_merge_moves_an_open_item() {
     // Plain beside soft: moved.
     w.merge(77, "Part of ARUGU-1, fixes ARUGU-1", true).await;
     assert_eq!(w.run(now()).await, 1);
-    assert_eq!(w.fake.sent().len(), 1);
+    assert_eq!(w.fake.sent().len(), 2, "the move and its comment");
     assert_eq!(w.group(1).as_deref(), Some("completed"));
 }
 
@@ -215,11 +219,11 @@ async fn a_plane_that_is_down_is_tried_again() {
     assert_eq!(w.run(t).await, 0, "not before its back-off");
 
     assert_eq!(w.run(t + RETRY_MS + 1_000).await, 1);
-    assert_eq!(w.fake.sent().len(), 1, "{:?}", w.fake.sent());
+    assert_eq!(w.fake.sent().len(), 2, "{:?}", w.fake.sent());
     assert_eq!(w.group(1).as_deref(), Some("completed"));
     assert_eq!(w.jobs()[0].state, "done");
     assert_eq!(w.run(t + 2 * RETRY_MS).await, 0);
-    assert_eq!(w.fake.sent().len(), 1);
+    assert_eq!(w.fake.sent().len(), 2);
 }
 
 /// With the project's content off the mirror keeps no body (#467), and the
@@ -234,4 +238,75 @@ async fn the_webhooks_body_moves_the_plane_item_with_content_off() {
     assert_eq!(w.jobs().len(), 1);
     assert_eq!(w.run(now()).await, 1);
     assert_eq!(w.group(2).as_deref(), Some("completed"));
+}
+
+/// The footer setting applies to the comment: `none` leaves the line bare.
+#[tokio::test]
+async fn the_comment_follows_the_connections_footer() {
+    let w = start().await;
+    let (s, v) = call(
+        &w.base,
+        "bob",
+        "PATCH",
+        &format!("/api/projects/{}/trackers/{}", w.team, w.connection),
+        Some(json!({ "attribution": "none" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    w.merge(70, "ARUGU-2: plumbing", true).await;
+    assert_eq!(w.run(now()).await, 1);
+    let sent = w.fake.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    let html = sent[1].html.as_deref().unwrap();
+    assert!(html.contains("acme/site#70") && !html.contains("via Arugula"), "{html}");
+}
+
+/// A connection with close-on-merge off sends nothing for a merge, and the
+/// switch is in the connection and its settings; on again, a later merge moves it.
+#[tokio::test]
+async fn close_on_merge_can_be_switched_off_per_connection() {
+    let w = start().await;
+    let path = format!("/api/projects/{}/trackers/{}", w.team, w.connection);
+    let (s, v) = call(&w.base, "bob", "GET", &format!("/api/projects/{}/trackers", w.team), None).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(v.to_string().contains(r#""close_on_merge":true"#), "on by default: {v}");
+    let (s, v) = call(&w.base, "bob", "PATCH", &path, Some(json!({ "close_on_merge": false }))).await;
+    assert_eq!((s, &v["close_on_merge"]), (200, &json!(false)), "{v}");
+
+    w.merge(70, "ARUGU-2: plumbing", true).await;
+    w.run(now()).await;
+    assert!(w.fake.sent().is_empty(), "{:?}", w.fake.sent());
+    assert_eq!(w.group(2).as_deref(), Some("started"));
+
+    let (s, v) = call(&w.base, "bob", "PATCH", &path, Some(json!({ "close_on_merge": true }))).await;
+    assert_eq!((s, &v["close_on_merge"]), (200, &json!(true)), "{v}");
+    w.merge(71, "ARUGU-2: more plumbing", true).await;
+    w.run(now()).await;
+    assert_eq!(w.group(2).as_deref(), Some("completed"));
+}
+
+/// An item Arugula closed on a merge and a person then moved out of Done is
+/// never closed by another merge; an item Arugula never closed still is.
+#[tokio::test]
+async fn an_item_a_person_reopened_is_not_closed_again() {
+    let w = start().await;
+    w.merge(70, "ARUGU-2: plumbing", true).await;
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.group(2).as_deref(), Some("completed"));
+    assert_eq!(w.fake.sent().len(), 2);
+
+    // A person reopens it in Plane, and another PR naming it merges.
+    w.fake.set_items(vec![
+        item(1, "First", "backlog", 3_000),
+        item(2, "Second", "started", 9_000),
+        item(3, "Third", "completed", 1_000),
+    ]);
+    w.merge(71, "ARUGU-2: follow-up", true).await;
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.fake.sent().len(), 2, "nothing more sent: {:?}", w.fake.sent());
+
+    // ARUGU-1, which Arugula never closed, still closes.
+    w.merge(72, "ARUGU-1: first", true).await;
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.fake.sent().len(), 4);
 }

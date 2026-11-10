@@ -694,6 +694,7 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
                     workspace_slug: c.workspace_slug,
                     agent_writes: policy::summary(&c.write_policy).into(),
                     write_policy: c.write_policy,
+                    close_on_merge: c.close_on_merge,
                 })
                 .collect();
             projects.push(TrackerReachProject { id, name, connections });
