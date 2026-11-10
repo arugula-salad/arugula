@@ -286,8 +286,14 @@ mod tests {
             v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
             serde_json::from_value::<TrackerReachConnection>(v).unwrap()
         };
-        assert_eq!(serde_json::to_value(c(json!({ "epics_as_boards": true }))).unwrap()["epics_as_boards"], json!(true));
-        assert_eq!(serde_json::to_value(c(json!({ "epics_as_boards": false }))).unwrap()["epics_as_boards"], json!(false));
+        assert_eq!(
+            serde_json::to_value(c(json!({ "epics_as_boards": true }))).unwrap()["epics_as_boards"],
+            json!(true)
+        );
+        assert_eq!(
+            serde_json::to_value(c(json!({ "epics_as_boards": false }))).unwrap()["epics_as_boards"],
+            json!(false)
+        );
         assert!(serde_json::to_value(c(json!({}))).unwrap().get("epics_as_boards").is_none());
     }
 

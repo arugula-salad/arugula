@@ -139,10 +139,8 @@ impl Moves {
             Err(e) => bail!("{}", e.1),
         };
         db.tracker_merge_closed(&c.id, m.number, now_ms())?;
-        let note = TrackerWrite::Comment {
-            item: t.id.clone(),
-            text: format!("Arugula moved this to Done: {} merged.", m.pr),
-        };
+        let note =
+            TrackerWrite::Comment { item: t.id.clone(), text: format!("Arugula moved this to Done: {} merged.", m.pr) };
         if let Err(e) = writes::send(app, &m.project, &c, &note, &who).await {
             warn!(project = %m.project, connection = %c.id, "couldn't say on {reference} that Arugula closed it: {}", e.1);
         }

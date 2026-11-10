@@ -5799,7 +5799,12 @@ failed_moves: number,
  * Whether each open epic has a board that follows it (#483). On unless
  * turned off; off, the boards stay and stop following.
  */
-epics_as_boards: boolean, };
+epics_as_boards: boolean, 
+/**
+ * Whether a merged PR that names an item moves it to Done (#852). On
+ * unless turned off.
+ */
+close_on_merge: boolean, };
 
 export type TrackerConnections = { 
 /**
@@ -5897,7 +5902,11 @@ export type TrackerSettings = { agent_writes: string | null, write_policy: Track
 /**
  * Whether each open epic has a board that follows it.
  */
-epics_as_boards: boolean | null, };
+epics_as_boards: boolean | null, 
+/**
+ * Whether a merged PR moves the items it names to Done.
+ */
+close_on_merge: boolean | null, };
 
 /**
  * A write to a tracker's work item, the same for people and agents. `item`
