@@ -129,6 +129,14 @@ plugin's README says where each one shows.
 [teams](https://docs.arugula.io/teams/), [the CLI](https://docs.arugula.io/cli/) and [MCP](https://docs.arugula.io/mcp/). They're built from
 [arugula-salad/site](https://github.com/arugula-salad/site).
 
+When something goes wrong, or before you trust it with your machine:
+
+- [docs/gotchas/](docs/gotchas/README.md): sharp edges people have hit, one page each, found
+  by what you see on screen.
+- [docs/what-leaves-your-machine.md](docs/what-leaves-your-machine.md): what the daemon sends to
+  Arugula control, to Cloud workspaces and elsewhere, what it never sends, and the switch for
+  each.
+
 For working on Arugula itself:
 
 - [docs/development.md](docs/development.md): building from source, testing, releasing, and the
