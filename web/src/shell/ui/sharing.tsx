@@ -76,7 +76,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
       <h2>Guest SSH access</h2>
       <p class="dim">
         Lets you invite someone who has only OpenSSH to watch one of this machine's panes, or type in it if you say so: <i>Invite over
-        ssh…</i> in the pane's menu, or <code>arugula share --guest</code>. Each invite ends when it expires or you revoke it. Off
+        ssh…</i> in the pane's menu, or <code>arugula share --guest</code>. Each invite ends when it expires or you revoke it, and turning this off ends them all. Off
         until you, the owner, turn it on here; Arugula cloud can't.
       </p>
       {error && <p class="error">{error}</p>}

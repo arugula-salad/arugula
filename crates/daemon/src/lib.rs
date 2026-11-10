@@ -684,6 +684,9 @@ fn sharing_cli(
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
             }
+            if lab_flags::BUILT && !on {
+                println!("  Every ssh invite has ended, and anyone using one is cut off.");
+            }
         }
     }
     Ok(())
