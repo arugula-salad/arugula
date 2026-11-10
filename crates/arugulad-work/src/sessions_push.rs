@@ -466,7 +466,8 @@ pub async fn clone_shallow(stage: &Path, remote: &str, token: Option<&str>) -> R
     run(c, "clone it").await.map(|_| ())
 }
 
-#[cfg(test)]
+// Process groups, `sh` and `ps`: Unix only, as the group's kill is.
+#[cfg(all(test, unix))]
 mod tests {
     use std::time::Duration;
 
