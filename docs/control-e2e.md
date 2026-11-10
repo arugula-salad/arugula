@@ -42,7 +42,7 @@ only an account's first passkey may be vouched for by one of its browsers
 | `browser` | control's page in a browser or on a phone, including keys a passkey re-derives ([aru-061](decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md)) | yes | yes | anything |
 | `cli` | `arugula login` in a terminal | yes | older accounts only | CLI, machine |
 | `app` | the desktop app's window | yes | no | app, CLI, machine |
-| `recovery` | a code on paper from your first sign-in | no | no | one browser, CLI, app or code, then it's spent; never a machine |
+| `recovery` | a code on paper from your first sign-in | no | no | one browser, CLI or app, then it's spent; never a machine |
 | `daemon` | a machine | it's what's reached | no | nothing |
 
 Removing a device follows the same line: only a browser whose every link
@@ -52,7 +52,7 @@ On a team's machines, only such a browser or the app makes an editor or an
 owner, never a CLI (the app keeps this, as DK7 decided).
 
 **Why your CLI can't approve a browser.** The CLI's key is a file
-(`~/.config/arugula/device.key`) that any program you run can read, agents
+(`~/.config/arugula/cli-key`) that any program you run can read, agents
 included, and the app's keys reach its window through a loopback port that
 any program on the computer can listen on. If either could approve a
 browser, an agent on one machine could make itself one. Then it could
@@ -72,8 +72,9 @@ machines joined ([Recovery](#keys)). With no device and no code left, a
 fresh GitHub sign-in starts a device reset: 48 hours any device can cancel,
 then a new root, so each machine has to be joined again on the machine
 ([aru-119](decisions/aru-119-an-account-can-reset-its-devices-from-a-fresh-github-sign-in.md)).
-It removes your passkeys too, so after a total loss one reset brings both
-back. Passkeys alone have their own way back, a passkey reset, which leaves
+It removes your passkeys too when its warning reached a verified address
+([below](#page-only-actions-need-a-browser-and-a-passkey)), so after a total
+loss one reset brings both back. Passkeys alone have their own way back, a passkey reset, which leaves
 devices and machines alone ([Page-only actions](#page-only-actions-need-a-browser-and-a-passkey)).
 
 Joining a machine and approving a new browser carry a secret control never
@@ -84,13 +85,18 @@ The rest of this page has the details.
 
 ## Summary
 
-- **One channel type:** every client–daemon stream is a Noise channel,
+- **One channel type:** every client–daemon stream through control, or
+  from one machine to another, is a Noise channel,
   `Noise_IK_25519_AESGCM_SHA256`, on the relay *and* on direct paths.
-  Browsers run it on WebCrypto alone; daemons and the CLI use `snow`.
+  Browsers run it on WebCrypto alone; daemons and the CLI use `snow`. The
+  one exception is a daemon's own page (`http://127.0.0.1:7681`, or its
+  tailnet name): it talks to the daemon it came from over plain `/ws` and
+  its API, under the same access checks, and control isn't in that path.
 - **Every viewer gets its own channel, including on shared sessions.**
   Sessions have no shared key. Revoking someone closes their channel; there
-  is no key to rotate. Changing their role (a team owner made a viewer)
-  closes it too, and their client opens a new one in the new role. What a
+  is no key to rotate. Giving or taking away owner (a team owner made a viewer)
+  closes it too, and their client opens a new one in the new role; a change
+  between editor and viewer takes effect on the open channel. What a
   channel was streaming (a follow) ends with it, and a follow over any path
   ends once its reader may no longer read that pane. Fanning out one ciphertext at the relay waits until
   a measured need (see [Fan-out](#fan-out-later-if-ever)).
@@ -115,14 +121,14 @@ The rest of this page has the details.
   mux, `relay_ws.rs`) and splices clients onto it. It sees connection metadata
   and byte counts only.
 - **Read-only links:** a link carries a one-off device key in its fragment
-  (`#k=…`). The daemon lists that key as a viewer of one session until the
+  (`#link=…`). The daemon lists that key as a viewer of one session until the
   link expires.
 - **Push:**
   - the daemon encrypts the notification (RFC 8291) to a subscription
     the device signed;
   - control only adds the VAPID signature and posts it;
-  - control's own notices (something waits for approval) it encrypts
-    itself, and they say only that;
+  - control's own notices (something waits for approval, someone came in
+    on an invite, a reset) it encrypts itself, and they say what happened;
   - chat's pushes (M122) are control's own too: who, where, and the
     first 200 characters of the message.
 - **Chat:** held by control in plain text (M122): channels, DMs and the
@@ -134,7 +140,7 @@ The rest of this page has the details.
 | Holder | Keys | Where | Lost when |
 |---|---|---|---|
 | Browser / PWA | X25519 `noise`, Ed25519 `sign` | IndexedDB, non-extractable `CryptoKey`s (wrapped where those don't survive: below) | site data is cleared; Safari's 7-day eviction for sites not added to the home screen |
-| CLI | X25519 + Ed25519 | `~/.config/arugula/device.key`, 0600 | the file is deleted |
+| CLI | X25519 + Ed25519 | `~/.config/arugula/cli-key`, 0600 | the file is deleted |
 | Daemon | X25519 `noise`, Ed25519 `sign` | `<state>/daemon.key`, 0600 | the state directory is deleted (re-enroll) |
 | Recovery code | Ed25519 seed | printed once at first sign-in, never stored | the user loses the paper |
 
@@ -177,9 +183,9 @@ device nobody trusted. Now:
 **A device certificate** is what control stores and hands out:
 
 ```
-{ v: 1, account, device: <id>, name, kind: browser|cli|daemon|recovery|app,
-  noise: <x25519 pub>, sign: <ed25519 pub>, created, team? }
-  + approver: <device id>, sig: Ed25519(approver.sign, canonical JSON)
+{ v: 1, account, device: <id>, kind: browser|cli|daemon|recovery|app, name,
+  noise: <x25519 pub>, sign: <ed25519 pub>, created, approver: <device id> }
+  + sig: Ed25519(approver.sign, `illogical device v1` and each field above, a line each)
 ```
 
 - The **first device** of an account is self-signed. It is trusted on
@@ -209,7 +215,7 @@ device nobody trusted. Now:
   device they name as approver; any other is set aside before anything
   else, so it can't count against one that is. Since #761 a new browser is
   approved with the code it shows rather than a fingerprint to compare
-  (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
+  (the first 8 bytes of SHA-256 of `"illogical device id"‖noise‖sign`, which a page from before
   codes still shows).
 - **Who signs what** (`Kind::certifies`, the page's `certifies`): a
   browser signs any kind. A recovery code signs people's devices, not
@@ -220,8 +226,8 @@ device nobody trusted. Now:
   Daemons and pages drop a certificate that breaks this, wherever it is in
   the chain.
 - **What only a browser all the way back does** (`Trust::browser_chained`:
-  the device and every device that certified it, the root included, are
-  `browser`): remove a browser, a phone or a recovery code. A team's
+  the device is `browser`, and every device that certified it, the root
+  included, is `browser` or a recovery code): remove a browser, a phone or a recovery code. A team's
   editor or owner (a roster, a presigned or Ask me first invite), and any
   roster version that changes who the owners are (removing, demoting or
   moving one too), comes from that or the desktop app's device, never a
@@ -254,7 +260,9 @@ device nobody trusted. Now:
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
-  founder). The daemon pins only a team signed that way.
+  founder). The daemon pins only a team signed that way, or named in a
+  signed move (`illogical machine move v1`) from one of its account's
+  devices or, taking it out, an owner of its team.
 - **A team's member list** (its roster) is versioned, and each version is
   signed by a device of an owner in the version before. The one exception
   is a **presigned invite**:
@@ -282,7 +290,8 @@ device nobody trusted. Now:
     account of its own.
   - **Accepted risks:**
     - The link is a bearer token. Whoever holds it joins, which is why it
-      lasts a day (control refuses longer), works once and never grants
+      lasts a day (control refuses longer, past ten minutes for the owner's
+      clock), works once and never grants
       owner.
     - Expiry is checked against `at`, which the invitee writes. Control
       also refuses an expired invite by its own clock, but a daemon can't
@@ -305,7 +314,8 @@ device nobody trusted. Now:
     that session there, rather than members who were removed keeping it.
 - **Rosters only move forward** (`arugula_e2e::checkpoint::advance`):
   - Every machine that checks a team's roster (the team's own machines,
-    a machine a session was shared with, a hosted machine) keeps the last
+    a machine a session was shared with; a hosted machine's is a limit,
+    [below](#hosted-machines-a-projects-delegation)) keeps the last
     version it checked in `control.json`. It takes a newer version only as
     the very next one, following the one it holds. An older version,
     another version with the same number, or a history with a version
@@ -359,8 +369,9 @@ device nobody trusted. Now:
     its own (or move someone's proof to one) in front of an owner.
   - The prompt says who used the link, when the link was made and for
     which role, all from what the owner's device signed. *Add them* signs
-    a plain `v: 1` roster with that role and root, so older daemons follow
-    it and no feature gate is needed.
+    a plain `v: 1` roster with that role and root (`v: 2` while it, or the
+    version before, lists a spent presigned invite that hasn't expired), so
+    older daemons follow it and no feature gate is needed.
   - **Accepted risk:** as with a presigned link, it's a bearer token for
     asking: anyone who has the link can ask, for a week. The owner still
     says yes to each, by name.
@@ -380,8 +391,10 @@ device nobody trusted. Now:
 
 **Revocation:**
 
-- A revocation is a signed `{revoke: <device id>, at}` from any device of
-  the account, or from a team owner's device for team grants.
+- A revocation is `{v, account, device, at, by, sig}`, signed under
+  `illogical revoke v1` by a device of the account (not a machine), and
+  control refuses one dated more than ten minutes from its clock. A team's
+  member is removed by a new roster version instead.
 - A browser, a phone or a recovery code is removed only by a browser all
   the way back to the root. Daemons and pages ask that of the signer's
   certificates that count (`Trust::evaluate`): another certificate for a
@@ -429,12 +442,13 @@ device nobody trusted. Now:
 **Recovery:**
 
 - At first sign-in, the user gets two recovery codes. Each is an Ed25519
-  seed, shown as words, whose certificate (`kind: recovery`) the first
+  seed, shown as 52 letters and digits in fours, whose certificate (`kind: recovery`) the first
   device signs.
-- Any of the account's devices can make new ones. It signs their
+- A browser or a phone of the account, one all the way back to the root,
+  can make new ones. It signs their
   certificates and revokes every code still good, in one request; control
   refuses new codes that don't retire the old.
-- A recovery code lets in exactly one device (a new first device).
+- A recovery code lets in exactly one device.
   Control records which, once, when it first takes an approval by the
   code (`recovery_uses`), and refuses any other device by that code on
   every path from then on (`recovery_spent`). It serves an account's
@@ -465,7 +479,7 @@ browser's device keys, where the passkey gives them:
 - **Which browsers take the keys:** a passkey sign-in on a browser that
   isn't a working device of that account (new, site data cleared, keys
   lost). One that is keeps its own keys. A browser waiting for approval
-  offers *Use your passkey* first, which signs in again and takes them.
+  offers *Use your passkey*, which signs in again and takes them.
 - **The first time**, the passkey's keys are a new device, named for what
   keeps the passkey when control knows it from the AAGUID ("iCloud
   Keychain passkey", else "Passkey"). It's approved once like any other
@@ -493,7 +507,8 @@ browser's device keys, where the passkey gives them:
   it (`POST /api/devices/{id}/pin`, checked against the device's key).
 - **Every later time** (storage cleared, another browser the passkey syncs
   to) the browser derives the same keys, finds the device in the account,
-  and checks the pin with its own key before it takes the root. Control
+  and checks the pin with its own key before it takes the root (a device
+  that is the account's root needs no pin: it's its own root). Control
   can't make that signature, so it can't hand the browser an account of
   its own, which is what the code does for a browser approved normally
   (below). No approval, no new certificate.
@@ -575,7 +590,9 @@ would pass. So the daemon doesn't take the root on control's word. Since
   brought by a browser that came to approve the machine, #326) asks for
   the whole code before it offers Approve. An approval that reaches a
   machine with a secret but no MAC is refused unless `--account
-  FINGERPRINT` names the account (scripts that pass it keep working).
+  FINGERPRINT` names the account (scripts that pass it keep working), or
+  it's a machine going back into the account it was removed from, by the
+  root it kept itself.
 - **What this rests on:** the machine's side is the daemon's own output
   (terminal, or its local page), which control doesn't serve. The other
   side is the approving device, and it's only as trustworthy as that
@@ -585,24 +602,32 @@ would pass. So the daemon doesn't take the root on control's word. Since
   (`features`, as `presigned-invites` is said), print no secret, and get no
   MAC. The page shows them the old way: the code to check against the
   machine's, and the account's fingerprint (its root device's id, the first
-  8 bytes of SHA-256 over its keys, as `1a2b-3c4d-5e6f-7a8b`), which the
+  8 bytes of SHA-256 over `illogical device id` and its keys, as
+  `1a2b-3c4d-5e6f-7a8b`), which the
   machine then shows and asks about (`y`, or the fingerprint typed;
   *They match* / *They don't* in Getting started; `--account FINGERPRINT`
   without asking). A newer daemon or CLI does the same with a control that
   doesn't say `join_secret` in `/control.json`, so a control that lies
   about that gets the compare, not a pass. Daemons from 0.16.0 and before
-  pin without a check, as they always did; control's API keeps working for
-  all of them.
+  pinned without a check; control now refuses them (426), saying to update.
 - **Trust on first use, still:**
-  - an account's first device is self-signed. A browser enrolling as a
+  - an account's first device is self-signed, and trusted on first use.
+    Control says who's first: a browser told that its account has no
+    device yet makes itself the root, checking only that control names no
+    other, which is how an account starts. So a control that says an
+    account has no device can have a browser become its first root,
+    even for an account that has devices elsewhere: a sign-up and that
+    lie read the same to the browser. A browser enrolling as a
     later device no longer takes the account's root on control's word: the
     device that approves it answers the code it shows
     ([below](#approving-a-new-browser-or-phone-the-code-it-shows)), and the
     desktop app signed in from a device takes that device's root
     ([below](#signing-in-the-desktop-app-one-allow)). What's left: a
     browser let in by a recovery code takes the root control names (the
-    recovery certificate must chain to it, but control picks the chain),
-    and one approved by a page from before codes shows the account's
+    recovery certificate must chain to it, but control picks the chain)
+    and compares no fingerprint: a limit for now, and a step that shows
+    the account's fingerprint to check comes after launch; and one
+    approved by a page from before codes shows the account's
     fingerprint to compare;
   - a machine joined before 0.17.0 pinned whatever root control sent then.
     Its *Devices and machines…* fingerprint and `control.json`'s
@@ -687,7 +712,7 @@ The desktop app's window signs in through the person's browser
 - **Falls back to an approval** when there's no certificate: the app
   couldn't make keys (a webview without WebCrypto's X25519 or Ed25519), or
   the browser couldn't sign. The window then makes its own keys and waits
-  for a device to approve it, with the fingerprint, as before.
+  for a device to approve it, with the code it shows, as a browser does.
 - **What this rests on:** control's page in the browser, which signs, and
   in the app's window, which takes the keys: the same page the
   [last row below](#what-holds-against-control) already trusts. The
@@ -702,7 +727,8 @@ The desktop app's window signs in through the person's browser
   session the hand-over made (`sessions.via = app`) enrolls an `app`
   device only. Daemons and CLIs from before `app` can't read one, so
   control leaves `app` certificates out of what it answers a client that
-  doesn't send `x-arugula-features: app-devices` (`compat.rs`): such a
+  neither sends `x-arugula-features: app-devices` nor has a cookie, as a
+  page does (`compat.rs`): such a
   daemon doesn't let the app's window in until it's updated.
 - **Older apps and controls:** an app from before #758 sends no keys and
   no `features: ["no-code"]`, so control gives it a code and the page shows
@@ -767,7 +793,8 @@ that project only.
   rosters and device chains it's checked against).
 - **The key.** The hub makes its hosted key on first start and keeps it in
   `settings`, as it keeps its VAPID key. It signs hosted machines'
-  certificates and nothing else. A new key ends every delegation (they
+  certificates and public previews' grants ([below](#public-previews)),
+  and nothing else. A new key ends every delegation (they
   name the old one), and owners sign again.
 - **The enrollment.** When the platform makes a box, it asks the hub for
   a one-time enrollment (`HubPort::hosted_enrollment`), bound to the
@@ -805,6 +832,16 @@ that project only.
   the team pin, the roster and members' certificates (it serves people as a
   team machine does); for a personal one, the account's root and
   certificates. `GET /api/hosted/trust` gives it again.
+- **Trust on first use, still, for its rosters.** A hosted machine's first
+  roster is control's word at enrollment: no device of anyone's is in the
+  box to have checked an earlier one. On each refresh it takes any newer
+  version signed by owners of the one it holds, not only the very next,
+  and control serves it the latest alone. So a removal control withheld
+  from a hosted machine stays withheld there, while a removal the box has
+  seen holds. Walking rosters one version at a time there, as a team's
+  own machines do, comes after launch; until then, keeping a removed
+  person out of a hosted machine rests on control's routing, as the label
+  already says: it runs the box.
 - **Clients accept it for its project only** (`hosted::accept`,
   `acceptHosted` in `web/src/shell/e2e/hosted.ts`). The directory lists a
   hosted machine only to its project's people, with its certificate,
@@ -823,7 +860,7 @@ that project only.
   It's never one of an account's devices: its certificate is its own
   domain, so `Trust::evaluate` never counts it, it approves nothing, and
   its keys can't stand for a daemon or a browser of anyone's. The shell
-  shows it as **Hosted: the operator can read** wherever a machine's place
+  shows it as **Hosted · operator can read** wherever a machine's place
   is shown.
 - **Routing.** Control routes to a hosted machine only its project's people
   (a locked team's: its owners), never by a share, never as anyone's own
@@ -850,7 +887,12 @@ that project only.
   can read those, as it can read the box.
 - **Revoking.** Any owner's device signs `arugula project delegation
   revoke v1`. Nothing more enrolls under it, even an enrollment recorded
-  before. The machines enrolled before stay, as a revoked device's earlier
+  before. A revoke stays in force: control judges it once, and it holds
+  after the owner or device that signed it leaves the project or the
+  account; every owner's revoke is kept (one per device). Clients and
+  boxes take the earliest of a revoke by an owner as owners stand now and
+  control's own signed word that the delegation closed, and keep it once
+  heard. The machines enrolled before stay, as a revoked device's earlier
   approvals do, until they're removed: by a project owner
   (`DELETE /api/hosted/machines/{id}`) or when the platform deletes or
   rebuilds the workspace (`HubPort::hosted_gone`, which also drops an
@@ -899,9 +941,9 @@ It's S37's standing grant with a project as its resource.
   unless the owner picks (at most 366); the platform refuses one with no
   expiry or a longer one. Devices and machines… has *Runs on hosted
   workspaces* under *Hosted machines*: *Allow runs* asks for a passkey, on
-  a computer or the phone, and *Renew* confirms a new grant, which takes
-  the old one's place (one prompt), when it's about to expire or the
-  project's delegation changed. An account with no passkey is told to add
+  a computer or the phone, and *Renew* (*Sign again* once the project's delegation changed) confirms a
+  new grant, which takes the old one's place (one prompt), when it's about
+  to expire or the delegation changed. An account with no passkey is told to add
   one first; a window with no WebAuthn (the Linux app's) is sent to a
   browser. The CLI holds no passkey, so `arugula runs grant sign` and
   `revoke` send you to the page. The platform's project settings show it,
@@ -931,10 +973,12 @@ It's S37's standing grant with a project as its resource.
   sites or the platform page (`Config::passkey_origins`), and the same of
   a revoke. A new grant supersedes the live one. It holds no passkey or
   device key itself; the hosted machines check again.
-- **Each start carries it.** The platform asks the workspace's machine
-  over the relay (`runs.start`, a typed op), with the grant, the newest
-  revoke of the project's grants, and (a v2's) the granter's passkey log
-  as the hub publishes it. The machine checks, with what it pinned at
+- **Each run carries it.** The machine's pull (`GET /api/hosted/work`, below)
+  brings each run with the grant, the newest revoke of the project's grants
+  under each delegation, and (a v2's) the granter's passkey log as the hub
+  publishes it. `POST /api/projects/{project}/runs/start` asks the same of a
+  machine over the relay (`runs.start`, a typed op), and starts nothing
+  there. The machine checks, with what it pinned at
   enrollment and each refresh (the team's roster and members'
   certificates, or the account's chain; and since DK6 its people's
   passkey logs and the origins, as a deploy's box does): a v2's account is
@@ -991,9 +1035,9 @@ an agent, and a directory, for one hosted machine.
   machine (a person's) fails, saying so, and never reaches it.
 - **The machine pulls it.** A hosted machine asks for its work every few
   seconds, signed as itself (`GET /api/hosted/work`; only a hosted
-  machine's signature opens it), and at once when a start names a run.
-  Control answers every run that's ready for it and hasn't started, again
-  and again until it starts, and the project's revokes every time. A
+  machine's signature opens it).
+  Control answers every run that's ready for it and hasn't started, at most
+  20 a pull, again and again until it starts, and the project's revokes every time. A
   paused box is woken for its run. One run goes at a time on a machine.
   A run nobody asks for in 15 minutes fails.
 - **Checked again on the machine.** The operation's bytes must hash to the
@@ -1013,9 +1057,10 @@ an agent, and a directory, for one hosted machine.
     keys, its enrollment, the revokes it kept) or write anything of the
     box user's;
   - reads the box user's repos through their group, and works only in its
-    own copy (a clone, under `~runner/work/ID`, which is also its `HOME`);
+    own copy (a clone, or a plain copy of what isn't a repo, under
+    `~runner/work/ID`, which is also its `HOME`);
   - can't reach the daemon's ports, the provider's agent or the privileged
-    ports on loopback (iptables rules the daemon makes before the first
+    ports on loopback (nftables or iptables rules the daemon makes before the first
     run; until they're in, nothing runs).
   When a run ends, or is stopped, everything `runner` runs is killed.
 - **In a pane.** A new pane in the `runs` session, an ordinary end-to-end
@@ -1023,8 +1068,8 @@ an agent, and a directory, for one hosted machine.
   which run it is, the operation's hash and the exact command, with
   anything that wouldn't print as itself escaped.
 - **Agent runs** are Claude Code, headless (`claude -p`), with the
-  instruction, as `runner` in the run's copy. Its login reaches it on its
-  standard input, never on a command line, and its exit is the run's.
+  instruction, as `runner` in the run's copy. Its key is a placeholder the
+  provider's proxy fills in, and its exit is the run's.
   It's told it runs headless (the end of its turn ends the run), and the
   daemon's own binary follows what it says (`arugulad _agent-run`, its
   `stream-json`): a turn that ends with background work it started still
@@ -1046,12 +1091,21 @@ machine.
 project's hosted box", aru-115; `crates/platform/src/db/sessions.rs`,
 `arugula_e2e::session`, `arugula_control_wire::work`). `@arugula` in a
 project's thread starts a session on the box the project's agents run on,
-as its asker, on the project's key, under the standing grant's
-`runs.instruct`. M254 keeps them; the box's side (M255) and dispatch (M256)
-follow.
+as its asker, on the project's key (else the platform's, for a workspace
+whose maker is on the beta's list), under the standing grant's
+`runs.instruct`.
 
 - **Only on a hosted box,** never a person's machine: nobody's mention
   wakes an agent on someone's computer.
+- **Under the project's standing grant.** A session starts only while the
+  project has a live standing grant with `runs.instruct` for its live
+  delegation, and the box checks the grant itself before each turn,
+  against what it pinned and the revokes it kept, as it does a run's. An
+  owner's revoke that stops running work stops every live session at
+  once (one that lets them finish lets a turn under way end, and stops
+  the rest); the box keeps the revoke and stops them too, a queued
+  session with no grant fails, and a grant signed afterwards doesn't bring
+  them back.
 - **The prompts are plain text in control** (`session_prompts`): what the
   thread asked, given to the box. Text from GitHub goes to the agent
   fenced as quoted data, with its `author_association`.
@@ -1061,13 +1115,21 @@ follow.
   so a report can't be replayed or moved to another session; the state
   changes, errors and results are kept with their signatures
   (`session_events`, append-only). Control records only what it sees
-  itself: a session nobody took, or whose box is gone, fails; a person
+  itself: a session nobody took fails; one whose workspace is deleted stops,
+  and one whose box is rebuilt is queued again on the new box; a person
   stops one; a box quiet for 60 s mid-turn is `unresponsive` until it's
   heard from again. Those events have no signature.
-- **One branch, no sends.** The box pushes `arugula/<session>-<slug>` and
+- **One branch, no sends.** The box pushes `arugula/<8 hex of the session's id>-<slug>` and
   nothing else, with an installation token minted for each push and never
-  written to disk (the repo's contents and workflows: aru-115, amended). The PR is a draft its asker sends, with their one-use
-  user token.
+  written to disk (the repo's contents and workflows: aru-115, amended).
+  The platform mints it only while the session's asker may push to that
+  repo on GitHub, asked of GitHub for each push (write or better, under
+  the identity the hub holds for them): a session pushes as the person who
+  asked for it, so it pushes only where they could. No identity, a lesser
+  role, an asker whose account is gone, or no answer from GitHub refuses
+  the push, with the reason for the box
+  (`crates/platform-chat/src/sessions/push.rs`). The PR is a draft its
+  asker sends, with their one-use user token.
 
 **Who starts one** (M256, `crates/platform-chat/src/chat/sessions.rs`): an owner
 or editor of the project, on the hosted beta's list, by writing `@arugula`
@@ -1080,7 +1142,7 @@ can read resolved to what control holds of it
 (`crates/platform-chat/src/sessions/hydrate.rs`). A session stops when its
 workspace is deleted or its asker leaves the project, and when it's been
 done a day with no prompt (`ARUGULA_SESSION_IDLE_END`, in seconds): a done
-session holds one of its box's three slots, which this frees, and the box
+session holds one of the six its box holds, which this frees, and the box
 removes its checkout and its user's `~/.claude`. It stops too when a PR
 from its branch merges (M265, whoever opened the PR, once a turn under way
 is done): its card says "merged ✓", and its thread is done and leaves the
@@ -1090,8 +1152,8 @@ pressed it, so it's that mention, checks and all; the session's branch is
 named for the issue (`i<number>-<title's words>`). A workspace's finish step (its spec's `finish`, M261) runs on the
 box after each turn, as the session's user; a turn whose finish step fails
 twice isn't pushed. Each turn's report carries the agent's last message,
-which control posts in the session's thread as its asker's, `via` the
-session (`crates/platform-chat/src/sessions/answer.rs`): once per report it
+which control posts in the session's thread as the session's own (no
+author, `via` `said:<ses>`, `crates/platform-chat/src/sessions/answer.rs`): once per report it
 keeps, with no mentions, never through chat's post, so it wakes nobody
 and prompts nothing.
 
@@ -1099,10 +1161,12 @@ and prompts nothing.
 `crates/platform-chat/src/sessions/pool.rs`, `asks.rs` and `moves.rs`). A
 session runs on the workspace the project's agents run on, if someone
 chose one, else its only one. With several and none chosen, it picks one
-itself: of those whose spec has the repo, one that's awake (ready and
-online) with a free slot first, then one asleep with a free slot (woken
-for it), then the least busy: the fewest live sessions (queued, or a
-turn under way), then the fewest done ones, then by name. A box runs
+itself, of those whose spec has the repo (all of them, if none has): with a
+free slot and no live session (queued, or a turn under way), one that's
+awake (ready and online) first, then one asleep (woken for it); then one
+awake and busy, then any other with a slot, then a full one. Within each,
+the fewest live sessions, then the fewest done ones, parked or not, then by
+name. A box runs
 three sessions and holds six (no more than the session users it says it
 has on its pull; three when it doesn't say): a done one idle 30 minutes is parked (its
 box closes its agent, keeping its checkout and conversation; its card
@@ -1111,8 +1175,8 @@ then opens it again (Arugula #215). The
 repo is the one the ask names (`owner/name`, or a name only one repo
 has), else the only one the boxes have. It asks only when it must: when
 the boxes have several repos and the ask names none, an ask lists them,
-and when the ask names a repo the project linked that no box has, a line
-says so. What still needs the asker (which repo, or a question the
+and when the ask names by `owner/name` a repo the project linked that no
+box has, the session's box clones it at its start. What still needs the asker (which repo, or a question the
 session's agent asks) is a message in the thread, also sent to the
 channel, that mentions them: an unread mention and a push, until it's
 answered. It's a form there, a button per choice, and a press answers
@@ -1157,9 +1221,9 @@ or whoever runs yours) does:
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
-| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, through the relay alone. Revoking the delegation stops every certificate made after it; a machine certified before it stays accepted until an owner removes it or the workspace is deleted or rebuilt |
+| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted · operator can read"). Only that project's people reach it, through the relay alone. Revoking the delegation stops every certificate made after it; a machine certified before it stays accepted until an owner removes it or the workspace is deleted or rebuilt |
 | enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
-| starts runs on a project's hosted workspaces | only under an owner's standing grant, confirmed with their passkey (signed by their browser before DK6), which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
+| starts runs or agent sessions on a project's hosted workspaces | only under an owner's standing grant, confirmed with their passkey (signed by their browser before DK6), which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires. A revoke that stops running work stops the sessions under way too |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's
@@ -1185,7 +1249,11 @@ its build's modules (`web/scripts/check-imports.mjs`). A modified platform
 page could read what it shows, which is the platform plane's plaintext that
 control holds anyway (chat, Cloud workspaces), but it can't use a device key
 or reach a terminal. Its session is its own host's, made by the hub from
-yours and ended with it; passkeys stay on control's page.
+yours and ended with it. A passkey prompt on it is a deploy approval: the
+platform page asks for that itself, over bytes it chose, so a modified
+platform page could word an approval as it likes. Standing grants, and
+everything that changes who's in an account, are signed on control's page
+alone.
 
 So the promise is end to end encryption against the relay and against
 anyone who gets control's data, with the client code and the join trusted.
@@ -1206,24 +1274,32 @@ it came from.
   ```
 - AES-GCM rather than ChaCha20-Poly1305, because WebCrypto has AES-GCM and
   not ChaCha. The browser then ships no crypto code: the whole initiator is
-  [about 190 lines](archive/spikes:spikes/s15-control/web/noise.ts) over `crypto.subtle`.
-- **Prologue:** `"arugula/1" ‖ daemon id ‖ session id or empty`. If the
-  relay splices a client onto the wrong daemon, the handshake fails.
+  [about 190 lines](../web/src/shell/e2e/noise.ts) over `crypto.subtle`.
+- **Prologue:** `"illogical/1\n" ‖ daemon id ‖ "\n"`, frozen with the
+  signing domains (`crates/e2e/src/frozen.rs`). If the relay splices a
+  client onto the wrong daemon, the handshake fails.
 - **Message 1's payload** is encrypted to the daemon's static key only, so
-  it is replayable. It may carry only idempotent requests (`hello`, and
-  `attach` with offsets). It never carries input, method calls or intents.
-  Message 2's payload carries the `hello` tree. A block's channel carries
-  its grant there instead ([Block channels](#block-channels)).
+  it is replayable. A device's own channel sends an empty one. It never
+  carries input, method calls or intents. A block's channel carries its
+  grant there instead ([Block channels](#block-channels)), and a public
+  preview's its public grant ([Public previews](#public-previews)), which
+  only say who may open the channel.
+- **Message 2's payload** on a device's own channel is the daemon's clock,
+  `{"now": <ms>}` (`Welcome`), or a refusal,
+  `{"ok":false,"refused":"unknown-device","message":"…"}`. The `hello` tree
+  comes after the handshake, as the first message on the channel.
 
 **Framing.**
 
 - On WebSocket, one binary message is one Noise message.
 - On a mux stream (the relay's splice), each Noise message is
   `len (u32 BE) ‖ bytes`.
-- Plaintext starts with one byte: `0` means a whole protocol message
-  follows (today's JSON or binary frame), and `1` means more follows. That
-  covers snapshots over the Noise limit of 65,535 bytes. Senders chunk at
-  16 KB.
+- Plaintext starts with one byte: `0` means this chunk ends a message, and
+  `1` means more follows. That covers snapshots over the Noise limit of
+  65,535 bytes. Senders chunk at 16 KB.
+- A message, once joined, starts with its kind: `T` (the protocol's JSON),
+  `B` (its binary frames), `Q` (an HTTP request) or `R` (its response).
+  One channel carries what a page does over `/ws` and its API calls.
 
 **Costs, measured in the spike:**
 
@@ -1288,10 +1364,13 @@ Control's relay is the daemon's WebSocket-and-mux transport (`relay_ws.rs`,
 first built for the dial-out tunnel of M4c, since removed) with control at
 the home end:
 
-- An enrolled daemon keeps one WebSocket to `wss://control/dial`,
-  authenticated by a Noise handshake with its daemon key. (The spike
+- An enrolled daemon keeps one WebSocket to `wss://control/api/relay/dial`,
+  authenticated by a request signed with its daemon key (`x-arugula-auth`,
+  `arugula_e2e::cert::request_auth`). (The spike
   trusts `?pub=`; the real one checks the key against the account's chain.)
-- A client connects to `wss://control/c/<daemon id>`. Control checks that
+- A client connects to `wss://control/api/relay/c/<daemon id>`. A page opens
+  `wss://control/api/relay/m` once instead, and carries each daemon's channel
+  inside it as a numbered one. Control checks that
   the account may reach that daemon (metadata it has anyway), opens a mux
   stream and splices the two. It forwards opaque Noise messages and counts
   bytes per account (for fair use and the meter).
@@ -1311,13 +1390,12 @@ the home end:
 - A relayed round trip is about the client↔relay round trip plus the
   relay↔daemon one. Compared with the direct path, the relay adds about
   one relay↔daemon round trip (minus whatever the triangle saves).
-- **So the relay must run in the region nearest the daemon.** From geek,
+- **So a relay adds least in the region nearest the daemon.** From geek,
   ewr adds about 9–19 ms; ord added 52 ms.
-- **Hosted control is multi-region on Fly.** A daemon dials the anycast
-  name and lands on its nearest machine, which holds its mux. A client may
-  land elsewhere; that machine answers with `fly-replay:
-  instance=<machine>` so Fly routes the WebSocket to the machine holding
-  the mux. Self-hosted control is one process and needs none of this.
+- **Hosted control is one machine on Fly,** in ewr
+  (`packaging/control/fly.toml`). It holds every daemon's mux in its memory
+  (`Relay` in `crates/control/src/relay.rs`), and every daemon and client
+  connects to it, wherever they are. Self-hosted control is one process too.
 - **Capacity:** one relay process held 1,000 concurrent channels to one
   daemon. Each typed once a second, with p50 0.9 ms and p99 7 ms, 0
   failures, and 115 MB RSS on loopback. Streams are cheap; uplink
@@ -1339,7 +1417,7 @@ every request and keystroke through the dial-out tunnel (`/h/<name>/…`,
 since removed) on the home daemon at the time: 41.7 ms against 1.4 ms
 direct. The daemon now sets
 `TCP_NODELAY` on every accepted connection, and relayed requests take
-2.0 ms. Control's relay must do the same.
+2.0 ms. Control's relay does the same.
 
 ### Direct paths, and Chrome's Local Network Access
 
@@ -1353,9 +1431,9 @@ relay. The spike found a wrinkle:
   therefore can't open `wss://geek.<tailnet>.ts.net` until the user grants
   the *local network access* permission. Granting it worked in the spike.
 - **So control's web client:**
-  - asks for local network access the first time the directory lists a
-    direct URL, with a line saying why ("connect straight to your machines
-    when you're on the same network");
+  - has no step of its own for the permission: it tries each direct URL the
+    directory lists, for 1.5 seconds each (`web/src/shell/client.ts`), and
+    whatever Chrome does about the permission happens then;
   - falls back to the relay when it's denied, or until it's granted;
   - doesn't need the permission when served by a daemon itself, as today:
     that page is on the tailnet already.
@@ -1364,16 +1442,19 @@ The host chip says "direct" or "relayed" either way.
 
 ## Read-only links
 
-- A link is `https://control/s/<link id>#k=<base64url X25519 private key>`.
+- A link is
+  `https://control/#link=<daemon id>.<daemon's Noise key>.<X25519 private key>.<its public key>[.<when it ends, ms>]`,
+  the keys in hex (`makeLink` in `web/src/shell/control.ts`).
 - Making one: the sharing device generates the key pair. Its public key
   goes to the daemon as a **link principal** (viewer of one session,
   expiry, "from now" by default), signed by the sharer's device.
 - Opening one: the page reads the fragment, uses it as its Noise static key
   and connects through the relay. The daemon finds the key among its link
   principals and serves that session read-only.
-- Revoking or expiring the link removes the principal and closes its
-  channels.
-- **Control sees** that the link id was opened, never the key or the
+- An owner of the machine revokes a link (`DELETE /api/links/{id}`), and
+  that, or its expiry, removes the principal and closes its channels.
+- **Control sees** that a link to that daemon was opened
+  (`/api/relay/link/<daemon id>`), not which link, and never the key or the
   content. Fragments are never sent in requests.
 - **Link previews:** an unfurler that ran the page's script would see the
   fragment. The spike's share page reports what a script-running fetcher saw:
@@ -1383,9 +1464,11 @@ The host chip says "direct" or "relayed" either way.
   | Slack | pending | pending |
   | iMessage | pending | pending |
 
-  Whatever the results, the share page also refuses to connect until it has
-  focus and a user gesture ("Open the live view"). A headless previewer
-  never clicks.
+  Whatever the results, the page does nothing with a `#link=` fragment
+  until someone presses *Watch this session* in a window that has the
+  focus (`waitForLinkOpen`, `web/src/shell/ui/link-note.tsx`): no fetch,
+  no key read, no channel. A script's click doesn't count, and a headless
+  previewer never clicks.
 
 ## Block channels
 
@@ -1441,6 +1524,7 @@ state (the daemon's `Site::site_key`). There control serves only:
 | `/.arugula/boot.js`, `/.arugula/sw.js`, `/.arugula/shim.js` | `web/src/shell/block/`'s scripts; the worker gets `Service-Worker-Allowed: /` and no CSP |
 | any request with `Service-Worker: script` | `self.ARUGULA_APP_SW="<path>";importScripts("/.arugula/sw.js")`: the app's own worker, run inside the block's |
 | `/.arugula/relay?d=<daemon id>` | the block's channel through the relay, for a socket whose `Origin` is the block's own |
+| anything else under `/.arugula/` | 404 |
 | anything else | 503: the worker wasn't in the way |
 
 Control's page, cookies and API never answer on a block's origin, and
@@ -1549,8 +1633,8 @@ page that framed them with `postMessage`. Every message carries
   reads as one.
 - **Which way it went** (`web/src/shell/blocks/block-route.ts`): each block
   through control shows "direct" or "relayed" from its frame's `route`,
-  or "own site" once it fell back to the machine's own block site, in a
-  corner of its frame. That's the worker's channel (the block's
+  or "own site" once it fell back to the machine's own block site, in its
+  bar. That's the worker's channel (the block's
   requests); its tooltip adds why not direct, and which way the pages'
   WebSockets went (`data-block-route-why`, `data-block-ws-route`), and
   control's page logs each to its console. The host menu's *This machine* section sums them
@@ -1582,7 +1666,7 @@ on a block origin, through the hosted machine's relay socket.
   device signed in has nothing to sign one with.
 - **Never the provider's preview URLs.** E2B's are public by default and
   need a header browsers can't send. A test (`no_provider_preview_urls`
-  in `crates/control/src/blocks.rs`) keeps their hosts out of the tree.
+  in `crates/control/src/blocks.rs`) keeps their hosts out of the code.
 - **Public previews (M187)** are a separate path (below): a port a member
   makes public is served through the relay on a registrable domain of its
   own, never under the block domain, since every block origin shares a
@@ -1615,9 +1699,12 @@ at `https://<id>.<preview domain>` (`ARUGULA_PREVIEW_DOMAIN`,
   /api/hosted/previews`, signed as the machine; the platform answers),
   says that port is public under that id now. If control can't be asked,
   nothing is served. An open channel (a WebSocket) is checked again every
-  20 seconds and closed once the port isn't public. So control can't open
-  any other port of the machine, and a preview turned off stops within a
-  minute even while control's own cache (15 seconds) lags.
+  20 seconds and closed once the port isn't public. So a preview turned
+  off stops within a minute even while control's own cache (15 seconds)
+  lags. Which other port is public is control's word, though: the grant is
+  control's signature and the list is control's unsigned answer, and the
+  machine refuses only its own ports by itself. Against a lying control
+  the port list is a limit, as the label says: it runs the box.
 - **The id** is 32 random hex characters, made fresh each time a port is
   made public and kept while it's renewed: never the workspace's id, and a
   link that was turned off stays dead. It's in `hosted_ports.public_id`
@@ -1629,11 +1716,18 @@ at `https://<id>.<preview domain>` (`ARUGULA_PREVIEW_DOMAIN`,
   `Forwarded`, `Via`, `CF-*`). Its cookies are the preview's own: nothing
   of control's is ever sent to this domain, which shares no site with
   `arugula.io` or `arugula.run`. An answer's `Set-Cookie` loses any
-  `Domain`, so one preview can't set a cookie for another under the
-  shared domain. The machine passes requests from the preview's own pages
+  `Domain`, so a server can't set a cookie for another preview that way.
+  A preview's own script still can, for the whole of `arugula.site`, and
+  the browser then sends it to every preview it visits: a limit until
+  `arugula.site` is on the Public Suffix List, which is being asked for.
+  A preview can't read another's cookies, and nothing of control's lives
+  there. The machine passes requests from the preview's own pages
   as local (`Origin` and `Referer` rewritten, as for blocks), but leaves a
   request from another site with its own `Origin`, so the dev server's own
-  checks still see it; and it adds no frame rules of ours.
+  checks still see it. A WebSocket through a preview arrives with a local
+  `Origin` whichever site opened it, so a dev server's Origin check on its
+  sockets tells it nothing there; a preview's sockets carry no cookies
+  either way. It adds no frame rules of ours.
 - **Asleep.** A paused box isn't woken for a stranger: control answers
   503 with a short page that says it's asleep. A member opening the
   workspace wakes it (M182).
@@ -1668,34 +1762,38 @@ leaves it. So:
 - **Subscribing:**
   - devices subscribe once, with control's VAPID public key as the
     `applicationServerKey`;
-  - the device signs `{endpoint, p256dh, auth}` with its `sign` key, and
-    control stores and distributes that.
+  - the device signs `{account, device, endpoint, p256dh, auth, at}`
+    (`illogical push v1`) with its `sign` key, and control stores and
+    distributes that.
   - The signature matters: otherwise control could swap in a `p256dh` of
     its own and read notifications.
 - **Sending:**
   - the daemon checks the signature and encrypts the payload (today's
     `push::encrypt`);
-  - it hands control `{endpoint, ciphertext, ttl, urgency}` through the
-    relay socket;
+  - it hands control `{endpoint, body}` in a signed
+    `POST /api/daemon/push`;
   - control signs the VAPID JWT and posts it.
 - **What control and the push service see:** endpoint, size and timing.
-  Control logs "daemon X notified device Y".
-- **Control's own notices:** a new device waiting for the account, or
-  someone asking to join a team (to its owners). Control encrypts these
-  itself. They say only that something waits ("A new browser wants into
-  your account", "Ada asks to join Acme"); approving still happens on the
-  page, with the fingerprint.
+  Control logs the daemon, its account and the push service's status.
+- **Control's own notices:** a new device waiting for the account, someone
+  asking to join a team or joining on an invite (to its owners), a machine
+  someone wants to share, and news of the account or its teams (a reset, a
+  member's account deleted). Control encrypts these itself. They say what happened ("A new
+  browser wants into your account", "Ada asks to join Acme"); approving
+  still happens on the page.
 - **Chat's pushes (M122):** control sends these itself, encrypted to each
   subscription, since it holds the chat anyway (S41 decision 5): who, where
   and the first 200 characters ("jake mentioned you in #general", "jake
-  wrote to you"), tagged `chat-<room>` with the room for the tap. What
+  wrote to you"), tagged `chat-<room>` (`chat-<room>-t<parent>` for a reply
+  in a thread) with the room for the tap. What
   pushes follows the room's level (#113): all messages, mentions only or
   nothing, with the person's defaults for DMs, channels and threads. A
   mention, `@channel`, `@here` or one of the person's keywords counts as a
-  mention. Not your own posts, a room you have open, or a room you were
-  pushed for in the last minute, and nothing at all while do not disturb is
-  on (a snooze or quiet hours, #115). A reminder on a saved message is one
-  push. Reactions, pins, system lines and typing push nobody.
+  mention. Not your own posts, a room you have open, or a room (or a thread
+  of it) you were pushed for in the last minute, and nothing while do not
+  disturb is on (a snooze or quiet hours, #115), unless the sender of a DM
+  asked to notify you anyway. A reminder on a saved message is one push, tagged
+  `saved-…`, do not disturb or not. Reactions, pins, system lines and typing push nobody.
 - **What someone hears:** an account turns three kinds on or off
   (`/api/push/prefs`, the *Push:* items under *Notify this device*), for
   every device it turned on:
@@ -1704,7 +1802,7 @@ leaves it. So:
     subscriptions of someone who turned these off, and holds back a relay
     from a daemon that hasn't fetched since (answering 204).
   - **Projects:** the platform's other pushes (inbox, deploys, runs,
-    workspaces).
+    workspaces, a saved message's reminder).
 
   Notices about the account always go: control's own, and the platform's
   `agent-token-…` and `client-secret-reads-…`. Control can tell the kinds
@@ -1748,7 +1846,7 @@ only the page does takes the session cookie alone (`auth::PageSession`):
   sign-in it started itself and redeem it for a cookie);
 - enrolling and approving devices, and machines' joins;
 - recovery codes;
-- adding a passkey.
+- adding a passkey (which reads the cookie itself, `session_of`).
 
 **Adding a passkey** (`passkey.rs`) takes more than a session, since
 attestation is `none` and a passkey made in software can claim to verify
@@ -1782,7 +1880,8 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
 - every device of the account gets a push ("A passkey was added to your
   account") naming the device that signed for a first one, or else how the session
   signed in and its User-Agent (what a session says its device is is a
-  claim), and the passkey keeps both.
+  claim), and the passkey keeps that device, the request's User-Agent and
+  which session it was.
 
 **Removing a passkey takes another** (DK10, #393, aru-126). A session
 alone can't, or someone holding the GitHub account (or a stolen session)
@@ -1799,8 +1898,8 @@ one, or, if you've lost them, start a passkey reset"); a passkey can't
 sign its own removal. The last passkey can't be removed at all, as
 there's no other to sign: 409 `last_passkey` ("add another passkey
 first, or start a passkey reset"), and the page disables its Remove and
-says why. Never from the desktop app's window. Only a reset drops
-passkeys without another's say-so, every one of them `by reset` (for an
+says why. Never from the desktop app's window. Besides deleting the account, only a
+reset drops passkeys without another's say-so, every one of them `by reset` (for an
 account with GitHub linked; passkeys that are its only way in stay):
 
 - **The passkey reset** (aru-119 as amended, `reset.rs`), for passkeys
@@ -1819,7 +1918,7 @@ account with GitHub linked; passkeys that are its only way in stay):
   needs a verified address that hasn't changed in 48 hours (409 `no_email`
   or `email_changed`, pointing to support); its start waits for the
   warning email to be taken, and isn't recorded if it isn't (503
-  `email_failed`). A cancel after it's due, or after it finished, is 409
+  `email_failed`). A cancel after it's due, or in the day after it finished, is 409
   `already_done`. The page offers it under Passkeys, and *Devices and
   machines* shows one waiting, with a cancel this device signs.
 - **aru-119's device reset**, which removes the passkeys with the devices
@@ -1839,8 +1938,8 @@ event is kept as its proof; or what control vouches for: `signup`,
 before DK10, `reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
 from before the log, whose RP may name each of control's sites, since
 which one wasn't kept). Each event hashes the one before, as
-`deploy_events` do (aru-103); triggers refuse an update or a delete, and
-the log outlives its account. Anyone may read it
+`deploy_events` do (aru-103); triggers refuse an update, a delete or an
+event out of order, and the log outlives its account. Anyone may read it
 (`GET /api/accounts/{id}/passkeys/log`), and anyone checks a passkey's
 assertion against it with `arugula_e2e::passkey::verify` (the page's copy
 is `web/src/shell/e2e/passkey.ts`; `contract/examples/logic/passkey/` pins
@@ -1861,8 +1960,7 @@ desktop app's window enrolled as a `browser` device it named ("Arugula app
 on …", "illogical app"), and it approved browsers. A browser or a phone
 such a window approved counts again wherever control checks "a browser all
 the way back" (signing for a passkey, approving a browser or recovery
-codes, removing a browser, raising a team's owner or editor, a standing
-grant's signature), when control stored and approved
+codes, removing a browser, raising a team's owner or editor), when control stored and approved
 both rows before #1343 shipped: before `2026-10-22T20:18:00Z`
 (`legacy_app::APP_KIND_SHIPPED_MS`, when the v0.59.0 release run's
 `control` job finished, rounded down). The window then counts as the link
@@ -1937,13 +2035,16 @@ sleeps, and control pushes and searches them itself.
   on a machine. The project's members read them; owners and editors make,
   write and delete them, viewers read. An agent session on a Cloud workspace
   makes them with its asker's rights and writes only its own. Nothing
-  shares one outside its project.
+  shares one outside its project; its owner can make a copy of one of their
+  own in another project they write in (*Share with…*), and that copy is
+  the other project's Doc.
 - **Threads on objects (M196):** a room on one object, in the object's
   project: a native issue, or a linked repo's mirrored PR or issue. Those
   who read the object read its thread (for a private repo's item, only
   those GitHub says may read the repo).
 - **Text agents write (M197):** an agent reads or writes only under a grant
-  on its machine (`threads.read`, `threads.post`, `issues.write`), off
+  on its machine (`threads.read`, `threads.post`, `issues.write`,
+  `sessions.start`, `sessions.reply`), off
   until the machine's owner gives it over a project or their own DMs, and
   only over what the owner reads. Control checks it on every call, so a
   revoked grant refuses the next one. What an agent writes is stored with
@@ -1972,8 +2073,8 @@ sleeps, and control pushes and searches them itself.
   so a machine that just joined isn't refused. Deleting an account reaches
   it at once.
 - **Kept until deleted** (S41 decision 6): an author or an owner deletes a
-  message; deleting an account deletes its DMs and its machines' threads
-  and blanks its messages elsewhere (issue comments and its agents' posts
+  message; deleting an account deletes its DMs (a group DM still with two
+  others goes on) and its machines' threads and blanks its messages elsewhere (issue comments and its agents' posts
   included); a disbanded team's rooms go with it. Deleting a message deletes its files,
   reactions and pin; a room's go with the room. Nobody deletes a single
   issue: a project's issues and their threads go when the project does
