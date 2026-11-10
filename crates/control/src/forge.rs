@@ -18,8 +18,8 @@
 
 use std::sync::Arc;
 
+use arugula_control_common::port::{GithubUser, TokenAnswer};
 use arugula_control_wire::forge::{ForgeWatch, ForgeWatching, GithubToken, GithubTokenRequest};
-use arugula_control_wire::internal::{GithubUser, TokenAnswer};
 use arugula_platform_api::{NO_APP, PlatformPort as _, good_repo};
 use axum::{Json, extract::State, http::StatusCode};
 use tracing::info;

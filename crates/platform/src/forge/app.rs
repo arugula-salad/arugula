@@ -445,7 +445,7 @@ pub fn pushes(role: &str, permission: &str) -> bool {
     }
 }
 
-pub use arugula_control_wire::internal::GithubUser;
+pub use arugula_control_common::port::GithubUser;
 
 pub struct GithubApp {
     pub id: String,

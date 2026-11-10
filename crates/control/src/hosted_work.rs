@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_wire::internal::HostedMachine;
+use arugula_control_common::port::HostedMachine;
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
     work::{

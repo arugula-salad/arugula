@@ -7,16 +7,17 @@
 //! with.
 //!
 //! Each method is one `POST /internal/<hub|platform>/v1/<method>`, its
-//! arguments a JSON object (an `*Args` of `arugula_control_wire::internal`),
+//! arguments a JSON object (an `*Args` of `arugula_control_common::port`),
 //! its answer the method's JSON (200), or
 //! `{"error": ...}` (500, or 404 for a method this side doesn't have yet:
 //! the side that's called ships a method a release before the caller uses
 //! it). Every call is signed (`arugula_control_common::internal`): the key
 //! never crosses the network.
 //!
-//! The arguments and answers are `arugula_control_wire::internal`'s (#219),
-//! so they're in the contract's schema and examples, and keep the crate's
-//! two rules: the bytes don't change, and nothing is `deny_unknown_fields`.
+//! The arguments and answers are `arugula_control_common::port`'s, so
+//! they're in its schema and examples (`crates/control-common/port/`), and
+//! keep the wire's two rules: the bytes don't change, and nothing is
+//! `deny_unknown_fields`.
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -43,7 +44,6 @@ use tracing::Instrument as _;
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
-    internal::args::*,
     run_logs::{Upload, UploadGiven, Uploaded},
     work::{
         ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
@@ -51,9 +51,9 @@ use arugula_control_wire::{
     },
 };
 
-use arugula_control_wire::internal::{
+use arugula_control_common::port::{
     Account, BoxMember, BoxPost, BoxPosted, ChangePage, Daemon, Deleted, Flags, GithubUser, HostedMachine, Meter,
-    Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken,
+    Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken, args::*,
 };
 
 use crate::{
@@ -63,7 +63,7 @@ use crate::{
 };
 
 /// Where the hub's internal API is mounted, and the platform's.
-pub use arugula_control_wire::internal::{HUB_PREFIX, PLATFORM_PREFIX};
+pub use arugula_control_common::port::{HUB_PREFIX, PLATFORM_PREFIX};
 
 /// The largest internal call's arguments: a page of ids, a push message.
 const MAX_CALL: usize = 4 * 1024 * 1024;

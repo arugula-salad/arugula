@@ -99,7 +99,7 @@ pub const WORKSPACE_FAILED: &str =
 /// The most runs one pull answers.
 pub const PULL_LIMIT: u32 = 20;
 
-pub use arugula_control_wire::internal::HostedMachine;
+pub use arugula_control_common::port::HostedMachine;
 
 /// A reason's words, for a person: `not_taken: its cloud workspace didn't
 /// ask for it` is "its cloud workspace didn't ask for it". `None` for a

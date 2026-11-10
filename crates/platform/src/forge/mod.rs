@@ -254,7 +254,7 @@ impl Args {
 /// `OWNER/NAME`, as GitHub spells them (the hub checks them too).
 pub use arugula_platform_api::good_repo;
 
-pub use arugula_control_wire::internal::TokenAnswer;
+pub use arugula_control_common::port::TokenAnswer;
 
 /// A read-only installation token for `repo`, for an account GitHub gives
 /// access to it ([`viewer::access`]: kept answers every machine drops).
