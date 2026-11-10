@@ -188,6 +188,8 @@ test("a board's Steps view draws a row's links by kind, shows agents live and is
     await route.fulfill({ response: r, json: j });
   });
 
+  // The arrows are all drawn by default (#860); this and the tests after it read a row's own, so they begin with Links off. The Links test turns it back on.
+  await alice.evaluate(() => localStorage.setItem("arugula.board.steps.links", "0"));
   await alice.goto(`${app}/p/${project}/boards/${board}`);
   // Lanes is the default at this width; the switch is the board's own.
   await expect(alice.locator('[data-board-view="lanes"]')).toHaveAttribute("aria-pressed", "true");
@@ -301,7 +303,7 @@ test("at 390 px Steps is the default, a tap draws the arrows, and the drawer's a
   // Alice's own page at a phone's width, with the view she picked forgotten.
   const phone = alice;
   await phone.setViewportSize({ width: 390, height: 844 });
-  await phone.evaluate(() => localStorage.clear());
+  await phone.evaluate(() => (localStorage.clear(), localStorage.setItem("arugula.board.steps.links", "0")));
   await phone.goto(`${app}/p/${project}/boards/${board}`);
   await expect(phone.locator("[data-steps]")).toBeVisible();
   await expect(phone.locator('[data-board-view="steps"]')).toHaveAttribute("aria-pressed", "true");
@@ -593,6 +595,12 @@ test("the Done toggle hides the done rows, closes the columns they leave empty a
   await page.locator("[data-board-find-input]").fill("Chain");
   await expect(done).toHaveAttribute("aria-pressed", "true");
   await expect(done).toHaveText("Done");
+  // The toggle sits in the row right above the chart, not in the view switch's row.
+  await expect(page.locator("[data-steps-toggles] [data-board-done]")).toHaveCount(1);
+  await expect(page.locator("[data-board-views] ~ [data-board-done], .board-switch [data-board-done]")).toHaveCount(0);
+  const above = (await page.locator("[data-steps-toggles]").boundingBox())!;
+  expect(above.y + above.height).toBeLessThanOrEqual((await page.locator("[data-steps]").boundingBox())!.y);
+  await expect(done).toHaveAttribute("title", "Hide done rows");
   await expect(page.locator("[data-steps-col]")).toHaveText(["1", "2", "3", "4"]);
   await expect(page.locator("[data-steps-done]")).toHaveCount(0);
 
@@ -648,4 +656,65 @@ test("the Done toggle hides the done rows, closes the columns they leave empty a
   await shot(page, "831-390-hidden");
 
   await page.evaluate(() => localStorage.removeItem("arugula.board.steps.done"));
+});
+
+test("the Links toggle draws every arrow until a row is held, then only that row's; off, none until a row is held; the choice is kept (#860)", async () => {
+  test.setTimeout(240_000);
+  const page = alice;
+  const links = page.locator("[data-board-links]");
+  const arrows = page.locator("path[data-link-kind]");
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.links"));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await page.locator('[data-board-view="steps"]').click();
+  await page.locator("[data-board-find-input]").fill("Chain");
+  await page.mouse.move(2, 2);
+
+  // On by default: every arrow of the chain: three, each on its bars.
+  await expect(links).toHaveAttribute("aria-pressed", "true");
+  await expect(links).toHaveText("Links");
+  await expect(links).toHaveAttribute("title", "Hide links");
+  await expect(arrows).toHaveCount(3);
+  await onTheBars(page, ["before", "before", "blocks"]);
+  await shot(page, "860-1280-links-on");
+  // Holding C shows only C's two and fades the rest.
+  await bar(page, "Chain C").hover();
+  await expect(arrows).toHaveCount(2);
+  await expect(bar(page, "Chain A")).toHaveAttribute("data-faded", "");
+  await page.mouse.move(2, 2);
+  await expect(arrows).toHaveCount(3);
+
+  // Off: none, until a row is held.
+  await links.click();
+  await expect(links).toHaveAttribute("aria-pressed", "false");
+  await expect(links).toHaveAttribute("title", "Show links");
+  await expect(arrows).toHaveCount(0);
+  await shot(page, "860-1280-links-off");
+  await bar(page, "Chain C").hover();
+  await expect(arrows).toHaveCount(2);
+  await page.mouse.move(2, 2);
+  await expect(arrows).toHaveCount(0);
+
+  // Kept across a reload.
+  expect(await page.evaluate(() => localStorage.getItem("arugula.board.steps.links"))).toBe("0");
+  await page.goto(`${app}/p/${project}/boards/${board}`);
+  await expect(page.locator("[data-steps]")).toBeVisible();
+  await expect(links).toHaveAttribute("aria-pressed", "false");
+  await expect(arrows).toHaveCount(0);
+
+  // At 390 px the toggles are icons: named by their label, with no text.
+  await links.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(links).toHaveText("");
+  await expect(links).toHaveAttribute("aria-label", "Hide links");
+  await expect(page.locator("[data-board-done]")).toHaveAttribute("aria-label", "Hide done rows");
+  // The reload dropped the find: every arrow of the board's chart.
+  await expect(arrows).toHaveCount(8);
+  await shot(page, "860-390-links-on");
+  await links.click();
+  await expect(arrows).toHaveCount(0);
+  await shot(page, "860-390-links-off");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.evaluate(() => localStorage.removeItem("arugula.board.steps.links"));
 });
