@@ -1093,10 +1093,21 @@ name = "tracker_connections"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A Plane project connected to a project: the workspace, Plane's project id and identifier, its name, the negative id its mirrored items stand under, for each kind of agent write (create, comment, edit, state, fields) whether it waits for a person or lands at once and what footer a write carries (#423; the older one-word setting stays, no longer read), whether its epics become boards (#483), what the Plane project offers a work item (its states, modules, types and labels) and when that was fetched (#422), when its last webhook delivery arrived (#417), who connected it and when, when it was disconnected and when its rows are purged, and its backfill's lease, last finish, failures in a row and where a turn that ran out of pages stopped. The API key and webhook secret are sealed in `project_secrets`, never here."
+what = "A Plane project connected to a project: the workspace, Plane's project id and identifier, its name, the negative id its mirrored items stand under, for each kind of agent write (create, comment, edit, state, fields) whether it waits for a person or lands at once and what footer a write carries (#423; the older one-word setting stays, no longer read), whether its epics become boards (#483), whether a merged PR moves the items it names to Done (#852), what the Plane project offers a work item (its states, modules, types and labels) and when that was fetched (#422), when its last webhook delivery arrived (#417), who connected it and when, when it was disconnected and when its rows are purged, and its backfill's lease, last finish, failures in a row and where a turn that ran out of pages stopped. The API key and webhook secret are sealed in `project_secrets`, never here."
 why_asleep = "Its work items are kept on the platform and read from it, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who connected it. A connection of a project that went with the account is disconnected, and its rows purged within 24 hours."
+seen_by = ["litestream"]
+
+[[table]]
+name = "tracker_merge_closes"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each Plane item that a merged PR moved to Done, by connection and item number, and when (#852): so a later merge never closes an item a person has moved out of Done since."
+why_asleep = "A merge closes its items whether or not any machine is up."
+with_account = "partly"
+note = "A connection of a project that went with the account is disconnected, and its rows go with its purge."
 seen_by = ["litestream"]
 
 [[table]]
