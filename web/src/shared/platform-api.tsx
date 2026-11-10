@@ -37,6 +37,12 @@ export interface ChatNav {
   openRoom(room: string, msg?: number, thread?: number): void;
   /** Activity, the threads I follow, or search results for `q`. */
   openChatView(view: "activity" | "saved" | "search" | "threads", q?: string): void;
+  /** A phone's swipe between levels (#816); a host that omits them has none.
+   * `up`: where a swipe right goes (null: nowhere). `down`: where a swipe
+   * left goes (null: nowhere, the drag rubber-bands). `goTo` commits one. */
+  up?(): string | null;
+  down?(): string | null;
+  goTo?(path: string): void;
   /** A message's link, to copy; a reply's names its thread. */
   roomLink(room: string, seq: number, thread?: number): string;
   /** A room's address, for its row's `href` (UI audit #185). */

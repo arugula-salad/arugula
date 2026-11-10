@@ -177,7 +177,7 @@ pub fn check(saved: &Saved, s: &RunStart, kept: &[GrantRevoke], now: u64) -> Res
         return Err(GrantRefusal::WrongProject.into());
     }
     let owners = owners(saved).ok_or(GrantRefusal::Unsigned)?;
-    let revokes = Revokes { delegation: &pin.revocations, sent: &s.revokes, kept };
+    let revokes = Revokes { delegation: &pin.revocations, closed: &pin.closed, sent: &s.revokes, kept };
     let signers = signers(saved, &owners);
     project_grant::check(&s.grant, &pin.delegation, revokes, &signers, s.passkey_log.as_ref(), &s.cap, now)?;
     Ok(())
@@ -427,6 +427,9 @@ pub(crate) mod tests {
 
     use super::*;
 
+    /// Control's hosted key in [`machine`].
+    pub(crate) const MACHINE_KEY: [u8; 32] = [7; 32];
+
     /// A hosted machine of an account's project, enrolled under a
     /// delegation from the account's root device; and the account's phone,
     /// another of its devices.
@@ -437,7 +440,7 @@ pub(crate) mod tests {
         let phone = DeviceKeys::generate();
         let mut phone_cert = Cert::new(&phone, "acct1", Kind::Browser, "phone");
         phone_cert.sign_with(&root);
-        let key = HostedKey::generate();
+        let key = HostedKey::from_seed(&MACHINE_KEY);
         let mut d = Delegation {
             project: "prj_1".into(),
             owner: "account:acct1".into(),
@@ -456,6 +459,7 @@ pub(crate) mod tests {
             cert,
             delegation: d.clone(),
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),
@@ -641,6 +645,20 @@ pub(crate) mod tests {
         let (mut saved, d, root, _) = machine();
         let g = grant(&d, &root, 10);
         saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &root));
+        assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
+    }
+
+    /// A box that holds control's word stays stopped, by a revoke from a
+    /// device now off the account too.
+    #[test]
+    fn a_revoked_delegation_stays_revoked_when_its_signer_goes() {
+        let (mut saved, d, root, phone) = machine();
+        let g = grant(&d, &root, 10);
+        saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &phone));
+        assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
+        saved.revocations.push(arugula_e2e::Revocation::new("acct1", &phone.id(), &root));
+        assert!(check(&saved, &start(&g), &[], 40).is_ok());
+        saved.hosted_mut().unwrap().closed.push(HostedKey::from_seed(&MACHINE_KEY).close(&d, 30));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
     }
 

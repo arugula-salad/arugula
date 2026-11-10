@@ -1,0 +1,7 @@
+{"fixture":"run-capture","version":"0.26.2","about":"`arugula run --wait 'echo fixture-run'`, then `arugula capture %N`: run a command in a new tab, wait for it to exit, and read the screen."}
+{"t":2,"c":1,"from":"client","request":{"method":"POST","path":"/api/run","body":{"command":"echo fixture-run"}}}
+{"t":3,"c":1,"from":"daemon","response":{"status":200,"type":"application/json","body":{"pane":2}}}
+{"t":3,"c":2,"from":"client","request":{"method":"GET","path":"/api/panes/2/wait?until=exit"}}
+{"t":14,"c":2,"from":"daemon","response":{"status":200,"type":"application/json","body":{"code":0,"result":"exit"}}}
+{"t":14,"c":3,"from":"client","request":{"method":"GET","path":"/api/panes/2/capture?format=text&scope=screen"}}
+{"t":15,"c":3,"from":"daemon","response":{"status":200,"type":"text/plain; charset=utf-8","text":"fixture-run\n\n[exited with code 0 · press Enter for a shell]"}}

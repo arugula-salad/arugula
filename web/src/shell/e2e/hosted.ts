@@ -31,6 +31,14 @@ export interface DelegationRevoke {
   sig: string;
 }
 
+/** Control's word that a delegation ended, signed with the key it names. */
+export interface DelegationClosed {
+  project: string;
+  delegation: string;
+  at: number;
+  sig: string;
+}
+
 export interface HostedCert {
   project: string;
   owner: string;
@@ -49,19 +57,43 @@ export interface HostedProof {
   cert: HostedCert;
   delegation: Delegation;
   revocations: DelegationRevoke[];
+  /** Absent from a control from before. */
+  closed?: DelegationClosed[];
 }
 
 const enc = new TextEncoder();
 const token = (s: string) => /^[A-Za-z0-9_-]{1,64}$/.test(s);
 // eslint-disable-next-line no-control-regex
 const plain = (s: string) => s.length > 0 && [...s].length <= 64 && !/[\u0000-\u001f\u007f-\u009f]/.test(s);
-const isKey = (s: string) => /^[0-9a-f]{64}$/.test(s);
+// Hex on these papers reads in either case, as Rust's does; what's signed is
+// the text as given.
+const isKey = (s: string) => /^[0-9a-fA-F]{64}$/.test(s);
+const low = (s: string) => s.toLowerCase();
+
+const text = (v: unknown) => typeof v === "string";
+/** A time, as `arugula_e2e::hosted::read_time`: a JSON number whose value is a
+ * non-negative integer up to 2^53 - 1, however it's written. */
+const time = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+const isRevoke = (v: unknown): v is DelegationRevoke => {
+  const r = v as DelegationRevoke | null;
+  return !!r && typeof r === "object" && text(r.project) && text(r.delegation) && time(r.at) && text(r.by) && text(r.sig);
+};
+export const isClosed = (v: unknown): v is DelegationClosed => {
+  const c = v as DelegationClosed | null;
+  return !!c && typeof c === "object" && text(c.project) && text(c.delegation) && time(c.at) && text(c.sig);
+};
+/** The entries of a list that read as `is`, each on its own, as
+ * `arugula_e2e::hosted::entries`: what isn't a list is none. */
+const entries = <T,>(list: unknown, is: (v: unknown) => v is T): T[] => (Array.isArray(list) ? list.filter(is) : []);
 
 export const delegationBody = (d: Delegation) =>
   `arugula project delegation v1\nproject ${d.project}\nowner ${d.owner}\nkey ${d.key}\nat ${d.at}\nby ${d.by}\n`;
 
 export const revokeBody = (r: DelegationRevoke) =>
   `arugula project delegation revoke v1\nproject ${r.project}\ndelegation ${r.delegation}\nat ${r.at}\nby ${r.by}\n`;
+
+export const closedBody = (c: DelegationClosed) =>
+  `arugula project delegation closed v1\nproject ${c.project}\ndelegation ${c.delegation}\nat ${c.at}\n`;
 
 export const hostedBody = (c: HostedCert) =>
   `arugula hosted machine v1\nproject ${c.project}\nowner ${c.owner}\nworkspace ${c.workspace}\ndelegation ${c.delegation}\n` +
@@ -104,7 +136,7 @@ const ownerOf = (o: Owners) => ("team" in o ? `team:${o.team.team}` : `account:$
  * project's owners, trusted now. */
 async function maySign(o: Owners, owner: string, device: string, body: string, sig: string): Promise<boolean> {
   if (owner !== ownerOf(o) || !parseOwner(owner)) return false;
-  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli" || c.kind === "app") && (await verify(c.sign, body, sig));
+  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli" || c.kind === "app") && (await verify(low(c.sign), body, low(sig)));
   if ("team" in o) {
     for (const m of o.team.members.filter((m) => m.role === "owner")) {
       const [c, rv] = o.certs[m.account] ?? [[], []];
@@ -114,6 +146,10 @@ async function maySign(o: Owners, owner: string, device: string, body: string, s
   }
   return ok((await evaluate(o.account, o.certs, o.revocations)).get(device));
 }
+
+/** `x` ends `d`, whose id is `id`, signed with the key `d` names. */
+const closes = async (x: DelegationClosed, d: Delegation, id: string) =>
+  x.project === d.project && x.delegation === id && (await verify(low(d.key), closedBody(x), low(x.sig)));
 
 export type HostedRefusal = "form" | "wrong_project" | "not_in_project" | "unsigned" | "bad_signature" | "revoked";
 
@@ -129,7 +165,8 @@ export async function acceptHosted(
   const id = await delegationId(d);
   const formed =
     token(c.project) && token(c.workspace) && token(c.delegation) && !!parseOwner(c.owner) && plain(c.name) &&
-    isKey(c.noise) && isKey(c.sign) && (await deviceId(unhex(c.noise), unhex(c.sign))) === c.device &&
+    time(c.created) && time(d.at) &&
+    isKey(c.noise) && isKey(c.sign) && (await deviceId(unhex(low(c.noise)), unhex(low(c.sign)))) === c.device &&
     token(d.project) && !!parseOwner(d.owner) && isKey(d.key) && token(d.by) &&
     c.project === d.project && c.owner === d.owner && c.delegation === id;
   if (!formed) return no("form");
@@ -138,11 +175,38 @@ export async function acceptHosted(
     "team" in o ? o.team.members.find((m) => m.account === me)?.role : o.account.account === me ? "owner" : undefined;
   if (!role) return no("not_in_project");
   if (!(await maySign(o, d.owner, d.by, delegationBody(d), d.sig))) return no("unsigned");
-  if (!(await verify(d.key, hostedBody(c), c.sig))) return no("bad_signature");
+  if (!(await verify(low(d.key), hostedBody(c), low(c.sig)))) return no("bad_signature");
+  // The earliest of a revoke an owner signed, as this browser holds them now,
+  // and control's word. Either that doesn't check out is ignored.
   let revoked = Infinity;
-  for (const r of p.revocations ?? []) {
+  for (const r of entries(p.revocations, isRevoke)) {
     if (r.project === d.project && r.delegation === id && (await maySign(o, d.owner, r.by, revokeBody(r), r.sig))) revoked = Math.min(revoked, r.at);
+  }
+  for (const x of entries(p.closed, isClosed)) {
+    if (await closes(x, d, id)) revoked = Math.min(revoked, x.at);
   }
   if (c.created < d.at || revoked <= c.created) return no("revoked");
   return { ok: true, project: d.project, workspace: c.workspace, role };
+}
+
+/** What a client keeps of control's word that delegations ended. */
+export interface ClosuresHeld {
+  get(id: string): DelegationClosed | undefined;
+  take(c: DelegationClosed): void;
+}
+
+/** `acceptHosted`, by a client that keeps what it hears, as
+ * `arugula_e2e::hosted::accept_holding`: word that checks out goes into
+ * `held` when an owner signed the delegation, and what `held` has of it counts
+ * as though control sent it again. */
+export async function acceptHostedHolding(me: string, p: HostedProof, o: Owners, held: ClosuresHeld) {
+  const d = p.delegation;
+  const id = await delegationId(d);
+  const heard = entries(p.closed, isClosed);
+  const checked = await Promise.all(heard.map((x) => closes(x, d, id)));
+  if (checked.some(Boolean) && isKey(d.key) && token(d.project) && !!parseOwner(d.owner) && token(d.by) && (await maySign(o, d.owner, d.by, delegationBody(d), d.sig))) {
+    heard.filter((_, i) => checked[i]).forEach((x) => held.take(x));
+  }
+  const kept = held.get(id);
+  return acceptHosted(me, { ...p, closed: kept ? [...heard, kept] : heard }, o);
 }

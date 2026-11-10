@@ -1,9 +1,18 @@
 name: release-train
 
-# The daemon's release on a timer, when something's worth telling people
-# (scripts/release-train). The repository variable ARUGULA_RELEASE_TRAIN=on turns it
-# on. A manual run does the same, and is how to send one now.
+# The daemon's release, when something's worth telling people
+# (scripts/release-train). It starts when chant's tick finishes on main, so a
+# commit that turns green is looked at within minutes, and the script keeps 2
+# hours between releases. The cron is only a backstop: from Nov 7 to Nov 9
+# GitHub ran 12 of ~280 of the tick's scheduled runs and 9 of ~17 of this
+# one's, while the tick's workflow_run fired 188 times (Arugula #794). The
+# repository variable ARUGULA_RELEASE_TRAIN=on turns it on. A manual run does
+# the same without the gap, and is how to send one now.
 on:
+  workflow_run:
+    workflows: ["chant-ci-green"]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: "17 */4 * * *"
   workflow_dispatch: {}
@@ -20,6 +29,8 @@ permissions:
 
 jobs:
   train:
+    # A tick that failed tagged nothing new.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -42,3 +53,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARUGULA_RELEASE_TRAIN: ${{ vars.ARUGULA_RELEASE_TRAIN }}
+          ARUGULA_TRAIN_GAP_MINUTES: ${{ github.event_name == 'workflow_dispatch' && '0' || '120' }}

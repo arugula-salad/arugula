@@ -19,14 +19,18 @@
 # 2. images: packaging/control's, packaging/platform's and
 #    packaging/platform-dump's images around them, pushed to Fly's registry
 #    and handed on by digest;
-# 3. cut: `chant release cut server-<run number> --lane server --image ...`,
+# 3. postgres: the platform's tests on Postgres, on the commit, beside
+#    images. SQLite accepts SQL that Postgres refuses, and the merge queue's
+#    checks run on SQLite only. The cut needs it, so a failure deploys
+#    nothing;
+# 4. cut: `chant release cut server-<run number> --lane server --image ...`,
 #    which checks the commit is on main with a ci/green-server tag and no
 #    ci/revoked-server one, and records the release on chant/lifecycle.
 #    The job's summary lists what's in it (`chant release candidates`);
-# 4. platform: the platform, once arugula-platform has its Postgres secret
+# 5. platform: the platform, once arugula-platform has its Postgres secret
 #    and no public address, rolled one Machine at a time on its Fly checks;
 #    then the nightly dump's Machine, whose failure is a warning, as before;
-# 5. control: the hub, under the release, only when something it's built
+# 6. control: the hub, under the release, only when something it's built
 #    from changed since the release production runs it from (its `inputs`
 #    in ops/src/control.component.ts; a version number alone doesn't count).
 #    `deploy-unchanged` deploys it anyway.
@@ -184,10 +188,47 @@ jobs:
           image platform "$PLATFORM_TOKEN" "registry.fly.io/arugula-platform:$TAG" packaging/platform/Dockerfile "$bin/arugula-platform"
           image dump "$PLATFORM_TOKEN" "registry.fly.io/arugula-platform:dump-$TAG" packaging/platform-dump/Dockerfile packaging/platform-dump/dump.sh "$bin/arugula-platform"
 
+  # The platform's suite on Postgres, as rare-nightly's test-postgres runs it,
+  # on the commit this release is built from. On GitHub's runner, for Docker.
+  # Beside images, so a release waits for it only when it's the slower of the
+  # two.
+  postgres:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Postgres's image, from ghcr.io.
+      packages: read
+    env:
+      NEXTEST_PROFILE: ci
+      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+      GITHUB_TOKEN: ${{ github.token }}
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test-postgres
+          cache-workspace: server
+          ghostty: "false"
+      - run: just bootstrap
+      # The platform embeds web/dist-platform, and control web/dist.
+      - run: just web
+      - name: The platform on Postgres
+        run: just test-platform-postgres
+        env:
+          # As rare-nightly's test-postgres.
+          CARGO_BUILD_JOBS: "4"
+          NEXTEST_TEST_THREADS: "6"
+
   # The release, on chant/lifecycle. Writing it needs a token that may push
   # there, as chant-ci-green.yml's tick does.
   cut:
-    needs: [build, images]
+    needs: [build, images, postgres]
     runs-on: ubuntu-latest
     permissions:
       contents: write

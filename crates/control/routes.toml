@@ -1010,7 +1010,7 @@ path = "/api/hosted/delegations"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again."
+note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again. Refused while the project has another live one."
 
 [[route]]
 method = "POST"
@@ -1018,7 +1018,7 @@ path = "/api/hosted/delegations/revoke"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Any owner's own device's signed revocation: nothing more enrolls under it."
+note = "Any owner's own device's signed revocation, judged as it arrives: nothing more enrolls under it. The answer says whether it was the first and whether it's kept."
 
 [[route]]
 method = "POST"
@@ -1280,14 +1280,6 @@ path = "/api/chat/presence"
 process = "platform"
 auth = "session"
 clients = ["page"]
-
-[[route]]
-method = "POST"
-path = "/api/chat/presence/token"
-process = "platform"
-auth = "session"
-clients = ["page"]
-note = "a People block's room token for arugula.stream (team members only)"
 
 [[route]]
 method = "GET"

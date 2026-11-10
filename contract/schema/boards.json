@@ -2371,6 +2371,15 @@
         "note": {
           "type": "string"
         },
+        "place": {
+          "description": "The column the row sits in on the Steps chart (Arugula #824): the\nsame longest-path layout as [`Row::step`], but over every row with an\nissue or a PR, done ones included, using their ordering edges whether\nthe other end is open or closed. So finishing work never moves a row.\nAbsent for a row with no issue or PR.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "pointer": {
           "$ref": "#/$defs/Pointer"
         },

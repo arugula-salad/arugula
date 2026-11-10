@@ -180,6 +180,8 @@ impl Request for crate::api::OpenConversationRequest {}
 
 impl Request for crate::api::DocOpenRequest {}
 
+impl Request for crate::api::DocShareRequest {}
+
 impl Request for crate::api::Subscription {}
 
 impl Request for crate::api::NotifyRequest {}
@@ -282,6 +284,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocLinkDelete);
         $m!($crate::op::ops::DocsList);
         $m!($crate::op::ops::DocOpen);
+        $m!($crate::op::ops::DocShare);
         $m!($crate::op::ops::DocDelete);
         $m!($crate::op::ops::DocPreviewGet);
         $m!($crate::op::ops::DocRead);
@@ -383,13 +386,13 @@ pub mod ops {
         api::{
             AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
             ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
-            DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
-            GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
-            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
-            MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest,
-            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
-            NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            DocOpened, DocPreview, DocRow, DocShareRequest, DriverEntry, Empty, FollowUpRequest, FollowedUp,
+            FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, McpTokenRequest, MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened,
+            NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled,
+            NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff,
+            PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
             PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
             StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
             WaitRequest, WaitResult, WithdrawRequest,
@@ -655,6 +658,24 @@ pub mod ops {
         type Path = ();
         type Req = DocOpenRequest;
         type Res = DocOpened;
+    }
+
+    /// `POST /api/docs/ID/share` (Arugula #819): share a Doc with a link, or
+    /// update the link it has, whether or not a block shows it. The owner's,
+    /// and never an agent's, as the block's own `doc_share` is. The answer
+    /// holds the key, as `DocLinkGet`'s does.
+    pub struct DocShare;
+
+    impl Op for DocShare {
+        const NAME: &'static str = "doc.share";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/{id}/share";
+        const ACCESS: Access = Access::Owner;
+        // The URL holds the key that opens the Doc.
+        const CREDENTIAL: bool = true;
+        type Path = String;
+        type Req = DocShareRequest;
+        type Res = DocLinkUrl;
     }
 
     /// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, read

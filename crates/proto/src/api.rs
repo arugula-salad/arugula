@@ -43,6 +43,7 @@
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
+//! | POST | `/api/docs/ID/share` | `DocShareRequest`: `update` for a Doc that has a link | `DocLinkUrl`: the Doc's link, made or updated, whether or not a block shows it (the owner's, never an agent's) |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
@@ -1150,6 +1151,15 @@ pub struct DocOpenRequest {
     pub session: Option<String>,
     #[serde(default)]
     pub split: Option<PaneId>,
+}
+
+/// `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+/// now (it has one already); otherwise the Doc gets a link.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocShareRequest {
+    #[serde(default)]
+    pub update: bool,
 }
 
 /// The block that shows the Doc: the one that had it open, or a new one.
