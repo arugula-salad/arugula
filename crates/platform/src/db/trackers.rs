@@ -481,6 +481,17 @@ impl Db {
         Ok(group.flatten())
     }
 
+    /// The tracker's ids of a connection's items that aren't done or
+    /// cancelled, in a stable order: whose relations a reconcile sweeps.
+    pub fn tracker_open_items(&self, connection: &str) -> Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT source_item_id FROM forge_items WHERE connection_id = ?1
+             AND COALESCE(state_group, '') NOT IN ('completed', 'cancelled') ORDER BY source_item_id",
+            params![connection],
+            |r| r.get(0),
+        )
+    }
+
     /// The newest `updated_at` mirrored for a connection: where a reconcile
     /// reads from.
     pub fn tracker_newest(&self, mirror_id: i64) -> Result<Option<u64>> {
