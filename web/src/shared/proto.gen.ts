@@ -3268,13 +3268,21 @@ export type IssueComment = {
  */
 seq: number, 
 /**
- * The account that wrote it, or "" once it's deleted.
+ * The account that wrote it, or "": a deleted account's, or one
+ * nobody here wrote (then `via` says who did).
  */
 author: string, agent: ChatAgent | null, at: number, text: string, 
 /**
  * Lines it quoted from a pane.
  */
-quote: string | null, edited: number | null, };
+quote: string | null, edited: number | null, 
+/**
+ * As its message's [`via`](crate::chat::ChatMessage::via): with no
+ * author, Arugula's own post (`system`, a session's card or ask),
+ * GitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent
+ * session said (`said:<ses>`) (Arugula #626).
+ */
+via?: string, };
 
 /**
  * An event on an issue's timeline.

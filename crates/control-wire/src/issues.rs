@@ -320,7 +320,8 @@ pub struct IssueExportQuery {
 pub struct IssueComment {
     /// Its number in the thread.
     pub seq: i64,
-    /// The account that wrote it, or "" once it's deleted.
+    /// The account that wrote it, or "": a deleted account's, or one
+    /// nobody here wrote (then `via` says who did).
     pub author: String,
     pub agent: Option<ChatAgent>,
     pub at: u64,
@@ -328,6 +329,13 @@ pub struct IssueComment {
     /// Lines it quoted from a pane.
     pub quote: Option<String>,
     pub edited: Option<u64>,
+    /// As its message's [`via`](crate::chat::ChatMessage::via): with no
+    /// author, Arugula's own post (`system`, a session's card or ask),
+    /// GitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent
+    /// session said (`said:<ses>`) (Arugula #626).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

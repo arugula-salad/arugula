@@ -370,6 +370,87 @@ async fn an_export_reads_back_with_every_issue_event_and_comment() {
     assert_eq!(get(&base, "v", &format!("/api/projects/{p}/issues/export?format=pdf")).await.0, 400);
 }
 
+/// What nobody here wrote in an issue's thread is named in an export as
+/// the page names it (Arugula #626): Arugula's own posts (a line it says,
+/// a session's card) as Arugula, what a session said as that session, a
+/// comment from GitHub as its login there. "a deleted account" is only
+/// for a member who deleted theirs. JSON keeps the raw author and `via`.
+#[tokio::test]
+async fn an_export_names_who_wrote_what_nobody_here_did() {
+    use crate::{Deleted, PlatformPort as _, db::chat::NewMessage};
+    use arugula_control_wire::{
+        chat::SYSTEM_VIA,
+        sessions::{card_via, said_via},
+    };
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, i) = new_issue(&base, "e", &p, json!({ "title": "opened by someone who goes" })).await;
+    let id = i["id"].as_str().unwrap();
+    let (_, room) =
+        call(&base, "a", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    let room = room["id"].as_str().unwrap();
+    for who in ["a", "e"] {
+        let post = Some(json!({ "text": format!("{who} says hello") }));
+        assert_eq!(call(&base, who, "POST", &format!("/api/chat/rooms/{room}/messages"), post).await.0, 200);
+    }
+    let ses = "ses_0123456789abcdef";
+    let (card, said) = (card_via(ses), said_via(ses));
+    let theirs = [
+        (SYSTEM_VIA, "CI failed: 2 checks; sent to the session (round 1 of 2)"),
+        (card.as_str(), "Agent session started on o/app"),
+        (said.as_str(), "Pushed 1 commit to `fix`."),
+        ("github:dana-gh", "Seen on 1.2 too"),
+    ];
+    for (via, text) in theirs {
+        let m = NewMessage {
+            author: "",
+            at: arugula_e2e::now_ms(),
+            text,
+            quote: None,
+            ref_machine: None,
+            ref_pane: None,
+            mentions: &[],
+            agent: None,
+            via: Some(via),
+            parent: None,
+            also: false,
+            agent_session: None,
+        };
+        app.db.add_chat_message(room, &m).unwrap();
+    }
+    app.account_deleted(&Deleted { account: "e".into(), machines: vec![], disbanded: vec![] }).await.unwrap();
+
+    let (st, v) = get(&base, "v", &format!("/api/projects/{p}/issues/export?format=json")).await;
+    assert_eq!(st, 200, "{v}");
+    let x: IssueExport = serde_json::from_value(v).unwrap();
+    let e = &x.issues[0];
+    assert_eq!(e.issue.author, "", "e's account is gone");
+    let raw: Vec<(&str, Option<&str>, &str)> =
+        e.comments.iter().map(|c| (c.author.as_str(), c.via.as_deref(), c.text.as_str())).collect();
+    assert_eq!(
+        raw,
+        [
+            ("a", None, "a says hello"),
+            ("", Some(SYSTEM_VIA), theirs[0].1),
+            ("", Some(card.as_str()), theirs[1].1),
+            ("", Some(said.as_str()), theirs[2].1),
+            ("", Some("github:dana-gh"), theirs[3].1),
+        ],
+        "e's comment went with e's account"
+    );
+
+    let (st, _, md) = text(&base, "v", &format!("/api/projects/{p}/issues/export?format=md")).await;
+    assert_eq!(st, 200, "{md}");
+    let a =
+        x.people.iter().find(|p| p.account == "a").map(|p| p.name.as_str()).filter(|n| !n.is_empty()).unwrap_or("a");
+    let bylines: Vec<&str> =
+        md.lines().filter(|l| l.starts_with("**")).map(|l| l[2..].split("**").next().unwrap()).collect();
+    assert_eq!(bylines, [a, "Arugula", "Arugula", "Agent session 01234567", "dana-gh on GitHub"], "{md}");
+    assert!(md.contains("- Opened by a deleted account on "), "{md}");
+    assert_eq!(md.matches("a deleted account").count(), 2, "its opening, in the facts and the timeline: {md}");
+}
+
 /// A project's issue home: native without a linked repo, GitHub with one
 /// unless someone chose native; GitHub only with a repo; both places said.
 #[tokio::test]

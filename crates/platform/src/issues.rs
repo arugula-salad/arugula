@@ -594,6 +594,7 @@ pub async fn export(app: &Platform, by: Actor<'_>, project: &str) -> Result<wire
                     text: m.text,
                     quote: m.quote,
                     edited: m.edited,
+                    via: m.via,
                 })
                 .collect(),
         })
@@ -763,6 +764,23 @@ fn fenced(s: &str) -> String {
     format!("{fence}\n{}\n{fence}\n", s.trim_end())
 }
 
+/// Who wrote a comment with no author but a `via`, as the page names it
+/// (Arugula #626): a GitHub login "on GitHub", CI by its name, an agent
+/// session by its id, and the rest (`system`, a session's card or ask)
+/// Arugula itself. Only a deleted account's comment has neither.
+fn posted_by(via: &str) -> String {
+    use arugula_control_wire::{projects::ci_name, sessions::said_of};
+    if let Some(login) = via.strip_prefix("github:") {
+        format!("{} on GitHub", if login.is_empty() { "someone" } else { login })
+    } else if let Some(ci) = ci_name(via) {
+        ci
+    } else if let Some(ses) = said_of(via) {
+        format!("Agent session {}", ses.trim_start_matches("ses_").chars().take(8).collect::<String>())
+    } else {
+        "Arugula".to_owned()
+    }
+}
+
 /// An export as one Markdown file: a heading per issue, its facts, its
 /// body, its timeline and its comments, each by name. What people wrote is
 /// one line or in a code block ([`line`], [`fenced`]), so it can't pass
@@ -783,6 +801,11 @@ pub fn markdown(x: &wire::IssueExport) -> String {
             ),
             None => who,
         })
+    };
+    let by = |c: &wire::IssueComment| match c.via.as_deref() {
+        Some(via) if c.author.is_empty() => line(&posted_by(via)),
+        Some(via) => format!("{} via {}", name(&c.author, &c.agent), line(via)),
+        None => name(&c.author, &c.agent),
     };
     let mut out = format!(
         "# Issues: {}\n\nExported {} from project `{}`.\n",
@@ -847,7 +870,7 @@ pub fn markdown(x: &wire::IssueExport) -> String {
         if !e.comments.is_empty() {
             out.push_str("\n### Comments\n");
             for c in &e.comments {
-                let _ = write!(out, "\n**{}**, {}:\n\n", name(&c.author, &c.agent), when(c.at));
+                let _ = write!(out, "\n**{}**, {}:\n\n", by(c), when(c.at));
                 if let Some(q) = c.quote.as_deref().filter(|q| !q.is_empty()) {
                     out.push_str(&fenced(q));
                     out.push('\n');
