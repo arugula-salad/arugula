@@ -1214,6 +1214,9 @@ struct Told<'a> {
     /// On a board's thread: the machine and session that lead the board
     /// (#414), when this post is for them.
     lead: Option<(String, String)>,
+    /// A reply on a board's thread: the machine and session that posted the
+    /// message it answers (#780), when this reply is for them.
+    asker: Option<(String, Option<String>)>,
     /// The first line of the thread's root, for a reply (#580).
     root_line: Option<String>,
     /// The sessions the composer chose (#647): (machine's id, session).
@@ -1230,8 +1233,7 @@ struct Tell {
 /// and the session's name there. None for any other room, or a board nobody
 /// leads.
 fn board_lead(app: &Platform, room: &Room) -> Option<(String, String)> {
-    let board = room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("brd_"))?;
-    match app.db.board(board) {
+    match app.db.board(board_of(room)?) {
         Ok(b) => b?.lead.map(|l| (l.machine, l.session)),
         Err(e) => {
             tracing::warn!(error = %e, "chat: reading a board's lead");
@@ -1240,10 +1242,58 @@ fn board_lead(app: &Platform, room: &Room) -> Option<(String, String)> {
     }
 }
 
+/// The board whose thread `room` is, if it is one.
+fn board_of(room: &Room) -> Option<&str> {
+    room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("brd_"))
+}
+
+/// The agent's session that posted `parent`, the message a reply on a
+/// board's thread answers (#780): its machine and the session's name, if the
+/// message kept one. None for any other room, a post in the room, a person's
+/// message, or the reply's own session's (an agent of its machine, as that
+/// session or as one that can't be told apart from it).
+fn board_asker(
+    app: &Platform,
+    room: &Room,
+    parent: Option<i64>,
+    by: Option<&str>,
+    from_session: Option<&str>,
+) -> anyhow::Result<Option<(String, Option<String>)>> {
+    let Some(parent) = parent.filter(|_| board_of(room).is_some()) else { return Ok(None) };
+    let Some(m) = app.db.chat_message(&room.id, parent)? else { return Ok(None) };
+    let Some(machine) = m.agent else { return Ok(None) };
+    let session = m.agent_session;
+    let own = by == Some(machine.as_str())
+        && match (from_session, session.as_deref()) {
+            (Some(f), Some(s)) => f.to_lowercase() == s.to_lowercase(),
+            _ => true,
+        };
+    Ok((!own).then_some((machine, session)))
+}
+
+/// [`board_asker`], if its machine can read the thread: a reply on a board's
+/// thread is also for the session that posted the message it answers (#780),
+/// as a post there is for the board's lead.
+async fn asker_told(
+    app: &Platform,
+    facts: &Facts,
+    room: &Room,
+    parent: Option<i64>,
+    by: Option<&AgentPrincipal>,
+    from_session: Option<&str>,
+) -> anyhow::Result<Option<(String, Option<String>)>> {
+    let Some((machine, session)) = board_asker(app, room, parent, by.map(|b| b.machine.as_str()), from_session)? else {
+        return Ok(None);
+    };
+    let agents = room_agents(app, facts, room).await?;
+    Ok(agents.iter().any(|a| a.machine == machine && hears(a)).then_some((machine, session)))
+}
+
 /// The session `a`'s daemon is told to give `told` to: the one the text names
 /// (`@geek/ux`) when `a` is mentioned, else the board's lead's when `a`'s
-/// machine is the one that leads it (#394, #414, #429). None: the daemon works
-/// it out.
+/// machine is the one that leads it, else the one that posted the message a
+/// reply on a board's thread answers (#394, #414, #429, #780). None: the
+/// daemon works it out.
 fn session_for(told: &Told<'_>, agents: &[ChatRoomAgent], a: &ChatRoomAgent, mentioned: bool) -> Option<String> {
     let named = told
         .sessions
@@ -1251,7 +1301,9 @@ fn session_for(told: &Told<'_>, agents: &[ChatRoomAgent], a: &ChatRoomAgent, men
         .find(|(m, _)| mentioned && agents_named(agents, m).iter().any(|n| n.machine == a.machine))
         .map(|(_, s)| s.clone());
     let chosen = || told.to.iter().find(|(m, _)| mentioned && *m == a.machine).map(|(_, s)| s.clone());
-    named.or_else(chosen).or_else(|| told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()))
+    let lead = || told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone());
+    let asker = || told.asker.as_ref().filter(|(m, _)| *m == a.machine).and_then(|(_, s)| s.clone());
+    named.or_else(chosen).or_else(lead).or_else(asker)
 }
 
 /// The machine and session to tell of a post on a board's thread (#414): those
@@ -1315,7 +1367,8 @@ fn mention_op(
 ///
 /// A post on a board's thread is also for the session that leads the board
 /// (#414, `told.lead`): its machine is stored as mentioned by [`post_replied`]
-/// and told, naming the session.
+/// and told, naming the session. So is a reply there for the session that
+/// posted the message it answers (#780, `told.asker`).
 async fn plan_tells(
     app: &Platform,
     facts: &Facts,
@@ -1617,6 +1670,7 @@ async fn mention_to_resend(
         sessions: at_sessions(&without_code(&m.text)),
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
         lead: board_lead(app, &room),
+        asker: board_asker(app, &room, m.parent, m.agent.as_deref(), m.agent_session.as_deref()).ok().flatten(),
         root_line: root_line(app, &room, m.parent),
         to: vec![],
     };
@@ -2637,6 +2691,21 @@ pub(crate) async fn post_replied(
             }
         }
     }
+    // A reply on a board's thread is also for the session whose message it
+    // answers (#780), unless the composer chose whom it's for (#647).
+    let asker = match to {
+        Some(_) => None,
+        None => asker_told(app, &facts, &room, b.parent, agent, from_session.as_deref()).await.unwrap_or_else(|e| {
+            tracing::warn!("couldn't work out whom a reply answers: {e:#}");
+            None
+        }),
+    };
+    if let Some((machine, _)) = &asker {
+        let mention = format!("{}{machine}", wire::AGENT_MENTION);
+        if !stored.contains(&mention) {
+            stored.push(mention);
+        }
+    }
     let replying_to = if to.is_some() || names_a_machine { None } else { replying_to_agent(app, &room, b.parent)? };
     let chain = if agent.is_some() { agent_chain(app, &room, b.parent)? + 1 } else { 0 };
     let at = now_ms();
@@ -2706,6 +2775,7 @@ pub(crate) async fn post_replied(
         sessions: at_sessions(&plain),
         from_session,
         lead,
+        asker,
         root_line: root_line(app, &room, b.parent),
         to: chosen,
     };
@@ -3002,6 +3072,13 @@ pub async fn edit(
         let lead = format!("{}{machine}", wire::AGENT_MENTION);
         if m.mentions.contains(&lead) && !named.contains(&lead) {
             named.push(lead);
+        }
+    }
+    // So does the session whose message a reply there answers (#780).
+    if let Ok(Some((machine, _))) = board_asker(&app, &room, m.parent, None, None) {
+        let asker = format!("{}{machine}", wire::AGENT_MENTION);
+        if m.mentions.contains(&asker) && !named.contains(&asker) {
+            named.push(asker);
         }
     }
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;

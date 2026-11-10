@@ -103,8 +103,9 @@ pub enum Command {
     },
     /// Sharing settings: `arugulad sharing guest-ssh on` lets this
     /// machine's owner invite a guest with only OpenSSH to a pane (Guest
-    /// SSH access, off by default). It writes sharing.json in the state
-    /// directory; a running daemon follows at once. Control can't set it.
+    /// SSH access, off by default); `off` ends every ssh invite. It writes
+    /// sharing.json in the state directory; a running daemon follows at
+    /// once. Control can't set it.
     Sharing {
         /// The setting to show or set [default: list them].
         #[arg(value_enum)]

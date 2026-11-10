@@ -93,6 +93,10 @@ pub struct RunsReach {
     pub projects: Vec<RunsProject>,
     /// What to use, or why not.
     pub note: String,
+    /// Control answered, so what its grants reach is known; false when it
+    /// couldn't be asked or didn't answer (Arugula #549).
+    #[serde(skip)]
+    pub answered: bool,
 }
 
 /// A project a machine's run grants reach.
@@ -151,6 +155,8 @@ pub struct BoardsReach {
     pub projects: Vec<BoardsProject>,
     /// Why not, when control couldn't say.
     pub note: String,
+    /// Control answered, so what its grants reach is known (Arugula #549).
+    pub answered: bool,
 }
 
 /// A project a machine's board grants reach.
@@ -176,6 +182,10 @@ pub struct ThreadsReach {
     pub scopes: Vec<ThreadScope>,
     /// What to use, or why not.
     pub note: String,
+    /// Control answered, so what its grants reach is known; false when it
+    /// couldn't be asked or didn't answer (Arugula #549).
+    #[serde(skip)]
+    pub answered: bool,
 }
 
 /// A scope a machine's agent grants reach.

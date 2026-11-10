@@ -280,6 +280,8 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
     owners_runs(c, "wait with run").await?;
     let run = run_id(run)?;
     let started = Instant::now();
+    // Why control didn't answer the last ask, if it didn't.
+    let missed = std::sync::Mutex::new(None::<String>);
     let poll = async {
         let mut since = None::<u64>;
         loop {
@@ -294,8 +296,16 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
                     tokio::time::sleep(BACK_OFF).await;
                     continue;
                 }
+                // One ask control didn't answer is asked again, not the
+                // wait's end (Arugula #621).
+                Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
+                    *missed.lock().unwrap() = Some(e.to_string());
+                    tokio::time::sleep(BACK_OFF).await;
+                    continue;
+                }
                 Err(e) => return Err(said(e)),
             };
+            *missed.lock().unwrap() = None;
             if ended(&r) {
                 return Ok::<_, String>(r);
             }
@@ -304,11 +314,21 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
     };
     let Some(r) = c.waiting(&format!("waiting for {run}"), limit, poll).await else {
         let secs = started.elapsed().as_secs();
-        let r = runs_call(c, Method::GET, &agent_run(run), None).await?;
-        return done(
-            format!("{} hasn't ended after {secs}s: call wait with run again", line(&r)),
-            json!({ "state": "still running", "run": r }),
-        );
+        let missed = missed.into_inner().unwrap();
+        return match c.app().control.cloud(Method::GET, &agent_run(run), None).await {
+            Ok(r) => {
+                let mut s = format!("{} hasn't ended after {secs}s: call wait with run again", line(&r));
+                if let Some(m) = missed {
+                    s += &format!(". The last time control was asked it didn't answer ({m})");
+                }
+                done(s, json!({ "state": "still running", "run": r }))
+            }
+            Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => done(
+                format!("{run} hadn't ended after {secs}s, as far as control said: call wait with run again. {e}"),
+                json!({ "state": "still running" }),
+            ),
+            Err(e) => Err(said(e)),
+        };
     };
     let r = r?;
     // The end of its log, as kept.
@@ -323,9 +343,14 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
     let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_RUN_REACH, None));
     let v = match asked.await {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e) },
+        Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e), answered: false },
         Err(_) => {
-            return RunsReach { live: false, projects: vec![], note: "Arugula control didn't answer in time".into() };
+            return RunsReach {
+                live: false,
+                projects: vec![],
+                note: "Arugula control didn't answer in time".into(),
+                answered: false,
+            };
         }
     };
     let projects: Vec<RunsProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
@@ -335,7 +360,7 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
     } else {
         "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on the platform page.".into()
     };
-    RunsReach { live, projects, note }
+    RunsReach { live, projects, note, answered: true }
 }
 
 /// A log page as text: what it holds, and where the rest is.

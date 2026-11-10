@@ -1157,6 +1157,44 @@ async fn the_session_that_leads_a_board_is_not_told_its_own_post() {
     assert_eq!(asked_of(&hub, "geek").len(), 1);
 }
 
+/// A reply on a board's thread reaches the session that posted the message it
+/// answers (#780): another machine's session asks, the board's lead answers
+/// under it, and the asker is told, by name. A reply under the lead's own
+/// post, or the asker's reply under its own, wakes nobody.
+#[tokio::test]
+async fn a_reply_on_a_boards_thread_reaches_the_session_that_asked() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let (board, _room, _) = led_board(&hub, &base, &t).await;
+    hub.answers_ops("mini", OpAnswer::Done { url: None, routed: None });
+    let some = |s: &str| Some(s.to_owned());
+
+    let q = agent_posts(&base, "mini", &board, json!("Asker"), "which API do I build against?", None).await;
+    let q = q["seq"].as_i64().unwrap();
+    assert_eq!(lead_told(&hub, 1).await, [(some("Ux"), some("Asker"))]);
+
+    let v = agent_posts(&base, "geek", &board, json!("Ux"), "the v2 one", Some(q)).await;
+    assert_eq!(v["mentions"], json!(["machine:mini"]), "{v}");
+    for _ in 0..100 {
+        if !asked_of(&hub, "mini").is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let told: Vec<_> = asked_of(&hub, "mini").into_iter().map(|a| (a.session, a.from_session, a.parent)).collect();
+    assert_eq!(told, [(some("Asker"), some("Ux"), Some(q))]);
+
+    // The asker's own reply under its question tells the lead, not itself.
+    agent_posts(&base, "mini", &board, json!("Asker"), "thanks", Some(q)).await;
+    assert_eq!(lead_told(&hub, 2).await[1], (some("Ux"), some("Asker")));
+
+    // The lead's reply under its own post wakes nobody.
+    let own = agent_posts(&base, "geek", &board, json!("Ux"), "status: on track", None).await;
+    let v = agent_posts(&base, "geek", &board, json!("Ux"), "details", own["seq"].as_i64()).await;
+    assert_eq!(v["mentions"], json!([]), "{v}");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!((asked_of(&hub, "geek").len(), asked_of(&hub, "mini").len()), (2, 1));
+}
+
 /// A lead that's offline shows `offline` on the post's status line, like a
 /// mention (#414); a board nobody leads tells nobody (#394's rules only).
 #[tokio::test]

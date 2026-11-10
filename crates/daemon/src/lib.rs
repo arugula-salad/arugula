@@ -484,7 +484,9 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     let argv = install::app_agent_argv(argv, std::env::var("XPC_SERVICE_NAME").ok().as_deref(), &default_state_dir());
     log_to_file(&argv);
+    // Colours only for a terminal: not in a log file or the journal.
     tracing_subscriber::fmt()
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "arugulad=info,arugula_mux=info".into()),
@@ -683,6 +685,9 @@ fn sharing_cli(
                 println!("  This build of Arugula has no guest ssh, so nothing changes.");
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
+            }
+            if lab_flags::BUILT && !on {
+                println!("  Every ssh invite has ended, and anyone using one is cut off.");
             }
         }
     }

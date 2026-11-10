@@ -59,7 +59,8 @@ export function ShareLinks({ client, session, made, ended }: { client: Client; s
           if (row) out.push({ kind: "link", l: row });
         }
       }
-      // Off (404) or not built (501): no guests here, and nothing to say.
+      // Off: none, since turning it off ends them (an older machine answers
+      // 404). Not built (501): no guests here, and nothing to say.
       const g = await client.request(OPS["guests.list"].method, opPath("guests.list"));
       if (g.ok) for (const x of await g.json<GuestInvite[]>()) if (ours(x.pane) && !(x.used && !x.sessions)) out.push({ kind: "guest", g: x });
     } catch (e) {

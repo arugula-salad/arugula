@@ -339,7 +339,8 @@ enum Command {
     ///
     /// Made with `share --guest`, where the machine's owner has turned on
     /// Guest SSH access (`arugulad sharing guest-ssh on`). `guests revoke ID`
-    /// ends one and cuts off anyone using it.
+    /// ends one and cuts off anyone using it; turning Guest SSH access off
+    /// ends them all.
     Guests {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,

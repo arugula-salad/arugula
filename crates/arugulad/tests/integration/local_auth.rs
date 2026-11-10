@@ -55,6 +55,9 @@ fn loopback_programs_and_browsers_show_the_local_token() {
     assert!(head.contains("\r\nx-arugula-sign-in: /auth\r\n"), "{head}");
     let (status, _, page) = tcp(&d, "GET", "/", &[("accept", "text/html")]);
     assert!([200, 404].contains(&status), "the page (or 'not built'), not a refusal: {status} {page}");
+    // The page asks, without its key, whether control serves it: a daemon
+    // says it doesn't (web/src/shell/control.ts detectControl).
+    assert_eq!(tcp(&d, "GET", "/control.json", &[]).0, 404);
     // A program: the bearer.
     let bearer = format!("Bearer {token}");
     assert_eq!(tcp(&d, "GET", "/api/panes", &[("authorization", &bearer)]).0, 200);
