@@ -15,6 +15,7 @@ import {
   Machine,
   MachineConfig,
   MachineGuest,
+  MachineMetrics,
   MachinePort,
   MachineRestart,
   MachineService,
@@ -37,6 +38,9 @@ function serving() {
       ARUGULA_CONTROL_URL: "https://control.arugula.io",
       ARUGULA_PLATFORM_HOST: "app.arugula.io",
       ARUGULA_PREVIEW_DOMAIN: "arugula.site",
+      // Prometheus metrics on the private network, which `metrics` below
+      // has Fly's managed Prometheus scrape (part of Arugula #532).
+      ARUGULA_METRICS_LISTEN: "[::]:9091",
       // What `fly deploy` sets, kept so `fly status` and a hotfix's deploy see the same Machines.
       FLY_PROCESS_GROUP: "app",
       PRIMARY_REGION: "iad",
@@ -45,6 +49,8 @@ function serving() {
     restart: new MachineRestart({ policy: "on-failure", max_retries: 10 }),
     // On a stop, the platform hands back its Cloud jobs (up to 10 s), then flushes analytics.
     stop_config: new StopConfig({ signal: "SIGTERM", timeout: "25s" }),
+    // The launch dashboard's (docs/launch-runbook.md), at fly-metrics.net.
+    metrics: new MachineMetrics({ port: 9091, path: "/metrics" }),
     metadata: { fly_process_group: "app" },
     services: [
       new MachineService({

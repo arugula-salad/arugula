@@ -44,6 +44,11 @@ struct Args {
     #[arg(long, env = "ARUGULA_PLATFORM_REQUIRE_POSTGRES", value_parser = clap::builder::FalseyValueParser::new())]
     require_postgres: bool,
 
+    /// Prometheus metrics for the launch dashboard (part of Arugula #532),
+    /// on the private network only.
+    #[command(flatten)]
+    metrics: arugula_control_common::metrics::Listen,
+
     /// The hub's internal API (its `--internal-listen`), on the private
     /// network: `http://illogical-control.internal:7691` on Fly.
     #[arg(long, env = "ARUGULA_PLATFORM_HUB")]
@@ -249,6 +254,17 @@ async fn run() -> anyhow::Result<()> {
     }
     // The base's background work and every feature crate's.
     arugula_platform::in_process::start(&p);
+
+    if let Some(at) = a.metrics.at {
+        let p = p.clone();
+        arugula_control_common::metrics::serve(at, move || {
+            let p = p.clone();
+            async move {
+                tokio::task::spawn_blocking(move || arugula_platform::metrics::render(&p)).await.unwrap_or_default()
+            }
+        })
+        .await?;
+    }
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

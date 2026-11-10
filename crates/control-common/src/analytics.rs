@@ -14,7 +14,11 @@
 //! routing them through the hub would add a hop to something that drops
 //! events rather than wait.
 
-use std::time::Duration;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, oneshot};
@@ -32,6 +36,9 @@ enum Msg {
 #[derive(Default, Clone)]
 pub struct Analytics {
     tx: Option<mpsc::Sender<Msg>>,
+    /// Every event captured since start, by name, sent or not: the launch
+    /// dashboard's sign-ups and installs (`metrics`, part of Arugula #532).
+    counts: Arc<Mutex<BTreeMap<String, u64>>>,
 }
 
 impl Analytics {
@@ -41,16 +48,26 @@ impl Analytics {
         let url = format!("{}/batch/", host.trim_end_matches('/'));
         info!(%url, "product analytics on");
         tokio::spawn(send(rx, url, key, http));
-        Analytics { tx: Some(tx) }
+        Analytics { tx: Some(tx), counts: Default::default() }
     }
 
     pub fn on(&self) -> bool {
         self.tx.is_some()
     }
 
+    /// How many of each event were captured since start (PostHog's own
+    /// `$identify` and `$groupidentify` aren't counted), whether or not
+    /// analytics are on.
+    pub fn counts(&self) -> BTreeMap<String, u64> {
+        self.counts.lock().unwrap().clone()
+    }
+
     /// `event` by `who` (an account id, or `daemon:<id>` for a machine
     /// acting alone), with `props` (an object).
     pub fn capture(&self, who: &str, event: &str, props: Value) {
+        if !event.starts_with('$') {
+            *self.counts.lock().unwrap().entry(event.to_owned()).or_default() += 1;
+        }
         let Some(tx) = &self.tx else { return };
         let mut p = match props {
             Value::Object(m) => m,
@@ -187,6 +204,22 @@ mod tests {
         let a = Analytics::default();
         assert!(!a.on());
         a.capture("acct", "x", json!({}));
+    }
+
+    /// Off or on, every event is counted by name, from any handle, and
+    /// PostHog's own aren't.
+    #[test]
+    fn counts_events_by_name() {
+        let a = Analytics::default();
+        let b = a.clone();
+        a.signed_in("acct", "github", true);
+        b.capture_anon("install:1", "install started", json!({}));
+        a.group("acct", "team1", json!({}));
+        let c = a.counts();
+        assert_eq!(c.get("signed up"), Some(&1));
+        assert_eq!(c.get("signed in"), Some(&1));
+        assert_eq!(c.get("install started"), Some(&1));
+        assert!(c.keys().all(|k| !k.starts_with('$')), "{c:?}");
     }
 
     /// Events reach PostHog's batch endpoint, with the key, in one batch,

@@ -3386,6 +3386,39 @@ sign-ins still get through when it's full). Each minute it changed,
 (`refused`); `the relay is full` and `the relay has room again` mark
 when it fills and empties.
 
+### Metrics
+
+The hub and the platform each serve Prometheus metrics at `/metrics` on
+`--metrics-listen` (`ARUGULA_METRICS_LISTEN`), off unless it's set. Hosted
+control sets `[::]:9091` on both apps, and each `fly.toml`'s `[metrics]`
+has Fly's managed Prometheus scrape it. It's on the private network only:
+no `[[services]]` entry names the port, and a request that came through
+Fly's proxy anyway is refused. The launch dashboard reads them at
+fly-metrics.net ([launch-runbook.md](launch-runbook.md)).
+
+- **The hub:** `arugula_relay_sockets{kind}`, `arugula_relay_max_sockets`,
+  `arugula_relay_refused_total`, `arugula_relay_bytes_total`,
+  `arugula_accounts`, `arugula_machines`, `arugula_machines_seen{within="1d"}`,
+  `arugula_maintenance`, `arugula_process_resident_bytes`.
+- **The platform:** `arugula_hosted_workspaces{state,purpose}`,
+  `arugula_hosted_boxes_running`, `arugula_hosted_cost_usd{period="month"}`
+  (E2B, at `hosted::usage::PRICES`), `arugula_platform_paused`. Both machines
+  say the same database counts: take their `max`.
+- **Both:** `arugula_events_total{event}`, every product event by name
+  (`signed up`, `install started`, `crash`, …), counted whether or not
+  PostHog is set, and `arugula_build_info{version}`.
+
+Counters start again at a restart, which Prometheus's `rate` and
+`increase` allow for. Fly's own metrics have the rest: each machine's
+memory and CPU, the proxy's connections, and responses by status code
+(the error rate). To look one up by hand, use Grafana's *Explore* at
+fly-metrics.net, or Fly's Prometheus API with your token:
+
+```
+curl -sG https://api.fly.io/prometheus/personal/api/v1/query \
+  -H "Authorization: FlyV1 $(fly auth token)" --data-urlencode 'query=arugula_relay_sockets'
+```
+
 ### Shared Docs
 
 A person shares one Doc with a link (#1064). The machine encrypts the
