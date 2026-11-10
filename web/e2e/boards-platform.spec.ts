@@ -334,7 +334,17 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
 test("Alice closes the board with a note, finds it under Done, and reopens it", async () => {
   test.setTimeout(90_000);
   const page = alice.locator("[data-board-page]");
-  await page.locator("[data-board-close]").click();
+  // Close epic is a quiet button at the right of the Lanes/Steps row, red only on hover.
+  const trigger = page.locator("[data-board-close]");
+  await expect(page.locator(".board-switch [data-board-close]")).toHaveCount(1);
+  await expect(page.locator("[data-board-progress] ~ .board-epic-actions [data-board-close]")).toHaveCount(0);
+  await alice.mouse.move(2, 2);
+  const colour = () => trigger.evaluate((e) => getComputedStyle(e).color);
+  const quiet = await colour();
+  await trigger.hover();
+  await expect.poll(colour).not.toBe(quiet);
+  await alice.mouse.move(2, 2);
+  await trigger.click();
   const save = page.locator("[data-board-close-save]");
   await expect(save).toBeDisabled();
   await page.locator("[data-board-close-note]").fill(NOTE);

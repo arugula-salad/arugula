@@ -72,6 +72,13 @@ function pathBetween(a: Box, b: Box): string {
   return `M${a.right} ${a.cy}C${x + BEND} ${a.cy} ${x + BEND} ${b.cy} ${b.right} ${b.cy}`;
 }
 
+/** Every link between the bars on screen, each once. */
+function allLinks(rows: BoardRow[], onScreen: Set<string>): Link[] {
+  const seen = new Map<string, Link>();
+  for (const r of rows) if (onScreen.has(r.id)) for (const l of linksOf(r, rows, onScreen)) seen.set(`${l.kind}|${l.from}|${l.to}`, l);
+  return [...seen.values()];
+}
+
 export function StepsView({
   view,
   write,
@@ -80,6 +87,7 @@ export function StepsView({
   move,
   behind,
   showDone,
+  showLinks,
 }: {
   view: BoardView;
   /** Whether the reader may reorder (the platform refuses a viewer's move). */
@@ -93,6 +101,8 @@ export function StepsView({
   behind: string | null;
   /** Whether done rows are drawn (#831). Hidden, their columns close up: a bar's column is then not its place. */
   showDone: boolean;
+  /** Whether every arrow is drawn while no row is held (#860). A held row's arrows are drawn either way. */
+  showLinks: boolean;
 }) {
   const phone = usePhone();
   const uid = useId();
@@ -129,11 +139,12 @@ export function StepsView({
   }
   const active = hover ?? pinned;
   const row = active ? everyRow.find((r) => r.id === active) : undefined;
-  const links = row && onScreen.has(row.id) ? linksOf(row, everyRow, onScreen) : [];
+  const held = row && onScreen.has(row.id) ? row : undefined;
+  const links = held ? linksOf(held, everyRow, onScreen) : showLinks && !active ? allLinks(everyRow, onScreen) : [];
   const linksNow = useRef(links);
   linksNow.current = links;
   /** The rows the arrows join: the others fade while a row is held. */
-  const chain = new Set(row && onScreen.has(row.id) ? [row.id, ...links.flatMap((l) => [l.from, l.to])] : []);
+  const chain = new Set(held ? [held.id, ...links.flatMap((l) => [l.from, l.to])] : []);
 
   /** Measure the bars the arrows join, in the chart's coordinates. It runs after every layout (so after the title column's width changes, which resizes no box the observer watches), on a resize and when the chart's size changes (a "+M more" unfolding, the font arriving), so an arrow is never where the bars were. */
   const measure = () => {

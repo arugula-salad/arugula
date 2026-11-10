@@ -56,6 +56,25 @@ export function saveDone(show: boolean): void {
   }
 }
 
+const LINKS_KEY = "arugula.board.steps.links";
+
+/** Whether every arrow is drawn: yes until the viewer turns them off. Storage that refuses reads as on. */
+export function loadLinks(): boolean {
+  try {
+    return localStorage.getItem(LINKS_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveLinks(show: boolean): void {
+  try {
+    localStorage.setItem(LINKS_KEY, show ? "1" : "0");
+  } catch {
+    // Not kept; the pick holds for this page.
+  }
+}
+
 /** The title column's width, kept in this browser. */
 const TITLE_KEY = "arugula.board.steps.title";
 
