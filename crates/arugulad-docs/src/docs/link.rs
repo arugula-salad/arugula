@@ -224,6 +224,12 @@ pub struct Manifest {
     /// before layouts; a reader that doesn't know it ignores it.
     #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
     pub layout: DocLayout,
+    /// When the Doc was made and last changed (ms), for the viewer's "Created
+    /// … · edited …" (Arugula #825); a snapshot from before them has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated: Option<u64>,
     pub entries: Vec<ManifestEntry>,
     pub assets: Vec<ManifestAsset>,
 }
@@ -723,6 +729,8 @@ mod tests {
         let manifest = Manifest {
             title: "Vector".into(),
             layout: DocLayout::Doc,
+            made: None,
+            updated: None,
             entries: vec![
                 ManifestEntry {
                     id: "s1".into(),

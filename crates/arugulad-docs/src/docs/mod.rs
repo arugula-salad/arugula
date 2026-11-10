@@ -521,9 +521,14 @@ impl Doc {
             });
             blobs.push(bytes);
         }
+        // A Doc from before Docs were kept has no made time worth saying
+        // (`made_time`).
+        let meta = library::read_meta(&self.dir);
         let manifest = link::Manifest {
             title: title.clone(),
             layout,
+            made: meta.as_ref().and_then(library::Meta::made_time),
+            updated: meta.as_ref().map(|m| m.updated),
             entries: entries
                 .into_iter()
                 .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
@@ -635,6 +640,9 @@ impl Doc {
     }
 
     fn state_json(&self) -> Value {
+        // When it was made and last changed, and by whom, from `meta.json`:
+        // the page says them under the title (Arugula #825).
+        let meta = library::read_meta(&self.dir);
         let st = self.state.lock().unwrap();
         let mut v = json!({
             "title": st.title, "entries": st.entries, "entries_from": 0, "assets": st.assets, "rev": st.rev,
@@ -642,6 +650,11 @@ impl Doc {
             // A section was written after the link was last updated (#509).
             "shared_older": st.shared.is_some_and(|s| st.filled > s.updated),
         });
+        if let Some(m) = &meta {
+            v["made"] = json!(m.made_time());
+            v["updated"] = json!(m.updated);
+            v["by"] = json!(m.by);
+        }
         if st.platform {
             v["platform"] = json!(true);
         }

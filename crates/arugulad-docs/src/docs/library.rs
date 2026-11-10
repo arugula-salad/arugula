@@ -68,6 +68,15 @@ pub struct Meta {
     pub layout: DocLayout,
 }
 
+impl Meta {
+    /// When it was made, or `None` for a Doc from before Docs were kept
+    /// (`by: "migrated"`): its `made` is the oldest file's time in the old
+    /// folder (or the migration's, with no files), not when it was made.
+    pub fn made_time(&self) -> Option<u64> {
+        (self.by != "migrated").then_some(self.made)
+    }
+}
+
 /// Where a Doc's copy on the platform is (#418), as its last put was
 /// answered, and the pictures it has: each one's `rev` here when it was put.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -576,6 +585,16 @@ mod tests {
         std::fs::write(doc.join("doc.json"), outline.to_string()).unwrap();
         std::fs::write(doc.join("s1.md"), format!("The words of {title}.")).unwrap();
         std::fs::write(doc.join("assets/dot.png"), b"\x89PNG\r\n\x1a\nbytes").unwrap();
+    }
+
+    fn meta_by(by: &str) -> Meta {
+        Meta { id: "0".repeat(16), title: "t".into(), made: 10, updated: 20, by: by.into(), shape: None, platform: None, layout: DocLayout::Doc }
+    }
+
+    #[test]
+    fn a_migrated_doc_has_no_made_time_to_say() {
+        assert_eq!(meta_by("mcp:claude-code").made_time(), Some(10));
+        assert_eq!(meta_by("migrated").made_time(), None);
     }
 
     fn link(block: PaneId) -> serde_json::Value {
