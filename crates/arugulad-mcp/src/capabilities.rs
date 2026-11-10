@@ -84,6 +84,18 @@ impl ToolCall<'_, '_> {
         let mut held: Vec<&str> = threads.scopes.iter().flat_map(|s| &s.powers).map(String::as_str).collect();
         held.extend(runs.projects.iter().flat_map(|p| &p.powers).map(String::as_str));
         held.extend(boards.into_iter().flat_map(|b| &b.projects).flat_map(|p| &p.powers).map(String::as_str));
+        // The powers control didn't answer for, each with why: no answer
+        // isn't "not granted" (Arugula #549).
+        let mut unread: Vec<(&str, &str)> = Vec::new();
+        if !threads.answered {
+            unread.extend(["threads.read", "threads.post", "issues.write"].map(|p| (p, threads.note.as_str())));
+        }
+        if !runs.answered {
+            unread.extend(["runs.read", "runs.start", "runs.command"].map(|p| (p, runs.note.as_str())));
+        }
+        if let Some(b) = boards.filter(|b| !b.answered) {
+            unread.extend(["boards.read", "boards.write"].map(|p| (p, b.note.as_str())));
+        }
         let joined = self.app().control.enrolled().is_some();
         status_of(
             offered,
@@ -91,6 +103,7 @@ impl ToolCall<'_, '_> {
             listed.is_some_and(|l| l.was_told()),
             joined,
             &held,
+            &unread,
         )
     }
 
@@ -165,8 +178,16 @@ const GRANTS: [(&str, &[&str]); 9] = [
 /// The offered tools a session can't use yet. `had`: what its client last
 /// listed (`None`: it hasn't, so nothing is known to be missing); `told`:
 /// its client was sent `list_changed` since; `joined`: there is a control to
-/// hold grants; `held`: the powers this machine's grants give.
-fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: bool, held: &[&str]) -> Vec<ToolStatus> {
+/// hold grants; `held`: the powers this machine's grants give; `unread`:
+/// the powers control didn't answer for, and why.
+fn status_of(
+    offered: &[String],
+    had: Option<&[String]>,
+    told: bool,
+    joined: bool,
+    held: &[&str],
+    unread: &[(&str, &str)],
+) -> Vec<ToolStatus> {
     let mut out = Vec::new();
     for name in offered {
         // A grant is asked of control on each call; without it a restart doesn't help.
@@ -175,8 +196,16 @@ fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: boo
             .find(|(tool, _)| tool == name)
             .filter(|(_, powers)| joined && !powers.iter().any(|p| held.contains(p)));
         let missing = had.is_some_and(|h| !h.contains(name));
-        let (status, note) = match (ungranted, missing) {
-            (Some((_, powers)), _) => {
+        let why = ungranted.and_then(|(_, powers)| unread.iter().find(|(p, _)| powers.contains(p)));
+        let (status, note) = match (ungranted, missing, why) {
+            (Some(_), _, Some((_, why))) => {
+                let mut note = format!("{why}, so whether this machine has its grant isn't known: try again shortly");
+                if missing {
+                    note += &format!("; it also needs you to {RECONNECT}");
+                }
+                (ToolState::Unreachable, note)
+            }
+            (Some((_, powers)), _, None) => {
                 let power = powers[0];
                 let mut note = format!(
                     "needs {power} over a project: its owner gives it with `arugula grants add <machine> {power} --project <name>`"
@@ -186,8 +215,8 @@ fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: boo
                 }
                 (ToolState::NotGranted, note)
             }
-            (None, true) => (ToolState::Reconnect, reconnect(told)),
-            (None, false) => continue,
+            (None, true, _) => (ToolState::Reconnect, reconnect(told)),
+            (None, false, _) => continue,
         };
         out.push(ToolStatus { tool: shown(name), status, note });
     }
@@ -311,8 +340,8 @@ mod tests {
     #[test]
     fn a_loaded_tool_is_not_said() {
         let offered = names(&["run", "show", "show:board"]);
-        assert!(status_of(&offered, Some(&offered), false, false, &[]).is_empty());
-        assert!(status_of(&offered, None, false, false, &[]).is_empty(), "never listed: nothing is known");
+        assert!(status_of(&offered, Some(&offered), false, false, &[], &[]).is_empty());
+        assert!(status_of(&offered, None, false, false, &[], &[]).is_empty(), "never listed: nothing is known");
     }
 
     /// A tool a flag added after the session listed says to reconnect, or
@@ -322,10 +351,10 @@ mod tests {
     fn a_tool_added_after_the_session_started_says_what_to_do() {
         let offered = names(&["run", "show", "show:board"]);
         let had = names(&["run", "show"]);
-        let s = status_of(&offered, Some(&had), false, false, &[]);
+        let s = status_of(&offered, Some(&had), false, false, &[], &[]);
         assert_eq!((s.len(), s[0].tool.as_str(), s[0].status), (1, "show {kind: board}", ToolState::Reconnect));
         assert!(s[0].note.contains("`/mcp`") && !s[0].note.contains("will pick it up"), "{}", s[0].note);
-        let s = status_of(&offered, Some(&had), true, false, &[]);
+        let s = status_of(&offered, Some(&had), true, false, &[], &[]);
         assert!(s[0].note.contains("will pick it up"), "{}", s[0].note);
     }
 
@@ -335,13 +364,33 @@ mod tests {
     #[test]
     fn a_tool_without_its_grant_says_which_power_to_give() {
         let offered = names(&["board_read", "board_write"]);
-        let s = status_of(&offered, Some(&offered), false, true, &["boards.read"]);
+        let s = status_of(&offered, Some(&offered), false, true, &["boards.read"], &[]);
         assert_eq!(s.len(), 1, "boards.read is held, boards.write isn't: {s:?}");
         assert_eq!((s[0].tool.as_str(), s[0].status), ("board_write", ToolState::NotGranted));
         assert!(s[0].note.contains("arugula grants add <machine> boards.write --project <name>"), "{}", s[0].note);
-        assert!(status_of(&offered, Some(&offered), false, true, &["boards.write"]).is_empty());
-        assert!(status_of(&offered, Some(&offered), false, false, &[]).is_empty(), "no control, no grants to ask");
-        let s = status_of(&offered, Some(&[]), false, true, &[]);
+        assert!(status_of(&offered, Some(&offered), false, true, &["boards.write"], &[]).is_empty());
+        assert!(status_of(&offered, Some(&offered), false, false, &[], &[]).is_empty(), "no control, no grants to ask");
+        let s = status_of(&offered, Some(&[]), false, true, &[], &[]);
         assert!(s[0].note.contains("then reconnect"), "not granted and not listed: {}", s[0].note);
+    }
+
+    /// Control not answering isn't a missing grant (Arugula #549): a tool
+    /// whose grants weren't read says so and to try again, not to give a
+    /// grant; one whose grants were read still says what's missing.
+    #[test]
+    fn a_grant_control_didnt_answer_for_is_unreachable_not_missing() {
+        let offered = names(&["board_read", "board_write", "post_thread"]);
+        let late = "Arugula control didn't answer in time";
+        let unread = [("boards.read", late), ("boards.write", late)];
+        let s = status_of(&offered, Some(&offered), false, true, &[], &unread);
+        let of = |t: &str| s.iter().find(|x| x.tool == t).unwrap_or_else(|| panic!("{t}: {s:?}"));
+        for t in ["board_read", "board_write"] {
+            assert_eq!(of(t).status, ToolState::Unreachable, "{t}");
+            assert!(of(t).note.contains(late) && of(t).note.contains("try again shortly"), "{}", of(t).note);
+            assert!(!of(t).note.contains("grants add"), "no grant to give: {}", of(t).note);
+        }
+        assert_eq!(of("post_thread").status, ToolState::NotGranted, "threads were read, and not held");
+        let s = status_of(&offered, Some(&offered), false, true, &["boards.write", "threads.post"], &unread);
+        assert!(s.is_empty(), "a power that was read and is held says nothing: {s:?}");
     }
 }

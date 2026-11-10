@@ -4085,3 +4085,131 @@ async fn an_agent_started_on_an_issue_reads_it_in_its_project() {
     s.cancel().await.unwrap();
     agent.cancel().await.unwrap();
 }
+
+/// A fake control for the tools that ask it (Arugula #549, #621): the
+/// routes a joined daemon asks, grant reads that grant nothing, and agent
+/// sessions to wait on.
+#[derive(Clone, Default)]
+struct FakeControl {
+    /// The board grants read takes longer than `capabilities` waits.
+    slow_boards: Arc<std::sync::atomic::AtomicBool>,
+    /// How many more session waits to drop the connection of, as a proxy
+    /// that cuts a long poll does.
+    drop_waits: Arc<AtomicUsize>,
+    /// Session waits asked, dropped or not.
+    waits: Arc<AtomicUsize>,
+}
+
+async fn fake_control(f: FakeControl) -> String {
+    use arugula_control_wire::{boards::AGENT_BOARD_REACH, chat::AGENT_ROOMS, sessions::AGENT_SESSIONS_WAIT};
+    use axum::{
+        Json, Router,
+        extract::State,
+        routing::{get, post},
+    };
+    async fn boards(State(f): State<FakeControl>) -> Json<Value> {
+        if f.slow_boards.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_secs(6)).await;
+        }
+        Json(json!({ "projects": [] }))
+    }
+    async fn wait(State(f): State<FakeControl>, Json(b): Json<Value>) -> Json<Value> {
+        f.waits.fetch_add(1, Ordering::SeqCst);
+        if f.drop_waits.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+            // Ends the connection without an answer (and without a panic
+            // message): the daemon sees the request fail mid-flight.
+            std::panic::resume_unwind(Box::new("dropped"));
+        }
+        let row = |settled: bool| json!({ "session": "ses_1", "state": "working", "settled": settled });
+        match b["wait"].as_u64() {
+            Some(0) => Json(json!({ "settled": [], "sessions": [row(false)] })),
+            _ => Json(json!({ "settled": ["ses_1"], "sessions": [row(true)] })),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route(AGENT_ROOMS, get(|| async { Json(json!({ "reach": [] })) }))
+        .route(arugula_control_wire::runs::AGENT_RUN_REACH, get(|| async { Json(json!({ "projects": [] })) }))
+        .route(AGENT_BOARD_REACH, get(boards))
+        .route(AGENT_SESSIONS_WAIT, post(wait))
+        .route(
+            "/api/daemon/sessions/ses_1",
+            get(|| async { Json(json!({ "session": { "session": "ses_1", "state": "idle" } })) }),
+        )
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// A daemon that joined the fake control at `url`.
+fn joined(url: String) -> Daemon {
+    Daemon::child_in(&[], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+    })
+}
+
+/// Arugula #549: when control doesn't answer the board grants read in
+/// time, `capabilities` says the board tools are `unreachable`, to try
+/// again, and not that a grant is missing; when control answers that
+/// there is none, they're `not_granted`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grants_read_control_didnt_answer_is_not_a_missing_grant() {
+    let fake = FakeControl::default();
+    let d = joined(fake_control(fake.clone()).await);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let status = |caps: &Value, tool: &str| {
+        let all = caps["tool_status"].as_array().unwrap_or_else(|| panic!("no tool_status: {caps}"));
+        all.iter().find(|t| t["tool"] == tool).cloned().unwrap_or_else(|| panic!("{tool} isn't said: {caps}"))
+    };
+
+    fake.slow_boards.store(true, Ordering::SeqCst);
+    let caps = call(&s, "capabilities", json!({})).await;
+    for tool in ["board_read", "board_write"] {
+        let t = status(&caps, tool);
+        assert_eq!(t["status"], "unreachable", "{t}");
+        let note = t["note"].as_str().unwrap();
+        assert!(note.contains("didn't answer in time") && note.contains("try again shortly"), "{note}");
+        assert!(!note.contains("grants add"), "no grant to give: {note}");
+    }
+    // Threads were read, and grant nothing.
+    assert_eq!(status(&caps, "post_thread")["status"], "not_granted", "{caps}");
+
+    fake.slow_boards.store(false, Ordering::SeqCst);
+    let caps = call(&s, "capabilities", json!({})).await;
+    let t = status(&caps, "board_write");
+    assert_eq!(t["status"], "not_granted", "{t}");
+    assert!(t["note"].as_str().unwrap().contains("arugula grants add"), "{t}");
+    s.cancel().await.unwrap();
+}
+
+/// Arugula #621: a long `wait` on agent sessions is many asks of
+/// control; one whose connection drops is asked again, so the wait still
+/// sees the turn finish, and a wait whose asks all fail runs out as
+/// "still running", never as control being unreachable.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_wait_outlives_a_dropped_ask() {
+    let fake = FakeControl::default();
+    let d = joined(fake_control(fake.clone()).await);
+    let s = bridge(&d, Client::named("claude-code")).await;
+
+    fake.drop_waits.store(2, Ordering::SeqCst);
+    let r = call(&s, "wait", json!({ "agent_session": "ses_1", "until": "done", "timeout": 60 })).await;
+    assert_eq!(r["state"], "settled", "{r}");
+    assert!(fake.waits.load(Ordering::SeqCst) >= 3, "two dropped asks, then the answer");
+
+    fake.drop_waits.store(usize::MAX, Ordering::SeqCst);
+    let r = call(&s, "wait", json!({ "agent_session": "ses_1", "until": "done", "timeout": 8 })).await;
+    assert_eq!(r["state"], "still running", "{r}");
+    let said = r["summary"].as_str().unwrap();
+    assert!(said.contains("call wait with agent_session again") && said.contains("didn't answer"), "{said}");
+    s.cancel().await.unwrap();
+}

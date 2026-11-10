@@ -1047,6 +1047,11 @@
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
                 "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
+                "type": "string"
               }
             ]
           },
@@ -6025,6 +6030,11 @@
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
                 "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
+                "type": "string"
               }
             ]
           },
@@ -10933,6 +10943,11 @@
               {
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
                 "type": "string"
               }
             ]
@@ -15912,6 +15927,11 @@
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
                 "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
+                "type": "string"
               }
             ]
           },
@@ -20404,6 +20424,11 @@
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
                 "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
+                "type": "string"
               }
             ]
           },
@@ -22384,6 +22409,11 @@
               {
                 "const": "not_granted",
                 "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              },
+              {
+                "const": "unreachable",
+                "description": "Needs a grant, and Arugula control didn't answer whether this\nmachine has it: try again shortly.",
                 "type": "string"
               }
             ]

@@ -794,9 +794,14 @@ pub(super) async fn threads_reach(app: &crate::server::App) -> ThreadsReach {
     let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_ROOMS, None));
     let v = match asked.await {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e) },
+        Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e), answered: false },
         Err(_) => {
-            return ThreadsReach { live: false, scopes: vec![], note: "Arugula control didn't answer in time".into() };
+            return ThreadsReach {
+                live: false,
+                scopes: vec![],
+                note: "Arugula control didn't answer in time".into(),
+                answered: false,
+            };
         }
     };
     let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
@@ -820,7 +825,7 @@ pub(super) async fn threads_reach(app: &crate::server::App) -> ThreadsReach {
             rooms.join(", ")
         );
     }
-    ThreadsReach { live, scopes, note }
+    ThreadsReach { live, scopes, note, answered: true }
 }
 
 #[cfg(test)]
