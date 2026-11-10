@@ -1,0 +1,79 @@
+WK.app: replacing existing signature
+open done
+{
+  "  top page after" : "https:\/\/control.example.com\/",
+  "  top page after (2)" : "https:\/\/control.example.com\/",
+  "display:none frame" : {
+    "rafIn2s" : 0,
+    "timersIn2s" : 8,
+    "visibility" : "hidden",
+    "width" : 300
+  },
+  "frame reads parent.document" : {
+    "err" : "SecurityError: Blocked a frame with origin \"https:\/\/app.example.com\" from accessing a cross-origin frame. Protocols, domains, and ports must match."
+  },
+  "frame sets document.domain, reads parent" : {
+    "err" : "SecurityError: Assignment is forbidden for sandboxed iframes."
+  },
+  "frame-ancestors control, sandboxed frame" : {
+    "docRequest" : {
+      "cookies" : "",
+      "dest" : "iframe",
+      "site" : "same-site"
+    },
+    "loaded" : "https:\/\/app.example.com\/?framing=control",
+    "origin" : "https:\/\/app.example.com"
+  },
+  "frame's cookie comes back to it" : {
+    "cookies" : "framed_set=1",
+    "dest" : "empty",
+    "host" : "app.example.com",
+    "site" : "same-origin"
+  },
+  "GitHub-like stranger in a frame" : {
+    "blocked" : true
+  },
+  "history" : {
+    "after" : 3,
+    "before" : 1
+  },
+  "hop: hub redirects under 'none'" : {
+    "docRequest" : {
+      "cookies" : "framed_set=1",
+      "dest" : "iframe",
+      "site" : "same-site"
+    },
+    "loaded" : "https:\/\/app.example.com\/?framing=control&code=1",
+    "origin" : "https:\/\/app.example.com"
+  },
+  "hop: hub's own page under 'none'" : {
+    "blocked" : true
+  },
+  "navigator.credentials in the frame" : "object",
+  "navigator.credentials in the top page" : "object",
+  "new framed document carries the cookies" : {
+    "docRequest" : {
+      "cookies" : "top_set=1; framed_set=1",
+      "dest" : "iframe",
+      "site" : "same-site"
+    },
+    "loaded" : "https:\/\/app.example.com\/?framing=control",
+    "origin" : "https:\/\/app.example.com"
+  },
+  "passkey get in the frame, no allow=" : {
+    "err" : "NotAllowedError: The document is not focused."
+  },
+  "sandboxed frame moves the top page" : "SecurityError",
+  "today's headers frame?" : {
+    "blocked" : true
+  },
+  "top-level app sees the frame's cookie" : {
+    "cookies" : "framed_set=1",
+    "dest" : "empty",
+    "host" : "app.example.com",
+    "site" : "same-origin"
+  },
+  "top-level app sees the frame's localStorage" : null,
+  "ua" : "Mozilla\/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit\/605.1.15 (KHTML, like Gecko)",
+  "unsandboxed frame moves the top page, no click" : "SecurityError"
+}

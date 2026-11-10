@@ -1,0 +1,6 @@
+display: panes, no frame yet                               {"mb":396,"cpuPct":34.7}
+display: frame showing                                     {"mb":396,"cpuPct":30.9}
+display: frame hidden, panes showing                       {"mb":428,"cpuPct":36}
+visibility: panes, no frame yet                            {"mb":362,"cpuPct":33.9}
+visibility: frame showing                                  {"mb":416,"cpuPct":29.9}
+visibility: frame hidden, panes showing                    {"mb":415,"cpuPct":34.1}

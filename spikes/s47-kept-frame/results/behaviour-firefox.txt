@@ -1,0 +1,2 @@
+Not run on the real shell. Stuck at "Connecting to Arugula control…" on this rig, before sign-in.
+probe-firefox.json has the browser facts.
