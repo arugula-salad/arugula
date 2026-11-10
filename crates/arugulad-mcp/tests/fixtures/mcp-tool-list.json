@@ -2006,6 +2006,47 @@
             ],
             "type": "object"
           },
+          "StartedMcp": {
+            "description": "What a started agent can reach: its MCP servers by name, whether\nArugula's own is one, and the powers this machine's grants give over\nprojects (issues, boards, trackers, threads; never a value or a key).",
+            "properties": {
+              "arugula": {
+                "type": "boolean"
+              },
+              "grants": {
+                "description": "`project: power, power` lines; empty when there is no control or no grant.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "grants_note": {
+                "description": "Why `grants` is empty or partial, when control couldn't say.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "description": "Why not, when Arugula's MCP isn't given.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "servers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "servers",
+              "arugula",
+              "grants"
+            ],
+            "type": "object"
+          },
           "StartedOn": {
             "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
             "properties": {
@@ -2045,6 +2086,17 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedMcp"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The MCP servers it was started with and the grants this machine\nholds for its project (Arugula #836)."
           },
           "summary": {
             "type": "string"
@@ -4824,7 +4876,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -4838,8 +4890,8 @@
                 "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
               },
               "to": {
-                "description": "The second item, written the same way. `from` is `kind` it.",
-                "type": "string"
+                "$ref": "#/$defs/LinkTo",
+                "description": "The second item, written the same way, or a list of them (one link\neach). `from` is `kind` it."
               }
             },
             "required": [
@@ -4857,6 +4909,20 @@
               "discovered_from"
             ],
             "type": "string"
+          },
+          "LinkTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One item, or several to link `from` to."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7061,6 +7127,47 @@
             ],
             "type": "object"
           },
+          "StartedMcp": {
+            "description": "What a started agent can reach: its MCP servers by name, whether\nArugula's own is one, and the powers this machine's grants give over\nprojects (issues, boards, trackers, threads; never a value or a key).",
+            "properties": {
+              "arugula": {
+                "type": "boolean"
+              },
+              "grants": {
+                "description": "`project: power, power` lines; empty when there is no control or no grant.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "grants_note": {
+                "description": "Why `grants` is empty or partial, when control couldn't say.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "description": "Why not, when Arugula's MCP isn't given.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "servers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "servers",
+              "arugula",
+              "grants"
+            ],
+            "type": "object"
+          },
           "StartedOn": {
             "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
             "properties": {
@@ -7100,6 +7207,17 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedMcp"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The MCP servers it was started with and the grants this machine\nholds for its project (Arugula #836)."
           },
           "summary": {
             "type": "string"
@@ -9879,7 +9997,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -9893,8 +10011,8 @@
                 "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
               },
               "to": {
-                "description": "The second item, written the same way. `from` is `kind` it.",
-                "type": "string"
+                "$ref": "#/$defs/LinkTo",
+                "description": "The second item, written the same way, or a list of them (one link\neach). `from` is `kind` it."
               }
             },
             "required": [
@@ -9912,6 +10030,20 @@
               "discovered_from"
             ],
             "type": "string"
+          },
+          "LinkTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One item, or several to link `from` to."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -11953,6 +12085,47 @@
             ],
             "type": "object"
           },
+          "StartedMcp": {
+            "description": "What a started agent can reach: its MCP servers by name, whether\nArugula's own is one, and the powers this machine's grants give over\nprojects (issues, boards, trackers, threads; never a value or a key).",
+            "properties": {
+              "arugula": {
+                "type": "boolean"
+              },
+              "grants": {
+                "description": "`project: power, power` lines; empty when there is no control or no grant.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "grants_note": {
+                "description": "Why `grants` is empty or partial, when control couldn't say.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "description": "Why not, when Arugula's MCP isn't given.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "servers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "servers",
+              "arugula",
+              "grants"
+            ],
+            "type": "object"
+          },
           "StartedOn": {
             "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
             "properties": {
@@ -11992,6 +12165,17 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedMcp"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The MCP servers it was started with and the grants this machine\nholds for its project (Arugula #836)."
           },
           "summary": {
             "type": "string"
@@ -14771,7 +14955,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -14785,8 +14969,8 @@
                 "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
               },
               "to": {
-                "description": "The second item, written the same way. `from` is `kind` it.",
-                "type": "string"
+                "$ref": "#/$defs/LinkTo",
+                "description": "The second item, written the same way, or a list of them (one link\neach). `from` is `kind` it."
               }
             },
             "required": [
@@ -14804,6 +14988,20 @@
               "discovered_from"
             ],
             "type": "string"
+          },
+          "LinkTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One item, or several to link `from` to."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -17008,6 +17206,47 @@
             ],
             "type": "object"
           },
+          "StartedMcp": {
+            "description": "What a started agent can reach: its MCP servers by name, whether\nArugula's own is one, and the powers this machine's grants give over\nprojects (issues, boards, trackers, threads; never a value or a key).",
+            "properties": {
+              "arugula": {
+                "type": "boolean"
+              },
+              "grants": {
+                "description": "`project: power, power` lines; empty when there is no control or no grant.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "grants_note": {
+                "description": "Why `grants` is empty or partial, when control couldn't say.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "description": "Why not, when Arugula's MCP isn't given.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "servers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "servers",
+              "arugula",
+              "grants"
+            ],
+            "type": "object"
+          },
           "StartedOn": {
             "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
             "properties": {
@@ -17047,6 +17286,17 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedMcp"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The MCP servers it was started with and the grants this machine\nholds for its project (Arugula #836)."
           },
           "summary": {
             "type": "string"
@@ -19826,7 +20076,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -19840,8 +20090,8 @@
                 "description": "before (from comes first), blocks (from must be closed before to can\nstart), relates, duplicate_of or discovered_from. Default before."
               },
               "to": {
-                "description": "The second item, written the same way. `from` is `kind` it.",
-                "type": "string"
+                "$ref": "#/$defs/LinkTo",
+                "description": "The second item, written the same way, or a list of them (one link\neach). `from` is `kind` it."
               }
             },
             "required": [
@@ -19859,6 +20109,20 @@
               "discovered_from"
             ],
             "type": "string"
+          },
+          "LinkTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One item, or several to link `from` to."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
