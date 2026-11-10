@@ -36,6 +36,14 @@ test("Getting started: Edit in nvim sets the same preference", async ({ browser 
   await reset(page);
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel).toBeVisible();
+  // Named once (the card's heading), and it says there's nothing to
+  // install only when the daemon found nvim.
+  await expect(panel.getByText("Edit in nvim", { exact: true })).toHaveCount(1);
+  const found = await page.evaluate(async () => ((await (await fetch("/api/setup?part=agents")).json()) as { nvim?: boolean }).nvim);
+  expect(typeof found).toBe("boolean");
+  await expect(panel.locator("[data-edit-in-nvim-says]")).toHaveText(
+    found ? "Opens files in nvim, in a pane. Nothing to install." : "Opens files in nvim, in a pane. Needs nvim, which isn't on this machine's PATH yet.",
+  );
   const box = panel.locator("[data-edit-in-nvim]");
   await expect(box).not.toBeChecked();
   await box.check();

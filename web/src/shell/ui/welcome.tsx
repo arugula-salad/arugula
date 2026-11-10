@@ -104,11 +104,14 @@ interface Setup {
    * when the login shell doesn't find it; `added`: the startup files
    * Arugula put `~/.local/bin` on PATH in. Absent from an older daemon. */
   cli?: { command: string; added?: string[] };
+  /** nvim is on the daemon's PATH, for Edit in nvim. Absent from an older
+   * daemon. */
+  nvim?: boolean;
 }
 
 /** `GET /api/setup?part=agents`: what the welcome offer and the Agents
  * step read, without waiting for Tailscale. */
-type AgentsSetup = Pick<Setup, "claude" | "adapters" | "cli">;
+type AgentsSetup = Pick<Setup, "claude" | "adapters" | "cli" | "nvim">;
 
 /** What a button did. */
 interface Outcome {
@@ -455,7 +458,7 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           </span>
           <div>
             <h3>Edit in nvim</h3>
-            <EditInNvim />
+            <EditInNvim titled nvim={setup?.nvim} />
           </div>
         </li>
         <li>
