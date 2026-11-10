@@ -67,14 +67,15 @@ export function RunGrant({ project }: { project: string }) {
       hooks={{ "data-run-grant": g ? "yes" : v.offer ? "offered" : "no" }}
       lede={
         g
-          ? "Arugula may start runs on this project's cloud workspaces while every device sleeps."
-          : "No runs start here: nobody has allowed them, or the last grant expired or was revoked."
+          ? "Arugula may start runs and agent sessions on this project's cloud workspaces while every device sleeps."
+          : "No runs or agent sessions start here: nobody has allowed them, or the last grant expired or was revoked."
       }
       more={
         <p>
           A standing grant lets Arugula start runs and instruct them on every cloud workspace of this project, running whatever command
-          the project's runs start, with every device asleep, until it expires or is revoked. A project owner confirms it with a passkey, and each
-          workspace checks that owner's passkey before it starts anything. Deploys still ask an owner every time.
+          the project's runs start, with every device asleep, until it expires or is revoked. A thread's agent sessions run under it too. A project
+          owner confirms it with a passkey, and each workspace checks that owner's passkey before it starts anything. Deploys still ask an owner
+          every time.
         </p>
       }
     >
@@ -103,7 +104,7 @@ export function RunGrant({ project }: { project: string }) {
                 The owner who confirmed it isn't an owner of the project now, so workspaces refuse it: sign it again.
               </span>
             ) : v.renew ? (
-              <span class="settings-warn">It expires soon: renew it to keep runs starting.</span>
+              <span class="settings-warn">It expires soon: renew it to keep runs and agent sessions starting.</span>
             ) : null}
           </Card>
         </ul>
@@ -124,7 +125,7 @@ export function RunGrant({ project }: { project: string }) {
               {p.revoked_at ? (
                 <>
                   revoked <Time at={p.revoked_at} on />
-                  {p.revoke?.running === "stop" ? ", and the runs going stopped" : ""}
+                  {p.revoke?.running === "stop" ? ", and the runs and agent sessions going stopped" : ""}
                 </>
               ) : p.superseded_at ? (
                 <>

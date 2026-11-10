@@ -371,6 +371,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
+    /// Read-only links to a session that still work.
+    ///
+    /// Made in the Share dialog. `links revoke ID` ends one; anyone watching
+    /// is cut off.
+    Links {
+        #[command(subcommand)]
+        cmd: Option<cmd::share::LinksCmd>,
+    },
     /// Open this machine's page in your browser, signed in.
     ///
     /// Programs and browsers on this machine show the daemon's local token; this
@@ -660,7 +668,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
     ),
     ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
-    ("Sharing", &["share", "shares", "invite", "access", "guests"]),
+    ("Sharing", &["share", "shares", "links", "invite", "access", "guests"]),
     (
         "Machines and control",
         &[
@@ -971,6 +979,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Access { cmd } => cmd::access::run(cmd, ctx),
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
+        Command::Links { cmd } => cmd::share::links(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
         Command::Hosts { cmd } => {
             hosts::run(&ctx.sock, cmd, ctx.json_out)?;

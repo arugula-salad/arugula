@@ -41,6 +41,7 @@ use aes_gcm::{
     aead::{Aead, Payload},
 };
 use arugula_core::PaneId;
+use arugula_proto::api::DocLayout;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -219,6 +220,10 @@ fn forget(dir: &Path, id: &str) -> Result<(), String> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub title: String,
+    /// Left out for `doc`, so a snapshot of a plain Doc is what it was
+    /// before layouts; a reader that doesn't know it ignores it.
+    #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
+    pub layout: DocLayout,
     pub entries: Vec<ManifestEntry>,
     pub assets: Vec<ManifestAsset>,
 }
@@ -717,6 +722,7 @@ mod tests {
         let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
         let manifest = Manifest {
             title: "Vector".into(),
+            layout: DocLayout::Doc,
             entries: vec![
                 ManifestEntry {
                     id: "s1".into(),
@@ -832,5 +838,38 @@ mod tests {
         ivs.sort();
         ivs.dedup();
         assert_eq!(ivs.len(), 4);
+    }
+
+    /// A reader from before layouts, which had these three fields and no more.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct OldManifest {
+        title: String,
+        entries: Vec<ManifestEntry>,
+        assets: Vec<ManifestAsset>,
+    }
+
+    #[test]
+    fn a_layout_rides_the_manifest_and_an_older_reader_ignores_it() {
+        let (mut manifest, blobs) = vector_doc();
+        let plain = snapshot(&manifest, &blobs);
+        let json_of = |plain: &[u8]| -> Value {
+            let len = u32::from_be_bytes(plain[4..8].try_into().unwrap()) as usize;
+            serde_json::from_slice(&plain[8..8 + len]).unwrap()
+        };
+        // A plain Doc's manifest is what it was before layouts, byte for byte.
+        assert!(json_of(&plain).get("layout").is_none());
+
+        manifest.layout = DocLayout::Tabs;
+        let tabs = snapshot(&manifest, &blobs);
+        let json = json_of(&tabs);
+        assert_eq!(json["layout"], "tabs");
+        let old: OldManifest = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!((old.title.as_str(), old.entries.len(), old.assets.len()), ("Vector", 2, 1));
+        // The newer reader gets it back, and a name it doesn't know is `doc`.
+        assert_eq!(serde_json::from_value::<Manifest>(json.clone()).unwrap().layout, DocLayout::Tabs);
+        let mut unknown = json;
+        unknown["layout"] = json!("gallery");
+        assert_eq!(serde_json::from_value::<Manifest>(unknown).unwrap().layout, DocLayout::Doc);
     }
 }

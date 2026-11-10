@@ -1,8 +1,14 @@
 /* A board's Steps view (Arugula #763, #786, #824): the sequence chart, one line to a row with its bar in its place's column (a done row stays in its place, struck through), and arrows for the held row's links. Slate and Latte's tokens only. */
+.board-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  margin: 0 0 var(--space-3, 12px);
+}
+
 .board-views {
   display: inline-flex;
   width: max-content;
-  margin: 0 0 var(--space-3, 12px);
 }
 
 .steps {

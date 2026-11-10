@@ -33,7 +33,7 @@ use std::{
 };
 
 use arugula_core::PaneId;
-use arugula_proto::api::SearchHit;
+use arugula_proto::api::{DocLayout, SearchHit};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -63,6 +63,9 @@ pub struct Meta {
     pub shape: Option<Shape>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<OnPlatform>,
+    /// How the Doc is laid out; a `meta.json` without it is `doc`.
+    #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
+    pub layout: DocLayout,
 }
 
 /// Where a Doc's copy on the platform is (#418), as its last put was
@@ -118,6 +121,7 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             by: by.to_owned(),
             shape: Some(Shape::default()),
             platform: None,
+            layout: DocLayout::Doc,
         };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
@@ -154,6 +158,25 @@ pub fn touch(dir: &Path, title: Option<&str>) {
         warn!(doc = meta.id, error = e, "can't update a Doc's meta.json");
     }
     super::copies::changed(&meta.id);
+}
+
+/// The Doc's layout is now `layout`: `updated` moves, and its copy and
+/// share follow. A folder with no `meta.json` is left alone. Whether it
+/// changed.
+pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
+    let _held = META_LOCK.lock().unwrap();
+    let Some(mut meta) = read_meta(dir) else { return false };
+    if meta.layout == layout {
+        return false;
+    }
+    meta.layout = layout;
+    meta.updated = now_ms().max(meta.updated);
+    if let Err(e) = write_meta(dir, &meta) {
+        warn!(doc = meta.id, error = e, "can't keep a Doc's layout");
+        return false;
+    }
+    super::copies::changed(&meta.id);
+    true
 }
 
 /// Where the Doc's copy on the platform is now.
@@ -458,6 +481,7 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
             by: "migrated".into(),
             shape: Some(shape::of(&to)),
             platform: None,
+            layout: DocLayout::Doc,
         },
     )?;
     Ok(id)
@@ -848,6 +872,33 @@ mod tests {
         // `since` leaves out a Doc not changed since.
         assert!(search(&state, &shown, &re, Some(now_ms() + 60_000), 10).is_empty());
         assert!(search(&state, &shown, &re, None, 0).is_empty());
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    #[test]
+    fn a_docs_layout_is_kept_and_a_doc_without_one_reads_as_doc() {
+        let state = temp("layout");
+        let made = make(&state, "Mine", "me").unwrap();
+        let dir = dir(&state, &made.id).unwrap();
+        // A fresh Doc writes none, and a `meta.json` from before layouts reads `doc`.
+        let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join(META)).unwrap()).unwrap();
+        assert!(on_disk.get("layout").is_none());
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Doc);
+
+        assert!(!set_layout(&dir, DocLayout::Doc), "no change, no write");
+        assert!(set_layout(&dir, DocLayout::Tabs));
+        // As a restart reads it: from the folder, in the list too.
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Tabs);
+        assert_eq!(list(&state)[0].layout, DocLayout::Tabs);
+        assert!(set_layout(&dir, DocLayout::Prototype));
+        assert_eq!(list(&state)[0].layout, DocLayout::Prototype);
+        // A layout from a newer peer reads as `doc`, and the Doc still lists.
+        let mut meta = on_disk;
+        meta["layout"] = json!("gallery");
+        std::fs::write(dir.join(META), meta.to_string()).unwrap();
+        assert_eq!(list(&state)[0].layout, DocLayout::Doc);
+        // Setting it on a folder with no `meta.json` does nothing.
+        assert!(!set_layout(&state.join("nowhere"), DocLayout::Tabs));
         std::fs::remove_dir_all(state).unwrap();
     }
 }

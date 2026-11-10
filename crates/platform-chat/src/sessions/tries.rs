@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_common::{ApiError, err};
+use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::sessions::{SessionPick, SessionTryAsk, SessionView};
 use arugula_e2e::now_ms;
 use axum::{
@@ -64,6 +64,9 @@ pub async fn start(
             Cannot::Outside => "only the project's members try its sessions",
         };
         return Err(err(StatusCode::FORBIDDEN, said));
+    }
+    if let Some(line) = super::grant::barred_for(&app, &s).await? {
+        return Err(refusal(StatusCode::CONFLICT, crate::run_grant::NO_GRANT, &line));
     }
     let asked: Vec<String> = b.harnesses.unwrap_or_else(|| DEFAULT.map(String::from).to_vec());
     let harnesses: Vec<&str> = asked.iter().map(String::as_str).collect();

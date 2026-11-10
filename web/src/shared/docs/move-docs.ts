@@ -2,12 +2,11 @@
 // the Docs list's selection and onboarding's pick of what goes into the team
 // call the same move. One Doc at a time, in order, each with its own outcome:
 //
-// - A copy of a machine's Doc is Share with… (`POST …/copies`): the team Doc
-//   with its sections and pictures. A 409 carries the team Doc that's already
-//   there, and for the person that's a success.
-// - A Doc written on the platform has no machine: it's made again in the team
-//   (`POST …/docs`) from its sections. A person can't upload pictures, so
-//   they stay behind, and the result says so.
+// Every Doc is Share with… (`POST …/copies`), a machine's copy or one
+// written on the platform (Arugula #821): the team Doc with its sections and
+// pictures, and the source recorded. A 409 carries the team Doc that's
+// already there, and for the person that's a success, so moving a Doc twice
+// makes one team Doc.
 //
 // It never deletes or changes the original: whether the Mine copy is retired
 // afterwards is the caller's call.
@@ -25,8 +24,6 @@ export interface MoveResult {
   /** The team's Doc, for made and there. */
   teamDoc?: string;
   why?: string;
-  /** Made again from a Doc written here, which has pictures that didn't come. */
-  noPictures?: boolean;
 }
 
 /** What a result says, as the Docs list's bar and a single Doc's Share both
@@ -50,20 +47,10 @@ async function call(method: string, path: string, body?: unknown) {
 async function moveOne(from: string, team: string, d: ProjectDoc): Promise<MoveResult> {
   const result = { id: d.id, title: d.title };
   try {
-    if (d.machine) {
-      const r = await call("POST", `/api/projects/${enc(from)}/docs/${enc(d.id)}/copies`, { to: team });
-      if (r.ok) return { ...result, outcome: "made", teamDoc: (r.json as ProjectDocView).doc.id };
-      if (r.status === 409 && typeof r.json.id === "string") return { ...result, outcome: "there", teamDoc: r.json.id };
-      return { ...result, outcome: "refused", why: r.why };
-    }
-    const got = await call("GET", `/api/projects/${enc(from)}/docs/${enc(d.id)}`);
-    if (!got.ok) return { ...result, outcome: "refused", why: got.why };
-    const view = got.json as ProjectDocView;
-    const sections = view.sections.map((s) => ({ heading: s.heading, intent: s.intent, markdown: s.body }));
-    const r = await call("POST", `/api/projects/${enc(team)}/docs`, { title: d.title, sections });
-    if (!r.ok) return { ...result, outcome: "refused", why: r.why };
-    const noPictures = (view.assets?.length ?? 0) > 0;
-    return { ...result, outcome: "made", teamDoc: (r.json as ProjectDocView).doc.id, ...(noPictures && { noPictures }) };
+    const r = await call("POST", `/api/projects/${enc(from)}/docs/${enc(d.id)}/copies`, { to: team });
+    if (r.ok) return { ...result, outcome: "made", teamDoc: (r.json as ProjectDocView).doc.id };
+    if (r.status === 409 && typeof r.json.id === "string") return { ...result, outcome: "there", teamDoc: r.json.id };
+    return { ...result, outcome: "refused", why: r.why };
   } catch (e) {
     // The platform couldn't be reached: this Doc's outcome, and the rest still go.
     return { ...result, outcome: "refused", why: (e as Error).message };

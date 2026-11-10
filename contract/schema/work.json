@@ -29,6 +29,17 @@
           ],
           "description": "The workspace's finish step (M261), if its spec has one: what the\nbox runs after each turn, before it pushes."
         },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectGrant"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The project's standing grant, on every pull while it has a live one\nthat gives `runs.instruct` (aru-115, as amended): the box checks it\nagainst what it pinned before it takes the session or starts a turn\n(`arugula_e2e::project_grant::check`), and keeps the last one that\nchecked out, for the revokes that come with every pull\n([`Work::revokes`]). With none, the box starts nothing new; a turn\nunder way finishes."
+        },
         "harness": {
           "description": "The agent it runs ([`HARNESSES`]): `claude` unless it says (M264,\na Try 3's sibling or a review). A box without the one asked for\nruns `claude`, and its first report says which it ran\n([`SessionDetail::harness`]).",
           "type": [
@@ -52,6 +63,17 @@
         "park": {
           "description": "Parked (Arugula #215): `done`, with no prompt listed, for at least\n[`SESSION_PARK_MS`]. The box closes its agent block, keeping its\nuser, checkout and conversation; once it lists prompts again the\nbox opens a block on them, loading the conversation. The platform\nlists a parked one's prompts only when the box has a running slot\nfor it ([`MAX_SESSIONS_PER_BOX`]).",
           "type": "boolean"
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A v2 grant's granter's passkey log, as the platform read it from the\nhub (DK6, as [`WorkItem::passkey_log`]), while the session may be\nabout to start a turn: the machine takes only its removals. `None`:\nit goes by what it pinned."
         },
         "project": {
           "type": "string"
@@ -1014,7 +1036,7 @@
             }
           ],
           "default": null,
-          "description": "For a team Doc made from a copy (Share with…): where from. Null for\nany other Doc, and from an older platform."
+          "description": "For a team Doc made from a Doc of its owner's (Share with…): where\nfrom. Null for any other Doc, and from an older platform."
         },
         "project": {
           "type": "string"
@@ -1717,21 +1739,21 @@
       "type": "object"
     },
     "MadeFrom": {
-      "description": "The copy a team Doc was made from.",
+      "description": "The Doc a team Doc was made from: a machine's copy, or one written here.",
       "properties": {
         "id": {
           "type": "string"
         },
         "machine_name": {
           "default": null,
-          "description": "The name of the machine the copy is from, when control knows it. Only\nwhat the platform could tell; the copy itself is its owner's to read.",
+          "description": "The name of the machine the source is a copy from, when control knows\nit; null for a source written here. Only what the platform could\ntell; the source itself is its owner's to read.",
           "type": [
             "string",
             "null"
           ]
         },
         "project": {
-          "description": "The copy's project (its owner's personal one) and its id.",
+          "description": "The source Doc's project (its owner's personal one) and its id.",
           "type": "string"
         }
       },
@@ -3181,7 +3203,7 @@
         },
         "revokes": {
           "default": [],
-          "description": "Every revoke of the project's grants the platform holds, on every\npull, ready runs or not: a machine checks them against the grants\nits runs going were started under, and stops those a `running stop`\ncovers.",
+          "description": "Every revoke of the project's grants the platform holds, on every\npull, ready runs or not: a machine checks them against the grants\nits runs going were started under, and stops those a `running stop`\ncovers, and against its sessions' grants, ending those any revoke\ncovers (a turn under way finishes first, unless it says `running\nstop`).",
           "items": {
             "$ref": "#/$defs/GrantRevoke"
           },

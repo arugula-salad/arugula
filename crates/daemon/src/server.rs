@@ -126,6 +126,7 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
         .merge(crate::hosts::routes())
         .merge(crate::share::api_routes())
         .merge(crate::acl::api::routes())
+        .merge(crate::acl::api::link_routes())
         .merge(crate::setup::routes())
         .merge(crate::update::routes())
         .merge(crate::selfupdate::routes())

@@ -2291,6 +2291,14 @@ export type DocContentAsset = { name: string, mime: string, size: number, rev: n
 export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
 
 /**
+ * How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+ * or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+ * layout this build doesn't know (a newer peer's) reads as `doc`, never as
+ * an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+ */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
+/**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
  */
 export type DocLinkUrl = { url: string, };
@@ -2345,6 +2353,11 @@ summary: string,
  * Its sections, for the list's picture of its shape and its outline.
  */
 sections: Array<DocSectionShape>, 
+/**
+ * How it is laid out; `doc` for a Doc that never said, and from a
+ * daemon from before layouts.
+ */
+layout: DocLayout, 
 /**
  * Its copy on the platform (#418), once this machine has copied it up:
  * readable there with this machine asleep. Null until then, and again
@@ -4445,8 +4458,8 @@ machine: string | null,
  */
 machine_name: string | null, 
 /**
- * For a team Doc made from a copy (Share with…): where from. Null for
- * any other Doc, and from an older platform.
+ * For a team Doc made from a Doc of its owner's (Share with…): where
+ * from. Null for any other Doc, and from an older platform.
  */
 made_from: ProjectDocMadeFrom | null, };
 
@@ -4467,13 +4480,13 @@ mime: string, size: number,
 rev: number, };
 
 /**
- * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a copy, earliest
+ * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
  * first, in the projects its owner still reads.
  */
 export type ProjectDocCopies = { copies: Array<ProjectDocCopy>, };
 
 /**
- * A team Doc made from a copy, as its owner sees it.
+ * A team Doc made from a Doc of its owner's, as its owner sees it.
  */
 export type ProjectDocCopy = { project: string, project_name: string, 
 /**
@@ -4485,7 +4498,7 @@ id: string, link: string,
  */
 made: number, updated: number, 
 /**
- * The copy changed since: its rev is above the one recorded.
+ * The source changed since: its rev is above the one recorded.
  */
 stale: boolean, 
 /**
@@ -4503,16 +4516,17 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
 writer: boolean, };
 
 /**
- * The copy a team Doc was made from.
+ * The Doc a team Doc was made from: a machine's copy, or one written here.
  */
 export type ProjectDocMadeFrom = { 
 /**
- * The copy's project (its owner's personal one) and its id.
+ * The source Doc's project (its owner's personal one) and its id.
  */
 project: string, id: string, 
 /**
- * The name of the machine the copy is from, when control knows it. Only
- * what the platform could tell; the copy itself is its owner's to read.
+ * The name of the machine the source is a copy from, when control knows
+ * it; null for a source written here. Only what the platform could
+ * tell; the source itself is its owner's to read.
  */
 machine_name: string | null, };
 
@@ -5174,6 +5188,18 @@ signed: boolean,
  * What it says, in a line.
  */
 text: string, };
+
+/**
+ * One row of `GET /api/links`: a read-only link to a session that still
+ * works. Its key stays out: the private half never reached the machine, so
+ * a link can't be read back from here, only ended.
+ */
+export type SessionLink = { 
+/**
+ * What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+ * principal.
+ */
+id: string, session: number, made_ms: number, expires_ms: number, };
 
 /**
  * [`SESSION_MOVE`]'s body: the workspace it goes to.
@@ -6071,6 +6097,8 @@ export const OPS = {
   "ide.set": { method: "PUT", path: "/api/ide" },
   "invite.send": { method: "POST", path: "/api/invite" },
   "link.mint": { method: "POST", path: "/api/links" },
+  "link.revoke": { method: "DELETE", path: "/api/links/{id}" },
+  "links.list": { method: "GET", path: "/api/links" },
   "machine.reset": { method: "POST", path: "/api/machines/{id}/reset" },
   "machines.list": { method: "GET", path: "/api/machines" },
   "mcp_token.mint": { method: "POST", path: "/api/mcp/tokens" },

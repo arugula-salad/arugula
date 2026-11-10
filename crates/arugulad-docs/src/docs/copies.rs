@@ -504,7 +504,8 @@ fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
         (meta.title.clone(), Vec::new())
     };
     let pictures = assets::load(&dir.join(assets::FOLDER));
-    Ok(Some((meta, MachineDoc { title, sections }, pictures)))
+    let layout = (!meta.layout.is_doc()).then(|| meta.layout.as_str().to_owned());
+    Ok(Some((meta, MachineDoc { title, sections, layout }, pictures)))
 }
 
 /// What control's answer means for the Doc.
@@ -514,5 +515,31 @@ fn fail(e: anyhow::Error) -> Fail {
         Some(Answered(400 | 413, why)) => Fail::Never(why.clone()),
         Some(Answered(_, why)) => Fail::Later(why.clone()),
         None => Fail::Later(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arugula_proto::api::DocLayout;
+
+    use super::*;
+
+    #[test]
+    fn the_copy_names_a_layout_only_when_it_isnt_doc() {
+        let state = std::env::temp_dir().join(format!(
+            "arugula-copies-layout-{}-{}",
+            std::process::id(),
+            crate::store::now_ms()
+        ));
+        let meta = library::make(&state, "Plan", "me").unwrap();
+        let dir = library::dir(&state, &meta.id).unwrap();
+        let body = |dir: &Path| serde_json::to_value(whole(dir).ok().flatten().unwrap().1).unwrap();
+        // A control from before layouts sees the body it always did.
+        assert!(body(&dir).get("layout").is_none());
+        library::set_layout(&dir, DocLayout::Tabs);
+        assert_eq!(body(&dir)["layout"], "tabs");
+        library::set_layout(&dir, DocLayout::Doc);
+        assert!(body(&dir).get("layout").is_none());
+        std::fs::remove_dir_all(state).unwrap();
     }
 }

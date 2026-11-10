@@ -106,7 +106,7 @@
             }
           ],
           "default": null,
-          "description": "For a team Doc made from a copy (Share with…): where from. Null for\nany other Doc, and from an older platform."
+          "description": "For a team Doc made from a Doc of its owner's (Share with…): where\nfrom. Null for any other Doc, and from an older platform."
         },
         "project": {
           "type": "string"
@@ -151,7 +151,7 @@
       "type": "object"
     },
     "DocCopies": {
-      "description": "`GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a copy, earliest\nfirst, in the projects its owner still reads.",
+      "description": "`GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest\nfirst, in the projects its owner still reads.",
       "properties": {
         "copies": {
           "items": {
@@ -166,7 +166,7 @@
       "type": "object"
     },
     "DocCopy": {
-      "description": "A team Doc made from a copy, as its owner sees it.",
+      "description": "A team Doc made from a Doc of its owner's, as its owner sees it.",
       "properties": {
         "edited": {
           "description": "The team changed it since: its rev is above the one recorded.",
@@ -192,7 +192,7 @@
           "type": "string"
         },
         "stale": {
-          "description": "The copy changed since: its rev is above the one recorded.",
+          "description": "The source changed since: its rev is above the one recorded.",
           "type": "boolean"
         },
         "updated": {
@@ -334,6 +334,13 @@
     "MachineDoc": {
       "description": "`PUT` [`MACHINE_DOC`]: the whole Doc as the machine has it now. The\nsections replace the copy's; the same content again changes nothing.",
       "properties": {
+        "layout": {
+          "description": "How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when\nit isn't `doc`, so a control from before layouts still takes the Doc;\nabsent, or a name the reader doesn't know, is `doc`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sections": {
           "items": {
             "$ref": "#/$defs/MachineSection"
@@ -406,21 +413,21 @@
       "type": "object"
     },
     "MadeFrom": {
-      "description": "The copy a team Doc was made from.",
+      "description": "The Doc a team Doc was made from: a machine's copy, or one written here.",
       "properties": {
         "id": {
           "type": "string"
         },
         "machine_name": {
           "default": null,
-          "description": "The name of the machine the copy is from, when control knows it. Only\nwhat the platform could tell; the copy itself is its owner's to read.",
+          "description": "The name of the machine the source is a copy from, when control knows\nit; null for a source written here. Only what the platform could\ntell; the source itself is its owner's to read.",
           "type": [
             "string",
             "null"
           ]
         },
         "project": {
-          "description": "The copy's project (its owner's personal one) and its id.",
+          "description": "The source Doc's project (its owner's personal one) and its id.",
           "type": "string"
         }
       },
@@ -522,7 +529,7 @@
       "type": "object"
     },
     "Shared": {
-      "description": "The 409 to a [`ShareCopy`] when a team Doc was made from the copy in that\nproject already.",
+      "description": "The 409 to a [`ShareCopy`] when a team Doc was made from the Doc in that\nproject already.",
       "properties": {
         "error": {
           "type": "string"

@@ -36,6 +36,26 @@ export function saveMode(mode: BoardMode): void {
   }
 }
 
+/** Whether done rows are drawn, kept in this browser ("0": hidden). */
+const DONE_KEY = "arugula.board.steps.done";
+
+/** Whether done rows are shown: yes until the viewer hides them. Storage that refuses reads as shown. */
+export function loadDone(): boolean {
+  try {
+    return localStorage.getItem(DONE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveDone(show: boolean): void {
+  try {
+    localStorage.setItem(DONE_KEY, show ? "1" : "0");
+  } catch {
+    // Not kept; the pick holds for this page.
+  }
+}
+
 /** The title column's width, kept in this browser. */
 const TITLE_KEY = "arugula.board.steps.title";
 
@@ -132,6 +152,16 @@ export function phases(v: Pick<BoardView, "groups" | "zones" | "order" | "sequen
     });
   }
   return out;
+}
+
+/** The phases without their done rows (#831), a place left with no row dropped; each phase's `done` still counts the rows hidden. */
+export function withoutDone(ps: Phase[]): Phase[] {
+  return ps.map((p) => ({ ...p, places: p.places.map((s) => ({ ...s, rows: s.rows.filter((r) => r.lane !== "done") })).filter((s) => s.rows.length > 0) }));
+}
+
+/** The column of each place drawn (#831): the places in order, numbered 1…k, so a place no row is drawn in leaves no empty column. When every place from 1 is used it is the identity. */
+export function columns(places: number[]): Map<number, number> {
+  return new Map([...new Set(places)].sort((a, b) => a - b).map((p, i) => [p, i + 1]));
 }
 
 /** The highest place of any row. */

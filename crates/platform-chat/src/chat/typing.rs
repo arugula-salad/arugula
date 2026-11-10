@@ -14,6 +14,7 @@
 //! resume) is up by the time it's sent. Only where `@arugula` works (a
 //! project's channel, or the thread on its issue or PR; never a DM), only
 //! for someone it would start a session for ([`crate::triggers::may_start`]),
+//! on a project with a standing grant it would run under,
 //! only the box its sessions go to (`Db::agents_run_on`: the one chosen,
 //! else the only one), and at most once a minute per project across the
 //! platform's machines (`Db::take_warm`). The wake is the hub's own
@@ -67,6 +68,9 @@ pub(crate) enum Warm {
     /// The project has no box its sessions would go to: none, or several
     /// and none chosen.
     NoBox,
+    /// The project has no standing grant its sessions would run under
+    /// (aru-099): `@arugula` would start nothing.
+    NoGrant,
     /// This project's box was warmed within the last minute.
     Soon,
     /// Wake this box of this project (the minute is taken).
@@ -83,6 +87,9 @@ pub(crate) async fn warm_for(app: &Platform, room: &Room, account: &str, now: u6
     let Some(project) = app.db.chat_room_project(&room.id)? else { return Ok(Warm::NotHere) };
     if let Some(why) = crate::triggers::may_start(app, &project, account).await? {
         return Ok(Warm::Cannot(why));
+    }
+    if crate::run_grant::session_grant(&app.db, &project, now)?.is_none() {
+        return Ok(Warm::NoGrant);
     }
     let workspace = match app.db.agents_run_on(&project)? {
         AgentsOn::Chosen(w) | AgentsOn::Only(w) => w,

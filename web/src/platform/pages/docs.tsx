@@ -358,7 +358,6 @@ function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: P
                     {resultWords(r, results.team.name)}
                   </a>
                 )}
-                {r.noPictures && <span class="dim"> · pictures stay in Mine</span>}
               </li>
             );
           })}

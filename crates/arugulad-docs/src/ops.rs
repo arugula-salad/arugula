@@ -112,6 +112,7 @@ impl Handle<Docs> for DocsList {
                     by: m.by,
                     summary: shape.summary,
                     sections: shape.sections,
+                    layout: m.layout,
                     platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
                         project: p.project,
                         id: p.id,

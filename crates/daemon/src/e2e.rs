@@ -156,6 +156,9 @@ impl Out {
 }
 
 async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::Sender<Vec<u8>>) -> anyhow::Result<()> {
+    // Before anyone's looked up: a change from here on is one this channel
+    // sees, however soon it comes.
+    let mut changed = app.control.changed.subscribe();
     let m1 = tokio::time::timeout(std::time::Duration::from_secs(15), inbound.recv())
         .await
         .map_err(|_| anyhow::anyhow!("no handshake"))?
@@ -191,7 +194,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     // machine, a project person's own machine drives it: any request.
     if device.kind == Kind::Daemon {
         let full = app.control.drives(&who);
-        return serve_machine(app, inbound, out, who, device, principal, caller, full).await;
+        return serve_machine(app, inbound, out, who, device, principal, caller, full, changed).await;
     }
     let ch = out.ch.clone();
 
@@ -221,7 +224,6 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     // which is how most channels end: leave the mux and the hands then too.
     let _left = Leave { app: app.clone(), client, device: device.device.clone(), opened: std::time::Instant::now() };
     let router = crate::server::channel_router(app.clone());
-    let mut changed = app.control.changed.subscribe();
     // Its requests (a follow can run for as long as the channel does) end
     // with it: dropping the set aborts them.
     let mut requests = tokio::task::JoinSet::new();
@@ -243,6 +245,11 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
+                        // By what's true now, not at the handshake: the mux's
+                        // word that access went may still be on its way here.
+                        if no_longer(app.control.device(&who).map(|(_, p)| p), &principal).is_some() {
+                            break Ok(());
+                        }
                         requests.spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
@@ -332,12 +339,12 @@ async fn serve_machine(
     principal: crate::acl::Principal,
     caller: Caller,
     full: bool,
+    mut changed: tokio::sync::watch::Receiver<u64>,
 ) -> anyhow::Result<()> {
     let what = if full { "driving channel" } else { "agent channel" };
     info!(device = device.device, account = device.account, name = device.name, "{what} open");
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
-    let mut changed = app.control.changed.subscribe();
     let mut requests = tokio::task::JoinSet::new();
     let r = loop {
         tokio::select! {

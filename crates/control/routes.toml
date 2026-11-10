@@ -3122,7 +3122,7 @@ path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "The team Docs made from a machine Doc's copy (Share with…), in the projects the reader still reads. Only the copy's owner, from their personal project: anyone else is refused."
+note = "The team Docs made from one of the person's own Docs (Share with…), a machine's copy or one written on the platform, in the projects the reader still reads. Only the Doc's owner, from their personal project: anyone else is refused."
 
 [[route]]
 method = "POST"
@@ -3130,7 +3130,7 @@ path = "/api/projects/{project}/docs/{id}/copies"  # wire::project_docs::PROJECT
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Share with…: makes a new, ordinary Doc in the project `to` from the copy's title, sections and pictures as they are now, and records where it came from. Only the copy's owner, who writes Docs in `to`; 409 with the Doc's id when one was made from this copy there already."
+note = "Share with…: makes a new, ordinary Doc in the project `to` from the Doc's title, sections and pictures as they are now, and records where it came from. The Doc is one of the person's own, a machine's copy or one written on the platform; only its owner, who writes Docs in `to`; 409 with the team Doc's id when one was made from this Doc there already."
 
 [[route]]
 method = "PUT"
@@ -3138,7 +3138,7 @@ path = "/api/projects/{project}/docs/{id}/copies/{to}"  # wire::project_docs::PR
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Update copy: the team Doc in `to` made from this copy takes the copy's title, sections and pictures as they are now. Only the copy's owner, who still writes Docs in `to`; 409 `edited` when the team edited it since and `replace` isn't set."
+note = "Update copy: the team Doc in `to` made from this Doc takes its title, sections and pictures as they are now. Only the Doc's owner, who still writes Docs in `to`; 409 `edited` when the team edited it since and `replace` isn't set."
 
 [[route]]
 method = "DELETE"

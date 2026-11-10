@@ -116,6 +116,10 @@ pub enum Added {
     Revoked,
     /// A grant with this id is here already.
     Seen,
+    /// Its `made` isn't past every grant the project has had. Hosted machines
+    /// go by that time to tell which is newest, so it isn't kept: the page
+    /// signs one past the last.
+    Older,
 }
 
 impl Db {
@@ -137,6 +141,13 @@ impl Db {
         let seen: u64 = tx.query_row("SELECT count(*) FROM run_grants WHERE id = ?1", params![g.id], |r| r.get(0))?;
         if seen > 0 {
             return Ok(Added::Seen);
+        }
+        let newest: Option<u64> =
+            tx.query_row("SELECT max(made_at) FROM run_grants WHERE project_id = ?1", params![g.project], |r| {
+                r.get(0)
+            })?;
+        if newest.is_some_and(|n| g.made <= n) {
+            return Ok(Added::Older);
         }
         tx.execute(
             "UPDATE run_grants SET superseded_at = ?2
@@ -211,6 +222,19 @@ impl Db {
         Ok(newest)
     }
 
+    /// Whether the grant in force on the project was revoked since `at` (ms,
+    /// the platform's clock): what ran under it then is taken back. A grant
+    /// another took the place of wasn't in force: revoking it (under an
+    /// earlier delegation, say) takes nothing from what runs under the other.
+    pub fn run_grant_revoked_since(&self, project: &str, at: u64) -> Result<bool> {
+        let n: u64 = self.c().query_row(
+            "SELECT count(*) FROM run_grants WHERE project_id = ?1 AND revoked_at >= ?2 AND superseded_at IS NULL",
+            params![project, at],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
     /// Revoke every grant of `r`'s project under its delegation made at or
     /// before its time that isn't revoked yet: how many. The caller checked
     /// the revoke is well formed and for this project.
@@ -252,6 +276,24 @@ pub(crate) mod tests {
             by: keys.id(),
             sig: String::new(),
         }
+    }
+
+    /// Hosted machines go by the time a grant signs to tell which is newest,
+    /// so a grant is kept only past every grant the project has had, whatever
+    /// became of them, and an earlier one changes nothing.
+    #[test]
+    fn a_grant_not_past_the_last_isnt_kept() {
+        let (db, keys) = (Db::test(), DeviceKeys::generate());
+        let project = db.team_project("t", "t", 0).unwrap();
+        let g = grant(&project, &keys, 100);
+        assert_eq!(db.add_run_grant(&g, "a", 200).unwrap(), Added::Kept);
+        for made in [99, 100] {
+            assert_eq!(db.add_run_grant(&grant(&project, &keys, made), "a", 200).unwrap(), Added::Older, "{made}");
+        }
+        assert_eq!(db.live_run_grant(&project, 200).unwrap().unwrap().grant.id, g.id);
+        let next = grant(&project, &keys, 101);
+        assert_eq!(db.add_run_grant(&next, "a", 200).unwrap(), Added::Kept);
+        assert_eq!(db.live_run_grant(&project, 200).unwrap().unwrap().grant.id, next.id);
     }
 
     pub(crate) fn grant(project: &str, keys: &DeviceKeys, made: u64) -> ProjectGrant {

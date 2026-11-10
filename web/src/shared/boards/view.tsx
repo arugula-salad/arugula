@@ -42,7 +42,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_ORDER, STALE_REV, boards, type ForgeChecks } from "./store";
 import { StepsView } from "./steps-view";
-import { loadMode, nudge, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
+import { loadDone, loadMode, nudge, saveDone, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
@@ -102,6 +102,9 @@ export function BoardPanel({
   /** Lanes or Steps, as this viewer last picked (Steps on a phone until they do). */
   const [mode, setModeNow] = useState<BoardMode>(() => loadMode());
   const setMode = (m: BoardMode) => (setModeNow(m), saveMode(m), setBehind(null));
+  /** Whether the Steps view draws done rows (#831), as this viewer last picked. */
+  const [showDone, setShowDoneNow] = useState(loadDone);
+  const setShowDone = (on: boolean) => (setShowDoneNow(on), saveDone(on));
   /** The row whose reorder was refused because someone else moved its group first (Steps). */
   const [behind, setBehind] = useState<string | null>(null);
   useEffect(() => {
@@ -332,12 +335,19 @@ export function BoardPanel({
         }
         link={<CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />}
       />
-      <div class="seg small board-views" role="group" aria-label="View" data-board-views>
-        {(["lanes", "steps"] as const).map((m) => (
-          <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
-            {m === "lanes" ? "Lanes" : "Steps"}
+      <div class="board-switch">
+        <div class="seg small board-views" role="group" aria-label="View" data-board-views>
+          {(["lanes", "steps"] as const).map((m) => (
+            <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
+              {m === "lanes" ? "Lanes" : "Steps"}
+            </button>
+          ))}
+        </div>
+        {mode === "steps" && (
+          <button type="button" class="secondary small" aria-pressed={showDone} data-board-done onClick={() => setShowDone(!showDone)}>
+            Done
           </button>
-        ))}
+        )}
       </div>
       <div class="board-find" role="search" data-board-find>
         <input
@@ -394,7 +404,7 @@ export function BoardPanel({
         />
       )}
       {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
-        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} />
+        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} />
       )}
       {mode === "lanes" && sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;

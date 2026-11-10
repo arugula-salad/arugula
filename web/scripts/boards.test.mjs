@@ -503,7 +503,7 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
 });
 
 // The Steps view (Arugula #763): a reorder keeps to its group's order, a link is an arrow the way its kind runs.
-import { lastPlace, linksOf, loadMode, nudge, phases, reorder, shown, stepPlace } from "../src/shared/boards/steps.ts";
+import { columns, lastPlace, linksOf, loadDone, loadMode, nudge, phases, reorder, saveDone, shown, stepPlace, withoutDone } from "../src/shared/boards/steps.ts";
 
 test("Steps is the default at 390 px and Lanes elsewhere, and a reorder names the whole group's order it read", () => {
   assert.equal(loadMode(390), "steps");
@@ -543,4 +543,31 @@ test("phases hold every row by place, done rows first inside a place, and count 
   const drawn = new Set(["r1", "r2", "r4"]);
   // r3 is done and not on screen here, so its link is left out; "discovered from" runs from where it was found.
   assert.deepEqual(linksOf(me, [me, ...rows.slice(1)], drawn).map((l) => [l.kind, l.from, l.to]), [["before", "r1", "r2"], ["discovered_from", "r4", "r1"]]);
+});
+
+test("columns close the gaps between the places drawn, and the Done toggle is kept in the browser and shown when storage refuses", () => {
+  // Every place used: the identity. Unsorted and repeated places are numbered once, in order.
+  assert.deepEqual([...columns([1, 2, 3, 4])], [[1, 1], [2, 2], [3, 3], [4, 4]]);
+  assert.deepEqual([...columns([3, 4, 3])], [[3, 1], [4, 2]]);
+  assert.deepEqual([...columns([5, 1, 5, 2])], [[1, 1], [2, 2], [5, 3]]);
+  assert.equal(columns([]).size, 0);
+
+  // Without the done rows a phase keeps its done count and loses the places it had only done rows in.
+  const r = (id, lane) => ({ id, lane, place: lane === "done" ? 1 : 2, pointer: { kind: "note" } });
+  const [p] = withoutDone(phases({ groups: [], zones: [{ rows: [r("a", "done"), r("b", "next")] }], order: ["a", "b"] }));
+  assert.equal(p.done, 1);
+  assert.deepEqual(p.places.map((s) => [s.place, s.rows.map((x) => x.id)]), [[2, ["b"]]]);
+
+  const mem = new Map();
+  globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => void mem.set(k, v) };
+  assert.equal(loadDone(), true);
+  saveDone(false);
+  assert.equal(mem.get("arugula.board.steps.done"), "0");
+  assert.equal(loadDone(), false);
+  saveDone(true);
+  assert.equal(loadDone(), true);
+  globalThis.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  assert.equal(loadDone(), true);
+  assert.doesNotThrow(() => saveDone(false));
+  delete globalThis.localStorage;
 });

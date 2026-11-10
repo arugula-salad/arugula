@@ -242,18 +242,43 @@ fn private_file() -> OpenOptions {
 /// Write a file so that it is either entirely old or entirely new, even
 /// across a crash or power loss.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    replace_atomic(path, bytes).map_err(io::Error::from)
+}
+
+/// How [`replace_atomic`] failed: whether the file changed.
+#[derive(Debug)]
+pub enum ReplaceError {
+    /// Before the replacement: the file holds what it did.
+    NotReplaced(io::Error),
+    /// After it: the file holds the new bytes, though a crash could still
+    /// bring the old ones back.
+    NotSynced(io::Error),
+}
+
+impl From<ReplaceError> for io::Error {
+    fn from(e: ReplaceError) -> Self {
+        match e {
+            ReplaceError::NotReplaced(e) | ReplaceError::NotSynced(e) => e,
+        }
+    }
+}
+
+/// [`write_atomic`], for a caller that keeps a copy of what the file holds
+/// and so needs to know whether it changed.
+pub fn replace_atomic(path: &Path, bytes: &[u8]) -> Result<(), ReplaceError> {
     let tmp = path.with_extension("tmp");
-    {
+    let written = (|| {
         let mut f = private_file().write(true).create(true).truncate(true).open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
-    }
-    fs::rename(&tmp, path)?;
+        fs::rename(&tmp, path)
+    })();
+    written.map_err(ReplaceError::NotReplaced)?;
     // The rename itself, on disk. (Windows can't open a directory as a
     // file; NTFS journals the rename.)
     #[cfg(unix)]
     if let Some(dir) = path.parent() {
-        File::open(dir)?.sync_all()?;
+        File::open(dir).and_then(|d| d.sync_all()).map_err(ReplaceError::NotSynced)?;
     }
     Ok(())
 }

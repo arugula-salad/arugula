@@ -16,7 +16,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hook
 import type { BoardRow, BoardView } from "../proto";
 import { usePhone } from "../ui/hooks";
 import { isCard, pointerLabel, rowGlyph } from "./text";
-import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, lastPlace, linksOf, loadTitle, moreLine, phases, reorder, stepOf, rowsOf, saveTitle, shown, groupOrder, titleRange, type Link, type Reorder } from "./steps";
+import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, columns, lastPlace, linksOf, loadTitle, moreLine, phases, reorder, stepOf, rowsOf, saveTitle, shown, groupOrder, titleRange, withoutDone, type Link, type Reorder } from "./steps";
 import "./steps.css";
 
 /** One arrow, measured: where it runs, in the chart's own coordinates. */
@@ -79,6 +79,7 @@ export function StepsView({
   opened,
   move,
   behind,
+  showDone,
 }: {
   view: BoardView;
   /** Whether the reader may reorder (the platform refuses a viewer's move). */
@@ -90,13 +91,18 @@ export function StepsView({
   move: (row: BoardRow, m: Reorder) => void;
   /** The row whose reorder was refused because someone else had moved its group first. */
   behind: string | null;
+  /** Whether done rows are drawn (#831). Hidden, their columns close up: a bar's column is then not its place. */
+  showDone: boolean;
 }) {
   const phone = usePhone();
   const uid = useId();
   const root = useRef<HTMLDivElement>(null);
   const chart = useRef<HTMLDivElement>(null);
-  const ps = phases(view);
-  const last = lastPlace(ps);
+  const all = phases(view);
+  const ps = showDone ? all : withoutDone(all);
+  /** Each place drawn to its column: with done rows shown, the place itself (#824). */
+  const col = showDone ? new Map(ps.flatMap((p) => p.places.map((s) => [s.place, s.place] as const))) : columns(ps.flatMap((p) => p.places.map((s) => s.place)));
+  const last = showDone ? lastPlace(ps) : Math.max(1, col.size);
   const everyRow = rowsOf(view);
   /** The phases whose column 1 is unfolded. */
   const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
@@ -119,7 +125,7 @@ export function StepsView({
   const onScreen = new Set<string>();
   for (const p of ps) {
     const key = p.group?.id ?? "none";
-    for (const s of p.places) for (const r of shown(s.place, s.rows, unfolded.has(key)).rows) onScreen.add(r.id);
+    for (const s of p.places) for (const r of shown(col.get(s.place)!, s.rows, unfolded.has(key)).rows) onScreen.add(r.id);
   }
   const active = hover ?? pinned;
   const row = active ? everyRow.find((r) => r.id === active) : undefined;
@@ -262,16 +268,22 @@ export function StepsView({
                 <div class="steps-line steps-phase-head">
                   <div class="steps-lab">
                     <h2>{p.group?.title ?? "No group"}</h2>
+                    {!showDone && p.done > 0 && (
+                      <span class="dim" data-steps-done>
+                        {p.done} done
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
               {p.places.map((s) => {
-                const folded = shown(s.place, s.rows, unfolded.has(key));
+                const at = col.get(s.place)!;
+                const folded = shown(at, s.rows, unfolded.has(key));
                 const open = s.rows.filter((r) => r.lane !== "done");
                 return [
-                  ...folded.rows.map((r) => line(r, key, s.place, open)),
+                  ...folded.rows.map((r) => line(r, key, at, open)),
                   folded.more > 0 && (
-                    <div class="steps-line" key={`more-${s.place}`}>
+                    <div class="steps-line" key={`more-${at}`}>
                       <div class="steps-lab">
                         <button type="button" class="secondary small" data-steps-more={key} onClick={() => setUnfolded(new Set(unfolded).add(key))}>
                           {moreLine(folded.more)}

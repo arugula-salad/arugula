@@ -25,8 +25,14 @@ export interface ManifestAsset {
   size: number;
 }
 
+/** The proto's `DocLayout`, written out: this file imports nothing. */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
 export interface Manifest {
   title: string;
+  /** Absent in a snapshot from before layouts, or of a plain Doc; read it
+   * with `layoutOf`. */
+  layout?: string;
   entries: ManifestEntry[];
   assets: ManifestAsset[];
 }
@@ -103,6 +109,12 @@ function manifestOf(v: unknown): Manifest {
     if (!a || !str(a.name) || !str(a.mime) || !Number.isSafeInteger(a.size) || a.size < 0) throw new Broken("a bad asset");
   }
   return m as Manifest;
+}
+
+/** The snapshot's layout; a missing one, or one a newer machine made that
+ * this build doesn't know, is `doc`. */
+export function layoutOf(m: Manifest): DocLayout {
+  return m.layout === "tabs" || m.layout === "prototype" ? m.layout : "doc";
 }
 
 /** The snapshot in these parts. */
