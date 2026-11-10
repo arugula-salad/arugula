@@ -425,7 +425,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -440,6 +440,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -447,6 +461,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
@@ -5318,7 +5343,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -5333,6 +5358,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5340,6 +5379,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
@@ -10322,7 +10372,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -10337,6 +10387,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10344,6 +10408,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
@@ -15215,7 +15290,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -15230,6 +15305,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -15237,6 +15326,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
@@ -19802,7 +19902,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -19817,6 +19917,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -19824,6 +19938,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
@@ -21782,7 +21907,7 @@
         "readOnlyHint": true,
         "title": "Read a pane's output"
       },
-      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+      "description": "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -21797,6 +21922,20 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "ReadFormat": {
+            "oneOf": [
+              {
+                "const": "raw",
+                "description": "The block's whole text (a terminal's output).",
+                "type": "string"
+              },
+              {
+                "const": "messages",
+                "description": "An agent block's messages, one line per tool call.",
+                "type": "string"
+              }
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -21804,6 +21943,17 @@
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ReadFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an agent block: `messages` is only what was said (prompts, the\nassistant's text, each tool call's name and a line), no payloads or\nresults, paged by message: offset is a message's number, and the\nresult's next_offset goes back as offset. Default `raw`."
           },
           "last_command": {
             "default": false,
