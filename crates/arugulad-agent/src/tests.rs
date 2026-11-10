@@ -478,6 +478,30 @@ fn an_agent_woken_by_a_background_task_works_until_its_cycle_closes() {
     assert_eq!(g.attention().0, Attention::Done);
 }
 
+#[test]
+fn a_woken_cycle_holds_what_is_queued_until_it_ends() {
+    // #716: a prompt sent into the adapter's own cycle is never answered, so
+    // what's queued waits for the cycle's end, which says to send it. A new
+    // server ends the cycle too.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "end_turn" } }), 2000);
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let chunk = u(json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "back" } }));
+    g.on_in(&chunk, 2100);
+    assert!(g.autonomous_at.is_some());
+    let close =
+        u(json!({ "sessionUpdate": "usage_update", "_meta": { "_claude/origin": { "kind": "task-notification" } } }));
+    assert_eq!(g.on_in(&close, 2200), vec![Effect::WokenEnded]);
+    assert!(g.autonomous_at.is_none());
+    g.on_in(&chunk, 2300);
+    assert!(g.autonomous_at.is_some());
+    g.on_note(&json!({ "e": "spawn", "argv": ["fake"] }), 2400);
+    assert!(g.autonomous_at.is_none(), "the cycle went with its server");
+    assert_eq!(g.turns.last().and_then(|t| t.ended_ms), Some(2400));
+}
+
 /// M255: a follow-up is credited as it's sent, not as it's queued. Two
 /// queued behind a turn are each named just before their own prompt (not
 /// both at once, ahead of the turn they waited behind), and whose each is
