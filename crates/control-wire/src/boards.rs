@@ -1493,6 +1493,27 @@ pub enum RelationDirection {
     In,
 }
 
+/// An agent session started on a row's issue (Arugula #843).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRowSession"))]
+pub struct RowSession {
+    /// `ses_…`, for its thread.
+    pub session: String,
+    /// Its state as the platform keeps it: `queued`, `working`,
+    /// `needs_input`, `done`, `failed`, `unresponsive` or `stopped`.
+    pub state: String,
+    /// Whether it moves the row: it is under way, or done with its PR not
+    /// yet sent. A session that isn't live is shown dimmed.
+    pub live: bool,
+    /// The one ref it may push, `arugula/<8 hex>-<slug>`.
+    pub branch: String,
+    /// Its PR's link, once its asker sent it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pr: Option<String>,
+}
+
 /// An edge of a row's item, as the reader sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1760,6 +1781,10 @@ pub struct Row {
     /// The edges of the row's item, both ways, for the drawer.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RowRelation>,
+    /// The agent sessions started on the row's issue, oldest first
+    /// (Arugula #843). A live one puts the row in Doing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<RowSession>,
     /// Where the row falls in the board's order (Arugula #762): 1 plus the
     /// highest step of the open rows that come before it, worked out on
     /// every read and never stored. Absent for a row with no issue or PR,
@@ -2232,6 +2257,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
             let line = format!("answered: {} → {}", a.question, a.answer);
             *out += &format!("      {}\n", fit(&line, TEXT_WIDTH - 6));
         }
+        if let Some(s) = r.sessions.last() {
+            let line = format!("session {} · {}", s.branch, s.state.replace('_', " "));
+            *out += &format!("      {}\n", fit(&line, TEXT_WIDTH - 6));
+        }
         if let Some(b) = &r.block {
             // Under the row, in line with its label.
             *out += &format!("      {}\n", fit(&b.line(), TEXT_WIDTH - 6));
@@ -2590,6 +2619,7 @@ mod tests {
             ask: None,
             asked: vec![],
             relations: vec![],
+            sessions: vec![],
             step: None,
             place: None,
             live: None,
@@ -2913,6 +2943,29 @@ Done: People can sign up.
         assert!(line(text.clone(), "      closed with acme/site#70, by \"(#4)\" in the title"), "{text}");
         assert!(line(done(Some("acme/site#70"), None), "      closed with acme/site#70"));
         assert!(!done(None, None).contains("closed with"));
+    }
+
+    /// A row with a session on its issue names the newest one under it
+    /// (Arugula #843): its branch and its state in words.
+    #[test]
+    fn a_row_names_its_session() {
+        let with = |sessions: Vec<RowSession>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Doing, "Fix login");
+            r.sessions = sessions;
+            render(&view(lanes(vec![(Lane::Doing, vec![r])])))
+        };
+        let session = |branch: &str, state: &str| RowSession {
+            session: "ses_1".into(),
+            state: state.into(),
+            live: true,
+            branch: branch.into(),
+            pr: None,
+        };
+        let text = with(vec![session("arugula/ab12cd34-parser", "needs_input")]);
+        assert!(text.lines().any(|l| l == "      session arugula/ab12cd34-parser · needs input"), "{text}");
+        let text = with(vec![session("arugula/00000000-old", "failed"), session("arugula/ab12cd34-parser", "working")]);
+        assert!(text.contains("session arugula/ab12cd34-parser · working") && !text.contains("-old"), "{text}");
+        assert!(!with(vec![]).contains("session "));
     }
 
     /// A row says its item's title, then its note unless the note repeats the

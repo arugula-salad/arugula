@@ -2046,3 +2046,93 @@ async fn a_stale_block_from_a_machine_that_left_is_released() {
     let earlier = row_in(&v, &row)["attachments"][0]["id"].clone();
     assert_eq!(row_in(&v, &row)["marks"], json!([{ "kind": "earlier", "attachment": earlier }]), "{v}");
 }
+
+/// A session started on an issue moves that issue's rows on every board of
+/// the project (Arugula #843): Doing while it is queued, working, waiting on
+/// its person (even unresponsive), or done with its PR not yet sent; Next
+/// once it failed, stopped, or its PR is sent; Done with the issue closed.
+/// (A PR open is Review: the lane table's test, with no mirrored PR here.)
+#[tokio::test]
+async fn a_session_on_an_issue_moves_its_rows() {
+    use crate::db::sessions::{NewAgentSession, NewPrompt, Source};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let t = seed(&app, &hub);
+    let parser = issue(&base, "a", &t, "Parser").await;
+    let other = issue(&base, "a", &t, "Other").await;
+    let (one, row_one) = board_on(&base, "a", &t, "Launch", &parser).await;
+    let (two, row_two) = board_on(&base, "a", &t, "Polish", &parser).await;
+    let (elsewhere, row_other) = board_on(&base, "a", &t, "Elsewhere", &other).await;
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, created_at, updated_at)
+             VALUES ('hw_1', ?1, 'dev', '{}', 'h', 'ready', 1, 1)",
+            params![t],
+        )
+        .unwrap();
+    let new = NewAgentSession {
+        project: &t,
+        room: "room_1",
+        parent_seq: 1,
+        asker: "a",
+        workspace: "hw_1",
+        repo: None,
+        slug: "parser",
+        prompt: NewPrompt { author: "a", source: Source::Member, association: None, text: "fix the parser" },
+    };
+    let (session, _) = app.db.create_session(&new, 10).unwrap().unwrap();
+    crate::db::sessions::set_work_item_in(&app.db.c(), &session.id, &parser).unwrap();
+    let read = |board: &str| {
+        let (base, board) = (base.clone(), board.to_owned());
+        async move { call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+    let set = |state: &str, was: Option<&str>, pr: Option<&str>| {
+        app.db
+            .c()
+            .execute(
+                "UPDATE agent_sessions SET state = ?2, was_state = ?3, pr = ?4 WHERE id = ?1",
+                params![session.id, state, was, pr],
+            )
+            .unwrap();
+    };
+    let cases = [
+        ("queued", None, None, "doing", true),
+        ("working", None, None, "doing", true),
+        ("needs_input", None, None, "doing", true),
+        ("unresponsive", Some("working"), None, "doing", true),
+        ("unresponsive", Some("needs_input"), None, "doing", true),
+        ("done", None, None, "doing", true),
+        ("done", None, Some("https://github.com/o/r/pull/9"), "next", false),
+        ("failed", None, None, "next", false),
+        ("stopped", None, None, "next", false),
+    ];
+    for (state, was, pr, want, live) in cases {
+        set(state, was, pr);
+        for (board, row) in [(&one, &row_one), (&two, &row_two)] {
+            let v = read(board).await;
+            assert_eq!(lane(&v, row), want, "{state} {was:?} {pr:?} on {board}: {v}");
+            let r = row_in(&v, row);
+            assert_eq!(r["sessions"][0]["session"], json!(session.id), "{v}");
+            assert_eq!(r["sessions"][0]["state"], json!(state), "{v}");
+            assert_eq!(r["sessions"][0]["live"], json!(live), "{state}: {v}");
+            assert_eq!(r["sessions"][0]["branch"], json!(session.branch), "{v}");
+        }
+        let v = read(&elsewhere).await;
+        assert!(row_in(&v, &row_other).get("sessions").is_none(), "another issue's row: {v}");
+        assert_eq!(lane(&v, &row_other), "next", "{v}");
+    }
+    // A closed issue is Done, whatever the session is doing.
+    set("working", None, None);
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1",
+            params![parser],
+        )
+        .unwrap();
+    for (board, row) in [(&one, &row_one), (&two, &row_two)] {
+        let v = read(board).await;
+        assert_eq!(lane(&v, row), "done", "{v}");
+    }
+}

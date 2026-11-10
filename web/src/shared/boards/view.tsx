@@ -22,7 +22,7 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardRowSession, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
@@ -849,6 +849,31 @@ function Lane({
   );
 }
 
+/** A session started on the row's issue (#843): its branch without the `arugula/` prefix, and its state, a link to its thread where the reader has one. Dim once it no longer moves the row. */
+function SessionChip({ s, project }: { s: BoardRowSession; project: string }) {
+  const api = usePlatformApi();
+  const href = api.sessionHref?.(project, s.session);
+  const branch = s.branch.replace(/^arugula\//, "");
+  const state = s.state.replace(/_/g, " ");
+  return (
+    <ObjectChip
+      class={s.live ? undefined : "dim"}
+      title={s.live ? "An agent session working on this issue" : "An agent session that has stopped moving this row"}
+      fact={{ tone: s.live ? (s.state === "needs_input" ? "accent" : "muted") : "muted", text: state }}
+      data-board-session={s.session}
+      data-board-session-live={s.live ? "" : undefined}
+    >
+      {href ? (
+        <a class="board-ptr" href={href} target="_blank" rel="noopener noreferrer">
+          {branch}
+        </a>
+      ) : (
+        <span class="board-ptr">{branch}</span>
+      )}
+    </ObjectChip>
+  );
+}
+
 /** An attachment as an object chip: what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
 function AttachmentChip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all" }) {
   const api = usePlatformApi();
@@ -1152,10 +1177,13 @@ function Row({
               {closedWithLine(r.live)}
             </div>
           )}
-          {current.length > 0 && (
+          {(current.length > 0 || (r.sessions ?? []).length > 0) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
                 <AttachmentChip key={a.id} a={a} platform={platform} />
+              ))}
+              {(r.sessions ?? []).map((x) => (
+                <SessionChip key={x.session} s={x} project={project} />
               ))}
             </div>
           )}
@@ -1389,6 +1417,16 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
+      {(r.sessions ?? []).length > 0 && (
+        <section data-board-drawer-sessions>
+          <h3>Sessions</h3>
+          {(r.sessions ?? []).map((x) => (
+            <div key={x.session} class="board-drawer-attached">
+              <SessionChip s={x} project={project} />
+            </div>
+          ))}
+        </section>
+      )}
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
