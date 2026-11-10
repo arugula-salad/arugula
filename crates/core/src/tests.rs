@@ -230,6 +230,23 @@ fn options_are_kept_per_scope_and_go_with_their_owner() {
     m.apply(Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None }).unwrap();
     m.apply(Intent::ClosePane { pane: 1 }).unwrap();
     assert!(m.options.panes.is_empty());
+    // A star (#854) goes with its tab or pane, and stays on a pane that
+    // moves to another tab: its id is the same.
+    m.apply(Intent::NewTab { session: 1, from_pane: None, cwd: None }).unwrap();
+    let tab = *m.sessions[0].tabs.last().unwrap();
+    let pane = m.tab(tab).unwrap().root.panes()[0];
+    m.apply(Intent::Split { pane, edge: Edge::Right, local: false, cwd: None }).unwrap();
+    let moved = *m.tab(tab).unwrap().root.panes().last().unwrap();
+    m.apply(set(OptionScope::Tab(tab), "star", Some("1"))).unwrap();
+    m.apply(set(OptionScope::Pane(moved), "star", Some("2"))).unwrap();
+    m.apply(Intent::MovePane { pane: moved, target: 2, edge: Edge::Right }).unwrap();
+    assert_ne!(m.tab_of(moved).unwrap(), tab);
+    assert_eq!(m.options.get(OptionScope::Pane(moved)).unwrap()["star"], "2");
+    m.apply(Intent::CloseTab { tab }).unwrap();
+    assert!(m.options.tabs.is_empty());
+    assert_eq!(m.options.get(OptionScope::Pane(moved)).unwrap()["star"], "2");
+    m.apply(Intent::ClosePane { pane: moved }).unwrap();
+    assert!(m.options.panes.is_empty());
     m.apply(Intent::CloseSession { session: 1 }).unwrap();
     assert!(m.options.sessions.is_empty());
 }

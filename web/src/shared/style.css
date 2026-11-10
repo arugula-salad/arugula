@@ -10561,6 +10561,15 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-weight: 400;
 }
 
+/* A starred tab or pane (#854): on its tab, its pane's header and its row
+   in Starred. */
+.star-mark,
+.ws-star {
+  flex: none;
+  color: var(--accent);
+  line-height: 1;
+}
+
 .ws-session {
   position: relative;
   display: flex;

@@ -10,10 +10,11 @@ import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
-import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/ui/icons";
+import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon, StarIcon } from "../../../shared/ui/icons";
 import { HintChip } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
 import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
+import { starOf } from "../../stars";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -148,6 +149,11 @@ export function PaneHeader({
             </span>
           )}
           <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={glyph} /></span>
+          {starOf(client.state?.options, "pane", id) !== null && (
+            <span class="star-mark" role="img" aria-label="Starred pane" title="Starred pane: it's in Starred in the Sessions sidebar" data-pane-star>
+              <StarIcon on size="xs" />
+            </span>
+          )}
         </>
       }
       title={<BarTitle class="pane-header-title">{title}</BarTitle>}

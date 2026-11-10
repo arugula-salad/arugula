@@ -18,13 +18,14 @@ import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
+import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, SearchIcon, StarIcon, TabsIcon } from "../../../shared/ui/icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import type { MenuItem } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
 import { ObjectChip } from "../../../shared/ui/state-chip";
+import { goToStarred, isCurrent, starredRows, type StarredRow } from "../starred";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -36,6 +37,8 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: "working", label: "Working" },
   { id: "idle", label: "Idle" },
 ];
+/** Starred tabs and panes (#854) come right below Needs you. */
+const STARRED_AFTER: Group = "needs";
 
 export interface SessionSummary {
   session: Session;
@@ -124,9 +127,10 @@ export function SessionSidebar({
 }) {
   const { open, width, narrow } = useSidebar();
   const [query, setQuery] = useState("");
-  // The highlighted row by id, not position: rows move between groups as
-  // their panes start and stop working.
-  const [hiPick, setHi] = useState<SessionId | null>(null);
+  // The highlighted row by key (`session:N`, `tab:N`, `pane:N`), not
+  // position: rows move between groups as their panes start and stop
+  // working.
+  const [hiPick, setHi] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const state = client.state;
   // Re-render each minute too, for "2m ago".
@@ -141,12 +145,21 @@ export function SessionSidebar({
   const all = state ? state.sessions.map((s) => summarize(client, s)) : [];
   const q = query.trim().toLowerCase();
   const shown = q ? all.filter((r) => r.session.name.toLowerCase().includes(q) || (r.context ?? "").toLowerCase().includes(q)) : all;
+  const stars = state ? starredRows(client) : [];
+  const starsShown = q ? stars.filter((r) => `${r.label} ${r.detail}`.toLowerCase().includes(q)) : stars;
   // In the order they're drawn, for the arrow keys.
-  const ordered = GROUPS.flatMap((g) => shown.filter((r) => r.group === g.id));
-  const hiId = ordered.some((r) => r.session.id === hiPick) ? hiPick! : ordered[0]?.session.id;
+  const ordered: { key: string; go: () => void }[] = GROUPS.flatMap((g) => [
+    ...shown.filter((r) => r.group === g.id).map((r) => ({ key: `session:${r.session.id}`, go: () => choose(r.session.id) })),
+    ...(g.id === STARRED_AFTER ? starsShown.map((r) => ({ key: r.key, go: () => chooseStar(r) })) : []),
+  ]);
+  const hiKey = ordered.some((r) => r.key === hiPick) ? hiPick! : ordered[0]?.key;
   if (!open) return null;
   const choose = (id: SessionId) => {
     showSession(client, id);
+    if (narrow) setSidebarOpen(false);
+  };
+  const chooseStar = (r: StarredRow) => {
+    goToStarred(client, r.star);
     if (narrow) setSidebarOpen(false);
   };
   const create = () => {
@@ -156,12 +169,13 @@ export function SessionSidebar({
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!ordered.length) return;
-      const i = Math.max(0, ordered.findIndex((r) => r.session.id === hiId));
-      setHi(ordered[(i + (e.key === "ArrowDown" ? 1 : ordered.length - 1)) % ordered.length].session.id);
+      const i = Math.max(0, ordered.findIndex((r) => r.key === hiKey));
+      setHi(ordered[(i + (e.key === "ArrowDown" ? 1 : ordered.length - 1)) % ordered.length].key);
     } else if (e.key === "Enter") {
-      if (hiId !== undefined) {
+      const row = ordered.find((r) => r.key === hiKey);
+      if (row) {
         e.preventDefault();
-        choose(hiId);
+        row.go();
         setQuery("");
         client.viewOf(client.active() ?? -1)?.focus();
       }
@@ -208,7 +222,7 @@ export function SessionSidebar({
           placeholder="Search sessions"
           aria-label="Search sessions"
           aria-controls="ws-session-list"
-          aria-activedescendant={q && hiId !== undefined ? `ws-session-${hiId}` : undefined}
+          aria-activedescendant={q && hiKey !== undefined ? rowId(hiKey) : undefined}
           value={query}
           data-session-search
           onInput={(e) => {
@@ -223,7 +237,19 @@ export function SessionSidebar({
       <div class="ws-session-list" id="ws-session-list" aria-label="Sessions">
         {GROUPS.map((g) => {
           const rows = shown.filter((r) => r.group === g.id);
-          if (!rows.length) return null;
+          const starred = g.id === STARRED_AFTER && starsShown.length > 0 && (
+            <Fragment key="starred">
+              <h3 class="ws-group starred" id="ws-group-starred" data-session-group="starred">
+                <StarIcon on size="xs" /> Starred <span class="ws-group-count">{starsShown.length}</span>
+              </h3>
+              <div role="list" aria-labelledby="ws-group-starred">
+                {starsShown.map((r) => (
+                  <StarredItem key={r.key} client={client} row={r} hi={!!q && r.key === hiKey} choose={chooseStar} />
+                ))}
+              </div>
+            </Fragment>
+          );
+          if (!rows.length) return starred || null;
           return (
             <Fragment key={g.id}>
               <h3 class={`ws-group ${g.id}`} id={`ws-group-${g.id}`} data-session-group={g.id}>
@@ -247,17 +273,18 @@ export function SessionSidebar({
                   client={client}
                   row={r}
                   current={r.session.id === client.session}
-                  hi={!!q && r.session.id === hiId}
+                  hi={!!q && `session:${r.session.id}` === hiKey}
                   renaming={renaming?.kind === "session" && renaming.id === r.session.id}
                   setRenaming={setRenaming}
                   choose={choose}
                 />
               ))}
               </div>
+              {starred}
             </Fragment>
           );
         })}
-        {shown.length === 0 && (
+        {shown.length === 0 && starsShown.length === 0 && (
           <EmptyLine
             role="status"
             data-session-empty
@@ -279,6 +306,33 @@ export function SessionSidebar({
       </>}
       {!narrow && <Resizer width={width} />}
     </aside>
+  );
+}
+
+/** The list's element id for a row's key, for the search's
+ * aria-activedescendant. */
+const rowId = (key: string) => (key.startsWith("session:") ? `ws-session-${key.slice(8)}` : `ws-starred-${key.replace(":", "-")}`);
+
+/** A starred tab or pane (#854): its name, and under it where it is now. */
+function StarredItem({ client, row, hi, choose }: { client: Client; row: StarredRow; hi: boolean; choose: (r: StarredRow) => void }) {
+  const current = isCurrent(client, row.star);
+  const what = row.star.kind === "tab" ? "Tab" : "Pane";
+  return (
+    <div id={rowId(row.key)} class={`ws-session ws-starred${current ? " current" : ""}${hi ? " hi" : ""}`} role="listitem" data-starred={row.key}>
+      <button class="ws-session-main" aria-current={current ? "true" : undefined} title={`${what}: ${row.label}${row.detail ? `, ${row.detail}` : ""}`} onClick={() => choose(row)}>
+        <span class="ws-session-line">
+          <span class="ws-star" role="img" aria-label={`Starred ${row.star.kind}`}><StarIcon on size="xs" /></span>
+          <span class="ws-session-name">{row.label}</span>
+        </span>
+        {row.detail && (
+          <span class="ws-session-sub">
+            <span class="ws-session-context">
+              <span class="ws-ellipsis">{row.detail}</span>
+            </span>
+          </span>
+        )}
+      </button>
+    </div>
   );
 }
 

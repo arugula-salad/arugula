@@ -76,12 +76,13 @@ pub enum OptionScope {
 
 pub type OptionMap = BTreeMap<String, String>;
 
-/// Opaque named strings that clients keep with the layout (tmux's `@user`
-/// options: iTerm2's tab grouping and attach guard, `@affinities`). Saved
-/// with the layout; an entry goes when what it belongs to does. Only the
-/// tmux front end set them, and it was removed (DECISIONS.md "The TUI and
-/// tmux -CC are removed"); they stay in the protocol and the saved layout so
-/// a layout and an older client still load, and nothing reads them.
+/// Named strings that clients keep with the layout, per scope. Saved with
+/// the layout; an entry goes when what it belongs to does. The web client
+/// keeps a tab's or pane's star here (`star`, when it was starred, in ms
+/// since the epoch, #854). The tmux front end's `@user` options (iTerm2's
+/// tab grouping and attach guard, `@affinities`) were the first; it was
+/// removed (DECISIONS.md "The TUI and tmux -CC are removed"), and a layout
+/// that still has them loads.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Options {
@@ -230,9 +231,8 @@ pub enum Intent {
         tab: TabId,
         pane: Option<PaneId>,
     },
-    /// Set an option, or unset it (`value: None`). No client sends it
-    /// since the tmux front end was removed; kept in the protocol (see
-    /// [`Options`]).
+    /// Set an option, or unset it (`value: None`). The web client sends
+    /// it to star a tab or pane (see [`Options`]).
     SetOption {
         scope: OptionScope,
         name: String,

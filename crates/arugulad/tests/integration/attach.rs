@@ -697,7 +697,7 @@ async fn bad_intents_report_errors_and_others_see_changes() {
 
 // ---------------------------------------------------------------- M2: restore
 
-use arugula_proto::{PaneOp, Policy};
+use arugula_proto::{OptionScope, PaneOp, Policy};
 
 async fn attach_pane(ws: &mut Ws, pane: u32) -> String {
     send(
@@ -740,6 +740,10 @@ async fn a_clean_stop_brings_back_layout_scrollback_cwd_and_rerun() {
     )
     .await;
     send(&mut ws, ClientMsg::Intent { id: None, intent: Intent::RenameTab { tab, name: Some("kept".into()) } }).await;
+    // A starred tab (#854) is still starred.
+    let star =
+        Intent::SetOption { scope: OptionScope::Tab(tab), name: "star".into(), value: Some("1700000000000".into()) };
+    send(&mut ws, ClientMsg::Intent { id: None, intent: star }).await;
     attach_pane(&mut ws, 1).await;
     type_in(&mut ws, 1, "cd /tmp && echo marker-$((6*7))").await;
     read_pane_until(&mut ws, 1, "marker-42").await;
@@ -757,6 +761,7 @@ async fn a_clean_stop_brings_back_layout_scrollback_cwd_and_rerun() {
     let (mut ws, s) = connect_state(&d).await;
     assert_eq!(s.tabs.len(), 1);
     assert_eq!(s.tabs[0].name.as_deref(), Some("kept"));
+    assert_eq!(s.options.tabs[&s.tabs[0].id]["star"], "1700000000000");
     assert_eq!(s.tabs[0].layout.panes.len(), 2);
     let p2 = s.panes.iter().find(|p| p.id == 2).unwrap();
     assert_eq!(p2.policy, policy);

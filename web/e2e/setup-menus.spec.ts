@@ -64,6 +64,11 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   for (const h of hidden) expect(got).not.toContain(h);
   expect(got).toContain("Open a port…");
   expect(got).toContain("Open in editor");
+  // #854: an editor stars a pane, and a tab.
+  expect(got).toContain("Star pane");
+  await page.keyboard.press("Escape");
+  await page.locator(".tab").first().click({ button: "right" });
+  expect(await items(page)).toContain("Star tab");
   await page.keyboard.press("Escape");
 
   // The session menu, a tab's and the + button's.

@@ -26,7 +26,8 @@ import { RenameInput, type Renaming } from "./rename-input";
 import { HOSTED_LABEL } from "../../../shared/hosted";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { Chip } from "../../../shared/ui/state-chip";
-import { Caret, ChevronIcon, CloseIcon, IconButton } from "../../../shared/ui/icons";
+import { Caret, ChevronIcon, CloseIcon, IconButton, StarIcon } from "../../../shared/ui/icons";
+import { starOf } from "../../stars";
 
 /** The tab bar of a session. */
 export function TabStrip({
@@ -303,6 +304,11 @@ function TabItem({
             VM
           </Chip>
         )
+      )}
+      {starOf(client.state?.options, "tab", tab.id) !== null && (
+        <span class="star-mark" role="img" aria-label="Starred tab" title="Starred tab: it's in Starred in the Sessions sidebar" data-tab-star>
+          <StarIcon on size="xs" />
+        </span>
       )}
       <span class="tab-label">{label}</span>
       <TabPeople client={client} tab={tab.id} />

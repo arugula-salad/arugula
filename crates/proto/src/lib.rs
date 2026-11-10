@@ -896,8 +896,9 @@ pub struct State {
     /// Machines that blocks run on, other than this host.
     #[serde(default)]
     pub machines: Vec<Machine>,
-    /// Clients' named options (tmux `@` options), per scope: unused since
-    /// the tmux front end was removed, kept for older clients.
+    /// Clients' named options, per scope: the web client's stars on tabs
+    /// and panes (`star`). Every tab's and pane's, not only what this
+    /// client sees: a client lists only those it can see.
     #[serde(default)]
     pub options: Box<Options>,
     /// For someone who isn't the daemon's owner (M12): their role in each

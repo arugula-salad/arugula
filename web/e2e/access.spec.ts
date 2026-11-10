@@ -153,6 +153,29 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   for (const item of ["New session", "Rename session", "Close session", "Share session…"])
     await expect(friend.getByRole("menuitem", { name: item })).toHaveCount(0);
   await friend.keyboard.press("Escape");
+  // Stars (#854): a viewer sees the owner's on what they see, and gets no
+  // Star tab or Star pane; one on a tab they don't see isn't listed.
+  const [sharedTab, privateTab] = await owner.evaluate(() => window.__arugula.client.state!.sessions.map((s) => s.tabs[0]));
+  for (const t of [sharedTab, privateTab])
+    await owner.evaluate((t) => window.__arugula.client.intent({ op: "set_option", scope: { kind: "tab", id: t }, name: "star", value: String(Date.now()) }), t);
+  await expect(friend.locator(`.ws-tabs [data-tab-id="${sharedTab}"] [data-tab-star]`)).toBeVisible();
+  await expect(friend.locator("[data-starred]")).toHaveCount(1);
+  await expect(friend.locator(`[data-starred="tab:${sharedTab}"]`)).toBeVisible();
+  await friend.locator(`.ws-tabs [data-tab-id="${sharedTab}"]`).click({ button: "right" });
+  await expect(friend.getByRole("menu")).toBeVisible();
+  await expect(friend.getByRole("menuitem", { name: /star tab/i })).toHaveCount(0);
+  await friend.keyboard.press("Escape");
+  await friend.locator(`[data-pane-header="${sharedPane}"]`).click({ button: "right" });
+  await expect(friend.getByRole("menu")).toBeVisible();
+  await expect(friend.getByRole("menuitem", { name: /star pane/i })).toHaveCount(0);
+  await friend.keyboard.press("Escape");
+  // And the daemon refuses one from them.
+  await friend.evaluate((t) => window.__arugula.client.intent({ op: "set_option", scope: { kind: "tab", id: t }, name: "star", value: null }), sharedTab);
+  await friend.waitForTimeout(300);
+  await expect(owner.locator(`.ws-tabs [data-tab-id="${sharedTab}"] [data-tab-star]`)).toBeVisible();
+  for (const t of [sharedTab, privateTab])
+    await owner.evaluate((t) => window.__arugula.client.intent({ op: "set_option", scope: { kind: "tab", id: t }, name: "star", value: null }), t);
+  await expect(friend.locator("[data-starred]")).toHaveCount(0);
   await friend.setViewportSize({ width: 1000, height: 640 });
 });
 

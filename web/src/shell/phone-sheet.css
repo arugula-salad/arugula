@@ -134,3 +134,23 @@
   vertical-align: 2px;
 }
 
+
+/* Starred (#854): a tab's or pane's name, and where it is under it. */
+.sheet-starred .sheet-item {
+  min-height: 52px;
+}
+
+.sheet-starred-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-starred-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: var(--text-sm);
+}

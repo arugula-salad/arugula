@@ -212,6 +212,22 @@ test.describe("on a computer", () => {
     // Enter hands the keys to the pane and clears the search.
     await expect(search).toHaveValue("");
 
+    // A starred tab (#854) is found by its session too, and the arrows
+    // and Enter reach it.
+    const zulu = await page.evaluate(() => window.__arugula.client.state!.sessions.find((s) => s.name === "zulu")!.tabs[0]);
+    await page.evaluate((t) => window.__arugula.client.intent({ op: "set_option", scope: { kind: "tab", id: t }, name: "star", value: "1" }), zulu);
+    await search.fill("zulu");
+    await expect(page.locator(`[data-starred="tab:${zulu}"]`)).toBeVisible();
+    await expect(page.locator(".ws-session")).toHaveCount(2);
+    await expect(page.locator(".ws-session.hi")).toHaveAttribute("data-starred", `tab:${zulu}`);
+    await search.press("ArrowDown");
+    await expect(page.locator(".ws-session.hi")).toHaveAttribute("data-session-id", /\d+/);
+    await search.press("ArrowDown");
+    await search.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.tab)).toBe(zulu);
+    await page.evaluate((t) => window.__arugula.client.intent({ op: "set_option", scope: { kind: "tab", id: t }, name: "star", value: null }), zulu);
+    await expect(page.locator("[data-starred]")).toHaveCount(0);
+
     await search.fill("nothing-like-it");
     await expect(page.locator("[data-session-empty]")).toContainText("nothing-like-it");
     await expect(page.locator(".ws-session")).toHaveCount(0);

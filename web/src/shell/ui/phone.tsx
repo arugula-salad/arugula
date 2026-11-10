@@ -36,7 +36,9 @@ import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 import { Chip } from "../../shared/ui/state-chip";
 import type { ComponentChildren } from "preact";
-import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
+import { starOf } from "../stars";
+import { goToStarred, isCurrent, starredRows } from "./starred";
+import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, StarIcon, TildeKeyIcon } from "../../shared/ui/icons";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -113,6 +115,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   // Someone who only watches this session (a viewer, or a read-only link's
   // page) gets nothing that types or changes it (UI audit #149).
   const watching = client.role() === "viewer";
+  const stars = starredRows(client);
   const closeTab =
     client.tab !== null && (client.tabMachine(client.tab) || paneIds(client.tabView(client.tab)!).length > 1);
   return (
@@ -200,6 +203,23 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 <EmptyLine>Nothing right now.</EmptyLine>
               </section>
             )}
+            {/* #854: starred tabs and panes, below what needs you. */}
+            {stars.length > 0 && (
+              <section class="sheet-card sheet-starred" data-sheet-starred>
+                <h2>
+                  <StarIcon on size="xs" /> Starred
+                </h2>
+                {stars.map((r) => (
+                  <button key={r.key} class={isCurrent(client, r.star) ? "sheet-item current" : "sheet-item"} data-starred={r.key} onClick={act(() => goToStarred(client, r.star))}>
+                    <span class="star-mark" aria-hidden="true"><StarIcon on size="sm" /></span>
+                    <span class="sheet-starred-text">
+                      <span class="label">{r.label}</span>
+                      {r.detail && <span class="sheet-starred-detail">{r.detail}</span>}
+                    </span>
+                  </button>
+                ))}
+              </section>
+            )}
               {/* What a phone is opened for most: right at the top. */}
               {!watching && (
               <div class="sheet-actions sheet-quick">
@@ -256,6 +276,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                           <div key={tid} class="sheet-tab">
                             <button class={tid === client.tab ? "sheet-item current" : "sheet-item"} onClick={act(() => client.selectTab(tid))}>
                               {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" class="chip-gap">VM</Chip>}
+                              {starOf(state.options, "tab", tid) !== null && <span class="star-mark" role="img" aria-label="Starred tab"><StarIcon on size="xs" /></span>}
                               <span class="label">{tabLabel(client, t)}</span>
                               {panes.length > 1 && <span class="sheet-count">{panes.length}</span>}
                               <ChatTabBadge client={client} panes={panes} />
@@ -269,6 +290,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                                 >
                                   {/* Shells often title every pane alike; the number tells them apart. */}
                                   <span class="pane-number">{i + 1}</span>
+                                  {starOf(state.options, "pane", p) !== null && <span class="star-mark" role="img" aria-label="Starred pane"><StarIcon on size="xs" /></span>}
                                   <span class="label">{client.title(p) || client.cwd(p) || `pane %${p}`}</span>
                                 </button>
                               ))}

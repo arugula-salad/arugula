@@ -140,6 +140,12 @@ mod tests {
         assert!(!may(Intent::NewSession { name: None, from_pane: None }));
         assert!(!may(Intent::SetOption { scope: OptionScope::Global, name: "x".into(), value: None }));
         assert!(may(Intent::SetOption { scope: OptionScope::Pane(pane_a), name: "x".into(), value: None }));
+        // Starring a tab or pane (#854) is an editor's, not a viewer's.
+        let star = |scope| Intent::SetOption { scope, name: "star".into(), value: Some("1".into()) };
+        assert!(may(star(OptionScope::Tab(m.sessions[0].tabs[0]))));
+        assert!(may(star(OptionScope::Pane(pane_a))));
+        assert!(!may(star(OptionScope::Tab(m.sessions[1].tabs[0]))));
+        assert!(!may(star(OptionScope::Pane(pane_b))));
         // Arranging and focusing a tab are an editor's, not a viewer's.
         let (tab_a, tab_b) = (m.sessions[0].tabs[0], m.sessions[1].tabs[0]);
         assert!(may(Intent::Arrange { tab: tab_a, preset: crate::Preset::Grid, main: None }));

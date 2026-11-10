@@ -40,6 +40,7 @@ import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
+import { starIntent, starOf } from "../stars";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -172,6 +173,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(info?.type === "doc" ? [...docShareItems(client, id), "separator" as const] : []),
     ...clipboard,
     ...focus,
+    starItem(client, "pane", id),
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
@@ -222,6 +224,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
   if (watching) return [{ header: watching }, ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : [])];
   return [
     { label: "Rename tab", run: rename },
+    starItem(client, "tab", tab.id),
     { id: "new-tab", label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
     ...(client.has("vms") ? [{ id: "new-vm-tab", label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
     { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
@@ -235,6 +238,17 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
     "separator",
     { label: machine ? "Close tab and machine" : "Close tab", danger: true, run: () => confirmCloseTab(client, tab.id) },
   ];
+}
+
+/** Star tab / Unstar tab, Star pane / Unstar pane (#854): an editor's,
+ * as renaming is. */
+function starItem(client: Client, kind: "tab" | "pane", id: number): MenuItem {
+  const on = starOf(client.state?.options, kind, id) !== null;
+  return {
+    label: `${on ? "Unstar" : "Star"} ${kind}`,
+    hint: on ? "Take it out of Starred, for everyone on this machine" : `Keep this ${kind} in Starred in the Sessions sidebar. Everyone who sees this session sees its stars`,
+    run: () => client.intent(starIntent(kind, id, !on)),
+  };
 }
 
 /** The `+` button's menu: a new tab, and blocks in tabs of their own. */

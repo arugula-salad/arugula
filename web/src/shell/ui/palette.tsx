@@ -22,8 +22,10 @@ import { useWorkspaceDir } from "../blocks";
 import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { showSession } from "./shell/session-sidebar";
-import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "../../shared/ui/icons";
+import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon, StarIcon } from "../../shared/ui/icons";
 import { paneName } from "./shell/overview";
+import { starOf } from "../stars";
+import { homeCwd, paneDetail } from "./starred";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
@@ -63,6 +65,9 @@ export interface Command {
   also?: string;
   /** The action it is, from its menu item: the same in two menus. */
   id?: string;
+  /** When its tab or pane was starred: a starred jump comes first among
+   * Go to (#854). */
+  starred?: number;
 }
 
 /** Commands, or Search output (native #245): the output of every pane. */
@@ -209,20 +214,22 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     client.setActive(p);
     requestAnimationFrame(() => client.viewOf(p)?.focus());
   };
+  const go: Command[] = [];
   for (const s of state.sessions) {
-    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", kind: "Sessions", label: `Go to session ${s.name}`, run: () => showSession(client, s.id) });
+    if (s.id !== session) go.push({ key: `Go/session ${s.id}`, group: "Go to", kind: "Sessions", label: `Go to session ${s.name}`, run: () => showSession(client, s.id) });
     for (const tid of s.tabs) {
       const t = client.tabView(tid);
       if (!t) continue;
       const label = tabLabel(client, t);
       const panes = paneIds(t);
-      out.push({
+      go.push({
         key: `Go/tab ${tid}`,
         group: "Go to",
         kind: "Tabs",
         label: `Go to tab ${label}`,
         detail: s.name,
         also: s.name,
+        starred: starOf(state.options, "tab", tid) ?? undefined,
         run: () => {
           client.selectTab(tid);
         },
@@ -232,15 +239,16 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
         if (!info) continue;
         if (info.type === "workspace") {
           const name = client.title(p).replace(/ \(chant\)$/, "");
-          out.push({ key: `Go/pane ${p}`, group: "Go to", kind: "Panes", label: `Go to workspace ${name}`, detail: `${s.name} › ${label}`, run: () => toPane(p) });
+          go.push({ key: `Go/pane ${p}`, group: "Go to", kind: "Panes", label: `Go to workspace ${name}`, detail: `${s.name} › ${label}`, starred: starOf(state.options, "pane", p) ?? undefined, run: () => toPane(p) });
         } else {
-          const cwd = client.cwd(p)?.replace(/^\/(?:home|Users)\/[^/]+/, "~") ?? null;
-          out.push({
+          const cwd = homeCwd(client.cwd(p));
+          go.push({
             key: `Go/pane ${p}`,
             group: "Go to",
             kind: "Panes",
             label: `Go to pane ${paneName(client, info)}`,
-            detail: [`${s.name} › ${label}`, cwd, info.branch].filter(Boolean).join(" · "),
+            detail: paneDetail(client, p),
+            starred: starOf(state.options, "pane", p) ?? undefined,
             // Found by its session and tab too, and its directory's name.
             also: [s.name, label, cwd?.split("/").pop(), info.branch].filter(Boolean).join(" "),
             run: () => toPane(p),
@@ -249,6 +257,10 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
       }
     }
   }
+
+  // Starred tabs and panes first, oldest star first (#854).
+  const starred = go.filter((c) => c.starred !== undefined).sort((a, b) => a.starred! - b.starred!);
+  out.push(...starred, ...go.filter((c) => c.starred === undefined));
 
   // The Docs this machine keeps, by title (#1494).
   for (const d of docs) {
@@ -395,7 +407,7 @@ function rank(list: Command[], query: string, recent: string[]): Command[] {
       // after a match on its name.
       const d = a === null && b === null && c.also ? fuzzy(q, `${c.label} ${c.also}`) : null;
       const s = a === null ? (b ?? (d === null ? null : d - 2)) : b === null ? a : Math.max(a, b);
-      return { c, s: s === null ? null : s + (at(c) < Infinity ? 4 : 0) - (c.disabled ? 20 : 0) };
+      return { c, s: s === null ? null : s + (at(c) < Infinity ? 4 : 0) + (c.starred !== undefined ? 2 : 0) - (c.disabled ? 20 : 0) };
     })
     .filter((x): x is { c: Command; s: number } => x.s !== null);
   scored.sort((a, b) => b.s - a.s);
@@ -634,6 +646,7 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
             <span class="palette-command-icon" aria-hidden="true">{iconOf(c)}</span>
             <span class="palette-command-text">
             <span class="picker-label">
+              {c.starred !== undefined && <span class="star-mark" role="img" aria-label="Starred"><StarIcon on size="xs" /></span>}
               {c.label}
               {/* A switch that's on: a badge after it, not a dot glued
                   to its first word (UI audit #176). */}
