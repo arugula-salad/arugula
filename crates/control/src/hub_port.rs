@@ -279,7 +279,7 @@ impl HubPort for InProcess {
     fn github_user<'a>(
         &'a self,
         account: &'a str,
-    ) -> BoxFuture<'a, HubResult<Option<arugula_control_wire::internal::GithubUser>>> {
+    ) -> BoxFuture<'a, HubResult<Option<arugula_control_common::port::GithubUser>>> {
         Box::pin(async move { crate::forge::github_user(&*self.app()?, account) })
     }
 

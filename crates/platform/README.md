@@ -73,7 +73,7 @@ Start with `src/lib.rs`, then:
   (`serve_hub`, which the hub mounts on its internal listener, and
   `serve_platform`), each call signed with the shared key; and `vouched`,
   the check of the principal header every forwarded call carries. The
-  calls' arguments and answers are `arugula_control_wire::internal`'s.
+  calls' arguments and answers are `arugula_control_common::port`'s.
 - `../arugula-platform/src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
   the background work (the job worker, hosted workspaces' worker, chat's
   and grants' feed followers, usage reports), and the routes behind `vouched`.

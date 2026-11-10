@@ -268,7 +268,7 @@ pub fn rules_for(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::
     Ok(plan(app, project, maker)?.rules)
 }
 
-pub use arugula_control_wire::internal::TurnAnswer;
+pub use arugula_control_common::port::TurnAnswer;
 
 /// A turn refused: its status, a reason, and a sentence for the person.
 fn refused_turn(status: StatusCode, reason: Option<&str>, error: &str) -> TurnAnswer {

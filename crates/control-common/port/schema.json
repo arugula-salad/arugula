@@ -570,7 +570,7 @@
           "type": "string"
         },
         "aliases": {
-          "description": "The handles ([`crate::machine::handle`]) it went by before it was\nrenamed (#500): `@old` still reaches it, unless another machine is\ncalled that now.",
+          "description": "The handles ([`arugula_control_wire::machine::handle`]) it went by before it was\nrenamed (#500): `@old` still reaches it, unless another machine is\ncalled that now.",
           "items": {
             "type": "string"
           },
@@ -3226,5 +3226,5 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "arugula_control_wire::internal"
+  "title": "arugula_control_common::port"
 }

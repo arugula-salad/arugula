@@ -868,6 +868,25 @@ impl Inner {
         list
     }
 
+    /// The MCP servers this agent is started with, by name, and whether
+    /// Arugula's own is among them; when it isn't, why (Arugula #836).
+    /// No values: a token or a header never leaves in it.
+    fn mcp_report(&self, ctx: &AgentCtx) -> Value {
+        let servers: Vec<String> =
+            self.servers(ctx).iter().filter_map(|s| s["name"].as_str().map(str::to_owned)).collect();
+        let arugula = servers.iter().any(|n| n == crate::mcp::SERVER_NAME);
+        let note = if arugula {
+            None
+        } else if self.cfg.def.chat {
+            Some("A chat has no tools, so none of Arugula's MCP server: it can't reach issues, boards or threads")
+        } else if self.cfg.run_as.is_some() {
+            Some("This session's agent gets Arugula's MCP only over HTTP, and this agent or box doesn't offer it")
+        } else {
+            Some("Arugula's MCP server isn't given to this agent: it has no tools to reach issues, boards or threads")
+        };
+        json!({ "servers": servers, "arugula": arugula, "note": note })
+    }
+
     /// What never goes into the log or the transcript: a worn agent's
     /// secrets, and Arugula's own token where it went by reference.
     fn secrets(&self) -> Vec<String> {
@@ -1728,6 +1747,9 @@ impl Inner {
         state["recipe"] = json!(self.cfg.def.recipe);
         // #372: the issue it was started on, and the boards it is on.
         state["work"] = json!(self.cfg.work);
+        // #836: the MCP servers it has, and whether Arugula's is one.
+        state["mcp"] = self.mcp_report(ctx);
+        state["worktree"] = json!(self.cfg.worktree.as_ref().map(|w| &w.path));
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
@@ -3377,11 +3399,16 @@ impl Agent {
     /// work it left, as a [`arugula_proto::api::TurnResult`]; `null` while a
     /// turn runs, before the first, or when it said nothing.
     fn turn_result(&self) -> BoxFuture<'static, Result<Value, String>> {
-        let (message, started_ms, cwd) = {
+        let (message, started_ms, cwd, worktree) = {
             let g = self.inner.lock().unwrap();
             let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
             let message = if done { g.t.last_message() } else { None };
-            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
+            (
+                message,
+                g.turns.last().map(|t| t.started_ms),
+                work_dir(&self.ctx, &g),
+                g.cfg.worktree.as_ref().map(|w| w.path.clone()),
+            )
         };
         let block = self.ctx.block.clone();
         let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
@@ -3393,10 +3420,13 @@ impl Agent {
                 Some(u) => Ok(crate::review::Runner::As(u)),
                 None => crate::review::Runner::user(&block).await,
             };
-            let r = match runner {
+            let mut r = match runner {
                 Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
                 Err(_) => arugula_proto::api::TurnResult { message, work: None },
             };
+            if let Some(w) = r.work.as_mut() {
+                w.worktree = worktree;
+            }
             serde_json::to_value(r).map_err(|e| e.to_string())
         })
     }
@@ -3576,7 +3606,8 @@ impl Block for Agent {
                 })
                 .collect(),
         });
-        crate::block::Summary { title: g.shown_title(), on_issue, stopped, ..Default::default() }
+        let worktree = g.cfg.worktree.as_ref().map(|w| w.path.clone());
+        crate::block::Summary { title: g.shown_title(), on_issue, worktree, stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {
@@ -3612,6 +3643,10 @@ impl Block for Agent {
             out.push_str(&fix);
         }
         out
+    }
+
+    fn messages(&self) -> Option<Vec<String>> {
+        Some(self.inner.lock().unwrap().t.messages())
     }
 
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {

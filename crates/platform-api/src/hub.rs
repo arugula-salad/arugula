@@ -12,7 +12,7 @@
 //! It only grows: a method the platform needs ships in the hub a release
 //! before the platform calls it, and nothing here is renamed or removed
 //! while a deployed platform might call it. The types cross the network in
-//! M140, so they live in `arugula_control_wire::internal` (#219, re-exported
+//! M140, so they live in `arugula_control_common::port` (re-exported
 //! here) and keep its two rules: the bytes don't change, and nothing is
 //! `deny_unknown_fields`.
 //!
@@ -43,7 +43,7 @@ use arugula_control_wire::{
 };
 use futures_util::future::BoxFuture;
 
-use arugula_control_wire::internal::GithubUser;
+use arugula_control_common::port::GithubUser;
 
 /// What a hub call answers.
 pub type HubResult<T> = anyhow::Result<T>;
@@ -311,7 +311,7 @@ pub trait HubPort: Send + Sync {
     }
 }
 
-pub use arugula_control_wire::internal::{
+pub use arugula_control_common::port::{
     Account, Change, ChangeKind, ChangePage, Daemon, Flags, LinkedAccount, Member, Meter, PasskeyAssertion,
     ProductLink, PushOptions, Pushed, Resolved, Team,
 };

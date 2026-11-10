@@ -492,6 +492,7 @@ mod tests {
     #[test]
     fn a_turn_with_no_diff_says_so() {
         let work = |diffstat: Option<&str>| Work {
+            worktree: None,
             branch: "feat/x".into(),
             head: "abc1234".into(),
             pushed: false,

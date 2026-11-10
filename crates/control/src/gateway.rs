@@ -38,11 +38,11 @@
 
 use std::{sync::Arc, time::Duration};
 
+use arugula_control_common::port::{GithubUser, TokenAnswer};
 use arugula_control_common::{
     ApiError, internal,
     principal::{self, NotVouched, PrincipalKey, Vouch},
 };
-use arugula_control_wire::internal::{GithubUser, TokenAnswer};
 use arugula_platform_api::{Deleted, PlatformPort, auth::Asked, in_process::InProcess, remote::HttpPlatform};
 use axum::{
     Router,
@@ -154,8 +154,8 @@ impl PlatformPort for PlatformAt {
         &'a self,
         account: &'a str,
         draft: &'a str,
-        token: Option<arugula_control_wire::internal::UserToken>,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::internal::Outcome>> {
+        token: Option<arugula_control_common::port::UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_common::port::Outcome>> {
         self.port().send_draft(account, draft, token)
     }
 
@@ -188,7 +188,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_work<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         takes: &'a [String],
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Work>> {
         self.port().hosted_work(machine, takes)
@@ -196,7 +196,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_report<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         report: &'a arugula_control_wire::work::Report,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
         self.port().hosted_report(machine, report)
@@ -204,7 +204,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_report<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         report: &'a arugula_control_wire::work::SessionReport,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
         self.port().hosted_session_report(machine, report)
@@ -212,7 +212,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_push<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         ask: &'a arugula_control_wire::work::PushAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::PushGiven>> {
         self.port().hosted_session_push(machine, ask)
@@ -220,7 +220,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_issues<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         ask: &'a arugula_control_wire::work::SessionIssuesAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::SessionIssuesGiven>> {
         self.port().hosted_session_issues(machine, ask)
@@ -228,7 +228,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_secrets<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         ask: &'a arugula_control_wire::work::SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::SecretsGiven>> {
         self.port().hosted_secrets(machine, ask)
@@ -236,7 +236,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_artifact<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         ask: &'a arugula_control_wire::work::SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::ArtifactGiven>> {
         self.port().hosted_artifact(machine, ask)
@@ -287,7 +287,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_upload<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         upload: &'a arugula_control_wire::run_logs::Upload,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::run_logs::UploadGiven>> {
         self.port().hosted_upload(machine, upload)
@@ -295,7 +295,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_uploaded<'a>(
         &'a self,
-        machine: &'a arugula_control_wire::internal::HostedMachine,
+        machine: &'a arugula_control_common::port::HostedMachine,
         upload: &'a arugula_control_wire::run_logs::Upload,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::run_logs::Uploaded>> {
         self.port().hosted_uploaded(machine, upload)
@@ -304,14 +304,14 @@ impl PlatformPort for PlatformAt {
     fn box_members<'a>(
         &'a self,
         project: &'a str,
-    ) -> BoxFuture<'a, anyhow::Result<Option<Vec<arugula_control_wire::internal::BoxMember>>>> {
+    ) -> BoxFuture<'a, anyhow::Result<Option<Vec<arugula_control_common::port::BoxMember>>>> {
         self.port().box_members(project)
     }
 
     fn box_post<'a>(
         &'a self,
-        post: &'a arugula_control_wire::internal::BoxPost,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::internal::BoxPosted>> {
+        post: &'a arugula_control_common::port::BoxPost,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_common::port::BoxPosted>> {
         self.port().box_post(post)
     }
 }

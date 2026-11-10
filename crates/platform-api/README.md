@@ -8,7 +8,7 @@ crates/platform), so a platform edit doesn't rebuild the hub's 38k lines.
 - `src/hub.rs`: `HubPort`, everything the platform asks the hub.
 - `src/port.rs`: `PlatformPort`, everything the hub asks the platform (the
   platform answers it in `crates/platform/src/port.rs`). Both ports' types
-  are `arugula_control_wire::internal`'s.
+  are `arugula_control_common::port`'s.
 - `src/remote.rs`: both ports over the private network (M140), each call
   signed with the shared key, and `vouched`.
 - `src/auth.rs`: who's asking, as the hub found out.

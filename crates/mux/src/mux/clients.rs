@@ -753,6 +753,7 @@ impl Daemon {
                 answered: None,
                 work: None,
                 on_issue: None,
+                worktree: None,
                 project: None,
                 branch: None,
                 head: None,

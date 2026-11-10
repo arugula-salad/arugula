@@ -462,6 +462,33 @@ async fn start_agent_gives_the_agent_its_callers_login() {
     s.cancel().await.unwrap();
 }
 
+/// Arugula #836: `start_agent` says which MCP servers the new agent has and
+/// whether Arugula's own is one (and why not, for a chat, which has none);
+/// the agent block's state says the same, and neither carries a token.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_agent_says_which_mcp_servers_the_agent_has() {
+    let d = Daemon::child();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let args = json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello",
+        "cwd": d.sessions });
+    let r = call(&s, "start_agent", args).await;
+    assert_eq!(r["mcp"]["arugula"], true, "{r}");
+    assert!(r["mcp"]["servers"].as_array().unwrap().iter().any(|n| n == "arugula"), "{r}");
+    assert!(r["mcp"]["grants"].as_array().unwrap().is_empty(), "no control here, so no grants: {r}");
+    assert!(r["mcp"]["grants_note"].as_str().unwrap().contains("isn't joined"), "{r}");
+    let b = r["block"].as_u64().unwrap();
+    let st = d.get(&format!("/api/blocks/{b}"))["state"].clone();
+    assert_eq!(st["mcp"]["arugula"], true, "describe says it too: {st}");
+    assert_eq!(st["mcp"]["servers"], r["mcp"]["servers"]);
+    assert!(!st["mcp"].to_string().contains("Bearer") && !st["mcp"].to_string().contains("token"), "{st}");
+
+    let c = call(&s, "start_agent", json!({ "chat": true, "prompt": "hi" })).await;
+    assert_eq!(c["mcp"]["arugula"], false, "{c}");
+    assert!(c["mcp"]["servers"].as_array().unwrap().is_empty(), "{c}");
+    assert!(c["mcp"]["note"].as_str().unwrap().contains("no tools"), "{c}");
+    s.cancel().await.unwrap();
+}
+
 /// Runs `git ARGS` in `dir` (a throwaway repo), as a test identity.
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -506,6 +533,14 @@ async fn start_agent_owns_a_worktree_and_close_keeps_unmerged_work() {
     assert!(r["summary"].as_str().unwrap().contains(wa.to_str().unwrap()), "{r}");
     call(&s, "wait", json!({ "pane": a, "until": "idle", "timeout": 30 })).await;
     assert_eq!(d.state(a)["cwd"], wa.to_str().unwrap());
+    // Every answer about the block says where its worktree is.
+    let want = wa.to_str().unwrap();
+    let w = call(&s, "wait", json!({ "pane": a, "until": "idle", "timeout": 30 })).await;
+    assert_eq!(w["turn"]["work"]["worktree"], want, "{w}");
+    let l = call(&s, "list", json!({})).await;
+    let row = l["panes"].as_array().unwrap().iter().find(|e| e["pane"] == a).unwrap();
+    assert_eq!(row["worktree"], want, "{l}");
+    assert_eq!(d.state(a)["worktree"], want);
     assert!(wa.join("dirty.txt").exists());
 
     // The same branch again is refused, not reused.
@@ -515,6 +550,7 @@ async fn start_agent_owns_a_worktree_and_close_keeps_unmerged_work() {
     // An uncommitted file: closed, but kept, with the reason.
     let r = call(&s, "close", json!({ "pane": a })).await;
     assert_eq!(r["worktree"]["outcome"], "kept", "{r}");
+    assert_eq!(r["worktree"]["path"], want, "{r}");
     assert!(r["worktree"]["why"].as_str().unwrap().contains("1 uncommitted file"), "{r}");
     assert!(r["summary"].as_str().unwrap().contains("kept worktree"), "{r}");
     assert!(wa.join("dirty.txt").exists());
@@ -3256,6 +3292,7 @@ async fn an_agent_reads_and_writes_a_board() {
     assert!(read.get("zones").is_none(), "the JSON only when verbose: {read}");
     let text = read["summary"].as_str().unwrap();
     assert!(text.starts_with("Launch (brd_1): 2/3 done, 1 proven, 2 group(s)\nLaunch\n"), "{text}");
+    assert!(text.contains("In project prj_1."), "a bare brd_ id needs no project, and the answer names it: {text}");
     assert!(text.contains("# Phase 1"), "{text}");
     assert!(text.contains("Next") && text.contains("○ #12"), "rows by their items: {text}");
     assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");

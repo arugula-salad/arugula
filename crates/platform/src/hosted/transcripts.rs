@@ -39,7 +39,7 @@ use crate::{
 /// Transcripts a project keeps: its newest.
 pub const MAX_PER_PROJECT: usize = 1000;
 
-pub use arugula_control_wire::internal::Archived;
+pub use arugula_control_common::port::Archived;
 
 fn refused(status: StatusCode, error: &str) -> Archived {
     Archived::Refused { status: status.as_u16(), error: error.to_owned() }

@@ -586,6 +586,7 @@ pub fn entry(p: &PaneSummary) -> results::PaneEntry {
         current: i.current.as_ref().and_then(|c| c.text.clone()),
         last: i.last.as_ref().map(|c| results::LastCommand { command: c.text.clone(), exit: c.exit }),
         started_by: i.started_by.as_ref().map(|s| s.by.clone()),
+        worktree: i.worktree.clone(),
         you: None,
     }
 }

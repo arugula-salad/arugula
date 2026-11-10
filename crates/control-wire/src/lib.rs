@@ -75,7 +75,6 @@ mod examples;
 pub mod forge;
 pub mod forge_ops;
 pub mod hosted;
-pub mod internal;
 pub mod issues;
 pub mod join;
 pub mod machine;

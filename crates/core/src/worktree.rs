@@ -58,7 +58,8 @@ printf 'ok %s/%s %s\n' "$top" "$w" "$base"
 /// are in `origin/BASE`. A squash merge isn't in `origin/BASE`: for a
 /// clean, pushed worktree on a github.com origin, `gh` may say a merged PR
 /// from the branch had exactly HEAD as its head, which counts. Never
-/// touches a remote branch. Says `removed`, `kept WHY` or `err WHY` last.
+/// touches a remote branch. A base that origin no longer has (deleted when
+/// its PR merged) is replaced by origin's default branch. Says `removed`, `kept WHY` or `err WHY` last.
 pub const CLOSE: &str = r#"repo=$1; w=$2; branch=$3; base=$4
 [ -e "$w/.git" ] || { printf 'gone\n'; exit 0; }
 why=
@@ -68,6 +69,18 @@ head=$(git -C "$w" rev-parse HEAD 2>/dev/null) || { printf 'kept cannot read its
 [ -n "$(git -C "$w" branch -r --contains "$head" 2>/dev/null)" ] || why="${why:+$why, }commits not pushed"
 fetched=1
 git -C "$repo" fetch -q --no-tags origin "+refs/heads/$base:refs/remotes/origin/$base" >/dev/null 2>&1 || fetched=
+# A stacked base is deleted when its PR merges: if origin answers and has no
+# such branch (exit 2, not a network failure), judge against origin's default
+# branch instead.
+if [ -z "$fetched" ]; then
+  git -C "$repo" ls-remote -q --exit-code --heads origin "refs/heads/$base" >/dev/null 2>&1
+  if [ $? -eq 2 ]; then
+    def=$(git -C "$repo" ls-remote --symref origin HEAD 2>/dev/null | awk '$1 == "ref:" { sub("^refs/heads/", "", $2); print $2; exit }')
+    if [ -n "$def" ] && git -C "$repo" fetch -q --no-tags origin "+refs/heads/$def:refs/remotes/origin/$def" >/dev/null 2>&1; then
+      base=$def; fetched=1
+    fi
+  fi
+fi
 merged=
 if [ -n "$fetched" ] && git -C "$repo" merge-base --is-ancestor "$head" "refs/remotes/origin/$base" 2>/dev/null; then
   merged=1
@@ -152,7 +165,7 @@ mod tests {
         ));
         // The fetch and the push go to the bare repo; the URL is only for the check.
         sh("cd clone && git config url.\"$PWD/../up.git\".insteadOf https://github.com/o/r.git");
-        let close = |name: &str, oid: &str| {
+        let close_on = |name: &str, base: &str, oid: &str| {
             sh(&format!(
                 "cd clone && git worktree add -q -b {name} ../{name} && cd ../{name} && {g} commit -q --allow-empty -m w \
                  && git push -q origin {name}"
@@ -163,16 +176,25 @@ mod tests {
             sh("chmod +x bin/gh");
             let out = std::process::Command::new("sh")
                 .args(["-c", super::CLOSE, "sh"])
-                .args([dir.join("clone").to_str().unwrap(), dir.join(name).to_str().unwrap(), name, "main"])
+                .args([dir.join("clone").to_str().unwrap(), dir.join(name).to_str().unwrap(), name, base])
                 .env("PATH", format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap()))
                 .output()
                 .unwrap();
             String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or_default().to_owned()
         };
+        let close = |name: &str, oid: &str| close_on(name, "main", oid);
         let stale = close("stale", "0000000000000000000000000000000000000001");
         assert!(stale.starts_with("kept ") && stale.contains("not merged into origin/main"), "{stale}");
         assert!(dir.join("stale").exists());
         assert_eq!(close("squashed", ""), "removed");
+        // A stacked base deleted after its PR merged: the check falls back to origin's default branch.
+        sh("cd clone && git push -q origin main:gone-base && git fetch -q origin");
+        sh("git -C up.git branch -D gone-base");
+        let gone = close_on("stacked", "gone-base", "");
+        assert_eq!(gone, "removed");
+        let gone = close_on("stale2", "gone-base", "0000000000000000000000000000000000000001");
+        assert!(gone.starts_with("kept ") && gone.contains("not merged into origin/main"), "{gone}");
+
         assert!(!dir.join("squashed").exists());
         assert!(sh("cd clone && git branch --list squashed").is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
