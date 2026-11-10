@@ -423,7 +423,7 @@ at most once every 2 hours after the last release (`scripts/release-train`, #724
 Arugula #794), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
 commit with the daemon's green tag goes out as a patch, with notes built from what
 its pull requests added to `docs/notes/` (`scripts/release-notes.mjs`), if they added
-any. Its rare jobs run first, and a failure holds the release while merges go on. A
+any. Its rare jobs run first, a failed one gets one more try, and a second failure holds the release while merges go on. A
 manual run of the workflow sends one now. Daemons don't install on their own: people
 get a notice with an Update now button. The steps below are for a minor or a major
 version, or when you want different notes.

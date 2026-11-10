@@ -103,7 +103,8 @@
 #                                  A daemon release stops too when the commit
 #                                  has no ci/rare tag (check-rare); --rare
 #                                  starts the rare jobs on it, waits for them
-#                                  and goes on if they pass.
+#                                  (running failed ones once more) and goes on
+#                                  if they pass.
 #                                  --dry-run shows the tag and stops.
 #                                  ARUGULA_RELEASE_TRAILER, when set (one line,
 #                                  `Key: value`), ends the tag's message: the
@@ -285,8 +286,32 @@ run_rare() {
   fi
   echo "waiting for the rare jobs on ${sha:0:12}: $link"
   gh run watch "$id" -R "$repo" --exit-status --interval 30 >/dev/null || true
+  rare "$sha" || rerun_rare "$id" "$sha" "$link" || true
   if rare "$sha"; then echo "${sha:0:12} passed the rare jobs (ci/rare/$sha)"
   else echo "the rare jobs didn't pass on ${sha:0:12}: $link" >&2; return 1; fi
+}
+
+# rerun_rare ID SHA LINK: run ID's failed jobs once more and wait, so one
+# testnet timeout doesn't cost a release (Arugula #798). A job over its
+# timeout ends `cancelled` with rare-passed skipped. A person's cancel takes
+# rare-passed with it, and that run stays cancelled.
+rerun_rare() {
+  local id=$1 sha=$2 link=$3 passed status=completed
+  passed=$(gh run view "$id" -R "$repo" --json jobs --jq '.jobs[] | select(.name == "rare-passed") | .conclusion') || return 1
+  if [ "$passed" = cancelled ]; then
+    echo "the rare jobs on ${sha:0:12} were cancelled: not running them again"
+    return 1
+  fi
+  echo "the rare jobs failed on ${sha:0:12}: running the failed ones once more: $link"
+  gh run rerun "$id" -R "$repo" --failed >/dev/null || return 1
+  # The run says it's going again a few seconds after it's asked.
+  for _ in $(seq 1 24); do
+    status=$(gh run view "$id" -R "$repo" --json status --jq .status) || return 1
+    [ "$status" = completed ] || break
+    sleep "${ARUGULA_RELEASE_POLL:-5}"
+  done
+  [ "$status" != completed ] || { echo "the rare jobs on ${sha:0:12} didn't start again after 2 min" >&2; return 1; }
+  gh run watch "$id" -R "$repo" --exit-status --interval 30 >/dev/null || true
 }
 
 # check_rare TAG: TAG's commit has a ci/rare tag. ARUGULA_RELEASE_SKIP_GREEN=1 skips this too:
