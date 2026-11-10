@@ -16,6 +16,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { LINE_MAX, TITLE_MAX } from "./whats-new.mjs";
 
 const SECTIONS = ["Added", "Changed", "Fixed", "Removed"];
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -40,8 +41,10 @@ export function parseNote(name, text) {
   if (!SECTIONS.includes(section)) throw new Error(`docs/notes/${name}: section is one of ${SECTIONS.join(", ")}, not ${section}`);
   if (!title) throw new Error(`docs/notes/${name}: no title`);
   if (!line) throw new Error(`docs/notes/${name}: no line`);
-  if (title.length > 80) throw new Error(`docs/notes/${name}: title is over 80 characters`);
-  if (line.length > 240) throw new Error(`docs/notes/${name}: line is over 240 characters`);
+  // Any note can be a headline (a release with none marked uses its first), so
+  // every note is held to a headline's limits.
+  if (title.length > TITLE_MAX) throw new Error(`docs/notes/${name}: title is over ${TITLE_MAX} characters`);
+  if (line.length > LINE_MAX) throw new Error(`docs/notes/${name}: line is over ${LINE_MAX} characters`);
   let tryIt;
   if (fields.try) {
     try {
