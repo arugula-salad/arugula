@@ -326,6 +326,9 @@ pub enum ToolState {
     Reconnect,
     /// Needs a grant over a project that this machine's owner hasn't given.
     NotGranted,
+    /// Needs a grant, and Arugula control didn't answer whether this
+    /// machine has it: try again shortly.
+    Unreachable,
 }
 
 /// One kind of block.

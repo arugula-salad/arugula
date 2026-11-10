@@ -62,8 +62,8 @@ pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersR
         Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app), c.trackers_reach(app)),
         None => (
             CloudReach { reachable: false, note: NO_CONTROL_TOOLS.into() },
-            ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into() },
-            RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
+            ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
+            RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
             TrackersReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
         ),
     }
@@ -74,7 +74,7 @@ pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersR
 pub async fn boards_reach(app: &App) -> BoardsReach {
     match CONTROL_TOOLS.get() {
         Some(c) => c.boards_reach(app).await,
-        None => BoardsReach { projects: vec![], note: NO_CONTROL_TOOLS.into() },
+        None => BoardsReach { projects: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
     }
 }
 

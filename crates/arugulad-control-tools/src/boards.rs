@@ -1562,9 +1562,12 @@ pub(crate) async fn boards_reach(app: &crate::server::App) -> BoardsReach {
         Ok(Ok(v)) => BoardsReach {
             projects: serde_json::from_value::<Vec<BoardsProject>>(v["projects"].clone()).unwrap_or_default(),
             note: String::new(),
+            answered: true,
         },
-        Ok(Err(e)) => BoardsReach { projects: vec![], note: said(e) },
-        Err(_) => BoardsReach { projects: vec![], note: "Arugula control didn't answer in time".into() },
+        Ok(Err(e)) => BoardsReach { projects: vec![], note: said(e), answered: false },
+        Err(_) => {
+            BoardsReach { projects: vec![], note: "Arugula control didn't answer in time".into(), answered: false }
+        }
     }
 }
 

@@ -2841,10 +2841,14 @@ impl Control {
                 None => req,
             }
         };
-        let (status, got) = self
-            .patiently(method.as_str(), path_and_query, patience, build)
-            .await
-            .map_err(|e| CloudRefused::Unreachable(e.to_string()))?;
+        let (status, got) = self.patiently(method.as_str(), path_and_query, patience, build).await.map_err(|e| {
+            // With its causes: reqwest's own words are only "error sending
+            // request", which can't tell a timeout from a dropped
+            // connection (Arugula #621).
+            let e = format!("{:#}", anyhow::Error::from(e));
+            info!(path = path_and_query, error = %e, "control didn't answer");
+            CloudRefused::Unreachable(e)
+        })?;
         let v: serde_json::Value = serde_json::from_slice(&got).unwrap_or_default();
         if (200..300).contains(&status) {
             return Ok(v);
