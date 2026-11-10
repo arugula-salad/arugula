@@ -321,6 +321,47 @@ impl Db {
         Ok(logged)
     }
 
+    /// A passkey sign-up: the account (`e.account`, a fresh id, named
+    /// `name`), its `passkey` identity (the credential), the passkeys row
+    /// and its `added` event, in one transaction, or none of them. `None`
+    /// when control already has that credential, as a passkey or as an
+    /// identity: nothing is made, looked up or changed for it.
+    pub fn new_passkey_account(&self, public: &[u8], e: Event, name: &str) -> anyhow::Result<Option<Event>> {
+        anyhow::ensure!(e.event == Change::Added, "a new passkey's event is an add");
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let known: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM passkeys WHERE id = ?1)
+                 OR EXISTS (SELECT 1 FROM identities WHERE provider = 'passkey' AND subject = ?1)",
+            params![e.credential],
+            |r| r.get(0),
+        )?;
+        if known {
+            return Ok(None);
+        }
+        tx.execute(
+            "INSERT INTO accounts (id, root, created, name) VALUES (?1, NULL, ?2, ?3)",
+            params![e.account, e.at as i64, name],
+        )?;
+        tx.execute(
+            "INSERT INTO identities (provider, subject, account, login) VALUES ('passkey', ?1, ?2, '')",
+            params![e.credential, e.account],
+        )?;
+        // A new account is a name the platform may have kept as nobody's
+        // (`accounts`, chat's `from:`): it's news too.
+        super::changes::changed(&tx, arugula_platform_api::hub::ChangeKind::AccountName, &e.account)?;
+        tx.execute(
+            "INSERT INTO passkeys (id, account, alg, public, sign_count, created) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+            params![e.credential, e.account, e.alg, public, e.at as i64],
+        )?;
+        // A fresh account's log is empty: its first event always goes in.
+        let Ok(logged) = append(&tx, e, false)? else {
+            anyhow::bail!("a new account's log didn't take its first event");
+        };
+        tx.commit()?;
+        Ok(Some(logged))
+    }
+
     /// The account's next event, as it would be placed now: what a step-up
     /// signs before the passkey is added ([`Db::add_passkey_logged`], pinned).
     pub fn passkey_next(&self, d: Draft) -> anyhow::Result<Event> {
