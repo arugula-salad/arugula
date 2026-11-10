@@ -357,6 +357,13 @@ pub struct AgentMention {
     /// before it starts on something. An older daemon ignores it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub others: Vec<String>,
+    /// Whether this machine's owner wrote it themselves (#665): a person's
+    /// post, signed in as the account that owns the machine. Never set for an
+    /// agent's post, the owner's own agents' included. The daemon tells the
+    /// session it's from its person; else from a teammate. An older daemon
+    /// ignores it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_owner: bool,
 }
 
 /// What a machine's session is doing (#645).

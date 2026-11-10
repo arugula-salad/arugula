@@ -62,6 +62,8 @@ mod chat_grant_ask_tests;
 #[cfg(test)]
 mod chat_machine_rename_tests;
 #[cfg(test)]
+mod chat_mention_owner_tests;
+#[cfg(test)]
 mod chat_mention_redeliver_tests;
 #[cfg(test)]
 mod chat_mention_status_tests;

@@ -89,7 +89,7 @@ fn replies_waiting_on_a_terminal_pane_are_one_follow_up_per_thread() {
     let a = tool_ended(&d, pane);
     let text = a["follow_up"]["text"].as_str().unwrap_or_else(|| panic!("{a}"));
     assert!(
-        text.contains("in the thread \"root 10\":\nAda: first reply\nAda: second reply\n"),
+        text.contains("in the thread \"root 10\":\nAda (a teammate): first reply\nAda (a teammate): second reply\n"),
         "the thread's replies as one, oldest first: {text}"
     );
     assert!(!text.contains("elsewhere"), "the other thread's waits: {text}");
