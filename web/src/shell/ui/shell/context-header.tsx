@@ -96,6 +96,8 @@ export function ContextHeader({
   useSubscribe((fn) => directory.subscribe(fn));
   const sidebar = useSidebar();
   const at = usePlace(client);
+  // The session's own parts (where you are in it, Share) are the panes'.
+  const panes = at === "panes" || at === "overview";
   const state = client.state!;
   const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
   const tab = client.tabView();
@@ -114,11 +116,12 @@ export function ContextHeader({
         )}
         <ConnectionChip client={client} />
       </nav>
-      {/* The other places cover this head with a bar of their own (AppBar). */}
-      {(at === "panes" || at === "overview") && <MachinePlaces client={client} at={at} />}
+      {/* Docs sits under this head (Arugula #796); the other places cover it
+          with a bar of their own (AppBar). */}
+      {(panes || at === "docs") && <MachinePlaces client={client} at={at} />}
       {/* The sidebar and tab strip say which session and tab this is; without
           the sidebar, this does (Arugula #637). */}
-      {(!sidebar.open || sidebar.narrow) && (
+      {panes && (!sidebar.open || sidebar.narrow) && (
         <nav class="ws-crumbs ws-trail" aria-label="Where you are" data-tauri-drag-region>
           {session && <SessionButton client={client} session={session} setRenaming={setRenaming} />}
           {tab && (
@@ -137,7 +140,7 @@ export function ContextHeader({
       {/* M111: what waits on you, on every machine. */}
       <AttentionBell client={client} />
       {/* Sharing is the daemon's owner's (M13), and in sight so it's found (#551). */}
-      {session && !state.roles && (
+      {panes && session && !state.roles && (
         <button
           class="ws-share"
           aria-label="Share session"

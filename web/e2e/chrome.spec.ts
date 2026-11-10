@@ -89,9 +89,11 @@ test.describe("on a computer", () => {
     await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
     await places.locator("[data-machine-docs]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
-    await expect(page.locator(".app-bar [data-machine-docs]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator(".app-bar [data-open-attention]")).toBeVisible();
-    await page.locator(".app-bar [data-machine-panes]").click();
+    // Docs is under the workspace's own header, not a bar of its own (Arugula #796).
+    await expect(page.locator(".app-bar")).toHaveCount(0);
+    await expect(page.locator(".ws-head [data-machine-docs]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".ws-head [data-open-attention]")).toBeVisible();
+    await page.locator(".ws-head [data-machine-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
     // The sidebar says which session this is; without it, the bar does.
     await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
@@ -114,6 +116,27 @@ test.describe("on a computer", () => {
     });
     expect((await page.locator(".ws-head").boundingBox())!.y).toBe(64);
     expect((await page.locator(".ws-brand").boundingBox())!.y).toBe(64);
+  });
+
+  test("on macOS the Docs page sits under the header and the native controls strip, as the panes do (Arugula #796)", async ({ page }) => {
+    await newWorkspace(page);
+    await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
+    const onPanes = (await page.locator(".ws-head").boundingBox())!;
+    await page.locator("[data-machine-docs]").click();
+    const docs = page.locator("[data-docs-page]");
+    await expect(docs).toBeVisible();
+    // The same header, where it was: below the strip, beside the rail.
+    const head = (await page.locator(".ws-head").boundingBox())!;
+    expect(head).toEqual(onPanes);
+    expect(head.y).toBe(28);
+    expect((await page.locator(".ws-brand").boundingBox())!.y).toBe(head.y);
+    await expect(page.locator(".ws-head .ws-search-button svg")).toBeVisible();
+    // The page starts under it and doesn't cover the rail.
+    const box = (await docs.boundingBox())!;
+    expect(box.y).toBe(head.y + head.height);
+    expect(box.x).toBe((await page.locator(".ws-rail").boundingBox())!.width);
+    // A lone machine's rail has no Docs: Panes stays lit.
+    await expect(page.locator(".ws-rail [data-open-panes]")).toHaveAttribute("aria-current", "page");
   });
 
   test("rail routes keep the way back: Panes returns to the same tab and pane", async ({ page }) => {

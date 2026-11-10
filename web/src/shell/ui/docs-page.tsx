@@ -49,8 +49,11 @@ const NO_FRESH = new Map<string, number>();
 /** A Doc as the Doc block's renderer takes it. */
 const stateOf = (c: DocContent): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined });
 
-/** The page, while the route says so and this is the machine's owner. */
-export function DocsPage({ client }: { client: Client }) {
+/** The page, while the route says so and this is the machine's owner. In
+ * the workspace (`inWorkspace`) it sits under the workspace's header, beside
+ * its rail, as the panes do (Arugula #796); elsewhere (a phone) it covers the
+ * window under a bar of its own. */
+export function DocsPage({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -58,7 +61,7 @@ export function DocsPage({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   if (!docsRoute() || client.state?.roles) return null;
-  return <Page client={client} />;
+  return <Page client={client} inWorkspace={inWorkspace} />;
 }
 
 /** Who made it: an agent (`mcp:NAME`), a person's driver, a Doc from
@@ -105,7 +108,7 @@ function ageGroup(updated: number, now: number): string {
   return "Earlier";
 }
 
-function Page({ client }: { client: Client }) {
+function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -225,8 +228,8 @@ function Page({ client }: { client: Client }) {
     ) : undefined;
 
   return (
-    <div class="chat agents-page docs-page" data-docs-page>
-      <AppBar client={client} at="docs" />
+    <div class={inWorkspace ? "chat agents-page docs-page ws-page" : "chat agents-page docs-page"} data-docs-page>
+      {!inWorkspace && <AppBar client={client} at="docs" />}
       <ListPage<DocRow>
         label="Docs"
         splitKey="docs"
