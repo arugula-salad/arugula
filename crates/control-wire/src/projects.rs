@@ -1236,4 +1236,7 @@ pub struct TrackerReachConnection {
     pub agent_writes: String,
     /// Per kind: `allow` or `approve`.
     pub write_policy: TrackerWritePolicy,
+    /// Whether each open epic has a board that follows it (#483).
+    #[serde(default = "yes")]
+    pub epics_as_boards: bool,
 }

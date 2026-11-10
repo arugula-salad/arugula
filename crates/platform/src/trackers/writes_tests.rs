@@ -1034,6 +1034,9 @@ async fn the_reach_lists_the_policy_and_a_summary() {
     w.settings(json!({ "agent_writes": "allow" })).await;
     let c = reach().await;
     assert_eq!((c["agent_writes"].as_str(), c["write_policy"]["create"].as_str()), (Some("allow"), Some("allow")));
+    assert_eq!(c["epics_as_boards"], json!(true));
+    w.settings(json!({ "epics_as_boards": false })).await;
+    assert_eq!(reach().await["epics_as_boards"], json!(false));
 }
 
 // ---- history and retry (#441)

@@ -297,7 +297,7 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
     let projects: Vec<TrackerReachProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
     let live = !projects.is_empty();
     let note = if live {
-        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent may say it was via Arugula, as the connection says. Each project lists its connections (id, identifier, write_policy: which kinds go at once): create takes connection or tracker, or neither when there is one. After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
+        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent may say it was via Arugula, as the connection says. Each project lists its connections (id, identifier, write_policy: which kinds go at once): create takes connection or tracker, or neither when there is one. epics_as_boards: true means each open Plane epic has a board that follows its children (new ones appear on it), so don't build an epic's board by hand; false means epics aren't followed (a person switches it in the project's Plane settings). After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
     } else {
         "This machine's owner hasn't given its agents trackers.write: `arugula grants add <machine> trackers.write --project <name>`, or Settings, Agents, Plane writes, on the platform page.".into()
     };

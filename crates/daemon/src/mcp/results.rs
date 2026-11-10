@@ -145,6 +145,12 @@ pub struct TrackerReachConnection {
     /// write at once, `approve` keeps it for a person.
     #[serde(default)]
     pub write_policy: std::collections::BTreeMap<String, String>,
+    /// `true`: each open Plane epic has a board that follows its children,
+    /// so new ones appear on it; don't build an epic's board by hand. `false`:
+    /// not followed. A person switches it in the project's Plane settings.
+    /// Absent when control predates the setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epics_as_boards: Option<bool>,
 }
 
 /// The projects in control whose boards agents here reach: through grants
@@ -258,6 +264,20 @@ mod tests {
         if let Err(e) = arugula_testkit::schema::conforms(&sent, &schema) {
             panic!("{sent} doesn't fit its schema: {e}\n{schema:#}");
         }
+    }
+
+    /// `capabilities` shows a connection's epics-as-boards setting, on or off,
+    /// and says nothing when an older control doesn't send it.
+    #[test]
+    fn a_tracker_connection_shows_epics_as_boards() {
+        let c = |extra: Value| {
+            let mut v = json!({ "id": "tc_1", "identifier": "ARUGU", "name": "Arugula", "agent_writes": "approve" });
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value::<TrackerReachConnection>(v).unwrap()
+        };
+        assert_eq!(serde_json::to_value(c(json!({ "epics_as_boards": true }))).unwrap()["epics_as_boards"], json!(true));
+        assert_eq!(serde_json::to_value(c(json!({ "epics_as_boards": false }))).unwrap()["epics_as_boards"], json!(false));
+        assert!(serde_json::to_value(c(json!({}))).unwrap().get("epics_as_boards").is_none());
     }
 
     #[test]

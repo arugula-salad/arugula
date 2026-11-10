@@ -692,6 +692,7 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
                     identifier: c.identifier,
                     name: c.name,
                     workspace_slug: c.workspace_slug,
+                    epics_as_boards: c.epics_as_boards,
                     agent_writes: policy::summary(&c.write_policy).into(),
                     write_policy: c.write_policy,
                 })
