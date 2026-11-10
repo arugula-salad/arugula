@@ -703,6 +703,9 @@ struct Facts {
     /// By `fi_` id of an open PR: the number of the open PR of its repo that
     /// it is stacked on (it targets that PR's branch).
     after: HashMap<String, u64>,
+    /// By `iss_` and `fi_` id: the sessions started on it, oldest first
+    /// (Arugula #843).
+    sessions: HashMap<String, Vec<wire::RowSession>>,
 }
 
 /// The facts for `ids`, in `project`; `blocks` is what [`block_states`] found.
@@ -743,6 +746,11 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
             f.by_id.insert(id.clone(), Fact::Run { running: run.state == RunState::Running });
         }
     }
+    let on: Vec<&str> = found.iter().chain(&issues).copied().collect();
+    for s in app.db.sessions_on(project, &on)? {
+        let Some(item) = s.work_item.clone() else { continue };
+        f.sessions.entry(item).or_default().push(session_row(&s));
+    }
     // A stale report is unknown: the block moves no lane. One whose machine
     // left is released: closed.
     for (k, b) in blocks.state.iter().filter(|(k, _)| !blocks.stale.contains(*k)) {
@@ -752,7 +760,37 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
     Ok(f)
 }
 
+/// A session as a row shows it. It is live while its turn is under way
+/// (queued, working, needs_input; an unresponsive one counts as the state it
+/// was in), or done with its PR not yet sent and not merged. Failed and
+/// stopped ones aren't.
+fn session_row(s: &crate::db::sessions::AgentSession) -> wire::RowSession {
+    use crate::db::sessions::State as St;
+    let live = match s.seen_as() {
+        St::Queued | St::Working | St::NeedsInput => true,
+        St::Done => s.pr.is_none() && s.merged_at.is_none(),
+        _ => false,
+    };
+    wire::RowSession {
+        session: s.id.clone(),
+        state: s.state.as_str().to_owned(),
+        live,
+        branch: s.branch.clone(),
+        pr: s.pr.clone(),
+    }
+}
+
 impl Facts {
+    /// The sessions on a row's item, as lanes read them.
+    fn sessions_of(&self, p: &wire::Pointer) -> &[wire::RowSession] {
+        match p {
+            wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } => {
+                self.sessions.get(id).map_or(&[], Vec::as_slice)
+            }
+            _ => &[],
+        }
+    }
+
     /// [`Self::of`] for an attachment: a block a newer agent took the row
     /// from (`released`) is closed to this row.
     fn of_attached(&self, p: &wire::Pointer, released: bool) -> Option<Fact> {
@@ -798,7 +836,8 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
         .filter(|(r, ..)| *r == wire::AttachRole::Work)
         .filter_map(|(_, p, released)| facts.of_attached(p, *released).map(|f| (*p, f)))
         .collect();
-    let seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
+    let mut seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
+    seen.extend(facts.sessions_of(pointer).iter().map(|s| Fact::Session { live: s.live }));
     let lane = lanes::lane(primary, &seen);
     let merged_not_closed = lanes::merged_not_closed(primary, &seen);
     let cancelled = lanes::cancelled(primary);
@@ -897,6 +936,7 @@ fn is_earlier(a: &db::Attached, facts: &Facts) -> bool {
 /// told count as idle ([`Shown`]), so a block they aren't told holds no
 /// stall up to them, and its idle time says nothing.
 fn stall_of(
+    pointer: &wire::Pointer,
     attachments: &[&db::Attached],
     lane: wire::Lane,
     facts: &Facts,
@@ -905,7 +945,9 @@ fn stall_of(
     minutes: u32,
 ) -> Option<u64> {
     let work = attachments.iter().filter(|a| a.role == wire::AttachRole::Work);
-    let seen: Vec<Fact> = work.clone().filter_map(|a| facts.of_attached(&a.pointer, a.released_at.is_some())).collect();
+    let mut seen: Vec<Fact> =
+        work.clone().filter_map(|a| facts.of_attached(&a.pointer, a.released_at.is_some())).collect();
+    seen.extend(facts.sessions_of(pointer).iter().map(|s| Fact::Session { live: s.live }));
     let idle: Vec<Option<u64>> = work
         .filter(|a| a.released_at.is_none())
         .filter(|a| matches!(facts.of(&a.pointer), Some(Fact::Block { closed: false })))
@@ -1234,7 +1276,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let mut a = assess(&e.pointer, &attached, &facts);
-        let stalled = stall_of(&mine, a.lane, &facts, &told, now, minutes);
+        let stalled = stall_of(&e.pointer, &mine, a.lane, &facts, &told, now, minutes);
         let doubt = blocks.doubt(&attached);
         forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref(), doubt);
         let (lane, set) = shown(a.lane, e.lane_set.as_ref(), doubt);
@@ -1324,6 +1366,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             ask,
             asked,
             relations,
+            sessions: facts.sessions_of(&e.pointer).to_vec(),
             step: None,
             place: None,
             live: row_live,
