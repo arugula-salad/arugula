@@ -523,6 +523,31 @@ fn a_turn_cut_off_by_a_restart_asks_whether_to_continue() {
     });
 }
 
+/// #617: the card a restart leaves isn't a question: a prompt (MCP's
+/// prompt_agent, `arugula send --wait`) goes, as Continue or typing in the
+/// block would, and clears it.
+#[test]
+fn a_prompt_reaches_an_agent_whose_turn_a_restart_cut_off() {
+    let mut d = Daemon::child();
+    let id = d.open("hello");
+    d.wait(id, "idle");
+    d.call(id, "send", json!({ "text": "slow" }));
+    d.wait_for("the turn to run", || d.state(id)["status"] == "working");
+    d.stop();
+    d.start();
+    d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    assert_eq!(d.wait(id, "needs-input"), "needs_input");
+    let v = d.post(&format!("/api/panes/{id}/prompt"), json!({ "text": "hello" }));
+    assert_eq!(v["result"], "done", "{v}");
+    let s = d.state(id);
+    assert!(entries(&s).iter().any(|e| e["type"] == "user" && e["text"] == "hello"), "{s}");
+    assert!(!entries(&s).iter().any(|e| e["text"] == CUT_PROMPT), "{s}");
+    d.wait_for("the card to go", || {
+        let list = d.get("/api/attention");
+        list.as_array().unwrap().iter().all(|i| i["pane"] != id || i["state"] != "needs_input")
+    });
+}
+
 /// #680: only a real interruption is a card: a block that was idle comes
 /// back idle.
 #[test]
@@ -664,16 +689,38 @@ fn a_woken_agent_that_never_closes_goes_back_to_idle() {
     d.wait_for("the pane to stop showing working", || !woken(&d, id));
 }
 
+/// #716: a prompt that comes while the agent works on a cycle it woke for
+/// waits for that cycle, then goes as a turn of its own. claude-agent-acp
+/// folds one sent during the cycle into it and never answers it, which
+/// left the block working on it for good, with everything queued behind it.
 #[test]
-fn a_prompt_during_a_woken_cycle_is_a_normal_turn() {
+fn a_prompt_during_a_woken_cycle_goes_when_the_cycle_ends() {
     let d = Daemon::child();
+    let id = open_claude(&d, "wake");
+    d.wait_for("the woken agent to show working", || woken(&d, id));
+    let sent = d.call(id, "send", json!({ "text": "hello" }));
+    assert_eq!(sent["queued"], 1, "held while the cycle runs: {sent}");
+    d.wait_for("the held prompt's turn", || {
+        entries(&d.state(id)).iter().any(|e| e["type"] == "agent" && e["text"] == "Hello! I am fake.")
+    });
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.state(id);
+    assert_eq!(s["queued"], json!([]), "{s}");
+    let folded = entries(&s).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("Folded in")));
+    assert!(!folded, "sent into the cycle: {s}");
+    assert_eq!(s["recent_turns"][0]["prompt"], "hello", "{s}");
+}
+
+/// ...and one that never closes holds it only until its quiet period ends.
+#[test]
+fn a_prompt_during_a_woken_cycle_that_never_closes_goes_after_the_quiet() {
+    let d = Daemon::child_env(&[], &[("ARUGULA_AUTONOMOUS_QUIET_MS", "1500")]);
     let id = open_claude(&d, "wake-open");
     d.wait_for("the woken agent to show working", || woken(&d, id));
     d.call(id, "send", json!({ "text": "hello" }));
     d.wait_for("the turn to finish", || {
         d.state(id)["status"] == "ready" && entries(&d.state(id)).iter().any(|e| e["text"] == "Hello! I am fake.")
     });
-    // Its own turn took over and ended: not still woken (the quiet period is a minute).
     // The pane shows it at the next publish tick (#713).
     d.wait_for("the pane to stop showing working", || !woken(&d, id));
     assert_eq!(d.wait(id, "idle"), "done");

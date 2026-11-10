@@ -48,6 +48,11 @@ Prompts:
                  output in $FAKE_ACP_DIR/tasks/<id>.output, which ends with
                  "[exited with code 0]" SECS later; then the agent wakes as
                  for "wake"
+  wake           as claude-agent-acp when a background task finishes after
+                 the turn: a cycle of its own, outside any prompt, closed 2s
+                 later by an autonomous-origin usage_update. A prompt that
+                 comes during it is folded into it and never answered, as
+                 claude-agent-acp does (#716). "wake-open" never closes.
   held           as claude-agent-acp while background subagents live: the
                  result's usage_update, then the prompt's answer held for 30s
                  (a cancel answers it at once)
@@ -119,6 +124,7 @@ next_id = [0]
 waiting = {}  # our request id -> [event, answer]
 cancelled = set()  # session ids with a cancel pending
 asking = {}  # session id -> the elicitation request id it waits on
+woken = set()  # session ids in a "wake" cycle, which swallows prompts (#716)
 caps = {}  # the client's capabilities
 WITHDRAWN = {"withdrawn": True}
 # As claude-agent-acp names its models.
@@ -527,6 +533,12 @@ def prompt(mid, p):
     with open(os.path.join(DIR, f"prompt-{sid}.json"), "w") as f:
         json.dump(blocks, f)
     text = "".join(c.get("text", "") for c in blocks)
+    if sid in woken:
+        # Folded into the cycle it woke for: its work goes on there, and
+        # this prompt is never answered.
+        send({"method": "session/update", "params": {"sessionId": sid, "update": {
+            "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"Folded in: {text}"}}}})
+        return
     update(sid, s, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}})
     n = len(s["updates"])
     if DEMO:
@@ -758,11 +770,14 @@ def prompt(mid, p):
         # output outside any prompt, closed by an autonomous-origin usage_update
         # ("wake-open" never closes).
         time.sleep(0.3)
+        if text == "wake":
+            woken.add(sid)
         send({"method": "session/update", "params": {"sessionId": sid, "update": {
             "sessionUpdate": "agent_message_chunk", "messageId": f"w{n}",
             "content": {"type": "text", "text": "The background task finished."}}}})
         if text == "wake":
             time.sleep(2)
+            woken.discard(sid)
             send({"method": "session/update", "params": {"sessionId": sid, "update": {
                 "sessionUpdate": "usage_update", "used": 12, "size": 1000,
                 "cost": {"amount": s["cost"], "currency": "USD"},

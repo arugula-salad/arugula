@@ -362,6 +362,9 @@ enum Effect {
     SessionLost(String),
     /// A turn ended: send what's queued.
     TurnEnded,
+    /// A cycle the agent woke for by itself ended: send what's queued
+    /// (#716).
+    WokenEnded,
     /// A permission request came: answer it if a rule allows it.
     Permission(String),
     /// An agent request we don't serve.
@@ -933,6 +936,7 @@ impl Inner {
                 // A new server: nothing outstanding carries over. (An old
                 // Managoat block's turn wasn't cut: it went on there.)
                 self.background.clear();
+                self.close_woken(at);
                 let cut_now = e["fountain"] != true
                     && (self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty());
                 if cut_now {
@@ -961,6 +965,7 @@ impl Inner {
             }
             "exit" | "stopped" => {
                 self.background.clear();
+                self.close_woken(at);
                 if self.prompt_id.is_some() {
                     self.interrupted = true;
                 }
@@ -1292,6 +1297,7 @@ impl Inner {
                         // An autonomous cycle's close.
                         if claude && self.replay.is_none() && origin != "human" && self.autonomous_at.take().is_some() {
                             self.end_woken(at);
+                            fx.push(Effect::WokenEnded);
                         }
                         // #444: the window claude-agent-acp learned from the
                         // turn's result (the SDK's `modelUsage`), which the
@@ -1551,6 +1557,14 @@ impl Inner {
             news.push((if first && a == Attention::Done { Attention::Idle } else { a }, why));
         }
         news
+    }
+
+    /// The server it was woken on went away: so did its cycle, which no
+    /// longer holds back what's queued (#716).
+    fn close_woken(&mut self, at: u64) {
+        if self.autonomous_at.take().is_some() {
+            self.end_woken(at);
+        }
     }
 
     /// A woken cycle ended (#700): its turn did.
@@ -2485,6 +2499,7 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                     if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
                         g.autonomous_at = None;
                         g.end_woken(now_ms());
+                        send_next(&ctx, &mut g);
                         dirty = true;
                     }
                     // #606: what it left running, checked on this host only.
@@ -2739,6 +2754,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             }
             send_next(ctx, g);
         }
+        Effect::WokenEnded => send_next(ctx, g),
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
             for tag in std::mem::take(&mut g.mention_turn) {
@@ -3046,9 +3062,12 @@ fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
 /// credential, say.
 const TURN_ALLOWED_FOR: Duration = Duration::from_secs(5);
 
-/// Send the next queued prompt, if the agent can take it.
+/// Send the next queued prompt, if the agent can take it. Not while it
+/// works on a cycle it woke for by itself (#716): claude-agent-acp folds a
+/// prompt that comes then into that cycle and never answers it, so the
+/// block would wait on it for good. It goes when the cycle ends.
 fn send_next(ctx: &AgentCtx, g: &mut Inner) {
-    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
+    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() || g.autonomous_at.is_some() {
         return;
     }
     let Some(q) = g.queue.front().cloned() else { return };
