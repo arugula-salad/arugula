@@ -3471,7 +3471,15 @@ sign-ins still get through when it's full). Each minute it changed,
 `fly logs` has `relay sockets` with the count (`sockets`, `daemons`,
 `clients`), the ceiling (`max`) and how many were refused for it
 (`refused`); `the relay is full` and `the relay has room again` mark
-when it fills and empties.
+when it fills and when it's back under 90% of the ceiling.
+
+The load test (#530, "Load testing" below) found the hub's CPU runs out
+first, not memory or sockets. Busy sockets cost about 100 KB each (615 MB
+at the 5,000 ceiling). CPU costs about 20% of a core per 1,000 idle
+machines, and about 3% per busy pane watched over the relay. A
+`shared-cpu-1x` machine keeps only about 8% of a core once its burst is
+spent (`steal` in Fly's metrics goes to about 90%), and then every route
+slows together (#855).
 
 ### Metrics
 

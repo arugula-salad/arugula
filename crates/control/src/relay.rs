@@ -39,6 +39,8 @@ const PING_EVERY: Duration = Duration::from_secs(15);
 /// A text message on a daemon's socket: "fetch your certificates now".
 pub const NUDGE: &str = "trust";
 const DEAD_AFTER: Duration = Duration::from_secs(45);
+/// A connected machine's `last_seen` is written every this many pings.
+const SEEN_EVERY: u64 = 4;
 const CLIENT_PING: Duration = Duration::from_secs(30);
 /// Each socket's read buffer (#174): the default, 128 KiB, made an idle
 /// relay connection cost about 150 KB; terminal traffic is small messages.
@@ -623,6 +625,7 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
     let connected = Instant::now();
     let (mut tx, mut rx) = ws.split();
     let mut ping = tokio::time::interval(PING_EVERY);
+    let mut pings = 0u64;
     let mut heard = Instant::now();
     loop {
         tokio::select! {
@@ -662,7 +665,14 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                 if heard.elapsed() > DEAD_AFTER || tx.send(Message::Ping(Default::default())).await.is_err() {
                     break;
                 }
-                let _ = seen(&app, &id, hosted, None);
+                // A machine's `last_seen` is written once a minute while it's
+                // connected (#530: every ping, at 5,000 machines, was 330
+                // writes a second); whether it's online is the relay's own
+                // map, never this. A hosted machine's, every ping, as before.
+                pings += 1;
+                if hosted || pings.is_multiple_of(SEEN_EVERY) {
+                    let _ = seen(&app, &id, hosted, None);
+                }
             }
             _ = stop.notified() => break,
             _ = ticket.gone() => break,

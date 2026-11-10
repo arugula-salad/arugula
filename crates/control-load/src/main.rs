@@ -375,9 +375,13 @@ async fn run(ctx: &Arc<Ctx>, out: &Arc<Out>, url: &str, r: RunArgs, concurrency:
             });
             let mut ids = vec![];
             for (k, m) in p.machines.iter().enumerate() {
+                if machines_now >= target {
+                    break;
+                }
                 let keys = keys::from_text(m)?;
+                // A page shows only the machines this step runs.
                 ids.push(keys.id());
-                if k >= running_machines[i] && machines_now < target {
+                if k >= running_machines[i] {
                     let d = Arc::new(Daemon { keys, account: a.account.clone() });
                     tokio::spawn(daemon::run(ctx.clone(), d));
                     running_machines[i] = k + 1;
