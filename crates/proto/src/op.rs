@@ -1616,9 +1616,10 @@ pub mod ops {
     }
 
     /// `GET /api/guests` (M65): the ssh invites made here. A credential. A
-    /// build without Labs answers 501 to every method. Like making and
-    /// revoking one, refused where Guest SSH access is off (a sharing
-    /// setting, `crate::sharing`, native #205; it was the `guest-ssh` flag).
+    /// build without Labs answers 501 to every method. Listing and revoking
+    /// work whatever Guest SSH access says (a sharing setting,
+    /// `crate::sharing`, native #205; it was the `guest-ssh` flag); off,
+    /// there are none, since turning it off ends them (native #270).
     pub struct GuestsList;
 
     impl Op for GuestsList {
@@ -1633,7 +1634,7 @@ pub mod ops {
     }
 
     /// `POST /api/guests`: an ssh invite to one terminal pane (`arugula share
-    /// --guest`).
+    /// --guest`). Refused where Guest SSH access is off.
     pub struct GuestMint;
 
     impl Op for GuestMint {

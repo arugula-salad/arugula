@@ -38,7 +38,7 @@ pub const FILE: &str = "sharing.json";
 /// choice ([`migrate`]).
 pub const OLD_FLAG: &str = "guest-ssh";
 
-/// What a request for a guest invite is told where Guest SSH access is
+/// What a request to make a guest invite is told where Guest SSH access is
 /// off: the machine is the daemon that answered.
 pub const GUEST_SSH_OFF: &str = "Guest SSH access is off on this machine: its owner turns it on in the machine menu's Guest SSH access…, or with `arugulad sharing guest-ssh on` there";
 

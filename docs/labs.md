@@ -32,10 +32,12 @@ menu, Settings' *This machine*, the phone's sheet), or
 control never writes, so no push turns it on, as the flag was local-only.
 A machine that had the flag on (by name, or `labs`) keeps it on: the
 daemon writes the old flag's word there once, at its start. With it off,
-*Invite over ssh…* isn't offered and `/api/guests` (list, invite, revoke)
-is refused, saying how to turn it on. `arugula guests`, `arugula share
---guest…` and `arugulad --guest-ssh`/`--guest-ssh-host` (the listener) are
-always in `--help` now; `guest-ssh` is a retired flag.
+*Invite over ssh…* isn't offered and making an invite is refused, saying
+how to turn it on. Turning it off ends every ssh invite and cuts off its
+guests (native #270); listing and revoking invites work whatever the
+setting. `arugula guests`, `arugula share --guest…` and `arugulad
+--guest-ssh`/`--guest-ssh-host` (the listener) are always in `--help` now;
+`guest-ssh` is a retired flag.
 
 Boards, a project's boards and epics, were the `boards` flag until they left
 Labs (native #191, 2026-11-02, Aaron): they're on for everyone, and a

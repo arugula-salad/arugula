@@ -391,6 +391,71 @@ fn revoke_expiry_and_closing_the_pane_end_sessions() {
     assert!(list.as_array().unwrap().iter().all(|x| x["pane"] != other), "{list}");
 }
 
+/// Turning Guest SSH access off (native #270) cuts off a guest who is on,
+/// ends every invite and closes the port, and turning it on again brings
+/// none back. Both ways: the owner's `sharing.set`, and `arugulad sharing
+/// guest-ssh off` on the machine, which changes only the file.
+#[test]
+fn turning_guest_ssh_off_ends_its_invites_and_their_sessions() {
+    if skip() {
+        return;
+    }
+    let d = start("off");
+    let pane = d.first_pane();
+    d.send(pane, "echo here-$((9*9))");
+    d.wait_capture(pane, "here-81");
+    let gone = |port: u16| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            assert!(Instant::now() < deadline, "still listening on {port}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+
+    // The owner turns it off: the guest on is cut off at once.
+    let inv = d.invite(json!({"pane": pane, "rw": true, "reusable": true}));
+    let cmd = inv["command"].as_str().unwrap().to_owned();
+    let mut g = Guest::run(&cmd);
+    g.wait_for("here-81");
+    let t = Instant::now();
+    let (s, v) = d.api("PUT", "/api/sharing", Some(json!({"guest_ssh": false})));
+    assert_eq!(s, 200, "{v}");
+    assert_ne!(g.exited(Duration::from_secs(5)), 0);
+    assert!(t.elapsed() < Duration::from_secs(4), "took {:?}", t.elapsed());
+    assert!(g.text().contains("Guest SSH access was turned off"), "{:?}", g.text());
+    let (s, list) = d.api("GET", "/api/guests", None);
+    assert_eq!((s, &list), (200, &json!([])), "listed while off, and none left");
+    gone(inv["port"].as_u64().unwrap() as u16);
+
+    // On again: the invite stays ended. Another keeps the server up, on a
+    // port of its own, so the old token meets the server's refusal there.
+    let (s, v) = d.api("PUT", "/api/sharing", Some(json!({"guest_ssh": true})));
+    assert_eq!(s, 200, "{v}");
+    let (old, new) = (inv["port"].as_u64().unwrap(), d.invite(json!({"pane": pane}))["port"].as_u64().unwrap());
+    let moved =
+        cmd.replace(&format!("-p {old} "), &format!("-p {new} ")).replace(&format!("]:{old} "), &format!("]:{new} "));
+    let mut late = Guest::run(&moved);
+    assert_ne!(late.exited(Duration::from_secs(10)), 0);
+    assert!(late.text().contains("Permission denied"), "{:?}", late.text());
+
+    // Off on the machine, the file alone: the same.
+    let inv = d.invite(json!({"pane": pane, "reusable": true}));
+    let mut g = Guest::run(inv["command"].as_str().unwrap());
+    g.wait_for("here-81");
+    let out = Command::new(env!("CARGO_BIN_EXE_arugulad"))
+        .args(["sharing", "guest-ssh", "off", "--state-dir"])
+        .arg(&d.state)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Every ssh invite has ended"), "{out:?}");
+    assert_ne!(g.exited(Duration::from_secs(5)), 0);
+    assert!(g.text().contains("Guest SSH access was turned off"), "{:?}", g.text());
+    let (s, list) = d.api("GET", "/api/guests", None);
+    assert_eq!((s, &list), (200, &json!([])));
+    gone(inv["port"].as_u64().unwrap() as u16);
+}
+
 #[test]
 fn wrong_tokens_and_other_host_keys_are_refused_and_the_port_closes() {
     if skip() {
