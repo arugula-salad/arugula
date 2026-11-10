@@ -608,6 +608,7 @@ mod tests {
             current: None,
             last: None,
             started_by: None,
+            worktree: None,
             you: None,
         };
         let want = serde_json::to_value(&pane).unwrap();

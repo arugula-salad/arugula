@@ -918,6 +918,9 @@ impl TurnResult {
 /// What a turn left in a git repo (AR-1, #1475).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
+    /// The worktree the agent block owns, absolute, when it owns one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
     /// The checked-out branch, or `(detached)`.
     pub branch: String,
     /// HEAD, abbreviated.
