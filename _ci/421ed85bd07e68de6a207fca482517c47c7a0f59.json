@@ -3,7 +3,7 @@
   "commit": "421ed85bd07e68de6a207fca482517c47c7a0f59",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-10T19:33:44Z",
+  "at": "2026-11-10T19:41:01Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,19 +54,19 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "test",
           "id": 130069470396,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130069470396"
         },
         {
           "name": "test-2",
           "id": 130069470444,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130069470444"
         }
       ]
@@ -114,7 +114,7 @@
         {
           "name": "e2e (4)",
           "id": 130071688814,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130071688814"
         },
         {
@@ -132,7 +132,7 @@
         {
           "name": "e2e (7)",
           "id": 130071689090,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130071689090"
         },
         {
@@ -147,7 +147,8 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130071688958"
         }
-      ]
+      ],
+      "reason": "retrying"
     },
     "claims": {
       "verdict": "pass",
@@ -162,13 +163,13 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 130069470583,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499628/job/130069470583"
         }
       ]
@@ -202,6 +203,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/42884499588/job/130069664345"
         }
       ]
+    }
+  },
+  "retried": {
+    "e2e (7)": {
+      "run": 130071689090,
+      "at": "2026-11-10T19:41:01Z"
     }
   }
 }
