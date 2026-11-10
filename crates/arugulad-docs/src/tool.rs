@@ -134,20 +134,20 @@ Every fence is checked before anything is written: a bad chart, tile, drawing or
 pub static DOC: &[Kind] = &[
     Kind {
         name: "new",
-        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids (s1, s2, …): fill them in order. Choose layout tabs for several prototypes or long separate parts, prototype when the whole screen is the thing, as an artifact is: one section, filled with one line and one ```prototype fence.",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids: fill them in order. Layout: tabs for several prototypes or long parts; prototype when the whole screen is the thing.",
         schema: schema_for_type::<DocNewArgs>,
         flag: None,
     },
     kind_of::<DocsList, Docs>(),
     Kind {
         name: "open",
-        description: "Open a Doc from list in a block beside your pane, to read or go on with; fill it as after new. A Doc already open is that block, not a second one.",
+        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.",
         schema: schema_for_type::<DocOpenArgs>,
         flag: None,
     },
     Kind {
         name: "fill",
-        description: r##"Write one section (block, section id, Markdown): headings, lists, **bold**, *italic*, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
+        description: r##"Write one section in Markdown: headings, lists, emphasis, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
@@ -165,7 +165,7 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc with a link anyone can open. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once unless the user wants more."##,
+        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
