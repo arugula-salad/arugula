@@ -199,7 +199,7 @@ pub struct Pushed {
 /// platform checks it before it makes or wakes a box, and stops the boxes
 /// of a suspended account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Standing {
     pub account: String,
     /// Suspended for abuse: refused everything, its boxes stop.

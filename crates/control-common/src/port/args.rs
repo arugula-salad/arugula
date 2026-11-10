@@ -314,7 +314,7 @@ pub struct UploadArgs {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StandingsArgs {
     pub accounts: Vec<String>,
     /// The one account asked for is turned away from a new box for want
