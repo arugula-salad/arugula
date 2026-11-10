@@ -7,7 +7,7 @@
 //!
 //! - [`HubPort`] (everything the platform asks the hub) and [`PlatformPort`]
 //!   (everything the hub asks the platform), their types being
-//!   `arugula_control_wire::internal`'s;
+//!   `arugula_control_common::port`'s;
 //! - [`remote`], both ports over the private network, and [`auth`], who's
 //!   asking as the hub found out;
 //! - [`page`], the platform page the hub serves on the platform's host;

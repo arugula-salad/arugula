@@ -76,7 +76,7 @@ pub enum How {
     Machine,
 }
 
-pub use arugula_control_wire::internal::{Outcome, UserToken};
+pub use arugula_control_common::port::{Outcome, UserToken};
 
 /// What a send did, from the send's result.
 pub fn outcome(r: Result<wire::DraftSent, ApiError>) -> Outcome {

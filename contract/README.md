@@ -12,14 +12,17 @@ here is generated from them or tested against them.
 - `examples/logic/`: inputs and answers for the shared security logic
   (#220): `examples/logic/README.md` says what's there.
 
+Not here: the internal port, what the hub and the platform say to each other
+over the private network (`HubPort`/`PlatformPort`'s arguments and answers,
+and the principal header's JSON). Only those two send it, so its messages,
+schema and examples live in `crates/control-common` (`src/port/`, `port/`),
+checked by that crate's tests the same way.
+
 ## schema/
 
 One file per module of `crates/control-wire`: `chat.json` is
-`arugula_control_wire::chat`, `lib.json` the crate's root (`/control.json`,
-joining, the relay's dial), and `internal.json` the internal port: what the
-hub and the platform say to each other over the private network
-(`HubPort`/`PlatformPort`'s arguments and answers, and the principal header's
-JSON). Each file's `$defs` holds the module's public types by their Rust name,
+`arugula_control_wire::chat`, and `lib.json` the crate's root (`/control.json`,
+joining, the relay's dial). Each file's `$defs` holds the module's public types by their Rust name,
 and every type they carry, `arugula-e2e`'s certificates, rosters and grants
 among them. A type that two modules carry appears in both files.
 
@@ -70,9 +73,9 @@ change to either as a hub change, and a hub deploy drops every relayed terminal.
 
 ## examples/wire/
 
-`examples/wire/<module>.<Type>/` holds payloads of one type: `internal.Team/`
-is `arugula_control_wire::internal::Team`, and `$defs/Team` in
-`schema/internal.json`. They come from the messages control-wire's tests
+`examples/wire/<module>.<Type>/` holds payloads of one type: `team.AccessList/`
+is `arugula_control_wire::team::AccessList`, and `$defs/AccessList` in
+`schema/team.json`. They come from the messages control-wire's tests
 recorded from both sides, or are built the way the hub's and the platform's
 code builds them, with obviously fake ids, keys and tokens.
 

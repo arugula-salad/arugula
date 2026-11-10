@@ -22,7 +22,7 @@ use axum::http::StatusCode;
 
 use crate::Platform;
 
-pub use arugula_control_wire::internal::{BoxMember, BoxPost, BoxPosted};
+pub use arugula_control_common::port::{BoxMember, BoxPost, BoxPosted};
 
 /// A refusal, as the author posting themselves would get it.
 fn refused(e: ApiError) -> BoxPosted {

@@ -1,9 +1,10 @@
 //! The contract's JSON Schema (#219): every type here, as
 //! `contract/schema/<file>.json`, checked in so that a change to a wire type
 //! is a schema diff in its pull request. One file per module (`lib.json` for
-//! the crate's root, `internal.json` for the hub and the platform's port),
-//! each type and what it carries (`arugula-e2e`'s certificates, rosters and
-//! grants) under `$defs`, by name.
+//! the crate's root), each type and what it carries (`arugula-e2e`'s
+//! certificates, rosters and grants) under `$defs`, by name. The internal
+//! port between the hub and the platform isn't here: its messages and
+//! schema are `arugula-control-common`'s (`port`).
 //!
 //! The schemas are what a reader accepts (schemars' deserialize contract):
 //! a field read with `#[serde(default)]` isn't required, and none of them
@@ -72,9 +73,6 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         ],
         "hosted" => [
             hosted::PublicPorts, hosted::PublicPort, hosted::EnrollAsk, hosted::EnrollGiven, hosted::Enrolled, hosted::EnrollRequest, hosted::Enrollment, hosted::DelegationPost, hosted::RevokePost, hosted::WakeAnswer, hosted::WakeCode, hosted::SetupPlan, hosted::SetupRepo, hosted::SetupStatus, hosted::SetupReport,
-        ],
-        "internal" => [
-            internal::ResolveArgs, internal::IdsArgs, internal::AccountArgs, internal::WordArgs, internal::ReachArgs, internal::PushArgs, internal::OwnersArgs, internal::MetersArgs, internal::ChangesArgs, internal::DriveArgs, internal::TeamArgs, internal::DaemonArgs, internal::HostedRemovedArgs, internal::BlockersArgs, internal::DeletedArgs, internal::NoArgs, internal::TokenArgs, internal::GithubIdArgs, internal::SendAuthArgs, internal::WorkspacesArgs, internal::DelegationArgs, internal::OpArgs, internal::SendArgs, internal::WakeArgs, internal::TurnArgs, internal::WorkArgs, internal::ReportArgs, internal::SessionReportArgs, internal::SessionPushArgs, internal::SessionIssuesArgs, internal::SecretsArgs, internal::HostedArgs, internal::ProjectArgs, internal::DrivesArgs, internal::TranscriptArgs, internal::PreviewArgs, internal::ProductUserArgs, internal::UnlinkArgs, internal::AccessArgs, internal::UploadArgs, internal::GithubUser, internal::LinkedAccount, internal::ProductLink, internal::PasskeyAssertion, internal::PushOptions, internal::Account, internal::Resolved, internal::Team, internal::Member, internal::Daemon, internal::Pushed, internal::Meter, internal::ChangePage, internal::Change, internal::ChangeKind, internal::Deleted, internal::TokenAnswer, internal::UserToken, internal::Outcome, internal::TurnAnswer, internal::Archived, internal::PublicPreview, internal::HostedMachine, internal::BoxMember, internal::BoxPost, internal::BoxPosted, internal::Principal, internal::Vouch, internal::NotVouched, internal::Credential,
         ],
         "issues" => [
             issues::AgentIssueHomeQuery, issues::IssueGithub, issues::Issue, issues::IssueQuery, issues::IssueList, issues::NewIssue, issues::IssueListEdit, issues::IssuePatch, issues::IssueEvent, issues::IssuePatched, issues::IssueEvents, issues::IssueHome, issues::IssueHomeChange, issues::IssueExportQuery, issues::IssueComment, issues::ExportedIssue, issues::ExportedPerson, issues::IssueExport,
@@ -205,7 +203,6 @@ fn every_wire_type_is_in_the_schema() {
         }
         let file = match rel.as_str() {
             "lib.rs" => "lib".to_owned(),
-            r if r.starts_with("internal/") => "internal".to_owned(),
             r => r.trim_end_matches(".rs").to_owned(),
         };
         let text = std::fs::read_to_string(&path).unwrap();

@@ -12,7 +12,7 @@ use super::{
 /// How long a port stays public after it's made public or renewed.
 pub const PUBLIC_FOR_MS: u64 = 7 * 86_400_000;
 
-pub use arugula_control_wire::internal::PublicPreview;
+pub use arugula_control_common::port::PublicPreview;
 
 const COLUMNS: &str =
     "p.public_id, p.workspace_id, w.project_id, w.machine, p.port, w.state, p.public_by, p.public_until";

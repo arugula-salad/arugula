@@ -6,7 +6,8 @@
 //! signed header the hub forwards it in once the platform is its own
 //! process, M140), and how the two sign the calls between them
 //! (`internal`), and how each backs its database up off-site (`backup`),
-//! and the hub's tokens for other products, which either checks (`issuer`).
+//! and the hub's tokens for other products, which either checks (`issuer`),
+//! and the messages of the internal port between them (`port`).
 //!
 //! Nothing here knows about either side's state: no `App`, no tables.
 
@@ -16,6 +17,7 @@ pub mod error;
 pub mod internal;
 pub mod issuer;
 pub mod limit;
+pub mod port;
 pub mod principal;
 pub mod roots;
 pub mod sqlite;

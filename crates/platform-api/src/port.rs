@@ -6,7 +6,7 @@
 //! platform's routes, is M140's too.
 //!
 //! Like `HubPort` it only grows, and its types are
-//! `arugula_control_wire::internal`'s, with that crate's two rules.
+//! `arugula_control_common::port`'s, with the wire's two rules.
 
 use futures_util::future::BoxFuture;
 
@@ -20,8 +20,8 @@ use arugula_control_wire::{
     },
 };
 
-pub use arugula_control_wire::internal::{Archived, PublicPreview, TurnAnswer};
-use arugula_control_wire::internal::{
+pub use arugula_control_common::port::{Archived, PublicPreview, TurnAnswer};
+use arugula_control_common::port::{
     BoxMember, BoxPost, BoxPosted, GithubUser, HostedMachine, Outcome, TokenAnswer, UserToken,
 };
 
@@ -329,4 +329,4 @@ pub trait PlatformPort: Send + Sync {
     }
 }
 
-pub use arugula_control_wire::internal::Deleted;
+pub use arugula_control_common::port::Deleted;

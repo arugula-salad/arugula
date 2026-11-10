@@ -30,7 +30,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use arugula_control_wire::internal::UserToken;
+use arugula_control_common::port::UserToken;
 use arugula_e2e::now_ms;
 use arugula_platform_api::PlatformPort as _;
 use axum::{

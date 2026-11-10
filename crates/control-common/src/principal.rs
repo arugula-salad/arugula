@@ -22,7 +22,7 @@
 //! (and how it would have answered) or that there were none, and the
 //! platform refuses a call with no valid header at all.
 
-pub use arugula_control_wire::internal::{Credential, NotVouched, Principal, Vouch};
+pub use crate::port::{Credential, NotVouched, Principal, Vouch};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use hmac::{KeyInit as _, Mac as _};
 
