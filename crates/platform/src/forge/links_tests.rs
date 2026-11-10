@@ -55,7 +55,7 @@ pub struct Gh {
     pub(super) refuse: Option<u16>,
     /// A status every question about a person's permission is answered
     /// with, while set (GitHub having a bad minute).
-    pub(super) permission_fails: Option<u16>,
+    pub permission_fails: Option<u16>,
     /// A permission answered 200 with a body that isn't JSON, while set.
     pub(super) permission_garbled: bool,
     /// A status every installation lookup is answered with, while set.

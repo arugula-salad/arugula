@@ -433,6 +433,18 @@ impl RepoRole {
     }
 }
 
+/// Whether a role GitHub names (`role_name`: `admin`, `maintain`, `write`,
+/// `triage`, `read`, or an organization's own) pushes, by its name, or
+/// by the base `permission` GitHub says it comes down to when the name
+/// isn't one of GitHub's five.
+pub fn pushes(role: &str, permission: &str) -> bool {
+    match role {
+        "admin" | "maintain" | "write" => true,
+        "triage" | "read" | "none" => false,
+        _ => matches!(permission, "admin" | "write"),
+    }
+}
+
 pub use arugula_control_wire::internal::GithubUser;
 
 pub struct GithubApp {
@@ -916,7 +928,55 @@ impl GithubApp {
         }
         // Someone else's installation (an organization's, say): only if
         // GitHub says they're a collaborator on the repository.
-        let token = match self.read_token(c, install.id, Repo::Name(repo), Purpose::Read).await {
+        let v = self.collaborator(c, install.id, Repo::Name(repo), user, repo).await?;
+        match (v["permission"].as_str(), v["user"]["id"].as_u64()) {
+            (Some(p), Some(_)) if p != "none" => Ok(install),
+            _ => Err(Refused::no(format!("GitHub doesn't list {login} as a collaborator on {repo}"))),
+        }
+    }
+
+    /// Whether `user` may push to `repo` on GitHub, asked of GitHub now
+    /// through `install` (the installation that covers the repo): their
+    /// role when it's write or better, as GitHub names it. `Err` is why
+    /// not, for the person, clear when GitHub said no and unsure when it
+    /// couldn't be asked. Never kept: a push asks each time.
+    pub async fn may_push(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo_id: u64,
+        user: &GithubUser,
+        repo: &str,
+    ) -> Result<String, Refused> {
+        let login = user.login.as_str();
+        let v = self.collaborator(c, install, Repo::Id(repo_id), user, repo).await?;
+        let (Some(permission), Some(_)) = (v["permission"].as_str(), v["user"]["id"].as_u64()) else {
+            return Err(Refused::no(format!("GitHub doesn't list {login} as a collaborator on {repo}")));
+        };
+        let role = v["role_name"].as_str().unwrap_or(permission);
+        match pushes(role, permission) {
+            true => Ok(role.to_owned()),
+            false => Err(Refused::no(format!("GitHub gives {login} {role} on {repo}, and a push takes write"))),
+        }
+    }
+
+    /// `user`'s standing on `repo` as GitHub says now: the answer to
+    /// `GET /repos/{repo}/collaborators/{login}/permission`, asked with a
+    /// read token of `install` for `of` (its `permission`, `role_name` and
+    /// `user.id`), or `Null` when GitHub lists no such collaborator. `Err`
+    /// is unsure when GitHub couldn't be asked (a token not minted, an
+    /// error, a garbled answer), clear when the login belongs to someone
+    /// else now.
+    async fn collaborator(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        of: Repo<'_>,
+        user: &GithubUser,
+        repo: &str,
+    ) -> Result<Value, Refused> {
+        let login = user.login.as_str();
+        let token = match self.read_token(c, install, of, Purpose::Read).await {
             Ok(t) => t,
             Err(e) => {
                 warn!(error = %e, "minting a token to check access");
@@ -952,10 +1012,7 @@ impl GithubApp {
                 "the GitHub login {login} isn't yours any more: sign in to control with GitHub again"
             )));
         }
-        match (v["permission"].as_str(), v["user"]["id"].as_u64()) {
-            (Some(p), Some(_)) if p != "none" => Ok(install),
-            _ => Err(Refused::no(format!("GitHub doesn't list {login} as a collaborator on {repo}"))),
-        }
+        Ok(v)
     }
 
     /// [`installation`](Self::installation), asked of GitHub now: a person
