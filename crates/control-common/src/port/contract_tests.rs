@@ -80,6 +80,8 @@ fn types() -> (&'static [&'static str], fn(&mut SchemaGenerator, &mut Roots)) {
         UnlinkArgs,
         AccessArgs,
         UploadArgs,
+        StandingsArgs,
+        Standing,
         GithubUser,
         LinkedAccount,
         ProductLink,

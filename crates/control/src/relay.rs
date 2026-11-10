@@ -74,6 +74,9 @@ pub struct Relay {
     came: tokio::sync::Notify,
     /// Hosted machines' boxes being woken (M182), one wake each.
     pub wakes: crate::wake::Wakes,
+    /// The launch switches (#531): a suspended account's sockets are
+    /// refused, and the operator's relay cap replaces `caps.daily_bytes`.
+    switches: Arc<crate::switches::Switches>,
 }
 
 /// How long a machine has to answer an op: a send runs `gh` and waits for
@@ -101,7 +104,8 @@ pub struct Caps {
     pub sockets: usize,
     /// Daemons dialed in.
     pub daemons: usize,
-    /// Relayed bytes a day, both ways, while billing is off.
+    /// Relayed bytes a day, both ways, while billing is off, unless the
+    /// operator set a cap (`arugula-control switches cap relay-mb`).
     pub daily_bytes: u64,
     /// Relay sockets of every kind, all accounts together (#344): below
     /// the proxy's connection limit, so a full relay leaves room for
@@ -156,12 +160,17 @@ pub struct Ticket {
     u: Arc<Use>,
     open: Arc<Open>,
     side: Side,
-    /// The byte budget to slow down past (0: none).
-    budget: u64,
+    /// Control bills (its own allowance applies, not the daily budget).
+    billing: bool,
+    /// `Caps::daily_bytes`, unless the operator's cap says otherwise.
+    daily: u64,
+    switches: Arc<crate::switches::Switches>,
 }
 
 impl Ticket {
-    /// Count bytes moved; whether the account is now past today's budget.
+    /// Count bytes moved; whether the account is now past today's budget:
+    /// the operator's cap for it as it is now (#531), else
+    /// `Caps::daily_bytes`. 0 is none, and so is billing's.
     pub fn count(&self, n: u64) -> bool {
         let mut t = self.u.today.lock().unwrap();
         let day = crate::day(now_ms());
@@ -169,7 +178,11 @@ impl Ticket {
             *t = (day, 0);
         }
         t.1 += n;
-        self.budget > 0 && t.1 > self.budget
+        if self.billing {
+            return false;
+        }
+        let budget = self.switches.now().relay_bytes(&self.account).unwrap_or(self.daily);
+        budget > 0 && t.1 > budget
     }
 
     /// Resolves when the account is deleted.
@@ -218,6 +231,11 @@ impl Relay {
         Self { caps, ..Default::default() }
     }
 
+    /// The launch switches it follows (#531), the app's.
+    pub fn with_switches(self, switches: Arc<crate::switches::Switches>) -> Self {
+        Self { switches, ..self }
+    }
+
     /// Count a socket against `account` and the relay's ceiling, or say
     /// why not (#174, #344). An account at its own limit is refused for
     /// that and takes nothing from the ceiling; sockets already open stay.
@@ -258,7 +276,9 @@ impl Relay {
         };
         let n = &mut open[side as usize];
         let all = &self.open.all;
-        let why = if cap > 0 && *n >= cap {
+        let why = if self.switches.now().suspended(account) {
+            Some(Refused::Account(crate::switches::SUSPENDED_SAY.to_owned()))
+        } else if cap > 0 && *n >= cap {
             Some(Refused::Account(format!("this account has {n} {what}, the most at once; close some first")))
         } else if self.caps.total > 0 && all.load(Ordering::Relaxed) >= self.caps.total {
             Some(Refused::Full)
@@ -294,7 +314,9 @@ impl Relay {
             u,
             open: self.open.clone(),
             side,
-            budget: if billing { 0 } else { self.caps.daily_bytes },
+            billing,
+            daily: self.caps.daily_bytes,
+            switches: self.switches.clone(),
         })
     }
 

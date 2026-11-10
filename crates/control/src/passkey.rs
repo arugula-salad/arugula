@@ -325,8 +325,10 @@ pub async fn register_start(
         None => {
             let asked = body.and_then(|b| b.name).unwrap_or_default();
             let name = crate::api::display_name(&asked).map_err(|_| bad("your name, as teammates will see it"))?;
-            // A new account each time: limited.
-            app.limits.check(crate::limit::ACCOUNTS, app.limits.client_ip(peer, &headers))?;
+            // A new account each time: not while sign-ups are paused, and
+            // limited per address (#531).
+            app.switches.check_signup()?;
+            crate::switches::count_signup(&app, app.limits.client_ip(peer, &headers))?;
             name
         }
     };
@@ -688,6 +690,8 @@ async fn register(
         // `signup` event made together, or not at all. A passkey control
         // already has stays whose it is: it signs in at `/auth/passkey/login`.
         None => {
+            // Sign-ups paused since this one started (#531).
+            app.switches.check_signup()?;
             let a = auth::new_account_id();
             let event = made.draft(&a, site, "signup").after(None);
             if app.db.new_passkey_account(&made.public, event, &name)?.is_none() {
@@ -1006,6 +1010,8 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::H
         return Err(bad("that request expired; try again"));
     }
     let (pk, count) = asserted(app, site, &a, &cd.challenge)?;
+    // A suspended account doesn't sign in (#531).
+    app.switches.check(&pk.account)?;
     app.db.passkey_used(&a.id, count, now_ms())?;
     if a.prf {
         app.db.passkey_prf(&a.id, true)?;
@@ -2365,5 +2371,35 @@ mod tests {
         // Ada is untouched by any of it: her sessions are her sign-up and
         // her sign-in above.
         assert_eq!((app.db.account(&a).unwrap().unwrap().name.as_str(), of("sessions", &a)), ("Ada", 2));
+    }
+
+    /// The launch switches (#531): a sign-up that started before sign-ups
+    /// were paused makes nothing when it finishes, and a suspended account's
+    /// passkey doesn't sign it in, until the suspension is lifted.
+    #[tokio::test]
+    async fn paused_sign_ups_and_a_suspended_account() {
+        let app = App::for_tests(ORIGIN).start();
+        let mut h = HeaderMap::new();
+        h.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        let ada = Authn::new(1);
+        let ch = app.passkeys.issue(Purpose::Register { account: None, name: "Ada".into() });
+        app.db.set_switch("signups", Some(""), now_ms()).unwrap();
+        crate::switches::refresh(&app).unwrap();
+        let e = register(&app, &h, ada.create(&ch, None)).await.unwrap_err();
+        assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some(crate::switches::SIGNUPS_PAUSED)));
+        assert!(app.db.passkey(&ada.id()).unwrap().is_none(), "nothing made");
+
+        app.db.set_switch("signups", None, now_ms()).unwrap();
+        crate::switches::refresh(&app).unwrap();
+        let ch = app.passkeys.issue(Purpose::Register { account: None, name: "Ada".into() });
+        let (a, _, _) = register(&app, &h, ada.create(&ch, None)).await.unwrap();
+        let signs_in = || login(&app, &h, ada.get(&app.passkeys.issue(Purpose::Login), UP | UV, json!({})));
+        app.db.set_account_switch(&a, "suspended", Some("jake: proxying"), now_ms()).unwrap();
+        crate::switches::refresh(&app).unwrap();
+        let e = signs_in().unwrap_err();
+        assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some(crate::switches::SUSPENDED)));
+        app.db.set_account_switch(&a, "suspended", None, now_ms()).unwrap();
+        crate::switches::refresh(&app).unwrap();
+        assert_eq!(signs_in().unwrap().1.account, a);
     }
 }
