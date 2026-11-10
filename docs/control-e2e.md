@@ -1121,8 +1121,15 @@ whose maker is on the beta's list), under the standing grant's
   heard from again. Those events have no signature.
 - **One branch, no sends.** The box pushes `arugula/<8 hex of the session's id>-<slug>` and
   nothing else, with an installation token minted for each push and never
-  written to disk (the repo's contents and workflows: aru-115, amended). The PR is a draft its asker sends, with their one-use
-  user token.
+  written to disk (the repo's contents and workflows: aru-115, amended).
+  The platform mints it only while the session's asker may push to that
+  repo on GitHub, asked of GitHub for each push (write or better, under
+  the identity the hub holds for them): a session pushes as the person who
+  asked for it, so it pushes only where they could. No identity, a lesser
+  role, an asker whose account is gone, or no answer from GitHub refuses
+  the push, with the reason for the box
+  (`crates/platform-chat/src/sessions/push.rs`). The PR is a draft its
+  asker sends, with their one-use user token.
 
 **Who starts one** (M256, `crates/platform-chat/src/chat/sessions.rs`): an owner
 or editor of the project, on the hosted beta's list, by writing `@arugula`
