@@ -2544,7 +2544,7 @@ impl ToolCall<'_, '_> {
         let failed = std::sync::Mutex::new(None::<String>);
         let poll = async {
             loop {
-                let reads = crate::forges::pr_verdicts(&self.app, &refs).await;
+                let reads = crate::forges::pr_verdicts(self.app, &refs).await;
                 let settled = started.elapsed() >= settle;
                 let mut now = Vec::new();
                 for (pr, read) in refs.iter().zip(reads) {

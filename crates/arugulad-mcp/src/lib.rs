@@ -26,7 +26,8 @@ use arugula_mux::{acl, block, history, keys, mux, osc, pane, store};
 #[cfg(unix)]
 use arugulad_base::upload;
 use arugulad_base::{
-    agent, api, features, forge_wait, forges, fs, lab_flags, lab_hooks, mcp, ops, review, server, task, telemetry, work, worktree,
+    agent, api, features, forge_wait, forges, fs, lab_flags, lab_hooks, mcp, ops, review, server, task, telemetry,
+    work, worktree,
 };
 
 use std::sync::Arc;
