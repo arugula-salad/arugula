@@ -263,7 +263,10 @@ pub struct AttachArgs {
     /// The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
     pub item: String,
     /// What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an
-    /// https:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).
+    /// https:// link, or an agent block on this machine (block:MACHINE/PANE:
+    /// MACHINE is this machine's id in control, or `local`; PANE is the pane's
+    /// number as %N or N; `block:%N` and a bare `%N` work too). A block starts
+    /// attached to its row with start_agent's issue: "#N".
     /// A string, or a list of them.
     #[serde(deserialize_with = "many")]
     #[schemars(with = "StringOrList")]
@@ -903,17 +906,43 @@ enum Target {
     Item(String),
 }
 
-fn target(to: &str) -> Result<Target, String> {
-    let to = to.trim();
-    if let Some(rest) = to.strip_prefix("block:") {
-        let (machine, pane) = rest
-            .split_once('/')
-            .filter(|(m, p)| !m.is_empty() && !p.is_empty())
-            .ok_or_else(|| format!("{to:?}: an agent block is block:MACHINE/PANE"))?;
-        return Ok(Target::Done(
-            Pointer::Block { machine: machine.into(), pane: pane.trim().trim_start_matches('%').into() },
-            AttachRole::Work,
+/// This machine's id in control, which `block:MACHINE/PANE` names.
+fn own_machine(c: &Call<'_>) -> Option<String> {
+    c.app().control.enrolled().map(|e| e.saved.cert.device.clone())
+}
+
+/// A block on this machine, `own` being its id: `block:<id>/N`, or the
+/// shorthands `block:local/N`, `block:%N` and a bare `%N`. A block on
+/// another machine is refused, with the string that works.
+fn block_target(to: &str, own: Option<&str>) -> Result<Target, String> {
+    let rest = to.strip_prefix("block:").unwrap_or(to);
+    let (machine, pane) = match rest.split_once('/') {
+        Some((m, p)) => (Some(m.trim()), p),
+        None => (None, rest),
+    };
+    let pane = pane.trim().trim_start_matches('%');
+    if machine.is_some_and(str::is_empty) || pane.is_empty() || !pane.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!(
+            "{to:?}: an agent block is block:MACHINE/PANE, MACHINE being this machine's id (or local) and PANE the pane's number: block:local/N, block:%N or %N"
         ));
+    }
+    let own = own.ok_or("this machine hasn't joined Arugula control, where boards live: ask your person to join it")?;
+    let machine = match machine {
+        None | Some("local") => own,
+        Some(m) => m,
+    };
+    if machine != own {
+        return Err(format!(
+            "{to:?}: an agent attaches only blocks on its own machine. This machine is {own}: use block:{own}/{pane} (or block:local/{pane}). To attach a block to its row when it starts, use start_agent with issue: \"#N\"; that is the intended path"
+        ));
+    }
+    Ok(Target::Done(Pointer::Block { machine: machine.into(), pane: pane.into() }, AttachRole::Work))
+}
+
+fn target(to: &str, own: Option<&str>) -> Result<Target, String> {
+    let to = to.trim();
+    if to.starts_with("block:") || (to.starts_with('%') && to.len() > 1) {
+        return block_target(to, own);
     }
     if to.starts_with("run_") {
         return Ok(Target::Done(Pointer::Run { id: to.into() }, AttachRole::Work));
@@ -1099,7 +1128,8 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
     }
     let mut view = read_view(c, &a.board).await?;
     let row = find_row(&view, &a.item)?.clone();
-    let targets: Vec<Result<Target, String>> = a.to.iter().map(|t| target(t)).collect();
+    let own = own_machine(c);
+    let targets: Vec<Result<Target, String>> = a.to.iter().map(|t| target(t, own.as_deref())).collect();
     let to_resolve: Vec<String> = targets
         .iter()
         .filter_map(|t| match t {
@@ -2046,13 +2076,30 @@ mod tests {
     /// resolves.
     #[test]
     fn an_attachment_is_named_by_its_kind() {
-        assert!(matches!(target("block:m1/7"), Ok(Target::Done(Pointer::Block { .. }, AttachRole::Work))));
-        assert!(matches!(target("run_ab12"), Ok(Target::Done(Pointer::Run { .. }, AttachRole::Work))));
-        assert!(matches!(
-            target("https://ci.example.com/1"),
-            Ok(Target::Done(Pointer::Link { .. }, AttachRole::Proof))
-        ));
-        assert!(matches!(target("#12"), Ok(Target::Item(_))));
-        assert!(target("block:m1").is_err());
+        let t = |to| target(to, Some("m1"));
+        assert!(matches!(t("block:m1/7"), Ok(Target::Done(Pointer::Block { .. }, AttachRole::Work))));
+        assert!(matches!(t("run_ab12"), Ok(Target::Done(Pointer::Run { .. }, AttachRole::Work))));
+        assert!(matches!(t("https://ci.example.com/1"), Ok(Target::Done(Pointer::Link { .. }, AttachRole::Proof))));
+        assert!(matches!(t("#12"), Ok(Target::Item(_))));
+        assert!(t("block:m1").is_err());
+    }
+
+    /// `local`, `block:%N` and `%N` are this machine's block; another
+    /// machine's is refused with the string that works.
+    #[test]
+    fn block_shorthand_is_this_machines() {
+        for to in ["block:local/278", "block:%278", "%278", "block:m1/%278", "block:278"] {
+            match target(to, Some("m1")) {
+                Ok(Target::Done(Pointer::Block { machine, pane }, _)) => {
+                    assert_eq!((machine.as_str(), pane.as_str()), ("m1", "278"), "{to}")
+                }
+                _ => panic!("{to} should be a block"),
+            }
+        }
+        let Err(why) = target("block:other/278", Some("m1")) else { panic!("refused") };
+        assert!(why.contains("block:m1/278") && why.contains("start_agent") && why.contains("issue"), "{why}");
+        assert!(target("block:local/278", None).is_err());
+        assert!(target("block:local/", Some("m1")).is_err());
+        assert!(target("%x", Some("m1")).is_err());
     }
 }

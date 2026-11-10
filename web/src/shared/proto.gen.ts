@@ -4264,7 +4264,12 @@ app?: string | null,
  * The issue an agent block was started on, and the boards it is on
  * (#372): the chip on its sidebar row and its swarm card.
  */
-on_issue?: OnIssue | null, };
+on_issue?: OnIssue | null, 
+/**
+ * The git worktree an agent block owns, absolute (start_agent with a
+ * worktree, or an agent on an issue): where its work is.
+ */
+worktree?: string | null, };
 
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 

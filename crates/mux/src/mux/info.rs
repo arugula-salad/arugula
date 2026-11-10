@@ -241,6 +241,7 @@ impl Daemon {
             started_by: meta.started_by.clone(),
             app: meta.app.clone(),
             on_issue: None,
+            worktree: None,
             running,
             policy: meta.policy,
             current: status.current.map(info_of),
@@ -327,6 +328,7 @@ impl Daemon {
             app: None,
             editor: s.editor,
             on_issue: s.on_issue,
+            worktree: s.worktree,
             diff: None,
             claude_ide: false,
         }

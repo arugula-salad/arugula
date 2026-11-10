@@ -398,6 +398,35 @@ impl Transcript {
         out
     }
 
+    /// What was said, one message each, as text: prompts, the assistant's
+    /// text and a line for each tool call (its kind, what it ran and how it
+    /// ended), with no tool output or thoughts.
+    pub fn messages(&self) -> Vec<String> {
+        const LONG: usize = 4_000;
+        fn cut(s: &str, max: usize) -> String {
+            let s = s.trim();
+            if s.chars().count() <= max {
+                return s.to_owned();
+            }
+            let head: String = s.chars().take(max).collect();
+            format!("{head}… ({} more characters)", s.chars().count() - max)
+        }
+        let one = |s: &str| cut(&s.split_whitespace().collect::<Vec<_>>().join(" "), 160);
+        self.entries
+            .iter()
+            .filter_map(|e| match e {
+                Entry::User { text, .. } => Some(format!("You: {}", cut(text, LONG))),
+                Entry::Agent { text, .. } if !text.trim().is_empty() => Some(cut(text, LONG)),
+                Entry::Agent { .. } | Entry::Thought { .. } => None,
+                Entry::Tool(t) => {
+                    let exit = t.exit.map(|e| format!(", exit {e}")).unwrap_or_default();
+                    Some(format!("[{}] {} ({}{exit})", tool_kind(t), one(&t.label()), t.status))
+                }
+                Entry::Note { text, .. } => Some(format!("({})", one(text))),
+            })
+            .collect()
+    }
+
     /// For the state clients get: the last `max` entries, with long tool
     /// output cut to its end.
     pub fn for_state(&self, max: usize) -> (usize, Vec<Entry>) {
@@ -510,6 +539,26 @@ fn merge_tool(t: &mut Tool, u: &Value) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn messages_leave_out_tool_payloads() {
+        let mut t = Transcript::default();
+        t.user("run ls", vec![], 1);
+        t.apply(&json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"hmm"}}), 2);
+        t.apply(
+            &json!({"sessionUpdate":"tool_call","toolCallId":"t1","title":"ls","kind":"execute","status":"pending"}),
+            3,
+        );
+        let big = "x".repeat(2_000_000);
+        t.apply(
+            &json!({"sessionUpdate":"tool_call_update","toolCallId":"t1","_meta":{"terminal_output":{"data":big}}}),
+            4,
+        );
+        t.apply(&json!({"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed","_meta":{"terminal_exit":{"exit_code":0}}}), 5);
+        t.apply(&json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Done."}}), 6);
+        let m = t.messages();
+        assert_eq!(m, vec!["You: run ls", "[Ran] ls (completed, exit 0)", "Done."]);
+    }
 
     #[test]
     fn chunks_tools_and_markdown() {

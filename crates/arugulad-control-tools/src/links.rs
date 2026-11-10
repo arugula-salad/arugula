@@ -24,7 +24,7 @@ use crate::mcp::tools::{Call, Out, done};
 
 pub(crate) const TOOL: &str = "link";
 
-pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
+pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LinkArgs {
@@ -43,12 +43,21 @@ pub struct LinkArgs {
 pub struct LinkArg {
     /// The first item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
     pub from: String,
-    /// The second item, written the same way. `from` is `kind` it.
-    pub to: String,
+    /// The second item, written the same way, or a list of them (one link
+    /// each). `from` is `kind` it.
+    pub to: LinkTo,
     /// before (from comes first), blocks (from must be closed before to can
     /// start), relates, duplicate_of or discovered_from. Default before.
     #[serde(default)]
     pub kind: LinkKind,
+}
+
+/// One item, or several to link `from` to.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum LinkTo {
+    One(String),
+    Many(Vec<String>),
 }
 
 #[derive(Deserialize, JsonSchema, Clone, Copy, Default)]
@@ -74,27 +83,52 @@ impl From<LinkKind> for RelationKind {
     }
 }
 
-fn ends(l: LinkArg) -> LinkEnds {
-    LinkEnds { from: l.from, to: l.to, kind: l.kind.into() }
+/// One pair for each `to`.
+fn pairs(links: Vec<LinkArg>) -> Vec<Pair> {
+    let mut out = vec![];
+    for l in links {
+        let tos = match l.to {
+            LinkTo::One(t) => vec![t],
+            LinkTo::Many(ts) => ts,
+        };
+        out.extend(tos.into_iter().map(|to| Pair { from: l.from.clone(), to, kind: l.kind.into() }));
+    }
+    out
+}
+
+struct Pair {
+    from: String,
+    to: String,
+    kind: RelationKind,
+}
+
+impl Pair {
+    fn words(&self) -> String {
+        format!("{} {} {}", self.from.trim(), self.kind.as_str().replace('_', " "), self.to.trim())
+    }
+
+    fn ends(self) -> LinkEnds {
+        LinkEnds { from: self.from, to: self.to, kind: self.kind }
+    }
 }
 
 /// `link`.
 pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
     c.owners_own(TOOL).await?;
-    let n = a.add.len() + a.remove.len();
+    let (add, remove) = (pairs(a.add), pairs(a.remove));
+    let n = add.len() + remove.len();
     if n == 0 {
-        return Err("link needs add or remove".into());
+        return Err("link needs add or remove, each with a `to` (one item, or a list of them)".into());
     }
     if n > LINKS_MAX {
         return Err(format!("at most {LINKS_MAX} links in one call; you gave {n}"));
     }
     let chosen = c.chosen_project(a.project.as_deref()).await?;
-    let words = |l: &LinkArg| {
-        format!("{} {} {}", l.from.trim(), RelationKind::from(l.kind).as_str().replace('_', " "), l.to.trim())
+    let said: Vec<String> = add.iter().chain(&remove).map(Pair::words).collect();
+    let batch = LinkBatch {
+        add: add.into_iter().map(Pair::ends).collect(),
+        remove: remove.into_iter().map(Pair::ends).collect(),
     };
-    let said: Vec<String> = a.add.iter().chain(&a.remove).map(words).collect();
-    let batch =
-        LinkBatch { add: a.add.into_iter().map(ends).collect(), remove: a.remove.into_iter().map(ends).collect() };
     let body = serde_json::to_value(batch).map_err(|e| e.to_string())?;
     let v = c.issues_call(Method::POST, &agent_project_relations_batch(&chosen.id), Some(body)).await?;
     let got: LinksDone =
@@ -150,5 +184,41 @@ mod tests {
             v["summary"],
             "added: #1 before #2\nrefused: #2 before #1 (that would make a cycle)\nnot there: #3 blocks #4\n3 link(s): 1 added, 1 not there, 1 refused."
         );
+    }
+
+    /// A batch of three with a list `to`: each `to` is its own pair, in order,
+    /// and the one refused is said in its line while the others land.
+    #[test]
+    fn a_list_to_is_a_pair_each_and_one_refused_leaves_the_rest() {
+        let a: LinkArgs = serde_json::from_value(serde_json::json!({
+            "add": [
+                { "from": "#1", "to": ["#2", "#nope"], "kind": "relates" },
+                { "from": "#3", "to": "#4" }
+            ]
+        }))
+        .unwrap();
+        let add = pairs(a.add);
+        let said: Vec<String> = add.iter().map(Pair::words).collect();
+        assert_eq!(said, ["#1 relates #2", "#1 relates #nope", "#3 before #4"]);
+        let r = |outcome, why: Option<&str>| LinkResult { outcome, why: why.map(Into::into) };
+        let got = LinksDone {
+            add: vec![
+                r(LinkOutcome::Added, None),
+                r(LinkOutcome::Refused, Some("#nope: no such item")),
+                r(LinkOutcome::Added, None),
+            ],
+            remove: vec![],
+        };
+        assert_eq!(
+            answer(&said, &got)["summary"],
+            "added: #1 relates #2\nrefused: #1 relates #nope (#nope: no such item)\nadded: #3 before #4\n3 link(s): 2 added, 1 refused."
+        );
+    }
+
+    /// The schema says `to` is a string or a list.
+    #[test]
+    fn the_schema_offers_to_as_one_or_a_list() {
+        let s = serde_json::to_string(&schemars::schema_for!(LinkArgs)).unwrap();
+        assert!(s.contains("\"LinkTo\"") && s.contains("\"array\""), "{s}");
     }
 }

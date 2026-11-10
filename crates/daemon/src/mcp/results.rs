@@ -49,6 +49,9 @@ pub struct PaneEntry {
     pub current: Option<String>,
     pub last: Option<LastCommand>,
     pub started_by: Option<String>,
+    /// The git worktree an agent block owns, absolute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
     /// Set on the caller's own pane only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub you: Option<bool>,
@@ -284,6 +287,7 @@ mod tests {
             current: None,
             last: None,
             started_by: None,
+            worktree: None,
             you: None,
         }
     }

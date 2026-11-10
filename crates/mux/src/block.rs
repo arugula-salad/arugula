@@ -53,6 +53,12 @@ pub trait Block: Send + Sync {
     }
     /// A plain-text rendering, for `capture --text`, history and search.
     fn text(&self) -> String;
+    /// What was said, one message each (a prompt, the assistant's text, a
+    /// tool call's name and one line), with no payloads: `read_output`'s
+    /// `messages` format. None for a block that isn't a conversation.
+    fn messages(&self) -> Option<Vec<String>> {
+        None
+    }
     /// One of the type's methods.
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>>;
     /// ...on behalf of someone (M29: their name, for its transcript and
@@ -124,6 +130,8 @@ pub struct Summary {
     pub editor: Option<arugula_proto::EditorInfo>,
     /// The issue an agent block was started on, and its boards (#372).
     pub on_issue: Option<arugula_proto::OnIssue>,
+    /// The git worktree it owns, absolute.
+    pub worktree: Option<String>,
     /// Its program ended: an agent block whose agent stopped. It isn't
     /// running then (UI audit #154).
     pub stopped: bool,
