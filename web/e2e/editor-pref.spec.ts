@@ -332,7 +332,7 @@ test("+ Pane › Editor: Edit in nvim sets the Editor preference, and unticking 
   const drawer = page.locator("[data-add-pane-drawer]");
   await drawer.locator('[data-kind="editor"]').click();
   const box = drawer.locator("[data-edit-in-nvim]");
-  await expect(drawer.getByText("Opens files in nvim, in a pane. Nothing to install.")).toBeVisible();
+  await expect(drawer.getByText("Opens files in nvim, in a pane.", { exact: true })).toBeVisible();
   await expect(box).not.toBeChecked();
   await box.check();
   await expect(drawer.locator("[data-add-pane-destination]")).toContainText("nvim on");

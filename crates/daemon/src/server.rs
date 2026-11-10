@@ -398,10 +398,15 @@ fn page_key_from_query(req: &mut Request) {
     }
 }
 
-/// The app's own files: the page and what Vite built for it.
+/// The app's own files: the page and what Vite built for it. And
+/// `/control.json`, which the page asks for as it loads, without its key,
+/// to learn whether control serves it: a daemon answers 404 (`asset`),
+/// not 401 and a rejected request in its log.
 fn shell_file(path: &str) -> bool {
     let file = path.trim_start_matches('/');
-    file.is_empty() || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
+    file.is_empty()
+        || path == arugula_control_wire::CONTROL_JSON
+        || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
 }
 
 /// Whose request this can be.
@@ -735,7 +740,7 @@ mod tests {
         let p = signin_page("ilp_abc", "/</script><script>alert(1)//");
         assert!(!p.contains("</script><script>alert"), "{p}");
         assert!(!shell_file("/api/panes") && !shell_file("/ws") && !shell_file("/auth"));
-        assert!(shell_file("/"));
+        assert!(shell_file("/") && shell_file("/control.json"));
     }
 
     fn state(block: u32, n: u64) -> ToClient {
