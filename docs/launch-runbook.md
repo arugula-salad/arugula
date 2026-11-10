@@ -117,6 +117,9 @@ for M in $(fly machine list -a arugula-platform --json | jq -r '.[] | select(.co
 done
 ```
 
+Rehearsed on a staging copy (2026-11-10): the clone passed its check 6 s
+after the command, and a resize took 4 s.
+
 The clone isn't in the release's plan (`ops/src/fly/platform/platform.fly.ts`
 declares two). Either add it there, or `fly machine destroy` it once the
 peak is over. A resize sticks the same way as the hub's.
@@ -132,24 +135,51 @@ dashboard's connections and CPU.
 
 **Fastest: put the previous image back.** Each release records the image it
 replaced on the machine (`chant-release-previous-digest`), so going back
-needs no build. The hub:
+needs no build. `fly machine update --image` won't take a bare digest
+(`invalid image identifier`), so this goes through the Machines API, as the
+release does, keeping the rest of each Machine's config:
+
+```
+image_back() {   # APP MACHINE DIGEST
+  local t; t=$(fly auth token 2>/dev/null)
+  curl -s -H "Authorization: Bearer $t" "https://api.machines.dev/v1/apps/$1/machines/$2" |
+    jq --arg img "registry.fly.io/$1@$3" '{config: (.config | .image = $img)}' |
+    curl -s -X POST -H "Authorization: Bearer $t" -H 'Content-Type: application/json' \
+      "https://api.machines.dev/v1/apps/$1/machines/$2" -d @- | jq -c '{state, image: .config.image, error}'
+  curl -s -H "Authorization: Bearer $t" "https://api.machines.dev/v1/apps/$1/machines/$2/wait?state=started&timeout=60" | jq -c .
+}
+```
+
+The hub:
 
 ```
 M=$(fly machine list -a illogical-control --json | jq -r '.[] | select(.config.metadata.fly_process_group == "app") | .id')
 PREV=$(fly machine list -a illogical-control --json | jq -r '.[] | select(.id == "'"$M"'") | .config.metadata["chant-release-previous-digest"]')
-fly machine update "$M" -a illogical-control --image "registry.fly.io/illogical-control@$PREV" -y
+image_back illogical-control "$M" "$PREV"
+fly status -a illogical-control                     # 1/1 checks passing
 curl -s https://control.arugula.io/control.json | jq .version
 ```
 
-The platform's two machines, one at a time. Take the digest from the machine
-that carries it: a release records it on the one it verifies.
+The platform's two machines, one at a time, each passing its check before
+the next. Take the digest from the app machine that carries it (a release
+records it on the one it verifies; the `platform-dump` machine's is the
+dump image's, not this one).
 
 ```
-PREV=$(fly machine list -a arugula-platform --json | jq -r '[.[] | .config.metadata["chant-release-previous-digest"] // empty][0]')
+PREV=$(fly machine list -a arugula-platform --json | jq -r '[.[] | select(.config.metadata.fly_process_group == "app") | .config.metadata["chant-release-previous-digest"] // empty][0]')
 for M in $(fly machine list -a arugula-platform --json | jq -r '.[] | select(.config.metadata.fly_process_group == "app") | .id'); do
-  fly machine update "$M" -a arugula-platform --image "registry.fly.io/arugula-platform@$PREV" -y
+  image_back arugula-platform "$M" "$PREV"
+  until fly machine list -a arugula-platform --json | jq -e '.[] | select(.id == "'"$M"'") | all(.checks[]; .status == "passing")' >/dev/null; do sleep 2; done
 done
 ```
+
+Rehearsed on a staging copy of the platform (2026-11-10): a newer image, then
+`image_back` to the one before by digest, passing its check within 5 s.
+
+**By tag** (any older release): `fly machine update "$M" -a <app> --image
+registry.fly.io/<app>:<tag> -y` does take a tag. `fly releases -a
+illogical-control --image` lists `fly deploy`'s tags (`vX.Y.Z`); a chant
+release pushes `server-<run>`.
 
 Releases deploy the platform first and the hub second. Roll back in the
 reverse order, the hub first, unless only one of them is broken. Any older
@@ -231,6 +261,15 @@ platform"). Then, first choice, Fly's backups into a new cluster:
 ```
 fly mpg backup list 1zqyxr76dp1owp8m
 fly mpg restore 1zqyxr76dp1owp8m --backup-id <id> --name arugula-platform-db-restored    # or --pitr-time
+```
+
+A restore takes a few minutes to make the cluster (rehearsed on the staging
+copy, 2026-11-10: 6 minutes to `ready`, every table and migration there).
+Check it before pointing anything at it:
+
+```
+echo "select count(*) from information_schema.tables where table_schema='public'; select max(version) from platform_migrations;" |
+  fly mpg connect <new cluster id> -d fly-db
 ```
 
 Put the new cluster's URL in `ARUGULA_PLATFORM_DATABASE_URL`
