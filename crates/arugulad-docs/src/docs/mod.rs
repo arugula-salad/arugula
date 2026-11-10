@@ -68,7 +68,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use arugula_proto::{BlockType, fs::READ_MAX};
+use arugula_proto::{BlockType, api::DocLayout, fs::READ_MAX};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -189,6 +189,8 @@ struct State {
     shared: Option<SharedAt>,
     /// The Doc has a copy on the platform (the page is `doc_shares`').
     platform: bool,
+    /// How it is laid out, as its `meta.json` has it (#827).
+    layout: DocLayout,
     /// When a section was last written (ms), to tell a shared copy is older
     /// (#509); on a restart, the newest section file's time.
     filled: u64,
@@ -260,6 +262,7 @@ impl Doc {
                 Err(e) => state.error = Some(e),
             }
         }
+        state.layout = library::read_meta(&dir).map_or(DocLayout::Doc, |m| m.layout);
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
@@ -283,6 +286,24 @@ impl Doc {
     async fn touched(&self, title: Option<String>) {
         let dir = self.dir.clone();
         let _ = crate::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
+    }
+
+    /// The Doc's layout is `layout` now: kept in its `meta.json`, and the
+    /// block, its share's next update and its copy follow. Nothing in MCP
+    /// sets it yet.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn set_layout(&self, layout: DocLayout) -> bool {
+        let _io = self.io.lock().await;
+        let dir = self.dir.clone();
+        let kept = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await.unwrap_or(false);
+        if kept {
+            let mut st = self.state.lock().unwrap();
+            st.layout = layout;
+            st.rev += 1;
+            drop(st);
+            (self.changed)();
+        }
+        kept
     }
 
     /// `doc_outline`: the sections, once.
@@ -465,7 +486,7 @@ impl Doc {
     /// lock so a fill can't land halfway.
     async fn snapshot(&self) -> Result<(String, Vec<u8>), String> {
         let _io = self.io.lock().await;
-        let (title, entries, kept) = {
+        let (title, entries, kept, layout) = {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
                 return Err(e.clone());
@@ -473,7 +494,7 @@ impl Doc {
             if st.entries.is_empty() {
                 return Err("this Doc has no outline yet: there is nothing to share".into());
             }
-            (st.title.clone(), st.entries.clone(), st.assets.clone())
+            (st.title.clone(), st.entries.clone(), st.assets.clone(), st.layout)
         };
         let mut blobs = Vec::new();
         let mut assets = Vec::new();
@@ -490,6 +511,7 @@ impl Doc {
         }
         let manifest = link::Manifest {
             title: title.clone(),
+            layout,
             entries: entries
                 .into_iter()
                 .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
@@ -610,6 +632,9 @@ impl Doc {
         });
         if st.platform {
             v["platform"] = json!(true);
+        }
+        if !st.layout.is_doc() {
+            v["layout"] = json!(st.layout);
         }
         if let Some(e) = &st.error {
             v["error"] = json!(e);
@@ -1903,5 +1928,23 @@ mod share_tests {
         // The block is gone; the key isn't (the account list still copies it).
         drop(again);
         assert_eq!(link::url_of(&s.state_dir, ID).unwrap().as_deref(), Some(url.as_str()));
+    }
+
+    #[tokio::test]
+    async fn the_blocks_state_carries_its_layout_and_a_restart_keeps_it() {
+        let state = temp("layout");
+        let meta = library::make(&state, "Plan", "me").unwrap();
+        let folder = library::dir(&state, &meta.id).unwrap();
+        let d = Doc::new(folder.clone(), "Plan".into(), false, Arc::new(|| {}));
+        assert!(d.state().get("layout").is_none(), "a plain Doc's state is what it was");
+        let before = d.state()["rev"].as_u64().unwrap();
+        assert!(d.set_layout(DocLayout::Tabs).await);
+        assert_eq!(d.state()["layout"], "tabs");
+        assert!(d.state()["rev"].as_u64().unwrap() > before, "clients are told");
+        assert!(!d.set_layout(DocLayout::Tabs).await);
+        drop(d);
+        let again = Doc::new(folder, "Plan".into(), true, Arc::new(|| {}));
+        assert_eq!(again.state()["layout"], "tabs");
+        std::fs::remove_dir_all(state).unwrap();
     }
 }

@@ -51,6 +51,8 @@ export interface DocState {
   /** The machine has put a copy of it on the platform (Arugula #708); the
    * page is the owner's to ask for (`doc_shares`). */
   platform?: boolean;
+  /** How the Doc is laid out; absent is `doc` (Arugula #827). */
+  layout?: "doc" | "tabs" | "prototype";
   error?: string;
 }
 
