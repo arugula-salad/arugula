@@ -5176,6 +5176,18 @@ signed: boolean,
 text: string, };
 
 /**
+ * One row of `GET /api/links`: a read-only link to a session that still
+ * works. Its key stays out: the private half never reached the machine, so
+ * a link can't be read back from here, only ended.
+ */
+export type SessionLink = { 
+/**
+ * What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+ * principal.
+ */
+id: string, session: number, made_ms: number, expires_ms: number, };
+
+/**
  * [`SESSION_MOVE`]'s body: the workspace it goes to.
  */
 export type SessionMove = { workspace: string, };
@@ -6071,6 +6083,8 @@ export const OPS = {
   "ide.set": { method: "PUT", path: "/api/ide" },
   "invite.send": { method: "POST", path: "/api/invite" },
   "link.mint": { method: "POST", path: "/api/links" },
+  "link.revoke": { method: "DELETE", path: "/api/links/{id}" },
+  "links.list": { method: "GET", path: "/api/links" },
   "machine.reset": { method: "POST", path: "/api/machines/{id}/reset" },
   "machines.list": { method: "GET", path: "/api/machines" },
   "mcp_token.mint": { method: "POST", path: "/api/mcp/tokens" },

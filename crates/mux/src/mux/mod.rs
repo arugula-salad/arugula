@@ -1010,10 +1010,16 @@ impl Daemon {
     }
 
     pub(super) fn sessions_gone(&mut self, before: Vec<SessionId>) {
+        let mut shared = false;
         for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
             let readers = self.readers_at_close(gone, false);
             self.closed.session(gone, now_ms(), readers);
-            self.config.acl.forget_session(gone);
+            shared |= self.config.acl.forget_session(gone);
+        }
+        // Whoever it was shared with, a link's viewer say, and has nothing
+        // else here is hung up on now, as on a revoke.
+        if shared {
+            self.acl_changed();
         }
     }
 
@@ -1554,6 +1560,13 @@ impl Daemon {
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Connect { sub } => {
+                // Its handshake was a moment ago: if access went since, that
+                // change's `AclChanged` found no client here to close.
+                if !self.config.acl.knows(&sub.principal) {
+                    info!(client = sub.client, who = sub.principal.id(), "no access by the time it connected");
+                    clients::hang_up(&sub);
+                    return;
+                }
                 let state = self.state_for(&sub.principal);
                 let client = sub.client;
                 self.clients.insert(client, sub.clone());

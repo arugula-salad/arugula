@@ -727,6 +727,8 @@ mod tests {
             (AclGet::path(&()), "/api/acl"),
             (AclSet::path(&()), "/api/acl"),
             (LinkMint::path(&()), "/api/links"),
+            (LinksList::path(&()), "/api/links"),
+            (LinkRevoke::path(&enc("0123")), "/api/links/0123"),
             (InviteSend::path(&()), "/api/invite"),
             (TeamPinsGet::path(&()), "/api/team-pins"),
             (TeamPinsSet::path(&()), "/api/team-pins"),

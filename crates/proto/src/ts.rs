@@ -11,8 +11,8 @@ use crate::{
     ClientMsg, ServerMsg,
     api::{
         ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
-        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
-        ShareRequest, TeamPins, TeamPinsRequest,
+        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse,
+        SessionLink, Share, ShareRequest, TeamPins, TeamPinsRequest,
     },
     flags::{FlagInfo, FlagSetRequest},
     forge::ForgeState,
@@ -98,6 +98,7 @@ fn generate() -> String {
     c.visit::<NotifyPref>();
     c.visit::<ShareRequest>();
     c.visit::<Share>();
+    c.visit::<SessionLink>();
     c.visit::<GuestInviteRequest>();
     c.visit::<GuestInvite>();
     c.visit::<ForgeState>();
