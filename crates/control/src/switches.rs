@@ -44,8 +44,8 @@ use std::{
 };
 
 use anyhow::Context as _;
-use arugula_control_common::{ApiError, refusal};
 use arugula_control_common::port::Standing;
+use arugula_control_common::{ApiError, refusal};
 use axum::{http::StatusCode, response::Response};
 use clap::Parser;
 use rusqlite::{Connection, OptionalExtension as _};

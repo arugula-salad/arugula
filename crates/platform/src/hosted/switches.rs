@@ -32,8 +32,8 @@ use std::{
     time::Duration,
 };
 
-use arugula_control_common::{ApiError, refusal};
 use arugula_control_common::port::Standing;
+use arugula_control_common::{ApiError, refusal};
 use axum::http::StatusCode;
 use tracing::{info, warn};
 
