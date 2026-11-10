@@ -105,7 +105,9 @@ a box at the platform's compute provider (E2B, `crates/platform/src/compute`),
 in a project. It enrolls into the project under the project's delegation
 (M178) and shows in its machines. A project's members list and open its
 workspaces; its owners and editors make, rebuild and delete them, and
-making a box also needs the account on `ARUGULA_HOSTED_ACCOUNTS`. The
+making a box also needs the account on `ARUGULA_HOSTED_ACCOUNTS` or let in
+from the waitlist, under its caps on live workspaces and box-hours a month
+(the launch switches, #531: docs/control-ops.md). The
 platform's worker makes each box from the current release's template of
 the workspace's size (below; `ARUGULA_HOSTED_TEMPLATE` names another, for
 loam and testnet), records its one-time

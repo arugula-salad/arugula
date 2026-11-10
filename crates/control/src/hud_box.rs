@@ -275,7 +275,7 @@ pub async fn posts(
 }
 
 /// A page of the hub's own: no script, nothing may frame it.
-fn page(status: StatusCode, title: &str, body: &str) -> Response {
+pub(crate) fn page(status: StatusCode, title: &str, body: &str) -> Response {
     let html = format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>

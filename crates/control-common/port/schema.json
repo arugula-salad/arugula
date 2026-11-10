@@ -2749,6 +2749,66 @@
       ],
       "type": "string"
     },
+    "Standing": {
+      "description": "What an account may do with hosted boxes now, by the launch switches\nthe operator sets on the hub (#531, `arugula-control switches`). The\nplatform checks it before it makes or wakes a box, and stops the boxes\nof a suspended account.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "admitted": {
+          "description": "Let in from the waitlist by the operator.",
+          "type": "boolean"
+        },
+        "box_hours": {
+          "description": "Hours its cloud workspaces' boxes may run each UTC month.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "boxes": {
+          "description": "Live cloud workspaces it may have made at once.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hosted": {
+          "description": "New boxes, for everyone: `open` (any account), `waitlist` (admitted\naccounts only) or `off` (none; those made keep going).",
+          "type": "string"
+        },
+        "suspended": {
+          "description": "Suspended for abuse: refused everything, its boxes stop.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account",
+        "suspended",
+        "hosted",
+        "admitted",
+        "boxes",
+        "box_hours"
+      ],
+      "type": "object"
+    },
+    "StandingsArgs": {
+      "properties": {
+        "accounts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "waiting": {
+          "default": false,
+          "description": "The one account asked for is turned away from a new box for want\nof an admission: the hub puts it on the waitlist.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accounts"
+      ],
+      "type": "object"
+    },
     "Team": {
       "description": "A team, as its latest signed roster says.",
       "properties": {

@@ -85,9 +85,11 @@ pub fn ran_to_cap(started: u64, paused_at: u64, cap: Duration) -> bool {
 }
 
 /// When each busy box was last held, on this machine. A new leader starts
-/// with none, so it holds every busy box on its first tick.
+/// with none, so it holds every busy box on its first tick. And the
+/// workspaces whose boxes the launch switches stopped (#531,
+/// [`super::switches::sweep`]): they're never held or woken.
 #[derive(Debug, Default)]
-pub struct Holds(HashMap<String, u64>);
+pub struct Holds(HashMap<String, u64>, pub HashSet<String>);
 
 impl Holds {
     /// Which of `boxes` to hold at `now`: each whose machine is in `busy`
@@ -119,6 +121,7 @@ pub async fn tick_at(app: &Platform, holds: &mut Holds, now: u64) -> Result<usiz
         holds.0.clear();
         return Ok(0);
     }
+    let boxes: Vec<Running> = boxes.into_iter().filter(|b| !holds.1.contains(&b.workspace)).collect();
     let machines: Vec<String> = boxes.iter().map(|b| b.machine.clone()).collect();
     let busy: HashSet<String> = match app.hub.activity(&machines).await {
         Ok(said) => said.into_iter().filter(|a| a.busy).map(|a| a.machine).collect(),
@@ -185,6 +188,7 @@ pub fn start(app: Arc<Platform>) {
     tokio::spawn(async move {
         let mut holds = Holds::default();
         let mut was_leader = false;
+        let mut swept = 0;
         loop {
             tokio::time::sleep(TICK).await;
             if app.is_paused() || app.is_stopping() || !app.is_leader() {
@@ -197,7 +201,16 @@ pub fn start(app: Arc<Platform>) {
                 was_leader = true;
             }
             app.busy.fetch_add(1, SeqCst);
-            if let Err(error) = tick_at(&app, &mut holds, arugula_e2e::now_ms()).await {
+            let now = arugula_e2e::now_ms();
+            // The launch switches (#531), every so often.
+            if now >= swept + super::switches::SWEEP.as_millis() as u64 {
+                swept = now;
+                match super::switches::sweep(&app, now).await {
+                    Ok(stopped) => holds.1 = stopped,
+                    Err(error) => warn!(%error, "checking hosted boxes against the launch switches failed"),
+                }
+            }
+            if let Err(error) = tick_at(&app, &mut holds, now).await {
                 warn!(%error, "holding busy hosted boxes failed");
             }
             app.busy.fetch_sub(1, SeqCst);

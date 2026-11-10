@@ -570,6 +570,24 @@ with_account = "none"
 seen_by = ["litestream"]
 
 [[table]]
+name = "switches"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The launch switches for everyone (#531): one row per switch the operator set with `arugula-control switches` (sign-ups paused and what they're told, who may make new hosted boxes, a cap's default), with its value and when it was set."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_switches"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "An account's launch switches (#531): let in from the waitlist (and by whom), on the waitlist since, suspended (by whom and why, as the operator wrote it), and caps of its own, each with when it was set."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "untold_deletions"
 plane = "machine"
 process = "hub"

@@ -290,9 +290,11 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   - `ARUGULA_RELAY_MAX_SOCKETS` (32): client connections through the
     relay at once (a page uses one for all its machines).
   - `ARUGULA_RELAY_MAX_MACHINES` (50): machines dialed in at once.
-  - `ARUGULA_RELAY_DAILY_MB` (2000): relayed traffic a day, while
+  - `ARUGULA_RELAY_DAILY_MB` (10000): relayed traffic a day, while
     billing is off. Past it the account's relayed traffic slows to about
     64 KB/s, as billing's allowance does. Direct connections don't count.
+    The launch switches' `cap relay-mb` overrides it without a restart,
+    for everyone or one account ("Launch switches" below).
 - **A ceiling on the relay,** every account's sockets together:
   `ARUGULA_RELAY_MAX_TOTAL` (5000; 0 for none). Keep it below the
   proxy's connection limit, so a full relay still leaves room for
@@ -1110,6 +1112,91 @@ so check the account pays for no plan first. The hub's rows go in one
 transaction, and teammates Settings would tell get a notice in the app (no
 push). The running hub tells the platform within 30 s, and the platform
 erases its part.
+
+### Launch switches (#531)
+
+What to flip in seconds when sign-ups or hosted boxes need holding back:
+no deploy and no restart. Each is a row in the hub's database
+(`switches`, `account_switches`), set with `arugula-control switches` on
+the hub's machine and read by the running hub every second, so it holds
+across a restart. With this helper (as "The first window" below has it):
+
+```
+hub()  { fly ssh console -q -a illogical-control -C "/arugula-control $*" | tr -d '\r'; }
+hub switches status --db /data/control.db                        # every switch; add an account for its own
+hub switches signups pause --db /data/control.db                 # --message "..." says something else
+hub switches signups open --db /data/control.db
+hub switches hosted off --db /data/control.db                    # or open, or waitlist (the default)
+hub switches waitlist --db /data/control.db                      # who asked for a box, first first
+hub switches admit github:LOGIN --by jake --db /data/control.db  # an account id works too; several at once
+hub switches unadmit ACCOUNT --db /data/control.db
+hub switches cap box-hours 120 --account github:LOGIN --db /data/control.db
+hub switches cap boxes default --db /data/control.db             # back to the default
+hub switches suspend github:LOGIN --by jake --why "mining on a box" --db /data/control.db
+hub switches unsuspend ACCOUNT --db /data/control.db
+```
+
+- **Sign-ups paused** (`signups pause|open`). Nobody new gets an account,
+  by GitHub or a passkey; whoever has one signs in as ever. A GitHub
+  sign-in that would make an account ends on a page titled *New sign-ups
+  are paused* with the sentence below (or `--message`'s), and GitHub's
+  token is revoked; the passkey sign-up (the page's and the CLI's browser)
+  answers `403 {"reason": "signups_paused", "error": ...}` with the same
+  sentence, before the passkey is made. Default sentence: "Arugula isn't
+  taking new sign-ups right now. Try again in a little while; if you
+  already have an account, sign in with it as usual."
+- **Sign-ups per address** (`cap signups-per-hour`, 60). New accounts one
+  client address (an IPv6 one by its /64) makes an hour, by either way;
+  signing in to an account isn't counted. Past it: a page or
+  `429 {"reason": "signups_limited"}` that says to try again later. Counted
+  in memory, so a restart forgets.
+- **New hosted boxes** (`hosted open|waitlist|off`). The platform asks the
+  hub before it makes a cloud workspace's box, for a new workspace or a
+  rebuild. `waitlist` (the default) lets admitted accounts, and those on
+  the platform's `ARUGULA_HOSTED_ACCOUNTS`, make them; anyone else is told
+  "Cloud workspaces are invite-only during the beta. You're on the
+  waitlist now, and you can make one as soon as you're let in." and goes
+  on `waitlist`'s list. `admit` lets them in: the shell offers them hosted
+  workspaces, and runs and thread sessions start on them. `off` refuses
+  every new box and rebuild (`503`, `reason: hosted_off`, "New cloud
+  workspaces are turned off for now. The ones there are keep running and
+  open as usual; try again later."); boxes there keep running, pause and
+  wake as ever. `open` lets any signed-in account, under its caps.
+- **Caps per account** (`cap NAME VALUE [--account A]`, `default` puts one
+  back). Everyone's default, or one account's own, which wins:
+  - `boxes` (2): live cloud workspaces it made, in every project together.
+    Past it, `409`, `reason: box_cap`: "You've made 2 cloud workspaces that
+    are still there, the most one account may have for now. Delete one to
+    make another." The project's own cap (10) still holds.
+  - `box-hours` (60): hours the boxes of the workspaces it made ran this
+    UTC month, whatever their size, deleted workspaces' included (the
+    platform's meter, `hosted_usage`). Past it, no new box or rebuild, and
+    its workspaces' boxes don't wake, whoever opens them (`429`,
+    `reason: box_hours`, saying when the hours start again); the platform
+    pauses its running boxes between turns (within 30 s of the leader
+    noticing, or at the end of the turn under way).
+  - `relay-mb` (`ARUGULA_RELAY_DAILY_MB`, 10000): relayed MB a UTC day,
+    past which its relayed traffic slows to about 64 KB/s (sockets already
+    open follow the change). 0 is no cap. With billing on, billing's
+    allowance applies instead.
+  - `signups-per-hour`: above (everyone's only).
+- **Suspending an account** (`suspend A --by NAME --why TEXT`), for abuse
+  such as mining or proxying. Within a second: its sign-ins (GitHub,
+  passkeys), sessions, CLI and browser devices and machines' signatures are
+  refused with `403 {"reason": "suspended"}`, "This Arugula account is
+  suspended. If you think that's a mistake, write to hello@arugula.io."
+  (the reason you wrote stays in the record, never shown); its relay
+  sockets hang up and new ones are refused; it's no one to the platform.
+  Within 30 s the platform pauses the boxes of the cloud workspaces it
+  made, mid-turn too, and doesn't wake them for anyone. Nothing is
+  deleted: `unsuspend` lets it all back, its sessions included, and its
+  boxes wake when opened.
+
+`fly logs` says each change as the hub reads it (`launch switches: ...`),
+and each box paused for one (`pausing a hosted box for the launch
+switches`). The platform asks the hub (`HubPort::standings`); while it
+can't, nothing new is made ("try again in a minute") and wakes go ahead.
+TURN minutes aren't capped: control hands out no TURN credentials.
 
 ### Deploys
 
