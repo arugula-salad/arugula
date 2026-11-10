@@ -727,9 +727,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 107,
+        version: 106,
         name: "project_doc_layout",
-        sql: include_str!("../../migrations/sqlite/0107_project_doc_layout.sql"),
+        sql: include_str!("../../migrations/sqlite/0106_project_doc_layout.sql"),
         additive: true,
     },
 ];
@@ -1369,9 +1369,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 107,
+        version: 106,
         name: "project_doc_layout",
-        sql: include_str!("../../migrations/postgres/0107_project_doc_layout.sql"),
+        sql: include_str!("../../migrations/postgres/0106_project_doc_layout.sql"),
         additive: true,
     },
 ];
