@@ -39,6 +39,11 @@ const dir = "docs/releases";
 const NEEDS = /^(control|team|hosted|flag:[a-z][a-z0-9-]*)$/;
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_ITEMS = 5;
+// A headline's title and line at most: What's new shows them as they are.
+// scripts/release-notes.mjs holds each note to these, so a pull request's
+// notes check refuses what a release would.
+export const TITLE_MAX = 60;
+export const LINE_MAX = 200;
 
 const fail = (file, what) => {
   throw new Error(`${dir}/${file}: ${what}`);
@@ -66,7 +71,7 @@ function headlines(file, text) {
     const extra = Object.keys(it).filter((k) => !["id", "title", "line", "try", "needs"].includes(k));
     if (extra.length) fail(file, `item ${i}: unknown ${extra.join(", ")}`);
     if (typeof it.id !== "string" || !ID.test(it.id)) fail(file, `item ${i}: id is lowercase words and dashes`);
-    const item = { id: it.id, title: str(file, i, "title", it.title, 60), line: str(file, i, "line", it.line, 200) };
+    const item = { id: it.id, title: str(file, i, "title", it.title, TITLE_MAX), line: str(file, i, "line", it.line, LINE_MAX) };
     if (it.try !== undefined) {
       const t = it.try;
       const ok =

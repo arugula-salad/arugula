@@ -22,7 +22,7 @@ git init -q -b main "$tmp/work"
 cd "$tmp/work"
 git remote add origin "$tmp/origin.git"
 mkdir -p scripts docs/notes docs/releases web/src crates/foo/src
-cp "$src/release-notes.mjs" "$src/release-note-check.mjs" "$src/pr-notes-check" "$src/release-train" scripts/
+cp "$src/release-notes.mjs" "$src/release-note-check.mjs" "$src/whats-new.mjs" "$src/pr-notes-check" "$src/release-train" scripts/
 echo '# notes' >docs/notes/README.md
 git add -A && git commit -qm base
 git tag v1.2.3
@@ -148,7 +148,28 @@ note too-long "Too long" "line: $(printf 'x%.0s' {1..245})
 "
 git add -A && git commit -qm "Notes"
 refuses "a note alone still has to read: a 245-character line fails"
-if grep -qF 'docs/notes/too-long.md: line is over 240 characters' "$tmp/out"; then ok "naming the file"; else bad "the message: $(cat "$tmp/out")"; fi
+if grep -qF 'docs/notes/too-long.md: line is over 200 characters' "$tmp/out"; then ok "naming the file"; else bad "the message: $(cat "$tmp/out")"; fi
+# A headline's limits, not looser ones: a 210-character line or a 61-character
+# title passed the check once and held every train (2026-11-10).
+pr notes-over-a-headline
+mkdir -p docs/releases
+note headline-line "Headline line" "line: $(printf 'x%.0s' {1..210})
+"
+git add -A && git commit -qm "Notes"
+refuses "a 210-character line fails, as a headline would"
+if grep -qF 'docs/notes/headline-line.md: line is over 200 characters' "$tmp/out"; then ok "saying the line's limit"; else bad "the message: $(cat "$tmp/out")"; fi
+pr notes-title-over-a-headline
+mkdir -p docs/releases
+note headline-title "$(printf 'T%.0s' {1..61})"
+git add -A && git commit -qm "Notes"
+refuses "a 61-character title fails, as a headline would"
+if grep -qF 'docs/notes/headline-title.md: title is over 60 characters' "$tmp/out"; then ok "saying the title's limit"; else bad "the message: $(cat "$tmp/out")"; fi
+pr notes-at-the-limits
+mkdir -p docs/releases
+note at-limits "$(printf 'T%.0s' {1..60})" "line: $(printf 'x%.0s' {1..200})
+"
+git add -A && git commit -qm "Notes"
+passes "a 60-character title and a 200-character line pass"
 # A note already released can be edited: its id is in a release by then.
 pr edits-a-released-note
 mkdir -p docs/releases

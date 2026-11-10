@@ -20,8 +20,8 @@ The longer version for the release's page, if the line isn't enough. Markdown.
 ```
 
 - `section`: Added, Changed, Fixed or Removed.
-- `title`: a few words. `line`: one sentence on what it means for someone using
-  Arugula. Both show in What's new.
+- `title`: a few words, at most 60 characters. `line`: one sentence on what it
+  means for someone using Arugula, at most 200. Both show in What's new.
 - `try`, `needs` (optional): what *Try it* opens and who may use it, as
   `scripts/whats-new.mjs` describes.
 - `headline: no` (optional): only in the release's notes, not in What's new. Use it
