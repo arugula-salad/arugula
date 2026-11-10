@@ -130,6 +130,17 @@ pub struct Page {
     pub text: String,
 }
 
+/// A page of an agent block's messages, paged by message.
+#[derive(Debug, Serialize)]
+pub struct Messages {
+    pub pane: PaneId,
+    pub offset: usize,
+    pub next_offset: usize,
+    pub total: usize,
+    pub more: bool,
+    pub text: String,
+}
+
 /// A pane's screen.
 #[derive(Debug, Serialize)]
 pub struct Screen {

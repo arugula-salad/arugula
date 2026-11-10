@@ -3614,6 +3614,10 @@ impl Block for Agent {
         out
     }
 
+    fn messages(&self) -> Option<Vec<String>> {
+        Some(self.inner.lock().unwrap().t.messages())
+    }
+
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
         self.call_by(method, args, None)
     }

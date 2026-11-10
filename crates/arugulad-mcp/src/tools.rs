@@ -196,6 +196,21 @@ pub struct ReadArgs {
     /// programs); the other arguments don't apply.
     #[serde(default)]
     pub screen: bool,
+    /// For an agent block: `messages` is only what was said (prompts, the
+    /// assistant's text, each tool call's name and a line), no payloads or
+    /// results, paged by message: offset is a message's number, and the
+    /// result's next_offset goes back as offset. Default `raw`.
+    #[serde(default)]
+    pub format: Option<ReadFormat>,
+}
+
+#[derive(Deserialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadFormat {
+    /// The block's whole text (a terminal's output).
+    Raw,
+    /// An agent block's messages, one line per tool call.
+    Messages,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1078,7 +1093,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "read_output",
             title: "Read a pane's output",
-            description: "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs).",
+            description: "A pane's output as text (escape sequences stripped): the latest, from an offset, or its last command's. Paged: pass next_offset back as offset for more. With screen: what it shows right now (for full-screen programs). On an agent block, format messages gives only what was said (prompts, its text, each tool call's name and a line), paged by message: pass next_offset as offset.",
             args: Args::One(schema_for_type::<ReadArgs>),
             read_only: true,
             destructive: false,
@@ -2000,6 +2015,7 @@ impl ToolCall<'_, '_> {
         let p = self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten();
         let status = p.map(|p| p.status());
         let current = status.as_ref().and_then(|s| s.current.clone());
+        let tail = self.block_tail(pane).await;
         let end = self.end_of(pane).await;
         let from = current.as_ref().map(|c| c.start).unwrap_or(end.saturating_sub(4096));
         let what = current
@@ -2019,9 +2035,22 @@ impl ToolCall<'_, '_> {
                 pane,
                 command: current.and_then(|c| c.text),
                 next_offset: end,
-                last_lines: self.last_lines(pane, from, None),
+                last_lines: tail.unwrap_or_else(|| self.last_lines(pane, from, None)),
             },
         )
+    }
+
+    /// An agent block's last messages, in `read_output`'s messages form.
+    async fn block_tail(&self, pane: PaneId) -> Option<String> {
+        let b = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten()?;
+        let all = b.messages()?;
+        let mut from = all.len();
+        let mut used = 0;
+        while from > 0 && used + all[from - 1].len() + 2 <= 4_000 {
+            used += all[from - 1].len() + 2;
+            from -= 1;
+        }
+        Some(cap_tail(&all[from.min(all.len().saturating_sub(1))..].join("\n\n"), 4_000))
     }
 
     async fn waited(&self, pane: PaneId, r: WaitResult) -> Out {
@@ -2214,11 +2243,18 @@ impl ToolCall<'_, '_> {
             Err(e) if self.me().is_some() => return Err(e),
             Err(_) => None,
         };
+        if a.format == Some(ReadFormat::Messages) && info.as_ref().is_some_and(|p| p.info.kind == BlockType::Terminal) {
+            return Err("format messages is for agent blocks; a terminal's output is raw".into());
+        }
         if let Some(p) = &info
             && p.info.kind != BlockType::Terminal
         {
             let b =
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
+            if a.format == Some(ReadFormat::Messages) {
+                let all = b.messages().ok_or_else(|| format!("%{pane} has no messages: format raw"))?;
+                return page_messages(pane, &all, a.offset, max);
+            }
             return page_text(pane, &b.text(), a.offset, max);
         }
         let closed = || {
@@ -3466,6 +3502,7 @@ impl ToolCall<'_, '_> {
                         last_command: false,
                         max_chars: None,
                         screen: false,
+                        format: None,
                     })
                     .await?;
                 return Ok(v["text"].as_str().unwrap_or_default().to_owned());
@@ -3508,6 +3545,41 @@ fn forge_state(b: &Arc<dyn crate::block::Block>) -> Result<ForgeState, String> {
 }
 
 /// A block's text (an agent's transcript), paged by character.
+/// A page of messages, by message: from `offset` (a message's number), or
+/// the latest that fit without one; at least one, cut to `max` if it alone
+/// is longer.
+fn page_messages(pane: PaneId, all: &[String], offset: Option<u64>, max: usize) -> Out {
+    let total = all.len();
+    let size = |m: &String| m.chars().count() + 2;
+    let from = match offset {
+        Some(o) => (o as usize).min(total),
+        None => {
+            let (mut from, mut used) = (total, 0);
+            while from > 0 && (used + size(&all[from - 1]) <= max || from == total) {
+                used += size(&all[from - 1]);
+                from -= 1;
+            }
+            from
+        }
+    };
+    let (mut to, mut used) = (from, 0);
+    while to < total && (used + size(&all[to]) <= max || to == from) {
+        used += size(&all[to]);
+        to += 1;
+    }
+    let mut text = all[from..to].join("\n\n");
+    if text.chars().count() > max {
+        text = text.chars().take(max).collect();
+    }
+    let more = to < total;
+    let summary = if more {
+        format!("%{pane}: messages {from}–{to} of {total}; more: call again with offset {to}")
+    } else {
+        format!("%{pane}: messages {from}–{to} of {total}, to the end")
+    };
+    done(summary, results::Messages { pane, offset: from, next_offset: to, total, more, text })
+}
+
 fn page_text(pane: PaneId, text: &str, offset: Option<u64>, max: usize) -> Out {
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
@@ -3653,6 +3725,38 @@ pub mod whole;
 #[cfg(test)]
 mod tests {
     use crate::mcp::tools::open_lands_on_machine;
+
+    #[test]
+    fn messages_page_by_message_under_the_cap() {
+        use super::page_messages;
+        let all: Vec<String> =
+            (0..500).map(|i| format!("[Ran] command {i} {} (completed, exit 0)", "y".repeat(100))).collect();
+        // Without an offset: the latest that fit.
+        let v = page_messages(1, &all, None, 16_000).unwrap();
+        assert!(v["text"].as_str().unwrap().chars().count() <= 16_000);
+        assert_eq!(v["next_offset"], 500);
+        assert_eq!(v["more"], false);
+        assert!(v["offset"].as_u64().unwrap() > 300);
+        // From the start: pages by message, and next_offset continues.
+        let (mut at, mut seen) = (0u64, 0);
+        loop {
+            let v = page_messages(1, &all, Some(at), 16_000).unwrap();
+            assert!(v["text"].as_str().unwrap().chars().count() <= 16_000);
+            let next = v["next_offset"].as_u64().unwrap();
+            assert!(next > at);
+            seen += next - at;
+            at = next;
+            if v["more"] == false {
+                break;
+            }
+        }
+        assert_eq!(seen, 500);
+        // One message longer than the cap is cut to it.
+        let one = vec!["z".repeat(5_000)];
+        let v = page_messages(1, &one, None, 200).unwrap();
+        assert_eq!(v["text"].as_str().unwrap().chars().count(), 200);
+        assert_eq!(v["next_offset"], 1);
+    }
 
     /// Every Labs flag on, or none.
     fn fl(labs: bool) -> arugula_proto::flags::On {

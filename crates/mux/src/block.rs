@@ -53,6 +53,12 @@ pub trait Block: Send + Sync {
     }
     /// A plain-text rendering, for `capture --text`, history and search.
     fn text(&self) -> String;
+    /// What was said, one message each (a prompt, the assistant's text, a
+    /// tool call's name and one line), with no payloads: `read_output`'s
+    /// `messages` format. None for a block that isn't a conversation.
+    fn messages(&self) -> Option<Vec<String>> {
+        None
+    }
     /// One of the type's methods.
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>>;
     /// ...on behalf of someone (M29: their name, for its transcript and
