@@ -658,9 +658,16 @@ async fn read_view(c: &Call<'_>, board: &str) -> Result<BoardView, String> {
     view_of(boards_call(c, Method::GET, &agent_board(board.trim()), None).await?)
 }
 
+/// The project a board is in, for every answer: a board's id alone is
+/// enough to name it, and the answer says which project it came from.
+fn in_project(v: &BoardView) -> String {
+    format!("In project {}.", v.board.project)
+}
+
 /// The answer to a call: `summary` (its lines), and with `verbose` the board
 /// as JSON, once, and its text.
 fn answer(summary: String, view: &BoardView, verbose: bool) -> Out {
+    let summary = format!("{summary}\n{}", in_project(view));
     if !verbose {
         return done(summary, serde_json::json!({}));
     }

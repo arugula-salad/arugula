@@ -680,8 +680,13 @@ async fn an_agent_with_boards_write_works_the_rows() {
         v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned(),
     );
 
-    // No grant: refused, with how to give it. Read or write alike.
+    // No grant: the board answers as one that isn't there, by its id alone,
+    // read or write alike; the project's list says how to give the grant.
     let (st, v) = geek(&base, "GET", &agent_board(&id), None).await;
+    let (st_none, v_none) = geek(&base, "GET", &agent_board("brd_nothere"), None).await;
+    assert_eq!((st, &v), (st_none, &v_none), "{v}");
+    assert_eq!(st, 404, "{v}");
+    let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
     assert!(
         v["error"].as_str().unwrap().contains(&format!("arugula grants add geek-box boards.read --project {t}")),
@@ -689,7 +694,7 @@ async fn an_agent_with_boards_write_works_the_rows() {
     );
     let add = json!({ "entry": "row", "note": "sneaky" });
     let (st, v) = geek(&base, "PUT", &agent_board_entries(&id), Some(add.clone())).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    assert_eq!((st, &v), (404, &v_none), "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(shape(&v), lanes(&["the plan", "tests green"], &[], &[], &[]), "nothing was written");
 
@@ -958,10 +963,10 @@ async fn a_session_leads_a_board() {
     let took = LeadBoard { session: Some("Docs".into()), release: false };
     assert!(crate::boards::lead(&app, by, &id, &took).await.is_err());
 
-    // Without boards.write the machine leads nothing.
+    // With no grant the board is not there to lead.
     hub.daemon("ro", "a", Some("t"));
     let (st, v) = signed(&base, "a ro", "POST", &agent_board_lead(&id), Some(json!({ "session": "S" }))).await;
-    assert_eq!(st, 403, "{v}");
+    assert_eq!(st, 404, "{v}");
 }
 
 async fn xbox(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
