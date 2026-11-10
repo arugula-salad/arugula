@@ -1,0 +1,28 @@
+{
+  "dns": {
+    "skip_registration": true
+  },
+  "env": {
+    "ARUGULA_DUMP_RECIPIENTS": "age1gulmpg3ynhp0e97kam8mjultnf4efcusg987whq002yx2svg7a2ssvdwgv",
+    "OTEL_RESOURCE_ATTRIBUTES": "chant.workspace=arugula,chant.member=ops,chant.decl=platformDump,service.version=sha256%3A8a5132d7592ff0c2942cc20265806717d189ab3bdd2b9cd011c721a86757b279,vcs.ref.head.revision=d4374360a56fb2597444ead43dd90d2f40411713",
+    "OTEL_SERVICE_NAME": "arugula-platform",
+    "APP_REVISION": "d4374360a56fb2597444ead43dd90d2f40411713"
+  },
+  "guest": {
+    "cpu_kind": "shared",
+    "cpus": 1,
+    "memory_mb": 512
+  },
+  "image": "registry.fly.io/arugula-platform@sha256:8a5132d7592ff0c2942cc20265806717d189ab3bdd2b9cd011c721a86757b279",
+  "metadata": {
+    "managed-by": "chant",
+    "role": "platform-dump",
+    "chant-release-digest": "sha256:8a5132d7592ff0c2942cc20265806717d189ab3bdd2b9cd011c721a86757b279",
+    "chant-release-git-sha": "d4374360a56fb2597444ead43dd90d2f40411713",
+    "chant-release-previous-digest": "sha256:6b6eaae02fab29d24e9cc0e014b2d188c5419b902b41eec3a701e80e2d26908d"
+  },
+  "restart": {
+    "policy": "no"
+  },
+  "schedule": "hourly"
+}
