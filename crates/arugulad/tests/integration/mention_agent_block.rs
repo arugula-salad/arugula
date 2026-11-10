@@ -258,7 +258,9 @@ fn replies_waiting_on_an_agent_block_are_one_prompt_per_thread() {
 
     let state = d.get(&format!("/api/blocks/{block}"))["state"].to_string();
     assert!(
-        state.contains("in the thread \\\"root 10\\\":\\nAda: first reply\\nAda: second reply"),
+        state.contains(
+            "in the thread \\\"root 10\\\":\\nAda (a teammate): first reply\\nAda (a teammate): second reply"
+        ),
         "the thread's replies came as one prompt, oldest first: {state}"
     );
     assert!(!state.contains("elsewhere\\nAda"), "the other thread's came apart: {state}");

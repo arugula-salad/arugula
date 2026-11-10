@@ -1202,6 +1202,9 @@ struct Told<'a> {
     parent: Option<i64>,
     /// Who wrote it, as people read it.
     author: String,
+    /// With a person's own post (#665): their account. None for an agent's,
+    /// or a product's for them (`via`): those aren't the person's word.
+    person: Option<String>,
     text: &'a str,
     /// The sessions it names, `@<machine>/<session>`: (machine's name,
     /// session), both lowercased (#429).
@@ -1272,8 +1275,14 @@ async fn lead_told(
     Ok(agents.iter().any(|a| a.machine == machine && hears(a)).then_some((machine, session)))
 }
 
-/// The op that tells a daemon about `told`, for `session` ([`session_for`]).
-fn mention_op(told: &Told<'_>, session: Option<String>, others: Vec<String>) -> arugula_control_wire::forge::DaemonOp {
+/// The op that tells `a`'s daemon about `told`, for `session` ([`session_for`]).
+/// It's from the machine's owner (#665) only when the owner posted it themselves.
+fn mention_op(
+    told: &Told<'_>,
+    a: &ChatRoomAgent,
+    session: Option<String>,
+    others: Vec<String>,
+) -> arugula_control_wire::forge::DaemonOp {
     use arugula_control_wire::forge::{AgentMention, DaemonOp};
     DaemonOp::AgentMention(AgentMention {
         room: told.room.id.clone(),
@@ -1287,6 +1296,7 @@ fn mention_op(told: &Told<'_>, session: Option<String>, others: Vec<String>) -> 
         from_session: told.from_session.clone(),
         others,
         root_line: told.root_line.clone(),
+        from_owner: told.person.as_deref().is_some_and(|p| !p.is_empty() && p == a.owner),
     })
 }
 
@@ -1382,7 +1392,7 @@ async fn plan_tells(
         }
         let session = session_for(told, &agents, a, is_mentioned);
         let others = thread_agents::others_in(&seen, &agents, &a.machine, session.as_deref());
-        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session, others) });
+        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, a, session, others) });
     }
     out
 }
@@ -1602,6 +1612,7 @@ async fn mention_to_resend(
         seq: m.seq,
         parent: m.parent,
         author: who,
+        person: (m.agent.is_none() && m.via.is_none()).then(|| m.author.clone()),
         text: &m.text,
         sessions: at_sessions(&without_code(&m.text)),
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
@@ -1609,7 +1620,7 @@ async fn mention_to_resend(
         root_line: root_line(app, &room, m.parent),
         to: vec![],
     };
-    Ok(mention_op(&told, session_for(&told, &agents, a, true), vec![]))
+    Ok(mention_op(&told, a, session_for(&told, &agents, a, true), vec![]))
 }
 
 // ---------------------------------------------------------------- live
@@ -2690,6 +2701,7 @@ pub(crate) async fn post_replied(
         seq,
         parent: b.parent,
         author: who,
+        person: (agent.is_none() && via.is_none()).then(|| s.account.clone()),
         text,
         sessions: at_sessions(&plain),
         from_session,
