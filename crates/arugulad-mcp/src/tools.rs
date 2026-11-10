@@ -3145,8 +3145,68 @@ impl ToolCall<'_, '_> {
             format!(
                 "Started an agent in %{block}{tail}; wait on it (until needs_input or idle): the answer has its last message and the work it left; read_output for its transcript"
             ),
-            results::StartedAgent { block, issue: on },
+            results::StartedAgent { block, issue: on, mcp: Some(self.started_mcp(block).await) },
         )
+    }
+
+    /// What the agent just started can reach (Arugula #836): its MCP servers
+    /// as its block says them, and this machine's grants over projects, so a
+    /// lead can tell a missing server from a missing grant.
+    async fn started_mcp(&self, block: arugula_proto::PaneId) -> results::StartedMcp {
+        let state = match self.app.mux.api(|r| Api::Block(block, r)).await.flatten() {
+            Some(b) => b.state(),
+            None => Value::Null,
+        };
+        let m = &state["mcp"];
+        let servers = m["servers"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|n| n.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        let (grants, grants_note) = self.grants_held().await;
+        results::StartedMcp {
+            servers,
+            arugula: m["arugula"] == true,
+            note: m["note"].as_str().map(str::to_owned),
+            grants,
+            grants_note,
+        }
+    }
+
+    /// The powers this machine's grants give, a line per project, and why
+    /// they're unknown when control wasn't asked or didn't answer.
+    async fn grants_held(&self) -> (Vec<String>, Option<String>) {
+        use std::collections::{BTreeMap, BTreeSet};
+        if self.app.control.enrolled().is_none() {
+            return (vec![], Some("This machine isn't joined to Arugula control, so it holds no grants".into()));
+        }
+        let (boards, (_, threads, runs, trackers)) =
+            tokio::join!(crate::mcp::registry::boards_reach(self.app), crate::mcp::registry::reach(self.app));
+        let mut by: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut add = |name: &str, powers: &[String]| {
+            by.entry(name.to_owned()).or_default().extend(powers.iter().cloned());
+        };
+        for t in threads.scopes.iter().filter(|t| t.kind == "project") {
+            add(&t.name, &t.powers);
+        }
+        for p in &runs.projects {
+            add(&p.name, &p.powers);
+        }
+        for p in &boards.projects {
+            add(&p.name, &p.powers);
+        }
+        for p in &trackers.projects {
+            add(&p.name, &["trackers.write".to_owned()]);
+        }
+        let silent: Vec<&str> = [(threads.answered, "threads"), (runs.answered, "runs"), (boards.answered, "boards")]
+            .into_iter()
+            .filter(|(a, _)| !a)
+            .map(|(_, n)| n)
+            .collect();
+        let note = (!silent.is_empty())
+            .then(|| format!("Control didn't answer for {}: those grants are unknown, not missing", silent.join(", ")));
+        let lines =
+            by.into_iter().map(|(p, w)| format!("{p}: {}", w.into_iter().collect::<Vec<_>>().join(", "))).collect();
+        (lines, note)
     }
 
     /// `start_agent {issue}`: attach the block to the issue's row, and say
@@ -3313,7 +3373,7 @@ impl ToolCall<'_, '_> {
         let block = self.open(req).await?;
         done(
             format!("Started a chat in %{block}; wait on it (until idle), then read_output for its answer"),
-            results::BlockOnly { block },
+            results::StartedAgent { block, issue: None, mcp: Some(self.started_mcp(block).await) },
         )
     }
 
