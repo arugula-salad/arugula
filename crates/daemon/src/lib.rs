@@ -972,8 +972,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         url: args.update_url.clone(),
         enabled: !args.no_update_check,
     });
-    let subject = format!("mailto:{}", owner_login.clone().unwrap_or_else(|| "arugula@localhost".into()));
-    let push = match push::Push::open(state_dir.join("push"), subject) {
+    let push = match push::Push::open(state_dir.join("push")) {
         Ok(p) => Some(p),
         Err(e) => {
             tracing::warn!(error = %e, "web push is off");
