@@ -92,6 +92,9 @@ struct Open {
     /// asked was (so the log says when it fills and when it has room).
     refused: AtomicU64,
     full: AtomicBool,
+    /// Bytes relayed since control started, every socket and both ways
+    /// (the launch dashboard's, part of Arugula #532).
+    bytes: AtomicU64,
 }
 
 /// Per-account relay limits (#174), so one account can't take the whole
@@ -172,6 +175,7 @@ impl Ticket {
     /// the operator's cap for it as it is now (#531), else
     /// `Caps::daily_bytes`. 0 is none, and so is billing's.
     pub fn count(&self, n: u64) -> bool {
+        self.open.bytes.fetch_add(n, Ordering::Relaxed);
         let mut t = self.u.today.lock().unwrap();
         let day = crate::day(now_ms());
         if t.0 != day {
@@ -330,6 +334,11 @@ impl Relay {
             self.caps.total,
             o.refused.load(Ordering::Relaxed),
         )
+    }
+
+    /// Bytes relayed since control started, both ways (`/metrics`).
+    pub fn bytes(&self) -> u64 {
+        self.open.bytes.load(Ordering::Relaxed)
     }
 
     /// Log the relay's sockets each minute they've changed (#344), for

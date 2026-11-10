@@ -11,6 +11,7 @@
 //! (M140).
 
 pub mod changes;
+pub mod counts;
 pub mod doc_links;
 pub mod email;
 pub mod hosted;

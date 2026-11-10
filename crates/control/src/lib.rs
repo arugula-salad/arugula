@@ -84,6 +84,7 @@ mod links_wire;
 mod machine_rename_wire;
 mod mail;
 mod maintenance;
+mod metrics;
 #[cfg(test)]
 mod native_clients_wire;
 mod notice;
@@ -276,6 +277,11 @@ struct Args {
     /// Off-site backup with Litestream (#174).
     #[command(flatten)]
     backup: arugula_control_common::backup::Litestream,
+
+    /// Prometheus metrics for the launch dashboard (part of Arugula #532),
+    /// on the private network only.
+    #[command(flatten)]
+    metrics: arugula_control_common::metrics::Listen,
 
     /// Push endpoints allowed besides the browsers' push services, as
     /// host:port (tests).
@@ -1268,6 +1274,9 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         tokio::spawn(guest_jump::serve(app.clone(), l));
     }
     tokio::spawn(relay::Relay::log_counts(app.clone()));
+    if let Some(at) = a.metrics.at {
+        metrics::serve(app.clone(), at).await?;
+    }
     // The platform's background work, when it's in process; out of
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {

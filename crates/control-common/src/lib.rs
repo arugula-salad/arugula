@@ -5,9 +5,10 @@
 //! analytics the same way, and agree on who is asking (`Principal`, and the
 //! signed header the hub forwards it in once the platform is its own
 //! process, M140), and how the two sign the calls between them
-//! (`internal`), and how each backs its database up off-site (`backup`),
-//! and the hub's tokens for other products, which either checks (`issuer`),
-//! and the messages of the internal port between them (`port`).
+//! (`internal`), and how each backs its database up off-site (`backup`)
+//! and says its counts to Prometheus (`metrics`), and the hub's tokens for
+//! other products, which either checks (`issuer`), and the messages of the
+//! internal port between them (`port`).
 //!
 //! Nothing here knows about either side's state: no `App`, no tables.
 
@@ -17,6 +18,7 @@ pub mod error;
 pub mod internal;
 pub mod issuer;
 pub mod limit;
+pub mod metrics;
 pub mod port;
 pub mod principal;
 pub mod roots;
