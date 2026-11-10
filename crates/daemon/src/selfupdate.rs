@@ -132,17 +132,25 @@ pub async fn fetch(releases: &str, version: &str, into: &Path) -> anyhow::Result
 /// Expand-Archive (as install.ps1 does; the release's zip has `\` paths).
 fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
     let out = if cfg!(windows) {
-        let q = |p: &Path| p.display().to_string().replace('\'', "''");
-        Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force", q(archive), q(into)))
-            .output()
+        expand_archive(archive, into).output()
     } else {
         Command::new("tar").arg("-xzf").arg(archive).arg("-C").arg(into).output()
     }
     .context("unpacking the release")?;
     ensure!(out.status.success(), "unpacking {}: {}", archive.display(), String::from_utf8_lossy(&out.stderr).trim());
     Ok(())
+}
+
+/// Windows PowerShell 5.1's Expand-Archive. Without `PSModulePath`, which
+/// a daemon or shell started from PowerShell 7 hands down pointing at 7's
+/// modules, 5.1 builds its own and finds `Microsoft.PowerShell.Archive`.
+fn expand_archive(archive: &Path, into: &Path) -> Command {
+    let q = |p: &Path| p.display().to_string().replace('\'', "''");
+    let mut c = Command::new("powershell");
+    c.args(["-NoProfile", "-NonInteractive", "-Command"])
+        .arg(format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force", q(archive), q(into)))
+        .env_remove("PSModulePath");
+    c
 }
 
 /// `arugulad --version` says `arugulad 0.24.0`.
@@ -444,6 +452,15 @@ mod tests {
             "https://github.com/arugula-salad/arugula/releases"
         );
         assert_eq!(releases("http://127.0.0.1:9/releases/latest/"), "http://127.0.0.1:9/releases");
+    }
+
+    /// Arugula #128: PowerShell 7's `PSModulePath` stops 5.1 loading
+    /// Expand-Archive.
+    #[test]
+    fn expand_archive_drops_ps_module_path() {
+        let c = expand_archive(Path::new("a.zip"), Path::new("out"));
+        assert_eq!(c.get_program(), "powershell");
+        assert!(c.get_envs().any(|(k, v)| k == "PSModulePath" && v.is_none()));
     }
 
     #[test]
